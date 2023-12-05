@@ -1,5 +1,5 @@
 // Re-export entire crates
-pub use structopt;
+pub use structopt::*;
 pub use bastion;
 pub use flume;
 pub use log;
@@ -8,6 +8,7 @@ pub use futures_timer;
 pub use futures;
 pub use itertools;
 pub use async_recursion;
+
 
 #[cfg(feature = "test-utils")]
 pub use async_std;
