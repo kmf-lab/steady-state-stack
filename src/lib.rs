@@ -2,7 +2,13 @@
 pub use structopt;
 pub use bastion;
 pub use flume;
-pub use log::{debug, error, info, trace, warn};
+pub use log::debug;
+pub use log::error;
+pub use log::info;
+pub use log::trace;
+pub use log::warn;
+
+
 pub use flexi_logger;
 pub use futures_timer;
 pub use futures;
