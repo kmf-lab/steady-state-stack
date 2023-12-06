@@ -1,6 +1,12 @@
 # steady-state-stack
 Stack of Rust crates for stead state projects
 
+
+# new projects can use SSS as a starting point with this.
+cargo new --name my_new_project --template https://github.com/kmf-lab/steady-state-stack.git
+
+
+
 The Steady State Stack (3S framework) for Rust is a focused collection of crates designed to enhance general service development, concurrent processing, asynchronous programming, and logging. Here's a brief overview of its core components:
 
 StructOpt (0.3.26): Facilitates the creation of command-line interfaces by parsing command-line arguments directly into Rust structs, ensuring type safety and ease of use.

@@ -3,9 +3,6 @@ name = "sss"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-path = "src/lib.rs"
-
 [dependencies]
 structopt       = "0.3.26"  # CLI parse for type safe arguments
 bastion         = "0.4.5"   # The actor framwork with supervisors to recover from panics
@@ -17,15 +14,6 @@ futures         = "0.3.29"  # for Select! Barrier etc and lock::Mutex when neede
 itertools       = "0.12.0"  # helpful smart iter methods
 async-recursion = "1.0.5"   # simplify the writing of async recursive functions
 
-
 [dev-dependencies] 
 async-std       = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
-
-
-# remote usage
-# [dependencies]
-# steady_state_stack = { git = "https://github.com/yourusername/steady-state-stack.git", branch = "main" }
-# [dev-dependencies] 
-# steady_state_stack = { git = "https://github.com/yourusername/steady-state-stack.git", branch = "main" }
-
 
