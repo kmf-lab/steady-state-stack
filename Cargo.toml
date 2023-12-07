@@ -12,7 +12,8 @@ flexi_logger    = "0.27.3"  # default flexable logging implementation
 futures-timer   = "3.0.2"   # for async Delay::new(check_rate).await used places where we poll
 futures         = "0.3.29"  # for Select! Barrier etc and lock::Mutex when needed
 itertools       = "0.12.0"  # helpful smart iter methods
-async-recursion = "1.0.5"   # simplify the writing of async recursive functions
+async-recursion = "1.0.5"
+structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
 
 [dev-dependencies] 
 async-std       = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
