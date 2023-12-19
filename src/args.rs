@@ -7,7 +7,7 @@ pub struct Opt {
     long = "name",
     default_value = "unknown"
     )]
-    peers_string: String,
+    pub peers_string: String,
 
     #[structopt(short = "a", long = "age", default_value = "0", validator = |p|
     match p.parse::<u8>() {
@@ -15,6 +15,9 @@ pub struct Opt {
     _ => Err(String::from("Age must be 120 or less.")),
     }
     )]
-    my_idx: usize
+    pub my_idx: usize,
+
+    #[structopt(long = "logging_level", default_value = "info")]
+    pub logging_level: String
 
 }

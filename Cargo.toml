@@ -4,16 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-structopt       = "0.3.26"  # CLI parse for type safe arguments
-bastion         = "0.4.5"   # The actor framwork with supervisors to recover from panics
-flume           = "0.11.0"  # lock free bounded channels for communications between actors
-log             = "0.4.20"  # common logging traits
-flexi_logger    = "0.27.3"  # default flexable logging implementation
-futures-timer   = "3.0.2"   # for async Delay::new(check_rate).await used places where we poll
-futures         = "0.3.29"  # for Select! Barrier etc and lock::Mutex when needed
-itertools       = "0.12.0"  # helpful smart iter methods
-async-recursion = "1.0.5"
+structopt        = "0.3.26"  # CLI parse for type safe arguments
+bastion          = "0.4.5"   # The actor framwork with supervisors to recover from panics
+flume            = "0.11.0"  # lock free bounded channels for communications between actors
+log              = "0.4.20"  # common logging traits
+flexi_logger     = "0.27.3"  # default flexable logging implementation
+futures-timer    = "3.0.2"   # for async Delay::new(check_rate).await used places where we poll
+futures          = "0.3.29"  # for Select! Barrier etc and lock::Mutex when needed
+itertools        = "0.12.0"  # helpful smart iter methods
+async-recursion  = "1.0.5"
 structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
+dashmap          = "4.0.2"   # for concurrent hashmap
+#let map: DashMap<MyStruct, f64> = DashMap::new();
+# add crate for cross thread caching like these crates: https://crates.io/crates/crossbeam-cache
 
 [dev-dependencies] 
 async-std       = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
