@@ -13,32 +13,22 @@ pub struct ApprovedWidgets {
 
 #[cfg(not(test))]
 pub async fn behavior(mut monitor: SteadyMonitor, mut rx: SteadyRx<WidgetInventory>, mut tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
-    loop {
-        select! {
-            _ = monitor.relay_stats().await => {},
-            _ = process( &mut monitor
-                       , &mut rx
-                       , &mut tx).fuse() => {}
-        }
-    }
+    process(  &mut monitor
+             , &mut rx
+             , &mut tx).await;
     Ok(())
 }
 
 #[cfg(test)]
 pub async fn behavior(mut monitor: SteadyMonitor, mut rx: SteadyRx<WidgetInventory>, mut tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
-    loop {
-        select! {
-            _ = monitor.relay_stats().await => {},
-            _ = process(  &mut monitor
-                        , &mut rx
-                        , &mut tx).fuse() => {/*we could return Ok(()) here to stop the actor*/}
-        }
-    }
+    process( &mut monitor
+              , &mut rx
+              , &mut tx).await;
     Ok(())
 }
 
 // important function break out to ensure we have a point to test on
-async fn process(monitor: &mut SteadyMonitor
+async fn process(mut monitor: &mut SteadyMonitor
                  , rx: &mut SteadyRx<WidgetInventory>
                  , tx: &mut SteadyTx<ApprovedWidgets>)  {
      match rx.rx(monitor).await {

@@ -1,12 +1,16 @@
 mod args;
+#[macro_use]
 mod steady;
+
 use std::future::Future;
 use structopt::*;
 use log;
 use log::{debug, error, info, trace, warn};
 use flexi_logger;
 use bastion::Bastion;
-use bastion::prelude::{Children, ChildrenRef, SupervisionStrategy};
+use bastion::distributor::Distributor;
+use bastion::prelude::{Dispatcher, SendError};
+use bastion::prelude::{Children, ChildrenRef, RefAddr, SupervisionStrategy};
 use bastion::supervisor::SupervisorRef;
 use flexi_logger::{Logger, LogSpecification};
 use crate::steady::*;
@@ -33,62 +37,35 @@ fn build_graph(opt: Opt) {
     let _ = Bastion::supervisor(|supervisor|
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
-                let monitor = graph.new_monitor();
-                children
-                    .with_redundancy(1)
-                    .with_name("generator")
-                    .with_callbacks(monitor.callbacks())
-                    .with_exec(
-                        move |ctx| actor::data_generator::
-                                    behavior(monitor.wrap(ctx)
-                                            , generator_tx.clone()
-
-                        )
+                graph.new_monitor().configure_for_graph("generator"
+                                            , children.with_redundancy(0)
+                        , move |monitor|
+                             actor::data_generator::behavior(monitor
+                                                            , generator_tx.clone())
                     )
             })
             .children(|children| {
-                    let monitor = graph.new_monitor();
-                    children
-                        .with_redundancy(1)
-                        .with_name("approval")
-                        .with_callbacks(monitor.callbacks())
-                        .with_exec(
-                            move |ctx| actor::data_approval::behavior(monitor.wrap(ctx)
-                                                                      , generator_rx.clone()
-                                                                      , consumer_tx.clone())
-                        )
+                    graph.new_monitor().configure_for_graph("approval"
+                                             , children.with_redundancy(0)
+                        , move |monitor|
+                                actor::data_approval::behavior(monitor
+                                                               , generator_rx.clone()
+                                                               , consumer_tx.clone())
+                                                    )
             })
             .children(|children| {
-                        let monitor = graph.new_monitor();
-                        children
-                            .with_redundancy(1)
-                            .with_name("consumer")
-                            .with_callbacks(monitor.callbacks())
-                            .with_exec(move |ctx|
-                                            actor::data_consumer::behavior(monitor.wrap(ctx)
-                                                                              , consumer_rx.clone())
+                    graph.new_monitor().configure_for_graph("consumer"
+                                         , children.with_redundancy(0)
+                            ,move |monitor|
+                                actor::data_consumer::behavior(monitor
+                                                               , consumer_rx.clone())
                             )
             })
     ).expect("OneForOne supervisor creation error.");
-
 }
 
-
-
-pub fn single_actor<F, Fut, G>(sup: &SupervisorRef, sc: SteadyControllerBuilder, f: F, g: G) -> ChildrenRef
-    where
-        F: Fn(SteadyMonitor) -> Fut,
-        Fut: Future<Output = Result<(), ()>> + Send + 'static,
-        F: Send + Sync + 'static,
-        G: Fn(Children) -> Children,
-{
-    sup.children(|children| g(children)
-                           .with_exec(
-        move |ctx| Box::pin(f(sc.clone().wrap(ctx)))
-    )).expect("Error creating approve")
-}
-
-
+//TODO: consider moving monitor.wrap inside, this could hide all the monitor work easy
+//TODO: consider 'static lifetime to simplify the behavior function...
 
 fn main() {
 
@@ -100,11 +77,12 @@ fn main() {
                 .format(flexi_logger::colored_with_thread)
                 .start() {
                 Ok(_) => {
-                    trace!("This is an trace log message");
-                    debug!("This is an debug log message");
-                    info!("This is an info log message");
-                    warn!("This is a warn log message");
-                    error!("This is an error log message");
+                    // for all log levels use caution and never write any personal data to the logs.
+                    trace!("trace log message, use when deep tracing through the application");
+                    debug!("debug log message, use when debugging complex parts of the application");
+                    warn!("warn log message, when something recoverable happens, may be a flag that this area needs attention");
+                    error!("error log message, use when the unexpected happens");
+                    info!("info log message, use rarely when key events happen");
                 },
                 Err(e) => {
                     // Logger initialization failed
@@ -129,14 +107,21 @@ fn main() {
 
 //TODO: here we need the test graph the same as teh main graph as test so the actors are different.
 //      in this case ...
+#[derive(Clone, Debug)]
+enum SteadyBeacon {
+    BeginTestCase(RefAddr, &'static str),
+}
+
 
 #[cfg(test)]
 mod tests {
-    use bastion::prelude::BastionContext;
+    use bastion::prelude::{BastionContext, Distributor, MessageHandler, RefAddr, RestartPolicy, RestartStrategy};
+    use bastion::run;
+    use itertools::assert_equal;
     use super::*;
 
     #[async_std::test]
-    async fn test_graph() {
+    async fn test_graph_one() {
 
         let test_ops = Opt {
             peers_string: "".to_string(),
@@ -148,23 +133,48 @@ mod tests {
 
         build_graph(test_ops);
 
-        let one_for_one: SupervisorRef = Bastion::supervisor(|supervisor|
-            supervisor.with_strategy(
-                SupervisionStrategy::OneForOne
-            )
+        let r = RestartStrategy::default();
+        let r = r.with_restart_policy(RestartPolicy::Never);
+
+        /*
+        let test_one = Bastion::supervisor(|supervisor|
+            supervisor.with_strategy(SupervisionStrategy::OneForOne)
+                .with_restart_strategy(r)
+                .children(|children|
+                     children
+                        .with_redundancy(1)
+                        .with_distributor(Distributor::named("say_hi"))
+                        .with_name("test-one")
+                        .with_exec(
+                            move |ctx|
+                                test_script_one(ctx)
+                        )
+                )
         ).expect("OneForOne supervisor creation error.");
-
-        let test_ref_one: ChildrenRef = one_for_one.children(|children| children.with_exec(move |ctx|
-            test_script_one(ctx)
-        )).expect("Error creating approve");
-
-        //we send this so all test implementations know the test actor
-        let report_actor_addr = test_ref_one.elems().get(0).unwrap().addr();
-
-      //  Bastion::broadcast(SteadyBeacon::TestCase(report_actor_addr.clone(), "One".to_owned()));
+*/
 
         // Launch Bastion
         Bastion::start();
+
+        //the problem here is that we do not have the ref addr for the test actor.
+        //let answer = children_ref.ask_anonymously(RequestMessage {
+        //    content: "Hello, Bastion".into(),
+        //}).expect("Failed to send message");
+
+        let say_hi:Distributor = Distributor::named("testing-generator");
+        //let say_hi:Distributor = Distributor::named("testing-consumer");
+
+
+        run!(async {
+            let answer: Result<&str, SendError> =
+            say_hi.request("hi!").await.expect("Couldn't send request");
+
+            assert_eq!(1,1);
+
+            println!("{}", answer.expect("Couldn't receive answer"))
+
+        });
+
 
         // Bastion::stop();
         Bastion::block_until_stopped();
@@ -172,8 +182,52 @@ mod tests {
 
     pub async fn test_script_one(ctx: BastionContext) -> Result<(),()> {
 
-        let msg = ctx.recv();
+        //tell other actors to begin test one and send the results here.
+        //note we could do more complex staged setup with multiple broadcast messages
+        Bastion::broadcast(SteadyBeacon::BeginTestCase(ctx.signature(), "one"))
+              .expect("Unable to start unit test 'one'");
 
+
+
+        let msg = ctx.recv();
+        MessageHandler::new(ctx.recv().await?)
+            .on_tell(|message: &ApprovedWidgets, _sender_addr| {
+                // Handle the message...
+                println!("Received ApprovedWidgets: {:?}", message);
+                // TODO: assert that the message is what we expected from the logic.
+
+            })
+          /*  .on_broadcast(|message: &SteadyBeacon, _sender_addr| {
+
+
+                if let SteadyBeacon::TestCase(addr, case) = message {
+                    if "One" == case {
+                        test_one = Some(addr.clone());
+                    }
+                    // Handle the message...
+                    println!("Received TestCase with case: {}", case);
+                    // Potentially send a message back using addr
+                }
+
+            })*/
+            /* .on_broadcast(|message: &SteadyBeacon, _sender_addr| {
+                if let SteadyBeacon::Telemetry(addr) = message {
+                    tel = Some(addr.clone());
+                    //  init_actor(tel); //todo rebuild is a problem becuse broadcast wil be gone.
+                    // Handle the message...
+                    println!("Received target: {:?}", addr);
+                    // Potentially send a message back using addr
+                }
+
+            })   */
+        ;
+
+        if true {
+         //   Bastion::stop();
+        }
+        //get all the required messages for test one.
+        //TODO: how do I make this test fail if the wront message is received?
+        //     especially since we are in bastion and it eats panics.
 
         Ok(())
     }

@@ -1,13 +1,17 @@
+
 use std::any::{type_name};
 use std::future::Future;
 use std::time::Duration;
 use bastion::{Callbacks};
+use bastion::children::Children;
+use bastion::distributor::Distributor;
 use bastion::prelude::{BastionContext};
 use flume::{Receiver, Sender, bounded, RecvError};
 use futures::future::Fuse;
 use futures_timer::Delay;
 use log::{error, info};
 use futures::{FutureExt, select};
+use crate::actor;
 
 pub struct SteadyGraph {
     senders_count: usize,
@@ -23,18 +27,25 @@ pub enum Telemetry {
     MessagesReceived(usize, usize, u64),
 }
 
+
+
+macro_rules! process_select_loop {
+    ($monitor:expr, $($args:expr),*) => {
+        loop {
+            select! {
+                _ = $monitor.relay_stats().await => {},
+                _ = process(&mut $monitor, $($args),*).fuse() => {},
+            }
+        }
+    };
+}
+
+
 #[derive(Clone)]
 pub struct SteadyControllerBuilder {
     telemetry_tx: SteadyTx<Telemetry>,
 }
 
-
-impl SteadyControllerBuilder {
-    pub(crate) fn callbacks(&self) -> Callbacks {
-     //  Callbacks::new().
-        todo!()
-    }
-}
 
 pub struct SteadyMonitor {
     telemetry_tx: SteadyTx<Telemetry>,
@@ -45,7 +56,9 @@ pub struct SteadyMonitor {
 
 impl SteadyMonitor {
 
-    pub async fn relay_stats<'a>(self: & 'a mut Self,) -> Fuse<Delay> {
+
+
+    pub async fn relay_stats<'a>(mut self: & 'a mut Self,) -> Fuse<Delay> {
         info!("hello");
         let tx = self.telemetry_tx.clone();
 
@@ -75,6 +88,51 @@ impl SteadyMonitor {
 }
 
 impl SteadyControllerBuilder {
+
+    pub(crate) fn callbacks(&self) -> Callbacks {
+        //  Callbacks::new().
+        todo!()
+    }
+
+    pub fn configure_for_graph<F,I>(self: &mut Self, root_name: &str, c: Children, init: I ) -> Children
+        where I: Fn(SteadyMonitor) -> F + Send + 'static + Clone,
+              F: Future<Output = Result<(),()>> + Send + 'static ,
+    {
+        #[cfg(test)] {
+            let s = self.clone();
+            let init_clone = init.clone();
+            return c.with_callbacks(self.callbacks())
+                .with_exec(move |ctx| {
+                    let init_clone = init_clone.clone();
+                    let s = s.clone();
+                    async move {
+                            let init_clone = init_clone.clone();
+                            let mut monitor = s.wrap(ctx);
+                            init_clone(monitor).await;
+                            Ok(())
+                    }
+                })
+                .with_name(root_name)
+                .with_distributor(Distributor::named(format!("testing-{root_name}")));
+        }
+        #[cfg(not(test))] {
+            let s = self.clone();
+            let init_clone = init.clone();
+            return c.with_callbacks(self.callbacks())
+                .with_exec(move |ctx| {
+                    let init_clone = init_clone.clone();
+                    let s = s.clone();
+                    async move {
+                        let init_clone = init_clone.clone();
+                        let mut monitor = s.wrap(ctx);
+                        init_clone(monitor).await;
+                        Ok(())
+                    }
+                })
+                .with_name(root_name);
+        }
+    }
+
     pub fn wrap(self: &Self, ctx: BastionContext) -> SteadyMonitor {
        let monitor = SteadyMonitor {
            telemetry_tx: self.telemetry_tx.clone(),

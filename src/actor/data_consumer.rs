@@ -17,13 +17,8 @@ async fn process(mut monitor: &mut SteadyMonitor
 
 #[cfg(not(test))]
 pub async fn behavior(mut monitor: SteadyMonitor, mut rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
-    loop {
-        select! {
-            _ = monitor.relay_stats().await => {},
-            _ = process(  &mut monitor
-                        , &mut rx_approved_widgets).fuse() => {/*we could return Ok(()) here to stop the actor*/}
-        }
-    }
+    process( &mut monitor
+              , &mut rx_approved_widgets).await;
     Ok(())
 }
 
@@ -37,13 +32,8 @@ pub async fn behavior(mut monitor: SteadyMonitor, mut rx_approved_widgets: Stead
 
     // waiting for the test framework to send a message
 
-    loop {
-        select! {
-            _ = monitor.relay_stats().await => {},
-            _ = process(  &mut monitor
-                        , &mut rx_approved_widgets).fuse() => {/*we could return Ok(()) here to stop the actor*/}
-        }
-    }
+
+
     match rx_approved_widgets.rx(&mut monitor).await {
         Ok(m) => {
             //  send to the unit test
