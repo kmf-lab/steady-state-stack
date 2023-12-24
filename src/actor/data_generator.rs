@@ -1,98 +1,82 @@
-use std::future::Future;
+
 use std::time::Duration;
-use futures::future::Fuse;
-use futures::select;
-use futures_timer::Delay;
+use futures::future;
 use crate::steady::{SteadyTx, SteadyMonitor};
-use futures::FutureExt;
-
-       #[macro_use]
-       use crate::steady;
-
 
 #[derive(Clone, Debug)]
 pub struct WidgetInventory {
     pub(crate) count: u128
 }
 
+struct InternalState {
+    pub(crate) count: u128
+}
+
 #[cfg(not(test))]
 pub async fn behavior(mut monitor: SteadyMonitor
                      , mut tx: SteadyTx<WidgetInventory> ) -> Result<(),()> {
-
-
-
-            process_select_loop!(monitor, &mut tx);
-
-        /*
+    let mut state = InternalState { count: 0 };
     loop {
-        select! {
-              _ = monitor.relay_stats().await => {},
-              _ = process(&mut monitor, &mut tx).fuse() => {},
-            }
+        //single pass of work, do not loop in here
+        iterate_once(&mut monitor, &mut state, &mut tx).await; //prod or test code
+        monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
     }
-          */
-    Ok(())
+    future::pending().await
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 #[cfg(test)]
-pub async fn behavior(mut monitor: SteadyMonitor, mut tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
+pub async fn behavior(mut monitor: SteadyMonitor, tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
     loop {
-        select! {
-              _ = monitor.relay_stats().await => {},
-              _ = process(&mut monitor, &mut tx).fuse() => {},
-            }
+        //single pass of work, do not loop in here
+       // iterate_once(&mut monitor, &mut tx).await; //prod or test code
+        monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
     }
+    future::pending().await
 
-    Ok(())
 }
 
-
-
-// Define a generic behavior function with flexible arguments
-
-
-// (&mut SteadyTx<WidgetInventory>,)
-
-async fn process(mut monitor: &mut SteadyMonitor
-                          , tx_widget: &mut SteadyTx<WidgetInventory> )
+async fn iterate_once(monitor: &mut SteadyMonitor
+                      , state: &mut InternalState
+                      , tx_widget: &mut SteadyTx<WidgetInventory> )
 {
-    let mut counter:u128 = 0;
-    loop {
-        tx_widget.tx(monitor, WidgetInventory {count:counter }).await;
-        counter += 1;
-        Delay::new(Duration::from_secs(3)).await;
-    }
-
+    tx_widget.tx(monitor, WidgetInventory {count: state.count.clone() }).await;
+    state.count += 1;
 }
-
 
 
 #[cfg(test)]
 mod tests {
-
+    use crate::actor::data_generator::InternalState;
 
     #[async_std::test]
     async fn test_something() {
+        let mut state = InternalState { count: 0 };
+        assert_eq!(state.count, 0);
 
-
+        //TODO: test the iterate_once function
     }
+
+    /*
+    #[async_std::test]
+    async fn test_iterate_once() {
+        let (sender, receiver): (Sender<WidgetInventory>, Receiver<WidgetInventory>) = channel();
+
+        let mut state = InternalState { count: 0 };
+        let monitor = MockSteadyMonitor;
+        let tx_widget = MockSteadyTx { sender };
+
+        // Call iterate_once and test its effects
+        iterate_once(&mut monitor, &mut state, &mut tx_widget).await;
+
+        // Check that state.count has been incremented
+        assert_eq!(state.count, 1);
+
+        // Verify that a WidgetInventory was sent
+        match receiver.try_recv() {
+            Ok(widget_inventory) => assert_eq!(widget_inventory.count, 0),
+            Err(e) => panic!("Expected a WidgetInventory, but got an error: {:?}", e),
+        }
+    }
+    //  */
 
 }

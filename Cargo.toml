@@ -12,9 +12,12 @@ flexi_logger     = "0.27.3"  # default flexable logging implementation
 futures-timer    = "3.0.2"   # for async Delay::new(check_rate).await used places where we poll
 futures          = "0.3.29"  # for Select! Barrier etc and lock::Mutex when needed
 itertools        = "0.12.0"  # helpful smart iter methods
-async-recursion  = "1.0.5"
+async-recursion  = "1.0.5"   # simplify the writing of async recursive functions
 structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
 dashmap          = "4.0.2"   # for concurrent hashmap
+time             = "0.3.31"   # for time::Instant::now()
+async-std        = { version = "1.12.0", features = ["attributes"] }# for RWLock
+unreachable      = "1.0.0"  # for unreachable!() macro
 #let map: DashMap<MyStruct, f64> = DashMap::new();
 # add crate for cross thread caching like these crates: https://crates.io/crates/crossbeam-cache
 

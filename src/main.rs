@@ -2,16 +2,12 @@ mod args;
 #[macro_use]
 mod steady;
 
-use std::future::Future;
 use structopt::*;
 use log;
 use log::{debug, error, info, trace, warn};
 use flexi_logger;
 use bastion::Bastion;
-use bastion::distributor::Distributor;
-use bastion::prelude::{Dispatcher, SendError};
-use bastion::prelude::{Children, ChildrenRef, RefAddr, SupervisionStrategy};
-use bastion::supervisor::SupervisorRef;
+use bastion::prelude::*;
 use flexi_logger::{Logger, LogSpecification};
 use crate::steady::*;
 use crate::args::Opt;
@@ -37,16 +33,16 @@ fn build_graph(opt: Opt) {
     let _ = Bastion::supervisor(|supervisor|
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
-                graph.new_monitor().configure_for_graph("generator"
-                                            , children.with_redundancy(0)
+                graph.add_to_graph("generator"
+                                  , children.with_redundancy(0)
                         , move |monitor|
                              actor::data_generator::behavior(monitor
                                                             , generator_tx.clone())
                     )
             })
             .children(|children| {
-                    graph.new_monitor().configure_for_graph("approval"
-                                             , children.with_redundancy(0)
+                    graph.add_to_graph("approval"
+                                      , children.with_redundancy(0)
                         , move |monitor|
                                 actor::data_approval::behavior(monitor
                                                                , generator_rx.clone()
@@ -54,18 +50,19 @@ fn build_graph(opt: Opt) {
                                                     )
             })
             .children(|children| {
-                    graph.new_monitor().configure_for_graph("consumer"
-                                         , children.with_redundancy(0)
+                    graph.add_to_graph("consumer"
+                                      , children.with_redundancy(0)
                             ,move |monitor|
                                 actor::data_consumer::behavior(monitor
                                                                , consumer_rx.clone())
                             )
             })
     ).expect("OneForOne supervisor creation error.");
-}
 
-//TODO: consider moving monitor.wrap inside, this could hide all the monitor work easy
-//TODO: consider 'static lifetime to simplify the behavior function...
+    graph.init_telemetry();
+
+
+}
 
 fn main() {
 
@@ -105,19 +102,12 @@ fn main() {
 }
 
 
-//TODO: here we need the test graph the same as teh main graph as test so the actors are different.
-//      in this case ...
-#[derive(Clone, Debug)]
-enum SteadyBeacon {
-    BeginTestCase(RefAddr, &'static str),
-}
 
 
 #[cfg(test)]
 mod tests {
-    use bastion::prelude::{BastionContext, Distributor, MessageHandler, RefAddr, RestartPolicy, RestartStrategy};
+    use bastion::prelude::{BastionContext, Distributor, MessageHandler, RestartPolicy, RestartStrategy};
     use bastion::run;
-    use itertools::assert_equal;
     use super::*;
 
     #[async_std::test]
@@ -180,16 +170,8 @@ mod tests {
         Bastion::block_until_stopped();
     }
 
-    pub async fn test_script_one(ctx: BastionContext) -> Result<(),()> {
+    pub async fn _test_script_one(ctx: BastionContext) -> Result<(),()> {
 
-        //tell other actors to begin test one and send the results here.
-        //note we could do more complex staged setup with multiple broadcast messages
-        Bastion::broadcast(SteadyBeacon::BeginTestCase(ctx.signature(), "one"))
-              .expect("Unable to start unit test 'one'");
-
-
-
-        let msg = ctx.recv();
         MessageHandler::new(ctx.recv().await?)
             .on_tell(|message: &ApprovedWidgets, _sender_addr| {
                 // Handle the message...

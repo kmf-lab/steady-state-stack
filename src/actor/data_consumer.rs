@@ -1,38 +1,50 @@
-use futures::{FutureExt, select};
+use std::time::Duration;
+use futures::future;
+
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use crate::steady::*;
 
-async fn process(mut monitor: &mut SteadyMonitor
+async fn iterate_once(mut monitor: &mut SteadyMonitor
                  , rx_approved_widgets: &SteadyRx<ApprovedWidgets>)  {
 
     match rx_approved_widgets.rx(&mut monitor ).await {
         Ok(m) => {
-            info!("recieved: {:?}", m);
+            info!("recieved: {:?}", m.to_owned());
         },
-        Err(e) => {}
+        Err(e) => {
+            error!("Unexpected error recv_async: {}",e);
+        }
     }
 
 }
 
 #[cfg(not(test))]
 pub async fn behavior(mut monitor: SteadyMonitor, mut rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
-    process( &mut monitor
-              , &mut rx_approved_widgets).await;
-    Ok(())
+
+    loop {
+        //single pass of work, do not loop in here
+        iterate_once(&mut monitor, &mut rx_approved_widgets).await;
+        monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
+    }
+    future::pending().await
 }
 
 
 
 #[cfg(test)]
-pub async fn behavior(mut monitor: SteadyMonitor, mut rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
+pub async fn behavior(mut monitor: SteadyMonitor, rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
 
     //let mut test_one:Option<RefAddr> = None;
     //let mut tel:Option<RefAddr> = None; //store in rx core..
 
     // waiting for the test framework to send a message
 
-
+ //   loop {
+        //single pass of work, do not loop in here
+  //      process( &mut monitor, &mut rx_approved_widgets).await;
+   //     monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
+   // }
 
     match rx_approved_widgets.rx(&mut monitor).await {
         Ok(m) => {
@@ -81,11 +93,11 @@ pub async fn behavior(mut monitor: SteadyMonitor, mut rx_approved_widgets: Stead
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_std::task;
+    use async_std::test;
 
-    #[async_std::test]
+    #[test]
     async fn test_something() {
-
+        info!("hello");
     }
 
 }

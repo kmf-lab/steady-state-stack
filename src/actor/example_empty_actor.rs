@@ -1,42 +1,61 @@
 use std::time::Duration;
-use flume::{Receiver, Sender};
-use futures::select;
-use futures_timer::Delay;
-use crate::steady::*;
-use futures::FutureExt;
+use futures::future;
 
+use log::*;
+use crate::steady::*;
+
+#[derive(Clone, Debug)]
 pub struct SomeExampleRecord {
 
 }
 
 #[cfg(not(test))]
-pub async fn behavior(mut monitor: SteadyMonitor, _tx: Sender<SomeExampleRecord>, _rx: Receiver<SomeExampleRecord>) -> Result<(),()> {
+pub async fn behavior(mut monitor: SteadyMonitor
+                      , mut tx: SteadyTx<SomeExampleRecord>
+                      , mut rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
+
     loop {
-        select! {
-            _ = monitor.relay_stats().await => {},
-            _ = process( &mut monitor
-                       // , &mut tx // put your args here
-                         ).fuse() => {}
-        }
+        //single pass of work, do not loop in here
+        iterate_once( &mut monitor
+                        , &mut tx
+                        , &mut rx).await;
+        monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
     }
-    Ok(())
+    future::pending().await
 }
 
 #[cfg(test)]
-pub async fn behavior(mut monitor: SteadyMonitor, _tx: Sender<SomeExampleRecord>, _rx: Receiver<SomeExampleRecord>) -> Result<(),()> {
-
-    todo!(); // put code here for testing the full graph, this injects tx and reads rx back to the tester
-
-    Ok(())
+pub async fn _behavior(mut monitor: SteadyMonitor
+                      , mut tx: SteadyTx<SomeExampleRecord>
+                      , mut rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
+    loop {
+        //single pass of work, do not loop in here
+        iterate_once( &mut monitor
+                      , &mut tx
+                      , &mut rx).await;
+        monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
+    }
+    unreachable!("This code should never be reached otherwise Ok(()) should have been returned")
 }
 
-async fn process(monitor: &mut SteadyMonitor
-                // , tx_widget: &mut SteadyTx<WidgetInventory>
+async fn iterate_once(mut monitor: &mut SteadyMonitor
+                      , tx: &SteadyTx<SomeExampleRecord>
+                      , rx: &SteadyRx<SomeExampleRecord>
                 )
 {
-    loop {
-        Delay::new(Duration::from_secs(3)).await
+
+    if rx.has_message() && tx.has_room() {
+        match rx.rx(&mut monitor).await {
+            Ok(m) => {
+                tx.tx(&mut monitor, m).await;
+            },
+            Err(e) => {
+                error!("Unexpected error recv_async: {}",e);
+            }
+        }
+
     }
+
 }
 
 #[cfg(test)]
@@ -44,6 +63,8 @@ mod tests {
 
     #[async_std::test]
     async fn test_process_function() {
+
+        // TODO: test iterate_once
 
     }
 
