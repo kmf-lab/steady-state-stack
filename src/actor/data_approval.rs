@@ -1,4 +1,3 @@
-use futures::future;
 use crate::actor::data_generator::WidgetInventory;
 use log::*;
 use crate::steady::*;
@@ -13,39 +12,39 @@ pub struct ApprovedWidgets {
 pub async fn behavior(mut monitor: SteadyMonitor
                       , mut rx: SteadyRx<WidgetInventory>
                       , mut tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
-
     loop {
         //single pass of work, do not loop in here
-        iterate_once( &mut monitor
-                 , &mut rx
-                 , &mut tx).await;
+        if iterate_once( &mut monitor
+                         , &mut rx
+                         , &mut tx).await {
+            break Ok(());
+        }
         monitor.relay_stats_all().await;
     }
-    future::pending().await
 }
 
 #[cfg(test)]
 pub async fn behavior(mut monitor: SteadyMonitor, mut rx: SteadyRx<WidgetInventory>, mut tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
     loop {
         //single pass of work, do not loop in here
-        iterate_once( &mut monitor
+        if iterate_once( &mut monitor
                       , &mut rx
-                      , &mut tx).await;
+                      , &mut tx).await {
+            break Ok(());
+        }
         monitor.relay_stats_all().await;
     }
-    unreachable!("This code should never be reached otherwise Ok(()) should have been returned")
-
 }
 
 // important function break out to ensure we have a point to test on
 async fn iterate_once(monitor: &mut SteadyMonitor
-                 , rx: &mut SteadyRx<WidgetInventory>
-                 , tx: &mut SteadyTx<ApprovedWidgets>)  {
+                 , rx: &SteadyRx<WidgetInventory>
+                 , tx: &SteadyTx<ApprovedWidgets>) -> bool  {
 
     //by design we wait here for new work
-     match rx.rx(monitor).await {
+     match monitor.rx(rx).await {
         Ok(m) => {
-            tx.tx(monitor, ApprovedWidgets {
+            monitor.tx(tx, ApprovedWidgets {
                 original_count: m.count,
                 approved_count: m.count/2
             }).await;
@@ -54,6 +53,7 @@ async fn iterate_once(monitor: &mut SteadyMonitor
             error!("Unexpected error recv_async: {}",e);
         }
     }
+    false
 
 }
 
@@ -62,14 +62,26 @@ async fn iterate_once(monitor: &mut SteadyMonitor
 mod tests {
     use super::*;
     use async_std::test;
+    use flexi_logger::{Logger, LogSpecification};
 
     #[test]
     async fn test_process() {
 
 
+        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
+            .format(flexi_logger::colored_with_thread)
+            .start();
 
+        let mut graph = SteadyGraph::new();
+        let (tx_in, rx_in): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8);
+        let (tx_out, rx_out): (SteadyTx<ApprovedWidgets>, _) = graph.new_channel(8);
 
+        let mut monitor = graph.new_monitor().await.wrap("test",None);
 
+        let exit= iterate_once(&mut monitor, &rx_in, &tx_out).await;
+        assert_eq!(exit, false);
+
+        // TODO: need more testing
 
     }
 

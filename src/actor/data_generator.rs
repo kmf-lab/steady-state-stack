@@ -1,6 +1,5 @@
 
 use std::time::Duration;
-use futures::future;
 use crate::steady::{SteadyTx, SteadyMonitor};
 
 #[derive(Clone, Debug)]
@@ -18,45 +17,61 @@ pub async fn behavior(mut monitor: SteadyMonitor
     let mut state = InternalState { count: 0 };
     loop {
         //single pass of work, do not loop in here
-        iterate_once(&mut monitor, &mut state, &mut tx).await; //prod or test code
+        if iterate_once(&mut monitor, &mut state, &mut tx).await {
+            break Ok(());
+        }
         monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
     }
-    future::pending().await
+
 }
 
 #[cfg(test)]
-pub async fn behavior(mut monitor: SteadyMonitor, tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
+pub async fn behavior(mut monitor: SteadyMonitor
+                      , mut tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
+    let mut state = InternalState { count: 0 };
     loop {
         //single pass of work, do not loop in here
-       // iterate_once(&mut monitor, &mut tx).await; //prod or test code
+        if iterate_once(&mut monitor, &mut state, &mut tx).await {
+            break Ok(());
+        }
         monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
     }
-    future::pending().await
-
 }
 
 async fn iterate_once(monitor: &mut SteadyMonitor
                       , state: &mut InternalState
-                      , tx_widget: &mut SteadyTx<WidgetInventory> )
+                      , tx_widget: &SteadyTx<WidgetInventory> ) -> bool
 {
-    tx_widget.tx(monitor, WidgetInventory {count: state.count.clone() }).await;
+    monitor.tx(tx_widget, WidgetInventory {count: state.count.clone() }).await;
     state.count += 1;
+    false
 }
 
 
 #[cfg(test)]
 mod tests {
-    use crate::actor::data_generator::InternalState;
+    use flexi_logger::{Logger, LogSpecification};
+    use crate::actor::{WidgetInventory};
+    use crate::actor::data_generator::{InternalState, iterate_once};
+    use crate::steady::{SteadyGraph, SteadyTx};
 
     #[async_std::test]
     async fn test_something() {
+        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
+            .format(flexi_logger::colored_with_thread)
+            .start();
+
+        let mut graph = SteadyGraph::new();
+        let (tx, rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8);
+        let mut monitor = graph.new_monitor().await.wrap("test", None);
+
         let mut state = InternalState { count: 0 };
-        assert_eq!(state.count, 0);
 
-        //TODO: test the iterate_once function
-    }
+        let exit = iterate_once(&mut monitor, &mut state, &tx).await;
+        assert_eq!(exit, false);
+// TODO: need more testing
 
-    /*
+        /*
     #[async_std::test]
     async fn test_iterate_once() {
         let (sender, receiver): (Sender<WidgetInventory>, Receiver<WidgetInventory>) = channel();
@@ -78,5 +93,6 @@ mod tests {
         }
     }
     //  */
+    }
 
 }

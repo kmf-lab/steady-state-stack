@@ -1,6 +1,7 @@
 
 use std::any::{type_name};
 use std::future::Future;
+use std::mem::replace;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -27,9 +28,9 @@ pub struct SteadyGraph {
 //telemetry enum every actor uses to send information about actors name messages send and messages received
 #[derive(Clone)]
 pub enum Telemetry {
-    ActorDef(String),
-    MessagesSent(Vec<u64>),
-    MessagesReceived(Vec<u64>),
+    ActorDef(& 'static str),
+    MessagesSent(Vec<usize>),
+    MessagesReceived(Vec<usize>),
     MessagesIndexSent(Vec<usize>),
     MessagesIndexReceived(Vec<usize>),
 }
@@ -43,16 +44,18 @@ pub struct SteadyControllerBuilder {
 }
 
 
-pub struct SteadyMonitor {
-    last_instant: Instant,
-    pub ctx: BastionContext,
 
-    pub sent_count: Vec<u64>,
-    pub sent_capacity: Vec<u64>,
+pub struct SteadyMonitor {
+    pub name: & 'static str,
+    last_instant: Instant,
+    pub ctx: Option<BastionContext>,
+
+    pub sent_count: Vec<usize>,
+    pub sent_capacity: Vec<usize>,
     pub sent_index: Vec<usize>,
 
-    pub received_count: Vec<u64>,
-    pub received_capacity: Vec<u64>,
+    pub received_count: Vec<usize>,
+    pub received_capacity: Vec<usize>,
     pub received_index: Vec<usize>,
 
     pub base: SteadyControllerBuilder, //keep this instead of moving the 3 values
@@ -62,15 +65,22 @@ pub struct SteadyMonitor {
 impl SteadyMonitor {
 
     pub async fn relay_stats_all(self: &mut Self) {
-        let tx = self.base.telemetry_tx.clone();
-        let vec = self.sent_count.clone();
-        tx.tx(self, Telemetry::MessagesSent(vec)).await;
-        self.sent_count.fill(0);
+        // switch to a new vector and send the old one
+        // we always clear the count so we can confirm this in testing
 
-        let tx = self.base.telemetry_tx.clone();
-        let vec = self.received_count.clone();
-        tx.tx(self, Telemetry::MessagesReceived(vec)).await;
-        self.received_count.fill(0);
+        let sc = self.sent_count.len();
+        let msg_sent_count = Telemetry::MessagesSent(replace(&mut self.sent_count
+                                                     , vec![0; sc]));
+
+        let rc = self.received_count.len();
+        let msg_received_count = Telemetry::MessagesReceived(replace(&mut self.received_count
+                                                         , vec![0; rc]));
+
+        //we only send the result if we have a context, ie a graph we are monitoring
+        if self.ctx.is_some() {
+            self.telemetry_tx(msg_sent_count).await;
+            self.telemetry_tx(msg_received_count).await;
+        }
 
     }
 
@@ -99,16 +109,126 @@ impl SteadyMonitor {
         }
     }
 
-    pub async fn relay_stats_tx_custom(self: & mut Self, tx: SteadyTx<Telemetry>, threshold: u64) {
-        if self.sent_count[tx.id] >= threshold {
+    pub async fn relay_stats_tx_custom<T>(self: & mut Self, tx: SteadyTx<T>, threshold: usize) {
+        let idx = self.base.shared_tx_array.read().await[tx.id] as usize;
+        if self.sent_count[idx] >= threshold {
             self.relay_stats_all().await;
         }
     }
 
-    pub async fn relay_stats_rx_custom(self: & mut Self, rx: SteadyRx<Telemetry>, threshold: u64) {
-        if self.received_count[rx.id] >= threshold {
+    pub async fn relay_stats_rx_custom<T>(self: & mut Self, rx: SteadyRx<T>, threshold: usize) {
+        let idx = self.base.shared_tx_array.read().await[rx.id] as usize;
+        if self.received_count[idx] >= threshold {
             self.relay_stats_all().await;
         }
+    }
+
+
+
+
+    async fn update_tx_count_internal(self: &mut Self, that_id: usize, that_capacity: usize) {
+//get the index but grow if we must
+        let index = self.base.shared_tx_array.read().await[that_id];
+        let index = if u8::MAX != index {
+            index as usize
+        } else {
+            let idx = self.sent_count.len() as u8;
+            self.base.shared_tx_array.write().await[that_id] = idx;
+
+            self.sent_count.push(0);
+            self.sent_capacity.push(that_capacity);
+            self.sent_index.push(that_id);
+
+            if self.ctx.is_some() {
+                self.base.telemetry_tx.sender.send_async(Telemetry::MessagesIndexSent(self.sent_index.clone())).await
+                    .expect("Unable to send telemetry"); //TODO: fix error handling
+            }
+            idx as usize
+        };
+        self.sent_count[index] += 1;
+    }
+
+    async fn update_rx_count_internal(self: &mut Self, that_id: usize, that_capacity: usize) {
+//get the index but grow if we must
+        let index = self.base.shared_rx_array.read().await[that_id];
+        let index = if u8::MAX != index {
+            index as usize
+        } else {
+            let idx = self.received_count.len() as u8;
+            self.base.shared_rx_array.write().await[that_id] = idx;
+            self.received_count.push(0);
+            self.received_capacity.push(that_capacity);
+            self.received_index.push(that_id);
+            if self.ctx.is_some() {
+                self.base.telemetry_tx.sender.send_async(Telemetry::MessagesIndexReceived(self.received_index.clone())).await
+                    .expect("Unable to send telemetry"); //TODO: fix error handling
+            }
+            idx as usize
+        };
+        self.received_count[index] += 1;
+    }
+
+
+    pub async fn rx<T>(self: &mut Self, this: &SteadyRx<T>) -> Result<T, RecvError> {
+
+        //if self ident not set then set it.
+
+        let result = this.receiver.recv_async().await;
+        if result.is_ok() {
+            self.update_rx_count_internal(this.id, this.capacity).await;
+        }
+        result
+    }
+
+
+    pub async fn tx<T>(self: &mut Self, this: &SteadyTx<T>, a: T) {
+        //we try to send but if the channel is full we log that fact
+        match this.sender.try_send(a) {
+            Ok(_) => {
+                self.update_tx_count_internal(this.id, this.capacity).await;
+            },
+            Err(flume::TrySendError::Full(a)) => {
+                error!("full channel detected data_approval tx  actor: {} capacity:{:?} type:{} "
+                , self.name, this.capacity, type_name::<T>());
+                //here we will await until there is room in the channel
+                match this.sender.send_async(a).await {
+                    Ok(_) => {
+                        self.update_tx_count_internal(this.id, this.capacity).await;
+                    },
+                    Err(e) => {
+                        error!("Unexpected error sending: {} {}",e, self.name);
+                    }
+                };
+            },
+            Err(e) => {
+                error!("Unexpected error try sending: {} {}",e, self.name);
+            }
+        };
+    }
+
+    async fn telemetry_tx(self: &mut Self, a: Telemetry) {
+        //we try to send but if the channel is full we log that fact
+        match self.base.telemetry_tx.sender.try_send(a) {
+            Ok(_) => {
+                self.update_tx_count_internal(self.base.telemetry_tx.id, self.base.telemetry_tx.capacity).await;
+            },
+            Err(flume::TrySendError::Full(a)) => {
+                error!("full channel detected data_approval tx  actor: {} capacity:{:?} "
+                , self.name, self.base.telemetry_tx.capacity);
+                //here we will await until there is room in the channel
+                match self.base.telemetry_tx.sender.send_async(a).await {
+                    Ok(_) => {
+                        self.update_tx_count_internal(self.base.telemetry_tx.id, self.base.telemetry_tx.capacity).await;
+                    },
+                    Err(e) => {
+                        error!("Unexpected error sending: {} {}",e, self.name);
+                    }
+                };
+            },
+            Err(e) => {
+                error!("Unexpected error try sending: {} {}",e, self.name);
+            }
+        };
     }
 
 
@@ -122,7 +242,7 @@ impl SteadyControllerBuilder {
         todo!()
     }
 
-    pub fn configure_for_graph<F,I>(self: &mut Self, root_name: &str, c: Children, init: I ) -> Children
+    pub fn configure_for_graph<F,I>(self: &mut Self, root_name: & 'static str, c: Children, init: I ) -> Children
         where I: Fn(SteadyMonitor) -> F + Send + 'static + Clone,
               F: Future<Output = Result<(),()>> + Send + 'static ,
     {
@@ -134,7 +254,7 @@ impl SteadyControllerBuilder {
                     let init_clone = init_clone.clone();
                     let s = s.clone();
                     async move {
-                            let monitor = s.wrap(ctx);
+                            let monitor = s.wrap(root_name,Some(ctx));
                             match init_clone(monitor).await {
                                 Ok(r) => {
                                     info!("Actor {:?} ", r); //TODO: we may want to exit here
@@ -157,7 +277,7 @@ impl SteadyControllerBuilder {
                     let init_clone = init_clone.clone();
                     let s = s.clone();
                     async move {
-                        let monitor = s.wrap(ctx);
+                        let monitor = s.wrap(root_name, ctx);
                         match init_clone(monitor).await {
                             Ok(r) => {
                                 info!("Actor {:?} ", r); //TODO: we may want to exit here
@@ -173,27 +293,33 @@ impl SteadyControllerBuilder {
         }
     }
 
-    pub fn wrap(self, ctx: BastionContext) -> SteadyMonitor {
+    pub fn wrap(self, root_name: & 'static str, ctx: Option<BastionContext>) -> SteadyMonitor {
         let tx = self.telemetry_tx.clone();
-        let mut monitor = SteadyMonitor {
-            last_instant: Instant::now(),
-            ctx,
-            sent_count:    Vec::new(),
-            sent_capacity: Vec::new(),
-            sent_index:    Vec::new(),
-            received_count:    Vec::new(),
-            received_capacity: Vec::new(),
-            received_index:    Vec::new(),
-            base: self, //onwership transfered
-        };
-
-        let name = monitor.ctx.current().name().to_string();
-        run!(
+        let is_in_graph = ctx.is_some();
+        let mut monitor = self.new_monitor(root_name, ctx);
+        if is_in_graph {
+            run!(
                 async {
-                    tx.tx(&mut monitor, Telemetry::ActorDef(name)).await;
+                    monitor.tx(&tx, Telemetry::ActorDef(root_name)).await;
                 }
             );
+        }
         monitor
+    }
+
+    fn new_monitor(self, name: & 'static str, ctx: Option<BastionContext>) -> SteadyMonitor {
+        SteadyMonitor {
+            last_instant: Instant::now(),
+            name,
+            ctx,
+            sent_count: Vec::new(),
+            sent_capacity: Vec::new(),
+            sent_index: Vec::new(),
+            received_count: Vec::new(),
+            received_capacity: Vec::new(),
+            received_index: Vec::new(),
+            base: self, //onwership transfered
+        }
     }
 }
 
@@ -273,7 +399,7 @@ impl SteadyGraph {
     }
 
 
-    pub fn add_to_graph<F,I>(self: &mut Self, root_name: &str, c: Children, init: I ) -> Children
+    pub fn add_to_graph<F,I>(self: &mut Self, root_name: & 'static str, c: Children, init: I ) -> Children
         where I: Fn(SteadyMonitor) -> F + Send + 'static + Clone,
               F: Future<Output = Result<(),()>> + Send + 'static ,
     {
@@ -284,45 +410,45 @@ impl SteadyGraph {
     }
 
     pub(crate) fn init_telemetry(&mut self) {
-
-        //TODO: we need to turn on and off the monitoring of the the telemetry channels
-
-      //  TODO: if we wrap rx_vec in an arc with read write lock we can keep dynamic graph changes.
-      //  let all_rx = &self.rx_vec;
-
-
         let _ = Bastion::supervisor(|supervisor|
                                         supervisor.with_strategy(SupervisionStrategy::OneForOne)
                                             .children(|children| {
+                                                let all_rx = self.rx_vec.clone();
                                                 self.add_to_graph("generator"
                                                                    , children.with_redundancy(0)
-                                                                   , move |monitor| telemetry()
+                                                                   , move |monitor| telemetry(monitor,all_rx.clone())
                                                         )
 
                                             })).expect("OneForOne supervisor creation error.");
-
     }
-
-
-
 }
 
-async fn telemetry() -> Result<(),()> {
-    info!("hello");
-    Ok(())
+async fn telemetry(_monitor: SteadyMonitor, all_rx: Arc<RwLock<Vec<SteadyRx<Telemetry>>>>) -> Result<(),()> {
+    loop {
+        let all = all_rx.read().await;
+
+        let _:Vec<_> = all.iter().collect();
+       //TODO: read from all these pipes and create our telemetry
+        Delay::new(Duration::from_millis(20)).await;
+        if false {
+            break Ok(());
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////
 #[derive(Clone)]
 pub struct SteadyTx<T> {
     pub id: usize,
+    pub capacity: usize,
     pub sender: Sender<T>
 }
 
 impl<T: Send> SteadyTx<T> {
     fn new(sender: Sender<T>, model: &SteadyGraph) -> Self {
         SteadyTx {id:model.senders_count
-                        , sender:sender }
+                  , capacity: sender.capacity().unwrap_or(usize::MAX)
+                  , sender:sender }
     }
 
     #[allow(dead_code)]
@@ -330,66 +456,8 @@ impl<T: Send> SteadyTx<T> {
         !self.sender.is_full()
     }
 
-    pub async fn tx(&self, monitor: &mut SteadyMonitor, a: T) {
-
-        info!("full channel from actor: {:?} path:{:?} capacity:{:?} type:{} Endpoints: S{}->R{} "
-                , monitor.ctx.signature().to_owned()
-                , monitor.ctx.current().path()
-                , self.sender.capacity()
-                , type_name::<T>()
-                , self.sender.sender_count(), self.sender.receiver_count()
-        );
-
-        //we try to send but if the channel is full we log that fact
-        match self.sender.try_send(a) {
-            Ok(_) => {
-                self.update_count(monitor).await;
-            },
-            Err(flume::TrySendError::Full(a)) => {
-
-                error!("full channel detected data_approval tx  actor: {} capacity:{:?} type:{} "
-                , monitor.ctx.current().path()
-                , self.sender.capacity()
-                , type_name::<T>());
-                //here we will await until there is room in the channel
-                match self.sender.send_async(a).await {
-                    Ok(_) => {
-                        self.update_count(monitor).await;
-                    },
-                    Err(e) => {
-                        error!("Unexpected error sending: {} {}",e, monitor.ctx.current().path());
-                    }
-                };
-            },
-            Err(e) => {
-                error!("Unexpected error try sending: {} {}",e, monitor.ctx.current().path());
-            }
-        };
 
 
-
-    }
-
-    async fn update_count(&self, monitor: &mut SteadyMonitor) {
-//get the index but grow if we must
-        let index = monitor.base.shared_tx_array.read().await[self.id];
-        let index = if u8::MAX != index {
-            index as usize
-        } else {
-            let idx = monitor.sent_count.len() as u8;
-            monitor.base.shared_tx_array.write().await[self.id] = idx;
-            monitor.sent_count.push(0);
-            monitor.sent_capacity.push(self.sender.capacity().unwrap() as u64);
-            monitor.sent_index.push(self.id);
-            monitor.base.telemetry_tx.sender.send_async(Telemetry::MessagesIndexSent(monitor.sent_index.clone())).await
-                .expect("Unable to send telemetry"); //TODO: fix error handling
-            idx as usize
-        };
-
-        //////
-
-        monitor.sent_count[index] += 1;
-    }
 }
 
 
@@ -397,12 +465,14 @@ impl<T: Send> SteadyTx<T> {
 #[derive(Clone)]
 pub struct SteadyRx<T> {
     pub id: usize,
+    pub capacity: usize,
     pub receiver: Receiver<T>,
 
 }
 impl<T: Send> SteadyRx<T> {
     pub fn new(receiver: Receiver<T>, model: &SteadyGraph) -> Self {
         SteadyRx { id: model.receivers_count
+                     , capacity: receiver.capacity().unwrap_or(usize::MAX)
                            , receiver
         }
     }
@@ -411,47 +481,90 @@ impl<T: Send> SteadyRx<T> {
         !self.receiver.is_empty()
     }
 
-   pub async fn rx(&self, monitor: &mut SteadyMonitor) -> Result<T, RecvError> {
 
-        info!("full channel from actor: {:?} path:{:?} capacity:{:?} type:{} Endpoints: S{}->R{} "
-                , monitor.ctx.signature().to_owned()
-                , monitor.ctx.current().path()
-                , self.receiver.capacity()
-                , type_name::<T>()
-                , self.receiver.sender_count(), self.receiver.receiver_count()
-        );
 
-        //if self ident not set then set it.
-
-       let result = self.receiver.recv_async().await;
-       if result.is_ok() {
-            self.update_count(monitor).await;
-       }
-
-       result
-   }
-
-   async fn update_count(&self, monitor: &mut SteadyMonitor) {
-//get the index but grow if we must
-       let index = monitor.base.shared_rx_array.read().await[self.id];
-       let index = if u8::MAX != index {
-           index as usize
-       } else {
-           let idx = monitor.received_count.len() as u8;
-           monitor.base.shared_rx_array.write().await[self.id] = idx;
-           monitor.received_count.push(0);
-           monitor.received_capacity.push(self.receiver.capacity().unwrap() as u64);
-           monitor.received_index.push(self.id);
-           monitor.base.telemetry_tx.sender.send_async(Telemetry::MessagesIndexReceived(monitor.received_index.clone())).await
-               .expect("Unable to send telemetry"); //TODO: fix error handling
-           idx as usize
-       };
-
-       //////
-
-       monitor.received_count[index] += 1;
-   }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_std::test;
+    use flexi_logger::{Logger, LogSpecification};
 
+    //this is my unit test for relay_stats_tx_custom
+    #[test]
+    async fn test_relay_stats_tx_rx_custom() {
+        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
+            .format(flexi_logger::colored_with_thread)
+            .start();
+
+        let mut graph = SteadyGraph::new();
+        let (tx_string, rx_string): (SteadyTx<String>, _) = graph.new_channel(8);
+
+        let mut monitor = graph.new_monitor().await.wrap("test", None);
+
+        let threshold = 5;
+        let mut count = 0;
+        while count < threshold {
+            monitor.tx(&tx_string, "test".to_string()).await;
+            count += 1;
+        }
+        let idx = monitor.base.shared_tx_array.read().await[tx_string.id] as usize;
+
+        assert_eq!(monitor.sent_count[idx], threshold);
+        monitor.relay_stats_tx_custom(tx_string.clone(), threshold).await;
+        assert_eq!(monitor.sent_count[idx], 0);
+
+        while count > 0 {
+            let x = monitor.rx(&rx_string).await;
+            assert_eq!(x, Ok("test".to_string()));
+            count -= 1;
+        }
+        let idx = monitor.base.shared_rx_array.read().await[rx_string.id] as usize;
+
+        assert_eq!(monitor.received_count[idx], threshold);
+        monitor.relay_stats_rx_custom(rx_string.clone(), threshold).await;
+        assert_eq!(monitor.received_count[idx], 0);
+
+
+    }
+
+    #[test]
+    async fn test_relay_stats_tx_rx_batch() {
+        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
+            .format(flexi_logger::colored_with_thread)
+            .start();
+
+        let mut graph = SteadyGraph::new();
+        let (tx_string, rx_string): (SteadyTx<String>, _) = graph.new_channel(5);
+
+        let mut monitor = graph.new_monitor().await.wrap("test", None);
+
+        let threshold = 5;
+        let mut count = 0;
+        while count < threshold {
+
+            monitor.tx(&tx_string, "test".to_string()).await;
+            count += 1;
+            let idx = monitor.base.shared_tx_array.read().await[tx_string.id] as usize;
+            assert_eq!(monitor.sent_count[idx], count);
+            monitor.relay_stats_batch().await;
+        }
+        let idx = monitor.base.shared_tx_array.read().await[tx_string.id] as usize;
+        assert_eq!(monitor.sent_count[idx], 0);
+
+        while count > 0 {
+            let x = monitor.rx(&rx_string).await;
+            assert_eq!(x, Ok("test".to_string()));
+            count -= 1;
+        }
+        let idx = monitor.base.shared_rx_array.read().await[rx_string.id] as usize;
+
+        assert_eq!(monitor.received_count[idx], threshold);
+        monitor.relay_stats_batch().await;
+        assert_eq!(monitor.received_count[idx], 0);
+
+
+    }
+}
 

@@ -1,5 +1,4 @@
 use std::time::Duration;
-use futures::future;
 
 use log::*;
 use crate::steady::*;
@@ -13,15 +12,15 @@ pub struct SomeExampleRecord {
 pub async fn behavior(mut monitor: SteadyMonitor
                       , mut tx: SteadyTx<SomeExampleRecord>
                       , mut rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
-
     loop {
         //single pass of work, do not loop in here
-        iterate_once( &mut monitor
+        if iterate_once( &mut monitor
                         , &mut tx
-                        , &mut rx).await;
+                        , &mut rx).await {
+            break Ok(());
+        }
         monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
     }
-    future::pending().await
 }
 
 #[cfg(test)]
@@ -30,24 +29,25 @@ pub async fn _behavior(mut monitor: SteadyMonitor
                       , mut rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
     loop {
         //single pass of work, do not loop in here
-        iterate_once( &mut monitor
+        if iterate_once( &mut monitor
                       , &mut tx
-                      , &mut rx).await;
+                      , &mut rx).await {
+            break Ok(());
+        }
         monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
     }
-    unreachable!("This code should never be reached otherwise Ok(()) should have been returned")
 }
 
-async fn iterate_once(mut monitor: &mut SteadyMonitor
+async fn iterate_once(monitor: &mut SteadyMonitor
                       , tx: &SteadyTx<SomeExampleRecord>
                       , rx: &SteadyRx<SomeExampleRecord>
-                )
+                ) -> bool
 {
 
     if rx.has_message() && tx.has_room() {
-        match rx.rx(&mut monitor).await {
+        match monitor.rx(rx).await {
             Ok(m) => {
-                tx.tx(&mut monitor, m).await;
+                monitor.tx(tx, m).await;
             },
             Err(e) => {
                 error!("Unexpected error recv_async: {}",e);
@@ -55,16 +55,29 @@ async fn iterate_once(mut monitor: &mut SteadyMonitor
         }
 
     }
-
+    false
 }
 
 #[cfg(test)]
 mod tests {
+    use flexi_logger::{Logger, LogSpecification};
+    use crate::actor::example_empty_actor::{iterate_once, SomeExampleRecord};
+    use crate::steady::{SteadyGraph, SteadyTx};
 
     #[async_std::test]
     async fn test_process_function() {
 
-        // TODO: test iterate_once
+
+        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
+            .format(flexi_logger::colored_with_thread)
+            .start();
+
+        let mut graph = SteadyGraph::new();
+        let (tx, rx): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8);
+        let mut monitor = graph.new_monitor().await.wrap("test",None);
+
+        let result = iterate_once(&mut monitor, &tx, &rx).await;
+
 
     }
 
