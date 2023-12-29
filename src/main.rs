@@ -4,14 +4,17 @@ mod steady;
 
 use structopt::*;
 use log;
-use log::{debug, error, info, trace, warn};
-use flexi_logger;
+use log::{debug};
 use bastion::Bastion;
 use bastion::prelude::*;
-use flexi_logger::{Logger, LogSpecification};
+use futures_timer::Delay;
+use crate::args::Args;
+use std::time::Duration;
+use crate::steady::{SteadyGraph, SteadyTx, steady_logging_init};
 
-use crate::args::Opt;
-
+// here are the actors that will be used in the graph.
+// note that the actors are in a separate module and we must use the structs/enums and
+// bring in the behavior functions
 mod actor {
     pub mod example_empty_actor;
     pub mod data_generator;
@@ -21,41 +24,80 @@ mod actor {
     pub mod data_consumer;
 }
 use crate::actor::*;
-use crate::steady::*; //message structs
 
+// This is a good template for your future main function. It should me minimal and just
+// get the command line args and start the graph. The graph is built in a separate function.
+// This is important so that the graph can be tested.
+// Try to keep the entire method small enough to see on one screen. Note that sometimes you
+// will need to validate the command line args before building the graph. This is fine.
+// review the Opt struct in args.rs for how to validate command line args.
+// The running graph will never fail or exit with a panic but you can panic in the main
+// if you discover a problem with the command line args. Fail fast is a good thing.
+// Note that the main function is not async. This keeps it simple.
+// Further note the main function is not a test. It is not run by any test. Keep it small.
+fn main() {
+    // a typical begging by fetching the command line args and starting logging
+    let opt = Args::from_args();
+    if let Err(e) = steady_logging_init(&opt.logging_level) {
+        eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
+    }
 
-fn build_graph(opt: Opt) {
-    trace!("args: {:?}",&opt);
+    Bastion::init(); //init bastion runtime
+    build_graph(&opt); //graph is built here and tested below in the test section.
+    Bastion::start(); //start the graph
 
+    //remove this block to run forever.
+    //run! is a macro provided by bastion that will block until the future is resolved.
+    run!(async {
+        // note we use (&opt) just to show we did NOT transfer ownership
+        Delay::new(Duration::from_secs((&opt).run_duration)).await;
+        Bastion::stop();
+    });
+
+    //wait for bastion to cleanly stop all actors
+    Bastion::block_until_stopped();
+}
+
+fn build_graph(cli_arg: &Args) {
+    debug!("args: {:?}",&cli_arg);
+
+    //create the mutable graph object
     let mut graph = SteadyGraph::new();
+
+    //create all the needed channels between actors
+
+    //upon construction these are set up to be monitored by the telemetry actor
     let (generator_tx, generator_rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8);
     let (consumer_tx, consumer_rx): (SteadyTx<ApprovedWidgets>, _) = graph.new_channel(8);
-
+    //the above tx rx objects will be owned by the children closures below then cloned
+    //each time we need to startup a new child actor instance. This way when an actor fails
+    //we still have the original to clone from.
+    //
+    //given your supervision strategy create the children to be added to the graph.
     let _ = Bastion::supervisor(|supervisor|
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
+                let cli_arg = cli_arg.clone(); //example passing args to child actor
                 graph.add_to_graph("generator"
                                   , children.with_redundancy(0)
-                        , move |monitor|
-                             actor::data_generator::behavior(monitor
-                                                            , generator_tx.clone())
+                        , move |monitor| actor::data_generator::run(monitor
+                                                                    , cli_arg.clone()
+                                                                    , generator_tx.clone())
                     )
             })
             .children(|children| {
                     graph.add_to_graph("approval"
                                       , children.with_redundancy(0)
-                        , move |monitor|
-                                actor::data_approval::behavior(monitor
-                                                               , generator_rx.clone()
-                                                               , consumer_tx.clone())
+                        , move |monitor| actor::data_approval::run(monitor
+                                                   , generator_rx.clone()
+                                                   , consumer_tx.clone())
                                                     )
             })
             .children(|children| {
                     graph.add_to_graph("consumer"
                                       , children.with_redundancy(0)
-                            ,move |monitor|
-                                actor::data_consumer::behavior(monitor
-                                                               , consumer_rx.clone())
+                            ,move |monitor| actor::data_consumer::run(monitor
+                                                     , consumer_rx.clone())
                             )
             })
     ).expect("OneForOne supervisor creation error.");
@@ -65,42 +107,8 @@ fn build_graph(opt: Opt) {
 
 }
 
-fn main() {
 
-    let opt = Opt::from_args();
 
-    match LogSpecification::env_or_parse(&opt.logging_level) {
-        Ok(log_spec) => {
-            match Logger::with(log_spec)
-                .format(flexi_logger::colored_with_thread)
-                .start() {
-                Ok(_) => {
-                    // for all log levels use caution and never write any personal data to the logs.
-                    trace!("trace log message, use when deep tracing through the application");
-                    debug!("debug log message, use when debugging complex parts of the application");
-                    warn!("warn log message, when something recoverable happens, may be a flag that this area needs attention");
-                    error!("error log message, use when the unexpected happens");
-                    info!("info log message, use rarely when key events happen");
-                },
-                Err(e) => {
-                    // Logger initialization failed
-                    println!("Warning: Logger initialization failed with {}. There will be no logging.", e);
-                },
-            };
-        },
-        Err(e) => {
-            // Logger initialization failed
-            println!("Warning: Logger initialization failed with {}. There will be no logging.", e);
-        }
-    }
-
-    Bastion::init();
-    build_graph(opt);
-    Bastion::start();
-//    Bastion::stop();
-    Bastion::block_until_stopped();
-
-}
 
 
 
@@ -114,15 +122,14 @@ mod tests {
     #[async_std::test]
     async fn test_graph_one() {
 
-        let test_ops = Opt {
-            peers_string: "".to_string(),
-            my_idx: 0,
+        let test_ops = Args {
+            run_duration: 21,
             logging_level: "debug".to_string(),
         };
 
         Bastion::init();
 
-        build_graph(test_ops);
+        build_graph(&test_ops);
 
         let r = RestartStrategy::default();
         let r = r.with_restart_policy(RestartPolicy::Never);

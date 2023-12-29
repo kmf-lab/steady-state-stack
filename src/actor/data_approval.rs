@@ -9,22 +9,25 @@ pub struct ApprovedWidgets {
 }
 
 #[cfg(not(test))]
-pub async fn behavior(mut monitor: SteadyMonitor
-                      , mut rx: SteadyRx<WidgetInventory>
-                      , mut tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
+pub async fn run(mut monitor: SteadyMonitor
+                 , mut rx: SteadyRx<WidgetInventory>
+                 , mut tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
     loop {
+        //in this example iterate once blocks/await until it has work to do
+        //this example is a very responsive actor for medium load levels
         //single pass of work, do not loop in here
         if iterate_once( &mut monitor
                          , &mut rx
                          , &mut tx).await {
             break Ok(());
         }
+        //we relay all our telemetry and return to the top to block for more work.
         monitor.relay_stats_all().await;
     }
 }
 
 #[cfg(test)]
-pub async fn behavior(mut monitor: SteadyMonitor, mut rx: SteadyRx<WidgetInventory>, mut tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
+pub async fn run(mut monitor: SteadyMonitor, mut rx: SteadyRx<WidgetInventory>, mut tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
     loop {
         //single pass of work, do not loop in here
         if iterate_once( &mut monitor

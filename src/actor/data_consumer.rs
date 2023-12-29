@@ -1,4 +1,4 @@
-
+use std::time::Duration;
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use crate::steady::*;
@@ -11,35 +11,45 @@ async fn iterate_once(monitor: &mut SteadyMonitor
                  , state: &mut InternalState
                  , rx_approved_widgets: &SteadyRx<ApprovedWidgets>) -> bool  {
 
-    //by design we wait here for new work
-    match monitor.rx(rx_approved_widgets).await {
-        Ok(m) => {
-            state.last_approval = Some(m.to_owned());
-            info!("recieved: {:?}", m.to_owned());
-        },
-        Err(e) => {
-            state.last_approval = None;
-            error!("Unexpected error recv_async: {}",e);
+    //example of high volume processing, we stay here until there is no more work BUT
+    //we must also relay our telemetry data periodically
+    while rx_approved_widgets.has_message() {
+        match monitor.rx(rx_approved_widgets).await {
+            Ok(m) => {
+                state.last_approval = Some(m.to_owned());
+                info!("recieved: {:?}", m.to_owned());
+            },
+            Err(e) => {
+                state.last_approval = None;
+                error!("Unexpected error recv_async: {}",e);
+            }
         }
+        //based on the channel capacity this will send batched updates so most calls do nothing.
+        monitor.relay_stats_batch().await;
+        //here is alternative to batch, we send all the stats we have but only
+        // every 100_000 received messages. This is helpful for very very high volumes.
+        monitor.relay_stats_rx_custom(rx_approved_widgets, 100_000).await;
     }
     false
 
 }
 
 #[cfg(not(test))]
-pub async fn behavior(mut monitor: SteadyMonitor, mut rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
+pub async fn run(mut monitor: SteadyMonitor, mut rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
     let mut state = InternalState { last_approval: None };
     loop {
-        //single pass of work, do not loop in here
+        //single pass of work, in this high volume example we stay in iterate_once as long
+        //as the input channel as more work to process.
         if iterate_once(&mut monitor, &mut state, &mut rx_approved_widgets).await {
             break Ok(());
         }
-        monitor.relay_stats_all().await;
+        //clear out any remaining stats but when we have no work do not spin tightly
+        monitor.relay_stats_periodic(Duration::from_millis(40)).await;
     }
 }
 
 #[cfg(test)]
-pub async fn behavior(mut monitor: SteadyMonitor, rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
+pub async fn run(mut monitor: SteadyMonitor, rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
 
     //let mut test_one:Option<RefAddr> = None;
     //let mut tel:Option<RefAddr> = None; //store in rx core..

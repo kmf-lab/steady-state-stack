@@ -11,9 +11,10 @@ use bastion::{Callbacks, run};
 use bastion::children::Children;
 
 use bastion::prelude::*;
+use flexi_logger::{Logger, LogSpecification};
 use flume::{Receiver, Sender, bounded, RecvError};
 use futures_timer::Delay;
-use log::{error, info, trace};
+use log::{debug, error, info, trace, warn};
 use crate::steady::telemetry::metrics_collector::DiagramData;
 
 mod telemetry {
@@ -121,14 +122,14 @@ impl SteadyMonitor {
         }
     }
 
-    pub async fn relay_stats_tx_custom<T>(self: & mut Self, tx: SteadyTx<T>, threshold: usize) {
+    pub async fn relay_stats_tx_custom<T>(self: & mut Self, tx: &SteadyTx<T>, threshold: usize) {
         let idx = self.base.shared_tx_array.read().await[tx.id] as usize;
         if self.sent_count[idx] >= threshold {
             self.relay_stats_all().await;
         }
     }
 
-    pub async fn relay_stats_rx_custom<T>(self: & mut Self, rx: SteadyRx<T>, threshold: usize) {
+    pub async fn relay_stats_rx_custom<T>(self: & mut Self, rx: &SteadyRx<T>, threshold: usize) {
         let idx = self.base.shared_tx_array.read().await[rx.id] as usize;
         if self.received_count[idx] >= threshold {
             self.relay_stats_all().await;
@@ -250,8 +251,26 @@ impl SteadyMonitor {
 impl SteadyControllerBuilder {
 
     pub(crate) fn callbacks(&self) -> Callbacks {
-        //  Callbacks::new().
-        todo!()
+
+        //is the call back recording events for the elemetry?
+        Callbacks::new()
+            .with_before_start( || {
+                //TODO: record the name? of the actor on the graph needed?
+                info!("before start");
+            })
+            .with_after_start( || {
+               //TODO: change actor to started if needed
+               info!("after start");
+            })
+            .with_after_stop( || {
+                //TODO: record this actor has stopped on the graph
+                info!("after stop");
+            })
+            .with_after_restart( || {
+                //TODO: record restart count on the graph
+                info!("after restart");
+            })
+
     }
 
     pub fn configure_for_graph<F,I>(self: &mut Self, root_name: & 'static str, c: Children, init: I ) -> Children
@@ -289,7 +308,7 @@ impl SteadyControllerBuilder {
                     let init_clone = init_clone.clone();
                     let s = s.clone();
                     async move {
-                        let monitor = s.wrap(root_name, ctx);
+                        let monitor = s.wrap(root_name, Some(ctx));
                         match init_clone(monitor).await {
                             Ok(r) => {
                                 info!("Actor {:?} ", r); //TODO: we may want to exit here
@@ -456,12 +475,13 @@ impl SteadyGraph {
 
 
 ////////////////////////////////////////////////////////////////
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SteadyTx<T> {
     pub id: usize,
     pub capacity: usize,
     pub sender: Sender<T>
 }
+
 
 impl<T: Send> SteadyTx<T> {
     fn new(sender: Sender<T>, model: &SteadyGraph) -> Self {
@@ -500,8 +520,68 @@ impl<T: Send> SteadyRx<T> {
         !self.receiver.is_empty()
     }
 
+}
 
+/// Initializes logging for the application using the provided log level.
+///
+/// This function sets up the logger based on the specified log level, which can be adjusted through
+/// command line arguments or environment variables. It's designed to be used both in the main
+/// application and in test cases. The function demonstrates the use of traditional Rust error
+/// propagation with the `?` operator. Note that actors do not initialize logging as it is done
+/// for them in `main` before they are started.
+///
+/// # Parameters
+/// * `level`: A string slice (`&str`) that specifies the desired log level. The log level can be
+///            dynamically set via environment variables or directly passed as an argument.
+///
+/// # Returns
+/// This function returns a `Result<(), Box<dyn std::error::Error>>`. On successful initialization
+/// of the logger, it returns `Ok(())`. If an error occurs during initialization, it returns an
+/// `Err` with the error wrapped in a `Box<dyn std::error::Error>`.
+///
+/// # Errors
+/// This function will return an error if the logger initialization fails for any reason, such as
+/// an invalid log level string or issues with logger setup.
+///
+/// # Security Considerations
+/// Be cautious to never log any personally identifiable information (PII) or credentials. It is
+/// the responsibility of the developer to ensure that sensitive data is not exposed in the logs.
+///
+/// # Examples
+/// ```
+/// let log_level = "info"; // Typically obtained from command line arguments or env vars
+/// if let Err(e) = init_logging(log_level) {
+///     eprintln!("Logger initialization failed: {:?}", e);
+///     // Handle error appropriately (e.g., exit the program or fallback to a default configuration)
+/// }
+/// ```
+pub(crate) fn steady_logging_init(level: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let log_spec = LogSpecification::env_or_parse(level)?;
 
+    Logger::with(log_spec)
+        .format(flexi_logger::colored_with_thread)
+        .start()?;
+
+    /////////////////////////////////////////////////////////////////////
+    // for all log levels use caution and never write any personal identifiable data
+    // to the logs. YOU are always responsible to ensure credentials are never logged.
+    ////////////////////////////////////////////////////////////////////
+    trace!("Trace: deep application tracing");
+    //Rationale: "Trace" level is typically used for detailed debugging information, often in a context where the flow through the system is being traced.
+
+    debug!("Debug: complex part analysis");
+    //Rationale: "Debug" is used for information useful in a debugging context, less detailed than trace, but more so than higher levels.
+
+    warn!("Warn: recoverable issue, needs attention");
+    //Rationale: Warnings indicate something unexpected but not necessarily fatal; it's a signal that something should be looked at but isn't an immediate failure.
+
+    error!("Error: unexpected issue encountered");
+    //Rationale: Errors signify serious issues, typically ones that are unexpected and may disrupt normal operation but are not application-wide failures.
+
+    info!("Info: key event occurred");
+    //Rationale: Info messages are for general, important but not urgent information. They should convey key events or state changes in the application.
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -518,10 +598,9 @@ pub(crate) mod tests {
 
     pub(crate) fn initialize_logger() {
         INIT.call_once(|| {
-            let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
-                .format(colored_with_thread)
-                .start()
-                .expect("Logger initialization failed");
+            if let Err(e) = steady_logging_init("info") {
+                print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
+            }
         });
     }
 

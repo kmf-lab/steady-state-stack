@@ -5,8 +5,8 @@ use crate::steady::*;
 
 #[derive(Clone, Debug)]
 pub enum DiagramData {
-    Structure(),
-    Content(),
+   // Structure(),
+    //Content(),
 }
 
 

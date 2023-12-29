@@ -1,5 +1,6 @@
 
 use std::time::Duration;
+use crate::args::Args;
 use crate::steady::{SteadyTx, SteadyMonitor};
 
 #[derive(Clone, Debug)]
@@ -12,26 +13,31 @@ struct InternalState {
 }
 
 #[cfg(not(test))]
-pub async fn behavior(mut monitor: SteadyMonitor
-                     , mut tx: SteadyTx<WidgetInventory> ) -> Result<(),()> {
+pub async fn run(mut monitor: SteadyMonitor
+                 , opt: Args
+                 , tx: SteadyTx<WidgetInventory> ) -> Result<(),()> {
+    //keep long running state in here while you run
     let mut state = InternalState { count: 0 };
     loop {
         //single pass of work, do not loop in here
-        if iterate_once(&mut monitor, &mut state, &mut tx).await {
+        if iterate_once(&mut monitor, &mut state, &tx).await {
             break Ok(());
         }
-        monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
+        //this is an example of an actor running periodically
+        //we send telemetry and wait for the next time we are to run here
+        monitor.relay_stats_periodic(Duration::from_millis(opt.gen_rate_ms)).await;
     }
 
 }
 
 #[cfg(test)]
-pub async fn behavior(mut monitor: SteadyMonitor
-                      , mut tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
+pub async fn run(mut monitor: SteadyMonitor
+                 , _opt: Args
+                 , tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
     let mut state = InternalState { count: 0 };
     loop {
         //single pass of work, do not loop in here
-        if iterate_once(&mut monitor, &mut state, &mut tx).await {
+        if iterate_once(&mut monitor, &mut state, &tx).await {
             break Ok(());
         }
         monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
