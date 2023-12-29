@@ -60,17 +60,13 @@ async fn iterate_once(monitor: &mut SteadyMonitor
 
 #[cfg(test)]
 mod tests {
-    use flexi_logger::{Logger, LogSpecification};
     use crate::actor::example_empty_actor::{iterate_once, SomeExampleRecord};
     use crate::steady::{SteadyGraph, SteadyTx};
 
     #[async_std::test]
     async fn test_process_function() {
 
-
-        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
-            .format(flexi_logger::colored_with_thread)
-            .start();
+        crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
         let (tx, rx): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8);

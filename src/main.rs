@@ -9,7 +9,7 @@ use flexi_logger;
 use bastion::Bastion;
 use bastion::prelude::*;
 use flexi_logger::{Logger, LogSpecification};
-use crate::steady::*;
+
 use crate::args::Opt;
 
 mod actor {
@@ -20,7 +20,8 @@ mod actor {
     pub use data_approval::ApprovedWidgets;
     pub mod data_consumer;
 }
-use crate::actor::*; //message structs
+use crate::actor::*;
+use crate::steady::*; //message structs
 
 
 fn build_graph(opt: Opt) {

@@ -62,15 +62,10 @@ async fn iterate_once(monitor: &mut SteadyMonitor
 mod tests {
     use super::*;
     use async_std::test;
-    use flexi_logger::{Logger, LogSpecification};
 
     #[test]
     async fn test_process() {
-
-
-        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
-            .format(flexi_logger::colored_with_thread)
-            .start();
+        crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
         let (tx_in, rx_in): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8);
@@ -78,11 +73,14 @@ mod tests {
 
         let mut monitor = graph.new_monitor().await.wrap("test",None);
 
+        monitor.tx(&tx_in, WidgetInventory {count: 5 }).await;
+
         let exit= iterate_once(&mut monitor, &rx_in, &tx_out).await;
         assert_eq!(exit, false);
 
-        // TODO: need more testing
-
+        let result = monitor.rx(&rx_out).await.unwrap();
+        assert_eq!(result.original_count, 5);
+        assert_eq!(result.approved_count, 2);
     }
 
 }

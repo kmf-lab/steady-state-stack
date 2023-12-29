@@ -50,25 +50,25 @@ async fn iterate_once(monitor: &mut SteadyMonitor
 
 #[cfg(test)]
 mod tests {
-    use flexi_logger::{Logger, LogSpecification};
     use crate::actor::{WidgetInventory};
     use crate::actor::data_generator::{InternalState, iterate_once};
     use crate::steady::{SteadyGraph, SteadyTx};
 
     #[async_std::test]
     async fn test_something() {
-        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
-            .format(flexi_logger::colored_with_thread)
-            .start();
+        crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
         let (tx, rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8);
-        let mut monitor = graph.new_monitor().await.wrap("test", None);
+
+        let mut monitor = graph.new_monitor().await.wrap("test", None); //TODO: smelly
 
         let mut state = InternalState { count: 0 };
 
-        let exit = iterate_once(&mut monitor, &mut state, &tx).await;
+        let exit = iterate_once(&mut monitor, &mut state, &tx).await;   //TODO: smelly
         assert_eq!(exit, false);
+
+
 // TODO: need more testing
 
         /*

@@ -100,14 +100,12 @@ pub async fn behavior(mut monitor: SteadyMonitor, rx_approved_widgets: SteadyRx<
 mod tests {
     use super::*;
     use async_std::test;
-    use flexi_logger::{Logger, LogSpecification};
 
     #[test]
     async fn test_something() {
 
-        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
-            .format(flexi_logger::colored_with_thread)
-            .start();
+        crate::steady::tests::initialize_logger();
+
 
         let mut graph = SteadyGraph::new();
         let (tx, rx): (SteadyTx<ApprovedWidgets>, _) = graph.new_channel(8);

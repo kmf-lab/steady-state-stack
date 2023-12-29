@@ -21,14 +21,17 @@ unreachable      = "1.0.0"  # for unreachable!() macro
 #let map: DashMap<MyStruct, f64> = DashMap::new();
 # add crate for cross thread caching like these crates: https://crates.io/crates/crossbeam-cache
 
-
 #not in use yet... but this is where I am planning to go for web services
 askama = "0.11.0" # for compile time templating
-hyper = "0.14.11" # for http server
-quinn = "0.6.0" # for quic and http3
+tide = "0.16.0" # for http server
+tide-websockets = "0.4.0" # for websockets
+
+lazy_static = "1.4.0" # for quic and http3
 
 
 
 [dev-dependencies] 
 async-std       = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
+lazy_static     = "1.4" # for lazy statics in unit tests
+
 

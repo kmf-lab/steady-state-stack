@@ -14,6 +14,18 @@ use bastion::prelude::*;
 use flume::{Receiver, Sender, bounded, RecvError};
 use futures_timer::Delay;
 use log::{error, info, trace};
+use crate::steady::telemetry::metrics_collector::DiagramData;
+
+mod telemetry {
+    pub mod metrics_collector;
+    pub mod server;
+}
+
+// An Actor is a single threaded block of behavior that can send and receive messages
+// A Troupe is a group of actors that are all working together to provide a specific service
+// A Guild is a group of Troupes that are all working together on the same problem
+// A Kingdom is a group of Guilds that are all working on the same problem
+// A collection of kingdoms is a world
 
 
 pub struct SteadyGraph {
@@ -410,31 +422,38 @@ impl SteadyGraph {
     }
 
     pub(crate) fn init_telemetry(&mut self) {
+
+        let (tx, rx): (SteadyTx<DiagramData>, _) = self.new_channel(8);
+
         let _ = Bastion::supervisor(|supervisor|
-                                        supervisor.with_strategy(SupervisionStrategy::OneForOne)
-                                            .children(|children| {
-                                                let all_rx = self.rx_vec.clone();
-                                                self.add_to_graph("generator"
-                                                                   , children.with_redundancy(0)
-                                                                   , move |monitor| telemetry(monitor,all_rx.clone())
-                                                        )
+                                supervisor.with_strategy(SupervisionStrategy::OneForOne)
+                                    .children(|children| {
+                                        let all_rx = self.rx_vec.clone();
+                                        self.add_to_graph("generator"
+                                                           , children.with_redundancy(0)
+                                                           , move |monitor|
+                                                    telemetry::metrics_collector::telemetry(monitor
+                                                                                                           ,all_rx.clone()
+                                                                                                           ,tx.clone()
+                                                    )
+                                                )
 
-                                            })).expect("OneForOne supervisor creation error.");
+                                    })
+                                    .children(|children| {
+                                        let all_rx = self.rx_vec.clone();
+                                        self.add_to_graph("generator"
+                                                          , children.with_redundancy(0)
+                                                          , move |monitor|
+                                                              telemetry::server::telemetry(monitor
+                                                                                                          ,rx.clone()
+                                                              )
+                                        )
+
+                                    })
+        ).expect("OneForOne supervisor creation error.");
     }
 }
 
-async fn telemetry(_monitor: SteadyMonitor, all_rx: Arc<RwLock<Vec<SteadyRx<Telemetry>>>>) -> Result<(),()> {
-    loop {
-        let all = all_rx.read().await;
-
-        let _:Vec<_> = all.iter().collect();
-       //TODO: read from all these pipes and create our telemetry
-        Delay::new(Duration::from_millis(20)).await;
-        if false {
-            break Ok(());
-        }
-    }
-}
 
 ////////////////////////////////////////////////////////////////
 #[derive(Clone)]
@@ -486,17 +505,30 @@ impl<T: Send> SteadyRx<T> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use async_std::test;
-    use flexi_logger::{Logger, LogSpecification};
+    use flexi_logger::{colored_with_thread, Logger, LogSpecification};
+    use lazy_static::lazy_static;
+    use std::sync::Once;
+
+    lazy_static! {
+            static ref INIT: Once = Once::new();
+    }
+
+    pub(crate) fn initialize_logger() {
+        INIT.call_once(|| {
+            let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
+                .format(colored_with_thread)
+                .start()
+                .expect("Logger initialization failed");
+        });
+    }
 
     //this is my unit test for relay_stats_tx_custom
     #[test]
     async fn test_relay_stats_tx_rx_custom() {
-        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
-            .format(flexi_logger::colored_with_thread)
-            .start();
+        crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
         let (tx_string, rx_string): (SteadyTx<String>, _) = graph.new_channel(8);
@@ -531,9 +563,7 @@ mod tests {
 
     #[test]
     async fn test_relay_stats_tx_rx_batch() {
-        let _ = Logger::with(LogSpecification::env_or_parse("info").unwrap())
-            .format(flexi_logger::colored_with_thread)
-            .start();
+        crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
         let (tx_string, rx_string): (SteadyTx<String>, _) = graph.new_channel(5);
