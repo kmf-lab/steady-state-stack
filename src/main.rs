@@ -38,7 +38,7 @@ use crate::actor::*;
 fn main() {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::from_args();
-    if let Err(e) = steady_logging_init(&opt.logging_level) {
+    if let Err(e) = steady_logging_init(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
@@ -50,7 +50,7 @@ fn main() {
     //run! is a macro provided by bastion that will block until the future is resolved.
     run!(async {
         // note we use (&opt) just to show we did NOT transfer ownership
-        Delay::new(Duration::from_secs((&opt).run_duration)).await;
+        Delay::new(Duration::from_secs((&opt).duration)).await;
         Bastion::stop();
     });
 
@@ -67,8 +67,8 @@ fn build_graph(cli_arg: &Args) {
     //create all the needed channels between actors
 
     //upon construction these are set up to be monitored by the telemetry actor
-    let (generator_tx, generator_rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8);
-    let (consumer_tx, consumer_rx): (SteadyTx<ApprovedWidgets>, _) = graph.new_channel(8);
+    let (generator_tx, generator_rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(38);
+    let (consumer_tx, consumer_rx): (SteadyTx<ApprovedWidgets>, _) = graph.new_channel(38);
     //the above tx rx objects will be owned by the children closures below then cloned
     //each time we need to startup a new child actor instance. This way when an actor fails
     //we still have the original to clone from.
@@ -104,18 +104,11 @@ fn build_graph(cli_arg: &Args) {
 
     graph.init_telemetry();
 
-
 }
-
-
-
-
-
-
 
 #[cfg(test)]
 mod tests {
-    use bastion::prelude::{BastionContext, Distributor, MessageHandler, RestartPolicy, RestartStrategy};
+    use bastion::prelude::{Distributor};
     use bastion::run;
     use super::*;
 
@@ -123,104 +116,38 @@ mod tests {
     async fn test_graph_one() {
 
         let test_ops = Args {
-            run_duration: 21,
-            logging_level: "debug".to_string(),
+            duration: 21,
+            loglevel: "debug".to_string(),
+            gen_rate_ms: 0,
         };
 
         Bastion::init();
-
         build_graph(&test_ops);
-
-        let r = RestartStrategy::default();
-        let r = r.with_restart_policy(RestartPolicy::Never);
-
-        /*
-        let test_one = Bastion::supervisor(|supervisor|
-            supervisor.with_strategy(SupervisionStrategy::OneForOne)
-                .with_restart_strategy(r)
-                .children(|children|
-                     children
-                        .with_redundancy(1)
-                        .with_distributor(Distributor::named("say_hi"))
-                        .with_name("test-one")
-                        .with_exec(
-                            move |ctx|
-                                test_script_one(ctx)
-                        )
-                )
-        ).expect("OneForOne supervisor creation error.");
-*/
-
-        // Launch Bastion
         Bastion::start();
 
-        //the problem here is that we do not have the ref addr for the test actor.
-        //let answer = children_ref.ask_anonymously(RequestMessage {
-        //    content: "Hello, Bastion".into(),
-        //}).expect("Failed to send message");
-
-        let say_hi:Distributor = Distributor::named("testing-generator");
-        //let say_hi:Distributor = Distributor::named("testing-consumer");
-
+        let distribute_generator:Distributor = Distributor::named("testing-generator");
+        let distribute_consumer:Distributor = Distributor::named("testing-consumer");
 
         run!(async {
-            let answer: Result<&str, SendError> =
-            say_hi.request("hi!").await.expect("Couldn't send request");
 
-            assert_eq!(1,1);
+            let to_send = WidgetInventory { count: 42 };
 
-            println!("{}", answer.expect("Couldn't receive answer"))
+            let answer_generator: Result<&str, SendError> = distribute_generator.request(to_send).await.unwrap();
+            assert_eq!("ok",answer_generator.unwrap());
 
+            let expected_message = ApprovedWidgets {
+                original_count: 42,
+                approved_count: 21
+            };
+            let answer_consumer: Result<&str, SendError> = distribute_consumer.request(expected_message).await.unwrap();
+            assert_eq!("ok",answer_consumer.unwrap());
+
+
+            Bastion::stop();
         });
-
-
-        // Bastion::stop();
         Bastion::block_until_stopped();
     }
 
-    pub async fn _test_script_one(ctx: BastionContext) -> Result<(),()> {
-
-        MessageHandler::new(ctx.recv().await?)
-            .on_tell(|message: &ApprovedWidgets, _sender_addr| {
-                // Handle the message...
-                println!("Received ApprovedWidgets: {:?}", message);
-                // TODO: assert that the message is what we expected from the logic.
-
-            })
-          /*  .on_broadcast(|message: &SteadyBeacon, _sender_addr| {
-
-
-                if let SteadyBeacon::TestCase(addr, case) = message {
-                    if "One" == case {
-                        test_one = Some(addr.clone());
-                    }
-                    // Handle the message...
-                    println!("Received TestCase with case: {}", case);
-                    // Potentially send a message back using addr
-                }
-
-            })*/
-            /* .on_broadcast(|message: &SteadyBeacon, _sender_addr| {
-                if let SteadyBeacon::Telemetry(addr) = message {
-                    tel = Some(addr.clone());
-                    //  init_actor(tel); //todo rebuild is a problem becuse broadcast wil be gone.
-                    // Handle the message...
-                    println!("Received target: {:?}", addr);
-                    // Potentially send a message back using addr
-                }
-
-            })   */
-        ;
-
-        if true {
-         //   Bastion::stop();
-        }
-        //get all the required messages for test one.
-        //TODO: how do I make this test fail if the wront message is received?
-        //     especially since we are in bastion and it eats panics.
-
-        Ok(())
-    }
 }
 
 

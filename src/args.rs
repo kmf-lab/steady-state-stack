@@ -3,21 +3,24 @@ use structopt_derive::StructOpt;
 
 #[derive(StructOpt, Debug, PartialEq, Clone)]
 pub struct Args {
-    #[structopt(short = "r", long = "run_seconds"
-              , default_value = "20"
-              , validator = run_duration_validator)]
-    pub run_duration: u64,
 
-    #[structopt(short = "l", long = "logging_level"
+    #[structopt(short = "l", long = "loglevel"
                 , default_value = "info"
                 , possible_values = log_variants()
                 , validator = validate_logging_level
                 , case_insensitive = true)]
-    pub logging_level: String,
+    pub loglevel: String,
 
-    #[structopt(short = "g", long = "gen_rate"
-    , default_value = "2000")]
+    #[structopt(short = "g", long = "gen-rate"
+    , default_value = "1000")]
     pub gen_rate_ms: u64,
+
+    #[structopt(short = "d", long = "duration", validator = run_duration_validator
+    , default_value = "20")]
+    pub duration: u64,
+
+
+
 }
 
 fn run_duration_validator(val: String) -> Result<(), String> {
@@ -36,11 +39,37 @@ fn validate_logging_level(level: String) -> Result<(), String> {
         .map_err(|_| String::from("Invalid logging level format."))
 }
 
+#[cfg(test)]
+pub fn to_cli_string(app:&str, arg: &Args) -> String {
+    format!("{} --duration={} --loglevel={} --gen-rate={}"
+            , app
+            , arg.duration
+            , arg.loglevel
+            , arg.gen_rate_ms)
+}
 
 #[cfg(test)]
 mod tests {
+    use log::info;
+    use structopt::StructOpt;
+    use crate::args::Args;
 
-    //TODO: show how wwe can test the args round trip.
 
+    #[test]
+    fn test_args_round_trip() {
+        use crate::args::to_cli_string;
+        crate::steady::tests::initialize_logger();
+
+        let orig_args = &Args {
+            loglevel: "debug".to_string(),
+            gen_rate_ms: 3000,
+            duration: 7
+        };
+        let to_test = to_cli_string("myapp", orig_args);
+        info!("to_test: {}", to_test);
+        to_test.split_whitespace().for_each(|s| info!("split: {}", s));
+        let cli_args = Args::from_iter(to_test.split_whitespace());
+        assert_eq!(cli_args, *orig_args);
+    }
 
 }

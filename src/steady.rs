@@ -33,13 +33,14 @@ pub struct SteadyGraph {
     senders_count: usize,
     receivers_count: usize,
     rx_vec: Arc<RwLock<Vec<SteadyRx<Telemetry>>>>,
-    shared_rx_array: Option<Arc<RwLock<Box<[u8]>>>>, //TODO: what if this is a vec instead??
+    shared_rx_array: Option<Arc<RwLock<Box<[u8]>>>>,
     shared_tx_array: Option<Arc<RwLock<Box<[u8]>>>>,
 }
 
 
+
 //telemetry enum every actor uses to send information about actors name messages send and messages received
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub enum Telemetry {
     ActorDef(& 'static str),
     MessagesSent(Vec<usize>),
@@ -49,7 +50,7 @@ pub enum Telemetry {
 }
 
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub struct SteadyControllerBuilder {
     telemetry_tx: SteadyTx<Telemetry>,
     shared_rx_array: Arc<RwLock<Box<[u8]>>>,
@@ -80,21 +81,27 @@ impl SteadyMonitor {
     pub async fn relay_stats_all(self: &mut Self) {
         // switch to a new vector and send the old one
         // we always clear the count so we can confirm this in testing
+        // only relay if there is room otherwise we change nothing and roll up locally
+        if self.base.telemetry_tx.compute_free_space()>=2 {
+            let sc = self.sent_count.len();
+            let msg_sent_count = Telemetry::MessagesSent(replace(&mut self.sent_count
+                                                                 , vec![0; sc]));
 
-        let sc = self.sent_count.len();
-        let msg_sent_count = Telemetry::MessagesSent(replace(&mut self.sent_count
-                                                     , vec![0; sc]));
+            let rc = self.received_count.len();
+            let msg_received_count = Telemetry::MessagesReceived(replace(&mut self.received_count
+                                                                 , vec![0; rc]));
 
-        let rc = self.received_count.len();
-        let msg_received_count = Telemetry::MessagesReceived(replace(&mut self.received_count
-                                                         , vec![0; rc]));
-
-        //we only send the result if we have a context, ie a graph we are monitoring
-        if self.ctx.is_some() {
-            self.telemetry_tx(msg_sent_count).await;
-            self.telemetry_tx(msg_received_count).await;
+            //we only send the result if we have a context, ie a graph we are monitoring
+            if self.ctx.is_some() {
+                self.telemetry_tx(msg_sent_count).await;
+                self.telemetry_tx(msg_received_count).await;
+                if self.base.telemetry_tx.compute_free_space() < 2 {
+                    error!("Telemetry channel is full for {}. Unable to send more telemetry, capacity is {}. It will be accumulated locally."
+                        ,self.name
+                        ,self.base.telemetry_tx.capacity);
+                }
+            }
         }
-
     }
 
     pub async fn relay_stats_periodic(self: &mut Self, duration_rate: Duration) {
@@ -123,14 +130,20 @@ impl SteadyMonitor {
     }
 
     pub async fn relay_stats_tx_custom<T>(self: & mut Self, tx: &SteadyTx<T>, threshold: usize) {
-        let idx = self.base.shared_tx_array.read().await[tx.id] as usize;
+        let idx: usize = {
+            let local = self.base.shared_tx_array.read().await;
+            if local.len() <= tx.id { local[tx.id] as usize } else { 0 }
+        };
         if self.sent_count[idx] >= threshold {
             self.relay_stats_all().await;
         }
     }
 
     pub async fn relay_stats_rx_custom<T>(self: & mut Self, rx: &SteadyRx<T>, threshold: usize) {
-        let idx = self.base.shared_tx_array.read().await[rx.id] as usize;
+        let idx: usize = {
+            let local = self.base.shared_rx_array.read().await;
+            if local.len() <= rx.id { local[rx.id] as usize } else { 0 }
+        };
         if self.received_count[idx] >= threshold {
             self.relay_stats_all().await;
         }
@@ -181,11 +194,11 @@ impl SteadyMonitor {
         self.received_count[index] += 1;
     }
 
+    //TODO: add methods later to instrument non await blocks for cpu usage chart
 
     pub async fn rx<T>(self: &mut Self, this: &SteadyRx<T>) -> Result<T, RecvError> {
 
         //if self ident not set then set it.
-
         let result = this.receiver.recv_async().await;
         if result.is_ok() {
             self.update_rx_count_internal(this.id, this.capacity).await;
@@ -219,29 +232,23 @@ impl SteadyMonitor {
         };
     }
 
-    async fn telemetry_tx(self: &mut Self, a: Telemetry) {
+    async fn telemetry_tx(self: &mut Self, a: Telemetry) -> Option<Telemetry> {
         //we try to send but if the channel is full we log that fact
         match self.base.telemetry_tx.sender.try_send(a) {
             Ok(_) => {
                 self.update_tx_count_internal(self.base.telemetry_tx.id, self.base.telemetry_tx.capacity).await;
             },
             Err(flume::TrySendError::Full(a)) => {
-                error!("full channel detected data_approval tx  actor: {} capacity:{:?} "
+                error!("full telemetry channel detected from actor: {} capacity:{:?} "
                 , self.name, self.base.telemetry_tx.capacity);
-                //here we will await until there is room in the channel
-                match self.base.telemetry_tx.sender.send_async(a).await {
-                    Ok(_) => {
-                        self.update_tx_count_internal(self.base.telemetry_tx.id, self.base.telemetry_tx.capacity).await;
-                    },
-                    Err(e) => {
-                        error!("Unexpected error sending: {} {}",e, self.name);
-                    }
-                };
+                //never block instead just return what we could not send
+                return Some(a);
             },
             Err(e) => {
-                error!("Unexpected error try sending: {} {}",e, self.name);
+                error!("Unexpected error try sending lost telemetry: {} {}",e, self.name);
             }
         };
+        None
     }
 
 
@@ -256,24 +263,24 @@ impl SteadyControllerBuilder {
         Callbacks::new()
             .with_before_start( || {
                 //TODO: record the name? of the actor on the graph needed?
-                info!("before start");
+               // info!("before start");
             })
             .with_after_start( || {
                //TODO: change actor to started if needed
-               info!("after start");
+              // info!("after start");
             })
             .with_after_stop( || {
                 //TODO: record this actor has stopped on the graph
-                info!("after stop");
+              //  info!("after stop");
             })
             .with_after_restart( || {
                 //TODO: record restart count on the graph
-                info!("after restart");
+//info!("after restart");
             })
 
     }
 
-    pub fn configure_for_graph<F,I>(self: &mut Self, root_name: & 'static str, c: Children, init: I ) -> Children
+    fn configure_for_graph<F,I>(self: &mut Self, root_name: & 'static str, c: Children, init: I ) -> Children
         where I: Fn(SteadyMonitor) -> F + Send + 'static + Clone,
               F: Future<Output = Result<(),()>> + Send + 'static ,
     {
@@ -324,7 +331,7 @@ impl SteadyControllerBuilder {
         }
     }
 
-    pub fn wrap(self, root_name: & 'static str, ctx: Option<BastionContext>) -> SteadyMonitor {
+    fn wrap(self, root_name: & 'static str, ctx: Option<BastionContext>) -> SteadyMonitor {
         let tx = self.telemetry_tx.clone();
         let is_in_graph = ctx.is_some();
         let mut monitor = self.new_monitor(root_name, ctx);
@@ -354,6 +361,14 @@ impl SteadyControllerBuilder {
     }
 }
 
+//for testing only
+#[cfg(test)]
+impl SteadyGraph  {
+    pub async fn new_test_monitor(self: &mut Self, root_name: & 'static str ) -> SteadyMonitor
+    {
+        self.new_monitor().await.wrap(root_name, None)
+    }
+}
 
 impl SteadyGraph {
     //wrap the context with a new context that has a telemetry channel
@@ -379,7 +394,9 @@ impl SteadyGraph {
 
 
     pub async fn new_monitor(&mut self) -> SteadyControllerBuilder {
-        let (tx, rx) = self.new_channel::<Telemetry>(8);
+        let channel_length = 32;
+
+        let (tx, rx) = self.new_channel::<Telemetry>(channel_length);
 
         self.rx_vec.write().await.push(rx);
 
@@ -440,36 +457,37 @@ impl SteadyGraph {
         )
     }
 
+
+
     pub(crate) fn init_telemetry(&mut self) {
+        let channel_length = 32; //TODO: move out for configuration
+        let (tx, rx): (SteadyTx<DiagramData>, _) = self.new_channel(channel_length);
 
-        let (tx, rx): (SteadyTx<DiagramData>, _) = self.new_channel(8);
-
+        //The Troupe is restarted together if one actor fails
         let _ = Bastion::supervisor(|supervisor|
-                                supervisor.with_strategy(SupervisionStrategy::OneForOne)
+                                supervisor.with_strategy(SupervisionStrategy::OneForAll)
                                     .children(|children| {
                                         let all_rx = self.rx_vec.clone();
-                                        self.add_to_graph("generator"
+                                        self.add_to_graph("collector"
                                                            , children.with_redundancy(0)
                                                            , move |monitor|
-                                                    telemetry::metrics_collector::telemetry(monitor
-                                                                                                           ,all_rx.clone()
-                                                                                                           ,tx.clone()
+                                                            telemetry::metrics_collector::run(monitor
+                                                                          , all_rx.clone()
+                                                                          , tx.clone()
                                                     )
                                                 )
 
                                     })
                                     .children(|children| {
-                                        let all_rx = self.rx_vec.clone();
-                                        self.add_to_graph("generator"
+                                        self.add_to_graph("server"
                                                           , children.with_redundancy(0)
                                                           , move |monitor|
-                                                              telemetry::server::telemetry(monitor
-                                                                                                          ,rx.clone()
+                                                            telemetry::server::run(monitor
+                                                                          , rx.clone()
                                                               )
                                         )
-
                                     })
-        ).expect("OneForOne supervisor creation error.");
+        ).expect("Telemetry supervisor creation error.");
     }
 }
 
@@ -495,18 +513,15 @@ impl<T: Send> SteadyTx<T> {
         !self.sender.is_full()
     }
 
-
-
+    pub fn compute_free_space(&self) -> usize {
+        self.capacity - self.sender.len()
+    }
 }
-
-
-////////////////////////////////////////////////////////////////
 #[derive(Clone)]
 pub struct SteadyRx<T> {
     pub id: usize,
     pub capacity: usize,
     pub receiver: Receiver<T>,
-
 }
 impl<T: Send> SteadyRx<T> {
     pub fn new(receiver: Receiver<T>, model: &SteadyGraph) -> Self {
@@ -519,7 +534,6 @@ impl<T: Send> SteadyRx<T> {
     pub fn has_message(&self) -> bool {
         !self.receiver.is_empty()
     }
-
 }
 
 /// Initializes logging for the application using the provided log level.
@@ -588,7 +602,6 @@ pub(crate) fn steady_logging_init(level: &str) -> Result<(), Box<dyn std::error:
 pub(crate) mod tests {
     use super::*;
     use async_std::test;
-    use flexi_logger::{colored_with_thread, Logger, LogSpecification};
     use lazy_static::lazy_static;
     use std::sync::Once;
 
@@ -623,7 +636,7 @@ pub(crate) mod tests {
         let idx = monitor.base.shared_tx_array.read().await[tx_string.id] as usize;
 
         assert_eq!(monitor.sent_count[idx], threshold);
-        monitor.relay_stats_tx_custom(tx_string.clone(), threshold).await;
+        monitor.relay_stats_tx_custom(&tx_string, threshold).await;
         assert_eq!(monitor.sent_count[idx], 0);
 
         while count > 0 {
@@ -634,9 +647,8 @@ pub(crate) mod tests {
         let idx = monitor.base.shared_rx_array.read().await[rx_string.id] as usize;
 
         assert_eq!(monitor.received_count[idx], threshold);
-        monitor.relay_stats_rx_custom(rx_string.clone(), threshold).await;
+        monitor.relay_stats_rx_custom(&rx_string.clone(), threshold).await;
         assert_eq!(monitor.received_count[idx], 0);
-
 
     }
 

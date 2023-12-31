@@ -1,4 +1,3 @@
-use std::time::Duration;
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use crate::steady::*;
@@ -17,7 +16,7 @@ async fn iterate_once(monitor: &mut SteadyMonitor
         match monitor.rx(rx_approved_widgets).await {
             Ok(m) => {
                 state.last_approval = Some(m.to_owned());
-                info!("recieved: {:?}", m.to_owned());
+                info!("received: {:?}", m.to_owned());
             },
             Err(e) => {
                 state.last_approval = None;
@@ -36,6 +35,8 @@ async fn iterate_once(monitor: &mut SteadyMonitor
 
 #[cfg(not(test))]
 pub async fn run(mut monitor: SteadyMonitor, mut rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
+    use std::time::Duration;
+
     let mut state = InternalState { last_approval: None };
     loop {
         //single pass of work, in this high volume example we stay in iterate_once as long
@@ -50,59 +51,30 @@ pub async fn run(mut monitor: SteadyMonitor, mut rx_approved_widgets: SteadyRx<A
 
 #[cfg(test)]
 pub async fn run(mut monitor: SteadyMonitor, rx_approved_widgets: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
-
-    //let mut test_one:Option<RefAddr> = None;
-    //let mut tel:Option<RefAddr> = None; //store in rx core..
-
-    // waiting for the test framework to send a message
-
- //   loop {
-        //single pass of work, do not loop in here
-  //      process( &mut monitor, &mut rx_approved_widgets).await;
-   //     monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
-   // }
-
-    match monitor.rx(&rx_approved_widgets).await {
-        Ok(m) => {
-            //  send to the unit test
-            //  sc.tell(&test_one.unwrap(), m).expect("Unable to send test message");
-        },
-        Err(e) => {
-            error!("Unable to read: {}",e);
+    loop {
+        relay_test(&mut monitor, &rx_approved_widgets).await;
+        if false {
+            break;
         }
     }
-
-    // test init  vs prod init
-    // both have telmetry if feature on
-/*
-    MessageHandler::new(ctx.recv().await?)
-        .on_broadcast(|message: &SteadyBeacon, _sender_addr| {
-            if let SteadyBeacon::TestCase(addr, case) = message {
-                if "One" == case {
-                    test_one = Some(addr.clone());
-                }
-                // Handle the message...
-                println!("Received TestCase with case: {}", case);
-                // Potentially send a message back using addr
-            }
-        })
-        .on_broadcast(|message: &SteadyBeacon, _sender_addr| {
-            if let SteadyBeacon::Telemetry(addr) = message {
-                tel = Some(addr.clone());
-              //  init_actor(tel); //todo rebuild is a problem becuse broadcast wil be gone.
-                // Handle the message...
-                println!("Received target: {:?}", addr);
-                // Potentially send a message back using addr
-            }
-
-        });
-//  */
-    // now we can run the tests
-
-
     Ok(())
 }
+#[cfg(test)]
+async fn relay_test(monitor: &mut SteadyMonitor, rx: &SteadyRx<ApprovedWidgets>) {
+    use bastion::prelude::*;
 
+
+    let ctx = {
+        monitor.ctx.as_ref().unwrap()
+    };
+    MessageHandler::new(ctx.recv().await.unwrap())
+        .on_question( |expected: ApprovedWidgets, answer_sender| {
+            run!(async {
+                let recevied = monitor.rx(&rx).await.unwrap();
+                answer_sender.reply(if expected == recevied {"ok"} else {"err"}).unwrap();
+               });
+        });
+}
 
 
 
@@ -112,23 +84,23 @@ mod tests {
     use async_std::test;
 
     #[test]
-    async fn test_something() {
+    async fn test_iterate_once() {
 
         crate::steady::tests::initialize_logger();
 
 
         let mut graph = SteadyGraph::new();
         let (tx, rx): (SteadyTx<ApprovedWidgets>, _) = graph.new_channel(8);
-        let mut monitor = graph.new_monitor().await.wrap("test",None);
+        let mut mock_monitor = graph.new_test_monitor("consumer_monitor").await;
 
-        monitor.tx(&tx, ApprovedWidgets {
+        mock_monitor.tx(&tx, ApprovedWidgets {
             original_count: 1,
             approved_count: 2
         }).await;
 
         let mut state = InternalState { last_approval: None };
 
-        let exit= iterate_once(&mut monitor, &mut state, &rx).await;
+        let exit= iterate_once(&mut mock_monitor, &mut state, &rx).await;
 
         assert_eq!(exit, false);
         let widgets = state.last_approval.unwrap();

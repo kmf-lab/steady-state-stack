@@ -2,7 +2,7 @@ use crate::actor::data_generator::WidgetInventory;
 use log::*;
 use crate::steady::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ApprovedWidgets {
     pub original_count: u128,
     pub approved_count: u128
@@ -74,14 +74,14 @@ mod tests {
         let (tx_in, rx_in): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8);
         let (tx_out, rx_out): (SteadyTx<ApprovedWidgets>, _) = graph.new_channel(8);
 
-        let mut monitor = graph.new_monitor().await.wrap("test",None);
+        let mut mock_monitor = graph.new_test_monitor("approval_monitor").await;
 
-        monitor.tx(&tx_in, WidgetInventory {count: 5 }).await;
+        mock_monitor.tx(&tx_in, WidgetInventory {count: 5 }).await;
 
-        let exit= iterate_once(&mut monitor, &rx_in, &tx_out).await;
+        let exit= iterate_once(&mut mock_monitor, &rx_in, &tx_out).await;
         assert_eq!(exit, false);
 
-        let result = monitor.rx(&rx_out).await.unwrap();
+        let result = mock_monitor.rx(&rx_out).await.unwrap();
         assert_eq!(result.original_count, 5);
         assert_eq!(result.approved_count, 2);
     }

@@ -3,7 +3,7 @@ use std::time::Duration;
 use log::*;
 use crate::steady::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SomeExampleRecord {
 }
 
@@ -11,8 +11,10 @@ pub struct SomeExampleRecord {
 struct SomeLocalState {
 }
 
+//example code is not called so we let the compiler know
+#[allow(dead_code)]
 #[cfg(not(test))]
-pub async fn _run(mut monitor: SteadyMonitor
+pub async fn run(mut monitor: SteadyMonitor
                  , tx: SteadyTx<SomeExampleRecord>
                  , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
     let mut state = SomeLocalState{};
@@ -31,8 +33,10 @@ pub async fn _run(mut monitor: SteadyMonitor
 
 }
 
+//example code is not called so we let the compiler know
+#[allow(dead_code)]
 #[cfg(test)]
-pub async fn _run(mut monitor: SteadyMonitor
+pub async fn run(mut monitor: SteadyMonitor
                   , tx: SteadyTx<SomeExampleRecord>
                   , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
     let mut state = SomeLocalState{};
@@ -88,13 +92,18 @@ mod tests {
         crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
-        let (tx, rx): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8);
-        let mut monitor = graph.new_monitor().await.wrap("test",None);
+        let (tx_in, rx_in): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8);
+        let (tx_out, rx_out): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8);
 
+        let mut mock_monitor = graph.new_test_monitor("example_test").await;
+
+        mock_monitor.tx(&tx_in, SomeExampleRecord{}).await;
         let mut state = SomeLocalState{};
-        let result = iterate_once(&mut monitor, &mut state, &tx, &rx).await;
-
-
+        let result = iterate_once(&mut mock_monitor, &mut state, &tx_out, &rx_in).await;
+        assert_eq!(false, result);
+        assert_eq!(true, rx_out.has_message());
+        let msg = mock_monitor.rx(&rx_out).await;
+        assert_eq!(SomeExampleRecord{}, msg.unwrap());
     }
 
 }

@@ -34,15 +34,29 @@ pub async fn run(mut monitor: SteadyMonitor
 pub async fn run(mut monitor: SteadyMonitor
                  , _opt: Args
                  , tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
-    let mut state = InternalState { count: 0 };
-    loop {
-        //single pass of work, do not loop in here
-        if iterate_once(&mut monitor, &mut state, &tx).await {
-            break Ok(());
-        }
-        monitor.relay_stats_periodic(Duration::from_millis(3000)).await;
-    }
+   loop {
+         relay_test(&mut monitor, &tx).await;
+         monitor.relay_stats_periodic(Duration::from_millis(30)).await;
+   }
 }
+#[cfg(test)]
+
+async fn relay_test(monitor: &mut SteadyMonitor, tx: &SteadyTx<WidgetInventory>) {
+    use bastion::run;
+    use bastion::message::MessageHandler;
+
+    let ctx = {
+        monitor.ctx.as_ref().unwrap()
+    };
+    MessageHandler::new(ctx.recv().await.unwrap())
+        .on_question( |message: WidgetInventory, answer_sender| {
+            run!(async {
+                monitor.tx(&tx, message).await;
+                answer_sender.reply("ok").unwrap();
+               });
+        });
+}
+
 
 async fn iterate_once(monitor: &mut SteadyMonitor
                       , state: &mut InternalState
@@ -61,44 +75,20 @@ mod tests {
     use crate::steady::{SteadyGraph, SteadyTx};
 
     #[async_std::test]
-    async fn test_something() {
+    async fn test_iterate_once() {
         crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
         let (tx, rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8);
+        let mut mock_monitor = graph.new_test_monitor("generator_monitor").await;
 
-        let mut monitor = graph.new_monitor().await.wrap("test", None); //TODO: smelly
+        let mut state = InternalState { count: 10 };
 
-        let mut state = InternalState { count: 0 };
-
-        let exit = iterate_once(&mut monitor, &mut state, &tx).await;   //TODO: smelly
+        let exit = iterate_once(&mut mock_monitor, &mut state, &tx).await;
         assert_eq!(exit, false);
 
-
-// TODO: need more testing
-
-        /*
-    #[async_std::test]
-    async fn test_iterate_once() {
-        let (sender, receiver): (Sender<WidgetInventory>, Receiver<WidgetInventory>) = channel();
-
-        let mut state = InternalState { count: 0 };
-        let monitor = MockSteadyMonitor;
-        let tx_widget = MockSteadyTx { sender };
-
-        // Call iterate_once and test its effects
-        iterate_once(&mut monitor, &mut state, &mut tx_widget).await;
-
-        // Check that state.count has been incremented
-        assert_eq!(state.count, 1);
-
-        // Verify that a WidgetInventory was sent
-        match receiver.try_recv() {
-            Ok(widget_inventory) => assert_eq!(widget_inventory.count, 0),
-            Err(e) => panic!("Expected a WidgetInventory, but got an error: {:?}", e),
-        }
-    }
-    //  */
+        let record = mock_monitor.rx(&rx).await.unwrap();
+        assert_eq!(record.count, 10);
     }
 
 }
