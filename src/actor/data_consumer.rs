@@ -16,7 +16,7 @@ async fn iterate_once(monitor: &mut SteadyMonitor
         match monitor.rx(rx_approved_widgets).await {
             Ok(m) => {
                 state.last_approval = Some(m.to_owned());
-                info!("received: {:?}", m.to_owned());
+                trace!("received: {:?}", m.to_owned());
             },
             Err(e) => {
                 state.last_approval = None;

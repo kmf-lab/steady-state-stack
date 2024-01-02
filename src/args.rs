@@ -50,7 +50,7 @@ pub fn to_cli_string(app:&str, arg: &Args) -> String {
 
 #[cfg(test)]
 mod tests {
-    use log::info;
+    use log::*;
     use structopt::StructOpt;
     use crate::args::Args;
 
@@ -66,8 +66,7 @@ mod tests {
             duration: 7
         };
         let to_test = to_cli_string("myapp", orig_args);
-        info!("to_test: {}", to_test);
-        to_test.split_whitespace().for_each(|s| info!("split: {}", s));
+        trace!("to_test: {}", to_test);
         let cli_args = Args::from_iter(to_test.split_whitespace());
         assert_eq!(cli_args, *orig_args);
     }

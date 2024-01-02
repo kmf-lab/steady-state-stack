@@ -10,7 +10,7 @@ use bastion::prelude::*;
 use futures_timer::Delay;
 use crate::args::Args;
 use std::time::Duration;
-use crate::steady::{SteadyGraph, SteadyTx, steady_logging_init};
+use crate::steady::*;
 
 // here are the actors that will be used in the graph.
 // note that the actors are in a separate module and we must use the structs/enums and
@@ -67,8 +67,8 @@ fn build_graph(cli_arg: &Args) {
     //create all the needed channels between actors
 
     //upon construction these are set up to be monitored by the telemetry actor
-    let (generator_tx, generator_rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(38);
-    let (consumer_tx, consumer_rx): (SteadyTx<ApprovedWidgets>, _) = graph.new_channel(38);
+    let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(38);
+    let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(38);
     //the above tx rx objects will be owned by the children closures below then cloned
     //each time we need to startup a new child actor instance. This way when an actor fails
     //we still have the original to clone from.

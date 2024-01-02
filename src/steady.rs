@@ -19,7 +19,7 @@ use crate::steady::telemetry::metrics_collector::DiagramData;
 
 mod telemetry {
     pub mod metrics_collector;
-    pub mod server;
+    pub mod telemetry_server;
 }
 
 // An Actor is a single threaded block of behavior that can send and receive messages
@@ -43,10 +43,8 @@ pub struct SteadyGraph {
 #[derive(Clone,Debug)]
 pub enum Telemetry {
     ActorDef(& 'static str),
-    MessagesSent(Vec<usize>),
-    MessagesReceived(Vec<usize>),
-    MessagesIndexSent(Vec<usize>),
-    MessagesIndexReceived(Vec<usize>),
+    Messages(Vec<usize>,Vec<usize>), //sent, received
+    MessagesIndex(Vec<usize>,Vec<usize>), //sent, received
 }
 
 
@@ -83,18 +81,15 @@ impl SteadyMonitor {
         // we always clear the count so we can confirm this in testing
         // only relay if there is room otherwise we change nothing and roll up locally
         if self.base.telemetry_tx.compute_free_space()>=2 {
+            // sent then received
             let sc = self.sent_count.len();
-            let msg_sent_count = Telemetry::MessagesSent(replace(&mut self.sent_count
-                                                                 , vec![0; sc]));
-
             let rc = self.received_count.len();
-            let msg_received_count = Telemetry::MessagesReceived(replace(&mut self.received_count
-                                                                 , vec![0; rc]));
-
+            let msg_counts = Telemetry::Messages(replace(&mut self.sent_count, vec![0; sc])
+                                                ,replace(&mut self.received_count, vec![0; rc])
+                                                );
             //we only send the result if we have a context, ie a graph we are monitoring
             if self.ctx.is_some() {
-                self.telemetry_tx(msg_sent_count).await;
-                self.telemetry_tx(msg_received_count).await;
+                self.telemetry_tx(msg_counts).await;
                 if self.base.telemetry_tx.compute_free_space() < 2 {
                     error!("Telemetry channel is full for {}. Unable to send more telemetry, capacity is {}. It will be accumulated locally."
                         ,self.name
@@ -166,8 +161,12 @@ impl SteadyMonitor {
             self.sent_index.push(that_id);
 
             if self.ctx.is_some() {
-                self.base.telemetry_tx.sender.send_async(Telemetry::MessagesIndexSent(self.sent_index.clone())).await
-                    .expect("Unable to send telemetry"); //TODO: fix error handling
+                    match self.base.telemetry_tx.sender.send_async(Telemetry::MessagesIndex(self.sent_index.clone()
+                                                                          ,self.received_index.clone()
+                                  )).await {
+                    Ok(_) => {}
+                    Err(e) => {error!("Unable to send telemetry: {}", e);} //TODO: fix error handling
+                }
             }
             idx as usize
         };
@@ -177,6 +176,10 @@ impl SteadyMonitor {
     async fn update_rx_count_internal(self: &mut Self, that_id: usize, that_capacity: usize) {
 //get the index but grow if we must
         let index = self.base.shared_rx_array.read().await[that_id];
+        //TODO: index out of bounds: the len is 7 but the index is 7
+        // this is because shared_rx_array was created before the channels
+        // we need to grow the array if we are out of bounds
+
         let index = if u8::MAX != index {
             index as usize
         } else {
@@ -186,8 +189,12 @@ impl SteadyMonitor {
             self.received_capacity.push(that_capacity);
             self.received_index.push(that_id);
             if self.ctx.is_some() {
-                self.base.telemetry_tx.sender.send_async(Telemetry::MessagesIndexReceived(self.received_index.clone())).await
-                    .expect("Unable to send telemetry"); //TODO: fix error handling
+                match self.base.telemetry_tx.sender.send_async(Telemetry::MessagesIndex(self.sent_index.clone()
+                                                                                        ,self.received_index.clone()
+                )).await {
+                    Ok(_) => {}
+                    Err(e) => {error!("Unable to send telemetry: {}", e);} //TODO: fix error handling
+                }
             }
             idx as usize
         };
@@ -284,50 +291,35 @@ impl SteadyControllerBuilder {
         where I: Fn(SteadyMonitor) -> F + Send + 'static + Clone,
               F: Future<Output = Result<(),()>> + Send + 'static ,
     {
-        #[cfg(test)] {
+        let result = {
             let s = self.clone();
             let init_clone = init.clone();
-            return c.with_callbacks(self.callbacks())
-                .with_exec(move |ctx| {
-                    let init_clone = init_clone.clone();
-                    let s = s.clone();
-                    async move {
-                            let monitor = s.wrap(root_name,Some(ctx));
-                            match init_clone(monitor).await {
-                                Ok(r) => {
-                                    info!("Actor {:?} ", r); //TODO: we may want to exit here
-                                },
-                                Err(e) => {
-                                    error!("{:?}", e);
-                                }
-                            }
-                            Ok(())
-                    }
-                })
-                .with_name(root_name)
-                .with_distributor(Distributor::named(format!("testing-{root_name}")));
-        }
-        #[cfg(not(test))] {
-            let s = self.clone();
-            let init_clone = init.clone();
-            return c.with_callbacks(self.callbacks())
+            c.with_callbacks(self.callbacks())
                 .with_exec(move |ctx| {
                     let init_clone = init_clone.clone();
                     let s = s.clone();
                     async move {
                         let monitor = s.wrap(root_name, Some(ctx));
                         match init_clone(monitor).await {
-                            Ok(r) => {
-                                info!("Actor {:?} ", r); //TODO: we may want to exit here
+                            Ok(_) => {
+                                info!("Actor {:?} finished ", root_name);
                             },
                             Err(e) => {
                                 error!("{:?}", e);
+                                return Err(e);
                             }
                         }
                         Ok(())
                     }
                 })
-                .with_name(root_name);
+                .with_name(root_name)
+        };
+
+        #[cfg(test)] {
+            result.with_distributor(Distributor::named(format!("testing-{root_name}")))
+        }
+        #[cfg(not(test))] {
+            result
         }
     }
 
@@ -413,7 +405,7 @@ impl SteadyGraph {
             let rw_lock = &(&self).shared_rx_array.as_ref().unwrap();
             let len = rw_lock.read().await.len();
 
-            if len != expected_count {
+            if len < expected_count {
                 //this is a feature not a bug but it does require a little more memory to be dynamic
                 trace!("Using more memory than needed. Consider building the channels before the actors.");
                 self.shared_rx_array = Some(Arc::new(RwLock::new(vec![u8::MAX; expected_count].into_boxed_slice())));
@@ -428,7 +420,7 @@ impl SteadyGraph {
             let rw_lock = &(&self).shared_tx_array.as_ref().unwrap();
             let len = rw_lock.read().await.len();
 
-            if len != expected_count {
+            if len < expected_count {
                 //this is a feature not a bug but it does require a little more memory to be dynamic
                 trace!("Using more memory than needed. Consider building the channels before the actors.");
                 self.shared_tx_array = Some(Arc::new(RwLock::new(vec![u8::MAX; expected_count].into_boxed_slice())));
@@ -461,32 +453,44 @@ impl SteadyGraph {
 
     pub(crate) fn init_telemetry(&mut self) {
         let channel_length = 32; //TODO: move out for configuration
-        let (tx, rx): (SteadyTx<DiagramData>, _) = self.new_channel(channel_length);
+
+        //TODO: build early so we have the right length??
+        let (tx, rx) = self.new_channel::<DiagramData>(channel_length);
+
+        //TODO: expand the array for dynamic growth which is what we don now.
 
         //The Troupe is restarted together if one actor fails
         let _ = Bastion::supervisor(|supervisor|
                                 supervisor.with_strategy(SupervisionStrategy::OneForAll)
                                     .children(|children| {
-                                        let all_rx = self.rx_vec.clone();
-                                        self.add_to_graph("collector"
-                                                           , children.with_redundancy(0)
-                                                           , move |monitor|
-                                                            telemetry::metrics_collector::run(monitor
-                                                                          , all_rx.clone()
-                                                                          , tx.clone()
-                                                    )
-                                                )
-
-                                    })
-                                    .children(|children| {
-                                        self.add_to_graph("server"
+                                        self.add_to_graph("telemetry-server"
                                                           , children.with_redundancy(0)
                                                           , move |monitor|
-                                                            telemetry::server::run(monitor
-                                                                          , rx.clone()
+                                                              telemetry::telemetry_server::run(monitor
+                                                                                               , rx.clone()
                                                               )
                                         )
                                     })
+                                    .children(|children| {
+                                        //we create this child last so we can clone the rx_vec
+                                        //and capture all the telemetry actors as well
+                                        run!(
+                                            //special case we MUST build new_monitor BEFORE
+                                            // we clone the rx_vec since we are the consumer
+                                            let mut base = self.new_monitor().await;
+                                            //this is AFTER the new_monitor so we can clone the rx_vec
+                                            let all_rx = self.rx_vec.clone();
+
+                                             base.configure_for_graph("telemetry-collector"
+                                                                 , children.with_redundancy(0)
+                                                                 , move |monitor|
+                                                      telemetry::metrics_collector::run(monitor
+                                                                                      , all_rx.clone()
+                                                                                      , tx.clone()
+                                            ))
+                                        )
+                                    })
+
         ).expect("Telemetry supervisor creation error.");
     }
 }
@@ -580,21 +584,23 @@ pub(crate) fn steady_logging_init(level: &str) -> Result<(), Box<dyn std::error:
     // for all log levels use caution and never write any personal identifiable data
     // to the logs. YOU are always responsible to ensure credentials are never logged.
     ////////////////////////////////////////////////////////////////////
-    trace!("Trace: deep application tracing");
-    //Rationale: "Trace" level is typically used for detailed debugging information, often in a context where the flow through the system is being traced.
+    if log::log_enabled!(log::Level::Trace) || log::log_enabled!(log::Level::Debug)  {
 
-    debug!("Debug: complex part analysis");
-    //Rationale: "Debug" is used for information useful in a debugging context, less detailed than trace, but more so than higher levels.
+        trace!("Trace: deep application tracing");
+        //Rationale: "Trace" level is typically used for detailed debugging information, often in a context where the flow through the system is being traced.
 
-    warn!("Warn: recoverable issue, needs attention");
-    //Rationale: Warnings indicate something unexpected but not necessarily fatal; it's a signal that something should be looked at but isn't an immediate failure.
+        debug!("Debug: complex part analysis");
+        //Rationale: "Debug" is used for information useful in a debugging context, less detailed than trace, but more so than higher levels.
 
-    error!("Error: unexpected issue encountered");
-    //Rationale: Errors signify serious issues, typically ones that are unexpected and may disrupt normal operation but are not application-wide failures.
+        warn!("Warn: recoverable issue, needs attention");
+        //Rationale: Warnings indicate something unexpected but not necessarily fatal; it's a signal that something should be looked at but isn't an immediate failure.
 
-    info!("Info: key event occurred");
-    //Rationale: Info messages are for general, important but not urgent information. They should convey key events or state changes in the application.
+        error!("Error: unexpected issue encountered");
+        //Rationale: Errors signify serious issues, typically ones that are unexpected and may disrupt normal operation but are not application-wide failures.
 
+        info!("Info: key event occurred");
+        //Rationale: Info messages are for general, important but not urgent information. They should convey key events or state changes in the application.
+    }
     Ok(())
 }
 
