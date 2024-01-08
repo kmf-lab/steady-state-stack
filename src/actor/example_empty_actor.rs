@@ -18,6 +18,8 @@ pub async fn run(mut monitor: SteadyMonitor
                  , tx: SteadyTx<SomeExampleRecord>
                  , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
     let mut state = SomeLocalState{};
+    let mut monitor = monitor.init_stats(&[&rx], &[&tx]);
+
     loop {
         //single pass of work, do not loop in here
         if iterate_once( &mut monitor
@@ -40,6 +42,8 @@ pub async fn run(mut monitor: SteadyMonitor
                   , tx: SteadyTx<SomeExampleRecord>
                   , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
     let mut state = SomeLocalState{};
+    let mut monitor = monitor.init_stats(&[&rx], &[&tx]);
+
     loop {
         //single pass of work, do not loop in here
         if iterate_once( &mut monitor
@@ -54,7 +58,7 @@ pub async fn run(mut monitor: SteadyMonitor
     }
 }
 
-async fn iterate_once(monitor: &mut SteadyMonitor
+async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
                         , _state: &mut SomeLocalState
                       , tx: &SteadyTx<SomeExampleRecord>
                       , rx: &SteadyRx<SomeExampleRecord>
@@ -64,7 +68,7 @@ async fn iterate_once(monitor: &mut SteadyMonitor
     while rx.has_message() && tx.has_room() {
         match monitor.rx(rx).await {
             Ok(m) => {
-                monitor.tx(tx, m).await;
+                let _ = monitor.tx(tx, m).await;
             },
             Err(e) => {
                 error!("Unexpected error recv_async: {}",e);
@@ -92,13 +96,15 @@ mod tests {
         crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
-        let (tx_in, rx_in): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8);
-        let (tx_out, rx_out): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8);
+        let (tx_in, rx_in): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8,&[]);
+        let (tx_out, rx_out): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8,&[]);
 
         let mut mock_monitor = graph.new_test_monitor("example_test").await;
 
-        mock_monitor.tx(&tx_in, SomeExampleRecord{}).await;
+        let mut mock_monitor = mock_monitor.init_stats(&[&rx_in], &[&tx_out]);
         let mut state = SomeLocalState{};
+
+        let _ = mock_monitor.tx(&tx_in, SomeExampleRecord{}).await;
         let result = iterate_once(&mut mock_monitor, &mut state, &tx_out, &rx_in).await;
         assert_eq!(false, result);
         assert_eq!(true, rx_out.has_message());

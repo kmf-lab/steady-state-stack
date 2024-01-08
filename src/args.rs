@@ -16,7 +16,7 @@ pub struct Args {
     pub gen_rate_ms: u64,
 
     #[structopt(short = "d", long = "duration", validator = run_duration_validator
-    , default_value = "20")]
+    , default_value = "120")]
     pub duration: u64,
 
 
@@ -25,7 +25,7 @@ pub struct Args {
 
 fn run_duration_validator(val: String) -> Result<(), String> {
     match val.parse::<u64>() {
-        Ok(i) if i <= 120 => Ok(()),
+        Ok(i) if i <= 240 => Ok(()),
         _ => Err(String::from("run must be 120 or less.")),
     }
 }

@@ -1,7 +1,7 @@
 
 use std::time::Duration;
 use crate::args::Args;
-use crate::steady::{SteadyTx, SteadyMonitor};
+use crate::steady::{SteadyTx, SteadyMonitor, LocalMonitor};
 
 #[derive(Clone, Debug)]
 pub struct WidgetInventory {
@@ -16,6 +16,8 @@ struct InternalState {
 pub async fn run(mut monitor: SteadyMonitor
                  , opt: Args
                  , tx: SteadyTx<WidgetInventory> ) -> Result<(),()> {
+    let mut monitor = monitor.init_stats(&[], &[&tx]);
+
     //keep long running state in here while you run
     let mut state = InternalState { count: 0 };
     loop {
@@ -34,35 +36,36 @@ pub async fn run(mut monitor: SteadyMonitor
 pub async fn run(mut monitor: SteadyMonitor
                  , _opt: Args
                  , tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
-   loop {
+    let mut monitor = monitor.init_stats(&[], &[&tx]);
+
+    loop {
          relay_test(&mut monitor, &tx).await;
          monitor.relay_stats_periodic(Duration::from_millis(30)).await;
    }
 }
 #[cfg(test)]
 
-async fn relay_test(monitor: &mut SteadyMonitor, tx: &SteadyTx<WidgetInventory>) {
+async fn relay_test(monitor: &mut LocalMonitor<0, 1>
+                    , tx: &SteadyTx<WidgetInventory>) {
     use bastion::run;
     use bastion::message::MessageHandler;
 
-    let ctx = {
-        monitor.ctx.as_ref().unwrap()
-    };
+    let ctx = monitor.ctx();
     MessageHandler::new(ctx.recv().await.unwrap())
         .on_question( |message: WidgetInventory, answer_sender| {
             run!(async {
-                monitor.tx(&tx, message).await;
+                let _ = monitor.tx(&tx, message).await;
                 answer_sender.reply("ok").unwrap();
                });
         });
 }
 
 
-async fn iterate_once(monitor: &mut SteadyMonitor
+async fn iterate_once<const R: usize,const T: usize>(monitor: &mut LocalMonitor<R, T>
                       , state: &mut InternalState
                       , tx_widget: &SteadyTx<WidgetInventory> ) -> bool
 {
-    monitor.tx(tx_widget, WidgetInventory {count: state.count.clone() }).await;
+    let _ = monitor.tx(tx_widget, WidgetInventory {count: state.count.clone() }).await;
     state.count += 1;
     false
 }
@@ -79,9 +82,9 @@ mod tests {
         crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
-        let (tx, rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8);
-        let mut mock_monitor = graph.new_test_monitor("generator_monitor").await;
-
+        let (tx, rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8,&[]);
+        let mock_monitor = graph.new_test_monitor("generator_monitor").await;
+        let mut mock_monitor = mock_monitor.init_stats(&[], &[&tx]);
         let mut state = InternalState { count: 10 };
 
         let exit = iterate_once(&mut mock_monitor, &mut state, &tx).await;

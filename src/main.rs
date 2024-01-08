@@ -4,7 +4,7 @@ mod steady;
 
 use structopt::*;
 use log;
-use log::{debug};
+use log::*;
 use bastion::Bastion;
 use bastion::prelude::*;
 use futures_timer::Delay;
@@ -67,8 +67,8 @@ fn build_graph(cli_arg: &Args) {
     //create all the needed channels between actors
 
     //upon construction these are set up to be monitored by the telemetry actor
-    let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(38);
-    let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(38);
+    let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(38,&[]);
+    let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(38,&[]);
     //the above tx rx objects will be owned by the children closures below then cloned
     //each time we need to startup a new child actor instance. This way when an actor fails
     //we still have the original to clone from.
@@ -88,6 +88,8 @@ fn build_graph(cli_arg: &Args) {
             .children(|children| {
                     graph.add_to_graph("approval"
                                       , children.with_redundancy(0)
+                        //add vec of of tx and antoher rx here??
+                        //you get them from the monitor object
                         , move |monitor| actor::data_approval::run(monitor
                                                    , generator_rx.clone()
                                                    , consumer_tx.clone())

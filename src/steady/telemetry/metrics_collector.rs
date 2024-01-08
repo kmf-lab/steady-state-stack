@@ -6,98 +6,122 @@ use crate::steady::*;
 #[derive(Clone, Debug)]
 pub enum DiagramData {
 
-    Structure(),
-    Content(),
+    //Structure(),
+    //Content(),
 
 }
 
 struct InternalState {
-    pub node_names: Vec<String>,
+    pub child_group_name: Vec<& 'static str>,
     pub index_received: Vec<Vec<usize>>,
     pub index_sent: Vec<Vec<usize>>,
 
+    total_sent: Vec<usize>,
+    total_received: Vec<usize>,
+    child_group_name_dirty: bool
 }
 
 pub(crate) async fn run(mut monitor: SteadyMonitor
-                        , all_rx: Arc<RwLock<Vec< SteadyRx<Telemetry> >>>
-                        , tx: SteadyTx<DiagramData>
+                        , all_rx: Arc<RwLock<Vec< CollectorDetail >>>
+                        , outgoing: Vec<SteadyTx<DiagramData>>
 ) -> Result<(),()> {
 
+    //TODO: may need custom method for this
+    //let rx_def = all_rx.read().await.as_slice();
+    //monitor.init_stats(rx_def, &outgoing);
+
+
     let mut state = InternalState {
-        node_names: Vec::new(),
+        child_group_name: Vec::new(),
         index_received: Vec::new(),
         index_sent: Vec::new(),
+        total_received: Vec::new(),
+        total_sent: Vec::new(),
+        child_group_name_dirty: false
 
     };
 
-  //  state.data.iter().for_each(|x| {
-  //      info!("data: {:?}", x);
-  //  });
-
-        //TODO: need to send this each time it changes to the server (reqiress common super)
-        monitor.tx(&tx, DiagramData::Structure()).await;
-        //TODO: need to send this once every 20ms to the server.
-        monitor.tx(&tx, DiagramData::Content()).await;
-
+    let outgoing = outgoing.clone();
     loop {
 
         let all = all_rx.read().await;
-        let v:Vec<&SteadyRx<Telemetry>> = all.iter()
-                                             .filter(|x| x.has_message())
-                                             .collect();
-        for tel in v {
-            while tel.has_message() {
+
+        let mut count_down:u8 = 20; //max checks before we break out of the loop
+
+        /*
+        loop {
+
+
+            let v: Vec<& CollectorDetail> = all.iter()
+                .filter(|x| x.telemetry_rx.has_message())
+                .map(|x| &x.telemetry_rx)
+                .collect();
+
+            count_down += 1;
+            if v.is_empty() || 0 == count_down {
+                break;
+            }
+
+            for tel in v {
                 match monitor.rx(&tel).await {
-                    Ok(Telemetry::ActorDef(name)) => {
-                        if tel.id < state.node_names.len() {
-                            state.node_names[tel.id] = name.to_string();
-                        } else {
-                            state.node_names.resize_with(tel.id + 1, String::new);
-                            state.node_names[tel.id] = name.to_string();
-                        }
+
+                    Ok(_) => {
+                        //we do not care about other telemetry
+
                     },
-                    Ok(Telemetry::MessagesIndex(tx_channel_ids, rx_channel_ids)) => {
-                        if tel.id < state.index_received.len() {
-                            state.index_received[tel.id] = rx_channel_ids;
-                        } else {
-                            state.index_received.resize_with(tel.id + 1, Vec::new);
-                            state.index_received[tel.id] = rx_channel_ids;
-                        }
-                        if tel.id < state.index_sent.len() {
-                            state.index_sent[tel.id] = tx_channel_ids;
-                        } else {
-                            state.index_sent.resize_with(tel.id + 1, Vec::new);
-                            state.index_sent[tel.id] = tx_channel_ids;
-                        }
-                    },
+
+                    /*
                     Ok(Telemetry::Messages(tx_channel_values, rx_channel_values)) => {
 
-                        let _s_index = state.index_sent[tel.id]
-                                            .iter()
-                                            .zip(tx_channel_values.iter());
+                        //these are sent very frequently and are the actual data
+                        state.index_sent[tel.id].iter()
+                            .zip(tx_channel_values.iter())
+                            .for_each(|(index, value)| {
+                                if *index >= state.total_sent.len() {
+                                    state.total_sent.resize_with(*index + 1, || 0);
+                                }
+                                state.total_sent[*index] += value;
+                            });
 
-                        let _r_index = state.index_received[tel.id]
-                                            .iter()
-                                            .zip(rx_channel_values.iter());
-
-                        //TODO: for each sum them in the arrays of totals
-
-                        //TODO: when done exit this channel so we can capture the others before returning
-                        //look up the index for this channel_rx_id and store the data
-                        info!("Got MessagesReceived: {:?} use index to store data", rx_channel_values);
+                        state.index_received[tel.id].iter()
+                            .zip(rx_channel_values.iter())
+                            .for_each(|(index, value)| {
+                                if *index >= state.total_received.len() {
+                                    state.total_received.resize_with(*index + 1, || 0);
+                                }
+                                state.total_received[*index] += value;
+                            });
                     },
+                    */
+
                     Err(e) => {
                         error!("Unexpected error recv_async: {}",e);
                     }
                 }
             }
         }
+       //    */
 
-        //TODO: if 10ms have passed send the totals to the next actor
+        if state.child_group_name_dirty {
+            if outgoing.iter().all(|x| x.has_room()) {
+                for tx in outgoing.clone() {
+                    //TODO: reevaulate this data structure, can we get channel related data?
+                    //monitor.tx(&tx, DiagramData::Structure(state.child_group_name)).await;
+                }
+            }
+        }
+        if outgoing.iter().all(|x| x.has_room()) {
+            for tx in outgoing.clone() {
+                //we have a sent count for each sender
+                //we ahve a recieve count for each reciever
 
 
+                //TODO: reevaulate this data structure
+                //monitor.tx(&tx, DiagramData::Content(state.total_sent,state.total_receved)).await;
+            }
+        }
 
-        Delay::new(Duration::from_millis(20)).await;
+        Delay::new(Duration::from_millis(5)).await;
         if false {
             break Ok(());
         }

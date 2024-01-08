@@ -3,10 +3,20 @@ name = "sss"
 version = "0.1.0"
 edition = "2021"
 
+#
+# to test if the code compiles for no_std use this command:
+#  cargo build --target thumbv6m-none-eabi
+#
+
 [dependencies]
 structopt        = "0.3.26"  # CLI parse for type safe arguments
 bastion          = "0.4.5"   # The actor framwork with supervisors to recover from panics
-flume            = "0.11.0"  # lock free bounded channels for communications between actors
+ringbuf          = "0.4.0-rc.1"   # primary, due to no_std static support, for telemetry
+futures_ringbuf  = "0.4.0"   # takes ringbuf and adds async support
+
+#may get deprecated in favor of ringbuf
+flume            = "0.11.0" # lock free bounded channels for communications between actors
+
 log              = "0.4.20"  # common logging traits
 flexi_logger     = "0.27.3"  # default flexable logging implementation
 futures-timer    = "3.0.2"   # for async Delay::new(check_rate).await used places where we poll
@@ -23,7 +33,7 @@ async-std        = { version = "1.12.0", features = ["attributes"] }# for RWLock
 askama = "0.11.0" # for compile time templating
 tide = "0.16.0" # for http server
 tide-websockets = "0.4.0" # for websockets
-
+                  # AsyncWrite and AsyncWriteExt
 petgraph = "0.6.4"  #   for graph data structures
 dot = "0.1.4"       #  for graphviz dot file generation
 
@@ -35,6 +45,10 @@ bytes = { version = "1.5.0", features = [] }   # for concurrent hashmap
 #serde ="0.3.0" # for serialization and deserialization
 #serde_derive = "1.0.64" # for serialization and deserialization
 #serde_json = "1.0.64" # for serialization and deserialization
+
+# for future consideration
+# turbine = { git = "https://github.com/polyfractal/Turbine", branch = "main" }
+# disruptor        = "0.2.0"   # does not integreate with bastion, but is a lock free ring buffer
 
 
 [dev-dependencies]
