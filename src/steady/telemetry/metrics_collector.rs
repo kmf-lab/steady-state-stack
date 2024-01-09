@@ -99,7 +99,7 @@ pub(crate) async fn run<const CONSUMERS: usize>(mut monitor: SteadyMonitor
         //NOTE: target 32ms updates for 30FPS, with a queue of 8 so writes must be no faster than 4ms
         //      we could double this speed if we have real animation needs but that is unlikely
 
-        Delay::new(Duration::from_millis(features::TELEMETRY_PRODUCTION_RATE_MS as u64)).await;
+        Delay::new(Duration::from_millis(steady_feature::TELEMETRY_PRODUCTION_RATE_MS as u64)).await;
         if false {
             break Ok(());
         }

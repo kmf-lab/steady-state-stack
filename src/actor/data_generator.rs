@@ -50,14 +50,15 @@ async fn relay_test(monitor: &mut LocalMonitor<0, 1>
     use bastion::run;
     use bastion::message::MessageHandler;
 
-    let ctx = monitor.ctx();
-    MessageHandler::new(ctx.recv().await.unwrap())
-        .on_question( |message: WidgetInventory, answer_sender| {
-            run!(async {
-                let _ = monitor.tx(&tx, message).await;
-                answer_sender.reply("ok").unwrap();
-               });
-        });
+    if let Some(ctx) = monitor.ctx() {
+        MessageHandler::new(ctx.recv().await.unwrap())
+            .on_question(|message: WidgetInventory, answer_sender| {
+                run!(async {
+                    let _ = monitor.tx(&tx, message).await;
+                    answer_sender.reply("ok").unwrap();
+                   });
+            });
+    }
 }
 
 

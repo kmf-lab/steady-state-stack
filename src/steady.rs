@@ -1,5 +1,5 @@
 
-use std::any::{type_name};
+use std::any::type_name;
 use std::future::Future;
 
 use std::sync::Arc;
@@ -10,17 +10,30 @@ use bastion::{Callbacks, run};
 use bastion::children::Children;
 
 use bastion::prelude::*;
-use bytes::{BufMut, BytesMut};
-use flexi_logger::{Logger, LogSpecification};
 
-use flume::{Receiver, Sender, bounded, RecvError};
+
 
 
 use futures_timer::Delay;
-use log::{debug, error, info, trace, warn};
+use log::{error, info};
+use petgraph::matrix_graph::Zero;
 use crate::steady::telemetry::metrics_collector::DiagramData;
+use crate::steady_feature::steady_feature;
 
+////
+//define our internal channel implementation for use
+////
+use flume;
 
+type InternalSender<T> = flume::Sender<T>;
+type InternalReceiver<T> = flume::Receiver<T>;
+
+#[inline]
+fn build_internal_channel<T>(cap: usize) -> (InternalSender<T>,InternalReceiver<T>)  {
+    flume::bounded(cap)
+}
+
+////
 
 mod telemetry {
     pub mod metrics_collector;
@@ -29,16 +42,6 @@ mod telemetry {
     pub mod telemetry_polling;
 
 }
-
-// An Actor is a single threaded block of behavior that can send and receive messages
-// A Troupe is a group of actors that are all working together to provide a specific service
-// A Guild is a group of Troupes that are all working together on the same problem
-// A Kingdom is a group of Guilds that are all working on the same problem
-// A collection of kingdoms is a world
-
-
-
-
 
 pub struct SteadyGraph {
     monitor_count: usize,
@@ -55,21 +58,15 @@ struct CollectorDetail {
     id: usize
 }
 
-pub struct SteadyMonitor
-{
-    pub name: & 'static str,
-
+pub struct SteadyMonitor {
+    name: & 'static str,
     last_instant: Instant,
-    pub ctx: Option<BastionContext>,
-
-    pub id: usize, //unique identifier for this child group
-
+    ctx: Option<BastionContext>,
+    id: usize, //unique identifier for this child group
     all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>, //these are Arc clones so they are the same for all monitors
-
     //these are Arc clones so they are the same for all monitors
     shared_rx_array: Arc<RwLock<Vec<u8>>>, //common vec marks which are monitored locally
     shared_tx_array: Arc<RwLock<Vec<u8>>>, //common vec marks which are monitored locally
-
 }
 
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
@@ -86,49 +83,62 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> LocalMonitor<RX_LEN, TX_LEN> {
-    pub(crate) fn ctx(&self) -> &BastionContext {
-       self.monitor.ctx.as_ref().unwrap()
+    #[allow(dead_code)]
+    pub(crate) fn ctx(&self) -> Option<&BastionContext> {
+       if let Some(ctx) = &self.monitor.ctx {
+           Some(ctx)
+       } else {
+           None
+       }
     }
 }
 
 impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn relay_stats_all(&mut self) {
 
-        //TODO: check rate and go no faster than frame rate / queue length
-        //TODO: do not send if we only have zeros.
+        // do not run any faster than the framerate of the telemetry can consume
+        //TODO: this is not right needs alignment with the periodic counter and other calls
+        //let run_duration: Duration = Instant::now().duration_since(self.monitor.last_instant);
+        //if run_duration.as_millis() as usize >= steady_feature::MIN_TELEMETRY_CAPTURE_RATE_MS
+        {
 
-        // switch to a new vector and send the old one
-        // we always clear the count so we can confirm this in testing
-        // only relay if there is room otherwise we change nothing and roll up locally
-        if self.telemetry_send_tx.has_room() {
-            //we only send the result if we have a context, ie a graph we are monitoring
-            if self.monitor.ctx.is_some() {
-                self.telemetry_tx_count(self.local_sent_count).await;
-                if !self.telemetry_send_tx.has_room() {
-                    error!("Telemetry channel is full for {}. Unable to send more telemetry, capacity is {}. It will be accumulated locally."
-                        ,self.monitor.name
-                        ,self.telemetry_send_tx.batch_limit);
+            // switch to a new vector and send the old one
+            // we always clear the count so we can confirm this in testing
+            if self.local_sent_count.iter().any(|x| !x.is_zero()) {
+                // only relay if there is room otherwise we change nothing and roll up locally
+                //we need something worth saying before we send
+                if self.telemetry_send_tx.has_room() {
+                    //we only send the result if we have a context, ie a graph we are monitoring
+                    if self.monitor.ctx.is_some() {
+                        self.telemetry_tx_count(self.local_sent_count).await;
+                        if !self.telemetry_send_tx.has_room() {
+                            error!("Telemetry channel is full for {}. Unable to send more telemetry, capacity is {}. It will be accumulated locally."
+                            ,self.monitor.name
+                            ,self.telemetry_send_tx.batch_limit);
+                        }
+                    }
+                    self.local_sent_count.fill(0);
                 }
             }
-            self.local_sent_count.fill(0);
-        }
-        if self.telemetry_send_rx.has_room() {
-            //we only send the result if we have a context, ie a graph we are monitoring
-            if self.monitor.ctx.is_some() {
-                self.telemetry_rx_count(self.local_received_count).await;
-                if !self.telemetry_send_rx.has_room() {
-                    error!("Telemetry channel is full for {}. Unable to send more telemetry, capacity is {}. It will be accumulated locally."
+            if self.local_received_count.iter().any(|x| !x.is_zero()) {
+                if self.telemetry_send_rx.has_room() {
+                    //we only send the result if we have a context, ie a graph we are monitoring
+                    if self.monitor.ctx.is_some() {
+                        self.telemetry_rx_count(self.local_received_count).await;
+                        if !self.telemetry_send_rx.has_room() {
+                            error!("Telemetry channel is full for {}. Unable to send more telemetry, capacity is {}. It will be accumulated locally."
                         ,self.monitor.name
                         ,self.telemetry_send_rx.batch_limit);
+                        }
+                    }
+                    self.local_received_count.fill(0);
                 }
             }
-            self.local_received_count.fill(0);
         }
-
     }
 
     pub async fn relay_stats_periodic(self: &mut Self, duration_rate: Duration) {
-        assert_eq!(true, duration_rate.ge(&Duration::from_millis(features::MIN_TELEMETRY_CAPTURE_RATE_MS as u64)));
+        assert_eq!(true, duration_rate.ge(&Duration::from_millis(steady_feature::MIN_TELEMETRY_CAPTURE_RATE_MS as u64)));
 
         self.relay_stats_all().await;
         let run_duration: Duration = Instant::now().duration_since(self.monitor.last_instant);
@@ -173,7 +183,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             self.relay_stats_all().await;
         }
     }
-    pub async fn rx<T>(self: &mut Self, this: &SteadyRx<T>) -> Result<T, RecvError> {
+    pub async fn rx<T>(self: &mut Self, this: &SteadyRx<T>) -> Result<T,String> {
 
         match self.monitor.rx(this).await {
             Ok(result) => {
@@ -182,18 +192,19 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                     let idx = guard[this.id];
                     drop(guard);
                     if u8::MAX != idx { //only record those turned on (init)
-                        self.local_received_count[idx as usize] += 1;
+                        self.local_received_count[idx as usize] =
+                        self.local_received_count[idx as usize].saturating_add(1);
                     }
                 }
                 Ok(result)
             },
-            Err(e) => {
-                error!("Unexpected error recv_async: {} {}",e, self.monitor.name);
-                Err(e)
+            Err(msg) => {
+                error!("Unexpected error recv_async: {} {}", msg, self.monitor.name);
+                Err(msg)
             }
         }
     }
-    pub async fn tx<T>(self: &mut Self, this: &SteadyTx<T>, a: T) -> Result<(), flume::SendError<T>> {
+    pub async fn tx<T>(self: &mut Self, this: &SteadyTx<T>, a: T) -> Result<(), T> {
        match self.monitor.tx(this, a).await {
            Ok(_) => {
                let guard = self.monitor.shared_tx_array.read().await;
@@ -201,14 +212,14 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                    let idx  = guard[this.id];
                    drop(guard);
                    if u8::MAX != idx { //only record those turned on (init)
-                      self.local_sent_count[idx as usize] += 1;
+                      self.local_sent_count[idx as usize] =
+                      self.local_sent_count[idx as usize].saturating_add(1);
                    }
                }
                return Ok(())
            },
-           Err(e) => {
-               error!("Unexpected error sending: {} {}",e, self.monitor.name);
-               return Err(e);
+           Err(d) => {
+               return Err(d);
            }
        }
 
@@ -223,17 +234,15 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                     let idx  = guard[self.telemetry_send_tx.id];
                     drop(guard);
                     if u8::MAX != idx { //only record those turned on (init)
-                       self.local_sent_count[idx as usize] += 1;
+                        self.local_sent_count[idx as usize]
+                        = self.local_sent_count[idx as usize].saturating_add(1);
                     }
                 }
             },
-            Err(flume::TrySendError::Full(a)) => {
+            Err(a) => {
                 error!("full telemetry channel detected from actor: {} capacity:{:?} value:{:?} "
                 , self.monitor.name, self.telemetry_send_tx.batch_limit,a);
                 //never block instead just return what we could not send
-            },
-            Err(e) => {
-                error!("Unexpected error try sending lost telemetry: {} {}",e, self.monitor.name);
             }
         };
     }
@@ -250,13 +259,10 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                     }
                 }
             },
-            Err(flume::TrySendError::Full(a)) => {
+            Err(a) => {
                 error!("full telemetry channel detected from actor: {} capacity:{:?} value:{:?} "
                 , self.monitor.name, self.telemetry_send_rx.batch_limit,a);
                 //never block instead just return what we could not send
-            },
-            Err(e) => {
-                error!("Unexpected error try sending lost telemetry: {} {}",e, self.monitor.name);
             }
         };
     }
@@ -297,16 +303,16 @@ impl SteadyMonitor {
 
 
         let (telemetry_send_tx, telemetry_take_tx): (SteadyTx<[usize; TX_LEN]>, SteadyRx<[usize; TX_LEN]>)
-                                                       =  build_channel(features::CHANNEL_LENGTH_TO_COLLECTOR
-                                                          , &["steady-telemetry"]
-                                                          , self.shared_tx_array.clone()
-                                                          , self.shared_rx_array.clone());
+                                                       =  build_channel(steady_feature::CHANNEL_LENGTH_TO_COLLECTOR
+                                                                        , &["steady-telemetry"]
+                                                                        , self.shared_tx_array.clone()
+                                                                        , self.shared_rx_array.clone());
 
         let (telemetry_send_rx, telemetry_take_rx): (SteadyTx<[usize; RX_LEN]>, SteadyRx<[usize; RX_LEN]>)
-                                                       =  build_channel(features::CHANNEL_LENGTH_TO_COLLECTOR
-                                                         , &["steady-telemetry"]
-                                                         , self.shared_tx_array.clone()
-                                                         , self.shared_rx_array.clone());
+                                                       =  build_channel(steady_feature::CHANNEL_LENGTH_TO_COLLECTOR
+                                                                        , &["steady-telemetry"]
+                                                                        , self.shared_tx_array.clone()
+                                                                        , self.shared_rx_array.clone());
 
         run!(async{
                 self.all_telemetry_rx.write().await.push(
@@ -340,24 +346,20 @@ impl SteadyMonitor {
 
     //TODO: wrap these methos to add telemetry after trasnsmit..
 
-    pub async fn rx<T>(self: &mut Self, this: &SteadyRx<T>) -> Result<T, flume::RecvError> {
-        this.recv_async().await
+    pub async fn rx<T>(self: &mut Self, this: &SteadyRx<T>) -> Result<T,String> {
+        this.take_async().await
     }
 
 
-    pub async fn tx<T>(self: &mut Self, this: &SteadyTx<T>, a: T) -> Result<(), flume::SendError<T>> {
+    pub async fn tx<T>(self: &mut Self, this: &SteadyTx<T>, a: T) -> Result<(), T> {
         //we try to send but if the channel is full we log that fact
         match this.try_send(a) {
-            Ok(_) => {return Ok(());},
-            Err(flume::TrySendError::Full(a)) => {
+            Ok(_) => {Ok(())},
+            Err(a) => {
                 error!("full channel detected data_approval tx  actor: {} capacity:{:?} type:{} "
                 , self.name, this.batch_limit, type_name::<T>());
                 //here we will await until there is room in the channel
                 this.send_async(a).await
-            },
-            Err(flume::TrySendError::Disconnected(d)) => {
-                error!("Unexpected disconnect error try sending: {}", self.name);
-                this.send_async(d).await
             }
         }
     }
@@ -390,17 +392,6 @@ pub(crate) fn callbacks() -> Callbacks {
 }
 
 
-async fn new_monitor_internal (graph: &mut SteadyGraph, name: & 'static str, ctx: Option<BastionContext>) -> SteadyMonitor //<'graph>
-{
-    let id = graph.monitor_count;
-    graph.monitor_count += 1;
-
-    build_new_monitor(name, ctx, id
-                      , graph.shared_rx_array.clone()
-                      , graph.shared_tx_array.clone()
-                      , graph.all_telemetry_rx.clone()).await
-}
-
 
 
 
@@ -428,17 +419,24 @@ async fn build_new_monitor(name: & 'static str, ctx: Option<BastionContext>
 impl SteadyGraph  {
     pub async fn new_test_monitor(self: &mut Self, name: & 'static str ) -> SteadyMonitor
     {
-        new_monitor_internal(self, name, None).await
+        let id = self.monitor_count;
+        self.monitor_count += 1;
+
+        build_new_monitor(name, None, id
+                          , self.shared_rx_array.clone()
+                          , self.shared_tx_array.clone()
+                          , self.all_telemetry_rx.clone()).await
+
     }
 }
 
 
-fn build_channel<T>(cap: usize, labels: & 'static [& 'static str]
+
+fn build_channel<T>(
+                     cap: usize, labels: & 'static [& 'static str]
                     , sta: Arc<RwLock<Vec<u8>>>
                     , sra: Arc<RwLock<Vec<u8>>>) -> (SteadyTx<T>, SteadyRx<T>) {
-
-    let (tx, rx): (Sender<T>, Receiver<T>) = bounded(cap);
-
+    let (tx, rx): (InternalSender<T>,InternalReceiver<T>) = build_internal_channel(cap);
     run!(async{
             let (stx,srx) = (SteadyTx::new(tx, sta.read().await.len(), labels).await
                            , SteadyRx::new(rx, sra.read().await.len(), labels).await);
@@ -567,9 +565,9 @@ impl SteadyGraph {
 
             let mut outgoing = Vec::new();
 
-            let supervisor = if features::TELEMETRY_LOGGING {
-                let (tx, rx) = self.new_channel::<DiagramData>(features::CHANNEL_LENGTH_TO_FEATURE
-                                                               ,&["steady-telemetry"]);
+            let supervisor = if steady_feature::TELEMETRY_LOGGING {
+                let (tx, rx) = self.new_channel::<DiagramData>(steady_feature::CHANNEL_LENGTH_TO_FEATURE
+                                                               , &["steady-telemetry"]);
                 outgoing.push(tx);
                 supervisor.children(|children| {
                     self.add_to_graph("telemetry-logging"
@@ -584,9 +582,9 @@ impl SteadyGraph {
                 supervisor
             };
 
-            let supervisor = if features::TELEMETRY_STREAMING {
-                let (tx, rx) = self.new_channel::<DiagramData>(features::CHANNEL_LENGTH_TO_FEATURE
-                                                               ,&["steady-telemetry"]);
+            let supervisor = if steady_feature::TELEMETRY_STREAMING {
+                let (tx, rx) = self.new_channel::<DiagramData>(steady_feature::CHANNEL_LENGTH_TO_FEATURE
+                                                               , &["steady-telemetry"]);
                 outgoing.push(tx);
                 supervisor.children(|children| {
                     self.add_to_graph("telemetry-streaming"
@@ -601,9 +599,9 @@ impl SteadyGraph {
                 supervisor
             };
 
-            let supervisor = if features::TELEMETRY_POLLING {
-                let (tx, rx) = self.new_channel::<DiagramData>(features::CHANNEL_LENGTH_TO_FEATURE
-                                                               ,&["steady-telemetry"]);
+            let supervisor = if steady_feature::TELEMETRY_POLLING {
+                let (tx, rx) = self.new_channel::<DiagramData>(steady_feature::CHANNEL_LENGTH_TO_FEATURE
+                                                               , &["steady-telemetry"]);
                 outgoing.push(tx);
                 supervisor.children(|children| {
                     self.add_to_graph("telemetry-polling"
@@ -630,7 +628,7 @@ impl SteadyGraph {
                                                                  , children.with_redundancy(0)
                                                                  , move |monitor| {
 
-                                                        let tel_tx_array: [SteadyTx<DiagramData>; features::FEATURE_LEN]
+                                                        let tel_tx_array: [SteadyTx<DiagramData>; steady_feature::FEATURE_LEN]
                                                                            = outgoing.clone().try_into()
                                                                              .unwrap_or_else(|_| panic!("Incorrect length"));
 
@@ -652,51 +650,12 @@ impl SteadyGraph {
     }
 }
 
-pub mod features {
-    #[cfg(feature = "telemetry_logging")]
-    pub const TELEMETRY_LOGGING: bool = true;
-    #[cfg(not(feature = "telemetry_logging"))]
-    pub const TELEMETRY_LOGGING: bool = false;
-
-    #[cfg(feature = "telemetry_streaming")]
-    pub const TELEMETRY_STREAMING: bool = true;
-    #[cfg(not(feature = "telemetry_streaming"))]
-    pub const TELEMETRY_STREAMING: bool = false;
-
-    #[cfg(feature = "telemetry_polling")]
-    pub const TELEMETRY_POLLING: bool = true;
-    #[cfg(not(feature = "telemetry_polling"))]
-    pub const TELEMETRY_POLLING: bool = false;
-
-    #[cfg(feature = "telemetry_history")]
-    pub const TELEMETRY_HISTORY: bool = true;
-    #[cfg(not(feature = "telemetry_history"))]
-    pub const TELEMETRY_HISTORY: bool = false;
-
-    // Public constant representing the total length
-    // Convert bools to usize and sum them up
-    pub const FEATURE_LEN: usize =  (TELEMETRY_LOGGING as usize)
-                                  + (TELEMETRY_STREAMING as usize)
-                                  + (TELEMETRY_POLLING as usize)
-                                  + (TELEMETRY_HISTORY as usize);
-
-    pub const CHANNEL_LENGTH_TO_FEATURE:usize = 4; //allows features to fall behind with some latency
-    pub const CHANNEL_LENGTH_TO_COLLECTOR:usize = 8; //larger values take up memory but allow faster capture rates
-    pub const TELEMETRY_PRODUCTION_RATE_MS:usize = 32; //values faster than 32 can not be seen my normal humans
-    pub const MIN_TELEMETRY_CAPTURE_RATE_MS:usize = TELEMETRY_PRODUCTION_RATE_MS/CHANNEL_LENGTH_TO_COLLECTOR;
-
-
-
-}
-
-
 
 ////////////////////////////////////////////////////////////////
 
 pub trait TxDef {
     fn id(&self) -> usize;
     fn bash_limit(&self) -> usize;
-
 
 }
 
@@ -709,45 +668,6 @@ impl <T> TxDef for SteadyTx<T> {
     }
 
 }
-
-#[derive(Clone, Debug)]
-pub struct SteadyTx<T> {
-    pub id: usize,
-    batch_limit: usize,
-    tx: Arc<Sender<T>>,
-    pub label: &'static [& 'static str],
-
-}
-
-
-impl<T> SteadyTx<T> {
-    async fn new(sender: Sender<T>, id: usize, label: &'static [& 'static str]) -> Self {
-        SteadyTx {id, batch_limit: sender.capacity().unwrap_or(usize::MAX)
-                  , tx: Arc::new(sender), label }
-    }
-
-    #[inline]
-    pub fn try_send(&self, msg: T) -> Result<(), flume::TrySendError<T>> {
-        self.tx.try_send(msg)
-    }
-
-    #[inline]
-    pub async fn send_async(&self, msg: T) -> Result<(), flume::SendError<T>> {
-        self.tx.send_async(msg).await
-    }
-
-    #[inline]
-    pub fn is_full(&self) -> bool {
-        self.tx.is_full()
-    }
-
-    #[allow(dead_code)]
-    pub fn has_room(&self) -> bool {
-        !self.is_full()
-    }
-
-}
-
 
 pub trait RxDef {
     fn id(&self) -> usize;
@@ -804,26 +724,26 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                 let mut count = 0;
 
                 if self.read_rx.has_message() {
-                    match self.read_rx.recv_async().await {
+                    match self.read_rx.take_async().await {
                         Ok(a) => {
                             self.map_rx.iter().zip(a.iter())
                                 .for_each(|(idx, val)| take_target[*idx] += *val as u128);
                         },
-                        Err(e) => {
-                            error!("Unexpected error recv_async: {}",e);
+                        Err(msg) => {
+                            error!("Unexpected error recv_async: {}",msg);
                         }
                     }
                 } else {
                     count += 1;
                 }
                 if self.read_tx.has_message() {
-                    match self.read_tx.recv_async().await {
+                    match self.read_tx.take_async().await {
                         Ok(a) => {
                             self.map_tx.iter().zip(a.iter())
                                 .for_each(|(idx, val)| send_target[*idx] += *val as u128);
                         },
-                        Err(e) => {
-                            error!("Unexpected error recv_async: {}",e);
+                        Err(msg) => {
+                            error!("Unexpected error recv_async: {}",msg);
                         }
                     }
                 } else {
@@ -851,29 +771,54 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
     read_tx: SteadyRx<[usize; TXL]>,
     map_tx: [usize; TXL],
-
     read_rx: SteadyRx<[usize; RXL]>,
     map_rx: [usize; RXL],
-
 }
 
 #[derive(Clone,Debug)]
 pub struct SteadyRx<T> {
-    pub id: usize,
+    id: usize,
     batch_limit: usize,
-    rx: Arc<Receiver<T>>,
-    pub label: &'static [& 'static str],
+    rx: Arc<InternalReceiver<T>>,
+    label: &'static [& 'static str],
 }
+
+#[derive(Clone, Debug)]
+pub struct SteadyTx<T> {
+    id: usize,
+    batch_limit: usize,
+    tx: Arc<InternalSender<T>>,
+    label: &'static [& 'static str],
+
+}
+
+
 impl<T> SteadyRx<T> {
-    async fn new(receiver: Receiver<T>, id: usize, label: &'static [& 'static str]) -> Self {
+    async fn new(receiver: InternalReceiver<T>, id: usize, label: &'static [& 'static str]) -> Self {
         SteadyRx { id, batch_limit: receiver.capacity().unwrap_or(usize::MAX)
                            , rx: Arc::new(receiver), label
         }
     }
 
     #[inline]
-    pub async fn recv_async(&self) -> Result<T, RecvError> {
-        self.rx.recv_async().await
+    pub async fn take_async(&self) -> Result<T,String> {
+         match self.rx.recv_async().await {
+            Ok(a) => {Ok(a)}
+            Err(e) => {Err(e.to_string())}
+        }
+    }
+
+    #[inline]
+    pub async fn take_now(&self) -> Option<T> {
+        match self.rx.recv() {
+            Ok(a) => {Some(a)}
+            Err(_) => {None}
+        }
+    }
+
+    #[inline]
+    pub fn try_peek(&self) -> Option<&T> {
+        todo!();
     }
 
     //this can and should be in-line when possible, hint to compiler
@@ -887,124 +832,41 @@ impl<T> SteadyRx<T> {
         !self.is_empty()
     }
 }
-
-/// Initializes logging for the application using the provided log level.
-///
-/// This function sets up the logger based on the specified log level, which can be adjusted through
-/// command line arguments or environment variables. It's designed to be used both in the main
-/// application and in test cases. The function demonstrates the use of traditional Rust error
-/// propagation with the `?` operator. Note that actors do not initialize logging as it is done
-/// for them in `main` before they are started.
-///
-/// # Parameters
-/// * `level`: A string slice (`&str`) that specifies the desired log level. The log level can be
-///            dynamically set via environment variables or directly passed as an argument.
-///
-/// # Returns
-/// This function returns a `Result<(), Box<dyn std::error::Error>>`. On successful initialization
-/// of the logger, it returns `Ok(())`. If an error occurs during initialization, it returns an
-/// `Err` with the error wrapped in a `Box<dyn std::error::Error>`.
-///
-/// # Errors
-/// This function will return an error if the logger initialization fails for any reason, such as
-/// an invalid log level string or issues with logger setup.
-///
-/// # Security Considerations
-/// Be cautious to never log any personally identifiable information (PII) or credentials. It is
-/// the responsibility of the developer to ensure that sensitive data is not exposed in the logs.
-///
-/// # Examples
-/// ```
-/// let log_level = "info"; // Typically obtained from command line arguments or env vars
-/// if let Err(e) = init_logging(log_level) {
-///     eprintln!("Logger initialization failed: {:?}", e);
-///     // Handle error appropriately (e.g., exit the program or fallback to a default configuration)
-/// }
-/// ```
-pub(crate) fn steady_logging_init(level: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let log_spec = LogSpecification::env_or_parse(level)?;
-
-    Logger::with(log_spec)
-        .format(flexi_logger::colored_with_thread)
-        .start()?;
-
-    /////////////////////////////////////////////////////////////////////
-    // for all log levels use caution and never write any personal identifiable data
-    // to the logs. YOU are always responsible to ensure credentials are never logged.
-    ////////////////////////////////////////////////////////////////////
-    if log::log_enabled!(log::Level::Trace) || log::log_enabled!(log::Level::Debug)  {
-
-        trace!("Trace: deep application tracing");
-        //Rationale: "Trace" level is typically used for detailed debugging information, often in a context where the flow through the system is being traced.
-
-        debug!("Debug: complex part analysis");
-        //Rationale: "Debug" is used for information useful in a debugging context, less detailed than trace, but more so than higher levels.
-
-        warn!("Warn: recoverable issue, needs attention");
-        //Rationale: Warnings indicate something unexpected but not necessarily fatal; it's a signal that something should be looked at but isn't an immediate failure.
-
-        error!("Error: unexpected issue encountered");
-        //Rationale: Errors signify serious issues, typically ones that are unexpected and may disrupt normal operation but are not application-wide failures.
-
-        info!("Info: key event occurred");
-        //Rationale: Info messages are for general, important but not urgent information. They should convey key events or state changes in the application.
-    }
-    Ok(())
-}
-////////////////////////////////////////////
-////////////////////////////////////////////
-
-
-struct Node<'a> {
-    id: & 'a String,
-    color: & 'static str,
-    pen_width: & 'static str,
-    label: String, //label may also have (n) for replicas
-}
-
-struct Edge<'a> {
-    from: & 'a String,
-    to: & 'a String,
-    color: & 'static str,
-    pen_width: & 'static str,
-    label: String,
-}
-
-fn build_dot(nodes: Vec<Node>, edges: Vec<Edge>, rankdir: &str, dot_graph: &mut BytesMut) {
-    dot_graph.put_slice(b"digraph G {\nrankdir=");
-    dot_graph.put_slice(rankdir.as_bytes());
-    dot_graph.put_slice(b";\n");
-
-    for node in nodes {
-        dot_graph.put_slice(b"\"");
-        dot_graph.put_slice(node.id.as_bytes());
-        dot_graph.put_slice(b"\" [label=\"");
-        dot_graph.put_slice(node.label.as_bytes());
-        dot_graph.put_slice(b"\", color=");
-        dot_graph.put_slice(node.color.as_bytes());
-        dot_graph.put_slice(b", penwidth=");
-        dot_graph.put_slice(node.pen_width.as_bytes());
-        dot_graph.put_slice(b"];\n");
+impl<T> SteadyTx<T> {
+    async fn new(sender: InternalSender<T>, id: usize, label: &'static [& 'static str]) -> Self {
+        SteadyTx {id, batch_limit: sender.capacity().unwrap_or(usize::MAX)
+            , tx: Arc::new(sender), label }
     }
 
-    for edge in edges {
-        dot_graph.put_slice(b"\"");
-        dot_graph.put_slice(edge.from.as_bytes());
-        dot_graph.put_slice(b"\" -> \"");
-        dot_graph.put_slice(edge.to.as_bytes());
-        dot_graph.put_slice(b"\" [label=\"");
-        dot_graph.put_slice(edge.label.as_bytes());
-        dot_graph.put_slice(b"\", color=");
-        dot_graph.put_slice(edge.color.as_bytes());
-        dot_graph.put_slice(b", penwidth=");
-        dot_graph.put_slice(edge.pen_width.as_bytes());
-        dot_graph.put_slice(b"];\n");
+
+
+    #[inline]
+    pub fn try_send(&self, msg: T) -> Result<(), T> {
+        match self.tx.try_send(msg) {
+            Ok(_) => {Ok(())}
+            Err(m) => {Err(m.into_inner())}
+        }
     }
 
-    dot_graph.put_slice(b"}\n");
+    #[inline]
+    pub async fn send_async(&self, msg: T) -> Result<(), T> {
+        match self.tx.send_async(msg).await {
+            Ok(_) => {Ok(())}
+            Err(m) => {Err(m.into_inner())}
+        }
+    }
+
+    #[inline]
+    pub fn is_full(&self) -> bool {
+        self.tx.is_full()
+    }
+
+    #[allow(dead_code)]
+    pub fn has_room(&self) -> bool {
+        !self.is_full()
+    }
+
 }
-
-
 ////////////////////////////////////////////
 ////////////////////////////////////////////
 
@@ -1014,7 +876,8 @@ pub(crate) mod tests {
     use async_std::test;
     use lazy_static::lazy_static;
     use std::sync::Once;
-    use ringbuf::producer::Producer;
+    use crate::steady_util::steady_util;
+
 
     lazy_static! {
             static ref INIT: Once = Once::new();
@@ -1022,7 +885,7 @@ pub(crate) mod tests {
 
     pub(crate) fn initialize_logger() {
         INIT.call_once(|| {
-            if let Err(e) = steady_logging_init("info") {
+            if let Err(e) = steady_util::steady_logging_init("info") {
                 print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
             }
         });
@@ -1036,7 +899,7 @@ pub(crate) mod tests {
         let mut graph = SteadyGraph::new();
         let (tx_string, rx_string): (SteadyTx<String>, _) = graph.new_channel(8,&[]);
 
-        let monitor = new_monitor_internal(&mut graph,"test", None).await;
+        let monitor = graph.new_test_monitor("test").await;
         let mut monitor = monitor.init_stats(&[&rx_string], &[&tx_string]);
 
         let threshold = 5;
@@ -1064,33 +927,6 @@ pub(crate) mod tests {
 
     }
 
-#[test]
-async fn lossless_buffer_test() {
-
-    use ringbuf::{SharedRb};
-    use ringbuf::consumer::Consumer;
-    use ringbuf::producer::Producer;
-    use ringbuf::storage::Static;
-    use ringbuf::traits::{SplitRef};
-
-    const RB_SIZE: usize = 1;
-    let mut rb = SharedRb::<Static<i32, RB_SIZE>>::default();
-    let (mut prod, mut cons) = rb.split_ref();
-
-    assert_eq!(prod.try_push(123), Ok(()));
-    assert_eq!(prod.try_push(321), Err(321));
-
-    //here we are borrowing the next read
-    let expected: i32 = 123;
-    assert_eq!(cons.first(), Some(&expected));
-    //we can do the processing here
-    //then pop the element we just processed.
-    assert_eq!(cons.try_pop(), Some(123));
-    assert_eq!(cons.try_pop(), None);
-
-
-
-}
 
 
     #[test]
@@ -1102,7 +938,7 @@ async fn lossless_buffer_test() {
         let mut graph = SteadyGraph::new();
         let (tx_string, rx_string): (SteadyTx<String>, _) = graph.new_channel(5,&[]);
 
-        let monitor = new_monitor_internal(&mut graph, "test", None).await;
+        let monitor = graph.new_test_monitor("test").await;
         let mut monitor = monitor.init_stats(&[&rx_string], &[&tx_string]);
 
         let threshold = 5;
@@ -1132,5 +968,3 @@ async fn lossless_buffer_test() {
 
     }
 }
-
-/////////////////////////////////

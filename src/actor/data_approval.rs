@@ -62,8 +62,8 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
                 approved_count: m.count/2
             }).await;
         },
-        Err(e) => {
-            error!("Unexpected error recv_async: {}",e);
+        Err(msg) => {
+            error!("Unexpected error recv_async: {}",msg);
         }
     }
     false

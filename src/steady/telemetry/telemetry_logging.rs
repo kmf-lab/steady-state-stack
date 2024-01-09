@@ -1,7 +1,7 @@
 
-use crate::steady::{SteadyMonitor, SteadyRx, Node, Edge, build_dot};
+use crate::steady::{SteadyMonitor, SteadyRx};
 use crate::steady::telemetry::metrics_collector::DiagramData;
-
+use crate::steady_util::steady_util;
 use bytes::{ BytesMut};
 
 
@@ -37,10 +37,10 @@ pub(crate) async fn run(mut monitor: SteadyMonitor, rx: SteadyRx<DiagramData>) -
 }
 
 //   let mut dot_graph = BytesMut::with_capacity(1024); // Adjust capacity as needed
-fn assemble_dot(nodes: Vec<Node>, edges: Vec<Edge>, top_down: bool, dot_graph: &mut BytesMut) -> BytesMut {
+fn assemble_dot(nodes: Vec<steady_util::Node>, edges: Vec<steady_util::Edge>, top_down: bool, dot_graph: &mut BytesMut) -> BytesMut {
     dot_graph.clear(); // Clear the buffer for reuse
     let rankdir = if top_down { "TB" } else { "LR" };
-    build_dot(nodes, edges, rankdir, dot_graph);
+    steady_util::build_dot(nodes, edges, rankdir, dot_graph);
 
     // Use split_to to get the whole content as Bytes, without cloning
     dot_graph.split_to(dot_graph.len())
@@ -48,8 +48,8 @@ fn assemble_dot(nodes: Vec<Node>, edges: Vec<Edge>, top_down: bool, dot_graph: &
 
 
 struct LocalState<'a> {
-    nodes: Vec<Node<'a>>,
-    edges: Vec<Edge<'a>>,
+    nodes: Vec<steady_util::Node<'a>>,
+    edges: Vec<steady_util::Edge<'a>>,
 }
 
 

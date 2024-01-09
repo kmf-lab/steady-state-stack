@@ -1,6 +1,8 @@
 mod args;
 #[macro_use]
 mod steady;
+mod steady_feature;
+mod steady_util;
 
 use structopt::*;
 use log;
@@ -11,6 +13,7 @@ use futures_timer::Delay;
 use crate::args::Args;
 use std::time::Duration;
 use crate::steady::*;
+use crate::steady_util::steady_util::steady_logging_init;
 
 // here are the actors that will be used in the graph.
 // note that the actors are in a separate module and we must use the structs/enums and

@@ -55,9 +55,9 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 0>
                 state.last_approval = Some(m.to_owned());
                 trace!("received: {:?}", m.to_owned());
             },
-            Err(e) => {
+            Err(msg) => {
                 state.last_approval = None;
-                error!("Unexpected error recv_async: {}",e);
+                error!("Unexpected error recv_async: {}",msg);
             }
         }
         //based on the channel capacity this will send batched updates so most calls do nothing.
@@ -74,14 +74,15 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 0>
 async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &SteadyRx<ApprovedWidgets>) {
     use bastion::prelude::*;
 
-    let ctx = monitor.ctx();
-    MessageHandler::new(ctx.recv().await.unwrap())
-        .on_question( |expected: ApprovedWidgets, answer_sender| {
-            run!(async {
+    if let Some(ctx) = monitor.ctx() {
+        MessageHandler::new(ctx.recv().await.unwrap())
+            .on_question(|expected: ApprovedWidgets, answer_sender| {
+                run!(async {
                 let recevied = monitor.rx(&rx).await.unwrap();
                 answer_sender.reply(if expected == recevied {"ok"} else {"err"}).unwrap();
                });
-        });
+            });
+    }
 }
 
 

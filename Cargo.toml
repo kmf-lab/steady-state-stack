@@ -18,7 +18,7 @@ telemetry_history = []  # poll socket for a large full history data block
 structopt        = "0.3.26"  # CLI parse for type safe arguments
 bastion          = "0.4.5"   # The actor framwork with supervisors to recover from panics
 ringbuf          = "0.4.0-rc.1"   # primary, due to no_std static support, for telemetry
-futures_ringbuf  = "0.4.0"   # takes ringbuf and adds async support
+async-ringbuf    = "0.2.0-rc.4"
 
 #may get deprecated in favor of ringbuf
 flume            = "0.11.0" # lock free bounded channels for communications between actors
