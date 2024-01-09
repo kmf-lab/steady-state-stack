@@ -8,7 +8,7 @@ struct InternalState {
 
 
 #[cfg(not(test))]
-pub async fn run(mut monitor: SteadyMonitor
+pub async fn run(monitor: SteadyMonitor
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
     use std::time::Duration;
     let mut monitor =  monitor.init_stats(&[&rx], &[]);
@@ -27,7 +27,7 @@ pub async fn run(mut monitor: SteadyMonitor
 }
 
 #[cfg(test)]
-pub async fn run(mut monitor: SteadyMonitor
+pub async fn run(monitor: SteadyMonitor
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
     let mut monitor = monitor.init_stats(&[&rx], &[]);
 

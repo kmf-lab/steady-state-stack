@@ -14,7 +14,7 @@ struct SomeLocalState {
 //example code is not called so we let the compiler know
 #[allow(dead_code)]
 #[cfg(not(test))]
-pub async fn run(mut monitor: SteadyMonitor
+pub async fn run(monitor: SteadyMonitor
                  , tx: SteadyTx<SomeExampleRecord>
                  , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
     let mut state = SomeLocalState{};
@@ -38,7 +38,7 @@ pub async fn run(mut monitor: SteadyMonitor
 //example code is not called so we let the compiler know
 #[allow(dead_code)]
 #[cfg(test)]
-pub async fn run(mut monitor: SteadyMonitor
+pub async fn run(monitor: SteadyMonitor
                   , tx: SteadyTx<SomeExampleRecord>
                   , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
     let mut state = SomeLocalState{};
@@ -99,7 +99,7 @@ mod tests {
         let (tx_in, rx_in): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8,&[]);
         let (tx_out, rx_out): (SteadyTx<SomeExampleRecord>, _) = graph.new_channel(8,&[]);
 
-        let mut mock_monitor = graph.new_test_monitor("example_test").await;
+        let mock_monitor = graph.new_test_monitor("example_test").await;
 
         let mut mock_monitor = mock_monitor.init_stats(&[&rx_in], &[&tx_out]);
         let mut state = SomeLocalState{};

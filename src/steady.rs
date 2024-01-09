@@ -16,15 +16,11 @@ use flexi_logger::{Logger, LogSpecification};
 use flume::{Receiver, Sender, bounded, RecvError};
 
 
-use futures::AsyncReadExt;
 use futures_timer::Delay;
 use log::{debug, error, info, trace, warn};
 use crate::steady::telemetry::metrics_collector::DiagramData;
 
 
-use ringbuf::{CachingCons, CachingProd, SharedRb, StaticRb};
-use ringbuf::storage::Static;
-use ringbuf::traits::SplitRef;
 
 mod telemetry {
     pub mod metrics_collector;
@@ -96,35 +92,44 @@ impl<const RX_LEN: usize, const TX_LEN: usize> LocalMonitor<RX_LEN, TX_LEN> {
 }
 
 impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
-    pub async fn relay_stats_all(self: &Self) {
+    pub async fn relay_stats_all(&mut self) {
+
+        //TODO: check rate and go no faster than frame rate / queue length
+        //TODO: do not send if we only have zeros.
+
         // switch to a new vector and send the old one
         // we always clear the count so we can confirm this in testing
         // only relay if there is room otherwise we change nothing and roll up locally
         if self.telemetry_send_tx.has_room() {
-
             //we only send the result if we have a context, ie a graph we are monitoring
             if self.monitor.ctx.is_some() {
-                /*
-                                for elem in self.local_sent_count.iter_mut() {
-                                    self.tx(&self.telemetry_tx, Telemetry::RelayTxStats(*elem, false)).await;
-                                    *elem = 0;
-                                }
-
-                                for elem in self.local_received_count.iter_mut() {
-                                    self.tx(&self.telemetry_tx, Telemetry::RelayRxStats(*elem, false)).await;
-                                    *elem = 0;
-                                }
-                */
+                self.telemetry_tx_count(self.local_sent_count).await;
                 if !self.telemetry_send_tx.has_room() {
                     error!("Telemetry channel is full for {}. Unable to send more telemetry, capacity is {}. It will be accumulated locally."
                         ,self.monitor.name
                         ,self.telemetry_send_tx.batch_limit);
                 }
             }
+            self.local_sent_count.fill(0);
         }
+        if self.telemetry_send_rx.has_room() {
+            //we only send the result if we have a context, ie a graph we are monitoring
+            if self.monitor.ctx.is_some() {
+                self.telemetry_rx_count(self.local_received_count).await;
+                if !self.telemetry_send_rx.has_room() {
+                    error!("Telemetry channel is full for {}. Unable to send more telemetry, capacity is {}. It will be accumulated locally."
+                        ,self.monitor.name
+                        ,self.telemetry_send_rx.batch_limit);
+                }
+            }
+            self.local_received_count.fill(0);
+        }
+
     }
 
     pub async fn relay_stats_periodic(self: &mut Self, duration_rate: Duration) {
+        assert_eq!(true, duration_rate.ge(&Duration::from_millis(features::MIN_TELEMETRY_CAPTURE_RATE_MS as u64)));
+
         self.relay_stats_all().await;
         let run_duration: Duration = Instant::now().duration_since(self.monitor.last_instant);
         Delay::new(duration_rate.saturating_sub(run_duration)).await;
@@ -209,8 +214,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     }
 
-    //TODO: we need two of these later!!
-    async fn telemetry_tx(self: &mut Self, a: [usize; TXL])  {
+    async fn telemetry_tx_count(self: &mut Self, a: [usize; TXL])  {
         //we try to send but if the channel is full we log that fact
         match self.telemetry_send_tx.try_send(a) {
             Ok(_) => {
@@ -224,8 +228,8 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 }
             },
             Err(flume::TrySendError::Full(a)) => {
-                error!("full telemetry channel detected from actor: {} capacity:{:?} "
-                , self.monitor.name, self.telemetry_send_tx.batch_limit);
+                error!("full telemetry channel detected from actor: {} capacity:{:?} value:{:?} "
+                , self.monitor.name, self.telemetry_send_tx.batch_limit,a);
                 //never block instead just return what we could not send
             },
             Err(e) => {
@@ -233,7 +237,29 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             }
         };
     }
-
+    async fn telemetry_rx_count(self: &mut Self, a: [usize; RXL])  {
+        //we try to send but if the channel is full we log that fact
+        match self.telemetry_send_rx.try_send(a) {
+            Ok(_) => {
+                let guard = self.monitor.shared_rx_array.read().await;
+                if guard.len() > self.telemetry_send_rx.id {
+                    let idx  = guard[self.telemetry_send_rx.id];
+                    drop(guard);
+                    if u8::MAX != idx { //only record those turned on (init)
+                        self.local_received_count[idx as usize] += 1;
+                    }
+                }
+            },
+            Err(flume::TrySendError::Full(a)) => {
+                error!("full telemetry channel detected from actor: {} capacity:{:?} value:{:?} "
+                , self.monitor.name, self.telemetry_send_rx.batch_limit,a);
+                //never block instead just return what we could not send
+            },
+            Err(e) => {
+                error!("Unexpected error try sending lost telemetry: {} {}",e, self.monitor.name);
+            }
+        };
+    }
 }
 
 impl SteadyMonitor {
@@ -245,65 +271,58 @@ impl SteadyMonitor {
 
 
         let mut rx_bash_limit = [0; RX_LEN];
-        let mut rx_index = [0; RX_LEN];
+        let mut map_rx = [0; RX_LEN];
         let mut rx_array = run!(async {self.shared_rx_array.write().await});
         rx_def.iter()
             .enumerate()
             .for_each(|(c,rx)| {
                     rx_array[rx.id()]=c as u8;
                     rx_bash_limit[c] = rx.bash_limit();
-                    rx_index[c] = rx.id();
+                    map_rx[c] = rx.id();
             });
         drop(rx_array);
 
 
         let mut tx_bash_limit = [0; TX_LEN];
-        let mut tx_sent_index = [0; TX_LEN];
+        let mut map_tx = [0; TX_LEN];
         let mut tx_array = run!(async {self.shared_tx_array.write().await});
         tx_def.iter()
             .enumerate()
             .for_each(|(c,tx)| {
                 tx_array[tx.id()]=c as u8;
                 tx_bash_limit[c] = tx.bash_limit();
-                tx_sent_index[c] = tx.id();
+                map_tx[c] = tx.id();
             });
         drop(tx_array);
 
 
-        //TODO: build my special telemetry channel and pass map in..
-        let (telemetry_send_tx, telemetry_send_rx): (SteadyTx<[usize; TX_LEN]>, SteadyRx<[usize; TX_LEN]>)
-                                                       =  build_channel(TELEMETRY_FEATURES.channel_length
+        let (telemetry_send_tx, telemetry_take_tx): (SteadyTx<[usize; TX_LEN]>, SteadyRx<[usize; TX_LEN]>)
+                                                       =  build_channel(features::CHANNEL_LENGTH_TO_COLLECTOR
                                                           , &["steady-telemetry"]
                                                           , self.shared_tx_array.clone()
                                                           , self.shared_rx_array.clone());
 
-        let (telemetry_receive_tx, telemetry_receive_rx): (SteadyTx<[usize; RX_LEN]>, SteadyRx<[usize; RX_LEN]>)
-                                                       =  build_channel(TELEMETRY_FEATURES.channel_length
+        let (telemetry_send_rx, telemetry_take_rx): (SteadyTx<[usize; RX_LEN]>, SteadyRx<[usize; RX_LEN]>)
+                                                       =  build_channel(features::CHANNEL_LENGTH_TO_COLLECTOR
                                                          , &["steady-telemetry"]
                                                          , self.shared_tx_array.clone()
                                                          , self.shared_rx_array.clone());
-
-        let str = SteadyTelemetryRx {
-            read_tx: telemetry_send_rx,
-            map_tx: tx_sent_index,
-            read_rx: telemetry_receive_rx,
-            map_rx: rx_index,
-        };
 
         run!(async{
                 self.all_telemetry_rx.write().await.push(
                     CollectorDetail{
                           name: self.name
                         , id: self.id
-                        , telemetry_take: Box::new(str)        }
+                        , telemetry_take: Box::new(SteadyTelemetryRx {
+                                                    read_tx: telemetry_take_tx, map_tx,
+                                                    read_rx: telemetry_take_rx, map_rx,
+                                                })        }
                 );
             });
 
 
-        let mut result = LocalMonitor::<RX_LEN,TX_LEN> {
-            telemetry_send_rx: telemetry_receive_tx,
-            telemetry_send_tx: telemetry_send_tx,
-
+        LocalMonitor::<RX_LEN,TX_LEN> {
+            telemetry_send_rx,  telemetry_send_tx,
 
             monitor: self,  //TODO: should be some kind of clone??
 
@@ -312,14 +331,7 @@ impl SteadyMonitor {
 
             local_received_count: [0; RX_LEN],
             local_received_capacity: rx_bash_limit
-        };
-
-//TODO: we need 2 pipes since we have two lengths !!!
-
-    //    run!( async {result.telemetry_tx(&rx_index).await} );
-      //  run!( async {result.telemetry_tx(&tx_sent_index).await} );
-
-        result
+        }
     }
 
 
@@ -380,20 +392,17 @@ pub(crate) fn callbacks() -> Callbacks {
 
 async fn new_monitor_internal (graph: &mut SteadyGraph, name: & 'static str, ctx: Option<BastionContext>) -> SteadyMonitor //<'graph>
 {
-    let (id, shared_rx_array, shared_tx_array, all_telemetry_channels) = prep_to_monitor(graph,name).await;
-    build_new_monitor(name, ctx, id, shared_rx_array, shared_tx_array, all_telemetry_channels).await
-}
-
-
-
-
-async fn prep_to_monitor(graph: &mut SteadyGraph, name: & 'static str) -> (usize, Arc<RwLock<Vec<u8>>>, Arc<RwLock<Vec<u8>>>, Arc<RwLock<Vec<CollectorDetail>>>) {
-
     let id = graph.monitor_count;
     graph.monitor_count += 1;
 
-    (id, graph.shared_rx_array.clone(), graph.shared_tx_array.clone(), graph.all_telemetry_rx.clone())
+    build_new_monitor(name, ctx, id
+                      , graph.shared_rx_array.clone()
+                      , graph.shared_tx_array.clone()
+                      , graph.all_telemetry_rx.clone()).await
 }
+
+
+
 
 async fn build_new_monitor(name: & 'static str, ctx: Option<BastionContext>
                            , id: usize
@@ -471,14 +480,29 @@ impl SteadyGraph {
         build_channel(cap, labels, sta, sra)
     }
 
-
+    //TODO: this is example code but not called
+    /*
     fn create<T, const N: usize>() {
-        let mut rb = StaticRb::<T, N>::default();
+        //let mut rb = StaticRb::<usize, N>::default();
         //let (mut prod: StaticRbProducer<i32, RB_SIZE>, mut cons: StaticRbConsumer<i32, RB_SIZE>) = rb.split();
-        let (mut prod, mut cons): (CachingProd<&SharedRb<Static<T, N>>>, CachingCons<&SharedRb<Static<T, N>>>) = rb.split_ref();
+        // let (mut prod, mut cons) = rb.split_ref();
+//: (CachingProd<&SharedRb<Static<T, N>>>, CachingCons<&SharedRb<Static<T, N>>>)
 
+        const RB_SIZE: usize = 1;
+        let mut rb = StaticRb::<i32, RB_SIZE>::default();
+        let (mut prod, mut cons) = rb.split_ref();
+
+        assert_eq!(prod.try_push(123), Ok(()));
+        assert_eq!(prod.try_push(321), Err(321));
+
+        assert_eq!(cons.read_index(), 123);
+
+        assert_eq!(cons.try_pop(), Some(123));
+        assert_eq!(cons.try_pop(), None);
+
+        //TODO: new and beter design here so we can peek and never loose a read ! (pronghorn)
     }
-
+//     */
 
 
     fn configure_for_graph<F,I>(graph: & mut SteadyGraph, name: & 'static str, c: Children, init: I ) -> Children
@@ -489,7 +513,13 @@ impl SteadyGraph {
                 let init_clone = init.clone();
 
                 let (id, telemetry_tx, shared_rx_array, shared_tx_array) =
-                    run!(async  {prep_to_monitor(graph,name).await});
+                    run!(async  {
+
+                        let id = graph.monitor_count;
+                        graph.monitor_count += 1;
+                        (id, graph.shared_rx_array.clone(), graph.shared_tx_array.clone(), graph.all_telemetry_rx.clone())
+
+                    });
 
                 c.with_callbacks(callbacks())
                     .with_exec(move |ctx| {
@@ -535,11 +565,11 @@ impl SteadyGraph {
         let _ = Bastion::supervisor(|supervisor| {
             let supervisor = supervisor.with_strategy(SupervisionStrategy::OneForAll);
 
-            let mut outgoing:Vec<SteadyTx<DiagramData>> = Vec::new();
+            let mut outgoing = Vec::new();
 
-            let supervisor = if TELEMETRY_FEATURES.logging {
-                //TODO: we have two ideas for length here and we need to check volume.
-                let (tx, rx) = self.new_channel::<DiagramData>(TELEMETRY_FEATURES.channel_length,&["steady-telemetry"]);
+            let supervisor = if features::TELEMETRY_LOGGING {
+                let (tx, rx) = self.new_channel::<DiagramData>(features::CHANNEL_LENGTH_TO_FEATURE
+                                                               ,&["steady-telemetry"]);
                 outgoing.push(tx);
                 supervisor.children(|children| {
                     self.add_to_graph("telemetry-logging"
@@ -554,8 +584,9 @@ impl SteadyGraph {
                 supervisor
             };
 
-            let supervisor = if TELEMETRY_FEATURES.streaming {
-                let (tx, rx) = self.new_channel::<DiagramData>(TELEMETRY_FEATURES.channel_length,&["steady-telemetry"]);
+            let supervisor = if features::TELEMETRY_STREAMING {
+                let (tx, rx) = self.new_channel::<DiagramData>(features::CHANNEL_LENGTH_TO_FEATURE
+                                                               ,&["steady-telemetry"]);
                 outgoing.push(tx);
                 supervisor.children(|children| {
                     self.add_to_graph("telemetry-streaming"
@@ -570,8 +601,9 @@ impl SteadyGraph {
                 supervisor
             };
 
-            let supervisor = if TELEMETRY_FEATURES.polling {
-                let (tx, rx) = self.new_channel::<DiagramData>(TELEMETRY_FEATURES.channel_length,&["steady-telemetry"]);
+            let supervisor = if features::TELEMETRY_POLLING {
+                let (tx, rx) = self.new_channel::<DiagramData>(features::CHANNEL_LENGTH_TO_FEATURE
+                                                               ,&["steady-telemetry"]);
                 outgoing.push(tx);
                 supervisor.children(|children| {
                     self.add_to_graph("telemetry-polling"
@@ -587,6 +619,7 @@ impl SteadyGraph {
             };
 
 
+
             supervisor.children(|children| {
                 //we create this child last so we can clone the rx_vec
                 //and capture all the telemetry actors as well
@@ -596,11 +629,15 @@ impl SteadyGraph {
                                              SteadyGraph::configure_for_graph(self, "telemetry-collector"
                                                                  , children.with_redundancy(0)
                                                                  , move |monitor| {
-                                                        //TODO: test...this is AFTER the new_monitor so we can clone the rx_vec
+
+                                                        let tel_tx_array: [SteadyTx<DiagramData>; features::FEATURE_LEN]
+                                                                           = outgoing.clone().try_into()
+                                                                             .unwrap_or_else(|_| panic!("Incorrect length"));
+
                                                         let all_rx = all_tel_rx.clone();
                                                          telemetry::metrics_collector::run(monitor
                                                                                       , all_rx
-                                                                                      , outgoing.clone()
+                                                                                      , tel_tx_array
 
                                                         )
                                                         }
@@ -615,20 +652,43 @@ impl SteadyGraph {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct TelemetryFeatures {
-    channel_length: usize,
-    logging: bool,
-    streaming: bool,
-    polling: bool,
-}
-impl TelemetryFeatures {
-    const fn new(channel_length: usize, logging: bool, streaming: bool, polling: bool) -> Self {
-        TelemetryFeatures { channel_length, logging, streaming, polling }
-    }
+pub mod features {
+    #[cfg(feature = "telemetry_logging")]
+    pub const TELEMETRY_LOGGING: bool = true;
+    #[cfg(not(feature = "telemetry_logging"))]
+    pub const TELEMETRY_LOGGING: bool = false;
+
+    #[cfg(feature = "telemetry_streaming")]
+    pub const TELEMETRY_STREAMING: bool = true;
+    #[cfg(not(feature = "telemetry_streaming"))]
+    pub const TELEMETRY_STREAMING: bool = false;
+
+    #[cfg(feature = "telemetry_polling")]
+    pub const TELEMETRY_POLLING: bool = true;
+    #[cfg(not(feature = "telemetry_polling"))]
+    pub const TELEMETRY_POLLING: bool = false;
+
+    #[cfg(feature = "telemetry_history")]
+    pub const TELEMETRY_HISTORY: bool = true;
+    #[cfg(not(feature = "telemetry_history"))]
+    pub const TELEMETRY_HISTORY: bool = false;
+
+    // Public constant representing the total length
+    // Convert bools to usize and sum them up
+    pub const FEATURE_LEN: usize =  (TELEMETRY_LOGGING as usize)
+                                  + (TELEMETRY_STREAMING as usize)
+                                  + (TELEMETRY_POLLING as usize)
+                                  + (TELEMETRY_HISTORY as usize);
+
+    pub const CHANNEL_LENGTH_TO_FEATURE:usize = 4; //allows features to fall behind with some latency
+    pub const CHANNEL_LENGTH_TO_COLLECTOR:usize = 8; //larger values take up memory but allow faster capture rates
+    pub const TELEMETRY_PRODUCTION_RATE_MS:usize = 32; //values faster than 32 can not be seen my normal humans
+    pub const MIN_TELEMETRY_CAPTURE_RATE_MS:usize = TELEMETRY_PRODUCTION_RATE_MS/CHANNEL_LENGTH_TO_COLLECTOR;
+
+
+
 }
 
-const TELEMETRY_FEATURES: TelemetryFeatures = TelemetryFeatures::new(64, true, false, true);
 
 
 ////////////////////////////////////////////////////////////////
@@ -709,27 +769,37 @@ impl <T> RxDef for SteadyRx<T> {
 
 
 pub trait RxTel : Send + Sync {
-    //NOTE: we will do one dyn call per node every 20 milliseconds or so to build the image
+    //NOTE: we will do one dyn call per node every 32ms or so to build the image
     //      we only have 1 impl assuming the compiler will inline this if possible
-    // This closure, when called, returns a Pin<Box<dyn Future>>.
+    // TODO: in the future we could rewrite this to return a future that can be pinned and boxed
     fn consume_into(&self, take_target: &mut Vec<u128>, send_target: &mut Vec<u128>);
+    fn biggest_tx_id(&self) -> usize;
+    fn biggest_rx_id(&self) -> usize;
 
-    //fn consume_into(&self) -> Box<dyn Fn(&mut Vec<u128>, &mut Vec<u128>) + Send >;
-   // fn consume_into(&self) -> Box<dyn Fn(&mut Vec<u128>, &mut Vec<u128>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
-
+    //returns an iterator of usize channel ids for tx channels
+    fn tx_ids_iter(&self) -> Box<dyn Iterator<Item=usize> + '_>;
+    fn rx_ids_iter(&self) -> Box<dyn Iterator<Item=usize> + '_>;
 }
 impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
+
+    #[inline]
+    fn tx_ids_iter(&self) -> Box<dyn Iterator<Item=usize> + '_> {
+        Box::new((0..=self.biggest_tx_id()).into_iter())
+    }
+    #[inline]
+    fn rx_ids_iter(&self) -> Box<dyn Iterator<Item=usize> + '_> {
+        Box::new((0..=self.biggest_tx_id()).into_iter())
+    }
+
     #[inline]
     fn consume_into(&self, take_target: &mut Vec<u128>, send_target: &mut Vec<u128>) {
-        //-> Box<dyn Fn(&mut Vec<u128>, &mut Vec<u128>) + Send > {
-        //Box::new( |take_target: &mut Vec<u128>, send_target: &mut Vec<u128>| {
 
             //this method can not be async since we ned vtable and dyn
             //so we will return a future to be used later which will also remove any dyn call.
 
             //read all the messages available and put the total into the right vec index
             //do for both reads and sends.
-            run!(async { //TODO: this is a hack until I can write the future pined boxed function.
+            run!(async {
             loop {
                 let mut count = 0;
 
@@ -765,9 +835,16 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                 }
             }
             })
-        //  })
+
     }
 
+    fn biggest_tx_id(&self) -> usize {
+        self.map_tx.iter().max().unwrap_or(&0).clone()
+    }
+
+    fn biggest_rx_id(&self) -> usize {
+        self.map_rx.iter().max().unwrap_or(&0).clone()
+    }
 }
 
 #[derive(Clone,Debug)]
@@ -937,6 +1014,7 @@ pub(crate) mod tests {
     use async_std::test;
     use lazy_static::lazy_static;
     use std::sync::Once;
+    use ringbuf::producer::Producer;
 
     lazy_static! {
             static ref INIT: Once = Once::new();
@@ -958,7 +1036,7 @@ pub(crate) mod tests {
         let mut graph = SteadyGraph::new();
         let (tx_string, rx_string): (SteadyTx<String>, _) = graph.new_channel(8,&[]);
 
-        let mut monitor = new_monitor_internal(&mut graph,"test", None).await;
+        let monitor = new_monitor_internal(&mut graph,"test", None).await;
         let mut monitor = monitor.init_stats(&[&rx_string], &[&tx_string]);
 
         let threshold = 5;
@@ -986,14 +1064,45 @@ pub(crate) mod tests {
 
     }
 
+#[test]
+async fn lossless_buffer_test() {
+
+    use ringbuf::{SharedRb};
+    use ringbuf::consumer::Consumer;
+    use ringbuf::producer::Producer;
+    use ringbuf::storage::Static;
+    use ringbuf::traits::{SplitRef};
+
+    const RB_SIZE: usize = 1;
+    let mut rb = SharedRb::<Static<i32, RB_SIZE>>::default();
+    let (mut prod, mut cons) = rb.split_ref();
+
+    assert_eq!(prod.try_push(123), Ok(()));
+    assert_eq!(prod.try_push(321), Err(321));
+
+    //here we are borrowing the next read
+    let expected: i32 = 123;
+    assert_eq!(cons.first(), Some(&expected));
+    //we can do the processing here
+    //then pop the element we just processed.
+    assert_eq!(cons.try_pop(), Some(123));
+    assert_eq!(cons.try_pop(), None);
+
+
+
+}
+
+
     #[test]
     async fn test_relay_stats_tx_rx_batch() {
         crate::steady::tests::initialize_logger();
 
+
+
         let mut graph = SteadyGraph::new();
         let (tx_string, rx_string): (SteadyTx<String>, _) = graph.new_channel(5,&[]);
 
-        let mut monitor = new_monitor_internal(&mut graph, "test", None).await;
+        let monitor = new_monitor_internal(&mut graph, "test", None).await;
         let mut monitor = monitor.init_stats(&[&rx_string], &[&tx_string]);
 
         let threshold = 5;

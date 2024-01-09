@@ -7,6 +7,12 @@ edition = "2021"
 # to test if the code compiles for no_std use this command:
 #  cargo build --target thumbv6m-none-eabi
 #
+[features]
+telemetry_logging = []  # write key telemetry events to the log
+telemetry_streaming = [] # real time websocket push of telemetry
+telemetry_polling = []  # poll socket for an update
+telemetry_history = []  # poll socket for a large full history data block
+
 
 [dependencies]
 structopt        = "0.3.26"  # CLI parse for type safe arguments

@@ -13,7 +13,7 @@ struct InternalState {
 }
 
 #[cfg(not(test))]
-pub async fn run(mut monitor: SteadyMonitor
+pub async fn run(monitor: SteadyMonitor
                  , opt: Args
                  , tx: SteadyTx<WidgetInventory> ) -> Result<(),()> {
     let mut monitor = monitor.init_stats(&[], &[&tx]);
@@ -33,7 +33,7 @@ pub async fn run(mut monitor: SteadyMonitor
 }
 
 #[cfg(test)]
-pub async fn run(mut monitor: SteadyMonitor
+pub async fn run(monitor: SteadyMonitor
                  , _opt: Args
                  , tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
     let mut monitor = monitor.init_stats(&[], &[&tx]);

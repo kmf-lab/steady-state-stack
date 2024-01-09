@@ -10,7 +10,7 @@ pub struct ApprovedWidgets {
 }
 
 #[cfg(not(test))]
-pub async fn run(mut monitor: SteadyMonitor
+pub async fn run(monitor: SteadyMonitor
                  , rx: SteadyRx<WidgetInventory>
                  , tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
 
@@ -32,7 +32,7 @@ pub async fn run(mut monitor: SteadyMonitor
 
 
 #[cfg(test)]
-pub async fn run(mut monitor: SteadyMonitor
+pub async fn run(monitor: SteadyMonitor
                  , rx: SteadyRx<WidgetInventory>
                  , tx: SteadyTx<ApprovedWidgets>) -> Result<(),()> {
 
@@ -84,7 +84,7 @@ mod tests {
         let (tx_in, rx_in): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8,&[]);
         let (tx_out, rx_out): (SteadyTx<ApprovedWidgets>, _) = graph.new_channel(8,&[]);
 
-        let mut mock_monitor = graph.new_test_monitor("approval_monitor").await;
+        let mock_monitor = graph.new_test_monitor("approval_monitor").await;
         let mut mock_monitor = mock_monitor.init_stats(&[&rx_in], &[&tx_out]);
 
         let _ = mock_monitor.tx(&tx_in, WidgetInventory {count: 5 }).await;
