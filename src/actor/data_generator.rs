@@ -1,7 +1,8 @@
-
+use std::sync::Arc;
 use std::time::Duration;
+use async_std::sync::Mutex;
 use crate::args::Args;
-use crate::steady::{SteadyTx, SteadyMonitor, LocalMonitor};
+use crate::steady::*;
 
 #[derive(Clone, Debug)]
 pub struct WidgetInventory {
@@ -15,14 +16,18 @@ struct InternalState {
 #[cfg(not(test))]
 pub async fn run(monitor: SteadyMonitor
                  , opt: Args
-                 , tx: SteadyTx<WidgetInventory> ) -> Result<(),()> {
-    let mut monitor = monitor.init_stats(&[], &[&tx]);
+                 , tx: Arc<Mutex<SteadyTx<WidgetInventory>>> ) -> Result<(),()> {
+
+    let mut tx_guard = guard!(tx);
+    let tx = ref_mut!(tx_guard);
+
+    let mut monitor = monitor.init_stats(&mut[], &mut[tx]);
 
     //keep long running state in here while you run
     let mut state = InternalState { count: 0 };
     loop {
         //single pass of work, do not loop in here
-        if iterate_once(&mut monitor, &mut state, &tx).await {
+        if iterate_once(&mut monitor, &mut state, tx).await {
             break Ok(());
         }
         //this is an example of an actor running periodically
@@ -35,18 +40,20 @@ pub async fn run(monitor: SteadyMonitor
 #[cfg(test)]
 pub async fn run(monitor: SteadyMonitor
                  , _opt: Args
-                 , tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
-    let mut monitor = monitor.init_stats(&[], &[&tx]);
+                 , tx: Arc<Mutex<SteadyTx<WidgetInventory>>>) -> Result<(),()> {
+    let mut tx_guard = guard!(tx);
+    let tx = ref_mut!(tx_guard);
+    let mut monitor = monitor.init_stats(&mut[], &mut[tx]);
 
     loop {
-         relay_test(&mut monitor, &tx).await;
+         relay_test(& mut monitor, tx).await;
          monitor.relay_stats_periodic(Duration::from_millis(30)).await;
    }
 }
 #[cfg(test)]
 
-async fn relay_test(monitor: &mut LocalMonitor<0, 1>
-                    , tx: &SteadyTx<WidgetInventory>) {
+async fn relay_test(monitor: &mut LocalMonitor<0,1>
+                    , tx: &mut SteadyTx<WidgetInventory>) {
     use bastion::run;
     use bastion::message::MessageHandler;
 
@@ -54,7 +61,7 @@ async fn relay_test(monitor: &mut LocalMonitor<0, 1>
         MessageHandler::new(ctx.recv().await.unwrap())
             .on_question(|message: WidgetInventory, answer_sender| {
                 run!(async {
-                    let _ = monitor.tx(&tx, message).await;
+                    let _ = monitor.send_async(tx, message).await;
                     answer_sender.reply("ok").unwrap();
                    });
             });
@@ -62,11 +69,11 @@ async fn relay_test(monitor: &mut LocalMonitor<0, 1>
 }
 
 
-async fn iterate_once<const R: usize,const T: usize>(monitor: &mut LocalMonitor<R, T>
+async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor<R, T>
                       , state: &mut InternalState
-                      , tx_widget: &SteadyTx<WidgetInventory> ) -> bool
+                      , tx_widget: &mut SteadyTx<WidgetInventory> ) -> bool
 {
-    let _ = monitor.tx(tx_widget, WidgetInventory {count: state.count.clone() }).await;
+    let _ = monitor.send_async(tx_widget, WidgetInventory {count: state.count.clone() }).await;
     state.count += 1;
     false
 }
@@ -74,24 +81,29 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: &mut LocalMonitor<
 
 #[cfg(test)]
 mod tests {
-    use crate::actor::{WidgetInventory};
     use crate::actor::data_generator::{InternalState, iterate_once};
-    use crate::steady::{SteadyGraph, SteadyTx};
+    use crate::steady::{SteadyGraph};
 
     #[async_std::test]
     async fn test_iterate_once() {
         crate::steady::tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
-        let (tx, rx): (SteadyTx<WidgetInventory>, _) = graph.new_channel(8,&[]);
-        let mock_monitor = graph.new_test_monitor("generator_monitor").await;
-        let mut mock_monitor = mock_monitor.init_stats(&[], &[&tx]);
+        let (tx, rx) = graph.new_channel(8,&[]);
+        let mock_monitor = graph.new_test_monitor("generator_monitor");
+
+        let mut steady_tx_guard = guard!(tx);
+        let mut steady_rx_guard = guard!(rx);
+        let steady_tx = ref_mut!(steady_tx_guard);
+        let steady_rx = ref_mut!(steady_rx_guard);
+
+        let mut mock_monitor = mock_monitor.init_stats(&mut[steady_rx], &mut[steady_tx]);
         let mut state = InternalState { count: 10 };
 
-        let exit = iterate_once(&mut mock_monitor, &mut state, &tx).await;
+        let exit = iterate_once(&mut mock_monitor, &mut state, steady_tx).await;
         assert_eq!(exit, false);
 
-        let record = mock_monitor.rx(&rx).await.unwrap();
+        let record = mock_monitor.take_async(steady_rx).await.unwrap();
         assert_eq!(record.count, 10);
     }
 

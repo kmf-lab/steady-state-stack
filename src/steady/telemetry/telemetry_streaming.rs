@@ -1,7 +1,8 @@
-
-use crate::steady::{SteadyMonitor, SteadyRx};
+use std::sync::Arc;
+use crate::steady::*;
 use crate::steady::telemetry::metrics_collector::DiagramData;
 use async_std::stream::StreamExt;
+use async_std::sync::Mutex;
 
 
 use tide::{Endpoint};
@@ -26,7 +27,11 @@ async fn handle_ws(request: tide::Request<()>) -> tide::Result {
 
 
 
-pub(crate) async fn run(mut monitor: SteadyMonitor, rx: SteadyRx<DiagramData>) -> std::result::Result<(),()> {
+pub(crate) async fn run(monitor: SteadyMonitor, rx: Arc<Mutex<SteadyRx<DiagramData>>>) -> std::result::Result<(),()> {
+
+    let mut rx_guard = rx.lock().await;
+    let rx = rx_guard.deref_mut();
+
 
     //     monitor.init_stats(&[&rx], &[]); //TODO: this is not needed for this actor
 
@@ -69,16 +74,16 @@ pub(crate) async fn run(mut monitor: SteadyMonitor, rx: SteadyRx<DiagramData>) -
 
 
 
-    while rx.has_message() {
-        match monitor.rx(&rx).await {
+    while !rx.is_empty() {
+     //   match monitor.rx(rx).await {
          //   Ok(DiagramData::Structure()) => {
        //         log::info!("Got DiagramData::Structure()");
        //     },
       //      Ok(DiagramData::Content()) => {
 //info!("Got DiagramData::Content()");
        //     },
-            _ => {}
-        }
+       //     _ => {}
+       // }
     }
 
 

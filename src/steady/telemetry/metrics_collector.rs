@@ -1,5 +1,7 @@
+use std::ops::{DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
+use crate::steady;
 use crate::steady::*;
 
     //TODO: the u128 seq and count types should be moved out as type aliases based on use case need.
@@ -20,17 +22,13 @@ struct InternalState {
     sequence: u128,
 }
 
-pub(crate) async fn run<const CONSUMERS: usize>(mut monitor: SteadyMonitor
-                                                , all_rx: Arc<RwLock<Vec< CollectorDetail >>>
-                                                , to_telemetry_consumers: [SteadyTx<DiagramData>; CONSUMERS]
+pub(crate) async fn run(monitor: SteadyMonitor
+     , dynamic_senders_vec: Arc<Mutex<Vec< CollectorDetail >>>
+     , fixed_consumers: Vec<Arc<Mutex<SteadyTx<DiagramData>>>>
 ) -> Result<(),()> {
-
-    //TODO: may need custom method for this
-    //      OUR RULES SAY THAT WE CAN ADD NEW ACTORS BUT WHAT IS MONITORED IS FIXED.
-    //      THIS IS THE ACTOR DOING THE MONITORING SO THIS CAUSING A PROBLEM (BUT ONLY HERE)
-    //let rx_def = all_rx.read().await.as_slice();
-    //monitor.init_stats(&[], &to_telemetry_consumers); //ALSO NEED TO CAST DOWN CONSUMERS
-    //NOTE: child actors builders do not have the tx end of this same channel so its not in stats either.
+  //NOTE: each actor has fixed monitoring init or not but after
+    // graph is started new actors could be added with new monitors
+    assert_eq!(steady_feature::FEATURE_LEN, fixed_consumers.len());
 
     let mut state = InternalState {
                 total_take: Vec::new(),
@@ -39,18 +37,18 @@ pub(crate) async fn run<const CONSUMERS: usize>(mut monitor: SteadyMonitor
                 sequence: 0,
     };
 
-    let outgoing = to_telemetry_consumers.clone();
     loop {
         //
         //the monitored channels per actor of set once on startup but we can add more actors if needed dynamically
         //
         let seq = state.sequence.clone(); //every frame has a unique sequence number
         state.sequence += 1;
-        let locked_collector = all_rx.read().await; //we want to drop this as soon as we can
+        let mut dynamic_senders_guard = dynamic_senders_vec.lock().await; //we want to drop this as soon as we can
+        let dynamic_senders = dynamic_senders_guard.deref_mut();
 
-        if locked_collector.len() > state.actor_count {
+        if dynamic_senders.len() > state.actor_count {
             //get the max channel ids for the new actors
-            let (max_rx, max_tx):(usize,usize) = locked_collector.iter().skip(state.actor_count).map(|x| {
+            let (max_rx, max_tx):(usize,usize) = dynamic_senders.iter().skip(state.actor_count).map(|x| {
                   ( x.telemetry_take.biggest_rx_id(), x.telemetry_take.biggest_tx_id() )
             }).fold((0,0), |mut acc, x| {
                 if x.0 > acc.0 {acc.0 = x.0;}
@@ -67,33 +65,46 @@ pub(crate) async fn run<const CONSUMERS: usize>(mut monitor: SteadyMonitor
 
             //send new actor definitions to our listeners
             let skip_amount = state.actor_count;
-            let total_length = locked_collector.len();
+            let total_length = dynamic_senders.len();
 
             for i in skip_amount..total_length {
-               let details = &locked_collector[i];
+               let details = &dynamic_senders[i];
                let tt = &details.telemetry_take;
                let rxids:Arc<Vec<usize>> = Arc::new(tt.rx_ids_iter().collect());
                let txids:Arc<Vec<usize>> = Arc::new(tt.tx_ids_iter().collect());
-               for c in to_telemetry_consumers.iter() {
-                    let _ = monitor.tx(&c, DiagramData::Structure(seq
-                                                  , details.name, details.id
-                                                  , rxids.clone()
-                                                  , txids.clone())).await;
+
+               let send_me = DiagramData::Structure(seq
+                                       , details.name
+                                       , details.monitor_id
+                                       , rxids.clone()
+                                       , txids.clone());
+
+                //TODO: we may want to check first that all have room??
+               for c in fixed_consumers.iter() {
+                   let mut c_guard = c.lock().await;
+                   let c = c_guard.deref_mut();
+                   //let _ = monitor.send_async(c, send_me.clone()).await;
+                   let _ = c.send_async(send_me.clone()).await;
                }
             };
         }
-        for x in locked_collector.iter() {
-                x.telemetry_take.consume_into(&mut state.total_take, &mut state.total_sent);
+
+        for mut x in dynamic_senders.iter() {
+            x.telemetry_take.consume_into(&mut state.total_take, &mut state.total_sent);
         }
-        drop(locked_collector);
 
         let tr = Arc::new(state.total_take.clone()); //every one can see this but no one can change it
         let ts = Arc::new(state.total_sent.clone()); //every one can see this but no one can change it
 
-        if outgoing.iter().all(|x| x.has_room()) {
-            for tx in outgoing.clone() {
-                let _ = monitor.tx(&tx, DiagramData::Content(seq, tr.clone(), ts.clone())).await;
+        let all_room = false;//{to_telemetry_consumers.iter().all(|x| x.has_room())};
+
+        if all_room {
+            /*
+            for mut tx in to_telemetry_consumers.as_slice() {
+                let _ = monitor.tx(&mut tx, DiagramData::Content(seq, tr.clone(), ts.clone())).await;
             }
+
+             */
         }
 
         //NOTE: target 32ms updates for 30FPS, with a queue of 8 so writes must be no faster than 4ms

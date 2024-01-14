@@ -3,7 +3,6 @@ mod args;
 mod steady;
 mod steady_feature;
 mod steady_util;
-
 use structopt::*;
 use log;
 use log::*;
@@ -70,8 +69,8 @@ fn build_graph(cli_arg: &Args) {
     //create all the needed channels between actors
 
     //upon construction these are set up to be monitored by the telemetry actor
-    let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(38,&[]);
-    let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(38,&[]);
+    let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(38,&["widgets"]);
+    let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(38,&["widgets"]);
     //the above tx rx objects will be owned by the children closures below then cloned
     //each time we need to startup a new child actor instance. This way when an actor fails
     //we still have the original to clone from.
@@ -82,27 +81,32 @@ fn build_graph(cli_arg: &Args) {
             .children(|children| {
                 let cli_arg = cli_arg.clone(); //example passing args to child actor
                 graph.add_to_graph("generator"
-                                  , children.with_redundancy(0)
-                        , move |monitor| actor::data_generator::run(monitor
-                                                                    , cli_arg.clone()
-                                                                    , generator_tx.clone())
-                    )
+                                   , children.with_redundancy(0)
+                                   , move |monitor| actor::data_generator::run(monitor
+                                                                      , cli_arg.clone()
+                                                                      , generator_tx.clone()
+                                                                     )
+                )
             })
             .children(|children| {
                     graph.add_to_graph("approval"
                                       , children.with_redundancy(0)
-                        //add vec of of tx and antoher rx here??
-                        //you get them from the monitor object
                         , move |monitor| actor::data_approval::run(monitor
                                                    , generator_rx.clone()
-                                                   , consumer_tx.clone())
-                                                    )
+                                                   , consumer_tx.clone()
+                                                                     )
+
+                    )
+
             })
             .children(|children| {
                     graph.add_to_graph("consumer"
                                       , children.with_redundancy(0)
                             ,move |monitor| actor::data_consumer::run(monitor
-                                                     , consumer_rx.clone())
+                                                           , consumer_rx.clone()
+                                                                        )
+
+
                             )
             })
     ).expect("OneForOne supervisor creation error.");
@@ -110,6 +114,8 @@ fn build_graph(cli_arg: &Args) {
     graph.init_telemetry();
 
 }
+
+
 
 #[cfg(test)]
 mod tests {

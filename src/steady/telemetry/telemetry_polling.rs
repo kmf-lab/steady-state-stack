@@ -1,4 +1,6 @@
-
+use std::ops::DerefMut;
+use std::sync::{Arc};
+use async_std::sync::Mutex;
 use crate::steady::{SteadyMonitor, SteadyRx};
 use crate::steady::telemetry::metrics_collector::DiagramData;
 use crate::steady_util::steady_util;
@@ -8,7 +10,10 @@ use bytes::{ BytesMut};
 
 
 
-pub(crate) async fn run(mut monitor: SteadyMonitor, rx: SteadyRx<DiagramData>) -> std::result::Result<(),()> {
+pub(crate) async fn run(monitor: SteadyMonitor, rx: Arc<Mutex<SteadyRx<DiagramData>>>) -> std::result::Result<(),()> {
+
+    let mut rx_guard = rx.lock().await;
+    let rx = rx_guard.deref_mut();
 
     //     monitor.init_stats(&[&rx], &[]); //TODO: this is not needed for this actor
 
@@ -37,18 +42,18 @@ pub(crate) async fn run(mut monitor: SteadyMonitor, rx: SteadyRx<DiagramData>) -
         //   this actor will be singular due to its need to hold the port.
      }
 */
+  // let mut rx:SteadyRx<'_,DiagramData> = *rx.lock();
 
-
-    while rx.has_message() {
-        match monitor.rx(&rx).await {
+    while !rx.is_empty() {
+      //  match monitor.rx(rx).await {
        //     Ok(DiagramData::Structure()) => {
       //          log::info!("Got DiagramData::Structure()");
        //     },
         //    Ok(DiagramData::Content()) => {
 //info!("Got DiagramData::Content()");
         //    },
-            _ => {}
-        }
+        //    _ => {}
+       // }
     }
 
     let local_state = LocalState {

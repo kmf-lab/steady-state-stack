@@ -1,4 +1,5 @@
-
+use std::sync::Arc;
+use async_std::sync::Mutex;
 use crate::steady::{SteadyMonitor, SteadyRx};
 use crate::steady::telemetry::metrics_collector::DiagramData;
 use crate::steady_util::steady_util;
@@ -9,13 +10,13 @@ use bytes::{ BytesMut};
 
 
 
-pub(crate) async fn run(mut monitor: SteadyMonitor, rx: SteadyRx<DiagramData>) -> std::result::Result<(),()> {
+pub(crate) async fn run(monitor: SteadyMonitor, rx: Arc<Mutex<SteadyRx<DiagramData>>>) -> std::result::Result<(),()> {
 //TODO: write to disk the dot graph and then the volume data in a separate file.
 
     //     monitor.init_stats(&[&rx], &[]); //TODO: this is not needed for this actor
-
+/*
     while rx.has_message() {
-        match monitor.rx(&rx).await {
+        match monitor.rx(& mut rx).await {
       //      Ok(DiagramData::Structure()) => {
      //           log::info!("Got DiagramData::Structure() to put in logs...");
       //      },
@@ -25,7 +26,7 @@ pub(crate) async fn run(mut monitor: SteadyMonitor, rx: SteadyRx<DiagramData>) -
             _ => {}
         }
     }
-
+*/
     let local_state = LocalState {
         nodes: Vec::new(),
         edges: Vec::new(),
