@@ -8,15 +8,17 @@ edition = "2021"
 #  cargo build --target thumbv6m-none-eabi
 #
 [features]
-telemetry_logging = []  # write key telemetry events to the log
-telemetry_streaming = [] # real time websocket push of telemetry
-telemetry_polling = []  # poll socket for an update
-telemetry_history = []  # poll socket for a large full history data block
-
+### will add cargo-generate support later
+#{{#if telemetry_server}}
+"telemetry_server" = []
+#{{/if}}
+#{{#if telemetry_history}}
+"telemetry_history" = []
+#{{/if}}
 
 [dependencies]
 structopt        = "0.3.26"  # CLI parse for type safe arguments
-bastion          = "0.4.5"   # The actor framwork with supervisors to recover from panics
+bastion          = "0.4.5"   # The telemetry framwork with supervisors to recover from panics
 ringbuf          = "0.4.0-rc.1"
 async-ringbuf    = "0.2.0-rc.4"
 
@@ -29,25 +31,31 @@ async-recursion  = "1.0.5"   # simplify the writing of async recursive functions
 structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
 time             = "0.3.31"   # for time::Instant::now()
 async-std        = { version = "1.12.0", features = ["attributes"] }# for RWLock
-#let map: DashMap<MyStruct, f64> = DashMap::new();
-# add crate for cross thread caching like these crates: https://crates.io/crates/crossbeam-cache
 
 #not in use yet... but this is where I am planning to go for web services
-askama = "0.11.0" # for compile time templating
-tide = "0.16.0" # for http server
-tide-websockets = "0.4.0" # for websockets
-                  # AsyncWrite and AsyncWriteExt
+askama           = "0.12.1" # for compile time templating
+#ntex-web         = "1.0.0"
+ntex             = { version = "1.0.0", features = ["async-std","tls-rustls"] }
+             #  https://ntex.rs/docs/whatis
+# ntex-redis = "1.0.0"
+# ntex-mqtt ="1.0.0"
+
+#not in use yet for future code gen
 petgraph = "0.6.4"  #   for graph data structures
 dot = "0.1.4"       #  for graphviz dot file generation
 syn = "2.0.48"  # for building syntax tree for generated projects
 quote = "1.0.35"  # for converson of syntax tree to text source files
+
+zip              = "0.5"   # zip compression
+xz2              = "0.1.6" # lzma compression
 
 
 #others
 rand             = "0.8.4" # for random number generation
 regex            = "1.5.4" # for regex
 dashmap          = "5.5.3"
-bytes = { version = "1.5.0", features = [] }   # for concurrent hashmap
+bytes = { version = "1.5.0", features = [] }
+num-traits = "0.2.17"   # for concurrent hashmap
 #serde ="0.3.0" # for serialization and deserialization
 #serde_derive = "1.0.64" # for serialization and deserialization
 #serde_json = "1.0.64" # for serialization and deserialization
@@ -55,7 +63,6 @@ bytes = { version = "1.5.0", features = [] }   # for concurrent hashmap
 # for future consideration
 # turbine = { git = "https://github.com/polyfractal/Turbine", branch = "main" }
 # disruptor        = "0.2.0"   # does not integreate with bastion, but is a lock free ring buffer
-
 
 [dev-dependencies]
 async-std       = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only

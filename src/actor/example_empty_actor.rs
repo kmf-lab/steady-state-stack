@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 use async_std::sync::Mutex;
-
+use crate::monitor::LocalMonitor;
 use log::*;
 use crate::steady::*;
+use crate::steady::monitor::SteadyMonitor;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SomeExampleRecord {
@@ -36,7 +37,7 @@ pub async fn run(monitor: SteadyMonitor
                         , rx).await {
             break Ok(());
         }
-        //this is an example of an actor running periodically
+        //this is an example of an telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
         monitor.relay_stats_periodic(Duration::from_millis(40)).await;
     }
@@ -104,7 +105,7 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
 #[cfg(test)]
 mod tests {
     use crate::actor::example_empty_actor::{iterate_once, SomeExampleRecord, SomeLocalState};
-    use crate::steady::{SteadyGraph};
+    use crate::steady::SteadyGraph;
 
     #[async_std::test]
     async fn test_process_function() {

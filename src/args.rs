@@ -9,17 +9,15 @@ pub struct Args {
                 , possible_values = log_variants()
                 , validator = validate_logging_level
                 , case_insensitive = true)]
-    pub loglevel: String,
+    pub(crate) loglevel: String,
 
     #[structopt(short = "g", long = "gen-rate"
     , default_value = "1000")]
-    pub gen_rate_ms: u64,
+    pub(crate) gen_rate_ms: u64,
 
     #[structopt(short = "d", long = "duration", validator = run_duration_validator
     , default_value = "120")]
-    pub duration: u64,
-
-
+    pub(crate) duration: u64,
 
 }
 

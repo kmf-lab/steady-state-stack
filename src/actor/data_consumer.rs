@@ -1,10 +1,11 @@
-use std::ops::{ DerefMut};
+use std::ops::DerefMut;
 use std::sync::Arc;
 use async_std::sync::Mutex;
 use bastion::run;
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use crate::steady::*;
+use crate::steady::monitor::{LocalMonitor, SteadyMonitor};
 
 struct InternalState {
     pub(crate) last_approval: Option<ApprovedWidgets>

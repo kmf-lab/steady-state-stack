@@ -3,7 +3,8 @@ use async_std::sync::Mutex;
 use crate::actor::data_generator::WidgetInventory;
 use log::*;
 use crate::steady::*;
-use SteadyMonitor;
+use crate::steady::monitor::SteadyMonitor;
+use crate::steady::monitor::LocalMonitor;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApprovedWidgets {
@@ -27,7 +28,7 @@ pub async fn run(monitor: SteadyMonitor
 
     loop {
         //in this example iterate once blocks/await until it has work to do
-        //this example is a very responsive actor for medium load levels
+        //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
         if iterate_once( &mut monitor
                          , rx

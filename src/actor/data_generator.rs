@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_std::sync::Mutex;
 use crate::args::Args;
 use crate::steady::*;
+use crate::steady::monitor::{LocalMonitor, SteadyMonitor};
 
 #[derive(Clone, Debug)]
 pub struct WidgetInventory {
@@ -30,7 +31,7 @@ pub async fn run(monitor: SteadyMonitor
         if iterate_once(&mut monitor, &mut state, tx).await {
             break Ok(());
         }
-        //this is an example of an actor running periodically
+        //this is an example of an telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
         monitor.relay_stats_periodic(Duration::from_millis(opt.gen_rate_ms)).await;
     }
@@ -82,7 +83,7 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor
 #[cfg(test)]
 mod tests {
     use crate::actor::data_generator::{InternalState, iterate_once};
-    use crate::steady::{SteadyGraph};
+    use crate::steady::SteadyGraph;
 
     #[async_std::test]
     async fn test_iterate_once() {

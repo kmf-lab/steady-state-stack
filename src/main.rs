@@ -1,8 +1,7 @@
 mod args;
 #[macro_use]
 mod steady;
-mod steady_feature;
-mod steady_util;
+
 use structopt::*;
 use log;
 use log::*;
@@ -12,7 +11,7 @@ use futures_timer::Delay;
 use crate::args::Args;
 use std::time::Duration;
 use crate::steady::*;
-use crate::steady_util::steady_util::steady_logging_init;
+use crate::steady::util::steady_logging_init;
 
 // here are the actors that will be used in the graph.
 // note that the actors are in a separate module and we must use the structs/enums and
@@ -68,18 +67,18 @@ fn build_graph(cli_arg: &Args) {
 
     //create all the needed channels between actors
 
-    //upon construction these are set up to be monitored by the telemetry actor
+    //upon construction these are set up to be monitored by the telemetry telemetry
     let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(38,&["widgets"]);
     let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(38,&["widgets"]);
     //the above tx rx objects will be owned by the children closures below then cloned
-    //each time we need to startup a new child actor instance. This way when an actor fails
+    //each time we need to startup a new child telemetry instance. This way when an telemetry fails
     //we still have the original to clone from.
     //
     //given your supervision strategy create the children to be added to the graph.
     let _ = Bastion::supervisor(|supervisor|
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
-                let cli_arg = cli_arg.clone(); //example passing args to child actor
+                let cli_arg = cli_arg.clone(); //example passing args to child telemetry
                 graph.add_to_graph("generator"
                                    , children.with_redundancy(0)
                                    , move |monitor| actor::data_generator::run(monitor
