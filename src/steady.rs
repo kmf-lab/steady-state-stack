@@ -1,3 +1,13 @@
+pub(crate) mod telemetry {
+    pub mod metrics_collector;
+    pub mod metrics_server;
+}
+
+pub(crate) mod serialize {
+    pub mod byte_buffer_packer;
+    pub mod fast_protocol_packed;
+}
+
 
 use std::any::type_name;
 use std::future::Future;
@@ -7,10 +17,10 @@ use std::time::Duration;
 use bastion::{Callbacks, run};
 use bastion::children::Children;
 use bastion::prelude::*;
-
 use futures_timer::Delay;
 use log::{error, info, warn};
-use crate::steady::telemetry::metrics_collector::DiagramData;
+use crate::steady::telemetry::metrics_collector::*;
+use crate::steady::serialize::byte_buffer_packer::*;
 
 use async_ringbuf::{AsyncRb, traits::*};
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
@@ -23,8 +33,10 @@ use telemetry::metrics_collector::CollectorDetail;
 mod stats;
 mod config;
 pub mod util;
+
 mod dot;
 pub(crate) mod monitor;
+
 
 const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 60;
 
@@ -42,10 +54,6 @@ type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
 
 ////
 
-pub(crate) mod telemetry {
-    pub mod metrics_collector;
-    pub mod metrics_server;
-}
 
 pub struct SteadyGraph {
     channel_count: Arc<AtomicUsize>,
