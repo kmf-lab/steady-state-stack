@@ -5,9 +5,11 @@ use crate::args::Args;
 use crate::steady::*;
 use crate::steady::monitor::{LocalMonitor, SteadyMonitor};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct WidgetInventory {
-    pub(crate) count: u128
+    pub(crate) count: u128,
+    pub(crate) payload: u128,
+    pub(crate) extra: [u128;6],
 }
 
 struct InternalState {
@@ -27,9 +29,17 @@ pub async fn run(monitor: SteadyMonitor
     //keep long running state in here while you run
     let mut state = InternalState { count: 0 };
     loop {
-        //single pass of work, do not loop in here
-        if iterate_once(&mut monitor, &mut state, tx).await {
-            break Ok(());
+        let mut multiplier = 400;   //100_000 per second
+        //let mut multiplier = 120; //30_000 per second
+        //40 every 4 ms -> 10_000
+
+        loop {
+            //single pass of work, do not loop in here
+            iterate_once(&mut monitor, &mut state, tx).await;
+            multiplier -= 1;
+            if 0 == multiplier {
+                break;
+            }
         }
         //this is an example of an telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
@@ -74,7 +84,11 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor
                       , state: &mut InternalState
                       , tx_widget: &mut SteadyTx<WidgetInventory> ) -> bool
 {
-    let _ = monitor.send_async(tx_widget, WidgetInventory {count: state.count.clone() }).await;
+    let _ = monitor.send_async(tx_widget, WidgetInventory {
+        count: state.count.clone(),
+        payload: 42,
+        extra: [1,2,3,4,5,6]
+    }).await;
     state.count += 1;
     false
 }

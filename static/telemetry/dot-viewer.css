@@ -1,0 +1,184 @@
+body {
+  font-family: sans-serif;
+  margin: 0;
+  /* The following should prevent bounce on overscroll,
+     but Chrome still does it. */
+  overscroll-behavior: none;
+  background-color: #000000;
+}
+
+.dropdown {
+  background-color: #444;
+  position: fixed;
+  top: 48px;
+  visibility: hidden;
+  z-index: 3;
+}
+
+.dropdown > div {
+  color: white;
+  font-size: 16px;
+  height: 24px;
+  margin: 0 10px;
+  padding: 10px 5px 4px 5px;
+  cursor: pointer;
+}
+
+.dropdown > div:hover {
+  background-color: #00a900;
+}
+
+.dropdown > .selected {
+  background-color: #008000;
+  color: white;
+}
+
+img {
+  height: 24px;
+  margin-left: 20px;
+}
+
+.logo {
+  height: 36px;
+}
+
+nav > div {
+  align-items: center;
+  color: white;
+  display: flex;
+  height: 48px;
+  position: fixed;
+  width: 100%;
+  z-index: 1;
+}
+
+#nav1 {
+  background-color: #006600;
+  display: flex;
+  justify-content: space-between;
+}
+
+#nav1 > div {
+  align-items: center;
+  display: flex;
+}
+
+#nav2 {
+  background-color: #008000;
+  top: 48px;
+}
+
+#nav-spacer {
+  height: 96px;
+}
+
+#preview {
+  background: #000000;
+  border: solid #72C7D5 2px;
+  border-radius: 4px;
+  left: 10px;
+  width: 300px;
+  max-height: calc(100vh - 120px);
+  max-width: calc(100vw - 20px);
+  position: fixed;
+  top: 108px;
+  visibility: hidden;
+  z-index: 1;
+}
+
+#preview > svg {
+  height: 100%;
+  width: 100%;
+}
+
+#preview > svg text,
+#preview > svg polygon[fill="#000000"] { /* arrowheads */
+  display: none;
+}
+
+#speedArea {
+  align-items: center;
+  border-right: solid white 1px;
+  display: flex;
+  margin-right: 20px;
+  padding-right: 20px;
+}
+
+#speedArea > img {
+  margin: 0;
+}
+
+#speedDropdown {
+  position: fixed;
+  width: 110px;
+}
+
+#speedSpan {
+  font-size: 20px;
+  margin: 0 10px;
+  width: 94px;
+}
+
+#spinner {
+  display: inline-block;
+  height: 70px;
+  margin-top: 100px;
+  width: 70px;
+}
+
+#diagram {
+/* this needs to be removed if not in demo because it breaks the initial preview window
+  margin: auto;
+  width: 50%;*/
+}
+
+#spinner-container {
+  background: #000000;
+  display: flex;
+  height: 100vh;
+  justify-content: center;
+  width: 100vw;
+}
+
+.title {
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  margin-left: 20px;
+}
+
+#userBtn {
+  margin-left: 0;
+  margin-right: 20px;
+}
+
+#userDropdown {
+  position: fixed;
+  right: 0;
+  width: 150px;
+}
+
+#userDropdown > div:first-child {
+  border-bottom: solid white 1px;
+}
+
+#viewport {
+  background: transparent;
+  border: solid #72C7D5 2px;
+  border-radius: 3px;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.664);
+  cursor: move;
+  left: 10px; /* same as preview */
+  position: fixed;
+  top: 108px; /* same as preview */
+  visibility: hidden;
+  z-index: 2;
+}
+
+#zoomInBtnDisabled {
+  display: none;
+}
+
+#zoomOutBtn {
+  display: none;
+}

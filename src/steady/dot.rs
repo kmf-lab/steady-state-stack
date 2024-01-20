@@ -5,7 +5,7 @@ use log::error;
 pub struct DotState {
     pub(crate) nodes: Vec<Node<>>, //position matches the node id
     pub(crate) edges: Vec<Edge<>>, //position matches the channel id
-    pub seq: u128,
+    pub seq: u64,
 }
 
 pub(crate) struct Node {
@@ -29,6 +29,9 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
     dot_graph.put_slice(b"digraph G {\nrankdir=");
     dot_graph.put_slice(rankdir.as_bytes());
     dot_graph.put_slice(b";\n");
+    dot_graph.put_slice(b"node [style=filled, fillcolor=white, fontcolor=black];\n");
+    dot_graph.put_slice(b"edge [color=white, fontcolor=white];\n");
+    dot_graph.put_slice(b"graph [bgcolor=black];\n");
 
     for node in &state.nodes {
         dot_graph.put_slice(b"\"");
@@ -61,23 +64,21 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
 
 
 
-pub(crate) fn update_dot(mut graphvis_bytes: &mut BytesMut, rankdir: &str, mut dot_state: &mut DotState, msg: Result<crate::steady::telemetry::metrics_collector::DiagramData, String>) -> u128 {
+pub(crate) fn update_dot(mut graphvis_bytes: &mut BytesMut, rankdir: &str, mut dot_state: &mut DotState, msg: Result<crate::steady::telemetry::metrics_collector::DiagramData, String>) -> u64 {
     match msg {
         Ok(crate::steady::telemetry::metrics_collector::DiagramData::Node(seq, name, id, channels_in, channels_out)) => {
             refresh_structure(&mut dot_state, name, id, channels_in, channels_out);
             dot_state.seq = seq;
         },
-        Ok(crate::steady::telemetry::metrics_collector::DiagramData::Edge(seq, total_take
-                                                                          , consumed_this_cycle
-                                                                          , ma_consumed_per_second
-                                                                          , in_flight_this_cycle
-                                                                          , ma_inflight_per_second)) => {
+        Ok(crate::steady::telemetry::metrics_collector::DiagramData::Edge(seq
+                                                                          , total_take
+                                                                          , total_send)) => {
+            total_take.iter().enumerate().for_each(|(i,c)| {
+               dot_state.edges[i].display_label = format!("out:{}",c);
+            });
+            dot_state.seq = seq;
 
-            assert_eq!(seq, dot_state.seq,"Expected to get Node updates before Edge");
-            //TODO: update the chart with data
-
-
-
+            //TODO: update the chart with all the data in old example
 
             //NOTE: generate the graph and write it to disk
             graphvis_bytes.clear(); // Clear the buffer for reuse
@@ -98,8 +99,8 @@ pub fn refresh_structure(mut local_state: &mut DotState, name: &str
         local_state.nodes.resize_with(id + 1, || {
             Node {
                 id: usize::MAX,
-                color: "black",
-                pen_width: "1",
+                color: "grey",
+                pen_width: "2",
                 display_label: "".to_string(),
             }
         });
@@ -114,7 +115,7 @@ pub fn refresh_structure(mut local_state: &mut DotState, name: &str
                     Edge {
                         from: usize::MAX,
                         to: usize::MAX,
-                        color: "black",
+                        color: "white",
                         pen_width: "3",
                         display_label: "".to_string(),//defined when the content arrives
                         id: usize::MAX,
@@ -144,7 +145,7 @@ pub fn refresh_structure(mut local_state: &mut DotState, name: &str
                     Edge {
                         from: usize::MAX,
                         to: usize::MAX,
-                        color: "black",
+                        color: "white",
                         pen_width: "3",
                         display_label: "".to_string(),//defined when the content arrives
                         id: usize::MAX,

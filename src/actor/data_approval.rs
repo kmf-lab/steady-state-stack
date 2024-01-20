@@ -6,10 +6,11 @@ use crate::steady::*;
 use crate::steady::monitor::SteadyMonitor;
 use crate::steady::monitor::LocalMonitor;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Copy)]
 pub struct ApprovedWidgets {
     pub original_count: u128,
-    pub approved_count: u128
+    pub approved_count: u128,
+    pub extra:[u128;6],
 }
 
 #[cfg(not(test))]
@@ -54,11 +55,12 @@ pub async fn run(monitor: SteadyMonitor
       let mut monitor = monitor.init_stats(&mut[rx], &mut[tx]);
 
     loop {
-                match monitor.take_async(rx).await {
+              match monitor.take_async(rx).await {
                     Ok(m) => {
                         let _ = monitor.send_async(tx, ApprovedWidgets {
                             original_count: m.count,
-                            approved_count: m.count / 2
+                            approved_count: m.count / 2,
+                            extra: m.extra
                         }).await;
                     },
                     Err(msg) => {
@@ -80,7 +82,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
      match monitor.take_async(rx).await {
         Ok(m) => {
             let _ = monitor.send_async(tx, ApprovedWidgets {
-                original_count: m.count, approved_count: m.count/2
+                original_count: m.count, approved_count: m.count/2, extra: m.extra
             }).await;
         },
         Err(msg) => {
@@ -120,7 +122,11 @@ mod tests {
         let tx_out = ref_mut!(tx_out_guard);
         let rx_out = ref_mut!(rx_out_guard);
 
-        let _ = mock_monitor.send_async(tx_in, WidgetInventory {count: 5 }).await;
+        let _ = mock_monitor.send_async(tx_in, WidgetInventory {
+            count: 5
+            , payload: 42
+            , extra: [1,2,3,4,5,6]
+        }).await;
 
         let exit= iterate_once(&mut mock_monitor, rx_in, tx_out).await;
         assert_eq!(exit, false);

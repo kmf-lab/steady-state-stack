@@ -26,7 +26,8 @@ use async_ringbuf::{AsyncRb, traits::*};
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 use async_std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use ringbuf::storage::Heap;
+use ringbuf::StaticRb;
+use ringbuf::storage::{Heap, Static};
 use monitor::SteadyMonitor;
 use telemetry::metrics_collector::CollectorDetail;
 
@@ -41,6 +42,7 @@ pub(crate) mod monitor;
 const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 60;
 
 type ChannelBacking<T> = Heap<T>;
+
 
 type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
 type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
@@ -61,6 +63,8 @@ pub struct SteadyGraph {
 
     //used by collector but could grow if we get new actors at runtime
     all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
+    //ordered leaf first synchronous shutdown, in, out, hook
+    shutdown_hooks: Arc<Mutex<Vec<(Vec<usize>,Vec<usize>,fn())>>>,
 
 }
 //NOTE: we could get a read access to the SteadyRx and SteadyTx
@@ -110,12 +114,12 @@ macro_rules! ref_mut {
 
 //TODO: parallel children are a problem for the new single send recieve channels.
 
-//TODO: refactor into struct later
+/*
+
 pub(crate) fn callbacks() -> Callbacks {
 
     //is the call back recording events for the elemetry?
-    Callbacks::new()
-        .with_before_start( || {
+    Callbacks::new()       .with_before_start( || {
             //TODO: record the name? of the telemetry on the graph needed?
             // info!("before start");
         })
@@ -125,29 +129,13 @@ pub(crate) fn callbacks() -> Callbacks {
         })
         .with_after_stop( || {
             //TODO: record this telemetry has stopped on the graph
-            //  info!("after stop");
+              info!("after stop");
         })
         .with_after_restart( || {
             //TODO: record restart count on the graph
 //info!("after restart");
         })
-}
-
-
-fn build_new_monitor(name: & 'static str, ctx: Option<BastionContext>
-                           , id: usize
-                           , channel_count: Arc<AtomicUsize>
-                           , all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>
-) -> SteadyMonitor {
-
-    SteadyMonitor {
-        channel_count,
-        name,
-        ctx,
-        id,
-        all_telemetry_rx,
-    }
-}
+}*/
 
 //for testing only
 #[cfg(test)]
@@ -157,9 +145,16 @@ impl SteadyGraph  {
         let id = self.monitor_count;
         self.monitor_count += 1;
 
-        build_new_monitor(name, None, id, self.channel_count.clone()
-                          , self.all_telemetry_rx.clone())
-
+        let channel_count = self.channel_count.clone();
+        let all_telemetry_rx = self.all_telemetry_rx.clone();
+        SteadyMonitor {
+            channel_count,
+            name,
+            ctx: None,
+            id,
+            all_telemetry_rx,
+            shutdown_hooks: self.shutdown_hooks.clone()
+        }
     }
 }
 
@@ -170,6 +165,7 @@ fn build_channel<T>(
                     ) -> (Arc<Mutex<SteadyTx<T>>>, Arc<Mutex<SteadyRx<T>>>) {
     let rb = AsyncRb::<ChannelBacking<T>>::new(cap);
     let (tx, rx): (AsyncProd<Arc<AsyncRb<Heap<T>>>>, AsyncCons<Arc<AsyncRb<Heap<T>>>>) = rb.split();
+
     (  Arc::new(Mutex::new(SteadyTx::new(id, tx, cap, labels, None)))
      , Arc::new(Mutex::new(SteadyRx::new(id, rx, cap, labels))) )
 }
@@ -190,6 +186,7 @@ impl SteadyGraph {
             channel_count: Arc::new(AtomicUsize::new(0)),
             monitor_count: 0, //this is the count of all monitors
             all_telemetry_rx: Arc::new(Mutex::new(Vec::new())), //this is all telemetry receivers
+            shutdown_hooks: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -213,21 +210,31 @@ impl SteadyGraph {
 
                 let id = graph.monitor_count;
                 graph.monitor_count += 1;
-                let (id, telemetry_tx) = (id, graph.all_telemetry_rx.clone());
+                let telemetry_tx = graph.all_telemetry_rx.clone();
                 let channel_count = graph.channel_count.clone();
+                let shutdown_hooks = graph.shutdown_hooks.clone();
 
-                c.with_callbacks(callbacks())
-                    .with_exec(move |ctx| {
+                let callbacks = Callbacks::new().with_after_stop(|| {
+                   //TODO: new telemetry counting actor restarts
+                });
+                c.with_exec(move |ctx| {
                         let init_fn_clone = init_clone.clone();
                         let channel_count = channel_count.clone();
                         let telemetry_tx = telemetry_tx.clone();
+                        let shutdown_hooks = shutdown_hooks.clone();
+
                         async move {
                             //this telemetry now owns this monitor
-                            let monitor = build_new_monitor(name
-                                         , Some(ctx)
-                                         , id
-                                         , channel_count.clone()
-                                         , telemetry_tx.clone());
+
+                            let monitor = SteadyMonitor {
+                                shutdown_hooks:  shutdown_hooks.clone(),
+                                channel_count: channel_count.clone(),
+                                name,
+                                ctx: Some(ctx),
+                                id,
+                                all_telemetry_rx: telemetry_tx.clone(),
+                            };
+
 
                             match init_fn_clone(monitor).await {
                                 Ok(_) => {
@@ -241,6 +248,7 @@ impl SteadyGraph {
                             Ok(())
                         }
                     })
+                    .with_callbacks(callbacks)
                     .with_name(name)
             };
 
@@ -260,12 +268,12 @@ impl SteadyGraph {
         let _ = Bastion::supervisor(|supervisor| {
             let supervisor = supervisor.with_strategy(SupervisionStrategy::OneForAll);
 
-            let mut outgoing = Vec::new();
+            let mut outgoing = None;
 
             let supervisor = if config::TELEMETRY_SERVER {
                 let (tx, rx) = self.new_channel::<DiagramData>(config::CHANNEL_LENGTH_TO_FEATURE
                                                                , &["steady-telemetry"]);
-                outgoing.push(tx);
+                outgoing = Some(tx);
                 supervisor.children(|children| {
                     self.add_to_graph("telemetry-polling"
                                       , children.with_redundancy(0)
@@ -329,9 +337,14 @@ impl<T> SteadyRx<T> {
 
     #[inline]
     pub async fn take_async(& mut self) -> Result<T,String> {
-         match self.rx.pop().await {
-            Some(a) => {Ok(a)}
-            None => {Err("Producer is dropped".to_string())}
+        // implementation favors a full channel
+        if let Some(m) = self.rx.try_pop() {
+            return Ok(m);
+        } else {
+            match self.rx.pop().await {
+                Some(a) => { Ok(a) }
+                None => { Err("Producer is dropped".to_string()) }
+            }
         }
     }
 
@@ -381,12 +394,14 @@ impl<T> SteadyTx<T> {
 
     #[inline]
     pub async fn send_async(& mut self, msg: T) -> Result<(), T> {
+
         match self.tx.try_push(msg) {
             Ok(_) => {Ok(())},
             Err(msg) => {
                 error!("full channel detected data_approval tx telemetry: {:?} labels: {:?} capacity:{:?} type:{} "
                 , self.actor_name, self.label, self.batch_limit, type_name::<T>());
                 //here we will await until there is room in the channel
+
                 self.tx.push(msg).await
             }
         }
@@ -474,6 +489,8 @@ pub(crate) mod tests {
             assert_eq!(rx.count[rxd.local_idx], threshold);
         }
         monitor.relay_stats_rx_set_custom_batch_limit(rxd, threshold);
+        Delay::new(Duration::from_millis(config::MIN_TELEMETRY_CAPTURE_RATE_MS as u64)).await;
+
         monitor.relay_stats_batch().await;
 
         if let Some(ref mut rx) = monitor.telemetry_send_rx {
@@ -522,6 +539,7 @@ pub(crate) mod tests {
         if let Some(ref mut rx) = monitor.telemetry_send_rx {
             assert_eq!(rx.count[rxd.local_idx], threshold);
         }
+       Delay::new(Duration::from_millis(config::MIN_TELEMETRY_CAPTURE_RATE_MS as u64)).await;
 
         monitor.relay_stats_batch().await;
 

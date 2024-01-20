@@ -1,0 +1,11 @@
+digraph G {
+    rankdir=TB;
+    node [style=filled, fillcolor=white, fontcolor=black];
+    edge [color=white, fontcolor=white];
+    graph [bgcolor=black];
+    "0" [label="generator", color=red, penwidth=1];
+    "1" [label="approval", color=red, penwidth=1];
+    "2" [label="consumer", color=red, penwidth=1];
+    "0" -> "1" [label="out:3982401", color=green, penwidth=3];
+    "1" -> "2" [label="out:3982401", color=green, penwidth=3];
+}

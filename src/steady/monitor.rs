@@ -34,12 +34,9 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     pub async fn relay_stats_all(&mut self) {
+        //only relay if we are withing the bounds of the telemetry channel limits.
+        if self.last_instant.elapsed().as_millis()>= config::MIN_TELEMETRY_CAPTURE_RATE_MS as u128 {
 
-        // do not run any faster than the framerate of the telemetry can consume
-        //TODO: this is not right needs alignment with the periodic counter and other calls
-        //let run_duration: Duration = Instant::now().duration_since(self.monitor.last_instant);
-        //if run_duration.as_millis() as usize >= steady_feature::MIN_TELEMETRY_CAPTURE_RATE_MS
-        {
             let is_in_bastion:bool = {self.ctx().is_some()};
 
             if let Some(ref mut send_tx) = self.telemetry_send_tx {
@@ -109,31 +106,17 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                         }
                 }
             }
+           //note: this is the only place we set this, right after we do it
+           self.last_instant = Instant::now();
         }
+
     }
 
 
     pub async fn relay_stats_periodic(self: &mut Self, duration_rate: Duration) {
-
         assert_eq!(true, duration_rate.ge(&Duration::from_millis(config::MIN_TELEMETRY_CAPTURE_RATE_MS as u64)));
-
-        let run_duration: Duration = {
-                Instant::now().duration_since(self.last_instant).clone()
-            };
-
-        run!(
-            async {
-        Delay::new(duration_rate.saturating_sub(run_duration)).await;
-
-            }
-        );
-
-        {
-            self.last_instant = Instant::now();
-            self.relay_stats_all().await;
-        }
-
-
+        Delay::new(duration_rate.saturating_sub(self.last_instant.elapsed())).await;
+        self.relay_stats_all().await;
     }
 
 
@@ -288,10 +271,16 @@ pub struct SteadyMonitor {
     pub(crate) name: & 'static str,
     pub(crate) ctx: Option<BastionContext>,
     pub(crate) channel_count: Arc<AtomicUsize>,
-    pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>
+    pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
+    pub shutdown_hooks: Arc<Mutex<Vec<(Vec<usize>, Vec<usize>, fn())>>>,
 }
 
 impl SteadyMonitor {
+
+    //TODO: rethink this it must happen in our thread
+    //pub fn add_shutdown_hook(hook:fn()) {
+    // }
+
 
     pub fn init_stats<const RX_LEN: usize, const TX_LEN: usize>(self
                                    , rx_tag: &mut [& mut dyn RxDef; RX_LEN]
@@ -376,10 +365,11 @@ impl SteadyMonitor {
         let telemetry_send_rx = rx_tuple.0;
         let telemetry_send_tx = tx_tuple.0;
 
-         // this is my locked version for this specific thread
+         // this is my fixed size version for this specific thread
         LocalMonitor::<RX_LEN, TX_LEN> {
-            telemetry_send_rx,  telemetry_send_tx,
-            last_instant: Instant::now(),
+            telemetry_send_rx,
+            telemetry_send_tx,
+            last_instant: Instant::now().sub(Duration::from_secs(1+config::TELEMETRY_PRODUCTION_RATE_MS as u64)),
             id: self.id,
             name: self.name,
             ctx: self.ctx,
@@ -416,7 +406,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
 
     #[inline]
-    fn consume_into(&self, take_target: &mut Vec<u128>, send_target: &mut Vec<u128>) {
+    fn consume_into(&self, take_target: &mut Vec<i128>, send_target: &mut Vec<i128>) {
 
          //this method can not be async since we need vtable and dyn
         //TODO: revisit later we may be able to return a closure instead
@@ -432,7 +422,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                                 if meta.0>=take_target.len() {
                                     take_target.resize(1 + meta.0, 0);
                                 }
-                                take_target[meta.0] += *val as u128
+                                take_target[meta.0] += *val as i128
                             });
                     } else {
                         break;
@@ -450,7 +440,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                                 if meta.0>=take_target.len() {
                                     take_target.resize(1 + meta.0, 0);
                                 }
-                                take_target[meta.0] += *val as u128
+                                take_target[meta.0] += *val as i128
                             });
                     } else {
                         break;

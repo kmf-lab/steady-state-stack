@@ -12,7 +12,7 @@ pub struct Args {
     pub(crate) loglevel: String,
 
     #[structopt(short = "g", long = "gen-rate"
-    , default_value = "1000")]
+    , default_value = "4")]
     pub(crate) gen_rate_ms: u64,
 
     #[structopt(short = "d", long = "duration", validator = run_duration_validator

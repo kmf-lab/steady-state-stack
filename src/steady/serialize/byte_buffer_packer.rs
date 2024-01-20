@@ -4,12 +4,16 @@ use bytes::{Bytes, BytesMut};
 use num_traits::Zero;
 use crate::steady::serialize::fast_protocol_packed::{read_long_signed, read_long_unsigned, write_long_signed, write_long_unsigned};
 
+
 /// writes the deltas so we can write or send less data across the system.
 /// note vecs must be the same size or larger never smaller as we go
 pub(crate) struct PackedVecWriter<T> {
     pub(crate) previous: Vec<T>,
+    pub(crate) write_count: usize,
+    pub(crate) delta_limit: usize, //after this many write a full record
 }
 
+/// reads the deltas so we can write or send less data across the system.
 impl <T> PackedVecWriter<T>
     where T: Sub<Output = T> + Into<i128> + Copy + Zero + PartialEq {
 
@@ -63,9 +67,11 @@ impl <T> PackedVecWriter<T>
     }
 }
 
-
+/// reads the deltas so we can write or send less data across the system.
 pub(crate) struct PackedVecReader<T> {
-    previous: Vec<T>,
+    pub(crate) previous: Vec<T>,
+    pub(crate) write_count: usize,
+    pub(crate) delta_limit: usize, //after this many write a full record
 }
 
 impl <T> PackedVecReader<T>
@@ -116,8 +122,16 @@ mod tests {
 
     #[test]
     fn test_round_trip_single_change() {
-        let mut writer:PackedVecWriter<i128> = PackedVecWriter { previous: vec![1,2,3,4] };
-        let mut reader:PackedVecReader<i128> = PackedVecReader { previous: vec![1,2,3,4] };
+        let mut writer:PackedVecWriter<i128> = PackedVecWriter {
+            previous: vec![1,2,3,4],
+            delta_limit: usize::MAX,
+            write_count: 0
+        };
+        let mut reader:PackedVecReader<i128> = PackedVecReader {
+            previous: vec![1,2,3,4],
+            delta_limit: usize::MAX,
+            write_count: 0
+        };
 
         let mut buffer = BytesMut::new();
         let new_vec:Vec<i128> = vec![1, 2, 3, 5]; // One element changed
@@ -134,8 +148,16 @@ mod tests {
 
     #[test]
     fn test_round_trip_multiple_changes() {
-        let mut writer:PackedVecWriter<i64> = PackedVecWriter { previous: vec![10, 20, 30, 40] };
-        let mut reader:PackedVecReader<i64> = PackedVecReader { previous: vec![10, 20, 30, 40] };
+        let mut writer:PackedVecWriter<i64> = PackedVecWriter {
+            previous: vec![10, 20, 30, 40],
+            delta_limit: usize::MAX,
+            write_count: 0
+        };
+        let mut reader:PackedVecReader<i64> = PackedVecReader {
+            previous: vec![10, 20, 30, 40],
+            delta_limit: usize::MAX,
+            write_count: 0
+        };
 
         let mut buffer = BytesMut::new();
         let new_vec = vec![11, 21, 31, 41]; // All elements changed
@@ -151,8 +173,16 @@ mod tests {
 
     #[test]
     fn test_round_trip_no_change() {
-        let mut writer:PackedVecWriter<i128> = PackedVecWriter { previous: vec![5, 5, 5, 5] };
-        let mut reader:PackedVecReader<i128> = PackedVecReader { previous: vec![5, 5, 5, 5] };
+        let mut writer:PackedVecWriter<i128> = PackedVecWriter {
+            previous: vec![5, 5, 5, 5],
+            delta_limit: usize::MAX,
+            write_count: 0
+        };
+        let mut reader:PackedVecReader<i128> = PackedVecReader {
+            previous: vec![5, 5, 5, 5],
+            delta_limit: usize::MAX,
+            write_count: 0
+        };
 
         let mut buffer = BytesMut::new();
         let new_vec = vec![5, 5, 5, 5]; // No change

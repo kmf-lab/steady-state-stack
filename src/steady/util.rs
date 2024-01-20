@@ -1,5 +1,7 @@
+use std::str::FromStr;
+use flexi_logger::{DeferredNow, Logger, LogSpecBuilder, LogSpecification, ModuleFilter};
+use flexi_logger::filter::{LogLineFilter, LogLineWriter};
 
-use flexi_logger::{Logger, LogSpecification};
 use log::*;
 
     /// Initializes logging for the application using the provided log level.
@@ -36,10 +38,15 @@ use log::*;
     /// }
     /// ```
     pub fn steady_logging_init(level: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let log_spec = LogSpecification::env_or_parse(level)?;
+
+        let mut builder = LogSpecBuilder::new();
+        builder.default(LevelFilter::from_str(level)?); // Set the default level
+        let log_spec = builder.build();
 
         Logger::with(log_spec)
             .format(flexi_logger::colored_with_thread)
+            // covert the tide info messages to trace
+            .filter(Box::new(TideHide))
             .start()?;
 
         /////////////////////////////////////////////////////////////////////
@@ -65,5 +72,37 @@ use log::*;
         }
         Ok(())
     }
+
+pub struct TideHide;
+impl LogLineFilter for TideHide {
+    fn write(&self, now: &mut DeferredNow
+             , record: &log::Record
+             , log_line_writer: &dyn LogLineWriter ) -> std::io::Result<()> {
+
+        //NOTE: this is a hack to hide the tide info messages, revisit in 2025
+        //NOTE: if this filter stops working perhaps Tide has
+        //    fixed its code and we can use the proper way of filtering this.
+        if Level::Info == record.level()
+            //avoid more work if it can be  helped
+           && (Some(87) == record.line() || Some(43) == record.line())
+           && Some("tide::log::middleware") == record.module_path() {
+            if log_enabled!(Level::Trace) {
+                //rewrite the log record to be at trace level
+                let record = Record::builder()
+                    .args(*record.args())
+                    .level(Level::Trace)
+                    .target(record.target())
+                    .file(record.file())
+                    .line(record.line())
+                    .module_path(record.module_path())
+                    .build();
+                log_line_writer.write(now, &record)?;
+            }
+        } else {
+            log_line_writer.write(now, record)?;
+        }
+        Ok(())
+    }
+}
 ////////////////////////////////////////////
 ////////////////////////////////////////////

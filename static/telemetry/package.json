@@ -1,0 +1,16 @@
+{
+  "name": "zoomer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "zoomer.js",
+  "scripts": {
+    "open": "open index.html",
+    "server": "node server.js",
+    "sync": "browser-sync start --server --files 'index.html' '*.css' '*.js'"
+  },
+  "author": "R. Mark Volkmann <r.mark.volkmann@gmail.com> (https://mvolkmann.github.io/)",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.16.2"
+  }
+}

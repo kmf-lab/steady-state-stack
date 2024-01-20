@@ -35,7 +35,7 @@ pub async fn run(monitor: SteadyMonitor
             break Ok(());
         }
         //clear out any remaining stats but when we have no work do not spin tightly
-        monitor.relay_stats_periodic(Duration::from_millis(40)).await;
+        monitor.relay_stats_periodic(Duration::from_millis(2)).await;
     }
 }
 
@@ -134,7 +134,9 @@ mod tests {
 
         let _ = mock_monitor.send_async(steady_tx, ApprovedWidgets {
             original_count: 1,
-            approved_count: 2
+            approved_count: 2,
+            extra: [0; 6]
+
         }).await;
 
 

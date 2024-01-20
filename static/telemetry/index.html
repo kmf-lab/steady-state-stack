@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Telemetry</title>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="dot-viewer.css" />
+    <script src="viz-lite.js"></script>
+    <script src="dot-viewer.js"></script>
+  </head>
+  <body>
+    <nav id="nav">
+      <div id="nav1">
+        <div class="left">
+          <div class="title">Live Telemetry</div>
+        </div>
+        <div class="right">
+          <div id="speedArea">
+            <img id="refreshIcon" src="images/refresh-time-icon.svg">
+            <span id="speedSpan"></span>
+            <span>&#9660;</span>
+          </div>
+          <img id="userBtn" src="images/user-icon.svg">
+        </div>
+      </div>
+      <div id="nav2">
+        <img id="previewBtn" src="images/preview-icon.svg">
+        <img id="zoomInBtn" src="images/zoom-in-icon.svg">
+        <img id="zoomInBtnDisabled" src="images/zoom-in-icon-disabled.svg">
+        <img id="zoomOutBtn" src="images/zoom-out-icon.svg">
+        <img id="zoomOutBtnDisabled" src="images/zoom-out-icon-disabled.svg">
+      </div>
+    </nav>
+    <div id="nav-spacer"></div>
+    <div id="speedDropdown" class="dropdown">
+      <div class="speed0">No refresh</div>
+      <div class="speed33">33 ms</div>
+      <div class="speed100">100 ms</div>
+      <div class="speed200">200 ms</div>
+      <div class="speed1000">1 sec</div>
+      <div class="speed10000">10 sec</div>
+      <div class="speed20000">20 sec</div>
+      <div class="speed60000">1 min</div>
+      <div class="speed1200000">20 min</div>
+      <div class="speed3600000">1 hour</div>
+    </div>
+    <div id="userDropdown" class="dropdown">
+      <div id="exportItem">Export Flowmap</div>
+      <div class="logoutItem">Log Out</div>
+    </div>
+    <div id="diagram">
+      <div id="spinner-container">
+        <img id="spinner" src="images/spinner.gif" alt="spinner">
+      </div>
+    </div>
+    <div id="preview"></div>
+    <div id="viewport"></div>
+  </body>
+</html>

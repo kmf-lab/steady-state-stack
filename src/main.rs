@@ -2,6 +2,7 @@ mod args;
 #[macro_use]
 mod steady;
 
+
 use structopt::*;
 use log;
 use log::*;
@@ -66,10 +67,10 @@ fn build_graph(cli_arg: &Args) {
     let mut graph = SteadyGraph::new();
 
     //create all the needed channels between actors
-
+    let example_capacity = 512;
     //upon construction these are set up to be monitored by the telemetry telemetry
-    let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(38,&["widgets"]);
-    let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(38,&["widgets"]);
+    let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(example_capacity,&["widgets"]);
+    let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(example_capacity,&["widgets"]);
     //the above tx rx objects will be owned by the children closures below then cloned
     //each time we need to startup a new child telemetry instance. This way when an telemetry fails
     //we still have the original to clone from.
@@ -140,14 +141,19 @@ mod tests {
 
         run!(async {
 
-            let to_send = WidgetInventory { count: 42 };
+            let to_send = WidgetInventory {
+                count: 42
+                , payload: 0
+                , extra: [0; 6]
+            };
 
             let answer_generator: Result<&str, SendError> = distribute_generator.request(to_send).await.unwrap();
             assert_eq!("ok",answer_generator.unwrap());
 
             let expected_message = ApprovedWidgets {
                 original_count: 42,
-                approved_count: 21
+                approved_count: 21,
+                extra: [0; 6]
             };
             let answer_consumer: Result<&str, SendError> = distribute_consumer.request(expected_message).await.unwrap();
             assert_eq!("ok",answer_consumer.unwrap());

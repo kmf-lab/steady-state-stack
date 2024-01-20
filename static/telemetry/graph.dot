@@ -1,0 +1,404 @@
+digraph {
+rankdir = TD
+"Stage1"[label="LifeCycleBehavior
+#1
+sub:'MQTT/Connection'
+sub:'lifecycle/control/shutdown'
+ CPU 2.040% Elap:0032µs
+ Rate:0016ms",style=filled,fillcolor=burlywood2]
+"Stage2"[label="ActuatorDriverBehavior
+#2
+ShutdownListener
+sub:'actuator/power/internal'
+ CPU 0.000% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=burlywood2]
+"Stage3"[label="EngineBehavior
+#3
+sub:'feedback'
+sub:'engine/power/control'
+sub:'engine/calibration/control'
+ CPU 1.333% Elap:0065µs
+ Rate:0016ms",style=filled,fillcolor=burlywood2]
+"Stage4"[label="AmbientLightBehavior
+#4
+AnalogListener
+sub:'feedback'
+ CPU N/A% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=burlywood2]
+"Stage5"[label="LightingBehavior
+#5
+sub:'feedback'
+sub:'lights/override/control'
+sub:'lights/calibration/control'
+sub:'lights/ambient/feedback'
+ CPU N/A% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=burlywood2]
+"Stage6"[label="LocationBehavior
+#6
+ CPU 0.000% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=burlywood2]
+"Stage7"[label="IdGen
+#7 CPU N/A% Elap:0000ns
+ Rate:0040ms",style=filled,fillcolor=darkolivegreen2]
+"Stage8"[label="SequentialFileReadWrite
+#8 CPU N/A% Elap:0000ns
+ Rate:0040ms",style=filled,fillcolor=darkolivegreen2]
+"Stage9"[label="BlockStorage
+#9
+C:\Users\tobischw\AppData\Local\Temp\mqttClientData5063479581361446703\seqRep6528519268384140314.idx.tail CPU N/A% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=cornsilk2]
+"Stage10"[label="RawDataCryptAESCBCPKCS5
+#10
+encrypt CPU 0.000% Elap:0000ns
+ Rate:0040ms",style=filled,fillcolor=darkolivegreen2]
+"Stage11"[label="RawDataCryptAESCBCPKCS5
+#11
+decrypt CPU 0.000% Elap:0000ns
+ Rate:0040ms",style=filled,fillcolor=darkolivegreen2]
+"Stage12"[label="BlockStorage
+#12
+C:\Users\tobischw\AppData\Local\Temp\mqttClientData5063479581361446703\seqRep6689287086982744303.dat1.tail CPU 0.000% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=cornsilk2]
+"Stage13"[label="RawDataCryptAESCBCPKCS5
+#13
+encrypt CPU 0.000% Elap:0000ns
+ Rate:0040ms",style=filled,fillcolor=darkolivegreen2]
+"Stage14"[label="RawDataCryptAESCBCPKCS5
+#14
+decrypt CPU N/A% Elap:0000ns
+ Rate:0040ms",style=filled,fillcolor=darkolivegreen2]
+"Stage15"[label="BlockStorage
+#15
+C:\Users\tobischw\AppData\Local\Temp\mqttClientData5063479581361446703\seqRep7580609937551194244.dat0.tail CPU 0.000% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=cornsilk2]
+"Stage16"[label="RawDataCryptAESCBCPKCS5
+#16
+encrypt CPU N/A% Elap:0000ns
+ Rate:0040ms",style=filled,fillcolor=darkolivegreen2]
+"Stage17"[label="RawDataCryptAESCBCPKCS5
+#17
+decrypt CPU N/A% Elap:0000ns
+ Rate:0040ms",style=filled,fillcolor=darkolivegreen2]
+"Stage18"[label="SequentialReplayer
+#18 CPU N/A% Elap:0000ns
+ Rate:0040ms",style=filled,fillcolor=darkolivegreen2]
+"Stage19"[label="MQTTClientToServerEncode
+#19 CPU 0.622% Elap:0065µs
+ Rate:0004ms",style=filled,fillcolor=darkolivegreen2]
+"Stage20"[label="MQTTClient
+#20 CPU 0.053% Elap:0004µs
+ Rate:0004ms",style=filled,fillcolor=darkolivegreen2]
+"Stage21"[label="ClientSocketReader
+#21 CPU 0.252% Elap:0016µs
+ Rate:0004ms",style=filled,fillcolor=darkolivegreen2]
+"Stage22"[label="SSLEngineUnWrap
+#22 CPU 0.000% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=bisque1]
+"Stage23"[label="SSLEngineWrap
+#23 CPU N/A% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=bisque1]
+"Stage24"[label="ClientSocketWriter
+#24 CPU 22.031% Elap:0032µs
+ Rate:0004ms",color=blue,penwidth=5,style=filled,fillcolor=darkolivegreen2]
+"Stage25"[label="MQTTClientResponse
+#25 CPU 0.022% Elap:0002µs
+ Rate:0004ms",style=filled,fillcolor=darkolivegreen2]
+"Stage26"[label="IngressMQTT
+#26 CPU N/A% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=darkolivegreen2]
+"Stage27"[label="EgressMQTT
+#27 CPU N/A% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=darkolivegreen2]
+"Stage28"[label="TrafficCop
+#28 CPU N/A% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=cadetblue2]
+"Stage29"[label="TrafficCop
+#29 CPU 0.000% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=cadetblue2]
+"Stage30"[label="TrafficCop
+#30 CPU N/A% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=cadetblue2]
+"Stage31"[label="TrafficCop
+#31 CPU N/A% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=cadetblue2]
+"Stage32"[label="TrafficCop
+#32 CPU 11.992% Elap:0016µs
+ Rate:0016ms",style=filled,fillcolor=cadetblue2]
+"Stage33"[label="TrafficCop
+#33 CPU 0.000% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=cadetblue2]
+"Stage34"[label="TrafficCop
+#34 CPU 4.786% Elap:0008µs
+ Rate:0016ms",style=filled,fillcolor=cadetblue2]
+"Stage35"[label="MessagePubSub
+#35 CPU 87.673% Elap:0065µs
+ Rate:0016ms",color=red,penwidth=5,style=filled,fillcolor=gold2]
+"Stage36"[label="Replicator
+#36 CPU 0.000% Elap:0000ns
+ Rate:0016ms",style=filled,fillcolor=cornsilk2]
+"Stage37"[label="I2CJFFI
+#37 CPU 58.150% Elap:0065µs
+ Rate:0250µs",color=orange,penwidth=5,style=filled,fillcolor=darksalmon]
+"Stage38"[label="ReadDeviceInput
+#38 CPU 0.121% Elap:0016µs
+ Rate:0250µs",style=filled,fillcolor=darksalmon]
+{ rank=same "Stage22" }
+{ rank=same "Stage21" }
+{ rank=same "Stage23" }
+{ rank=same "Stage24" }
+"Stage37" -> "Stage36"[label="I2CResponse 
+Full:00% Vol:0001 
+ [16msg]3k",penwidth=2]
+"Stage35" -> "Stage34"[label="TrafficAck 
+Full:00% Vol:0000 
+ [16msg]1153b",penwidth=1]
+"Stage34" -> "Stage35"[label="TrafficRelease 
+Full:00% Vol:0000 
+ [21msg]1281b",penwidth=1]
+"Stage37" -> "Stage33"[label="TrafficAck 
+Full:00% Vol:0000 
+ [16msg]1153b",penwidth=1]
+"Stage33" -> "Stage37"[label="TrafficRelease 
+Full:00% Vol:0000 
+ [21msg]1281b",penwidth=1]
+"Stage35" -> "Stage32"[label="TrafficAck 
+Full:00% Vol:0000 
+ [16msg]1153b",penwidth=1]
+"Stage32" -> "Stage35"[label="TrafficRelease 
+Full:00% Vol:0000 
+ [21msg]1281b",penwidth=1]
+"Stage35" -> "Stage31"[label="TrafficAck 
+Full:00% Vol:0000 
+ [16msg]1153b",penwidth=1]
+"Stage31" -> "Stage35"[label="TrafficRelease 
+Full:00% Vol:0000 
+ [21msg]1281b",penwidth=1]
+"Stage35" -> "Stage30"[label="TrafficAck 
+Full:00% Vol:0000 
+ [16msg]1153b",penwidth=1]
+"Stage30" -> "Stage35"[label="TrafficRelease 
+Full:00% Vol:0000 
+ [21msg]1281b",penwidth=1]
+"Stage37" -> "Stage29"[label="TrafficAck 
+Full:02% Vol:0001 
+ [16msg]1153b",penwidth=2]
+"Stage29" -> "Stage37"[label="TrafficRelease 
+Full:00% Vol:0001 
+ [21msg]1281b",penwidth=2]
+"Stage35" -> "Stage28"[label="TrafficAck 
+Full:00% Vol:0000 
+ [16msg]1153b",penwidth=1]
+"Stage28" -> "Stage35"[label="TrafficRelease 
+Full:00% Vol:0000 
+ [21msg]1281b",penwidth=1]
+"Stage35" -> "Stage27"[label="MessageSubscription 
+Full:00% Vol:0000 
+ [42-64msgs]2m",penwidth=1]
+"Stage26" -> "Stage35"[label="IngressMessages 
+Full:00% Vol:0000 
+ [10msg]33k",penwidth=1]
+"Stage23" -> "Stage24"[label="NetPayload 
+Full:00% Vol:0000 
+ [102-341msgs]4m",penwidth=1]
+"Stage22" -> "Stage24"[label="NetPayload 
+Full:00% Vol:0000 
+ [102-341msgs]4m",penwidth=1]
+"Stage22" -> "Stage21"[label="Release 
+Full:00% Vol:0000 
+ [73-85msgs]3k",penwidth=1]
+"Stage25" -> "Stage21"[label="Release 
+Full:00% Vol:0000 
+ [73-85msgs]3k",penwidth=1]
+"Stage22" -> "Stage25"[label="NetPayload 
+Full:00% Vol:0000 
+ [51-170msgs]8m",penwidth=1]
+"Stage21" -> "Stage22"[label="NetPayload 
+Full:00% Vol:0000 
+ [51-170msgs]8m",penwidth=1]
+"Stage19" -> "Stage23"[label="NetPayload 
+Full:00% Vol:0000 
+ [102-341msgs]4m",penwidth=1]
+"Stage17" -> "Stage15"[label="BlockStorageXmit 
+Full:00% Vol:0000 
+ [10-12msgs]17k",penwidth=1]
+"Stage15" -> "Stage17"[label="BlockStorageReceive 
+Full:00% Vol:0000 
+ [10-16msgs]17k",penwidth=1]
+"Stage16" -> "Stage15"[label="BlockStorageXmit 
+Full:00% Vol:0000 
+ [10-12msgs]17k",penwidth=1]
+"Stage15" -> "Stage16"[label="BlockStorageReceive 
+Full:00% Vol:0000 
+ [10-16msgs]17k",penwidth=1]
+"Stage14" -> "Stage12"[label="BlockStorageXmit 
+Full:00% Vol:0000 
+ [10-12msgs]17k",penwidth=1]
+"Stage12" -> "Stage14"[label="BlockStorageReceive 
+Full:00% Vol:0000 
+ [10-16msgs]17k",penwidth=1]
+"Stage13" -> "Stage12"[label="BlockStorageXmit 
+Full:00% Vol:0000 
+ [10-12msgs]17k",penwidth=1]
+"Stage12" -> "Stage13"[label="BlockStorageReceive 
+Full:00% Vol:0000 
+ [10-16msgs]17k",penwidth=1]
+"Stage11" -> "Stage9"[label="BlockStorageXmit 
+Full:00% Vol:0000 
+ [10-12msgs]17k",penwidth=1]
+"Stage9" -> "Stage11"[label="BlockStorageReceive 
+Full:00% Vol:0000 
+ [10-16msgs]17k",penwidth=1]
+"Stage10" -> "Stage9"[label="BlockStorageXmit 
+Full:00% Vol:0000 
+ [10-12msgs]17k",penwidth=1]
+"Stage9" -> "Stage10"[label="BlockStorageReceive 
+Full:00% Vol:0000 
+ [10-16msgs]17k",penwidth=1]
+"Stage18" -> "Stage10"[label="RawData 
+Full:00% Vol:0000 
+ [128msg]19k",penwidth=1]
+"Stage18" -> "Stage13"[label="RawData 
+Full:00% Vol:0000 
+ [128msg]4m",penwidth=1]
+"Stage18" -> "Stage16"[label="RawData 
+Full:00% Vol:0000 
+ [128msg]4m",penwidth=1]
+"Stage11" -> "Stage18"[label="RawData 
+Full:00% Vol:0000 
+ [64msg]10k",penwidth=1]
+"Stage14" -> "Stage18"[label="RawData 
+Full:00% Vol:0000 
+ [64msg]2m",penwidth=1]
+"Stage17" -> "Stage18"[label="RawData 
+Full:00% Vol:0000 
+ [64msg]2m",penwidth=1]
+"Stage10" -> "Stage8"[label="RawData 
+Full:00% Vol:0000 
+ [64msg]10k",penwidth=1]
+"Stage13" -> "Stage8"[label="RawData 
+Full:00% Vol:0000 
+ [64msg]2m",penwidth=1]
+"Stage16" -> "Stage8"[label="RawData 
+Full:00% Vol:0000 
+ [64msg]2m",penwidth=1]
+"Stage8" -> "Stage11"[label="RawData 
+Full:00% Vol:0000 
+ [128msg]19k",penwidth=1]
+"Stage8" -> "Stage14"[label="RawData 
+Full:00% Vol:0000 
+ [128msg]4m",penwidth=1]
+"Stage8" -> "Stage17"[label="RawData 
+Full:00% Vol:0000 
+ [128msg]4m",penwidth=1]
+"Stage8" -> "Stage18"[label="SequentialResp 
+Full:00% Vol:0000 
+ [42-128msgs]2k",penwidth=1]
+"Stage8" -> "Stage18"[label="SequentialResp 
+Full:00% Vol:0000 
+ [42-128msgs]2k",penwidth=1]
+"Stage8" -> "Stage18"[label="SequentialResp 
+Full:00% Vol:0000 
+ [42-128msgs]2k",penwidth=1]
+"Stage18" -> "Stage8"[label="SequentialCtl 
+Full:00% Vol:0000 
+ [64-128msgs]2k",penwidth=1]
+"Stage18" -> "Stage8"[label="SequentialCtl 
+Full:00% Vol:0001 
+ [64-128msgs]2k",penwidth=2]
+"Stage18" -> "Stage8"[label="SequentialCtl 
+Full:00% Vol:0001 
+ [64-128msgs]2k",penwidth=2]
+"Stage18" -> "Stage19"[label="PersistedBlobLoad 
+Full:00% Vol:0000 
+ [42-128msgs]2m",penwidth=1]
+"Stage19" -> "Stage18"[label="PersistedBlobStore 
+Full:00% Vol:0000 
+ [42-128msgs]2m",penwidth=1]
+"Stage19" -> "Stage7"[label="MQTTIdRangeController 
+Full:00% Vol:0000 
+ [42-64msgs]1537b",penwidth=1]
+"Stage20" -> "Stage7"[label="MQTTIdRange 
+Full:00% Vol:0000 
+ [21msg]1281b",penwidth=1]
+"Stage7" -> "Stage20"[label="MQTTIdRange 
+Full:00% Vol:0000 
+ [5msg]1089b",penwidth=1]
+"Stage25" -> "Stage20"[label="MQTTServerToClient 
+Full:00% Vol:0000 
+ [42-128msgs]4m",penwidth=1]
+"Stage20" -> "Stage19"[label="MQTTClientToServerAck 
+Full:00% Vol:0000 
+ [51-128msgs]2k",penwidth=1]
+"Stage20" -> "Stage19"[label="MQTTClientToServer 
+Full:00% Vol:0002 
+ [64-256msgs]16m",penwidth=2]
+"Stage20" -> "Stage26"[label="MQTTClientResponse 
+Full:00% Vol:0000 
+ [56-170msgs]4m",penwidth=1]
+"Stage27" -> "Stage20"[label="MQTTClientRequest 
+Full:02% Vol:0009 
+ [36-128msgs]4m",penwidth=2]
+"Stage36" -> "Stage6"[label="I2CResponse 
+Full:00% Vol:0001 
+ [32msg]10k",penwidth=2]
+"Stage6" -> "Stage28"[label="TrafficOrder 
+Full:00% Vol:0000 
+ [16msg]1281b",penwidth=1]
+"Stage6" -> "Stage35"[label="MessagePubSub 
+Full:00% Vol:0000 
+ [18-42msgs]33k",penwidth=1]
+"Stage6" -> "Stage29"[label="TrafficOrder 
+Full:00% Vol:0007 
+ [512msg]9k",penwidth=2]
+"Stage6" -> "Stage37"[label="I2CCommand 
+Full:00% Vol:0007 
+ [341-512msgs]137k",penwidth=2]
+"Stage35" -> "Stage5"[label="MessageSubscription 
+Full:00% Vol:0000 
+ [42-64msgs]2m",penwidth=1]
+"Stage5" -> "Stage30"[label="TrafficOrder 
+Full:00% Vol:0000 
+ [16msg]1281b",penwidth=1]
+"Stage5" -> "Stage35"[label="MessagePubSub 
+Full:00% Vol:0000 
+ [18-42msgs]33k",penwidth=1]
+"Stage35" -> "Stage4"[label="MessageSubscription 
+Full:00% Vol:0000 
+ [42-64msgs]2m",penwidth=1]
+"Stage38" -> "Stage4"[label="GroveResponse 
+Full:00% Vol:0001 
+ [51-64msgs]3k",penwidth=2]
+"Stage4" -> "Stage31"[label="TrafficOrder 
+Full:00% Vol:0000 
+ [16msg]1281b",penwidth=1]
+"Stage4" -> "Stage35"[label="MessagePubSub 
+Full:00% Vol:0000 
+ [18-42msgs]33k",penwidth=1]
+"Stage35" -> "Stage3"[label="MessageSubscription 
+Full:00% Vol:0000 
+ [42-64msgs]2m",penwidth=1]
+"Stage3" -> "Stage32"[label="TrafficOrder 
+Full:00% Vol:0000 
+ [16msg]1281b",penwidth=1]
+"Stage3" -> "Stage35"[label="MessagePubSub 
+Full:00% Vol:0000 
+ [18-42msgs]33k",penwidth=1]
+"Stage35" -> "Stage2"[label="MessageSubscription 
+Full:00% Vol:0000 
+ [42-64msgs]2m",penwidth=1]
+"Stage2" -> "Stage33"[label="TrafficOrder 
+Full:00% Vol:0000 
+ [4096msg]65k",penwidth=1]
+"Stage2" -> "Stage37"[label="I2CCommand 
+Full:00% Vol:0000 
+ [5461-8192msgs]257k",penwidth=1]
+"Stage35" -> "Stage1"[label="MessageSubscription 
+Full:00% Vol:0000 
+ [42-64msgs]2m",penwidth=1]
+"Stage1" -> "Stage34"[label="TrafficOrder 
+Full:00% Vol:0000 
+ [16msg]1281b",penwidth=1]
+"Stage1" -> "Stage35"[label="MessagePubSub 
+Full:00% Vol:0000 
+ [18-42msgs]33k",penwidth=1]
+}
