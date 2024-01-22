@@ -85,7 +85,8 @@ impl LogLineFilter for TideHide {
         if Level::Info == record.level()
             //avoid more work if it can be  helped
            && (Some(87) == record.line() || Some(43) == record.line())
-           && Some("tide::log::middleware") == record.module_path() {
+           && (Some("tide::log::middleware") == record.module_path()
+            || Some("tide::fs::serve_dir") == record.module_path()) {
             if log_enabled!(Level::Trace) {
                 //rewrite the log record to be at trace level
                 let record = Record::builder()

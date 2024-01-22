@@ -12,8 +12,8 @@ pub struct Args {
     pub(crate) loglevel: String,
 
     #[structopt(short = "g", long = "gen-rate"
-    , default_value = "4")]
-    pub(crate) gen_rate_ms: u64,
+    , default_value = "500")] //half a millisecond
+    pub(crate) gen_rate_micros: u64,
 
     #[structopt(short = "d", long = "duration", validator = run_duration_validator
     , default_value = "120")]
@@ -37,14 +37,16 @@ fn validate_logging_level(level: String) -> Result<(), String> {
         .map_err(|_| String::from("Invalid logging level format."))
 }
 
-#[cfg(test)]
+//TODO: need a better way to abstract this for systemd.
 pub fn to_cli_string(app:&str, arg: &Args) -> String {
     format!("{} --duration={} --loglevel={} --gen-rate={}"
             , app
             , arg.duration
             , arg.loglevel
-            , arg.gen_rate_ms)
+            , arg.gen_rate_micros)
 }
+
+#[cfg(test)]
 
 #[cfg(test)]
 mod tests {
@@ -60,7 +62,7 @@ mod tests {
 
         let orig_args = &Args {
             loglevel: "debug".to_string(),
-            gen_rate_ms: 3000,
+            gen_rate_micros: 3000000,
             duration: 7
         };
         let to_test = to_cli_string("myapp", orig_args);

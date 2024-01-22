@@ -1,10 +1,10 @@
 mod args;
 #[macro_use]
 mod steady;
+mod serviced;
 
 
 use structopt::*;
-use log;
 use log::*;
 use bastion::Bastion;
 use bastion::prelude::*;
@@ -27,6 +27,7 @@ mod actor {
 }
 use crate::actor::*;
 
+
 // This is a good template for your future main function. It should me minimal and just
 // get the command line args and start the graph. The graph is built in a separate function.
 // This is important so that the graph can be tested.
@@ -44,15 +45,17 @@ fn main() {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
-    Bastion::init(); //init bastion runtime
-    build_graph(&opt); //graph is built here and tested below in the test section.
-    Bastion::start(); //start the graph
+    let mut graph:SteadyGraph = build_graph(&opt); //graph is built here and tested below in the test section.
+    graph.start();
+
 
     //remove this block to run forever.
     //run! is a macro provided by bastion that will block until the future is resolved.
     run!(async {
         // note we use (&opt) just to show we did NOT transfer ownership
-        Delay::new(Duration::from_secs((&opt).duration)).await;
+        Delay::new(Duration::from_secs(opt.duration)).await;
+        graph.request_shutdown();
+        //TODO:: need some way to wait for shutdown to complete
         Bastion::stop();
     });
 
@@ -60,14 +63,15 @@ fn main() {
     Bastion::block_until_stopped();
 }
 
-fn build_graph(cli_arg: &Args) {
+fn build_graph(cli_arg: &Args) -> SteadyGraph {
     debug!("args: {:?}",&cli_arg);
+    Bastion::init(); //init bastion runtime
 
     //create the mutable graph object
     let mut graph = SteadyGraph::new();
 
     //create all the needed channels between actors
-    let example_capacity = 512;
+    let example_capacity = 4000;
     //upon construction these are set up to be monitored by the telemetry telemetry
     let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(example_capacity,&["widgets"]);
     let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(example_capacity,&["widgets"]);
@@ -112,7 +116,7 @@ fn build_graph(cli_arg: &Args) {
     ).expect("OneForOne supervisor creation error.");
 
     graph.init_telemetry();
-
+    graph
 }
 
 
@@ -132,9 +136,8 @@ mod tests {
             gen_rate_ms: 0,
         };
 
-        Bastion::init();
-        build_graph(&test_ops);
-        Bastion::start();
+        let mut graph = build_graph(&test_ops);
+        graph.start();
 
         let distribute_generator:Distributor = Distributor::named("testing-generator");
         let distribute_consumer:Distributor = Distributor::named("testing-consumer");
@@ -143,8 +146,8 @@ mod tests {
 
             let to_send = WidgetInventory {
                 count: 42
-                , payload: 0
-                , extra: [0; 6]
+                , _payload: 0
+                , _extra: [0; 6]
             };
 
             let answer_generator: Result<&str, SendError> = distribute_generator.request(to_send).await.unwrap();
@@ -157,7 +160,6 @@ mod tests {
             };
             let answer_consumer: Result<&str, SendError> = distribute_consumer.request(expected_message).await.unwrap();
             assert_eq!("ok",answer_consumer.unwrap());
-
 
             Bastion::stop();
         });

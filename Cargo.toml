@@ -3,6 +3,21 @@ name = "sss"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+opt-level = 'z' # optimize for size
+lto = true # link time optimization
+codegen-units = 1 # only one codegen unit to reduce binary size
+panic = 'abort' # no unwinding
+strip = 'symbols' # strip symbols
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+enum_glob_use = "deny" # forbid use of enum glob imports
+unwrap_used = "deny" # forbid use of unwrap
+
+
 #
 # to test if the code compiles for no_std use this command:
 #  cargo build --target thumbv6m-none-eabi
@@ -25,26 +40,28 @@ async-ringbuf    = "0.2.0-rc.4"
 log              = "0.4.20"  # common logging traits
 flexi_logger     = "0.27.3"  # default flexable logging implementation
 futures-timer    = "3.0.2"   # for async Delay::new(check_rate).await used places where we poll
-futures          = "0.3.29"  # for Select! Barrier etc and lock::Mutex when needed
+futures          = "0.3.29"  # for Select! Barrier etc and lock::Mutex
 itertools        = "0.12.0"  # helpful smart iter methods
 async-recursion  = "1.0.5"   # simplify the writing of async recursive functions
 structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
 time = { version = "0.3.31", features = ["formatting"] }# for time::Instant::now()
 uuid = { version = "0.8.2", features = ["v4"] }
-
-async-std        = { version = "1.12.0", features = ["attributes"] }# for RWLock
-
-#not in use yet... but this is where I am planning to go for web services
-askama           = "0.12.1" # for compile time templating
-
 #
 # we will stay with tide since new async logic will be built soon from rust
 # long term stratigy to remain async agnostic and not write http myself.
 tide             = "0.17.0-beta.1"
 tide-websockets  = "0.4.0"
 
+const_panic = "0.2.8" # for const panic!()
+
+#color-eyre = "0.5.5"   # for better error messages
+#rstest = "0.5.2"       # for unit testing
+
 # TODO: SSS supports systemd and SQRL but not yet implmented
 #       rapid prototyping is a primary feature of sss
+
+#not in use yet... but this is where I am planning to go for web services
+#askama           = "0.12.1" # for compile time templating
 
 
 ## for SQRL will integrate later and use tide

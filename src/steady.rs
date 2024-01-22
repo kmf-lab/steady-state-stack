@@ -11,7 +11,7 @@ pub(crate) mod serialize {
 
 use std::any::type_name;
 use std::future::Future;
-use std::ops::{Deref, DerefMut, Sub};
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
 use bastion::{Callbacks, run};
@@ -24,12 +24,14 @@ use crate::steady::serialize::byte_buffer_packer::*;
 
 use async_ringbuf::{AsyncRb, traits::*};
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
-use async_std::sync::Mutex;
+use futures::lock::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use futures::StreamExt;
 use ringbuf::StaticRb;
 use ringbuf::storage::{Heap, Static};
 use monitor::SteadyMonitor;
 use telemetry::metrics_collector::CollectorDetail;
+
 
 mod stats;
 mod config;
@@ -52,21 +54,27 @@ type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
     //let mut rb = AsyncRb::<Static<T, 12>>::default().split_ref()
     //   AsyncRb::<ChannelBacking<T>>::new(cap).split_ref()
 
-
-
-////
+#[derive(PartialEq, Eq, Debug)]
+pub enum GraphRuntimeState {
+    Building,
+    Running,
+    StopRequested, //not yet confirmed by all nodes
+    StopInProgress, //confirmed by all nodes and now stopping
+    Stopped,
+}
 
 
 pub struct SteadyGraph {
     channel_count: Arc<AtomicUsize>,
     monitor_count: usize,
-
     //used by collector but could grow if we get new actors at runtime
     all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
-    //ordered leaf first synchronous shutdown, in, out, hook
-    shutdown_hooks: Arc<Mutex<Vec<(Vec<usize>,Vec<usize>,fn())>>>,
+
+    runtime_state: Arc<Mutex<GraphRuntimeState>>,
 
 }
+
+
 //NOTE: we could get a read access to the SteadyRx and SteadyTx
 //      BUT this could cause stalls in the application so instead
 //      this data is gathered on the developers schedule when batch
@@ -140,6 +148,9 @@ pub(crate) fn callbacks() -> Callbacks {
 //for testing only
 #[cfg(test)]
 impl SteadyGraph  {
+
+
+
     pub fn new_test_monitor(self: &mut Self, name: & 'static str ) -> SteadyMonitor
     {
         let id = self.monitor_count;
@@ -153,7 +164,7 @@ impl SteadyGraph  {
             ctx: None,
             id,
             all_telemetry_rx,
-            shutdown_hooks: self.shutdown_hooks.clone()
+            runtime_state: self.runtime_state.clone()
         }
     }
 }
@@ -172,8 +183,23 @@ fn build_channel<T>(
 
 impl SteadyGraph {
 
+    pub(crate) fn start(self: &mut Self) {
+        Bastion::start(); //start the graph
+        let mut guard = run!(self.runtime_state.lock());
+        let state = guard.deref_mut();
+        *state = GraphRuntimeState::Running;
+    }
+
+    pub(crate) fn request_shutdown(self: &mut Self) {
+
+        let mut guard = run!(self.runtime_state.lock());
+        let state = guard.deref_mut();
+        *state = GraphRuntimeState::StopRequested;
+
+    }
+
     /// add new children actors to the graph
-    pub fn add_to_graph<F,I>(self: &mut Self, name: & 'static str, c: Children, init: I ) -> Children
+    pub fn add_to_graph<F,I>(&mut self, name: & 'static str, c: Children, init: I ) -> Children
         where I: Fn(SteadyMonitor) -> F + Send + 'static + Clone,
               F: Future<Output = Result<(),()>> + Send + 'static ,  {
 
@@ -186,7 +212,7 @@ impl SteadyGraph {
             channel_count: Arc::new(AtomicUsize::new(0)),
             monitor_count: 0, //this is the count of all monitors
             all_telemetry_rx: Arc::new(Mutex::new(Vec::new())), //this is all telemetry receivers
-            shutdown_hooks: Arc::new(Mutex::new(Vec::new())),
+            runtime_state: Arc::new(Mutex::new(GraphRuntimeState::Building))
         }
     }
 
@@ -212,7 +238,7 @@ impl SteadyGraph {
                 graph.monitor_count += 1;
                 let telemetry_tx = graph.all_telemetry_rx.clone();
                 let channel_count = graph.channel_count.clone();
-                let shutdown_hooks = graph.shutdown_hooks.clone();
+                let runtime_state = graph.runtime_state.clone();
 
                 let callbacks = Callbacks::new().with_after_stop(|| {
                    //TODO: new telemetry counting actor restarts
@@ -221,13 +247,13 @@ impl SteadyGraph {
                         let init_fn_clone = init_clone.clone();
                         let channel_count = channel_count.clone();
                         let telemetry_tx = telemetry_tx.clone();
-                        let shutdown_hooks = shutdown_hooks.clone();
+                        let runtime_state = runtime_state.clone();
 
                         async move {
                             //this telemetry now owns this monitor
 
                             let monitor = SteadyMonitor {
-                                shutdown_hooks:  shutdown_hooks.clone(),
+                                runtime_state:  runtime_state.clone(),
                                 channel_count: channel_count.clone(),
                                 name,
                                 ctx: Some(ctx),
@@ -296,7 +322,7 @@ impl SteadyGraph {
 
             //only spin up the metrics collector if we have a consumer
             //OR if some actors are sending data we need to consume
-            let supervisor = if config::TELEMETRY_SERVER || senders_count>0 {
+            if config::TELEMETRY_SERVER || senders_count>0 {
 
                 supervisor.children(|children| {
                     //we create this child last so we can clone the rx_vec
@@ -318,9 +344,7 @@ impl SteadyGraph {
                 )
             } else {
                 supervisor
-            };
-
-            supervisor
+            }
 
         }).expect("Telemetry supervisor creation error.");
     }
@@ -339,7 +363,7 @@ impl<T> SteadyRx<T> {
     pub async fn take_async(& mut self) -> Result<T,String> {
         // implementation favors a full channel
         if let Some(m) = self.rx.try_pop() {
-            return Ok(m);
+            Ok(m)
         } else {
             match self.rx.pop().await {
                 Some(a) => { Ok(a) }
@@ -351,6 +375,14 @@ impl<T> SteadyRx<T> {
     #[inline]
     pub fn try_take(& mut self) -> Option<T> {
         self.rx.try_pop()
+    }
+
+    //removes items from the channel and Copy's them into the slice
+    //returns the number of items removed
+    #[inline]
+    pub fn take_slice(&mut self, elems: &mut [T]) -> usize
+        where T: Copy {
+           self.rx.pop_slice(elems)
     }
 
     #[inline]
@@ -393,13 +425,23 @@ impl<T> SteadyTx<T> {
     }
 
     #[inline]
-    pub async fn send_async(& mut self, msg: T) -> Result<(), T> {
+    pub fn send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
+        self.tx.push_iter(iter)
+    }
 
+    #[inline]
+    pub fn send_slice_until_full(&mut self, slice: &[T]) -> usize
+       where T: Copy {
+        self.tx.push_slice(slice)
+    }
+
+    #[inline]
+    pub async fn send_async(& mut self, msg: T) -> Result<(), T> {
         match self.tx.try_push(msg) {
             Ok(_) => {Ok(())},
             Err(msg) => {
-                error!("full channel detected data_approval tx telemetry: {:?} labels: {:?} capacity:{:?} type:{} "
-                , self.actor_name, self.label, self.batch_limit, type_name::<T>());
+                error!("full channel detected tx actor:{:?} labels:{:?} capacity:{:?} sending type:{} "
+                , self.actor_name, self.label, self.tx.capacity(), type_name::<T>());
                 //here we will await until there is room in the channel
 
                 self.tx.push(msg).await

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
-use async_std::sync::Mutex;
+use futures::lock::Mutex;
 use crate::monitor::LocalMonitor;
 use log::*;
 use crate::steady::*;

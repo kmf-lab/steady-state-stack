@@ -1,21 +1,23 @@
 use std::ops::DerefMut;
 use std::sync::Arc;
-use async_std::sync::Mutex;
+use futures::lock::Mutex;
 use bastion::run;
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use crate::steady::*;
 use crate::steady::monitor::{LocalMonitor, SteadyMonitor};
 
+const BATCH_SIZE: usize = 4000;
+#[derive(Clone, Debug, PartialEq, Copy)]
 struct InternalState {
-    pub(crate) last_approval: Option<ApprovedWidgets>
+    pub(crate) last_approval: Option<ApprovedWidgets>,
+    buffer: [ApprovedWidgets; BATCH_SIZE]
 }
 
 
 #[cfg(not(test))]
 pub async fn run(monitor: SteadyMonitor
                  , rx: Arc<Mutex<SteadyRx<ApprovedWidgets>>>) -> Result<(),()> {
-    use std::time::Duration;
 
     let mut rx_guard = guard!(rx);
     let rx = ref_mut!(rx_guard);
@@ -27,15 +29,18 @@ pub async fn run(monitor: SteadyMonitor
     // every 100_000 received messages. This is helpful for very very high volumes.
     monitor.relay_stats_rx_set_custom_batch_limit(rx, 100_000);
 
-    let mut state = InternalState { last_approval: None };
+    let mut state = InternalState {
+        last_approval: None,
+        buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
+    };
+
     loop {
         //single pass of work, in this high volume example we stay in iterate_once as long
         //as the input channel as more work to process.
         if iterate_once(&mut monitor, &mut state, rx).await {
             break Ok(());
         }
-        //clear out any remaining stats but when we have no work do not spin tightly
-        monitor.relay_stats_periodic(Duration::from_millis(2)).await;
+
     }
 }
 
@@ -46,28 +51,44 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonito
                                                       , rx: &mut SteadyRx<ApprovedWidgets>) -> bool  {
 
 
-
+    //wait for new work, we could also use a timer here to send telemetry periodically
+    if rx.is_empty() {
+        let msg = monitor.take_async(rx).await;
+        process_msg(state, msg);
+    }
     //example of high volume processing, we stay here until there is no more work BUT
     //we must also relay our telemetry data periodically
     while !rx.is_empty() {
 
-            match monitor.take_async(rx).await {
-                Ok(m) => {
-                    state.last_approval = Some(m.to_owned());
-                    trace!("received: {:?}", m.to_owned());
-                },
-                Err(msg) => {
-                    state.last_approval = None;
-                    error!("Unexpected error recv_async: {}",msg);
-                }
+            let count = monitor.take_slice(rx, &mut state.buffer);
+            for x in 0..count {
+               process_msg(state, Ok(state.buffer[x].to_owned()));
             }
+
+
 
             //based on the channel capacity this will send batched updates so most calls do nothing.
             monitor.relay_stats_batch().await;
 
     }
+
+
     false
 
+}
+
+#[inline]
+fn process_msg(state: &mut InternalState, msg: Result<ApprovedWidgets, String>) {
+    match msg {
+        Ok(m) => {
+            state.last_approval = Some(m);
+            //trace!("received: {:?}", m.to_owned());
+        },
+        Err(msg) => {
+            state.last_approval = None;
+            //error!("Unexpected error recv_async: {}",msg);
+        }
+    }
 }
 
 
@@ -130,12 +151,16 @@ mod tests {
 
 
         let mut mock_monitor = mock_monitor.init_stats(&mut[], &mut[]);
-        let mut state = InternalState { last_approval: None };
+        let mut state = InternalState {
+            last_approval: None,
+            buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
+
+        };
 
         let _ = mock_monitor.send_async(steady_tx, ApprovedWidgets {
             original_count: 1,
             approved_count: 2,
-            extra: [0; 6]
+
 
         }).await;
 

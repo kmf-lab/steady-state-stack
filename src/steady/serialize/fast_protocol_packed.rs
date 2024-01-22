@@ -17,7 +17,7 @@ pub fn read_long_signed(mut byte_buffer: &mut Bytes) -> Option<i64> {
         if v < 0 {
             Some(accumulator | (v as i64 & 0x7F))
         } else {
-            read_long_signed_tail((accumulator | v as i64) << 7, &mut byte_buffer, initial_remaining)
+            read_long_signed_tail((accumulator | v as i64) << 7, byte_buffer, initial_remaining)
         }
     } else {
         None
@@ -33,7 +33,7 @@ fn read_long_signed_tail(a: i64, mut byte_buffer: &mut Bytes,initial_remaining:u
             if initial_remaining-remaining > 10 {
                 None //we found bad data so we are not going to read
             } else {
-                read_long_signed_tail((a | v as i64) << 7, &mut byte_buffer, initial_remaining)
+                read_long_signed_tail((a | v as i64) << 7, byte_buffer, initial_remaining)
             }
         }
     } else {

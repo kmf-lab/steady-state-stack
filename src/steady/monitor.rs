@@ -8,9 +8,10 @@ use futures_timer::Delay;
 use petgraph::matrix_graph::Zero;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use async_std::sync::Mutex;
+use futures::lock::Mutex;
+
 use crate::steady;
-use crate::steady::{config, MAX_TELEMETRY_ERROR_RATE_SECONDS, SteadyRx, SteadyTx};
+use crate::steady::{config, GraphRuntimeState, MAX_TELEMETRY_ERROR_RATE_SECONDS, SteadyRx, SteadyTx};
 use crate::steady::telemetry::metrics_collector::{CollectorDetail, RxTel};
 
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
@@ -20,6 +21,8 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) telemetry_send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
     pub(crate) telemetry_send_rx: Option<SteadyTelemetrySend<RX_LEN>>,
     pub(crate) last_instant:      Instant,
+    pub(crate) runtime_state:     Arc<Mutex<GraphRuntimeState>>,
+
 }
 
 ///////////////////
@@ -35,7 +38,8 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     pub async fn relay_stats_all(&mut self) {
         //only relay if we are withing the bounds of the telemetry channel limits.
-        if self.last_instant.elapsed().as_millis()>= config::MIN_TELEMETRY_CAPTURE_RATE_MS as u128 {
+        if self.last_instant.elapsed().as_micros()>= config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u128 {
+
 
             let is_in_bastion:bool = {self.ctx().is_some()};
 
@@ -114,7 +118,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 
     pub async fn relay_stats_periodic(self: &mut Self, duration_rate: Duration) {
-        assert_eq!(true, duration_rate.ge(&Duration::from_millis(config::MIN_TELEMETRY_CAPTURE_RATE_MS as u64)));
+        assert!(duration_rate.ge(&Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)));
         Delay::new(duration_rate.saturating_sub(self.last_instant.elapsed())).await;
         self.relay_stats_all().await;
     }
@@ -159,6 +163,18 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 send.limits[rx.local_idx] = threshold;
             }
         }
+    }
+
+    pub fn take_slice<T>(& mut self, this: & mut SteadyRx<T>, slice: &mut [T]) -> usize
+        where T: Copy {
+        let done = this.take_slice(slice);
+        if let Some(ref mut telemetry) = self.telemetry_send_rx {
+            if usize::MAX != this.local_idx { //only record those turned on (init)
+                let count = telemetry.count[this.local_idx];
+                telemetry.count[this.local_idx] = count.saturating_add(done);
+            }
+        }
+        done
     }
 
     pub fn try_take<T>(& mut self, this: & mut SteadyRx<T>) -> Option<T> {
@@ -214,7 +230,31 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
 
-    pub fn try_send<T>(self: & mut Self, this: & mut SteadyTx<T>, msg: T) -> Result<(), T> {
+    pub fn send_slice_until_full<T>(&mut self, this: & mut SteadyTx<T>, slice: &[T]) -> usize
+        where T: Copy {
+        let done = this.send_slice_until_full(slice);
+        if let Some(ref mut telemetry) = self.telemetry_send_tx {
+            if usize::MAX != this.local_idx { //only record those turned on (init)
+                let count = telemetry.count[this.local_idx];
+                telemetry.count[this.local_idx] = count.saturating_add(done);
+            }
+        }
+        done
+    }
+
+    pub fn send_iter_until_full<T,I: Iterator<Item = T>>(&mut self, this: & mut SteadyTx<T>, iter: I) -> usize {
+        let done = this.send_iter_until_full(iter);
+        if let Some(ref mut telemetry) = self.telemetry_send_tx {
+            if usize::MAX != this.local_idx { //only record those turned on (init)
+                let count = telemetry.count[this.local_idx];
+                telemetry.count[this.local_idx] = count.saturating_add(done);
+            }
+        }
+        done
+    }
+
+
+    pub fn try_send<T>(& mut self, this: & mut SteadyTx<T>, msg: T) -> Result<(), T> {
         match this.try_send(msg) {
             Ok(_) => {
                 if let Some(ref mut telemetry) = self.telemetry_send_tx {
@@ -232,18 +272,18 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             }
         }
     }
-    pub fn is_full<T>(self: & mut Self,this: & mut SteadyTx<T>) -> bool {
+    pub fn is_full<T>(& mut self, this: & mut SteadyTx<T>) -> bool {
         this.is_full()
     }
 
-    pub fn vacant_units<T>(self: & mut Self,this: & mut SteadyTx<T>) -> usize {
+    pub fn vacant_units<T>(& mut self, this: & mut SteadyTx<T>) -> usize {
         this.vacant_units()
     }
-    pub async fn wait_vacant_units<T>(self: & mut Self,this: & mut SteadyTx<T>, count:usize) {
+    pub async fn wait_vacant_units<T>(& mut self, this: & mut SteadyTx<T>, count:usize) {
         this.wait_vacant_units(count).await
     }
 
-    pub async fn send_async<T>(self: & mut Self, this: & mut SteadyTx<T>, a: T) -> Result<(), T> {
+    pub async fn send_async<T>(& mut self, this: & mut SteadyTx<T>, a: T) -> Result<(), T> {
        match this.send_async(a).await {
            Ok(_) => {
                if let Some(ref mut telemetry) = self.telemetry_send_tx {
@@ -252,7 +292,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                        telemetry.count[this.local_idx] = count.saturating_add(1);
                    }
                }
-               return Ok(())
+               Ok(())
            },
            Err(sensitive) => {
                error!("Unexpected error send_async  telemetry: {} type: {}"
@@ -272,15 +312,10 @@ pub struct SteadyMonitor {
     pub(crate) ctx: Option<BastionContext>,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
-    pub shutdown_hooks: Arc<Mutex<Vec<(Vec<usize>, Vec<usize>, fn())>>>,
+    pub(crate) runtime_state: Arc<Mutex<GraphRuntimeState>>,
 }
 
 impl SteadyMonitor {
-
-    //TODO: rethink this it must happen in our thread
-    //pub fn add_shutdown_hook(hook:fn()) {
-    // }
-
 
     pub fn init_stats<const RX_LEN: usize, const TX_LEN: usize>(self
                                    , rx_tag: &mut [& mut dyn RxDef; RX_LEN]
@@ -373,6 +408,7 @@ impl SteadyMonitor {
             id: self.id,
             name: self.name,
             ctx: self.ctx,
+            runtime_state: self.runtime_state.clone(),
         }
     }
 
@@ -414,45 +450,39 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             if let Some(ref take) = &self.take {
                 let mut rx_guard = run!(take.rx.lock());
                 let rx = rx_guard.deref_mut();
-                loop {
-                    if let Some(msg) = rx.try_take() {
-                        take.map.iter()
-                            .zip(msg.iter())
-                            .for_each(|(meta, val)| {
-                                if meta.0>=take_target.len() {
-                                    take_target.resize(1 + meta.0, 0);
-                                }
-                                take_target[meta.0] += *val as i128
-                            });
-                    } else {
-                        break;
-                    }
+
+                while let Some(msg) = rx.try_take() {
+                    take.map.iter()
+                        .zip(msg.iter())
+                        .for_each(|(meta, val)| {
+                            if meta.0>=take_target.len() {
+                                take_target.resize(1 + meta.0, 0);
+                            }
+                            take_target[meta.0] += *val as i128
+                        });
                 }
             }
             if let Some(ref send) = &self.send {
                 let mut tx_guard = run!(send.rx.lock());
                 let tx = tx_guard.deref_mut();
-                loop {
-                    if let Some(msg) = tx.try_take() {
+
+                    while let Some(msg) = tx.try_take() {
                         send.map.iter()
                             .zip(msg.iter())
                             .for_each(|(meta, val)| {
                                 if meta.0>=take_target.len() {
-                                    take_target.resize(1 + meta.0, 0);
+                                    send_target.resize(1 + meta.0, 0);
                                 }
-                                take_target[meta.0] += *val as i128
+                                send_target[meta.0] += *val as i128
                             });
-                    } else {
-                        break;
                     }
-                }
             }
 
     }
 
     fn biggest_tx_id(&self) -> usize {
         if let Some(tx) = &self.send {
-            tx.map.iter().map(|(i,l)|i).max().unwrap_or(&0).clone()
+            *tx.map.iter().map(|(i,l)|i).max().unwrap_or(&0)
         } else {
             0
         }
@@ -461,7 +491,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
     fn biggest_rx_id(&self) -> usize {
         if let Some(tx) = &self.take {
-            tx.map.iter().map(|(i,l)|i).max().unwrap_or(&0).clone()
+            *tx.map.iter().map(|(i,_)|i).max().unwrap_or(&0)
         } else {
             0
         }

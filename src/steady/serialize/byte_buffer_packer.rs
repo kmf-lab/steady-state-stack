@@ -35,7 +35,7 @@ impl <T> PackedVecWriter<T>
         u64_values
     }
     pub(crate) fn add_vec(&mut self, mut target: &mut BytesMut, source: &Vec<T>) {
-        assert_eq!(true, source.len() >= self.previous.len());
+        assert!(source.len() >= self.previous.len());
         // which numbers changed? we use a 1 for them
         let zero = T::zero();
         let previous_iter = self.previous.iter().chain(std::iter::repeat(&zero));
@@ -45,20 +45,20 @@ impl <T> PackedVecWriter<T>
             .collect();
         let mut chunks:Vec<u64> = Self::consume_to_u64(&bits);
         //remove any zeros off the end we do not need them
-        while chunks.len()>0 && 0==chunks[chunks.len()-1] {
+        while !chunks.is_empty() && 0==chunks[chunks.len()-1] {
             chunks.truncate(chunks.len()-1);
         }
         //write length of chunks (yes unsigned would be better but not much)
-        write_long_unsigned(chunks.len() as u64, &mut target);
+        write_long_unsigned(chunks.len() as u64, target);
         //write the bit mask for which do have changes
-        chunks.iter().for_each(|c| write_long_unsigned(*c, &mut target));
+        chunks.iter().for_each(|c| write_long_unsigned(*c, target));
         //write each of the deltas
         self.previous.iter()
             .zip(source.iter())
             .for_each(|(p,s)| {
                 let dif:i128 = (*s - *p).into();
                 if 0!=dif {
-                    write_long_signed(dif as i64, &mut target);
+                    write_long_signed(dif as i64, target);
                 }
             });
 
