@@ -1,5 +1,5 @@
 # steady-state-stack
-Stack of Rust crates for stead state projects
+Stack of Rust crates for steady state projects
 
 
 # new projects can use SSS as a starting point with this.
