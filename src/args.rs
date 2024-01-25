@@ -37,13 +37,15 @@ fn validate_logging_level(level: String) -> Result<(), String> {
         .map_err(|_| String::from("Invalid logging level format."))
 }
 
-//TODO: need a better way to abstract this for systemd.
-pub fn to_cli_string(app:&str, arg: &Args) -> String {
-    format!("{} --duration={} --loglevel={} --gen-rate={}"
-            , app
-            , arg.duration
-            , arg.loglevel
-            , arg.gen_rate_micros)
+impl Args {
+    //TODO: used for the installer code, it would be cool if this could be generated
+    pub fn to_cli_string(&self, app: &str) -> String {
+        format!("{} --duration={} --loglevel={} --gen-rate={}"
+                , app
+                , self.duration
+                , self.loglevel
+                , self.gen_rate_micros)
+    }
 }
 
 #[cfg(test)]
@@ -57,15 +59,15 @@ mod tests {
 
     #[test]
     fn test_args_round_trip() {
-        use crate::args::to_cli_string;
-        crate::steady::tests::initialize_logger();
+
+        crate::steady::util::util_tests::initialize_logger();
 
         let orig_args = &Args {
             loglevel: "debug".to_string(),
             gen_rate_micros: 3000000,
             duration: 7
         };
-        let to_test = to_cli_string("myapp", orig_args);
+        let to_test = orig_args.to_cli_string("myapp");
         trace!("to_test: {}", to_test);
         let cli_args = Args::from_iter(to_test.split_whitespace());
         assert_eq!(cli_args, *orig_args);

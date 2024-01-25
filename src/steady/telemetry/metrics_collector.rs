@@ -1,17 +1,18 @@
 
 use std::ops::DerefMut;
-use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use futures::lock::Mutex;
+use futures_timer::Delay;
 
-use bytes::BytesMut;
-use time::{Instant};
+use time::Instant;
 use crate::steady::*;
+use crate::steady::channel::SteadyTx;
+use crate::steady::monitor::{ChannelMetaData, RxTel, SteadyMonitor};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum DiagramData {
     //only allocates new space when new telemetry children are added.
-    Node(u64, & 'static str, usize, Arc<Vec<(usize, Vec<&'static str>)>>, Arc<Vec<(usize, Vec<&'static str>)>>),
+    Node(u64, & 'static str, usize, Arc<Vec<Arc<ChannelMetaData>>>, Arc<Vec<Arc<ChannelMetaData>>>),
     //all consumers will share the same seq vec and it is dropped when the last one consumed it
     //this copy was required so we can gather the next seq while the last gets rendered.
     Edge(u64, Arc<Vec<i128>>, Arc<Vec<i128>>),
@@ -22,8 +23,8 @@ pub enum DiagramData {
 pub(crate) struct RawDiagramState {
     pub(crate) sequence: u64,
     pub(crate) actor_count: usize,
-    pub(crate) total_sent: Vec<i128>,
-    pub(crate) total_take: Vec<i128>,
+    pub(crate) running_total_sent: Vec<i128>,
+    pub(crate) running_total_take: Vec<i128>,
 }
 
 
@@ -35,8 +36,8 @@ pub(crate) async fn run(monitor: SteadyMonitor
     let mut state = RawDiagramState {
         sequence: 0,
         actor_count: 0,
-        total_take: Vec::new(), //running totals
-        total_sent: Vec::new(), //running totals
+        running_total_take: Vec::new(), //running totals
+        running_total_sent: Vec::new(), //running totals
     };
 
     let mut last_instant = Instant::now();
@@ -55,8 +56,8 @@ pub(crate) async fn run(monitor: SteadyMonitor
             };
             //collect all volume data AFTER we update the node data first
             for x in dynamic_senders.iter() {
-                x.telemetry_take.consume_into(  &mut state.total_take
-                                              , &mut state.total_sent);
+                x.telemetry_take.consume_into(  &mut state.running_total_take
+                                              , &mut state.running_total_sent);
             }
             nodes
         }; //dropped senders guard so list can be updated with new nodes if needed
@@ -69,16 +70,10 @@ pub(crate) async fn run(monitor: SteadyMonitor
         //NOTE: target 32ms updates for 30FPS, with a queue of 8 so writes must be no faster than 4ms
         //      we could double this speed if we have real animation needs but that is unlikely
 
-//TODO: the i128 seq and count types should be moved out as type aliases based on use case need.
-
-        let duration = last_instant.elapsed();
-        assert!(duration.whole_milliseconds()>=0);
-        let sleep_millis = config::TELEMETRY_PRODUCTION_RATE_MS - duration.whole_milliseconds() as usize;
-        if sleep_millis<3 {
-            warn!("sleep {}, need to tighten up the collector", sleep_millis);
-        }
-        if sleep_millis > 0 { //only sleep as long as we need
-            Delay::new(Duration::from_millis(config::TELEMETRY_PRODUCTION_RATE_MS as u64)).await;
+        let duration_micros = last_instant.elapsed().whole_microseconds();
+        let sleep_duration = (1000i128*config::TELEMETRY_PRODUCTION_RATE_MS as i128)-duration_micros;
+        if sleep_duration.is_positive() { //only sleep as long as we need
+            Delay::new(std::time::Duration::from_micros(sleep_duration as u64)).await;
         }
         state.sequence += 1; //increment next frame
         last_instant = Instant::now();
@@ -100,8 +95,8 @@ fn gather_node_details(mut state: &mut RawDiagramState, dynamic_senders: &&mut V
         acc
     });
     //grow our vecs as needed for the max ids found
-    state.total_take.resize(max_rx, 0);
-    state.total_sent.resize(max_tx, 0);
+    state.running_total_take.resize(max_rx, 0);
+    state.running_total_sent.resize(max_tx, 0);
 
     let nodes: Vec<DiagramData> = dynamic_senders.iter()
         .skip(state.actor_count).map(|details| {
@@ -132,10 +127,13 @@ async fn send_node_details(consumer: &Option<Arc<Mutex<SteadyTx<DiagramData>>>>
     }
 }
 
-async fn send_edge_details(consumer: &Option<Arc<Mutex<SteadyTx<DiagramData>>>>, mut state: &mut RawDiagramState) {
+async fn send_edge_details(consumer: &Option<Arc<Mutex<SteadyTx<DiagramData>>>>, state: &mut RawDiagramState) {
+    //info!("compute send_edge_details {:?} {:?}",state.running_total_sent,state.running_total_take);
+
     let send_me = DiagramData::Edge(state.sequence
-                                    , Arc::new(state.total_take.clone())
-                                    , Arc::new(state.total_sent.clone()));
+                                    , Arc::new(state.running_total_take.clone())
+                                    , Arc::new(state.running_total_sent.clone())
+    );
 
     if let Some(c) = consumer {
         let mut c_guard = c.lock().await;
@@ -150,25 +148,6 @@ pub struct CollectorDetail {
     pub(crate) telemetry_take: Box<dyn RxTel>,
     pub(crate) name: &'static str,
     pub(crate) monitor_id: usize
-}
-
-
-pub trait RxTel : Send + Sync {
-
-
-    //returns an iterator of usize channel ids
-    fn tx_channel_id_vec(&self) -> Vec<(usize, Vec<&'static str>)>;
-    fn rx_channel_id_vec(&self) -> Vec<(usize, Vec<&'static str>)>;
-
-    fn consume_into(&self, take_target: &mut Vec<i128>, send_target: &mut Vec<i128>);
-
-        //NOTE: we will do one dyn call per node every 32ms or so to build the image
-    //      we only have 1 impl assuming the compiler will inline this if possible
-    // TODO: in the future we could rewrite this to return a future that can be pinned and boxed
- //   fn consume_into(& mut self, take_target: &mut Vec<u128>, send_target: &mut Vec<u128>);
-    fn biggest_tx_id(&self) -> usize;
-    fn biggest_rx_id(&self) -> usize;
-
 }
 
 

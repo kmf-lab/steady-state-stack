@@ -1,7 +1,6 @@
 mod args;
 #[macro_use]
 mod steady;
-mod serviced;
 
 
 use structopt::*;
@@ -11,6 +10,7 @@ use bastion::prelude::*;
 use futures_timer::Delay;
 use crate::args::Args;
 use std::time::Duration;
+use steady::graph::SteadyGraph;
 use crate::steady::*;
 use crate::steady::util::steady_logging_init;
 
@@ -26,6 +26,7 @@ mod actor {
     pub mod data_consumer;
 }
 use crate::actor::*;
+use crate::steady::channel::ChannelBound;
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -52,6 +53,17 @@ fn main() {
     //remove this block to run forever.
     //run! is a macro provided by bastion that will block until the future is resolved.
     run!(async {
+        /*
+        use futures::prelude::*;
+        use nuclei::*;
+        use std::os::unix::net::UnixStream;
+
+        let (a, mut b) = Handle::<UnixStream>::pair()?;
+        signal_hook::pipe::register(signal_hook::SIGINT, a)?;
+        println!("Waiting for Ctrl-C...");
+        b.read_exact(&mut [0]).await?;
+        */
+
         // note we use (&opt) just to show we did NOT transfer ownership
         Delay::new(Duration::from_secs(opt.duration)).await;
         graph.request_shutdown();
@@ -73,8 +85,17 @@ fn build_graph(cli_arg: &Args) -> SteadyGraph {
     //create all the needed channels between actors
     let example_capacity = 4000;
     //upon construction these are set up to be monitored by the telemetry telemetry
-    let (generator_tx, generator_rx) = graph.new_channel::<WidgetInventory>(example_capacity,&["widgets"]);
-    let (consumer_tx, consumer_rx) = graph.new_channel::<ApprovedWidgets>(example_capacity,&["widgets"]);
+    let (generator_tx, generator_rx) = graph.channel_builder(example_capacity)
+                                       .with_labels(&["widgets"],true)
+                                       .with_percentile(80)
+                                       .with_red(ChannelBound::Percentile(70))
+                                       .build();
+
+    let (consumer_tx, consumer_rx) = graph.channel_builder(example_capacity)
+                                        .with_labels(&["widgets"],true)
+                                        .with_standard_deviation(2.5)
+                                        .build();
+
     //the above tx rx objects will be owned by the children closures below then cloned
     //each time we need to startup a new child telemetry instance. This way when an telemetry fails
     //we still have the original to clone from.
@@ -123,7 +144,7 @@ fn build_graph(cli_arg: &Args) -> SteadyGraph {
 
 #[cfg(test)]
 mod tests {
-    use bastion::prelude::{Distributor};
+    use bastion::prelude::Distributor;
     use bastion::run;
     use super::*;
 
@@ -133,7 +154,7 @@ mod tests {
         let test_ops = Args {
             duration: 21,
             loglevel: "debug".to_string(),
-            gen_rate_ms: 0,
+            gen_rate_micros: 0,
         };
 
         let mut graph = build_graph(&test_ops);
@@ -147,7 +168,6 @@ mod tests {
             let to_send = WidgetInventory {
                 count: 42
                 , _payload: 0
-                , _extra: [0; 6]
             };
 
             let answer_generator: Result<&str, SendError> = distribute_generator.request(to_send).await.unwrap();
@@ -156,7 +176,6 @@ mod tests {
             let expected_message = ApprovedWidgets {
                 original_count: 42,
                 approved_count: 21,
-                extra: [0; 6]
             };
             let answer_consumer: Result<&str, SendError> = distribute_consumer.request(expected_message).await.unwrap();
             assert_eq!("ok",answer_consumer.unwrap());

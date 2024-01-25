@@ -1,18 +1,25 @@
-use std::fmt::Write;
-use std::fs;
-use std::fs::{File, OpenOptions};
+
+// new Proactive IO
+use nuclei::*;
+use futures::io::SeekFrom;
+use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use std::fs::{create_dir_all, File, OpenOptions};
+
 use std::path::PathBuf;
+
 use std::sync::Arc;
 use bastion::run;
 
+use std::fmt::Write;
 use bytes::{BufMut, BytesMut};
 use log::{error, info};
 use time::{format_description, OffsetDateTime};
 use uuid::Uuid;
-use crate::steady::config;
+use crate::steady::channel::ChannelBound;
+use crate::steady::{config, util};
+use crate::steady::monitor::ChannelMetaData;
 use crate::steady::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::steady::serialize::fast_protocol_packed::write_long_unsigned;
-use crate::steady::telemetry::metrics_collector::DiagramData::*;
 
 pub struct DotState {
     pub(crate) nodes: Vec<Node<>>, //position matches the node id
@@ -28,14 +35,24 @@ pub(crate) struct Node {
 }
 
 pub(crate) struct Edge<> {
-    pub(crate) from: usize,
-    pub(crate) to: usize,
-    pub(crate) color: & 'static str,
-    pub(crate) pen_width: & 'static str,
-    pub(crate) display_label: String,
-    pub(crate) id: usize,
-    pub(crate) ctl_labels: Vec<&'static str>
+    pub(crate) id: usize, //position matches the channel id
+    pub(crate) from: usize, //monitor actor id of the sender
+    pub(crate) to: usize, //monitor actor id of the receiver
+    pub(crate) color: & 'static str, //results from computer
+    pub(crate) pen_width: & 'static str, //results from computer
+    pub(crate) display_label: String, //results from computer
+    pub(crate) ctl_labels: Vec<&'static str>, //visibility tags for render
+    stats_computer: ChannelStatsComputer
 }
+impl<> Edge<> {
+    pub(crate) fn compute_and_refresh(&mut self, send: &i128, take: &i128) {
+        let (label,color,pen) = self.stats_computer.compute(send, take);
+        self.display_label = label;
+        self.color = color;
+        self.pen_width = pen;
+    }
+}
+
 
 pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
     dot_graph.put_slice(b"digraph G {\nrankdir=");
@@ -58,6 +75,11 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
     }
 
     for edge in &state.edges {
+
+        // TODO: new feature must also drop nodes if no edges are visible
+       // let show = edge.ctl_labels.iter().any(|f| config::is_visible(f));
+
+
         dot_graph.put_slice(b"\"");
         dot_graph.put_slice(edge.from.to_string().as_bytes());
         dot_graph.put_slice(b"\" -> \"");
@@ -74,16 +96,75 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
     dot_graph.put_slice(b"}\n");
 }
 
+
+
 pub struct DotGraphFrames {
     pub(crate) active_graph: BytesMut,
 
 }
 
+struct ChannelStatsComputer {
 
-pub fn refresh_structure(mut local_state: &mut DotState, name: &str
+}
+
+const DOT_RED: & 'static str = "red";
+const DOT_GREEN: & 'static str = "green";
+const DOT_YELLOW: & 'static str = "yellow";
+const DOT_WHITE: & 'static str = "white";
+const DOT_GREY: & 'static str = "grey";
+const DOT_BLACK: & 'static str = "black";
+
+static DOT_PEN_WIDTH: [&'static str; 16]
+= ["1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"];
+
+
+impl ChannelStatsComputer {
+
+    pub(crate) fn new(meta: &Arc<ChannelMetaData>) -> ChannelStatsComputer {
+
+        //TODO: rethink, inflight, persecond and latency display!!
+
+        let labels = &meta.labels;
+        let display_labels = &meta.display_labels;
+        let line_expansion = &meta.line_expansion;
+        let show_type = &meta.show_type;
+        let window_in_seconds = &meta.window_in_seconds;
+        let percentiles = &meta.percentiles;
+        let std_dev = &meta.std_dev;
+        let red: Option<ChannelBound> = meta.red.clone();
+        let yellow: Option<ChannelBound> = meta.yellow.clone();
+
+        //TODO: build only the structures we need to support the above
+
+        ChannelStatsComputer {
+
+
+
+
+        }
+    }
+
+    pub(crate) fn compute(&mut self, send: &i128, take: &i128)
+        -> (String, & 'static str, & 'static str) {
+
+//info!("compute {} {}",send,take);
+        //DOIT
+
+
+        (format!("{}",take),"red","5")
+
+
+
+    }
+}
+
+
+pub fn refresh_structure(mut local_state: &mut DotState
+                         , name: &str
                          , id: usize
-                         , channels_in: Arc<Vec<(usize, Vec<&'static str>)>>
-                         , channels_out: Arc<Vec<(usize, Vec<&'static str>)>>) {
+                         , channels_in: Arc<Vec<Arc<ChannelMetaData>>>
+                         , channels_out: Arc<Vec<Arc<ChannelMetaData>>>
+) {
 //rare but needed to ensure vector length
     if id.ge(&local_state.nodes.len()) {
         local_state.nodes.resize_with(id + 1, || {
@@ -98,61 +179,46 @@ pub fn refresh_structure(mut local_state: &mut DotState, name: &str
     local_state.nodes[id].id = id;
     local_state.nodes[id].display_label = name.to_string();
 
-    channels_in.iter()
-        .for_each(|(cin,labels)| {
-            if cin.ge(&local_state.edges.len()) {
+    //edges are defined by both the sender and the receiver
+    //we need to record both monitors in this edge as to and from
+    define_unified_edges(&mut local_state, id, channels_in, true);
+    define_unified_edges(&mut local_state, id, channels_out, false);
+
+
+}
+
+fn define_unified_edges(mut local_state: &mut &mut DotState, id: usize, mdvec: Arc<Vec<Arc<ChannelMetaData>>>, set_to: bool) {
+    mdvec.iter()
+        .for_each(|meta| {
+            if meta.id.ge(&local_state.edges.len()) {
                 local_state.edges.resize_with(id + 1, || {
                     Edge {
+                        id: usize::MAX,
                         from: usize::MAX,
                         to: usize::MAX,
                         color: "white",
                         pen_width: "3",
                         display_label: "".to_string(),//defined when the content arrives
-                        id: usize::MAX,
-                        ctl_labels: Vec::new(),
+                        stats_computer: ChannelStatsComputer::new(meta),
+                        ctl_labels: Vec::new(), //for visibility control
                     }
                 });
             }
-            let idx = *cin;
+            let idx = meta.id;
+            assert!(local_state.edges[idx].id == idx || local_state.edges[idx].id == usize::MAX);
             local_state.edges[idx].id = idx;
-            local_state.edges[idx].to = id;
+            if set_to {
+                local_state.edges[idx].to = id;
+            } else {
+                local_state.edges[idx].from = id;
+            }
             // Collect the labels that need to be added
-            let labels_to_add: Vec<_> = labels.iter()
+            // This is redundant but provides safety if two dif label lists are in play
+            let labels_to_add: Vec<_> = meta.labels.iter()
                 .filter(|f| !local_state.edges[idx].ctl_labels.contains(f))
                 .cloned()  // Clone the items to be added
                 .collect();
-
-// Now, append them to `ctl_labels`
-            for label in labels_to_add {
-                local_state.edges[idx].ctl_labels.push(label);
-            }
-        });
-
-    channels_out.iter()
-        .for_each(|(cout,labels)| {
-            if cout.ge(&local_state.edges.len()) {
-                local_state.edges.resize_with(id + 1, || {
-                    Edge {
-                        from: usize::MAX,
-                        to: usize::MAX,
-                        color: "white",
-                        pen_width: "3",
-                        display_label: "".to_string(),//defined when the content arrives
-                        id: usize::MAX,
-                        ctl_labels: Vec::new(),
-                    }
-                });
-            }
-            let idx = *cout;
-            local_state.edges[idx].id = idx;
-            local_state.edges[idx].from = id;
-            // Collect the labels that need to be added
-            let labels_to_add: Vec<_> = labels.iter()
-                .filter(|f| !local_state.edges[idx].ctl_labels.contains(f))
-                .cloned()  // Clone the items to be added
-                .collect();
-
-// Now, append them to `ctl_labels`
+            // Now, append them to `ctl_labels`
             for label in labels_to_add {
                 local_state.edges[idx].ctl_labels.push(label);
             }
@@ -184,14 +250,14 @@ impl FrameHistory {
 
     pub async fn new() -> FrameHistory {
         let result = FrameHistory {
-            packed_sent_writer: PackedVecWriter {
+            packed_sent_writer: PackedVecWriter { //TODO: use a constructor
                 previous: Vec::new(),
-                delta_limit: usize::MAX,
+                sync_required: true, //first must be full
                 write_count: 0
             },
-            packed_take_writer: PackedVecWriter {
+            packed_take_writer: PackedVecWriter {//TODO: use a constructor
                 previous: Vec::new(),
-                delta_limit: usize::MAX,
+                sync_required: true, //first must be full
                 write_count: 0
             },
             history_buffer: BytesMut::new(),
@@ -205,7 +271,7 @@ impl FrameHistory {
             last_file_to_append_onto: "".to_string(),
             buffer_bytes_count: 0usize,
         };
-        run!(async {let _ = fs::create_dir_all(&result.output_log_path);});
+        run!(async {let _ = create_dir_all(&result.output_log_path);});
         result
     }
 
@@ -214,8 +280,8 @@ impl FrameHistory {
     }
 
     pub fn apply_node(&mut self, name: & 'static str, id:usize
-                      , chin: Arc<Vec<(usize, Vec<&'static str>)>>
-                      , chout: Arc<Vec<(usize, Vec<&'static str>)>>) {
+                      , chin: Arc<Vec<Arc<ChannelMetaData>>>
+                      , chout: Arc<Vec<Arc<ChannelMetaData>>>) {
 
         write_long_unsigned(REC_NODE, &mut self.history_buffer); //message type
         write_long_unsigned(id as u64, &mut self.history_buffer); //message type
@@ -224,20 +290,20 @@ impl FrameHistory {
         self.history_buffer.write_str(name).expect("internal error writing to ByteMut");
 
             write_long_unsigned(chin.len() as u64, &mut self.history_buffer);
-            chin.iter().for_each(|(id,labels)|{
-                write_long_unsigned(*id as u64, &mut self.history_buffer);
-                write_long_unsigned(labels.len() as u64, &mut self.history_buffer);
-                labels.iter().for_each(|s| {
+            chin.iter().for_each(|meta|{
+                write_long_unsigned(meta.id as u64, &mut self.history_buffer);
+                write_long_unsigned(meta.labels.len() as u64, &mut self.history_buffer);
+                meta.labels.iter().for_each(|s| {
                     write_long_unsigned(s.len() as u64, &mut self.history_buffer);
                     self.history_buffer.write_str(s).expect("internal error writing to ByteMut");
                 });
             });
 
             write_long_unsigned(chout.len() as u64, &mut self.history_buffer);
-            chout.iter().for_each(|(id,labels)|{
-                write_long_unsigned(*id as u64, &mut self.history_buffer);
-                write_long_unsigned(labels.len() as u64, &mut self.history_buffer);
-                labels.iter().for_each(|s| {
+            chout.iter().for_each(|meta|{
+                write_long_unsigned(meta.id as u64, &mut self.history_buffer);
+                write_long_unsigned(meta.labels.len() as u64, &mut self.history_buffer);
+                meta.labels.iter().for_each(|s| {
                     write_long_unsigned(s.len() as u64, &mut self.history_buffer);
                     self.history_buffer.write_str(s).expect("internal error writing to ByteMut");
                 });
@@ -273,6 +339,15 @@ impl FrameHistory {
             if let Err(e) = Self::append_to_file(self.output_log_path.join(&file_to_append_onto)
                                                 , &self.history_buffer) {
                 error!("Error writing to file: {}", e);
+                error!("Due to the above error some history has been lost");
+
+                //we force a full write for the next time around
+                self.packed_take_writer.sync_data();
+                self.packed_sent_writer.sync_data();
+
+                //NOTE: we could hold for write later but we may run out of memory
+                //      so we will just drop the data and hope for the best
+
             } else {
                 info!("wrote to hist log now {} bytes",self.file_bytes_written+self.buffer_bytes_count);
             }
@@ -291,19 +366,16 @@ impl FrameHistory {
 
 
     fn append_to_file(path: PathBuf, data: &[u8]) -> Result<(), std::io::Error> {
-        // Offloading the blocking I/O operation using `run!`
-        let mut file:File = OpenOptions::new()
-                        .append(true)
-                        .create(true)
-                        .open(path)?;
-        run!(async {
-                    use std::io::Write;
-                    let _ = file.write_all(data);
-                    let _ = file.flush();
-                    Result::<(), std::io::Error>::Ok(())
-        })
+        let file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&path)?;
+        drive(util::all_to_file_async(file, data))
     }
+
 }
+
+
 
 /*
  ////////////////////////////////////////////////

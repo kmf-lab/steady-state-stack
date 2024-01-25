@@ -1,8 +1,10 @@
+use std::ops::DerefMut;
 use std::sync::Arc;
 use futures::lock::Mutex;
 use crate::actor::data_generator::WidgetInventory;
 use log::*;
-use crate::steady::*;
+use crate::steady::channel::SteadyRx;
+use crate::steady::channel::SteadyTx;
 use crate::steady::monitor::SteadyMonitor;
 use crate::steady::monitor::LocalMonitor;
 
@@ -22,8 +24,8 @@ pub async fn run(monitor: SteadyMonitor
     let mut tx_guard = tx.lock().await;
     let mut rx_guard = rx.lock().await;
 
-    let tx = &mut *tx_guard;
-    let rx = &mut *rx_guard;
+    let tx = tx_guard.deref_mut();
+    let rx = rx_guard.deref_mut();
 
     let mut monitor = monitor.init_stats(&mut[rx], &mut[tx]);
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
@@ -50,10 +52,10 @@ pub async fn run(monitor: SteadyMonitor
                  , rx: Arc<Mutex<SteadyRx<WidgetInventory>>>
                  , tx: Arc<Mutex<SteadyTx<ApprovedWidgets>>>) -> Result<(),()> {
 
-      let mut rx_guard = guard!(rx);
-      let mut tx_guard = guard!(tx);
-      let rx = ref_mut!(rx_guard);
-      let tx = ref_mut!(tx_guard);
+      let mut rx_guard = rx.lock().await;
+      let mut tx_guard = tx.lock().await;
+      let rx = rx_guard.deref_mut();
+      let tx = tx_guard.deref_mut();
 
       let mut monitor = monitor.init_stats(&mut[rx], &mut[tx]);
       let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
@@ -85,10 +87,10 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
         let count = monitor.take_slice(rx, buf);
         //TODO: need to re-use this space
         let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
-        for x in 0..count {
+        for b in buf.iter().take(count) {
             approvals.push(ApprovedWidgets {
-                original_count: buf[x].count,
-                approved_count: buf[x].count / 2,
+                original_count: b.count,
+                approved_count: b.count / 2,
 
             });
         }
@@ -124,29 +126,30 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
 mod tests {
     use super::*;
     use async_std::test;
+    use crate::steady::graph::SteadyGraph;
 
     #[test]
     async fn test_process() {
-        crate::steady::tests::initialize_logger();
+        crate::steady::util::util_tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
-        let (tx_in, rx_in) = graph.new_channel(8,&[]);
-        let (tx_out, rx_out) = graph.new_channel(8,&[]);
+        let (tx_in, rx_in) = graph.channel_builder(8).build();
+        let (tx_out, rx_out) = graph.channel_builder(8).build();
 
         let mock_monitor = graph.new_test_monitor("approval_monitor");
 
         let mut mock_monitor = mock_monitor.init_stats(&mut[], &mut[]);
 
-        let mut tx_in_guard = guard!(tx_in);
-        let mut rx_in_guard = guard!(rx_in);
+        let mut tx_in_guard = tx_in.lock().await;
+        let mut rx_in_guard = rx_in.lock().await;
 
-        let mut tx_out_guard = guard!(tx_out);
-        let mut rx_out_guard = guard!(rx_out);
+        let mut tx_out_guard = tx_out.lock().await;
+        let mut rx_out_guard = rx_out.lock().await;
 
-        let tx_in = ref_mut!(tx_in_guard);
-        let rx_in = ref_mut!(rx_in_guard);
-        let tx_out = ref_mut!(tx_out_guard);
-        let rx_out = ref_mut!(rx_out_guard);
+        let tx_in = tx_in_guard.deref_mut();
+        let rx_in = rx_in_guard.deref_mut();
+        let tx_out = tx_out_guard.deref_mut();
+        let rx_out = rx_out_guard.deref_mut();
 
         let _ = mock_monitor.send_async(tx_in, WidgetInventory {
             count: 5

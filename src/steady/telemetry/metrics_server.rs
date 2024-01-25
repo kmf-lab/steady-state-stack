@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use futures::lock::Mutex;
-use crate::steady::{config, GraphRuntimeState, SteadyRx};
+use crate::steady::config;
 use crate::steady::telemetry::metrics_collector::DiagramData;
 use crate::steady::dot::*;
 use futures::FutureExt; // Provides the .fuse() method
@@ -14,6 +14,8 @@ use log::*;
 use crate::steady::monitor::SteadyMonitor;
 use tide::{Body, Request, Response};
 use tide::http::mime;
+use crate::steady::channel::SteadyRx;
+use crate::steady::graph::GraphRuntimeState;
 use crate::steady::telemetry::metrics_collector::DiagramData::{Edge, Node};
 
 
@@ -56,24 +58,20 @@ struct State {
     doc: Vec<u8>,
 }
 
+const CONTENT_INDEX_HTML: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/index.html")} else {""};
+// gzip -c ../../../static/telemetry/viz-lite.js > viz-lite.js.gz
+const CONTENT_VIZ_LITE: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/viz-lite.js")} else {""};
+const CONTENT_DOT_VIEWER_JS: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/dot-viewer.js")} else {""};
+const CONTENT_DOT_VIEWER_CSS: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/dot-viewer.css")} else {""};
+const CONTENT_WEBWORKER_JS: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/webworker.js")} else {""};
+
+//TODO: add the rest of these files and serve them
+//TODO: for each of these store the zipped version in the repo instead and serve that is possible or unzip for the client.
+//      this will add < 500K to the binary size and will make the server much faster
 
 pub(crate) async fn run(monitor: SteadyMonitor
                         , rx: Arc<Mutex<SteadyRx<DiagramData>>>) -> std::result::Result<(),()> {
 
-    let state = InternalState {
-        sequence: 0,
-        actor_count: 0,
-        total_take: Vec::new(), //running totals
-        total_sent: Vec::new(), //running totals
-
-        previous_total_take: Vec::new(), //for measuring cycle consumed
-        ma_index: 0,
-        ma_consumed_buckets: Vec::new(),
-        ma_consumed_runner: Vec::new(),
-        ma_inflight_buckets: Vec::new(),
-        ma_inflight_runner: Vec::new(),
-
-    };
 
     let mut history = FrameHistory::new().await;
 
@@ -100,9 +98,12 @@ pub(crate) async fn run(monitor: SteadyMonitor
 
     let mut app = tide::with_state(state.clone());
 
-
     let _ = app.at("/").serve_file("static/telemetry/index.html");
     let _ = app.at("/*").serve_dir("static/telemetry/");
+
+    let _ = app.at("/index.html").get(|_| async move {
+        Ok(tide::Response::builder(200).body(Body::from_bytes(CONTENT_INDEX_HTML.into())).content_type(mime::HTML).build())
+    });
 
     // TODO: pick up our history file, add the current buffer and send
     //       we may want to zip it first for faster transfer
@@ -110,23 +111,22 @@ pub(crate) async fn run(monitor: SteadyMonitor
 
     let _ = app.at("/graph.dot")
         .get(|req: Request<Arc<Mutex<State>>>| async move {
-        let vec = {
-            let guard = req.state().lock().await;
-            let state = guard.deref();
-            state.doc.clone()
-        };
-        let mut res = Response::new(200);
-        res.set_content_type(mime::PLAIN);  // Set the content type to text/plain
-        res.set_body(Body::from_bytes(vec));
-        Ok(res)
-    });
-
-
+            let body = Body::from_bytes({
+                let guard = req.state().lock().await;
+                let state = guard.deref();
+                state.doc.clone()
+            });
+            let mut res = Response::new(200);
+            res.set_content_type(mime::PLAIN);  // Set the content type to text/plain
+            res.set_body(body);
+            Ok(res)
+        });
 
     let server_handle = app.listen("127.0.0.1:8080");
     pin_mut!(server_handle);
 
     let runtime_state = monitor.runtime_state.clone();
+
 
     loop {
         select! {
@@ -135,32 +135,33 @@ pub(crate) async fn run(monitor: SteadyMonitor
                 break;
             },
             msg = rx.take_async().fuse() => {
-
-
                   match msg {
                          Ok(Node(seq, name, id, channels_in, channels_out)) => {
-                              refresh_structure(&mut dot_state, name, id, channels_in.clone(), channels_out.clone());
+                              //TODO: here is the defintion of the channels you need.
+
+
+                              refresh_structure(&mut dot_state
+                                               , name
+                                               , id
+                                               , channels_in.clone()
+                                               , channels_out.clone()
+                              );
+
                               dot_state.seq = seq;
-                               if config::TELEMETRY_HISTORY  {
+                              if config::TELEMETRY_HISTORY  {
                                         history.apply_node(name, id, channels_in.clone(), channels_out.clone());
-                               }
+                              }
                          },
                          Ok(Edge(seq
                                  , total_take
                                  , total_send)) => {
-                              total_take.iter().enumerate().for_each(|(i,c)| {
+                              //note on init we may not have the same length...
 
-                            //TODO: urgent but probably 2 days work.
-                            // Name/Labels/Type
-                            // Full:00% Vol:0000  AvgLatency based on sconsume rate.
-                            // Std:  Mead:  small histogram or range?
-//config choice on channel construction!!
-                            // ma window, fields to show, labels, title?
-               //Choose 80th Percentile if you're more interested in general performance under usual operating conditions.
-                            // Choose 96th Percentile if peak performance and behavior under high stress or load are more crucial for your monitoring needs.
+                              total_send.iter()
+                                        .zip(total_take.iter())
+                                        .enumerate()
+                                        .for_each(|(i,(s,t))| dot_state.edges[i].compute_and_refresh(s,t));
 
-                                dot_state.edges[i].display_label = format!("out:{}",c);
-                              });
                               dot_state.seq = seq;
                               //NOTE: generate the new graph
                               frames.active_graph.clear(); // Clear the buffer for reuse

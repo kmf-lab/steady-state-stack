@@ -1,10 +1,13 @@
+use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
 use futures::lock::Mutex;
 use crate::monitor::LocalMonitor;
 use log::*;
-use crate::steady::*;
+use crate::steady::channel::SteadyRx;
+use crate::steady::channel::SteadyTx;
 use crate::steady::monitor::SteadyMonitor;
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SomeExampleRecord {
@@ -21,10 +24,10 @@ pub async fn run(monitor: SteadyMonitor
                  , tx: Arc<Mutex<SteadyTx<SomeExampleRecord>>>
                  , rx: Arc<Mutex<SteadyRx<SomeExampleRecord>>>) -> Result<(),()> {
 
-    let mut tx_guard = guard!(tx);
-    let mut rx_guard = guard!(rx);
-    let tx = ref_mut!(tx_guard);
-    let rx = ref_mut!(rx_guard);
+    let mut rx_guard = rx.lock().await;
+    let mut tx_guard = tx.lock().await;
+    let rx = rx_guard.deref_mut();
+    let tx = tx_guard.deref_mut();
 
     let mut monitor = monitor.init_stats(&mut [rx], &mut [tx]);
     let mut state = SomeLocalState{};
@@ -51,10 +54,10 @@ pub async fn run(monitor: SteadyMonitor
                  , tx: Arc<Mutex<SteadyTx<SomeExampleRecord>>>
                  , rx: Arc<Mutex<SteadyRx<SomeExampleRecord>>>) -> Result<(),()> {
 
-    let mut tx_guard = guard!(tx);
-    let mut rx_guard = guard!(rx);
-    let tx = ref_mut!(tx_guard);
-    let rx = ref_mut!(rx_guard);
+    let mut rx_guard = rx.lock().await;
+    let mut tx_guard = tx.lock().await;
+    let rx = rx_guard.deref_mut();
+    let tx = tx_guard.deref_mut();
 
     let mut monitor = monitor.init_stats(&mut [rx], &mut [tx]);
     let mut state = SomeLocalState{};
@@ -104,27 +107,28 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
 
 #[cfg(test)]
 mod tests {
+    use std::ops::DerefMut;
     use crate::actor::example_empty_actor::{iterate_once, SomeExampleRecord, SomeLocalState};
-    use crate::steady::SteadyGraph;
+    use crate::steady::graph::SteadyGraph;
 
     #[async_std::test]
     async fn test_process_function() {
 
-        crate::steady::tests::initialize_logger();
+        crate::steady::util::util_tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
-        let (tx_in, rx_in) = graph.new_channel(8,&[]);
-        let (tx_out, rx_out) = graph.new_channel(8,&[]);
+        let (tx_in, rx_in) = graph.channel_builder(8).build();
+        let (tx_out, rx_out) = graph.channel_builder(8).build();
 
-        let mut tx_in_guard = guard!(tx_in);
-        let mut rx_in_guard = guard!(rx_in);
-        let mut tx_out_guard = guard!(tx_out);
-        let mut rx_out_guard = guard!(rx_out);
+        let mut tx_in_guard = tx_in.lock().await;
+        let mut rx_in_guard = rx_in.lock().await;
+        let mut tx_out_guard = tx_out.lock().await;
+        let mut rx_out_guard = rx_out.lock().await;
 
-        let tx_in = ref_mut!(tx_in_guard);
-        let rx_in = ref_mut!(rx_in_guard);
-        let tx_out = ref_mut!(tx_out_guard);
-        let rx_out = ref_mut!(rx_out_guard);
+        let tx_in = tx_in_guard.deref_mut();
+        let rx_in = rx_in_guard.deref_mut();
+        let tx_out = tx_out_guard.deref_mut();
+        let rx_out = rx_out_guard.deref_mut();
 
 
         let mock_monitor = graph.new_test_monitor("example_test");

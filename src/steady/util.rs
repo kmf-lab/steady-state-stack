@@ -1,8 +1,22 @@
+
 use std::str::FromStr;
-use flexi_logger::{DeferredNow, Logger, LogSpecBuilder, LogSpecification, ModuleFilter};
+use flexi_logger::{DeferredNow, Logger, LogSpecBuilder};
 use flexi_logger::filter::{LogLineFilter, LogLineWriter};
 
 use log::*;
+use nuclei::Handle;
+
+// new Proactive IO
+use nuclei::*;
+use futures::io::SeekFrom;
+use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use std::fs::{create_dir_all, File, OpenOptions};
+
+pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), std::io::Error> {
+    Handle::<File>::new(file)?.write_all(data).await?;
+    Result::<(), std::io::Error>::Ok(())
+}
+
 
     /// Initializes logging for the application using the provided log level.
     ///
@@ -107,3 +121,24 @@ impl LogLineFilter for TideHide {
 }
 ////////////////////////////////////////////
 ////////////////////////////////////////////
+
+////////////////////////////////////////////
+////////////////////////////////////////////
+#[cfg(test)]
+pub(crate) mod util_tests {
+    use lazy_static::lazy_static;
+    use std::sync::Once;
+    use crate::steady;
+    lazy_static! {
+            static ref INIT: Once = Once::new();
+    }
+
+    pub(crate) fn initialize_logger() {
+        INIT.call_once(|| {
+            if let Err(e) = steady::util::steady_logging_init("info") {
+                print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
+            }
+        });
+    }
+
+}

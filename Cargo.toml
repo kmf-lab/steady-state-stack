@@ -1,8 +1,12 @@
 [package]
-name = "sss"
+name = "steady_state"   # rename from sss
 version = "0.1.0"
 edition = "2021"
+description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
+license = "MIT"
+build = "build.rs" # assumes we have gzip installed
 
+# cargo build --release --features telemetry_history,telemetry_server
 [profile.release]
 opt-level = 'z' # optimize for size
 lto = true # link time optimization
@@ -36,16 +40,22 @@ structopt        = "0.3.26"  # CLI parse for type safe arguments
 bastion          = "0.4.5"   # The telemetry framwork with supervisors to recover from panics
 ringbuf          = "0.4.0-rc.1"
 async-ringbuf    = "0.2.0-rc.4"
-
+nuclei           = "0.4.0" # for proactor based IO also part of bastion
 log              = "0.4.20"  # common logging traits
+
+                  # great logger but I would like to see a new crate using
+                  # nuclei with log to provide a more async friendly logger
 flexi_logger     = "0.27.3"  # default flexable logging implementation
+
 futures-timer    = "3.0.2"   # for async Delay::new(check_rate).await used places where we poll
 futures          = "0.3.29"  # for Select! Barrier etc and lock::Mutex
 itertools        = "0.12.0"  # helpful smart iter methods
 async-recursion  = "1.0.5"   # simplify the writing of async recursive functions
 structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
-time = { version = "0.3.31", features = ["formatting"] }# for time::Instant::now()
-uuid = { version = "0.8.2", features = ["v4"] }
+time             = { version = "0.3.31", features = ["formatting"] }# for time::Instant::now()
+uuid             = { version = "0.8.2", features = ["v4"] }
+num-traits       = "0.2.17" # for num::Zero and other generic math traits
+
 #
 # we will stay with tide since new async logic will be built soon from rust
 # long term stratigy to remain async agnostic and not write http myself.
@@ -65,20 +75,20 @@ const_panic = "0.2.8" # for const panic!()
 
 
 ## for SQRL will integrate later and use tide
-ring   = "0.16.20" # for sha
-qrcode = "0.13.0"  # for qr code generation
-rustls = "0.20.0" # for https
+#ring   = "0.16.20" # for sha
+#qrcode = "0.13.0"  # for qr code generation
+#rustls = "0.20.0" # for https
 #diesel = { version = "1.4.7", features = ["postgres"] }
 
 
 #not in use yet for future code gen
-petgraph = "0.6.4"  #   for graph data structures
-dot = "0.1.4"       #  for graphviz dot file generation
-syn = "2.0.48"  # for building syntax tree for generated projects
-quote = "1.0.35"  # for converson of syntax tree to text source files
+#petgraph = "0.6.4"  #   for graph data structures
+#dot = "0.1.4"       #  for graphviz dot file parse
+#syn = "2.0.48"  # for building syntax tree for generated projects
+#quote = "1.0.35"  # for converson of syntax tree to text source files
 
-zip              = "0.5"   # zip compression
-xz2              = "0.1.6" # lzma compression
+#zip              = "0.5"   # zip compression
+#xz2              = "0.1.6" # lzma compression
 
 
 #others
@@ -86,8 +96,8 @@ rand             = "0.8.4" # for random number generation
 regex            = "1.5.4" # for regex
 dashmap          = "5.5.3"
 bytes = { version = "1.5.0", features = [] }
-num-traits = "0.2.17"
-  # for concurrent hashmap
+signal-hook = "0.3.17"
+# for concurrent hashmap
 #serde ="0.3.0" # for serialization and deserialization
 #serde_derive = "1.0.64" # for serialization and deserialization
 #serde_json = "1.0.64" # for serialization and deserialization

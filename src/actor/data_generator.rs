@@ -1,8 +1,9 @@
+use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
 use futures::lock::Mutex;
 use crate::args::Args;
-use crate::steady::*;
+use crate::steady::channel::SteadyTx;
 use crate::steady::monitor::{LocalMonitor, SteadyMonitor};
 
 #[derive(Clone, Debug, Copy)]
@@ -24,10 +25,10 @@ pub async fn run(monitor: SteadyMonitor
                  , opt: Args
                  , tx: Arc<Mutex<SteadyTx<WidgetInventory>>> ) -> Result<(),()> {
 
-    let mut tx_guard = guard!(tx);
-    let tx = ref_mut!(tx_guard);
+    let mut tx_guard = tx.lock().await;
+    let tx = tx_guard.deref_mut();
 
-    const MULTIPLIER:usize = 1000;   //2_000_000 per second at 500 micros
+    const MULTIPLIER:usize = 256;   //500_000 per second at 500 micros
 
     let mut monitor = monitor.init_stats(&mut[], &mut[tx]);
 
@@ -52,8 +53,10 @@ pub async fn run(monitor: SteadyMonitor
 pub async fn run(monitor: SteadyMonitor
                  , _opt: Args
                  , tx: Arc<Mutex<SteadyTx<WidgetInventory>>>) -> Result<(),()> {
-    let mut tx_guard = guard!(tx);
-    let tx = ref_mut!(tx_guard);
+
+    let mut tx_guard = tx.lock().await;
+    let tx = tx_guard.deref_mut();
+
     let mut monitor = monitor.init_stats(&mut[], &mut[tx]);
 
     loop {
@@ -111,22 +114,22 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor
 
 #[cfg(test)]
 mod tests {
+    use std::ops::DerefMut;
     use crate::actor::data_generator::{InternalState, iterate_once};
-    use crate::actor::WidgetInventory;
-    use crate::steady::SteadyGraph;
+    use crate::steady::graph::SteadyGraph;
 
-  //  #[async_std::test]
+    #[async_std::test]
     async fn test_iterate_once() {
-        crate::steady::tests::initialize_logger();
+        crate::steady::util::util_tests::initialize_logger();
 
         let mut graph = SteadyGraph::new();
-        let (tx, rx) = graph.new_channel(5,&[]);
+        let (tx, rx) = graph.channel_builder(5).build();
         let mock_monitor = graph.new_test_monitor("generator_monitor");
 
-        let mut steady_tx_guard = guard!(tx);
-        let mut steady_rx_guard = guard!(rx);
-        let steady_tx = ref_mut!(steady_tx_guard);
-        let steady_rx = ref_mut!(steady_rx_guard);
+        let mut steady_tx_guard = tx.lock().await;
+        let mut steady_rx_guard = rx.lock().await;
+        let steady_tx = steady_tx_guard.deref_mut();
+        let steady_rx = steady_rx_guard.deref_mut();
 
         let mut mock_monitor = mock_monitor.init_stats(&mut[steady_rx], &mut[steady_tx]);
         let mut state = InternalState {
