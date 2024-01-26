@@ -12,14 +12,15 @@ use bastion::run;
 
 use std::fmt::Write;
 use bytes::{BufMut, BytesMut};
+use futures_timer::Delay;
 use log::{error, info};
 use time::{format_description, OffsetDateTime};
 use uuid::Uuid;
-use crate::steady::channel::ChannelBound;
-use crate::steady::{config, util};
-use crate::steady::monitor::ChannelMetaData;
-use crate::steady::serialize::byte_buffer_packer::PackedVecWriter;
-use crate::steady::serialize::fast_protocol_packed::write_long_unsigned;
+use crate::steady_state::ColorTrigger;
+use crate::steady_state::{config, util};
+use crate::steady_state::monitor::ChannelMetaData;
+use crate::steady_state::serialize::byte_buffer_packer::PackedVecWriter;
+use crate::steady_state::serialize::fast_protocol_packed::write_long_unsigned;
 
 pub struct DotState {
     pub(crate) nodes: Vec<Node<>>, //position matches the node id
@@ -131,8 +132,8 @@ impl ChannelStatsComputer {
         let window_in_seconds = &meta.window_in_seconds;
         let percentiles = &meta.percentiles;
         let std_dev = &meta.std_dev;
-        let red: Option<ChannelBound> = meta.red.clone();
-        let yellow: Option<ChannelBound> = meta.yellow.clone();
+        let red: Option<ColorTrigger> = meta.red.clone();
+        let yellow: Option<ColorTrigger> = meta.yellow.clone();
 
         //TODO: build only the structures we need to support the above
 
@@ -336,8 +337,9 @@ impl FrameHistory {
                 self.file_bytes_written = 0;
                 self.last_file_to_append_onto=file_to_append_onto.clone();
             }
+            info!("attempt to write history");
             if let Err(e) = Self::append_to_file(self.output_log_path.join(&file_to_append_onto)
-                                                , &self.history_buffer) {
+                                                , &self.history_buffer).await {
                 error!("Error writing to file: {}", e);
                 error!("Due to the above error some history has been lost");
 
@@ -365,12 +367,43 @@ impl FrameHistory {
     }
 
 
-    fn append_to_file(path: PathBuf, data: &[u8]) -> Result<(), std::io::Error> {
-        let file = OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(&path)?;
-        drive(util::all_to_file_async(file, data))
+    async fn append_to_file(path: PathBuf, data: &[u8]) -> Result<(), std::io::Error> {
+
+        //TODO: re-evaluate this decision based on feedback from nuclei
+
+        info!("called append_to_file");
+
+                let d = data.to_vec();
+                let task = async move {
+                    info!("start the write");
+                    let file = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(&path)?;
+
+                    info!("start drive write");
+                    //let result = Self::all_to_file_async(file, d.as_slice()).await;
+                        let result = nuclei::drive(Self::all_to_file_async(file, d.as_slice()));
+                    info!("finish drive write");
+
+                        result
+
+                };
+
+        info!("spawn now");
+        run!(task)
+
+
+    }
+    pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), std::io::Error> {
+        info!("a");
+        let mut h = Handle::<File>::new(file)?;
+        info!("b");
+        h.write_all(data).await?;
+        info!("c");
+        Handle::<File>::flush(&mut h).await?;
+        info!("d");
+        Result::<(), std::io::Error>::Ok(())
     }
 
 }

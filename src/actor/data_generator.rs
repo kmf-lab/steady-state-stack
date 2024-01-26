@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use futures::lock::Mutex;
 use crate::args::Args;
-use crate::steady::channel::SteadyTx;
-use crate::steady::monitor::{LocalMonitor, SteadyMonitor};
+use crate::steady_state::*;
+
 
 #[derive(Clone, Debug, Copy)]
 pub struct WidgetInventory {
@@ -21,16 +21,16 @@ struct InternalState {
 }
 
 #[cfg(not(test))]
-pub async fn run(monitor: SteadyMonitor
+pub async fn run(context: SteadyContext
                  , opt: Args
-                 , tx: Arc<Mutex<SteadyTx<WidgetInventory>>> ) -> Result<(),()> {
+                 , tx: Arc<Mutex<Tx<WidgetInventory>>> ) -> Result<(),()> {
 
     let mut tx_guard = tx.lock().await;
     let tx = tx_guard.deref_mut();
 
     const MULTIPLIER:usize = 256;   //500_000 per second at 500 micros
 
-    let mut monitor = monitor.init_stats(&mut[], &mut[tx]);
+    let mut monitor = context.into_monitor(&[], &[tx]);
 
     //keep long running state in here while you run
 
@@ -50,14 +50,14 @@ pub async fn run(monitor: SteadyMonitor
 }
 
 #[cfg(test)]
-pub async fn run(monitor: SteadyMonitor
+pub async fn run(context: SteadyContext
                  , _opt: Args
-                 , tx: Arc<Mutex<SteadyTx<WidgetInventory>>>) -> Result<(),()> {
+                 , tx: Arc<Mutex<Tx<WidgetInventory>>>) -> Result<(),()> {
 
     let mut tx_guard = tx.lock().await;
     let tx = tx_guard.deref_mut();
 
-    let mut monitor = monitor.init_stats(&mut[], &mut[tx]);
+    let mut monitor = context.into_monitor(&[], &[tx]);
 
     loop {
          relay_test(& mut monitor, tx).await;
@@ -67,7 +67,7 @@ pub async fn run(monitor: SteadyMonitor
 #[cfg(test)]
 
 async fn relay_test(monitor: &mut LocalMonitor<0,1>
-                    , tx: &mut SteadyTx<WidgetInventory>) {
+                    , tx: &mut Tx<WidgetInventory>) {
     use bastion::run;
     use bastion::message::MessageHandler;
 
@@ -85,7 +85,7 @@ async fn relay_test(monitor: &mut LocalMonitor<0,1>
 
 async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor<R, T>
                       , state: &mut InternalState
-                      , tx_widget: &mut SteadyTx<WidgetInventory>
+                      , tx_widget: &mut Tx<WidgetInventory>
     , multiplier: usize
                     ) -> bool
 {
@@ -116,13 +116,13 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor
 mod tests {
     use std::ops::DerefMut;
     use crate::actor::data_generator::{InternalState, iterate_once};
-    use crate::steady::graph::SteadyGraph;
+    use crate::steady_state::Graph;
 
     #[async_std::test]
     async fn test_iterate_once() {
-        crate::steady::util::util_tests::initialize_logger();
+        crate::steady_state::util::util_tests::initialize_logger();
 
-        let mut graph = SteadyGraph::new();
+        let mut graph = Graph::new();
         let (tx, rx) = graph.channel_builder(5).build();
         let mock_monitor = graph.new_test_monitor("generator_monitor");
 
@@ -131,7 +131,7 @@ mod tests {
         let steady_tx = steady_tx_guard.deref_mut();
         let steady_rx = steady_rx_guard.deref_mut();
 
-        let mut mock_monitor = mock_monitor.init_stats(&mut[steady_rx], &mut[steady_tx]);
+        let mut mock_monitor = mock_monitor.into_monitor(&mut[steady_rx], &mut[steady_tx]);
         let mut state = InternalState {
             count: 10,
         };

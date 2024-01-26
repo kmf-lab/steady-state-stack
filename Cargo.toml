@@ -1,10 +1,10 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.1.0"
+version = "0.0.2"
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
-build = "build.rs" # assumes we have gzip installed
+build = "build.rs" # assumes we have gzip and base64 installed, the base64 crate is very broken and must not be used.
 
 # cargo build --release --features telemetry_history,telemetry_server
 [profile.release]
@@ -40,7 +40,7 @@ structopt        = "0.3.26"  # CLI parse for type safe arguments
 bastion          = "0.4.5"   # The telemetry framwork with supervisors to recover from panics
 ringbuf          = "0.4.0-rc.1"
 async-ringbuf    = "0.2.0-rc.4"
-nuclei           = "0.4.0" # for proactor based IO also part of bastion
+nuclei           = { version = "0.4.3", features = ["async-exec","iouring","attributes"] } # for proactor based IO also part of bastion
 log              = "0.4.20"  # common logging traits
 
                   # great logger but I would like to see a new crate using
@@ -55,7 +55,6 @@ structopt-derive = "0.4.18"   # simplify the writing of async recursive function
 time             = { version = "0.3.31", features = ["formatting"] }# for time::Instant::now()
 uuid             = { version = "0.8.2", features = ["v4"] }
 num-traits       = "0.2.17" # for num::Zero and other generic math traits
-
 #
 # we will stay with tide since new async logic will be built soon from rust
 # long term stratigy to remain async agnostic and not write http myself.

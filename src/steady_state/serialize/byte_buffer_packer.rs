@@ -2,7 +2,7 @@
 use std::ops::{Add, Sub};
 use bytes::{Bytes, BytesMut};
 use num_traits::Zero;
-use crate::steady::serialize::fast_protocol_packed::{read_long_signed, read_long_unsigned, write_long_signed, write_long_unsigned};
+use crate::steady_state::serialize::fast_protocol_packed::{read_long_signed, read_long_unsigned, write_long_signed, write_long_unsigned};
 
 
 /// writes the deltas so we can write or send less data across the system.

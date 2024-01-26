@@ -1,18 +1,15 @@
 mod args;
-#[macro_use]
-mod steady;
 
+mod steady_state;
 
 use structopt::*;
 use log::*;
-use bastion::Bastion;
-use bastion::prelude::*;
+
 use futures_timer::Delay;
 use crate::args::Args;
 use std::time::Duration;
-use steady::graph::SteadyGraph;
-use crate::steady::*;
-use crate::steady::util::steady_logging_init;
+
+use nuclei::GlobalExecutorConfig;
 
 // here are the actors that will be used in the graph.
 // note that the actors are in a separate module and we must use the structs/enums and
@@ -26,7 +23,10 @@ mod actor {
     pub mod data_consumer;
 }
 use crate::actor::*;
-use crate::steady::channel::ChannelBound;
+
+use bastion::{Bastion, run};
+use bastion::prelude::SupervisionStrategy;
+
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -42,12 +42,19 @@ use crate::steady::channel::ChannelBound;
 fn main() {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::from_args();
-    if let Err(e) = steady_logging_init(&opt.loglevel) {
+
+    if let Err(e) = steady_state::init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
-    let mut graph:SteadyGraph = build_graph(&opt); //graph is built here and tested below in the test section.
+let x = nuclei::init_with_config(GlobalExecutorConfig::default()
+         .with_min_threads(2)
+);
+    info!("hello x {:?}",x);
+
+    let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
     graph.start();
+
 
 
     //remove this block to run forever.
@@ -75,12 +82,12 @@ fn main() {
     Bastion::block_until_stopped();
 }
 
-fn build_graph(cli_arg: &Args) -> SteadyGraph {
+fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     debug!("args: {:?}",&cli_arg);
     Bastion::init(); //init bastion runtime
 
     //create the mutable graph object
-    let mut graph = SteadyGraph::new();
+    let mut graph = steady_state::Graph::new();
 
     //create all the needed channels between actors
     let example_capacity = 4000;
@@ -88,7 +95,7 @@ fn build_graph(cli_arg: &Args) -> SteadyGraph {
     let (generator_tx, generator_rx) = graph.channel_builder(example_capacity)
                                        .with_labels(&["widgets"],true)
                                        .with_percentile(80)
-                                       .with_red(ChannelBound::Percentile(70))
+                                       .with_red(steady_state::ColorTrigger::Percentile(70))
                                        .build();
 
     let (consumer_tx, consumer_rx) = graph.channel_builder(example_capacity)
@@ -116,7 +123,7 @@ fn build_graph(cli_arg: &Args) -> SteadyGraph {
             .children(|children| {
                     graph.add_to_graph("approval"
                                       , children.with_redundancy(0)
-                        , move |monitor| actor::data_approval::run(monitor
+                                   , move |monitor| actor::data_approval::run(monitor
                                                    , generator_rx.clone()
                                                    , consumer_tx.clone()
                                                                      )
@@ -127,7 +134,7 @@ fn build_graph(cli_arg: &Args) -> SteadyGraph {
             .children(|children| {
                     graph.add_to_graph("consumer"
                                       , children.with_redundancy(0)
-                            ,move |monitor| actor::data_consumer::run(monitor
+                                     ,move |monitor| actor::data_consumer::run(monitor
                                                            , consumer_rx.clone()
                                                                         )
 
@@ -144,7 +151,7 @@ fn build_graph(cli_arg: &Args) -> SteadyGraph {
 
 #[cfg(test)]
 mod tests {
-    use bastion::prelude::Distributor;
+    use bastion::prelude::{Distributor, SendError};
     use bastion::run;
     use super::*;
 

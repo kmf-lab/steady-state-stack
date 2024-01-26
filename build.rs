@@ -1,33 +1,86 @@
 use std::process::{Command, Stdio};
 use std::env;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::Path;
 
 fn main() {
     // Define the path to the file relative to the project root
-    let project_root = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let project_root = env::var("CARGO_MANIFEST_DIR").unwrap_or(".".to_string());
 
-    gzip_me(&Path::new(&project_root).join("static/telemetry/viz-lite.js"));
-    gzip_me(&Path::new(&project_root).join("static/telemetry/dot-viewer.js"));
-    gzip_me(&Path::new(&project_root).join("static/telemetry/dot-viewer.css"));
-    gzip_me(&Path::new(&project_root).join("static/telemetry/index.html"));
-    gzip_me(&Path::new(&project_root).join("static/telemetry/webworker.js"));
+    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/viz-lite.js"));
+    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/dot-viewer.js"));
+    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/dot-viewer.css"));
+    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/index.html"));
+    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/webworker.js"));
+
+    base64_encode(&Path::new(&project_root).join("static/telemetry/images/spinner.gif"));
+
+
 }
 
-fn gzip_me(file_path: &PathBuf) {
-    // Create the output file path with .gz extension
-    let output_path = file_path.with_extension("gz");
+
+fn base64_encode(file_path: &Path) {
+    // Define the output file name
+    let output_file_name = format!("{}.b64", file_path.to_str().unwrap_or("UNKNOWN"));
+
+    // Check if the output file already exists
+    if Path::new(&output_file_name).exists() {
+        println!("{} already exists, skipping", output_file_name);
+        return;
+    }
 
     // Open the output file for writing
-    let output_file = File::create(&output_path).expect("Failed to create output file");
+    let mut output_file = File::create(&output_file_name).expect("Failed to create output file");
 
-    // Run the gzip command with the output file as stdout
-    let status = Command::new("gzip")
+    // Run the base64 command
+    let base64_output = Command::new("base64")
+        .arg("-w")
+        .arg("0")
+        .arg(file_path)
+        .output()
+        .expect("Failed to execute base64 command");
+
+    // Write the base64 encoded data to the output file
+    output_file.write_all(&base64_output.stdout).expect("Failed to write to output file");
+
+    println!("Processed and saved to {}", output_file_name);
+}
+
+
+fn gzip_and_base64_encode(file_path: &Path) {
+    // Define the output file name
+    let output_file_name = format!("{}.gz.b64", file_path.to_str().unwrap_or("UNKNOWN"));
+
+    // Check if the output file already exists
+    if Path::new(&output_file_name).exists() {
+        println!("{} already exists, skipping", output_file_name);
+        return;
+    }
+
+    // Open the output file for writing
+    let mut output_file = File::create(&output_file_name).expect("Failed to create output file");
+
+    // Run the gzip command and pipe its output to the base64 command
+    let gzip_output = Command::new("gzip")
         .arg("-c")
         .arg(file_path)
-        .stdout(Stdio::from(output_file))
-        .status()
-        .expect("Failed to execute gzip command");
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to start gzip process")
+        .stdout
+        .expect("Failed to open gzip stdout");
 
-    println!("gzip status: {}", status);
+    let base64_output = Command::new("base64")
+        .arg("-w")
+        .arg("0")
+        .stdin(gzip_output)
+        .output()
+        .expect("Failed to execute base64 command");
+
+    // Write the base64 encoded data to the output file
+    output_file.write_all(&base64_output.stdout).expect("Failed to write to output file");
+
+    println!("Processed and saved to {}", output_file_name);
+
 }

@@ -5,9 +5,10 @@ use futures::lock::Mutex;
 use futures_timer::Delay;
 
 use time::Instant;
-use crate::steady::*;
-use crate::steady::channel::SteadyTx;
-use crate::steady::monitor::{ChannelMetaData, RxTel, SteadyMonitor};
+use crate::steady_state::*;
+use crate::steady_state::Tx;
+use crate::steady_state::monitor::{ChannelMetaData, RxTel};
+use crate::steady_state::SteadyContext;
 
 #[derive(Clone)]
 pub enum DiagramData {
@@ -28,9 +29,9 @@ pub(crate) struct RawDiagramState {
 }
 
 
-pub(crate) async fn run(monitor: SteadyMonitor
+pub(crate) async fn run(monitor: SteadyContext
        , dynamic_senders_vec: Arc<Mutex<Vec< CollectorDetail >>>
-       , optional_server: Option<Arc<Mutex<SteadyTx<DiagramData>>>>
+       , optional_server: Option<Arc<Mutex<Tx<DiagramData>>>>
 ) -> Result<(),()> {
 
     let mut state = RawDiagramState {
@@ -111,7 +112,7 @@ fn gather_node_details(mut state: &mut RawDiagramState, dynamic_senders: &&mut V
     nodes
 }
 
-async fn send_node_details(consumer: &Option<Arc<Mutex<SteadyTx<DiagramData>>>>
+async fn send_node_details(consumer: &Option<Arc<Mutex<Tx<DiagramData>>>>
                            , state: &mut RawDiagramState
                            , nodes: Vec<DiagramData>
                            ) {
@@ -127,7 +128,7 @@ async fn send_node_details(consumer: &Option<Arc<Mutex<SteadyTx<DiagramData>>>>
     }
 }
 
-async fn send_edge_details(consumer: &Option<Arc<Mutex<SteadyTx<DiagramData>>>>, state: &mut RawDiagramState) {
+async fn send_edge_details(consumer: &Option<Arc<Mutex<Tx<DiagramData>>>>, state: &mut RawDiagramState) {
     //info!("compute send_edge_details {:?} {:?}",state.running_total_sent,state.running_total_take);
 
     let send_me = DiagramData::Edge(state.sequence

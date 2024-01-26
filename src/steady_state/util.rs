@@ -128,14 +128,14 @@ impl LogLineFilter for TideHide {
 pub(crate) mod util_tests {
     use lazy_static::lazy_static;
     use std::sync::Once;
-    use crate::steady;
+    use crate::steady_state;
     lazy_static! {
             static ref INIT: Once = Once::new();
     }
 
     pub(crate) fn initialize_logger() {
         INIT.call_once(|| {
-            if let Err(e) = steady::util::steady_logging_init("info") {
+            if let Err(e) = steady_state::util::steady_logging_init("info") {
                 print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
             }
         });

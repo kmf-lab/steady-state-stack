@@ -3,10 +3,8 @@ use std::sync::Arc;
 use futures::lock::Mutex;
 use crate::actor::data_generator::WidgetInventory;
 use log::*;
-use crate::steady::channel::SteadyRx;
-use crate::steady::channel::SteadyTx;
-use crate::steady::monitor::SteadyMonitor;
-use crate::steady::monitor::LocalMonitor;
+
+use crate::steady_state::*;
 
 const BATCH_SIZE: usize = 2000;
 
@@ -17,9 +15,9 @@ pub struct ApprovedWidgets {
 }
 
 #[cfg(not(test))]
-pub async fn run(monitor: SteadyMonitor
-                 , rx: Arc<Mutex<SteadyRx<WidgetInventory>>>
-                 , tx: Arc<Mutex<SteadyTx<ApprovedWidgets>>>) -> Result<(),()> {
+pub async fn run(context: SteadyContext
+                 , rx: Arc<Mutex<Rx<WidgetInventory>>>
+                 , tx: Arc<Mutex<Tx<ApprovedWidgets>>>) -> Result<(),()> {
 
     let mut tx_guard = tx.lock().await;
     let mut rx_guard = rx.lock().await;
@@ -27,7 +25,7 @@ pub async fn run(monitor: SteadyMonitor
     let tx = tx_guard.deref_mut();
     let rx = rx_guard.deref_mut();
 
-    let mut monitor = monitor.init_stats(&mut[rx], &mut[tx]);
+    let mut monitor = context.into_monitor(&[rx], &[tx]);
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
     loop {
@@ -48,16 +46,16 @@ pub async fn run(monitor: SteadyMonitor
 
 
 #[cfg(test)]
-pub async fn run(monitor: SteadyMonitor
-                 , rx: Arc<Mutex<SteadyRx<WidgetInventory>>>
-                 , tx: Arc<Mutex<SteadyTx<ApprovedWidgets>>>) -> Result<(),()> {
+pub async fn run(context: SteadyContext
+                 , rx: Arc<Mutex<Rx<WidgetInventory>>>
+                 , tx: Arc<Mutex<Tx<ApprovedWidgets>>>) -> Result<(),()> {
 
       let mut rx_guard = rx.lock().await;
       let mut tx_guard = tx.lock().await;
       let rx = rx_guard.deref_mut();
       let tx = tx_guard.deref_mut();
 
-      let mut monitor = monitor.init_stats(&mut[rx], &mut[tx]);
+      let mut monitor = context.into_monitor(&[rx], &[tx]);
       let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
     loop {
@@ -78,8 +76,8 @@ pub async fn run(monitor: SteadyMonitor
 
 // important function break out to ensure we have a point to test on
 async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor<R, T>
-                                                      , rx: & mut SteadyRx<WidgetInventory>
-                                                      , tx: & mut SteadyTx<ApprovedWidgets>
+                                                      , rx: & mut Rx<WidgetInventory>
+                                                      , tx: & mut Tx<ApprovedWidgets>
                                                       , buf: &mut [WidgetInventory; BATCH_SIZE]) -> bool {
 
 
@@ -126,19 +124,19 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
 mod tests {
     use super::*;
     use async_std::test;
-    use crate::steady::graph::SteadyGraph;
+    use crate::steady_state::Graph;
 
     #[test]
     async fn test_process() {
-        crate::steady::util::util_tests::initialize_logger();
+        crate::steady_state::util::util_tests::initialize_logger();
 
-        let mut graph = SteadyGraph::new();
+        let mut graph = Graph::new();
         let (tx_in, rx_in) = graph.channel_builder(8).build();
         let (tx_out, rx_out) = graph.channel_builder(8).build();
 
         let mock_monitor = graph.new_test_monitor("approval_monitor");
 
-        let mut mock_monitor = mock_monitor.init_stats(&mut[], &mut[]);
+        let mut mock_monitor = mock_monitor.into_monitor(&mut[], &mut[]);
 
         let mut tx_in_guard = tx_in.lock().await;
         let mut rx_in_guard = rx_in.lock().await;

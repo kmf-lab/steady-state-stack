@@ -1,28 +1,24 @@
-use std::any::type_name;
 use std::sync::Arc;
 use futures::lock::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use async_ringbuf::AsyncRb;
 
 
-type ChannelBacking<T> = Heap<T>;
-type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
-type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
+pub(crate) type ChannelBacking<T> = Heap<T>;
+pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
+pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
 
 //TODO: we want to use Static but will use heap as first step
 //TODO: we must use static for all telemetry work.
 //let mut rb = AsyncRb::<Static<T, 12>>::default().split_ref()
 //   AsyncRb::<ChannelBacking<T>>::new(cap).split_ref()
 
-use ringbuf::traits::{Observer, Split};
-use ringbuf::consumer::Consumer;
-use async_ringbuf::consumer::AsyncConsumer;
-use log::error;
-use ringbuf::producer::Producer;
+use ringbuf::traits::Split;
 use async_ringbuf::producer::AsyncProducer;
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 use ringbuf::storage::Heap;
-use crate::steady::monitor::ChannelMetaData;
+use crate::steady_state::{ColorTrigger, MONITOR_UNKNOWN, Rx, Tx};
+use crate::steady_state::monitor::ChannelMetaData;
 
 pub struct ChannelBuilder<T> {
     phantom: std::marker::PhantomData<T>,
@@ -35,8 +31,8 @@ pub struct ChannelBuilder<T> {
     show_type: bool,
     percentiles: Vec<u8>, //each is a row
     std_dev: Vec<f32>, //each is a row
-    red: Option<ChannelBound>, //if used base is green
-    yellow: Option<ChannelBound>, //if used base is green
+    red: Option<ColorTrigger>, //if used base is green
+    yellow: Option<ColorTrigger>, //if used base is green
 
 }
 
@@ -113,7 +109,7 @@ impl <T> ChannelBuilder<T> {
         }
     }
 
-    pub fn with_red(self, bound: ChannelBound) -> Self {
+    pub fn with_red(self, bound: ColorTrigger) -> Self {
         ChannelBuilder {
             phantom: std::marker::PhantomData,
             channel_counter: self.channel_counter,
@@ -130,7 +126,7 @@ impl <T> ChannelBuilder<T> {
         }
     }
 
-    pub fn with_yellow(self, bound: ChannelBound) -> Self {
+    pub fn with_yellow(self, bound: ColorTrigger) -> Self {
         ChannelBuilder {
             phantom: std::marker::PhantomData,
             channel_counter: self.channel_counter,
@@ -220,168 +216,30 @@ impl <T> ChannelBuilder<T> {
         }
     }
 
-    pub fn build(self) -> (Arc<Mutex<SteadyTx<T>>>, Arc<Mutex<SteadyRx<T>>>) {
+    pub fn build(self) -> (Arc<Mutex<Tx<T>>>, Arc<Mutex<Rx<T>>>) {
         self.new_channel()
     }
 
-    fn new_channel(self) -> (Arc<Mutex<SteadyTx<T>>>, Arc<Mutex<SteadyRx<T>>>) {
+    fn new_channel(self) -> (Arc<Mutex<Tx<T>>>, Arc<Mutex<Rx<T>>>) {
         let channel_id = self.channel_counter.fetch_add(1, Ordering::SeqCst);
         let capacity = self.capacity;
         let rb = AsyncRb::<ChannelBacking<T>>::new(capacity);
         let (tx, rx) = rb.split();
 
         let channel_meta_data = Arc::new(self.to_meta_data(channel_id));
-        (  Arc::new(Mutex::new(SteadyTx { id: channel_id
-                         , actor_name: None
+        (  Arc::new(Mutex::new(Tx { id: channel_id
                          , batch_limit: capacity
                          , tx
                          , channel_meta_data: channel_meta_data.clone()
-                         , local_idx: usize::MAX }))
-         , Arc::new(Mutex::new(SteadyRx { id: channel_id
+                         , local_index: MONITOR_UNKNOWN }))
+         , Arc::new(Mutex::new(Rx { id: channel_id
                          , batch_limit: capacity
                          , rx
                          , channel_meta_data: channel_meta_data.clone()
-                         , local_idx: usize::MAX  }))
+                         , local_index: MONITOR_UNKNOWN }))
         )
 
 
     }
-}
-
-#[derive(Clone)]
-pub enum ChannelBound {
-    Percentile(u8),
-    StdDev(f32),
-    PercentFull(u8),
-}
-
-
-pub struct SteadyRx<T> {
-    pub(crate) id: usize,
-    pub(crate) batch_limit: usize,
-    pub(crate) rx: InternalReceiver<T>,
-    pub(crate) local_idx: usize,
-    pub(crate) channel_meta_data: Arc<ChannelMetaData>,
-}
-
-
-impl<T> SteadyRx<T> {
-    #[inline]
-    pub async fn take_async(& mut self) -> Result<T,String> {
-        // implementation favors a full channel
-        if let Some(m) = self.rx.try_pop() {
-            Ok(m)
-        } else {
-            match self.rx.pop().await {
-                Some(a) => { Ok(a) }
-                None => { Err("Producer is dropped".to_string()) }
-            }
-        }
-    }
-
-    #[inline]
-    pub fn try_take(& mut self) -> Option<T> {
-        self.rx.try_pop()
-    }
-
-    //removes items from the channel and Copy's them into the slice
-    //returns the number of items removed
-    #[inline]
-    pub fn take_slice(&mut self, elems: &mut [T]) -> usize
-        where T: Copy {
-           self.rx.pop_slice(elems)
-    }
-
-    #[inline]
-    pub fn try_peek(&self) -> Option<&T> {
-        self.rx.first()
-    }
-
-    #[inline]
-    pub async fn peek_async(& mut self) -> Option<&T> {
-        self.rx.wait_occupied(1).await;
-        self.rx.first()
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.rx.is_empty()
-    }
-    #[inline]
-    pub fn avail_units(& mut self) -> usize {
-        self.rx.occupied_len()
-    }
-
-    #[inline]
-    pub async fn wait_avail_units(& mut self, count: usize) {
-        self.rx.wait_occupied(count).await
-    }
-
-}
-
-
-pub struct SteadyTx<T> {
-    pub(crate) id: usize,
-    pub(crate) batch_limit: usize,
-    pub(crate) tx: InternalSender<T>,
-    pub(crate) local_idx: usize,
-    pub(crate) actor_name: Option<&'static str>,
-    pub(crate) channel_meta_data: Arc<ChannelMetaData>,
-
-
-}
-
-
-////////////////////////////////////////////////////////////////
-impl<T> SteadyTx<T> {
-    #[inline]
-    pub fn try_send(& mut self, msg: T) -> Result<(), T> {
-        match self.tx.try_push(msg) {
-            Ok(_) => {Ok(())}
-            Err(m) => {Err(m)}
-        }
-    }
-
-    #[inline]
-    pub fn send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
-        self.tx.push_iter(iter)
-    }
-
-    #[inline]
-    pub fn send_slice_until_full(&mut self, slice: &[T]) -> usize
-       where T: Copy {
-        self.tx.push_slice(slice)
-    }
-
-    #[inline]
-    pub async fn send_async(& mut self, msg: T) -> Result<(), T> {
-        match self.tx.try_push(msg) {
-            Ok(_) => {Ok(())},
-            Err(msg) => {
-                error!("full channel detected tx actor:{:?} labels:{:?} capacity:{:?} sending type:{} "
-                , self.actor_name, self.channel_meta_data.labels, self.tx.capacity(), type_name::<T>());
-                //here we will await until there is room in the channel
-
-                self.tx.push(msg).await
-            }
-        }
-    }
-
-    #[inline]
-    pub fn is_full(&self) -> bool {
-        self.tx.is_full()
-    }
-
-    #[inline]
-    pub fn vacant_units(&self) -> usize {
-        self.tx.vacant_len()
-    }
-
-    #[inline]
-    pub async fn wait_vacant_units(&self, count: usize) {
-        self.tx.wait_vacant(count).await
-    }
-
-
 }
 

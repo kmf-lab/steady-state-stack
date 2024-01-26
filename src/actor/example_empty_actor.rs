@@ -2,11 +2,11 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
 use futures::lock::Mutex;
-use crate::monitor::LocalMonitor;
+use crate::steady_state::LocalMonitor;
 use log::*;
-use crate::steady::channel::SteadyRx;
-use crate::steady::channel::SteadyTx;
-use crate::steady::monitor::SteadyMonitor;
+use crate::steady_state::Rx;
+use crate::steady_state::Tx;
+use crate::steady_state::SteadyContext;
 
 
 #[derive(Clone, Debug, PartialEq)]
@@ -20,16 +20,16 @@ struct SomeLocalState {
 //example code is not called so we let the compiler know
 #[allow(dead_code)]
 #[cfg(not(test))]
-pub async fn run(monitor: SteadyMonitor
-                 , tx: Arc<Mutex<SteadyTx<SomeExampleRecord>>>
-                 , rx: Arc<Mutex<SteadyRx<SomeExampleRecord>>>) -> Result<(),()> {
+pub async fn run(monitor: SteadyContext
+                 , tx: Arc<Mutex<Tx<SomeExampleRecord>>>
+                 , rx: Arc<Mutex<Rx<SomeExampleRecord>>>) -> Result<(),()> {
 
     let mut rx_guard = rx.lock().await;
     let mut tx_guard = tx.lock().await;
     let rx = rx_guard.deref_mut();
     let tx = tx_guard.deref_mut();
 
-    let mut monitor = monitor.init_stats(&mut [rx], &mut [tx]);
+    let mut monitor = monitor.into_monitor(&[rx], &[tx]);
     let mut state = SomeLocalState{};
 
     loop {
@@ -50,16 +50,16 @@ pub async fn run(monitor: SteadyMonitor
 //example code is not called so we let the compiler know
 #[allow(dead_code)]
 #[cfg(test)]
-pub async fn run(monitor: SteadyMonitor
-                 , tx: Arc<Mutex<SteadyTx<SomeExampleRecord>>>
-                 , rx: Arc<Mutex<SteadyRx<SomeExampleRecord>>>) -> Result<(),()> {
+pub async fn run(monitor: SteadyContext
+                 , tx: Arc<Mutex<Tx<SomeExampleRecord>>>
+                 , rx: Arc<Mutex<Rx<SomeExampleRecord>>>) -> Result<(),()> {
 
     let mut rx_guard = rx.lock().await;
     let mut tx_guard = tx.lock().await;
     let rx = rx_guard.deref_mut();
     let tx = tx_guard.deref_mut();
 
-    let mut monitor = monitor.init_stats(&mut [rx], &mut [tx]);
+    let mut monitor = monitor.into_monitor(&[rx], &[tx]);
     let mut state = SomeLocalState{};
 
     //this is high volume example so
@@ -85,8 +85,8 @@ pub async fn run(monitor: SteadyMonitor
 
 async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
                         , _state: &mut SomeLocalState
-                      , tx: &mut SteadyTx<SomeExampleRecord>
-                      , rx: &mut SteadyRx<SomeExampleRecord>
+                      , tx: &mut Tx<SomeExampleRecord>
+                      , rx: &mut Rx<SomeExampleRecord>
                 ) -> bool
 {
 
@@ -109,14 +109,14 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
 mod tests {
     use std::ops::DerefMut;
     use crate::actor::example_empty_actor::{iterate_once, SomeExampleRecord, SomeLocalState};
-    use crate::steady::graph::SteadyGraph;
+    use crate::steady_state::Graph;
 
     #[async_std::test]
     async fn test_process_function() {
 
-        crate::steady::util::util_tests::initialize_logger();
+        crate::steady_state::util::util_tests::initialize_logger();
 
-        let mut graph = SteadyGraph::new();
+        let mut graph = Graph::new();
         let (tx_in, rx_in) = graph.channel_builder(8).build();
         let (tx_out, rx_out) = graph.channel_builder(8).build();
 
@@ -133,7 +133,7 @@ mod tests {
 
         let mock_monitor = graph.new_test_monitor("example_test");
 
-        let mut mock_monitor = mock_monitor.init_stats(&mut[rx_in], &mut[tx_out]);
+        let mut mock_monitor = mock_monitor.into_monitor(&mut[rx_in], &mut[tx_out]);
         let mut state = SomeLocalState{};
 
         let _ = mock_monitor.send_async(tx_in, SomeExampleRecord{}).await;

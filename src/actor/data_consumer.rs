@@ -4,8 +4,9 @@ use futures::lock::Mutex;
 use bastion::run;
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
-use crate::steady::channel::SteadyRx;
-use crate::steady::monitor::{LocalMonitor, SteadyMonitor};
+use crate::steady_state::Rx;
+use crate::steady_state::LocalMonitor;
+use crate::steady_state::SteadyContext;
 
 const BATCH_SIZE: usize = 2000;
 #[derive(Clone, Debug, PartialEq, Copy)]
@@ -16,13 +17,13 @@ struct InternalState {
 
 
 #[cfg(not(test))]
-pub async fn run(monitor: SteadyMonitor
-                 , rx: Arc<Mutex<SteadyRx<ApprovedWidgets>>>) -> Result<(),()> {
+pub async fn run(context: SteadyContext
+                 , rx: Arc<Mutex<Rx<ApprovedWidgets>>>) -> Result<(),()> {
 
     let mut rx_guard = rx.lock().await;
     let rx = rx_guard.deref_mut();
 
-    let mut monitor =  monitor.init_stats(&mut[rx], &mut[]);
+    let mut monitor =  context.into_monitor(&[rx], &[]);
 
 
     //here is alternative to batch, we send all the stats we have but only
@@ -48,7 +49,7 @@ pub async fn run(monitor: SteadyMonitor
 
 async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonitor<R,T>
                                                       , state: &mut InternalState
-                                                      , rx: &mut SteadyRx<ApprovedWidgets>) -> bool  {
+                                                      , rx: &mut Rx<ApprovedWidgets>) -> bool  {
 
 
     //wait for new work, we could also use a timer here to send telemetry periodically
@@ -93,13 +94,13 @@ fn process_msg(state: &mut InternalState, msg: Result<ApprovedWidgets, String>) 
 
 
 #[cfg(test)]
-pub async fn run(monitor: SteadyMonitor
-                 , rx: Arc<Mutex<SteadyRx<ApprovedWidgets>>>) -> Result<(),()> {
+pub async fn run(context: SteadyContext
+                 , rx: Arc<Mutex<Rx<ApprovedWidgets>>>) -> Result<(),()> {
     //guards for the channels, NOTE: we could share one channel across actors.
     let mut rx_guard = rx.lock().await;
     let rx = rx_guard.deref_mut();
 
-    let mut monitor = monitor.init_stats(&mut[rx], &mut[]);
+    let mut monitor = context.into_monitor(&[rx], &[]);
 
     loop {
         relay_test(&mut monitor, rx).await;
@@ -112,7 +113,7 @@ pub async fn run(monitor: SteadyMonitor
 
 
 #[cfg(test)]
-async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut SteadyRx< ApprovedWidgets>) {
+async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< ApprovedWidgets>) {
     use bastion::prelude::*;
 
     if let Some(ctx) = monitor.ctx() {
@@ -132,14 +133,14 @@ async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut SteadyRx< Approve
 mod tests {
     use super::*;
     use async_std::test;
-    use crate::steady::graph::SteadyGraph;
+    use crate::steady_state::Graph;
 
     #[test]
     async fn test_iterate_once() {
 
-        crate::steady::util::util_tests::initialize_logger();
+        crate::steady_state::util::util_tests::initialize_logger();
 
-        let mut graph = SteadyGraph::new();
+        let mut graph = Graph::new();
         let (tx, rx) = graph.channel_builder(8).build();
         let mock_monitor = graph.new_test_monitor("consumer_monitor");
 
@@ -150,7 +151,7 @@ mod tests {
         let steady_rx = steady_rx_guard.deref_mut();
 
 
-        let mut mock_monitor = mock_monitor.init_stats(&mut[], &mut[]);
+        let mut mock_monitor = mock_monitor.into_monitor(&mut[], &mut[]);
         let mut state = InternalState {
             last_approval: None,
             buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]

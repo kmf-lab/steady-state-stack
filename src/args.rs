@@ -60,7 +60,7 @@ mod tests {
     #[test]
     fn test_args_round_trip() {
 
-        crate::steady::util::util_tests::initialize_logger();
+        crate::steady_state::util::util_tests::initialize_logger();
 
         let orig_args = &Args {
             loglevel: "debug".to_string(),
