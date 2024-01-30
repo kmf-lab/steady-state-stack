@@ -23,7 +23,7 @@ pub fn read_long_signed(mut byte_buffer: &mut Bytes) -> Option<i64> {
         None
     }
 }
-fn read_long_signed_tail(a: i64, mut byte_buffer: &mut Bytes,initial_remaining:usize) -> Option<i64> {
+fn read_long_signed_tail(a: i64, byte_buffer: &mut Bytes,initial_remaining:usize) -> Option<i64> {
     let remaining:usize = byte_buffer.remaining();
     if remaining>0 {
         let v = byte_buffer.get_i8();

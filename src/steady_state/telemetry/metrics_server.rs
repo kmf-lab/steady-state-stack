@@ -86,7 +86,7 @@ pub(crate) async fn run(monitor: SteadyContext
     };
 
 // Define a new instance of the state.
-    let mut state = Arc::new(Mutex::new(State {
+    let state = Arc::new(Mutex::new(State {
         doc: Vec::new()
     }));
 
@@ -128,8 +128,6 @@ pub(crate) async fn run(monitor: SteadyContext
             msg = rx.take_async().fuse() => {
                   match msg {
                          Ok(Node(seq, name, id, channels_in, channels_out)) => {
-                              //TODO: here is the defintion of the channels you need.
-
 
                               refresh_structure(&mut dot_state
                                                , name
@@ -147,11 +145,11 @@ pub(crate) async fn run(monitor: SteadyContext
                                  , total_take
                                  , total_send)) => {
                               //note on init we may not have the same length...
-
+                              assert_eq!(total_take.len(), total_send.len());
                               total_send.iter()
                                         .zip(total_take.iter())
                                         .enumerate()
-                                        .for_each(|(i,(s,t))| dot_state.edges[i].compute_and_refresh(s,t));
+                                        .for_each(|(i,(s,t))| dot_state.edges[i].compute_and_refresh(*s,*t));
 
                               dot_state.seq = seq;
                               //NOTE: generate the new graph
@@ -191,7 +189,7 @@ pub(crate) async fn run(monitor: SteadyContext
 
                          },
 
-                        Err(msg) => {error!("Unexpected error on incomming message: {}",msg)}
+                        Err(msg) => {error!("Unexpected error on incoming message: {}",msg)}
                   }
 
             }

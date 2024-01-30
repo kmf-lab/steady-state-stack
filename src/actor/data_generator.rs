@@ -2,6 +2,8 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
 use futures::lock::Mutex;
+use itertools::Itertools;
+use log::info;
 use crate::args::Args;
 use crate::steady_state::*;
 
@@ -59,9 +61,11 @@ pub async fn run(context: SteadyContext
 
     let mut monitor = context.into_monitor(&[], &[tx]);
 
+
+
     loop {
          relay_test(& mut monitor, tx).await;
-         monitor.relay_stats_periodic(Duration::from_micros(1000*30)).await;
+         monitor.relay_stats_all().await;
    }
 }
 #[cfg(test)]
@@ -74,6 +78,7 @@ async fn relay_test(monitor: &mut LocalMonitor<0,1>
     if let Some(ctx) = monitor.ctx() {
         MessageHandler::new(ctx.recv().await.unwrap())
             .on_question(|message: WidgetInventory, answer_sender| {
+                info!("relay_test: {:?}", message);
                 run!(async {
                     let _ = monitor.send_async(tx, message).await;
                     answer_sender.reply("ok").unwrap();
@@ -103,7 +108,7 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor
 
     let sent = monitor.send_slice_until_full(tx_widget, &wids);
     //iterator of sent until the end
-    let mut consume = wids.into_iter().skip(sent);
+    let consume = wids.into_iter().skip(sent);
     for send_me in consume {
         let _ = monitor.send_async(tx_widget, send_me).await;
     }
@@ -123,7 +128,7 @@ mod tests {
         crate::steady_state::util::util_tests::initialize_logger();
 
         let mut graph = Graph::new();
-        let (tx, rx) = graph.channel_builder(5).build();
+        let (tx, rx) = graph.channel_builder().with_capacity(5).build();
         let mock_monitor = graph.new_test_monitor("generator_monitor");
 
         let mut steady_tx_guard = tx.lock().await;

@@ -95,7 +95,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
 
         let sent = monitor.send_slice_until_full(tx, &approvals);
         //iterator of sent until the end
-        let mut send = approvals.into_iter().skip(sent);
+        let send = approvals.into_iter().skip(sent);
         for send_me in send {
             let _ = monitor.send_async(tx, send_me).await;
         }
@@ -131,8 +131,8 @@ mod tests {
         crate::steady_state::util::util_tests::initialize_logger();
 
         let mut graph = Graph::new();
-        let (tx_in, rx_in) = graph.channel_builder(8).build();
-        let (tx_out, rx_out) = graph.channel_builder(8).build();
+        let (tx_in, rx_in) = graph.channel_builder().with_capacity(8).build();
+        let (tx_out, rx_out) = graph.channel_builder().with_capacity(8).build();
 
         let mock_monitor = graph.new_test_monitor("approval_monitor");
 

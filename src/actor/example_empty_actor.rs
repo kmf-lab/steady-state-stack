@@ -62,11 +62,6 @@ pub async fn run(monitor: SteadyContext
     let mut monitor = monitor.into_monitor(&[rx], &[tx]);
     let mut state = SomeLocalState{};
 
-    //this is high volume example so
-    //this demonstrates processing as much a possible and only sending telemetry based
-    //on our own batch size after n messages in or out.
-    monitor.relay_stats_rx_set_custom_batch_limit(rx, 200_000);
-    monitor.relay_stats_tx_set_custom_batch_limit(tx, 300_000);
 
 
     loop {
@@ -100,7 +95,7 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
                 error!("Unexpected error recv_async {}", msg);
             }
         }
-        monitor.relay_stats_batch().await;
+        monitor.relay_stats_all().await;
     }
     false
 }
@@ -117,8 +112,8 @@ mod tests {
         crate::steady_state::util::util_tests::initialize_logger();
 
         let mut graph = Graph::new();
-        let (tx_in, rx_in) = graph.channel_builder(8).build();
-        let (tx_out, rx_out) = graph.channel_builder(8).build();
+        let (tx_in, rx_in) = graph.channel_builder().with_capacity(8).build();
+        let (tx_out, rx_out) = graph.channel_builder().with_capacity(8).build();
 
         let mut tx_in_guard = tx_in.lock().await;
         let mut rx_in_guard = rx_in.lock().await;

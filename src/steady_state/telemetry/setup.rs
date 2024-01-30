@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 use bastion::{Bastion, run};
 use bastion::prelude::SupervisionStrategy;
-use log::error;
+use log::*;
 use num_traits::Zero;
 use crate::steady_state::channel::ChannelBuilder;
 use crate::steady_state::{config, graph, LocalMonitor, MONITOR_NOT, MONITOR_UNKNOWN, RxDef, SteadyContext, telemetry, TxDef};
@@ -11,46 +11,46 @@ use crate::steady_state::Graph;
 use crate::steady_state::monitor::*;
 use crate::steady_state::telemetry::metrics_collector::CollectorDetail;
 
-
 pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(that: &SteadyContext
                                                                       , rx_defs: &[&mut dyn RxDef; RX_LEN]
                                                                       , tx_defs: &[&mut dyn TxDef; TX_LEN]
 ) -> (Option<SteadyTelemetrySend<{ RX_LEN }>>, Option<SteadyTelemetrySend<{ TX_LEN }>>) {
 
-    let mut rx_batch_limit = [0; RX_LEN];
     let mut rx_meta_data = Vec::new();
     let mut rx_inverse_local_idx = [0; RX_LEN];
     rx_defs.iter()
         .enumerate()
         .for_each(|(c, rx)| {
-            rx_batch_limit[c] = rx.batch_limit();
+            assert!(rx.meta_data().id < usize::MAX);
             rx_meta_data.push(rx.meta_data());
             rx_inverse_local_idx[c]=rx.meta_data().id;
         });
 
-    let mut tx_batch_limit = [0; TX_LEN];
     let mut tx_meta_data = Vec::new();
     let mut tx_inverse_local_idx = [0; TX_LEN];
     tx_defs.iter()
         .enumerate()
         .for_each(|(c, tx)| {
-            tx_batch_limit[c] = tx.batch_limit();
+            assert!(tx.meta_data().id < usize::MAX);
             tx_meta_data.push(tx.meta_data());
             tx_inverse_local_idx[c]=tx.meta_data().id;
         });
 
     //NOTE: if this child telemetry is monitored so we will create the appropriate channels
 
+
+
     let rx_tuple: (Option<SteadyTelemetrySend<RX_LEN>>, Option<SteadyTelemetryTake<RX_LEN>>)
         = if 0usize == RX_LEN {
         (None, None)
     } else {
         let (telemetry_send_rx, mut telemetry_take_rx) =
-            ChannelBuilder::new(that.channel_count.clone(), config::REAL_CHANNEL_LENGTH_TO_COLLECTOR)
+            ChannelBuilder::new(that.channel_count.clone())
                 .with_labels(&["steady_state-telemetry"], false)
+                .with_capacity(config::REAL_CHANNEL_LENGTH_TO_COLLECTOR)
                 .build();
 
-        (Some(SteadyTelemetrySend::new(telemetry_send_rx, [0; RX_LEN], rx_batch_limit,that.name,rx_inverse_local_idx), )
+        (Some(SteadyTelemetrySend::new(telemetry_send_rx, [0; RX_LEN], that.name,rx_inverse_local_idx), )
          , Some(SteadyTelemetryTake { rx: telemetry_take_rx, details: rx_meta_data }))
     };
 
@@ -59,11 +59,12 @@ pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>
         (None, None)
     } else {
         let (telemetry_send_tx, telemetry_take_tx) =
-            ChannelBuilder::new(that.channel_count.clone(), config::REAL_CHANNEL_LENGTH_TO_COLLECTOR)
+            ChannelBuilder::new(that.channel_count.clone() )
                 .with_labels(&["steady_state-telemetry"], false)
+                .with_capacity(config::REAL_CHANNEL_LENGTH_TO_COLLECTOR)
                 .build();
 
-        (Some(SteadyTelemetrySend::new(telemetry_send_tx, [0; TX_LEN], tx_batch_limit,that.name,tx_inverse_local_idx), )
+        (Some(SteadyTelemetrySend::new(telemetry_send_tx, [0; TX_LEN], that.name, tx_inverse_local_idx), )
          , Some(SteadyTelemetryTake { rx: telemetry_take_tx, details: tx_meta_data }))
     };
 
@@ -110,8 +111,9 @@ pub(crate) fn build_optional_telemetry_graph(graph: & mut Graph,) {
 
         let supervisor = if config::TELEMETRY_SERVER {
             //build channel for DiagramData type
-            let (tx, rx) = graph.channel_builder(config::REAL_CHANNEL_LENGTH_TO_FEATURE)
+            let (tx, rx) = graph.channel_builder()
                 .with_labels(&["steady_state-telemetry"], true)
+                .with_capacity(config::REAL_CHANNEL_LENGTH_TO_FEATURE)
                 .build();
 
             outgoing = Some(tx);

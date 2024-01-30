@@ -41,13 +41,13 @@ impl <T> PackedVecWriter<T>
         u64_values
     }
     pub(crate) fn add_vec(&mut self, mut target: &mut BytesMut, source: &Vec<T>) {
-        assert!(source.len() >= self.previous.len());
+        assert!(source.len() >= self.previous.len(), "new source {:?} >= prev {:?}", source.len(), self.previous.len() );
 
         if !self.sync_required {
             // which numbers changed? we use a 1 for them
             let zero = T::zero();
             let previous_iter = self.previous.iter().chain(std::iter::repeat(&zero));
-            let mut bits: Vec<u8> = source.iter()
+            let bits: Vec<u8> = source.iter()
                 .zip(previous_iter)
                 .map(|(s, p)| (*s != *p) as u8)
                 .collect();

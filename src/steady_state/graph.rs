@@ -1,8 +1,10 @@
 use bastion::children::Children;
 use std::future::Future;
-use bastion::Callbacks;
-use log::{error, info};
-use bastion::distributor::Distributor;
+use std::panic;
+use std::panic::AssertUnwindSafe;
+use std::process::exit;
+use bastion::{Bastion, Callbacks, run, spawn};
+use log::{error, info, trace};
 use crate::steady_state::{SteadyContext, Graph};
 
 pub(crate) fn configure_for_graph<F,I>(graph: & mut Graph, name: & 'static str, c: Children, init: I ) -> Children
@@ -39,8 +41,8 @@ pub(crate) fn configure_for_graph<F,I>(graph: & mut Graph, name: & 'static str, 
                     all_telemetry_rx: telemetry_tx.clone(),
                 };
 
-
-                match init_fn_clone(monitor).await {
+                let result = init_fn_clone(monitor).await;
+                match result {
                     Ok(_) => {
                         info!("Actor {:?} finished ", name);
                     },
@@ -57,6 +59,8 @@ pub(crate) fn configure_for_graph<F,I>(graph: & mut Graph, name: & 'static str, 
     };
 
     #[cfg(test)] {
+        use bastion::distributor::Distributor;
+
         result.with_distributor(Distributor::named(format!("testing-{name}")))
     }
     #[cfg(not(test))] {

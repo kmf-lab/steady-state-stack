@@ -21,6 +21,7 @@ pub mod graph;
 
 
 use std::any::type_name;
+use std::collections::HashMap;
 //re-publish bastion from steady_state for this early version
 pub use bastion;
 use bastion::context::BastionContext;
@@ -31,7 +32,8 @@ use futures::lock::Mutex;
 use std::ops::{DerefMut, Sub};
 use bastion::{Bastion, run};
 use bastion::children::Children;
-use std::future::Future;
+use std::future::{Future, ready};
+use std::thread::sleep;
 use log::error;
 use channel::{InternalReceiver, InternalSender};
 use ringbuf::producer::Producer;
@@ -40,6 +42,7 @@ use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use async_ringbuf::consumer::AsyncConsumer;
 use futures_timer::Delay;
+use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use crate::steady_state::channel::ChannelBuilder;
 use crate::steady_state::monitor::{ChannelMetaData, SteadyTelemetrySend};
 use crate::steady_state::telemetry::metrics_collector::CollectorDetail;
@@ -50,16 +53,43 @@ use crate::steady_state::util::steady_logging_init;// re-publish in public
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
 pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
+
+    //TODO: should probably be its own init function.
+    init_nuclei();  //TODO: add some configs and a boolean to control this?
+
     steady_logging_init(loglevel)
 }
 
+#[derive(Clone)]
+pub enum ChannelDataType {
+    InFlight(f32),
+    Consumed(f32),
+}
+
+
 /// Used when setting up new channels to specify when they should change to Red or Yellow state.
 #[derive(Clone)]
-pub enum ColorTrigger {
+pub enum ColorTrigger { //TODO: we need a vec of triggers not just one
+    //pct filled channel capacity
+    //
+    //above x std dev of filled channel (0 is just above average fill)
+    //
+    //consume rate lower than x stand deviations (0 is just below average)
+    //
+    //latency above x stand deviations (0 is just above average)
+    //
+    //latency at X percentile above y milliseconds (SLA rule)
+    //consume rate at X percentile above y milliseconds (SLA rule)
+    //
+
+
     Percentile(u8),
     StdDev(f32),
     PercentFull(u8),
 }
+    // Primary Label - Latency Estimate (80th Percentile): This gives a quick, representative view of the channel's performance under load.
+    //    Secondary Label - Moving Average of In-Flight Messages: This provides a sense of the current load on the channel.
+    //   Tertiary Label (Optional) - Moving Average of Take Rate: This could be included if there's room and if the take rate is a critical performance factor for your application.
 
 
 #[derive(PartialEq, Eq, Debug)]
@@ -96,8 +126,8 @@ impl SteadyContext {
 
     //method should be convert to_localmonitor
     pub fn into_monitor<const RX_LEN: usize, const TX_LEN: usize>(self
-                                                                  , rx_mons: &[& mut dyn RxDef; RX_LEN]
-                                                                  , tx_mons: &[& mut dyn TxDef; TX_LEN]
+                                                      , rx_mons: &[& mut dyn RxDef; RX_LEN]
+                                                      , tx_mons: &[& mut dyn TxDef; TX_LEN]
     ) -> LocalMonitor<RX_LEN,TX_LEN> {
 
         //only build telemetry channels if this feature is enabled
@@ -115,6 +145,8 @@ impl SteadyContext {
             name: self.name,
             ctx: self.ctx,
             runtime_state: self.runtime_state.clone(),
+            #[cfg(test)]
+            test_count: HashMap::new(),
         }
     }
 
@@ -178,6 +210,7 @@ impl Graph {
 
     /// create a new graph for the application typically done in main
     pub fn new() -> Graph {
+
         Graph {
             channel_count: Arc::new(AtomicUsize::new(0)),
             monitor_count: 0, //this is the count of all monitors
@@ -186,8 +219,8 @@ impl Graph {
         }
     }
 
-    pub fn channel_builder<T>(&mut self, capacity: usize ) -> ChannelBuilder<T> {
-        ChannelBuilder::new(self.channel_count.clone(), capacity)
+    pub fn channel_builder(&mut self) -> ChannelBuilder {
+        ChannelBuilder::new(self.channel_count.clone())
     }
 
     pub(crate) fn init_telemetry(&mut self) {
@@ -196,12 +229,31 @@ impl Graph {
 }
 
 
+fn init_nuclei() {
+    let nuclei_config = NucleiConfig {
+        iouring: IoUringConfiguration::interrupt_driven(1 << 6),
+        //iouring: IoUringConfiguration::kernel_poll_only(1 << 6),
+        //iouring: IoUringConfiguration::low_latency_driven(1 << 6),
+        //iouring: IoUringConfiguration::io_poll(1 << 6),
+    };
+    let _ = nuclei::Proactor::with_config(nuclei_config);
+
+    nuclei::spawn_blocking(|| {
+        // nuclei::drive(pending::<()>());
+        nuclei::drive(async {
+            loop {
+                sleep(Duration::from_secs(10));
+                ready(()).await;
+            };
+        });
+    }).detach();
+}
+
 const MONITOR_UNKNOWN: usize = usize::MAX;
 const MONITOR_NOT: usize = MONITOR_UNKNOWN-1; //any value below this is a valid monitor index
 
 pub struct Tx<T> {
     pub(crate) id: usize,
-    pub(crate) batch_limit: usize,
     pub(crate) tx: InternalSender<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
     pub(crate) local_index: usize,
@@ -210,7 +262,6 @@ pub struct Tx<T> {
 
 pub struct Rx<T> {
     pub(crate) id: usize,
-    pub(crate) batch_limit: usize,
     pub(crate) rx: InternalReceiver<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
     pub(crate) local_index: usize,
@@ -326,29 +377,21 @@ impl<T> Rx<T> {
 
 pub trait TxDef {
     fn meta_data(&self) -> Arc<ChannelMetaData>;
-    fn batch_limit(&self) -> usize;
 }
 
 impl <T> TxDef for Tx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         self.channel_meta_data.clone()
     }
-    fn batch_limit(&self) -> usize {
-        self.batch_limit
-    }
 }
 
 pub trait RxDef {
     fn meta_data(&self) -> Arc<ChannelMetaData>;
-    fn batch_limit(&self) -> usize;
 }
 
 impl <T> RxDef for Rx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         self.channel_meta_data.clone()
-    }
-    fn batch_limit(&self) -> usize {
-        self.batch_limit
     }
 }
 
@@ -360,6 +403,8 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) telemetry_send_rx: Option<SteadyTelemetrySend<RX_LEN>>,
     pub(crate) last_instant:      Instant,
     pub(crate) runtime_state:     Arc<Mutex<GraphLivelinessState>>,
+    #[cfg(test)]
+    pub(crate) test_count: HashMap<&'static str, usize>,
 
 }
 
@@ -390,29 +435,6 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         assert!(duration_rate.ge(&Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)));
         Delay::new(duration_rate.saturating_sub(self.last_instant.elapsed())).await;
         self.relay_stats_all().await;
-    }
-
-    pub async fn relay_stats_batch(self: &mut Self) {
-        let should_relay = self.telemetry_send_tx.as_ref().map_or(false, |send| {
-            send.count.iter().zip(send.limits.iter()).any(|(c, l)| *c >= *l)
-        }) || self.telemetry_send_rx.as_ref().map_or(false, |send| {
-            send.count.iter().zip(send.limits.iter()).any(|(c, l)| *c >= *l)
-        });
-        if should_relay {
-            self.relay_stats_all().await;
-        }
-    }
-
-    pub fn relay_stats_tx_set_custom_batch_limit<T>(self: &mut Self, this: &Tx<T>, threshold: usize) {
-        let _ = monitor::process_event(&mut self.telemetry_send_tx
-                                       , this.local_index, this.id,
-                                       |telemetry, index|  telemetry.limits[index] = threshold);
-    }
-
-    pub fn relay_stats_rx_set_custom_batch_limit<T>(&mut self, this: &Rx<T>, threshold: usize) {
-        let _ = monitor::process_event(&mut self.telemetry_send_rx
-                                       , this.local_index, this.id,
-                                       |telemetry, index|  telemetry.limits[index] = threshold);
     }
 
     pub fn take_slice<T>(& mut self, this: & mut Rx<T>, slice: &mut [T]) -> usize
@@ -460,7 +482,11 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             Ok(result) => {
                 this.local_index = monitor::process_event(&mut self.telemetry_send_rx
                                                           , this.local_index, this.id,
-                                                          |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(1));
+                   |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(1));
+
+                #[cfg(test)]
+                self.test_count.entry("take_async").and_modify(|e| *e += 1).or_insert(1);
+
                 Ok(result)
             },
             Err(error_msg) => {
@@ -475,7 +501,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let done = this.send_slice_until_full(slice);
         this.local_index = monitor::process_event(&mut self.telemetry_send_tx
                                                   , this.local_index, this.id,
-                                                  |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(done));
+             |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(done));
         done
     }
 
@@ -483,7 +509,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let done = this.send_iter_until_full(iter);
         this.local_index = monitor::process_event(&mut self.telemetry_send_tx
                                                   , this.local_index, this.id,
-                                                  |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(done));
+             |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(done));
         done
     }
 
@@ -518,7 +544,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
            Ok(_) => {
                this.local_index = monitor::process_event(&mut self.telemetry_send_tx
                                                          , this.local_index, this.id,
-                                                         |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(1));
+                    |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(1));
                Ok(())
            },
            Err(sensitive) => {

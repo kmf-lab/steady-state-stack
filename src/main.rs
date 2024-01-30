@@ -2,6 +2,8 @@ mod args;
 
 mod steady_state;
 
+use std::panic;
+use std::process::exit;
 use structopt::*;
 use log::*;
 
@@ -9,24 +11,26 @@ use futures_timer::Delay;
 use crate::args::Args;
 use std::time::Duration;
 
-use nuclei::GlobalExecutorConfig;
-
 // here are the actors that will be used in the graph.
 // note that the actors are in a separate module and we must use the structs/enums and
 // bring in the behavior functions
 mod actor {
     pub mod example_empty_actor;
     pub mod data_generator;
+    #[cfg(test)]
     pub use data_generator::WidgetInventory;
     pub mod data_approval;
+    #[cfg(test)]
     pub use data_approval::ApprovedWidgets;
     pub mod data_consumer;
 }
+#[cfg(test)]
 use crate::actor::*;
 
 use bastion::{Bastion, run};
 use bastion::prelude::SupervisionStrategy;
 
+use crate::steady_state::ChannelDataType;
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -47,10 +51,7 @@ fn main() {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
-let x = nuclei::init_with_config(GlobalExecutorConfig::default()
-         .with_min_threads(2)
-);
-    info!("hello x {:?}",x);
+
 
     let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
     graph.start();
@@ -60,16 +61,22 @@ let x = nuclei::init_with_config(GlobalExecutorConfig::default()
     //remove this block to run forever.
     //run! is a macro provided by bastion that will block until the future is resolved.
     run!(async {
+
         /*
         use futures::prelude::*;
         use nuclei::*;
         use std::os::unix::net::UnixStream;
+        use signal_hook::low_level::pipe;
 
-        let (a, mut b) = Handle::<UnixStream>::pair()?;
-        signal_hook::pipe::register(signal_hook::SIGINT, a)?;
-        println!("Waiting for Ctrl-C...");
-        b.read_exact(&mut [0]).await?;
-        */
+         nuclei::spawn(async move {
+                let (a, mut b) = Handle::<UnixStream>::pair()?;
+                signal_hook::pipe::register(signal_hook::SIGINT, a)?;
+                println!("Waiting for Ctrl-C...");
+                b.read_exact(&mut [0]).await?
+         });
+         */
+
+
 
         // note we use (&opt) just to show we did NOT transfer ownership
         Delay::new(Duration::from_secs(opt.duration)).await;
@@ -82,26 +89,47 @@ let x = nuclei::init_with_config(GlobalExecutorConfig::default()
     Bastion::block_until_stopped();
 }
 
+
 fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     debug!("args: {:?}",&cli_arg);
-    Bastion::init(); //init bastion runtime
+
+    //TODO: move for special debug flag.
+    #[cfg(debug_assertions)]
+    panic::set_hook(Box::new(|panic_info| {
+        // You can log the panic information here if needed
+        eprintln!("Application panicked: {}", panic_info);
+        // Exit with status code -1
+        exit(-1);
+    }));
 
     //create the mutable graph object
     let mut graph = steady_state::Graph::new();
 
+    Bastion::init(); //init bastion runtime
+
     //create all the needed channels between actors
     let example_capacity = 4000;
-    //upon construction these are set up to be monitored by the telemetry telemetry
-    let (generator_tx, generator_rx) = graph.channel_builder(example_capacity)
-                                       .with_labels(&["widgets"],true)
-                                       .with_percentile(80)
-                                       .with_red(steady_state::ColorTrigger::Percentile(70))
-                                       .build();
 
-    let (consumer_tx, consumer_rx) = graph.channel_builder(example_capacity)
-                                        .with_labels(&["widgets"],true)
-                                        .with_standard_deviation(2.5)
-                                        .build();
+    //here are the parts of the channel they both have in common, this could be done
+    // in place for each but we are showing here how you can do this for more complex projects.
+    let base_builder = graph.channel_builder()
+                            .with_compute_window_floor(Duration::from_secs(12))
+                            .with_labels(&["widgets"],true)
+                            .with_type()
+                            .with_line_expansion();
+
+    //upon construction these are set up to be monitored by the telemetry telemetry
+    let (generator_tx, generator_rx) = base_builder
+                     .with_percentile(ChannelDataType::Consumed(0.80))
+                     .with_red(steady_state::ColorTrigger::Percentile(70))
+                     .with_yellow(steady_state::ColorTrigger::Percentile(50))
+                     .with_capacity(example_capacity)
+                     .build();
+
+    let (consumer_tx, consumer_rx) = base_builder
+                     .with_standard_deviation(ChannelDataType::InFlight(2.5))
+                     .with_capacity(example_capacity)
+                     .build();
 
     //the above tx rx objects will be owned by the children closures below then cloned
     //each time we need to startup a new child telemetry instance. This way when an telemetry fails
@@ -177,6 +205,7 @@ mod tests {
                 , _payload: 0
             };
 
+
             let answer_generator: Result<&str, SendError> = distribute_generator.request(to_send).await.unwrap();
             assert_eq!("ok",answer_generator.unwrap());
 
@@ -186,6 +215,7 @@ mod tests {
             };
             let answer_consumer: Result<&str, SendError> = distribute_consumer.request(expected_message).await.unwrap();
             assert_eq!("ok",answer_consumer.unwrap());
+
 
             Bastion::stop();
         });

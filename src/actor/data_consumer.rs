@@ -1,7 +1,7 @@
 use std::ops::DerefMut;
 use std::sync::Arc;
 use futures::lock::Mutex;
-use bastion::run;
+#[allow(unused_imports)]
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use crate::steady_state::Rx;
@@ -25,11 +25,6 @@ pub async fn run(context: SteadyContext
 
     let mut monitor =  context.into_monitor(&[rx], &[]);
 
-
-    //here is alternative to batch, we send all the stats we have but only
-    // every 100_000 received messages. This is helpful for very very high volumes.
-    monitor.relay_stats_rx_set_custom_batch_limit(rx, 100_000);
-
     let mut state = InternalState {
         last_approval: None,
         buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
@@ -41,16 +36,12 @@ pub async fn run(context: SteadyContext
         if iterate_once(&mut monitor, &mut state, rx).await {
             break Ok(());
         }
-
     }
 }
-
-
 
 async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonitor<R,T>
                                                       , state: &mut InternalState
                                                       , rx: &mut Rx<ApprovedWidgets>) -> bool  {
-
 
     //wait for new work, we could also use a timer here to send telemetry periodically
     if rx.is_empty() {
@@ -60,16 +51,13 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonito
     //example of high volume processing, we stay here until there is no more work BUT
     //we must also relay our telemetry data periodically
     while !rx.is_empty() {
-
             let count = monitor.take_slice(rx, &mut state.buffer);
             for x in 0..count {
                process_msg(state, Ok(state.buffer[x].to_owned()));
             }
 
-
-
             //based on the channel capacity this will send batched updates so most calls do nothing.
-            monitor.relay_stats_batch().await;
+            monitor.relay_stats_all().await;
 
     }
 
@@ -141,7 +129,7 @@ mod tests {
         crate::steady_state::util::util_tests::initialize_logger();
 
         let mut graph = Graph::new();
-        let (tx, rx) = graph.channel_builder(8).build();
+        let (tx, rx) = graph.channel_builder().with_capacity(8).build();
         let mock_monitor = graph.new_test_monitor("consumer_monitor");
 
         let mut steady_tx_guard = tx.lock().await;

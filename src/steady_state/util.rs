@@ -7,9 +7,13 @@ use log::*;
 use nuclei::Handle;
 
 // new Proactive IO
+#[allow(unused_imports)]
 use nuclei::*;
+#[allow(unused_imports)]
 use futures::io::SeekFrom;
+#[allow(unused_imports)]
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+#[allow(unused_imports)]
 use std::fs::{create_dir_all, File, OpenOptions};
 
 pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), std::io::Error> {

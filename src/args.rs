@@ -12,7 +12,7 @@ pub struct Args {
     pub(crate) loglevel: String,
 
     #[structopt(short = "g", long = "gen-rate"
-    , default_value = "500")] //half a millisecond
+    , default_value = "5000")] //half a millisecond 500 5000 is 5ms
     pub(crate) gen_rate_micros: u64,
 
     #[structopt(short = "d", long = "duration", validator = run_duration_validator

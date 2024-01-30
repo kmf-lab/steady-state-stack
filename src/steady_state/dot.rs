@@ -1,7 +1,9 @@
 
 // new Proactive IO
 use nuclei::*;
+#[allow(unused_imports)]
 use futures::io::SeekFrom;
+#[allow(unused_imports)]
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use std::fs::{create_dir_all, File, OpenOptions};
 
@@ -11,13 +13,13 @@ use std::sync::Arc;
 use bastion::run;
 
 use std::fmt::Write;
+use std::vec;
 use bytes::{BufMut, BytesMut};
-use futures_timer::Delay;
-use log::{error, info};
+use log::*;
 use time::{format_description, OffsetDateTime};
 use uuid::Uuid;
-use crate::steady_state::ColorTrigger;
-use crate::steady_state::{config, util};
+use crate::steady_state::{ChannelDataType, ColorTrigger};
+use crate::steady_state::{config};
 use crate::steady_state::monitor::ChannelMetaData;
 use crate::steady_state::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::steady_state::serialize::fast_protocol_packed::write_long_unsigned;
@@ -35,7 +37,7 @@ pub(crate) struct Node {
     pub display_label: String, //label may also have (n) for replicas
 }
 
-pub(crate) struct Edge<> {
+pub(crate) struct Edge {
     pub(crate) id: usize, //position matches the channel id
     pub(crate) from: usize, //monitor actor id of the sender
     pub(crate) to: usize, //monitor actor id of the receiver
@@ -45,8 +47,8 @@ pub(crate) struct Edge<> {
     pub(crate) ctl_labels: Vec<&'static str>, //visibility tags for render
     stats_computer: ChannelStatsComputer
 }
-impl<> Edge<> {
-    pub(crate) fn compute_and_refresh(&mut self, send: &i128, take: &i128) {
+impl Edge {
+    pub(crate) fn compute_and_refresh(&mut self, send: i128, take: i128) {
         let (label,color,pen) = self.stats_computer.compute(send, take);
         self.display_label = label;
         self.color = color;
@@ -104,9 +106,6 @@ pub struct DotGraphFrames {
 
 }
 
-struct ChannelStatsComputer {
-
-}
 
 const DOT_RED: & 'static str = "red";
 const DOT_GREEN: & 'static str = "green";
@@ -118,46 +117,314 @@ const DOT_BLACK: & 'static str = "black";
 static DOT_PEN_WIDTH: [&'static str; 16]
 = ["1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"];
 
+const SQUARE_LIMIT: u128 = (1 << 64)-1; // (u128::MAX as f64).sqrt() as u128;
 
+
+struct ChannelStatsComputer {
+    pub(crate) display_labels: Option<Vec<& 'static str>>,
+    pub(crate) line_expansion: bool,
+    pub(crate) show_type: Option<& 'static str>,
+    pub(crate) percentiles: Vec<ChannelDataType>, //each is a row
+    pub(crate) std_devs: Vec<ChannelDataType>, //each is a row
+    pub(crate) red_trigger: Vec<ColorTrigger>, //if used base is green
+    pub(crate) yellow_trigger: Vec<ColorTrigger>, //if used base is green
+
+    pub(crate) runner_inflight:u128,
+    pub(crate) runner_consumed:u128,
+    pub(crate) percentile_inflight:[u32;65],//based on u64.leading_zeros() we wil put the answers in that bucket
+    pub(crate) percentile_consumed:[u32;65],//based on u64.leading_zeros() we wil put the answers in that bucket
+    pub(crate) buckets_inflight:Vec<u64>,
+    pub(crate) buckets_consumed:Vec<u64>,
+    pub(crate) buckets_index:usize,
+    pub(crate) buckets_mask:usize,
+    pub(crate) buckets_bits:u8,
+
+    pub(crate) time_label: String,
+    pub(crate) prev_take: i128,
+    pub(crate) has_full_window: bool,
+    pub(crate) capacity: usize,
+
+    pub(crate) sum_of_squares_inflight:u128,
+    pub(crate) sum_of_squares_consumed:u128,
+
+    pub(crate) show_avg_inflight:bool,
+    pub(crate) show_avg_consumed:bool,
+}
 impl ChannelStatsComputer {
 
     pub(crate) fn new(meta: &Arc<ChannelMetaData>) -> ChannelStatsComputer {
 
-        //TODO: rethink, inflight, persecond and latency display!!
+        let display_labels = if meta.display_labels {
+            Some(meta.labels.clone())
+        } else {
+            None
+        };
+        let line_expansion = meta.line_expansion;
+        let show_type = meta.show_type;
+        let percentiles                       = meta.percentiles.clone();
+        let std_devs                          = meta.std_dev.clone();
+        let red_trigger                       = meta.red.clone();
+        let yellow_trigger                    = meta.yellow.clone();
 
-        let labels = &meta.labels;
-        let display_labels = &meta.display_labels;
-        let line_expansion = &meta.line_expansion;
-        let show_type = &meta.show_type;
-        let window_in_seconds = &meta.window_in_seconds;
-        let percentiles = &meta.percentiles;
-        let std_dev = &meta.std_dev;
-        let red: Option<ColorTrigger> = meta.red.clone();
-        let yellow: Option<ColorTrigger> = meta.yellow.clone();
+        let buckets_bits = meta.window_bucket_in_bits;
+        let buckets_count:usize = 1<<meta.window_bucket_in_bits;
+        let buckets_mask:usize = buckets_count - 1;
+        let buckets_index:usize = 0;
+        let time_label = time_label(buckets_count * config::TELEMETRY_PRODUCTION_RATE_MS);
 
-        //TODO: build only the structures we need to support the above
+        let buckets_inflight:Vec<u64> = vec![0u64; buckets_count];
+        let buckets_consumed:Vec<u64> = vec![0u64; buckets_count];
+        let runner_inflight:u128      = 0;
+        let runner_consumed:u128      = 0;
+        let percentile_inflight       = [0u32;65];
+        let percentile_consumed       = [0u32;65];
+
+        let  prev_take = 0i128;
+
+        let sum_of_squares_inflight:u128= 0;
+        let sum_of_squares_consumed:u128= 0;
+        let capacity = meta.capacity;
+        let show_avg_inflight = meta.avg_inflight;
+        let show_avg_consumed = meta.avg_consumed;
+
+
 
         ChannelStatsComputer {
-
-
-
+            display_labels,
+            line_expansion,
+            show_type,
+            percentiles,
+            std_devs,
+            red_trigger,
+            yellow_trigger,
+            runner_inflight,
+            runner_consumed,
+            percentile_inflight,
+            percentile_consumed,
+            buckets_inflight,
+            buckets_consumed,
+            buckets_mask,
+            buckets_bits,
+            buckets_index,
+            time_label,
+            prev_take,
+            sum_of_squares_inflight,
+            sum_of_squares_consumed,
+            has_full_window : false,
+            capacity,
+            show_avg_inflight,
+            show_avg_consumed,
 
         }
     }
 
-    pub(crate) fn compute(&mut self, send: &i128, take: &i128)
+    pub(crate) fn compute(&mut self, send: i128, take: i128)
         -> (String, & 'static str, & 'static str) {
 
-//info!("compute {} {}",send,take);
-        //DOIT
+        assert!(send>=take, "internal error send {} must be greater or eq than take {}",send,take);
+
+        // compute the running totals
+
+        let inflight:u64 = (send-take) as u64;
+        let consumed:u64 = (take-self.prev_take) as u64;
+
+        self.runner_inflight += inflight as u128;
+        self.runner_inflight -= self.buckets_inflight[self.buckets_index] as u128;
+
+        self.percentile_inflight[64-inflight.leading_zeros() as usize] += 1u32;
+        let old_zeros = self.buckets_inflight[self.buckets_index].leading_zeros() as usize;
+        self.percentile_inflight[old_zeros] = self.percentile_inflight[64-old_zeros].saturating_sub(1u32);
+
+        let inflight_square = (inflight as u128).pow(2);
+        self.sum_of_squares_inflight = self.sum_of_squares_inflight.saturating_add(inflight_square);
+        self.sum_of_squares_inflight = self.sum_of_squares_inflight.saturating_sub((self.buckets_inflight[self.buckets_index] as u128).pow(2));
+        self.buckets_inflight[self.buckets_index] = inflight as u64;
+
+        self.runner_consumed += consumed as u128;
+        self.runner_consumed -= self.buckets_consumed[self.buckets_index] as u128;
+
+        self.percentile_consumed[64-consumed.leading_zeros() as usize] += 1;
+        let old_zeros = self.buckets_consumed[self.buckets_index].leading_zeros() as usize;
+        self.percentile_consumed[old_zeros] = self.percentile_consumed[64-old_zeros].saturating_sub(1);
+
+        let consumed_square = (consumed as u128).pow(2);
+        self.sum_of_squares_consumed = self.sum_of_squares_consumed.saturating_add(consumed_square);
+        self.sum_of_squares_consumed = self.sum_of_squares_consumed.saturating_sub((self.buckets_consumed[self.buckets_index] as u128).pow(2));
+        self.buckets_consumed[self.buckets_index] = consumed as u64;
+
+        self.buckets_index = (1+self.buckets_index) & self.buckets_mask;
+        self.prev_take = take;
+
+        //  build the label
+
+        let mut display_label = String::new();
+
+        self.show_type.map(|f| {
+            display_label.push_str(f);
+            display_label.push_str("\n");
+        });
+
+        display_label.push_str("per ");
+        display_label.push_str(&self.time_label);
+        display_label.push_str("\n");
+
+        self.display_labels.as_ref().map(|labels| {
+            //display_label.push_str("labels: ");
+            labels.iter().for_each(|f| {
+                display_label.push_str(f);
+                display_label.push_str(" ");
+            });
+            display_label.push_str("\n");
+        });
+
+        let window = 1usize<<self.buckets_bits;
+
+        if self.show_avg_consumed {
+            let avg = self.runner_consumed as f64 / window as f64;
+            display_label.push_str(format!("consumed avg: {:.1} ", avg).as_str());
+            display_label.push_str("\n");
+        }
+        if self.show_avg_inflight {
+            let avg = self.runner_inflight as f64 / window as f64;
+            display_label.push_str(format!("inflight avg: {:.1} ", avg).as_str());
+            display_label.push_str("\n");
+        }
+
+        //do not compute the std_devs if we do not have a full window of data.
+        if self.has_full_window {
+            self.std_devs.iter().for_each(|f| {
+               let (label,mult,runner,sum_sqr) = match f {
+                    ChannelDataType::InFlight(mult) => {
+                        //display_label.push_str("InFlight ");
+                        let runner = self.runner_inflight;
+                        let sum_sqr = self.sum_of_squares_inflight;
+                        ("inflight",mult,runner,sum_sqr)
+                    }
+                    ChannelDataType::Consumed(mult) => {
+                        //display_label.push_str("Consumed ");
+                        let runner = self.runner_consumed;
+                        let sum_sqr = self.sum_of_squares_consumed;
+                        ("consumed",mult,runner,sum_sqr)
+                    }
+                };
+                let std_deviation = Self::compute_variance(self.buckets_bits, window, runner, sum_sqr).sqrt();
+                display_label.push_str(format!("{} {:.1}StdDev: {:.1} "
+                                               , label,mult, mult*std_deviation as f32
+                                               ).as_str());
+                display_label.push_str("\n");
+            });
+        }
 
 
-        (format!("{}",take),"red","5")
 
 
+        if self.has_full_window && self.percentiles.len() > 0 {
+           // display_label.push_str("Percentiles\n");
+            self.percentiles.iter().for_each(|p| {
+
+                let (pct, label, walker) = match p {
+                    ChannelDataType::InFlight(pct) => {
+                        let walker = Self::compute_percentile(window as u32, *pct, self.percentile_inflight);
+                        (pct, "inflight", walker)
+                    }
+                    ChannelDataType::Consumed(pct) => {
+                        let walker = Self::compute_percentile(window as u32, *pct, self.percentile_inflight);
+                        (pct, "consumed", walker)
+                    }
+                };
+
+                display_label.push_str(format!("{} {:?}%ile {:?}"
+                                               , label, pct*100f32
+                                               , 1u64<<(walker+1) ).as_str());
+
+            });
+            display_label.push_str("\n");
+        }
+
+        display_label.push_str(format!("Capacity: {} Total: {}\n",self.capacity,take).as_str());
+
+        let line_thick = if self.line_expansion {
+            DOT_PEN_WIDTH[ (128usize-(take>>20).leading_zeros() as usize).min(DOT_PEN_WIDTH.len()-1) ]
+        } else {
+            "1"
+        };
+
+        let line_color = "white";
+        /*
+        let line_color = if let Some(red) = &self.red_trigger {
+            if red.trigger(take) {
+                DOT_RED
+            } else {
+                line_color
+            }
+        } else {
+            line_color
+        };
+
+        */
+
+
+        self.has_full_window = self.has_full_window || self.buckets_index == 0;
+
+
+        (display_label,line_color,line_thick)
 
     }
+
+    fn compute_percentile(window: u32, pct: f32, ptable: [u32; 65]) -> usize {
+        let limit: u32 = (window as f32 * pct) as u32;
+        let mut walker = 0usize;
+        let mut sum = 0u32;
+        while walker < 62 && sum + ptable[walker] < limit {
+            sum += ptable[walker];
+            walker += 1;
+        }
+        walker
+    }
+
+    #[inline]
+    fn compute_variance(bits: u8, window: usize, runner: u128, sum_sqr: u128) -> f64 {
+            if runner < SQUARE_LIMIT {
+                let r2 = (runner*runner)>>bits;
+                //trace!("{} {} {} {} -> {} ",bits,window,runner,sum_sqr,r2);
+                if sum_sqr > r2 {
+                    ((sum_sqr - r2) >> bits) as f64
+                } else {
+                    (sum_sqr as f64 / window as f64) - (runner as f64 / window as f64).powi(2)
+                }
+            } else {
+                //trace!("{:?} {:?} {:?} {:?} " ,bits ,window,runner ,sum_sqr);
+
+                (sum_sqr as f64 / window as f64) - (runner as f64 / window as f64).powi(2)
+            }
+    }
 }
+
+fn time_label(total_ms: usize) -> String {
+    let seconds = total_ms as f64 / 1000.0;
+    let minutes = seconds / 60.0;
+    let hours = minutes / 60.0;
+    let days = hours / 24.0;
+
+    if days >= 1.0 {
+        if days< 1.1 {"day".to_string()} else {
+            format!("{:.1} days", days)
+        }
+    } else if hours >= 1.0 {
+        if hours< 1.1 {"hr".to_string()} else {
+            format!("{:.1} hrs", hours)
+        }
+    } else if minutes >= 1.0 {
+        if minutes< 1.1 {"min".to_string()} else {
+            format!("{:.1} mins", minutes)
+        }
+    } else {
+        if seconds< 1.1 {"sec".to_string()} else {
+            format!("{:.1} secs", seconds)
+        }
+    }
+}
+
 
 
 pub fn refresh_structure(mut local_state: &mut DotState
@@ -188,11 +455,11 @@ pub fn refresh_structure(mut local_state: &mut DotState
 
 }
 
-fn define_unified_edges(mut local_state: &mut &mut DotState, id: usize, mdvec: Arc<Vec<Arc<ChannelMetaData>>>, set_to: bool) {
+fn define_unified_edges(mut local_state: &mut &mut DotState, node_id: usize, mdvec: Arc<Vec<Arc<ChannelMetaData>>>, set_to: bool) {
     mdvec.iter()
         .for_each(|meta| {
             if meta.id.ge(&local_state.edges.len()) {
-                local_state.edges.resize_with(id + 1, || {
+                local_state.edges.resize_with(meta.id + 1, || {
                     Edge {
                         id: usize::MAX,
                         from: usize::MAX,
@@ -209,9 +476,9 @@ fn define_unified_edges(mut local_state: &mut &mut DotState, id: usize, mdvec: A
             assert!(local_state.edges[idx].id == idx || local_state.edges[idx].id == usize::MAX);
             local_state.edges[idx].id = idx;
             if set_to {
-                local_state.edges[idx].to = id;
+                local_state.edges[idx].to = node_id;
             } else {
-                local_state.edges[idx].from = id;
+                local_state.edges[idx].from = node_id;
             }
             // Collect the labels that need to be added
             // This is redundant but provides safety if two dif label lists are in play
@@ -312,7 +579,7 @@ impl FrameHistory {
     }
 
 
-    pub fn apply_edge(&mut self, total_take:Arc<Vec<i128>>, total_send: Arc<Vec<i128>>) {
+    pub fn apply_edge(&mut self, total_take:Vec<i128>, total_send: Vec<i128>) {
              write_long_unsigned(REC_EDGE, &mut self.history_buffer); //message type
             self.packed_sent_writer.add_vec(&mut self.history_buffer, &total_send);
             self.packed_take_writer.add_vec(&mut self.history_buffer, &total_take);
@@ -324,7 +591,7 @@ impl FrameHistory {
         //we write to disk in blocks just under a fixed power of two size
         //if we are about to enter a new block ensure we write the old one
         if flush_all || self.will_span_into_next_block()  {
-            let continued_buffer:BytesMut = self.history_buffer.split_off(self.buffer_bytes_count);
+            let mut continued_buffer:BytesMut = self.history_buffer.split_off(self.buffer_bytes_count);
             let log_time = OffsetDateTime::now_utc();
             let file_to_append_onto = format!("{}_{}_log.dat"
                                               , log_time
@@ -338,8 +605,9 @@ impl FrameHistory {
                 self.last_file_to_append_onto=file_to_append_onto.clone();
             }
             info!("attempt to write history");
+            let to_be_written = std::mem::replace(&mut self.history_buffer, continued_buffer);
             if let Err(e) = Self::append_to_file(self.output_log_path.join(&file_to_append_onto)
-                                                , &self.history_buffer).await {
+                                                , to_be_written).await {
                 error!("Error writing to file: {}", e);
                 error!("Due to the above error some history has been lost");
 
@@ -354,7 +622,7 @@ impl FrameHistory {
                 info!("wrote to hist log now {} bytes",self.file_bytes_written+self.buffer_bytes_count);
             }
             self.file_bytes_written += self.buffer_bytes_count;
-            self.history_buffer = continued_buffer;
+
         }
         //set after in both cases right now the data matches this sequence
         self.file_buffer_last_seq = sequence;
@@ -367,104 +635,22 @@ impl FrameHistory {
     }
 
 
-    async fn append_to_file(path: PathBuf, data: &[u8]) -> Result<(), std::io::Error> {
+    async fn append_to_file(path: PathBuf, data: BytesMut) -> Result<(), std::io::Error> {
 
-        //TODO: re-evaluate this decision based on feedback from nuclei
-
-        info!("called append_to_file");
-
-                let d = data.to_vec();
-                let task = async move {
-                    info!("start the write");
                     let file = OpenOptions::new()
                             .append(true)
                             .create(true)
                             .open(&path)?;
 
-                    info!("start drive write");
-                    //let result = Self::all_to_file_async(file, d.as_slice()).await;
-                        let result = nuclei::drive(Self::all_to_file_async(file, d.as_slice()));
-                    info!("finish drive write");
-
-                        result
-
-                };
-
-        info!("spawn now");
-        run!(task)
-
+                    let h = Handle::<File>::new(file)?;
+                    nuclei::spawn(Self::all_to_file_async(h, data)).await
 
     }
-    pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), std::io::Error> {
-        info!("a");
-        let mut h = Handle::<File>::new(file)?;
-        info!("b");
-        h.write_all(data).await?;
-        info!("c");
+    pub(crate) async fn all_to_file_async(mut h: Handle<File>, data: BytesMut) -> Result<(), std::io::Error> {
+        h.write_all(data.as_ref()).await?;
         Handle::<File>::flush(&mut h).await?;
-        info!("d");
-        Result::<(), std::io::Error>::Ok(())
+        Ok(())
     }
 
 }
 
-
-
-/*
- ////////////////////////////////////////////////
-        //always compute our moving average values
-        ////////////////////////////////////////////////
-        //NOTE: at this point we must compute rates so its done just once
-
-        //This is how many are in the channel now
-        let total_in_flight_this_cycle:Vec<u128> = state.total_sent.iter()
-                                                        .zip(state.total_take.iter())
-                                                        .map(|(s,t)| s.saturating_sub(*t)).collect();
-        //This is how many messages we have consumed this cycle
-        let total_consumed_this_cycle:Vec<u128> = state.total_take.iter()
-                                                       .zip(state.previous_total_take.iter())
-                                                       .map(|(t,p)| t.saturating_sub(*p)).collect();
-
-        //message per second is based on those TAKEN/CONSUMED from channels
-        state.ma_consumed_buckets.iter_mut()
-                .enumerate()
-                .for_each(|(idx,buf)| {
-                    state.ma_consumed_runner[idx] += buf[state.ma_index];
-                    state.ma_consumed_runner[idx] = state.ma_consumed_runner[idx].saturating_sub(buf[(state.ma_index + MA_ADJUSTED_BUCKETS - MA_MIN_BUCKETS ) & MA_BITMASK]);
-                    buf[state.ma_index] = total_consumed_this_cycle[idx];
-                    //we do not divide because we are getting the one second total
-                });
-
-        //ma for the inflight
-        let ma_inflight_runner:Vec<u128> = state.ma_inflight_buckets.iter_mut()
-            .enumerate()
-            .map(|(idx,buf)| {
-                state.ma_inflight_runner[idx] += buf[state.ma_index];
-                state.ma_inflight_runner[idx] = state.ma_inflight_runner[idx].saturating_sub(buf[(state.ma_index + MA_ADJUSTED_BUCKETS - MA_MIN_BUCKETS ) & MA_BITMASK]);
-                buf[state.ma_index] = total_in_flight_this_cycle[idx];
-                //we do divide to find the average held in channel over the second
-                state.ma_inflight_runner[idx]/MA_MIN_BUCKETS as u128
-            }).collect();
-
-        //we may drop a seq no if backed up
-        //warn!("building sequence {} in metrics_collector with {} consumers",seq,fixed_consumers.len());
-
-        let all_room = true;//confirm_all_consumers_have_room(&fixed_consumers).await;   //TODO: can we make a better loop?
-        if all_room && !fixed_consumers.is_empty() {
-            //info!("send diagram edge data for seq {}",seq);
-            /////////////// NOTE: if this consumes too much CPU we may need to re-evaluate
-            let total_take              = Arc::new(state.total_take.clone());
-            let consumed_this_cycle     = Arc::new(total_consumed_this_cycle.clone());
-            let ma_consumed_per_second  = Arc::new(state.ma_consumed_runner.clone());
-            let in_flight_this_cycle    = Arc::new(total_in_flight_this_cycle);
-            let ma_inflight_per_second  = Arc::new(ma_inflight_runner.clone());
-
-
-
-       //keep current take for next time around
-        state.previous_total_take.clear();
-        state.total_take.iter().for_each(|f| state.previous_total_take.push(*f) );
-
-        //next index
-        state.ma_index = (1+state.ma_index) & MA_BITMASK;
- */
