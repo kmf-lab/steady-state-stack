@@ -4,7 +4,7 @@ use bastion::run;
 use std::sync::Arc;
 use futures::lock::Mutex;
 use num_traits::Zero;
-use crate::steady_state::{ChannelDataType, ColorTrigger, config, MONITOR_NOT, MONITOR_UNKNOWN};
+use crate::steady_state::{DataType, Trigger, config, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::steady_state::Rx;
 use crate::steady_state::Tx;
 use crate::steady_state::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
@@ -146,7 +146,7 @@ impl <const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct ChannelMetaData {
     pub(crate) id: usize,
     pub(crate) labels: Vec<&'static str>,
@@ -155,10 +155,10 @@ pub(crate) struct ChannelMetaData {
     pub(crate) line_expansion: bool,
     pub(crate) show_type: Option<&'static str>,
     pub(crate) window_bucket_in_bits: u8, //for percentiles and ma
-    pub(crate) percentiles: Vec<ChannelDataType>, //each is a row
-    pub(crate) std_dev: Vec<ChannelDataType>, //each is a row
-    pub(crate) red: Vec<ColorTrigger>, //if used base is green
-    pub(crate) yellow: Vec<ColorTrigger>, //if used base is green
+    pub(crate) percentiles: Vec<DataType>, //each is a row
+    pub(crate) std_dev: Vec<DataType>, //each is a row
+    pub(crate) red: Vec<Trigger>, //if used base is green
+    pub(crate) yellow: Vec<Trigger>, //if used base is green
     pub(crate) avg_inflight: bool,
     pub(crate) avg_consumed: bool,
 }

@@ -51,6 +51,16 @@ pub(crate) async fn run(_context: SteadyContext
        , optional_server: Option<Arc<Mutex<Tx<DiagramData>>>>
 ) -> Result<(),()> {
 
+    if let Some(c) = &optional_server {
+        let mut c_guard = c.lock().await;
+        let c = c_guard.deref_mut();
+  //NOTE: this line makes this node monitored on the telemetry
+    _context.into_monitor(&[], &[c]);
+        //TODO: when skipping over monitor must filter those out
+        //TODO: when we have half the edge must filter that out
+    }
+
+
     let mut state = RawDiagramState::new();
 
     let mut last_instant = Instant::now();

@@ -59,18 +59,17 @@ struct State {
     doc: Vec<u8>,
 }
 
-//TODO: add the rest of these files and serve them
-//TODO: for each of these store the zipped version in the repo instead and serve that is possible or unzip for the client.
-//      this will add < 500K to the binary size and will make the server much faster
-
-pub(crate) async fn run(monitor: SteadyContext
+pub(crate) async fn run(context: SteadyContext
                         , rx: Arc<Mutex<Rx<DiagramData>>>) -> std::result::Result<(),()> {
-
-
-    let mut history = FrameHistory::new().await;
 
     let mut rx_guard = rx.lock().await;
     let rx = rx_guard.deref_mut();
+
+    //this adds this node to the telemetry
+    let monitor = context.into_monitor(&[rx], &[]);
+
+    let mut history = FrameHistory::new().await;
+
 
     //     monitor.init_stats(&[&rx], &[]); //TODO: this is not needed for this telemetry
     let mut dot_state = DotState {

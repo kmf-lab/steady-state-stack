@@ -38,18 +38,17 @@ pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>
 
     //NOTE: if this child telemetry is monitored so we will create the appropriate channels
 
+    let channel_builder = ChannelBuilder::new(that.channel_count.clone())
+        .with_labels(&["steady_state-telemetry"], false)
+        .with_compute_window_bucket_bits(0)
+        .with_capacity(config::REAL_CHANNEL_LENGTH_TO_COLLECTOR);
 
 
     let rx_tuple: (Option<SteadyTelemetrySend<RX_LEN>>, Option<SteadyTelemetryTake<RX_LEN>>)
         = if 0usize == RX_LEN {
         (None, None)
     } else {
-        let (telemetry_send_rx, mut telemetry_take_rx) =
-            ChannelBuilder::new(that.channel_count.clone())
-                .with_labels(&["steady_state-telemetry"], false)
-                .with_capacity(config::REAL_CHANNEL_LENGTH_TO_COLLECTOR)
-                .build();
-
+        let (telemetry_send_rx, mut telemetry_take_rx) = channel_builder.build();
         (Some(SteadyTelemetrySend::new(telemetry_send_rx, [0; RX_LEN], that.name,rx_inverse_local_idx), )
          , Some(SteadyTelemetryTake { rx: telemetry_take_rx, details: rx_meta_data }))
     };
@@ -58,12 +57,7 @@ pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>
         = if 0usize == TX_LEN {
         (None, None)
     } else {
-        let (telemetry_send_tx, telemetry_take_tx) =
-            ChannelBuilder::new(that.channel_count.clone() )
-                .with_labels(&["steady_state-telemetry"], false)
-                .with_capacity(config::REAL_CHANNEL_LENGTH_TO_COLLECTOR)
-                .build();
-
+        let (telemetry_send_tx, telemetry_take_tx) = channel_builder.build();
         (Some(SteadyTelemetrySend::new(telemetry_send_tx, [0; TX_LEN], that.name, tx_inverse_local_idx), )
          , Some(SteadyTelemetryTake { rx: telemetry_take_tx, details: tx_meta_data }))
     };
@@ -112,6 +106,7 @@ pub(crate) fn build_optional_telemetry_graph(graph: & mut Graph,) {
         let supervisor = if config::TELEMETRY_SERVER {
             //build channel for DiagramData type
             let (tx, rx) = graph.channel_builder()
+                .with_compute_window_bucket_bits(0)
                 .with_labels(&["steady_state-telemetry"], true)
                 .with_capacity(config::REAL_CHANNEL_LENGTH_TO_FEATURE)
                 .build();

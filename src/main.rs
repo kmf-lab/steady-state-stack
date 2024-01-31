@@ -30,7 +30,7 @@ use crate::actor::*;
 use bastion::{Bastion, run};
 use bastion::prelude::SupervisionStrategy;
 
-use crate::steady_state::ChannelDataType;
+use crate::steady_state::{DataType, Filled, StdDev, Trigger};
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -120,14 +120,14 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     //upon construction these are set up to be monitored by the telemetry telemetry
     let (generator_tx, generator_rx) = base_builder
-                     .with_percentile(ChannelDataType::Consumed(0.80))
-                     .with_red(steady_state::ColorTrigger::Percentile(70))
-                     .with_yellow(steady_state::ColorTrigger::Percentile(50))
+                     .with_percentile(DataType::Consumed(0.80))
+                     .with_red(Trigger::AvgFilledAbove(Filled::p70()))
+                     .with_yellow(Trigger::StdDevsFilledAbove(StdDev::one(),Filled::p70()))
                      .with_capacity(example_capacity)
                      .build();
 
     let (consumer_tx, consumer_rx) = base_builder
-                     .with_standard_deviation(ChannelDataType::InFlight(2.5))
+                     .with_standard_deviation(DataType::InFlight(2.5))
                      .with_capacity(example_capacity)
                      .build();
 

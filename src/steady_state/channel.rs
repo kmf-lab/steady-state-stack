@@ -18,7 +18,7 @@ use ringbuf::traits::Split;
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 use log::info;
 use ringbuf::storage::Heap;
-use crate::steady_state::{ChannelDataType, ColorTrigger, config, MONITOR_UNKNOWN, Rx, Tx};
+use crate::steady_state::{DataType, Trigger, config, MONITOR_UNKNOWN, Rx, Tx};
 use crate::steady_state::monitor::ChannelMetaData;
 
 #[derive(Clone)]
@@ -30,13 +30,18 @@ pub struct ChannelBuilder {
     window_bucket_in_bits: u8, //ma is 1<<window_bucket_in_bits to ensure power of 2
     line_expansion: bool,
     show_type: bool,
-    percentiles: Vec<ChannelDataType>, //each is a row
-    std_dev: Vec<ChannelDataType>, //each is a row
-    red: Vec<ColorTrigger>, //if used base is green
-    yellow: Vec<ColorTrigger>, //if used base is green
+    percentiles: Vec<DataType>, //each is a row
+    std_dev: Vec<DataType>, //each is a row
+    red: Vec<Trigger>, //if used base is green
+    yellow: Vec<Trigger>, //if used base is green
     avg_inflight: bool,
     avg_consumed: bool,
 }
+//some ideas to target
+// Primary Label - Latency Estimate (80th Percentile): This gives a quick, representative view of the channel's performance under load.
+// Secondary Label - Moving Average of In-Flight Messages: This provides a sense of the current load on the channel.
+// Tertiary Label (Optional) - Moving Average of Take Rate: This could be included if there's room and if the take rate is a critical performance factor for your application.
+
 
 const DEFAULT_CAPACITY: usize = 64;
 
@@ -123,25 +128,25 @@ impl ChannelBuilder {
         result
     }
 
-    pub fn with_standard_deviation(&self, config: ChannelDataType) -> Self {
+    pub fn with_standard_deviation(&self, config: DataType) -> Self {
         let mut result = self.clone();
         result.std_dev.push(config);
         result
     }
 
-    pub fn with_percentile(&self, config: ChannelDataType) -> Self {
+    pub fn with_percentile(&self, config: DataType) -> Self {
         let mut result = self.clone();
         result.percentiles.push(config);
         result
     }
 
-    pub fn with_red(&self, bound: ColorTrigger) -> Self {
+    pub fn with_red(&self, bound: Trigger) -> Self {
         let mut result = self.clone();
         result.red.push(bound);
         result
     }
 
-    pub fn with_yellow(&self, bound: ColorTrigger) -> Self {
+    pub fn with_yellow(&self, bound: Trigger) -> Self {
         let mut result = self.clone();
         result.yellow.push(bound);
         result

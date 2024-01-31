@@ -20,6 +20,7 @@ pub mod serviced;
 pub mod graph;
 
 
+
 use std::any::type_name;
 use std::collections::HashMap;
 //re-publish bastion from steady_state for this early version
@@ -61,7 +62,7 @@ pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[derive(Clone)]
-pub enum ChannelDataType {
+pub enum DataType {
     InFlight(f32),
     Consumed(f32),
 }
@@ -69,27 +70,32 @@ pub enum ChannelDataType {
 
 /// Used when setting up new channels to specify when they should change to Red or Yellow state.
 #[derive(Clone)]
-pub enum ColorTrigger { //TODO: we need a vec of triggers not just one
-    //pct filled channel capacity
-    //
-    //above x std dev of filled channel (0 is just above average fill)
-    //
-    //consume rate lower than x stand deviations (0 is just below average)
-    //
-    //latency above x stand deviations (0 is just above average)
-    //
-    //latency at X percentile above y milliseconds (SLA rule)
-    //consume rate at X percentile above y milliseconds (SLA rule)
-    //
+pub enum Trigger {
+    AvgFilledAbove(Filled),
+    AvgFilledBelow(Filled),
+    StdDevsFilledAbove(StdDev, Filled), // above mean+(std*factor)
+    StdDevsFilledBelow(StdDev, Filled), // below mean-(std*factor)
+    PercentileFilledAbove(Percentile, Filled),
+    PercentileFilledBelow(Percentile, Filled),
+    /////////////////////////////////////////////
 
+    AvgRateBelow(Rate),
+    AvgRateAbove(Rate),
+    StdDevRateBelow(StdDev,Rate), // below mean-(std*factor)
+    StdDevRateAbove(StdDev,Rate), // above mean+(std*factor)
+    PercentileRateAbove(Percentile, Rate),
+    PercentileRateBelow(Percentile, Rate),
 
-    Percentile(u8),
-    StdDev(f32),
-    PercentFull(u8),
+    //////////////////////////
+
+    AvgLatencyAbove(Duration),
+    AvgLatencyBelow(Duration),
+    StdDevLatencyAbove(StdDev,Duration), // above mean+(std*factor)
+    StdDevLatencyBelow(StdDev,Duration), // below mean-(std*factor)
+    LatencyPercentileAbove(Percentile,Duration),
+    LatencyPercentileBelow(Percentile,Duration), //not sure if this is useful
+
 }
-    // Primary Label - Latency Estimate (80th Percentile): This gives a quick, representative view of the channel's performance under load.
-    //    Secondary Label - Moving Average of In-Flight Messages: This provides a sense of the current load on the channel.
-    //   Tertiary Label (Optional) - Moving Average of Take Rate: This could be included if there's room and if the take rate is a critical performance factor for your application.
 
 
 #[derive(PartialEq, Eq, Debug)]
@@ -553,10 +559,205 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
            }
        }
     }
-
-
-
-
 }
+
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StdDev(f32);
+
+impl StdDev {
+    // Private constructor to directly set the value inside the struct.
+    // This is private to ensure that all public constructors go through validation.
+    fn new(value: f32) -> Option<Self> {
+        if value > 0.0 && value < 10.0 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub fn one() -> Self {
+        Self(1.0)
+    }
+
+    pub fn one_and_a_half() -> Self {
+        Self(1.5)
+    }
+
+    pub fn two() -> Self {
+        Self(2.0)
+    }
+
+    pub fn two_and_a_half() -> Self {
+        Self(2.5)
+    }
+
+    pub fn three() -> Self {
+        Self(3.0)
+    }
+
+    pub fn four() -> Self {
+        Self(4.0)
+    }
+
+    // Allows custom values within the valid range.
+    pub fn custom(value: f32) -> Option<Self> {
+        Self::new(value)
+    }
+
+    // Getter to access the inner f32 value.
+    pub fn value(&self) -> f32 {
+        self.0
+    }
+}
+
+////////////////
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Percentile(f32);
+
+impl Percentile {
+    // Private constructor to directly set the value inside the struct.
+    // Ensures that all public constructors go through validation.
+    fn new(value: f32) -> Option<Self> {
+        if value >= 0.0 && value <= 100.0 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    // Convenience methods for common percentiles
+    pub fn p25() -> Self {
+        Self(25.0)
+    }
+
+    pub fn p50() -> Self {
+        Self(50.0) // Also known as the median
+    }
+
+    pub fn p75() -> Self {
+        Self(75.0)
+    }
+
+    pub fn p90() -> Self {
+        Self(90.0)
+    }
+
+    pub fn p80() -> Self {
+        Self(80.0)
+    }
+
+    pub fn p96() -> Self {
+        Self(96.0)
+    }
+
+    pub fn p99() -> Self {
+        Self(99.0)
+    }
+
+    // Allows custom values within the valid range.
+    pub fn custom(value: f32) -> Option<Self> {
+        Self::new(value)
+    }
+
+    // Getter to access the inner f32 value.
+    pub fn value(&self) -> f32 {
+        self.0
+    }
+}
+
+////////////////////
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rate {
+    // Internal representation as a rational number of the rate per second
+    // Numerator: units, Denominator: time in seconds
+    numerator: u64,
+    denominator: u64,
+}
+
+impl Rate {
+    // Milliseconds are represented as fractions of a second
+    pub fn per_millis(units: u64) -> Self {
+        Self {
+            numerator: units,
+            denominator: 1000,
+        }
+    }
+
+    pub fn per_seconds(units: u64) -> Self {
+        Self {
+            numerator: units,
+            denominator: 1,
+        }
+    }
+
+    pub fn per_minutes(units: u64) -> Self {
+        Self {
+            numerator: units,
+            denominator: 1 * 60, // 60 seconds
+        }
+    }
+
+    pub fn per_hours(units: u64) -> Self {
+        Self {
+            numerator: units,
+            denominator: 1 * 60 * 60, // 3600 seconds
+        }
+    }
+
+    pub fn per_days(units: u64) -> Self {
+        Self {
+            numerator: units,
+            denominator: 24 * 60 * 60, // 86400 seconds
+        }
+    }
+
+    /// Returns the rate as a rational number (numerator, denominator) to represent the rate per second.
+    /// This method ensures the rate can be used without performing division, preserving precision.
+    pub(crate) fn to_rational_per_second(&self) -> (u64, u64) {
+        (self.numerator, self.denominator)
+    }
+}
+
+///////////////////////////////
+
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Filled {
+    Percentage(u64,u64),  // Represents a percentage filled, as numerator and denominator
+    Exact(u64),           // Represents an exact fill level
+}
+
+impl Filled {
+    /// Creates a new `Filled` instance representing a percentage filled.
+    /// Ensures the percentage is within the valid range of 0.0 to 100.0.
+    pub fn percentage(value: f32) -> Option<Self> {
+        if value >= 0.0 && value <= 100.0 {
+            Some(Self::Percentage((value * 100_000f32) as u64, 100_000u64))
+        } else {
+            None
+        }
+    }
+
+    pub fn p10() -> Self { Self::Percentage(10, 100)}
+    pub fn p20() -> Self { Self::Percentage(20, 100)}
+    pub fn p30() -> Self { Self::Percentage(30, 100)}
+    pub fn p40() -> Self { Self::Percentage(40, 100)}
+    pub fn p50() -> Self { Self::Percentage(50, 100)}
+    pub fn p60() -> Self { Self::Percentage(60, 100)}
+    pub fn p70() -> Self { Self::Percentage(70, 100)}
+    pub fn p80() -> Self { Self::Percentage(80, 100)}
+    pub fn p90() -> Self { Self::Percentage(90, 100)}
+    pub fn p100() -> Self { Self::Percentage(100, 100)}
+
+
+    /// Creates a new `Filled` instance representing an exact fill level.
+    pub fn exact(value: u64) -> Self {
+        Self::Exact(value)
+    }
+}
+
 
 
