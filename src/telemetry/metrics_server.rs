@@ -1,24 +1,19 @@
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use futures::lock::Mutex;
-use crate::steady_state::config;
-use crate::steady_state::telemetry::metrics_collector::DiagramData;
-use crate::steady_state::dot::*;
 use futures::FutureExt; // Provides the .fuse() method
 use futures::pin_mut; // Add pin_mut
 
 use bytes::BytesMut;
 use futures::select;
 use log::*;
-use crate::steady_state::SteadyContext;
 use tide::{Body, Request, Response, Server};
 use tide::http::headers::CONTENT_ENCODING;
 use tide::http::mime;
-use crate::steady_state::Rx;
-use crate::steady_state::GraphLivelinessState;
-use crate::steady_state::telemetry::metrics_collector::DiagramData::{Edge, Node};
-
+use crate::*;
+use crate::dot::{build_dot, DotGraphFrames, DotState, FrameHistory, refresh_structure};
+use crate::telemetry::metrics_collector::*;
+use crate::telemetry::metrics_collector::DiagramData::{Edge, Node};
 
 macro_rules! count_bits {
     ($num:expr) => {{
@@ -38,9 +33,7 @@ const MA_BITS: usize = count_bits!(MA_MIN_BUCKETS);
 const MA_ADJUSTED_BUCKETS:usize = 1 << MA_BITS;
 const MA_BITMASK: usize = MA_ADJUSTED_BUCKETS - 1;
 
-struct AppState {
-    dot_graph: Arc<AtomicUsize>, // Stores a pointer to the current DOT graph
-}
+
 
 // websocat is a command line tool for connecting to WebSockets servers
 // cargo install websocat
@@ -65,13 +58,13 @@ pub(crate) async fn run(context: SteadyContext
     let mut rx_guard = rx.lock().await;
     let rx = rx_guard.deref_mut();
 
-    //this adds this node to the telemetry
-    let monitor = context.into_monitor(&[rx], &[]);
+    let runtime_state = context.runtime_state.clone();
 
-    let mut history = FrameHistory::new().await;
+    if config::SHOW_TELEMETRY_ON_TELEMETRY {
+        //NOTE: this line makes this node monitored on the telemetry
+        let _ = context.into_monitor(&[rx], &[]);
+    }
 
-
-    //     monitor.init_stats(&[&rx], &[]); //TODO: this is not needed for this telemetry
     let mut dot_state = DotState {
         seq: u64::MAX,
         nodes: Vec::new(), //position is the telemetry id
@@ -88,6 +81,7 @@ pub(crate) async fn run(context: SteadyContext
     let state = Arc::new(Mutex::new(State {
         doc: Vec::new()
     }));
+    let mut history = FrameHistory::new().await;
 
     let mut app = tide::with_state(state.clone());
 
@@ -112,10 +106,15 @@ pub(crate) async fn run(context: SteadyContext
             Ok(res)
         });
 
-    let server_handle = app.listen("127.0.0.1:8080");
+    //
+    let server_handle = app.listen(format!("{}:{}",config::TELEMETRY_SERVER_IP,config::TELEMETRY_SERVER_PORT));
+
+    // This future must be pinned before awaiting it to ensure it remains fixed in memory,
+    // as it might contain self-references or internal state that requires stable addresses.
+    // Pinning is crucial for safely using futures in async control flow, like select!.
+
     pin_mut!(server_handle);
 
-    let runtime_state = monitor.runtime_state.clone();
 
 
     loop {
@@ -161,8 +160,6 @@ pub(crate) async fn run(context: SteadyContext
                                 }
 
                             if config::TELEMETRY_HISTORY  {
-                               //TODO: add assert that this only happens once every 32ms
-
 
                                   //NOTE we do not expect to get any more messages for this seq
                                   //    and we have 32ms or so to record the history log file
@@ -199,20 +196,20 @@ pub(crate) async fn run(context: SteadyContext
 }
 
 
-const CONTENT_VIZ_LITE_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/viz-lite.js.gz.b64")} else {""};
-const CONTENT_INDEX_HTML_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/index.html.gz.b64")} else {""};
-const CONTENT_DOT_VIEWER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/dot-viewer.js.gz.b64")} else {""};
-const CONTENT_DOT_VIEWER_CSS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/dot-viewer.css.gz.b64")} else {""};
-const CONTENT_WEBWORKER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/webworker.js.gz.b64")} else {""};
-const CONTENT_SPINNER_GIF_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/images/spinner.gif.b64")} else {""};
+const CONTENT_VIZ_LITE_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/viz-lite.js.gz.b64")} else {""};
+const CONTENT_INDEX_HTML_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/index.html.gz.b64")} else {""};
+const CONTENT_DOT_VIEWER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/dot-viewer.js.gz.b64")} else {""};
+const CONTENT_DOT_VIEWER_CSS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/dot-viewer.css.gz.b64")} else {""};
+const CONTENT_WEBWORKER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/webworker.js.gz.b64")} else {""};
+const CONTENT_SPINNER_GIF_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/spinner.gif.b64")} else {""};
 
-const CONTENT_PREVIEW_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/images/preview-icon.svg")} else {""};
-const CONTENT_REFRESH_TIME_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/images/refresh-time-icon.svg")} else {""};
-const CONTENT_USER_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/images/user-icon.svg")} else {""};
-const CONTENT_ZOOM_IN_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/images/zoom-in-icon.svg")} else {""};
-const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/images/zoom-in-icon-disabled.svg")} else {""};
-const CONTENT_ZOOM_OUT_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/images/zoom-out-icon.svg")} else {""};
-const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../../static/telemetry/images/zoom-out-icon-disabled.svg")} else {""};
+const CONTENT_PREVIEW_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/preview-icon.svg")} else {""};
+const CONTENT_REFRESH_TIME_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/refresh-time-icon.svg")} else {""};
+const CONTENT_USER_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/user-icon.svg")} else {""};
+const CONTENT_ZOOM_IN_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/zoom-in-icon.svg")} else {""};
+const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/zoom-in-icon-disabled.svg")} else {""};
+const CONTENT_ZOOM_OUT_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/zoom-out-icon.svg")} else {""};
+const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/zoom-out-icon-disabled.svg")} else {""};
 
 
 

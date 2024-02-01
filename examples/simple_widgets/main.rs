@@ -1,14 +1,12 @@
 mod args;
 
-mod steady_state;
-
 use std::panic;
 use std::process::exit;
 use structopt::*;
 use log::*;
 
 use futures_timer::Delay;
-use crate::args::Args;
+use args::Args;
 use std::time::Duration;
 
 // here are the actors that will be used in the graph.
@@ -29,8 +27,7 @@ use crate::actor::*;
 
 use bastion::{Bastion, run};
 use bastion::prelude::SupervisionStrategy;
-
-use crate::steady_state::{DataType, Filled, StdDev, Trigger};
+use steady_state::*;
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -120,14 +117,14 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     //upon construction these are set up to be monitored by the telemetry telemetry
     let (generator_tx, generator_rx) = base_builder
-                     .with_percentile(DataType::Consumed(0.80))
+                     .with_rate_percentile(Percentile::p80())
                      .with_red(Trigger::AvgFilledAbove(Filled::p70()))
                      .with_yellow(Trigger::StdDevsFilledAbove(StdDev::one(),Filled::p70()))
                      .with_capacity(example_capacity)
                      .build();
 
     let (consumer_tx, consumer_rx) = base_builder
-                     .with_standard_deviation(DataType::InFlight(2.5))
+                     .with_filled_standard_deviation(StdDev::two_and_a_half())
                      .with_capacity(example_capacity)
                      .build();
 

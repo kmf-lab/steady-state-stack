@@ -12,7 +12,7 @@ use nuclei::{drive, Handle};
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 #[allow(unused_imports)]
 use std::fs::{create_dir_all, File, OpenOptions};
-use crate::steady_state::util;
+use crate::util;
 
 pub struct SystemdManager {
     pub service_name: String,

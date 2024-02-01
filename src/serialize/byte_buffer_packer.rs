@@ -2,20 +2,23 @@
 use std::ops::{Add, Sub};
 use bytes::{Bytes, BytesMut};
 use num_traits::Zero;
-use crate::steady_state::serialize::fast_protocol_packed::{read_long_signed, read_long_unsigned, write_long_signed, write_long_unsigned};
+use crate::serialize::fast_protocol_packed::{read_long_signed, read_long_unsigned, write_long_signed, write_long_unsigned};
 
 
 /// writes the deltas so we can write or send less data across the system.
 /// note vecs must be the same size or larger never smaller as we go
 pub(crate) struct PackedVecWriter<T> {
     pub(crate) previous: Vec<T>,
-    pub(crate) write_count: usize,
+    pub(crate) delta_write_count: usize,
     pub(crate) sync_required: bool, //next write is a full not a delta
 }
 
 impl<T> PackedVecWriter<T> {
-    pub(crate) fn sync_data(&mut self) {
+    pub fn sync_data(&mut self) {
         self.sync_required = true;
+    }
+    pub fn delta_write_count(&self) -> usize {
+        self.delta_write_count
     }
 }
 
@@ -40,7 +43,7 @@ impl <T> PackedVecWriter<T>
         }
         u64_values
     }
-    pub(crate) fn add_vec(&mut self, mut target: &mut BytesMut, source: &Vec<T>) {
+    pub(crate) fn add_vec(&mut self, target: &mut BytesMut, source: &Vec<T>) {
         assert!(source.len() >= self.previous.len(), "new source {:?} >= prev {:?}", source.len(), self.previous.len() );
 
         if !self.sync_required {
@@ -71,10 +74,13 @@ impl <T> PackedVecWriter<T>
                         write_long_signed(dif as i64, target);
                     }
                 });
+            self.delta_write_count += 1;
         } else {
             //negative length denotes we are sending a full record
             write_long_signed( -(source.len() as i64), target);
             source.iter().for_each(|s| write_long_signed((*s).into() as i64, target));
+            self.delta_write_count = 0;
+            self.sync_required = false;
         };
 
         self.previous.clear();
@@ -85,7 +91,6 @@ impl <T> PackedVecWriter<T>
 /// reads the deltas so we can write or send less data across the system.
 pub(crate) struct PackedVecReader<T> {
     pub(crate) previous: Vec<T>,
-    pub(crate) write_count: usize,
 }
 
 impl <T> PackedVecReader<T>
@@ -137,7 +142,7 @@ impl <T> PackedVecReader<T>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bytes::{BytesMut, Buf};
+    use bytes::BytesMut;
 
 
 
@@ -146,11 +151,10 @@ mod tests {
         let mut writer:PackedVecWriter<i128> = PackedVecWriter {
             previous: vec![1,2,3,4],
             sync_required: false,
-            write_count: 0
+            delta_write_count: 0
         };
         let mut reader:PackedVecReader<i128> = PackedVecReader {
             previous: vec![1,2,3,4],
-            write_count: 0
         };
 
         let mut buffer = BytesMut::new();
@@ -171,11 +175,10 @@ mod tests {
         let mut writer:PackedVecWriter<i64> = PackedVecWriter {
             previous: vec![10, 20, 30, 40],
             sync_required: false,
-            write_count: 0
+            delta_write_count: 0
         };
         let mut reader:PackedVecReader<i64> = PackedVecReader {
             previous: vec![10, 20, 30, 40],
-            write_count: 0
         };
 
         let mut buffer = BytesMut::new();
@@ -195,11 +198,10 @@ mod tests {
         let mut writer:PackedVecWriter<i128> = PackedVecWriter {
             previous: vec![5, 5, 5, 5],
             sync_required: true,
-            write_count: 0
+            delta_write_count: 0
         };
         let mut reader:PackedVecReader<i128> = PackedVecReader {
             previous: vec![5, 5, 5, 5],
-            write_count: 0
         };
 
         let mut buffer = BytesMut::new();

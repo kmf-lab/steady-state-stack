@@ -2,10 +2,10 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
 use futures::lock::Mutex;
-use itertools::Itertools;
-use log::info;
+#[allow(unused_imports)]
+use log::*;
 use crate::args::Args;
-use crate::steady_state::*;
+use steady_state::*;
 
 
 #[derive(Clone, Debug, Copy)]
@@ -121,11 +121,11 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor
 mod tests {
     use std::ops::DerefMut;
     use crate::actor::data_generator::{InternalState, iterate_once};
-    use crate::steady_state::Graph;
+    use steady_state::{Graph, util};
 
     #[async_std::test]
     async fn test_iterate_once() {
-        crate::steady_state::util::util_tests::initialize_logger();
+        util::logger::initialize();
 
         let mut graph = Graph::new();
         let (tx, rx) = graph.channel_builder().with_capacity(5).build();

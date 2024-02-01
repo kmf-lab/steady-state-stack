@@ -9,7 +9,7 @@
 use bytes::{Buf, BufMut, Bytes};
 use bytes::BytesMut;
 
-pub fn read_long_signed(mut byte_buffer: &mut Bytes) -> Option<i64> {
+pub fn read_long_signed(byte_buffer: &mut Bytes) -> Option<i64> {
     let initial_remaining:usize = byte_buffer.remaining();
     if initial_remaining>0 {
         let v = byte_buffer.get_i8();

@@ -4,9 +4,7 @@ use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
-use crate::steady_state::Rx;
-use crate::steady_state::LocalMonitor;
-use crate::steady_state::SteadyContext;
+use steady_state::*;
 
 const BATCH_SIZE: usize = 2000;
 #[derive(Clone, Debug, PartialEq, Copy)]
@@ -73,9 +71,9 @@ fn process_msg(state: &mut InternalState, msg: Result<ApprovedWidgets, String>) 
             state.last_approval = Some(m);
             //trace!("received: {:?}", m.to_owned());
         },
-        Err(msg) => {
+        Err(_msg) => {
             state.last_approval = None;
-            //error!("Unexpected error recv_async: {}",msg);
+            //error!("Unexpected error recv_async: {}",_msg);
         }
     }
 }
@@ -121,12 +119,12 @@ async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< ApprovedWidge
 mod tests {
     use super::*;
     use async_std::test;
-    use crate::steady_state::Graph;
+    use steady_state::Graph;
 
     #[test]
     async fn test_iterate_once() {
 
-        crate::steady_state::util::util_tests::initialize_logger();
+        util::logger::initialize();
 
         let mut graph = Graph::new();
         let (tx, rx) = graph.channel_builder().with_capacity(8).build();

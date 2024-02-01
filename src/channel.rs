@@ -9,17 +9,20 @@ pub(crate) type ChannelBacking<T> = Heap<T>;
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
 pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
 
-//TODO: we want to use Static but will use heap as first step
-//TODO: we must use static for all telemetry work.
+
+//TODO: we should use static for all telemetry work. (next step)
+//      this might lead to a general solution for static in other places
 //let mut rb = AsyncRb::<Static<T, 12>>::default().split_ref()
 //   AsyncRb::<ChannelBacking<T>>::new(cap).split_ref()
 
 use ringbuf::traits::Split;
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
-use log::info;
+#[allow(unused_imports)]
+use log::*;
 use ringbuf::storage::Heap;
-use crate::steady_state::{DataType, Trigger, config, MONITOR_UNKNOWN, Rx, Tx};
-use crate::steady_state::monitor::ChannelMetaData;
+use crate::{config, MONITOR_UNKNOWN, Percentile, Rx, StdDev, Trigger, Tx};
+use crate::monitor::ChannelMetaData;
+
 
 #[derive(Clone)]
 pub struct ChannelBuilder {
@@ -30,8 +33,10 @@ pub struct ChannelBuilder {
     window_bucket_in_bits: u8, //ma is 1<<window_bucket_in_bits to ensure power of 2
     line_expansion: bool,
     show_type: bool,
-    percentiles: Vec<DataType>, //each is a row
-    std_dev: Vec<DataType>, //each is a row
+    percentiles_inflight: Vec<Percentile>, //each is a row
+    percentiles_consumed: Vec<Percentile>, //each is a row
+    std_dev_inflight: Vec<StdDev>, //each is a row
+    std_dev_consumed: Vec<StdDev>, //each is a row
     red: Vec<Trigger>, //if used base is green
     yellow: Vec<Trigger>, //if used base is green
     avg_inflight: bool,
@@ -58,8 +63,10 @@ impl ChannelBuilder {
             window_bucket_in_bits: 5, // 1<<5 == 32
             line_expansion: false,
             show_type: false,
-            percentiles: Vec::new(),
-            std_dev: Vec::new(),
+            percentiles_inflight: Vec::new(),
+            percentiles_consumed: Vec::new(),
+            std_dev_inflight: Vec::new(),
+            std_dev_consumed: Vec::new(),
             red: Vec::new(),
             yellow: Vec::new(),
             avg_inflight: false,
@@ -124,19 +131,31 @@ impl ChannelBuilder {
     /// show the control labels   TODO: dot filter must still be implemented
     pub fn with_labels(&self, labels: &'static [& 'static str], display: bool) -> Self {
         let mut result = self.clone();
-        result.labels = labels;
+        result.labels = if display {labels} else {&[]};
         result
     }
 
-    pub fn with_standard_deviation(&self, config: DataType) -> Self {
+    pub fn with_filled_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
-        result.std_dev.push(config);
+        result.std_dev_inflight.push(config);
+        result
+    }
+    pub fn with_rate_standard_deviation(&self, config: StdDev) -> Self {
+        let mut result = self.clone();
+        result.std_dev_consumed.push(config);
         result
     }
 
-    pub fn with_percentile(&self, config: DataType) -> Self {
+
+    pub fn with_filled_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
-        result.percentiles.push(config);
+        result.percentiles_inflight.push(config);
+        result
+    }
+
+    pub fn with_rate_percentile(&self, config: Percentile) -> Self {
+        let mut result = self.clone();
+        result.percentiles_consumed.push(config);
         result
     }
 
@@ -152,7 +171,7 @@ impl ChannelBuilder {
         result
     }
 
-    pub fn to_meta_data(&self, type_name: &'static str) -> ChannelMetaData {
+    pub(crate) fn to_meta_data(&self, type_name: &'static str) -> ChannelMetaData {
 
         let channel_id = self.channel_count.fetch_add(1, Ordering::SeqCst);
 
@@ -163,8 +182,10 @@ impl ChannelBuilder {
             window_bucket_in_bits: self.window_bucket_in_bits,
             line_expansion: self.line_expansion,
             show_type: if self.show_type {Some(type_name.split("::").last().unwrap_or(""))} else {None},
-            percentiles: self.percentiles.clone(),
-            std_dev: self.std_dev.clone(),
+            percentiles_inflight: self.percentiles_inflight.clone(),
+            percentiles_consumed: self.percentiles_consumed.clone(),
+            std_dev_inflight: self.std_dev_inflight.clone(),
+            std_dev_consumed: self.std_dev_consumed.clone(),
             red: self.red.clone(),
             yellow: self.yellow.clone(),
             capacity: self.capacity,

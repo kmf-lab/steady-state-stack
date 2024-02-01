@@ -22,6 +22,7 @@ pub mod graph;
 
 
 use std::any::type_name;
+#[cfg(test)]
 use std::collections::HashMap;
 //re-publish bastion from steady_state for this early version
 pub use bastion;
@@ -44,12 +45,10 @@ use ringbuf::consumer::Consumer;
 use async_ringbuf::consumer::AsyncConsumer;
 use futures_timer::Delay;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
-use crate::steady_state::channel::ChannelBuilder;
-use crate::steady_state::monitor::{ChannelMetaData, SteadyTelemetrySend};
-use crate::steady_state::telemetry::metrics_collector::CollectorDetail;
-
-
-use crate::steady_state::util::steady_logging_init;// re-publish in public
+use crate::channel::ChannelBuilder;
+use crate::monitor::{ChannelMetaData, SteadyTelemetrySend};
+use crate::telemetry::metrics_collector::CollectorDetail;
+use crate::util::steady_logging_init;// re-publish in public
 
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
@@ -61,11 +60,6 @@ pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
     steady_logging_init(loglevel)
 }
 
-#[derive(Clone)]
-pub enum DataType {
-    InFlight(f32),
-    Consumed(f32),
-}
 
 
 /// Used when setting up new channels to specify when they should change to Red or Yellow state.
@@ -168,13 +162,15 @@ pub struct Graph {
     pub(crate) runtime_state: Arc<Mutex<GraphLivelinessState>>,
 }
 
-//for testing only
-#[cfg(test)]
 impl Graph {
 
     /// needed for testing only, this monitor assumes we are running without a full graph
+    /// and will not be used in production
     pub fn new_test_monitor(self: &mut Self, name: & 'static str ) -> SteadyContext
     {
+        // assert that we are NOT in release mode
+        assert!(cfg!(debug_assertions), "This function is only for testing");
+
         let id = self.monitor_count;
         self.monitor_count += 1;
 
@@ -183,7 +179,7 @@ impl Graph {
         SteadyContext {
             channel_count,
             name,
-            ctx: None,
+            ctx: None, //this is key, we are not running in a graph by design
             id,
             all_telemetry_rx,
             runtime_state: self.runtime_state.clone()
@@ -229,7 +225,7 @@ impl Graph {
         ChannelBuilder::new(self.channel_count.clone())
     }
 
-    pub(crate) fn init_telemetry(&mut self) {
+    pub fn init_telemetry(&mut self) {
         telemetry::setup::build_optional_telemetry_graph(self);
     }
 }
@@ -417,15 +413,15 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 ///////////////////
 impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
-    pub(crate) fn id(&self) -> usize {
+    pub fn id(&self) -> usize {
         self.id
     }
 
-    pub(crate) fn name(&self) -> & 'static str {
+    pub fn name(&self) -> & 'static str {
         self.name
     }
 
-    pub(crate) fn ctx(&self) -> Option<&BastionContext> {
+    pub fn ctx(&self) -> Option<&BastionContext> {
         if let Some(ctx) = &self.ctx {
             Some(ctx)
         } else {
@@ -464,7 +460,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
     pub fn try_peek<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
-        this.try_peek()  //nothing to record since nothing moved. TODO: revisit this
+        this.try_peek()
     }
     pub fn is_empty<T>(& mut self, this: & mut Rx<T>) -> bool {
         this.is_empty()
@@ -479,7 +475,6 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     pub async fn peek_async<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
-        //nothing to record since nothing moved. TODO: revisit this
         this.peek_async().await
 
     }
@@ -554,7 +549,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                Ok(())
            },
            Err(sensitive) => {
-               error!("Unexpected error send_async  telemetry: {} type: {}", self.name, type_name::<T>());
+               error!("Unexpected error send_async telemetry: {} type: {}", self.name, type_name::<T>());
                Err(sensitive)
            }
        }
@@ -758,6 +753,4 @@ impl Filled {
         Self::Exact(value)
     }
 }
-
-
 

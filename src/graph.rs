@@ -1,11 +1,8 @@
 use bastion::children::Children;
 use std::future::Future;
-use std::panic;
-use std::panic::AssertUnwindSafe;
-use std::process::exit;
-use bastion::{Bastion, Callbacks, run, spawn};
-use log::{error, info, trace};
-use crate::steady_state::{SteadyContext, Graph};
+use bastion::Callbacks;
+use log::*;
+use crate::{Graph, SteadyContext};
 
 pub(crate) fn configure_for_graph<F,I>(graph: & mut Graph, name: & 'static str, c: Children, init: I ) -> Children
     where I: Fn(SteadyContext) -> F + Send + 'static + Clone,
@@ -58,12 +55,14 @@ pub(crate) fn configure_for_graph<F,I>(graph: & mut Graph, name: & 'static str, 
             .with_name(name)
     };
 
-    #[cfg(test)] {
+    #[cfg(debug_assertions)]
+    {
         use bastion::distributor::Distributor;
 
         result.with_distributor(Distributor::named(format!("testing-{name}")))
     }
-    #[cfg(not(test))] {
+    #[cfg(not(debug_assertions))]
+    {
         result
     }
 }

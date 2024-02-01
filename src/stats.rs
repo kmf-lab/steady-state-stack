@@ -1,16 +1,13 @@
 use std::sync::Arc;
 use num_traits::Zero;
-use crate::steady_state::{config, DataType, dot, Filled, Trigger};
-
-use crate::steady_state::monitor::ChannelMetaData;
-
+use crate::{config, Filled, Percentile, StdDev, Trigger};
+use crate::monitor::ChannelMetaData;
 
 const DOT_RED: & 'static str = "red";
 const DOT_GREEN: & 'static str = "green";
 const DOT_YELLOW: & 'static str = "yellow";
 const DOT_WHITE: & 'static str = "white";
-const DOT_GREY: & 'static str = "grey";
-const DOT_BLACK: & 'static str = "black";
+
 
 static DOT_PEN_WIDTH: [&'static str; 16]
 = ["1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"];
@@ -21,8 +18,12 @@ pub struct ChannelStatsComputer {
     pub(crate) display_labels: Option<Vec<& 'static str>>,
     pub(crate) line_expansion: bool,
     pub(crate) show_type: Option<& 'static str>,
-    pub(crate) percentiles: Vec<DataType>, //each is a row
-    pub(crate) std_devs: Vec<DataType>, //each is a row
+
+    pub(crate) percentiles_inflight: Vec<Percentile>, //each is a row
+    pub(crate) percentiles_consumed: Vec<Percentile>, //each is a row
+    pub(crate) std_dev_inflight: Vec<StdDev>, //each is a row
+    pub(crate) std_dev_consumed: Vec<StdDev>, //each is a row
+
     pub(crate) red_trigger: Vec<Trigger>, //if used base is green
     pub(crate) yellow_trigger: Vec<Trigger>, //if used base is green
 
@@ -59,8 +60,7 @@ impl ChannelStatsComputer {
         };
         let line_expansion = meta.line_expansion;
         let show_type = meta.show_type;
-        let percentiles                       = meta.percentiles.clone();
-        let std_devs                          = meta.std_dev.clone();
+
         let red_trigger                       = meta.red.clone();
         let yellow_trigger                    = meta.yellow.clone();
 
@@ -91,8 +91,10 @@ impl ChannelStatsComputer {
             display_labels,
             line_expansion,
             show_type,
-            percentiles,
-            std_devs,
+            percentiles_inflight: meta.percentiles_inflight.clone(),
+            percentiles_consumed: meta.percentiles_consumed.clone(),
+            std_dev_inflight: meta.std_dev_inflight.clone(),
+            std_dev_consumed: meta.std_dev_consumed.clone(),
             red_trigger,
             yellow_trigger,
             runner_inflight,
@@ -158,9 +160,9 @@ impl ChannelStatsComputer {
         //set the default color in case we have no alerts.
         let mut line_color = if self.red_trigger.is_empty()
                          && self.yellow_trigger.is_empty() {
-                            "white"
+                            DOT_WHITE
                         } else {
-                            "green"
+                            DOT_GREEN
                         };
 
 
@@ -179,20 +181,12 @@ impl ChannelStatsComputer {
                 display_label.push_str("\n");
             }
 
-            self.std_devs.iter().for_each(|f| {
-               let (label,mult,runner,sum_sqr) = match f {
-                    DataType::InFlight(mult) => {
-                        //display_label.push_str("InFlight ");
-                        let runner = self.runner_inflight;
-                        let sum_sqr = self.sum_of_squares_inflight;
-                        ("inflight",mult,runner,sum_sqr)
-                    }
-                    DataType::Consumed(mult) => {
-                        //display_label.push_str("Consumed ");
-                        let runner = self.runner_consumed;
-                        let sum_sqr = self.sum_of_squares_consumed;
-                        ("consumed",mult,runner,sum_sqr)
-                    }
+            self.std_dev_inflight.iter().for_each(|f| {
+                let (label,mult,runner,sum_sqr) = {
+                    //display_label.push_str("InFlight ");
+                    let runner = self.runner_inflight;
+                    let sum_sqr = self.sum_of_squares_inflight;
+                    ("inflight", f.value(), runner, sum_sqr)
                 };
                 let std_deviation = Self::compute_std_dev(self.buckets_bits, window, runner, sum_sqr);
                 display_label.push_str(format!("{} {:.1}StdDev: {:.1} "
@@ -201,21 +195,27 @@ impl ChannelStatsComputer {
                 display_label.push_str("\n");
             });
 
-            if self.percentiles.len() > 0 {
+            self.std_dev_consumed.iter().for_each(|f| {
+                let (label,mult,runner,sum_sqr) = {
+                    //display_label.push_str("Consumed ");
+                    let runner = self.runner_consumed;
+                    let sum_sqr = self.sum_of_squares_consumed;
+                    ("consumed",f.value(),runner,sum_sqr)
+                };
+                let std_deviation = Self::compute_std_dev(self.buckets_bits, window, runner, sum_sqr);
+                display_label.push_str(format!("{} {:.1}StdDev: {:.1} "
+                                               , label,mult, mult*std_deviation as f32
+                ).as_str());
+                display_label.push_str("\n");
+            });
+
+            if self.percentiles_consumed.len() > 0 {
                // display_label.push_str("Percentiles\n");
-                self.percentiles.iter().for_each(|p| {
-
-                    let (pct, label, percentile) = match p {
-                        DataType::InFlight(pct) => {
-                            let percentile = Self::compute_percentile_est(window as u32, *pct, self.percentile_inflight);
-                            (pct, "inflight", percentile)
-                        }
-                        DataType::Consumed(pct) => {
-                            let percentile = Self::compute_percentile_est(window as u32, *pct, self.percentile_consumed);
-                            (pct, "consumed", percentile)
-                        }
-                    };
-
+                self.percentiles_consumed.iter().for_each(|p| {
+                    let (pct, label, percentile) = {
+                            let percentile = Self::compute_percentile_est(window as u32, p.value(), self.percentile_consumed);
+                            (p.value(), "consumed", percentile)
+                         };
                     display_label.push_str(&*format!("{} {:?}%ile {:?}"
                                                      , label, pct * 100f32
                                                      , percentile));
@@ -223,8 +223,23 @@ impl ChannelStatsComputer {
                 });
                 display_label.push_str("\n");
             }
+
+            if self.percentiles_inflight.len() > 0 {
+                // display_label.push_str("Percentiles\n");
+                self.percentiles_inflight.iter().for_each(|p| {
+                    let (pct, label, percentile) ={
+                            let percentile = Self::compute_percentile_est(window as u32, p.value(), self.percentile_inflight);
+                            (p.value(), "inflight", percentile)
+                    };
+                    display_label.push_str(&*format!("{} {:?}%ile {:?}"
+                                                     , label, pct * 100f32
+                                                     , percentile));
+                });
+                display_label.push_str("\n");
+            }
+
+
             //TODO: add latency display as an option in the builder.
-            //TODO: add current consumed and inflight? need two windows?
 
             //Trigger colors now that we have the data
             self.yellow_trigger.iter().for_each(|t| {
@@ -349,7 +364,7 @@ impl ChannelStatsComputer {
                                                            , self.runner_inflight
                                                            , self.sum_of_squares_inflight);
                 let std_deviation = (std_deviation * std_devs.value()) as u128;
-                let avg = (self.runner_inflight >> self.buckets_bits);
+                let avg = self.runner_inflight >> self.buckets_bits;
                 // inflight >  avg + f*std
                 ((avg+std_deviation) * *percent_full_den as u128).gt(&(*percent_full_num as u128 * self.capacity as u128 ))
             }
@@ -370,7 +385,7 @@ impl ChannelStatsComputer {
                                                           , self.runner_inflight
                                                           , self.sum_of_squares_inflight);
                 let std_deviation = (std_deviation * std_devs.value()) as u128;
-                let avg = (self.runner_inflight >> self.buckets_bits);
+                let avg = self.runner_inflight >> self.buckets_bits;
                 // inflight >  avg + f*std
                 ((avg+std_deviation) * *percent_full_den as u128).lt(&(*percent_full_num as u128 * self.capacity as u128 ))
             }
@@ -407,7 +422,7 @@ impl ChannelStatsComputer {
 
             /////////////////////////////////////////////////////////////////////////////////////
             /////////////////////////////////////////////////////////////////////////////////////
-            /// Rule: all rate values are in message per second so they can remain fixed while other values change
+            // Rule: all rate values are in message per second so they can remain fixed while other values change
 
             Trigger::AvgRateBelow(rate) => {
                 let measured_rate_per_window = self.runner_consumed;
@@ -558,13 +573,12 @@ fn time_label(total_ms: usize) -> String {
 
 #[cfg(test)]
 mod stats_tests {
-    use crate::steady_state::{Percentile, StdDev};
-    use super::*;
     use super::*;
     use rand::prelude::*;
     use rand_distr::{Normal, Distribution};
     use std::sync::Arc;
-    use log::info;
+    #[allow(unused_imports)]
+    use log::*;
 
     #[test]
     fn test_avg_filled_above_trigger() {

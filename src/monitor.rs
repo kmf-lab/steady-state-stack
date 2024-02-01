@@ -4,10 +4,8 @@ use bastion::run;
 use std::sync::Arc;
 use futures::lock::Mutex;
 use num_traits::Zero;
-use crate::steady_state::{DataType, Trigger, config, MONITOR_NOT, MONITOR_UNKNOWN};
-use crate::steady_state::Rx;
-use crate::steady_state::Tx;
-use crate::steady_state::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
+use crate::{config, MONITOR_NOT, MONITOR_UNKNOWN, Percentile, Rx, StdDev, Trigger, Tx};
+use crate::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
 
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
     pub(crate) send: Option<SteadyTelemetryTake<TXL>>,
@@ -36,7 +34,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
     #[inline]
     fn consume_take_into(&self, send_source: &mut Vec<i128>, take_target: &mut Vec<i128>, future_target: &mut Vec<i128>) {
         if let Some(ref take) = &self.take {
-            let mut buffer = [[0usize;RXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR];
+            let mut buffer = [[0usize;RXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
 
             let count = {
                 let mut rx_guard = run!(take.rx.lock());
@@ -82,7 +80,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
     fn consume_send_into(&self, send_target: &mut Vec<i128>) {
         if let Some(ref send) = &self.send {
             //we only want to gab a max of LOCKED_CHANNEL_LENGTH_TO_COLLECTOR for this frame
-            let mut buffer = [[0usize;TXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR];
+            let mut buffer = [[0usize;TXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
 
             let count = {
                 let mut tx_guard = run!(send.rx.lock());
@@ -132,6 +130,11 @@ pub struct SteadyTelemetrySend<const LENGTH: usize> {
 }
 
 impl <const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
+
+    pub fn actor_name(&self) -> &'static str {
+        self.actor_name
+    }
+
     pub fn new(tx: Arc<Mutex<Tx<[usize; LENGTH]>>>,
                count: [usize; LENGTH],
                actor_name: &'static str,
@@ -155,8 +158,10 @@ pub(crate) struct ChannelMetaData {
     pub(crate) line_expansion: bool,
     pub(crate) show_type: Option<&'static str>,
     pub(crate) window_bucket_in_bits: u8, //for percentiles and ma
-    pub(crate) percentiles: Vec<DataType>, //each is a row
-    pub(crate) std_dev: Vec<DataType>, //each is a row
+    pub(crate) percentiles_inflight: Vec<Percentile>, //each is a row
+    pub(crate) percentiles_consumed: Vec<Percentile>, //each is a row
+    pub(crate) std_dev_inflight: Vec<StdDev>, //each is a row
+    pub(crate) std_dev_consumed: Vec<StdDev>, //each is a row
     pub(crate) red: Vec<Trigger>, //if used base is green
     pub(crate) yellow: Vec<Trigger>, //if used base is green
     pub(crate) avg_inflight: bool,
@@ -187,15 +192,13 @@ pub trait RxTel : Send + Sync {
 #[cfg(test)]
 pub(crate) mod monitor_tests {
     use std::ops::DerefMut;
-    use crate::steady_state::*;
     use async_std::test;
     use lazy_static::lazy_static;
     use std::sync::Once;
     use std::time::Duration;
     use futures_timer::Delay;
-    use crate::steady_state::Rx;
-    use crate::steady_state::Tx;
-    use crate::steady_state::Graph;
+    use crate::{config, Graph, Rx, Tx, util};
+
     lazy_static! {
             static ref INIT: Once = Once::new();
     }
@@ -203,7 +206,7 @@ pub(crate) mod monitor_tests {
     //this is my unit test for relay_stats_tx_custom
     #[test]
     async fn test_relay_stats_tx_rx_custom() {
-        crate::steady_state::util::util_tests::initialize_logger();
+        util::logger::initialize();
 
         let mut graph = Graph::new();
         let (tx_string, rx_string) = graph.channel_builder()
@@ -256,7 +259,7 @@ pub(crate) mod monitor_tests {
 
     #[test]
     async fn test_relay_stats_tx_rx_batch() {
-        crate::steady_state::util::util_tests::initialize_logger();
+        util::logger::initialize();
 
         let mut graph = Graph::new();
         let monitor = graph.new_test_monitor("test");

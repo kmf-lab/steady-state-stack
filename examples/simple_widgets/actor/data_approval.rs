@@ -3,8 +3,8 @@ use std::sync::Arc;
 use futures::lock::Mutex;
 use crate::actor::data_generator::WidgetInventory;
 use log::*;
+use steady_state::{LocalMonitor, Rx, SteadyContext, Tx};
 
-use crate::steady_state::*;
 
 const BATCH_SIZE: usize = 2000;
 
@@ -124,11 +124,12 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
 mod tests {
     use super::*;
     use async_std::test;
-    use crate::steady_state::Graph;
+    use steady_state::{Graph, util};
+
 
     #[test]
     async fn test_process() {
-        crate::steady_state::util::util_tests::initialize_logger();
+        util::logger::initialize();
 
         let mut graph = Graph::new();
         let (tx_in, rx_in) = graph.channel_builder().with_capacity(8).build();

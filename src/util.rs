@@ -49,6 +49,7 @@ pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), std:
     ///
     /// # Examples
     /// ```
+    /// use steady_state::init_logging;
     /// let log_level = "info"; // Typically obtained from command line arguments or env vars
     /// if let Err(e) = init_logging(log_level) {
     ///     eprintln!("Logger initialization failed: {:?}", e);
@@ -128,18 +129,18 @@ impl LogLineFilter for TideHide {
 
 ////////////////////////////////////////////
 ////////////////////////////////////////////
-#[cfg(test)]
-pub(crate) mod util_tests {
+pub mod logger {
     use lazy_static::lazy_static;
     use std::sync::Once;
-    use crate::steady_state;
+    use crate::util;
     lazy_static! {
             static ref INIT: Once = Once::new();
     }
 
-    pub(crate) fn initialize_logger() {
+    pub fn initialize() {
+
         INIT.call_once(|| {
-            if let Err(e) = steady_state::util::steady_logging_init("info") {
+            if let Err(e) = util::steady_logging_init("info") {
                 print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
             }
         });

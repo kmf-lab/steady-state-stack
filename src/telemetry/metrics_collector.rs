@@ -8,10 +8,8 @@ use futures_timer::Delay;
 use log::*; //allow unused import
 
 use time::Instant;
-use crate::steady_state::*;
-use crate::steady_state::Tx;
-use crate::steady_state::monitor::{ChannelMetaData, RxTel};
-use crate::steady_state::SteadyContext;
+use crate::monitor::{ChannelMetaData, RxTel};
+use crate::{config, SteadyContext, Tx};
 
 #[derive(Clone)]
 pub enum DiagramData {
@@ -54,10 +52,19 @@ pub(crate) async fn run(_context: SteadyContext
     if let Some(c) = &optional_server {
         let mut c_guard = c.lock().await;
         let c = c_guard.deref_mut();
-  //NOTE: this line makes this node monitored on the telemetry
-    _context.into_monitor(&[], &[c]);
-        //TODO: when skipping over monitor must filter those out
-        //TODO: when we have half the edge must filter that out
+
+        if config::SHOW_TELEMETRY_ON_TELEMETRY {
+            //NOTE: this line makes this node monitored on the telemetry
+            _context.into_monitor(&[], &[c]);
+
+            //TODO: If we want to see our own incoming channels then we also need
+            //    to stop any new nodes from getting added to the dynamic_senders_vec
+            //    this will disable the ability to spin up new nodes on the fly.
+            //    this is not yet implemented but when it is that will also dictate that
+            //    this actor be the last one turning on monitoring. so timing is important.
+
+        }
+
     }
 
 

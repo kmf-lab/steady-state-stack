@@ -6,6 +6,12 @@ description = "Framework for building long runnnig low latency actor based servi
 license = "MIT"
 build = "build.rs" # assumes we have gzip and base64 installed, the base64 crate is very broken and must not be used.
 
+repository = "https://github.com/kmf-lab/steady-state-stack"
+
+[lib]
+name = "steady_state"
+path = "src/lib.rs"
+
 # cargo build --release --features telemetry_history,telemetry_server
 [profile.release]
 opt-level = 'z' # optimize for size
@@ -95,8 +101,9 @@ rand             = "0.8.4" # for random number generation
 regex            = "1.5.4" # for regex
 dashmap          = "5.5.3"
 bytes = { version = "1.5.0", features = [] }
-signal-hook = "0.3.17"
-itoa = "1.0.9"
+signal-hook      = "0.3.17"
+itoa             = "1.0.9"
+lazy_static      = "1.4" # for lazy statics in unit tests
 # for concurrent hashmap
 #serde ="0.3.0" # for serialization and deserialization
 #serde_derive = "1.0.64" # for serialization and deserialization
@@ -108,7 +115,6 @@ itoa = "1.0.9"
 
 [dev-dependencies]
 async-std       = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
-lazy_static     = "1.4" # for lazy statics in unit tests
 rand = "0.8.4" # for random number generation
 rand_distr = "0.4.2" # for random number generation
 

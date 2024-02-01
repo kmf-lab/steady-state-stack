@@ -38,8 +38,8 @@ fn validate_logging_level(level: String) -> Result<(), String> {
 }
 
 impl Args {
-    //TODO: used for the installer code, it would be cool if this could be generated
-    pub fn to_cli_string(&self, app: &str) -> String {
+    //TODO: will be used for the systemd installer code, it would be cool if this could be generated
+    pub fn _to_cli_string(&self, app: &str) -> String {
         format!("{} --duration={} --loglevel={} --gen-rate={}"
                 , app
                 , self.duration
@@ -56,11 +56,10 @@ mod tests {
     use structopt::StructOpt;
     use crate::args::Args;
 
-
     #[test]
     fn test_args_round_trip() {
 
-        crate::steady_state::util::util_tests::initialize_logger();
+        steady_state::util::logger::initialize();
 
         let orig_args = &Args {
             loglevel: "debug".to_string(),

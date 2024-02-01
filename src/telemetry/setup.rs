@@ -4,12 +4,11 @@ use bastion::{Bastion, run};
 use bastion::prelude::SupervisionStrategy;
 use log::*;
 use num_traits::Zero;
-use crate::steady_state::channel::ChannelBuilder;
-use crate::steady_state::{config, graph, LocalMonitor, MONITOR_NOT, MONITOR_UNKNOWN, RxDef, SteadyContext, telemetry, TxDef};
-use crate::steady_state::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
-use crate::steady_state::Graph;
-use crate::steady_state::monitor::*;
-use crate::steady_state::telemetry::metrics_collector::CollectorDetail;
+use crate::{config, Graph, graph, LocalMonitor, MONITOR_NOT, MONITOR_UNKNOWN, RxDef, SteadyContext, telemetry, TxDef};
+use crate::channel::ChannelBuilder;
+use crate::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
+use crate::monitor::{find_my_index, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
+use crate::telemetry::metrics_collector::CollectorDetail;
 
 pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(that: &SteadyContext
                                                                       , rx_defs: &[&mut dyn RxDef; RX_LEN]
@@ -48,7 +47,7 @@ pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>
         = if 0usize == RX_LEN {
         (None, None)
     } else {
-        let (telemetry_send_rx, mut telemetry_take_rx) = channel_builder.build();
+        let (telemetry_send_rx, telemetry_take_rx) = channel_builder.build();
         (Some(SteadyTelemetrySend::new(telemetry_send_rx, [0; RX_LEN], that.name,rx_inverse_local_idx), )
          , Some(SteadyTelemetryTake { rx: telemetry_take_rx, details: rx_meta_data }))
     };

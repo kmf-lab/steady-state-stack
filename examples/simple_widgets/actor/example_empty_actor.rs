@@ -2,11 +2,8 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
 use futures::lock::Mutex;
-use crate::steady_state::LocalMonitor;
+use steady_state::*;
 use log::*;
-use crate::steady_state::Rx;
-use crate::steady_state::Tx;
-use crate::steady_state::SteadyContext;
 
 
 #[derive(Clone, Debug, PartialEq)]
@@ -103,13 +100,14 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
 #[cfg(test)]
 mod tests {
     use std::ops::DerefMut;
+    use steady_state::*;
     use crate::actor::example_empty_actor::{iterate_once, SomeExampleRecord, SomeLocalState};
-    use crate::steady_state::Graph;
+
 
     #[async_std::test]
     async fn test_process_function() {
 
-        crate::steady_state::util::util_tests::initialize_logger();
+        util::logger::initialize();
 
         let mut graph = Graph::new();
         let (tx_in, rx_in) = graph.channel_builder().with_capacity(8).build();
@@ -124,7 +122,6 @@ mod tests {
         let rx_in = rx_in_guard.deref_mut();
         let tx_out = tx_out_guard.deref_mut();
         let rx_out = rx_out_guard.deref_mut();
-
 
         let mock_monitor = graph.new_test_monitor("example_test");
 

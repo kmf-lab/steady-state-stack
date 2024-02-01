@@ -15,13 +15,12 @@ use bastion::run;
 use std::fmt::Write;
 use bytes::{BufMut, BytesMut};
 use log::*;
-use num_traits::real::Real;
 use time::{format_description, OffsetDateTime};
 use uuid::Uuid;
-use crate::steady_state::monitor::ChannelMetaData;
-use crate::steady_state::serialize::byte_buffer_packer::PackedVecWriter;
-use crate::steady_state::serialize::fast_protocol_packed::write_long_unsigned;
-use crate::steady_state::stats::ChannelStatsComputer;
+use crate::monitor::ChannelMetaData;
+use crate::serialize::byte_buffer_packer::PackedVecWriter;
+use crate::serialize::fast_protocol_packed::write_long_unsigned;
+use crate::stats::ChannelStatsComputer;
 
 pub struct DotState {
     pub(crate) nodes: Vec<Node<>>, //position matches the node id
@@ -153,7 +152,7 @@ pub fn refresh_structure(mut local_state: &mut DotState
 
 }
 
-fn define_unified_edges(mut local_state: &mut &mut DotState, node_id: usize, mdvec: Arc<Vec<Arc<ChannelMetaData>>>, set_to: bool) {
+fn define_unified_edges(local_state: &mut &mut DotState, node_id: usize, mdvec: Arc<Vec<Arc<ChannelMetaData>>>, set_to: bool) {
     mdvec.iter()
         .for_each(|meta| {
             if meta.id.ge(&local_state.edges.len()) {
@@ -219,12 +218,12 @@ impl FrameHistory {
             packed_sent_writer: PackedVecWriter { //TODO: use a constructor
                 previous: Vec::new(),
                 sync_required: true, //first must be full
-                write_count: 0
+                delta_write_count: 0
             },
             packed_take_writer: PackedVecWriter {//TODO: use a constructor
                 previous: Vec::new(),
                 sync_required: true, //first must be full
-                write_count: 0
+                delta_write_count: 0
             },
             history_buffer: BytesMut::new(),
             //immutable details
@@ -289,7 +288,7 @@ impl FrameHistory {
         //we write to disk in blocks just under a fixed power of two size
         //if we are about to enter a new block ensure we write the old one
         if flush_all || self.will_span_into_next_block()  {
-            let mut continued_buffer:BytesMut = self.history_buffer.split_off(self.buffer_bytes_count);
+            let continued_buffer:BytesMut = self.history_buffer.split_off(self.buffer_bytes_count);
             let log_time = OffsetDateTime::now_utc();
             let file_to_append_onto = format!("{}_{}_log.dat"
                                               , log_time
