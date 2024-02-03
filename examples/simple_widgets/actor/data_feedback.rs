@@ -81,7 +81,11 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
                                                       , tx: & mut Tx<ChangeRequest>
                                                       , buf: &mut [WidgetInventory; BATCH_SIZE]) -> bool {
 
-
+    if let Ok(msg) = monitor.take_async(rx).await {
+        //we have a message to process
+        //we do not care about the message we just need to send a change request
+        let _ = tx.send_async(ChangeRequest {}).await;
+    }
 
     false
 }

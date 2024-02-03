@@ -470,6 +470,17 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         this.avail_units()
     }
 
+    pub async fn wait(& mut self, duration: Duration) {
+        Delay::new(duration).await;
+    }
+
+    //here we just take an async fn and call it async just to wrap it
+    pub async fn call_async<F>(& mut self, f: F) -> F::Output
+        where F: Future {
+        f.await
+    }
+
+
     pub async fn wait_avail_units<T>(& mut self, this: & mut Rx<T>, count:usize) {
         this.wait_avail_units(count).await
     }

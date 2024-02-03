@@ -699,6 +699,8 @@ mod stats_tests {
         for _ in 0..c {
             computer.accumulate_data_frame(0,(5.0 * 1.2) as u64); // Simulating rate being consistently above a certain value
         }
+
+
         // Define a trigger for average rate above a threshold
         assert!(computer.triggered(&Trigger::AvgRateAbove(Rate::per_millis(5))), "Trigger should fire when the average rate is above 5");
      //   assert!(!computer.triggered(&Trigger::AvgRateAbove(Rate::per_millis(197))), "Trigger should NOT fire when the average rate is above 20");

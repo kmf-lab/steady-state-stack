@@ -67,7 +67,10 @@ pub(crate) fn configure_for_graph<F,I>(graph: & mut Graph, name: & 'static str, 
     }
 }
 
-/*   //TODO: future feature.
+/*   //TODO: future feature, on the nodes we will show the count and rate of restarts.
+     //TODO: we also want to see the supervisor group and strategy
+     //TODO: with monitor we can also rank actors by lest time spent in await
+     //      this uses Instant::now() but backs off with time/load to become a sampling solution.
 
 pub(crate) fn callbacks() -> Callbacks {
 

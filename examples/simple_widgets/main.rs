@@ -67,7 +67,7 @@ fn main() {
     //run! is a macro provided by bastion that will block until the future is resolved.
     run!(async {
 
-        /*
+        /*  TODO: we should watch for break
         use futures::prelude::*;
         use nuclei::*;
         use std::os::unix::net::UnixStream;
@@ -113,12 +113,9 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     }));
 
     //create the mutable graph object
-    let mut graph = steady_state::Graph::new();
+    let mut graph = steady_state::Graph::new();//TODO: pass A Args to the graph
 
     Bastion::init(); //init bastion runtime
-
-    //create all the needed channels between actors
-    let example_capacity = 4000;
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
@@ -133,12 +130,12 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                          .with_rate_percentile(Percentile::p80())
                          .with_red(Trigger::AvgFilledAbove(Filled::p70()))
                          .with_yellow(Trigger::StdDevsFilledAbove(StdDev::one(),Filled::p70()))
-                         .with_capacity(example_capacity)
+                         .with_capacity(4000)
                          .build();
 
     let (consumer_tx, consumer_rx) = base_builder
-                         .with_avg_inflight()
-                         .with_capacity(example_capacity)
+                         .with_avg_consumed()
+                         .with_capacity(4000)
                          .build();
 
     let (failure_tx, failure_rx) = base_builder
@@ -159,23 +156,24 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let _ = Bastion::supervisor(|supervisor|
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
+                //TODO: this wll be moved into the context for the actor
                 let cli_arg = cli_arg.clone(); //example passing args to child telemetry
                 graph.add_to_graph("generator"
                                    , children.with_redundancy(0)
-                                   , move |monitor| actor::data_generator::run(monitor
-                                                                      , cli_arg.clone()
-                                                                      , change_rx.clone()
-                                                                      , generator_tx.clone()
+                                   , move |context| actor::data_generator::run(context
+                                                                               , cli_arg.clone()
+                                                                               , change_rx.clone()
+                                                                               , generator_tx.clone()
                                                                      )
                 )
             })
             .children(|children| {
                     graph.add_to_graph("approval"
                                       , children.with_redundancy(0)
-                                   , move |monitor| actor::data_approval::run(monitor
-                                                   , generator_rx.clone()
-                                                   , consumer_tx.clone()
-                                                   , failure_tx.clone()
+                                   , move |context| actor::data_approval::run(context
+                                                                              , generator_rx.clone()
+                                                                              , consumer_tx.clone()
+                                                                              , failure_tx.clone()
                                                                      )
 
                     )
@@ -184,7 +182,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
             .children(|children| {
                 graph.add_to_graph("feedback"
                                    , children.with_redundancy(0)
-                                   , move |monitor| actor::data_feedback::run(monitor
+                                   , move |context| actor::data_feedback::run(context
                                                                               , failure_rx.clone()
                                                                               , change_tx.clone()
                     )
@@ -195,8 +193,8 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
             .children(|children| {
                     graph.add_to_graph("consumer"
                                       , children.with_redundancy(0)
-                                     ,move |monitor| actor::data_consumer::run(monitor
-                                                           , consumer_rx.clone()
+                                     ,move |context| actor::data_consumer::run(context
+                                                                               , consumer_rx.clone()
                                                                         )
 
 

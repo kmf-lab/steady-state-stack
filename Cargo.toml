@@ -8,6 +8,9 @@ build = "build.rs" # assumes we have gzip and base64 installed, the base64 crate
 
 repository = "https://github.com/kmf-lab/steady-state-stack"
 
+# Exclude specific files and directories
+exclude = ["**/*.txt", "**/*.sh", "notes/", "temp/"]
+
 [lib]
 name = "steady_state"
 path = "src/lib.rs"
@@ -62,8 +65,8 @@ time             = { version = "0.3.31", features = ["formatting"] }# for time::
 uuid             = { version = "0.8.2", features = ["v4"] }
 num-traits       = "0.2.17" # for num::Zero and other generic math traits
 #
-# we will stay with tide since new async logic will be built soon from rust
-# long term stratigy to remain async agnostic and not write http myself.
+# we will stay with tide since new async logic will be built in soon
+# long term stratigy to remain async agnostic.
 tide             = "0.17.0-beta.1"
 tide-websockets  = "0.4.0"
 
@@ -72,12 +75,11 @@ const_panic = "0.2.8" # for const panic!()
 #color-eyre = "0.5.5"   # for better error messages
 #rstest = "0.5.2"       # for unit testing
 
-# TODO: SSS supports systemd and SQRL but not yet implmented
-#       rapid prototyping is a primary feature of sss
-
 #not in use yet... but this is where I am planning to go for web services
 #askama           = "0.12.1" # for compile time templating
 
+
+# TODO: will support systemd, SQRL and rapid prootyping
 
 ## for SQRL will integrate later and use tide
 #ring   = "0.16.20" # for sha
@@ -104,7 +106,7 @@ bytes = { version = "1.5.0", features = [] }
 signal-hook      = "0.3.17"
 itoa             = "1.0.9"
 lazy_static      = "1.4" # for lazy statics in unit tests
-# for concurrent hashmap
+
 #serde ="0.3.0" # for serialization and deserialization
 #serde_derive = "1.0.64" # for serialization and deserialization
 #serde_json = "1.0.64" # for serialization and deserialization
@@ -117,4 +119,5 @@ lazy_static      = "1.4" # for lazy statics in unit tests
 async-std       = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
 rand = "0.8.4" # for random number generation
 rand_distr = "0.4.2" # for random number generation
+
 

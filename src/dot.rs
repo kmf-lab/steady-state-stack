@@ -181,12 +181,13 @@ fn define_unified_edges(local_state: &mut &mut DotState, node_id: usize, mdvec: 
                         id: usize::MAX,
                         from: usize::MAX,
                         to: usize::MAX,
-                        color: "white",
-                        pen_width: "3",
                         sidecar: false,
-                        display_label: "".to_string(),//defined when the content arrives
                         stats_computer: ChannelStatsComputer::empty(),
                         ctl_labels: Vec::new(), //for visibility control
+
+                        color: "white",
+                        pen_width: "3",
+                        display_label: "".to_string(),//defined when the content arrives
                     }
                 });
             }

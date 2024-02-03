@@ -1,74 +1,47 @@
-# steady-state-stack
-Stack of Rust crates for steady state projects
+## steady_state: The Next Frontier in Rust Frameworks for Resilient Services
+'steady_state' embarks on an ambitious journey to revolutionize the development of resilient, high-performance services in Rust. With a clear vision of integrating advanced latency management, system observability, and unparalleled fault tolerance, steady_state is designed to set new standards in software reliability and efficiency.
 
+*Please note: steady_state is in the early stages of development. This initial release is intended to showcase our vision and the framework's potential direction.
+![Telemetry Visualization Example](simple-example.gif)
+*An animated GIF demonstrating real-time telemetry visualization in action.*
 
-# new projects can use SSS as a starting point with this.
-cargo new --name my_new_project --template https://github.com/kmf-lab/steady-state-stack.git
+## Why `steady_state`?
 
-This will be a crate once all the key features are in place.
+Named for its commitment to maintaining a consistent, optimal operational state, `steady_state` offers:
 
-Design Features:
+- **Fine-Grained Latency Control**: Through customizable batch processing and adjustable channel lengths, empowering developers to meet rigorous SLA requirements.
+- **Embedded Observability**: Built-in telemetry features for real-time performance insights, facilitating targeted optimizations.
+- **Erlang-Inspired Fault Tolerance**: Leveraging an advanced supervision system to ensure service continuity, even in the face of unexpected failures.
 
-Safety
-Borrow Checker: Ensures memory safety without garbage collection, preventing common errors like null pointer dereferences and buffer overruns.
-Actor-Based Threading: Reduces complexity and potential for race conditions by encapsulating state within actors, leading to safer concurrency management.
+## Getting Started
+Dive into steady_state and explore its capabilities through examples:
 
-Reliability
-Erlang Style Supervisors: Implements a supervision strategy for fault tolerance, ensuring system resilience and continuous operation.
-Dynamic Thread Scaling: Automatically scales thread usage based on workload, ensuring efficient resource utilization without overloading.
+'''
+git clone https://github.com/steady-state/steady-state.git
+cd steady-state/examples
+'''
 
-Latency
-Bounded Monitored Channels: Enables precise control over system latency, ensuring timely data processing and transfer.
-Lock-Free Asynchronous Message Passing: Improves system responsiveness by reducing blocking and waiting times during communication.
+## Core Features
 
-Performance
-Efficient Async Operations: Maximizes CPU usage with non-blocking code, leading to faster execution and better resource management.
-Optimized Thread Management: Balances workload across threads for optimal performance, avoiding both underutilization and bottlenecks.
+`steady_state` is crafted to ensure safety, reliability, and performance, focusing on:
 
-Maintenance
-Comprehensive Testing Strategy: Includes both unit and application-level testing to ensure robustness and minimize bugs.
-Actor Isolation for Debugging: Facilitates easier troubleshooting and maintenance by isolating functionality within individual actors.
+- **Safety and Concurrency**: Harnessing Rust's memory safety features and actor-based supervised threading for secure, durable, manageable concurrency.
+- **High Throughput**: Engineered for handling high message volumes with consistent processing capacity, crucial for demanding systems. Actors can consume and produce messages in batches for greater efficiency.
+- **Visibility**: Find and fix performance bottlenecks quickly with built-in telemetry, enabling real-time monitoring and analysis of your service's operational state.
+- **Rapid Prototyping**: Mock up your ideas in graphiz DOT files, then generate your Rust service project to get started.
 
-Throughput
-High Message Throughput: Efficiently handles a large number of messages per second, crucial for high-load systems.
-Steady State Processing: Maintains consistent processing capacity, ensuring reliable throughput even under varying loads.
+## Vision and Roadmap
 
-Scalability
-Horizontal and Vertical Scaling: Adapts to increased demands by scaling out (adding more nodes) or up (adding resources to existing nodes).
-Load Balancing: Distributes workload evenly across available resources, preventing any single point of overutilization.
+`steady_state` is more than just a framework; it's a vision for building the future of service development in Rust. Our roadmap includes:
 
-Flexibility
-Modular Design: Allows for easy swapping and updating of components, supporting a wide range of use cases and evolving requirements.
-Cross-Platform Compatibility: Functions seamlessly across different operating systems and hardware, enhancing its applicability.
+- **Prebuilt Actors for Cloud Services**: Simplifying the integration with popular cloud platforms and services.
+- **Automatic Code Generation**: Accelerating development with tools that generate actor and channel scaffolds from DOT file descriptions.
+- **Cross-Machine Telemetry**: Extending observability across distributed system deployments, essential for comprehensive performance management.
 
-Security
-Rigorous Error Handling: Prevents cascading failures and vulnerabilities by handling errors gracefully.
-Secure Communication Channels: Ensures data integrity and confidentiality during actor communications.
-Strong type constraints on command line args.
+### Commitment to Testing
 
+In `steady_state`, we prioritize rigorous testing to ensure service stability:
+- **Individual Actor Tests**: Roughing in tests for each actor to maintain clarity and ease of maintenance.
+- **Comprehensive Mock Actors**: Enabling full end-to-end and load testing capabilities for thorough validation of your service architecture without requiring external services.
 
-
-The Steady State Stack (3S framework) for Rust is a focused collection of crates
-designed to enhance general service development, concurrent processing, 
-asynchronous programming, and logging. Here's a brief overview of its core components:
-
-StructOpt (0.3.26): Facilitates the creation of command-line interfaces by parsing command-line arguments directly into Rust structs, ensuring type safety and ease of use.
-
-Bastion (0.4.5): An actor framework providing a resilient, fault-tolerant environment with supervisors to recover from panics, ideal for building scalable and reliable applications.
-
-async-ringbuf (0.2.0-rc.4): Offers lock-free bounded channels for efficient and reliable communication between actors, enhancing concurrent processing without the overhead of locking mechanisms.
-
-Log (0.4.20): Provides common logging traits, enabling consistent logging across applications and libraries.
-
-FlexiLogger (0.27.3): A flexible logging implementation that can be tailored to various output formats and destinations, enhancing the application's logging capabilities.
-
-Futures-Timer (3.0.2): Supports asynchronous operations like delays (using Delay::new(check_rate).await), useful in scenarios where polling is necessary.
-
-Futures (0.3.29): A comprehensive library for asynchronous programming, offering utilities like select!, barriers, and mutexes for advanced control over asynchronous tasks.
-
-Itertools (0.12.0): Provides additional iterator methods, enriching Rust's already powerful iteration capabilities with more sophisticated and convenient functions.
-
-Async-Recursion (1.0.5): Simplifies the writing of asynchronous recursive functions, enabling more straightforward and readable async code.
-
-This collection is particularly suitable for developing high-performance, concurrent, and asynchronous Rust applications, with a strong emphasis on reliability, efficient data handling, and enhanced logging capabilities.
-
+`steady_state` combines Rust's safety guarantees with extensive code coverage and a supervisor system to offer unmatched stability in service delivery.
