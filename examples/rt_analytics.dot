@@ -1,0 +1,28 @@
+digraph RealTimeDataAnalytics {
+
+    DataIngestionService [label="Data Ingestion Service\nCaptures data from various sources\nin real-time"];
+    StreamProcessingEngine [label="Stream Processing Engine\nProcesses data streams on-the-fly\nfor immediate insights"];
+    AnalyticsEngine [label="Analytics Engine\nPerforms complex analyses\non processed data"];
+    VisualizationService [label="Visualization Service\nGenerates dynamic visualizations\nof data insights"];
+    UserDashboard [label="User Dashboard\nInteractive interface for data exploration\nand visualization"];
+    AlertingMechanism [label="Alerting Mechanism\nDetects and notifies anomalies\nand significant events"];
+    MachineLearningModels [label="Machine Learning Models\nProvides predictive analytics\nand trend analysis"];
+    ExternalAPI [label="External API\nEnables integration with external systems\nand data exports"];
+    Logger [label="Logger\nLogs system activities for monitoring\nand troubleshooting"];
+
+    DataIngestionService -> StreamProcessingEngine [label="Raw data streams"];
+    StreamProcessingEngine -> AnalyticsEngine [label="Processed data"];
+    AnalyticsEngine -> VisualizationService [label="Analytical results"];
+    VisualizationService -> UserDashboard [label="Data visualizations"];
+    StreamProcessingEngine -> AlertingMechanism [label="Real-time data feed"];
+    AnalyticsEngine -> MachineLearningModels [label="Data for model training\nand predictions"];
+    UserDashboard -> ExternalAPI [label="Data requests\nand integration actions"];
+    DataIngestionService -> Logger [label="Ingestion logs"];
+    StreamProcessingEngine -> Logger [label="Processing logs"];
+    AnalyticsEngine -> Logger [label="Analytics logs"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

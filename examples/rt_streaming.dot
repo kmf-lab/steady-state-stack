@@ -1,0 +1,24 @@
+digraph RealTimeStreamingDataAnalytics {
+
+    DataIngestionPipeline [label="Data Ingestion Pipeline\nHandles high-velocity data streams\nfrom diverse sources"];
+    StreamProcessingEngine [label="Stream Processing Engine\nProcesses and analyzes streaming data\nin real-time"];
+    DynamicThresholdCalculation [label="Dynamic Threshold Calculation Module\nCalculates percentile-based thresholds\nto detect significant data deviations"];
+    AlertGenerationSystem [label="Alert Generation System\nTriggers alerts when data exceeds\nor falls below calculated thresholds"];
+    DataVisualizationDashboard [label="Data Visualization Dashboard\nDisplays real-time analytics and\nthreshold-triggered alerts"];
+    HistoricalDataStorage [label="Historical Data Storage\nArchives data for trend analysis\nand machine learning training"];
+    MachineLearningModel [label="Machine Learning Model\nImproves threshold calculations and\nanomaly detection over time"];
+
+
+    DataIngestionPipeline -> StreamProcessingEngine [label="Streaming data"];
+    StreamProcessingEngine -> DynamicThresholdCalculation [label="Real-time data analysis"];
+    DynamicThresholdCalculation -> AlertGenerationSystem [label="Threshold breaches"];
+    StreamProcessingEngine -> DataVisualizationDashboard [label="Processed data for visualization"];
+    StreamProcessingEngine -> HistoricalDataStorage [label="Data for archival"];
+    HistoricalDataStorage -> MachineLearningModel [label="Historical data for training"];
+    MachineLearningModel -> DynamicThresholdCalculation [label="Improved threshold logic"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

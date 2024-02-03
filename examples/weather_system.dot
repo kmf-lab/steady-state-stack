@@ -1,0 +1,16 @@
+digraph WeatherMonitoringSystem {
+
+    WeatherDataCollection [label="Weather Data Collection\nCollects data from sensors"];
+    DataProcessingEngine [label="Data Processing Engine\nProcesses and analyzes sensor data"];
+    WeatherDataStorage [label="Weather Data Storage\nStores historical weather data"];
+    UserInterface [label="User Interface\nDisplays real-time weather conditions"];
+
+    WeatherDataCollection -> DataProcessingEngine [label="Sensor data"];
+    DataProcessingEngine -> WeatherDataStorage [label="Processed data"];
+    DataProcessingEngine -> UserInterface [label="Current weather data"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

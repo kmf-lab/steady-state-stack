@@ -1,0 +1,26 @@
+digraph SmartGridEnergyManagement {
+
+    EnergyConsumptionAnalysis [label="Energy Consumption Analysis Module\nAnalyzes consumption patterns\nto optimize energy distribution"];
+    RenewableEnergyIntegration [label="Renewable Energy Integration System\nManages integration of solar, wind,\nand other renewable sources"];
+    DemandResponseManagement [label="Demand Response Management\nBalances supply and demand\nduring peak times"];
+    GridStabilityReliability [label="Grid Stability and Reliability Module\nEnsures consistent energy supply\nand grid stability"];
+    EnergyStorageIntegration [label="Energy Storage System Integration\nLeverages batteries and other storage\nsolutions to manage load"];
+    ConsumerEnergyManagement [label="Consumer Energy Management Portal\nAllows consumers to monitor\nand manage their energy usage"];
+    PredictiveAnalytics [label="Advanced Predictive Analytics Engine\nForecasts demand and optimizes\nenergy production and distribution"];
+
+
+    EnergyConsumptionAnalysis -> RenewableEnergyIntegration [label="Consumption data"];
+    EnergyConsumptionAnalysis -> DemandResponseManagement [label="Demand insights"];
+    RenewableEnergyIntegration -> GridStabilityReliability [label="Renewable sources"];
+    DemandResponseManagement -> GridStabilityReliability [label="Load balancing actions"];
+    EnergyStorageIntegration -> GridStabilityReliability [label="Storage capabilities"];
+    GridStabilityReliability -> ConsumerEnergyManagement [label="Grid status updates"];
+    PredictiveAnalytics -> EnergyConsumptionAnalysis [label="Predictive insights"];
+    PredictiveAnalytics -> RenewableEnergyIntegration [label="Production forecasts"];
+
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

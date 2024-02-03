@@ -1,0 +1,24 @@
+digraph GameServer {
+
+
+    ConnectionHandler [label="Connection Handler\nHandles player connections\ndisconnections"];
+    MatchmakingService [label="Matchmaking Service\nPairs players for games"];
+    GameLogicProcessor [label="Game Logic Processor\nProcesses game rules\nand player actions"];
+    PlayerStateManager [label="Player State Manager\nTracks current state\nof players in the game"];
+    Database [label="Database\nStores player data, scores,\nand game states"];
+    Logger [label="Logger\nLogs system activities\nfor debugging and monitoring"];
+
+    ConnectionHandler -> PlayerStateManager [label="Player sessions\nLogin/logout events"];
+    ConnectionHandler -> Logger [label="Connection logs\nSuccess, failure, disconnects"];
+    PlayerStateManager -> MatchmakingService [label="Available players\nLooking for a game"];
+    MatchmakingService -> GameLogicProcessor [label="Matched players\nStarts new game session"];
+    GameLogicProcessor -> PlayerStateManager [label="Game state updates\nPlayer positions, scores"];
+    PlayerStateManager -> Database [label="Persist state\nSave game progress"];
+    GameLogicProcessor -> Logger [label="Game events\nPlayer actions, rule triggers"];
+    Database -> Logger [label="Database operations\nQueries, updates, errors"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

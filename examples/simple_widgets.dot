@@ -1,0 +1,32 @@
+digraph G {
+rankdir=LR;
+node [style=filled, fillcolor=white, fontcolor=black];
+edge [color=white, fontcolor=white];
+graph [bgcolor=black];
+
+//TODO: we need to with caution add a way to set these in rare cases
+//      perhaps we should look for "sidecars" as a control label or boolean?
+
+
+"0" [label="generator", color=grey, penwidth=2];
+"1" [label="approval", color=grey, penwidth=2];
+"2" [label="feedback", color=grey, penwidth=2];
+"3" [label="consumer", color=grey, penwidth=2];
+"0" -> "1" [label="ChangeRequest
+per 16.4 secs
+Capacity: 4000 Total: 214853
+", color=white, penwidth=1];
+"1" -> "3" [label="ChangeRequest
+per 16.4 secs
+Capacity: 4000 Total: 215109
+", color=white, penwidth=1];
+"1" -> "2" [label="ChangeRequest
+per 16.4 secs
+Capacity: 4000
+", color=white, penwidth=1];
+{rank=same; "1" "2"};
+"2" -> "0" [label="ChangeRequest
+per 16.4 secs
+Capacity: 4000
+", color=white, penwidth=1];
+}

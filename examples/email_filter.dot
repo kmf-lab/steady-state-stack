@@ -1,0 +1,24 @@
+digraph G {
+
+
+    IMAPClient [label="IMAP Client\nConnects to IMAP server\nto fetch emails"];
+    EmailFilter [label="Email Filter\nAnalyzes emails to determine spam"];
+    SpamAssassin [label="SpamAssassin Integration\nOptionally uses SpamAssassin for detection"];
+    EmailMover [label="Email Mover\nMoves spam emails to a designated folder"];
+    ConfigLoader [label="Config Loader\nLoads configuration for IMAP and settings"];
+    Logger [label="Logger\nLogs system activities for monitoring"];
+
+    ConfigLoader -> IMAPClient [label="IMAP server details\nemail, password"];
+    IMAPClient -> EmailFilter [label="Emails\nRaw email data"];
+    EmailFilter -> SpamAssassin [label="Email content\nFor SpamAssassin analysis"];
+    SpamAssassin -> EmailFilter [label="Spam verdict\nSpam or Ham"];
+    EmailFilter -> EmailMover [label="Spam emails\nIdentified spam messages"];
+    EmailMover -> Logger [label="Move operations\nSuccess or failure logs"];
+    IMAPClient -> Logger [label="Connection logs\nSuccess or failure"];
+    EmailFilter -> Logger [label="Filtering logs\nProcessed emails and results"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

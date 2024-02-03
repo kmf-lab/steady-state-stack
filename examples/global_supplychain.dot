@@ -1,0 +1,30 @@
+digraph GlobalSupplyChainManagement {
+
+    SupplierManagement [label="Supplier Relationship Management\nManages supplier partnerships\nand procurement"];
+    InventoryManagement [label="Inventory Management System\nControls stock levels\nand warehouse operations"];
+    LogisticsCoordination [label="Logistics Coordination Platform\nCoordinates shipping, tracking,\nand delivery operations"];
+    CustomsCompliance [label="Customs and Compliance Module\nEnsures adherence to international\ntrade regulations and customs"];
+    DemandForecasting [label="Demand Forecasting Engine\nPredicts product demand using\nAI and market analysis"];
+    ConsumerFeedback [label="Consumer Feedback Analyzer\nGathers and analyzes customer\nfeedback for quality improvement"];
+    BlockchainNetwork [label="Blockchain Network\nSecures transactions and\nenhances supply chain transparency"];
+    IoTTracking [label="IoT Tracking System\nProvides real-time tracking of goods\nthroughout the supply chain"];
+    EnvironmentalImpact [label="Environmental Impact Assessment\nEvaluates and minimizes the ecological\nfootprint of supply chain activities"];
+    LastMileIntegration [label="Last-Mile Integration\nOptimizes local delivery networks\nand last-mile delivery"];
+
+
+    SupplierManagement -> InventoryManagement [label="Supply orders"];
+    InventoryManagement -> LogisticsCoordination [label="Goods to be shipped"];
+    LogisticsCoordination -> CustomsCompliance [label="Shipping documents"];
+    CustomsCompliance -> BlockchainNetwork [label="Compliance records"];
+    DemandForecasting -> InventoryManagement [label="Demand predictions"];
+    ConsumerFeedback -> DemandForecasting [label="Market feedback"];
+    IoTTracking -> LogisticsCoordination [label="Real-time location data"];
+    EnvironmentalImpact -> SupplierManagement [label="Supplier sustainability ratings"];
+    LastMileIntegration -> LogisticsCoordination [label="Delivery optimization data"];
+
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

@@ -1,0 +1,27 @@
+digraph DecentralizedRenewableEnergyTrading {
+
+
+    EnergyProductionMonitoring [label="Energy Production Monitoring\nMonitors renewable energy production\nat participating sites"];
+    BlockchainNetwork [label="Blockchain Network\nSecures transactions and\nmanages energy trade records"];
+    SmartContracts [label="Smart Contracts\nAutomates execution of trades\nbased on predefined rules"];
+    EnergyPricingEngine [label="Energy Pricing Engine\nDetermines dynamic pricing\nbased on supply and demand"];
+    P2PEnergyTradingPlatform [label="P2P Energy Trading Platform\nFacilitates direct energy trades\nbetween producers and consumers"];
+    UserDashboard [label="User Dashboard\nProvides insights into energy production,\nconsumption, and trade activities"];
+    AnalyticsReporting [label="Analytics and Reporting System\nGenerates market insights and\nperformance reports"];
+    GridIntegration [label="Grid Integration\nAllows surplus energy to be sold\nback to the local grid"];
+    CommunityProjects [label="Community Energy Projects\nSupports joint ventures for\nlocal energy initiatives"];
+
+    EnergyProductionMonitoring -> BlockchainNetwork [label="Production data"];
+    BlockchainNetwork -> SmartContracts [label="Transaction records"];
+    SmartContracts -> P2PEnergyTradingPlatform [label="Trade execution"];
+    EnergyPricingEngine -> P2PEnergyTradingPlatform [label="Pricing data"];
+    P2PEnergyTradingPlatform -> UserDashboard [label="Trade and energy data"];
+    UserDashboard -> AnalyticsReporting [label="User data and preferences"];
+    GridIntegration -> BlockchainNetwork [label="Grid transactions"];
+    CommunityProjects -> P2PEnergyTradingPlatform [label="Project collaborations"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

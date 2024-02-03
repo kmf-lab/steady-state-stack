@@ -1,0 +1,23 @@
+digraph SmartHealthMonitoring {
+
+
+    PatientDataCollection [label="Patient Data Collection Module\nCollects health data from wearables\nand IoT sensors"];
+    RealTimeHealthDataAnalysis [label="Real-time Health Data Analysis Engine\nAnalyzes health metrics for abnormalities\nand trends"];
+    PredictiveHealthModeling [label="Predictive Health Modeling System\nUses machine learning to predict\nhealth issues and outcomes"];
+    AlertNotificationSystem [label="Alert and Notification System\nGenerates alerts for patients,\ncaregivers, and healthcare providers"];
+    HealthcareProviderInterface [label="Caregiver and Healthcare Provider Interface\nFacilitates access to patient data\nand alerts"];
+    PatientEngagementPortal [label="Patient Engagement Portal\nProvides patients with access to their data,\nhealth insights, and recommendations"];
+
+
+    PatientDataCollection -> RealTimeHealthDataAnalysis [label="Health data"];
+    RealTimeHealthDataAnalysis -> PredictiveHealthModeling [label="Data for analysis"];
+    PredictiveHealthModeling -> AlertNotificationSystem [label="Predictive alerts"];
+    AlertNotificationSystem -> HealthcareProviderInterface [label="Alerts and notifications"];
+    AlertNotificationSystem -> PatientEngagementPortal [label="Alerts and recommendations"];
+
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

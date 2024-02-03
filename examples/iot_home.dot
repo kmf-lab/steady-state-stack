@@ -1,0 +1,31 @@
+digraph HomeControlSystem {
+
+    TimeScheduler [label="Time Scheduler\nAutomates lights and temperature\nbased on time of day"];
+    LightController [label="Light Controller\nManages home lighting systems"];
+    TempController [label="Temperature Controller\nRegulates home temperature"];
+    DoorLockController [label="Door Lock Controller\nControls locks on all doors"];
+    GarageController [label="Garage Controller\nManages garage door operations"];
+    WindowSensor [label="Window Sensor\nDetects open/closed state of windows"];
+    NotificationSystem [label="Notification System\nSends alerts for emergencies"];
+    UserInterface [label="User Interface\nFor manual control and configuration"];
+    Database [label="Database\nLogs events and stores preferences"];
+    ExternalComm [label="External Communication\nInterface for sending notifications"];
+
+    TimeScheduler -> LightController [label="Control Signals"];
+    TimeScheduler -> TempController [label="Control Signals"];
+    UserInterface -> LightController [label="User Commands"];
+    UserInterface -> TempController [label="User Commands"];
+    UserInterface -> DoorLockController [label="User Commands"];
+    UserInterface -> GarageController [label="User Commands"];
+    WindowSensor -> NotificationSystem [label="Trigger Alerts\n(when windows open unexpectedly)"];
+    GarageController -> NotificationSystem [label="Trigger Alerts\n(for open garage door)"];
+    DoorLockController -> NotificationSystem [label="Trigger Alerts\n(unauthorized access attempts)"];
+    ExternalComm -> NotificationSystem [label="Send Notifications\n(SMS, Email, App)"];
+    UserInterface -> Database [label="Log Events\nUser Preferences"];
+    NotificationSystem -> Database [label="Log Alerts"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

@@ -1,0 +1,28 @@
+digraph CentralInventoryManagement {
+
+
+    InventoryTrackingEngine [label="Inventory Tracking Engine\nMonitors inventory levels across all stores\nand warehouses in real-time"];
+    CentralDatabase [label="Central Database\nStores detailed inventory records,\ntransactions, and analytics"];
+    POSIntegration [label="POS Integration Module\nCaptures sales data in real-time\nfrom all retail locations"];
+    WarehouseIntegration [label="Warehouse Management System Integration\nSynchronizes warehouse stock levels\nwith retail inventories"];
+    StockRebalancingAlgorithm [label="Stock Rebalancing Algorithm\nAnalyzes inventory and determines\noptimal stock distribution"];
+    LogisticsCoordinator [label="Logistics and Distribution Coordinator\nManages the logistics of moving stock\nbetween locations"];
+    ExecutiveDashboard [label="Executive Dashboard\nProvides real-time inventory visibility\nand analytics for decision-making"];
+    IoTDevices [label="IoT Devices\nTracks inventory movement\nand status in stores and warehouses"];
+    MachineLearning [label="Machine Learning for Demand Forecasting\nPredicts future stock needs\nbased on sales trends and seasonality"];
+
+    POSIntegration -> InventoryTrackingEngine [label="Sales data"];
+    InventoryTrackingEngine -> CentralDatabase [label="Inventory updates"];
+    WarehouseIntegration -> InventoryTrackingEngine [label="Warehouse stock levels"];
+    InventoryTrackingEngine -> StockRebalancingAlgorithm [label="Current inventory levels"];
+    StockRebalancingAlgorithm -> LogisticsCoordinator [label="Rebalancing decisions"];
+    LogisticsCoordinator -> WarehouseIntegration [label="Stock movement instructions"];
+    CentralDatabase -> ExecutiveDashboard [label="Inventory data and analytics"];
+    IoTDevices -> InventoryTrackingEngine [label="Real-time tracking data"];
+    MachineLearning -> StockRebalancingAlgorithm [label="Demand forecasts"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

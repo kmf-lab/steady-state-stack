@@ -20,3 +20,5 @@ kmf-lab.pub
 /.idea
 
 /target
+/output_logs/
+/output_logs/

@@ -1,0 +1,32 @@
+digraph DistributedFileStorage {
+
+
+    FileManagementService [label="File Management Service\nHandles file operations\n(upload, download, delete)"];
+    DistributedStorageEngine [label="Distributed Storage Engine\nManages data storage across multiple nodes\nEnsures redundancy and reliability"];
+    AccessControlManager [label="Access Control Manager\nManages user permissions\nand file access rights"];
+    SynchronizationService [label="Synchronization Service\nKeeps files synced across devices"];
+    UserInterface [label="User Interface\nWeb and mobile interfaces for user interaction"];
+    EncryptionService [label="Encryption Service\nSecures files in transit and at rest"];
+    VersionControl [label="Version Control\nTracks file versions and changes"];
+    ExternalIntegration [label="External Integration\nAllows integration with third-party services"];
+    NotificationSystem [label="Notification System\nAlerts users to important file events"];
+    Logger [label="Logger\nLogs system activities for monitoring"];
+
+    UserInterface -> FileManagementService [label="File operations"];
+    FileManagementService -> DistributedStorageEngine [label="Stores and retrieves files"];
+    UserInterface -> AccessControlManager [label="Access requests"];
+    AccessControlManager -> FileManagementService [label="Enforces access controls"];
+    FileManagementService -> EncryptionService [label="Encrypts/Decrypts files"];
+    FileManagementService -> VersionControl [label="Version tracking"];
+    SynchronizationService -> DistributedStorageEngine [label="Syncs files across nodes"];
+    UserInterface -> SynchronizationService [label="Sync initiation"];
+    ExternalIntegration -> FileManagementService [label="Third-party file operations"];
+    FileManagementService -> NotificationSystem [label="File event notifications"];
+    DistributedStorageEngine -> Logger [label="Storage logs"];
+    AccessControlManager -> Logger [label="Access logs"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

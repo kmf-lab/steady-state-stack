@@ -1,0 +1,31 @@
+digraph ChatServer {
+
+
+    ConnectionManager [label="Connection Manager\nManages client connections\ndisconnections"];
+    MessageRouter [label="Message Router\nRoutes messages to correct recipients"];
+    SessionManager [label="Session Manager\nTracks user sessions\nand statuses"];
+    Database [label="Database\nStores messages, user accounts,\nand chat history"];
+    NotificationSystem [label="Notification System\nAlerts users to new messages\nand other notifications"];
+    ChatRoomManager [label="Chat Room Manager\nManages chat rooms and channels"];
+    DirectMessageHandler [label="Direct Message Handler\nManages direct user-to-user messages"];
+    MultimediaHandler [label="Multimedia Handler\nProcesses multimedia messages\n(images, videos)"];
+    Logger [label="Logger\nLogs system activities\nfor debugging and monitoring"];
+
+    ConnectionManager -> SessionManager [label="Session creation/destruction"];
+    SessionManager -> MessageRouter [label="User availability updates"];
+    MessageRouter -> ChatRoomManager [label="Channel-based routing"];
+    MessageRouter -> DirectMessageHandler [label="Direct message routing"];
+    ChatRoomManager -> Database [label="Chat room history storage"];
+    DirectMessageHandler -> Database [label="Direct message storage"];
+    MultimediaHandler -> Database [label="Multimedia message storage"];
+    NotificationSystem -> SessionManager [label="Trigger user notifications"];
+    Database -> Logger [label="Database operations logging"];
+    ConnectionManager -> Logger [label="Connection logs"];
+    SessionManager -> Logger [label="Session logs"];
+    MessageRouter -> Logger [label="Message routing logs"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+

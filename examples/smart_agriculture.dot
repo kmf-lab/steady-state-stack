@@ -1,0 +1,28 @@
+digraph SmartAgricultureManagement {
+   
+    SensorDataCollection [label="Sensor Data Collection\nCollects data from soil, weather,\nand crop sensors"];
+    WeatherForecasting [label="Weather Forecasting Service\nIntegrates external weather data\nfor accurate predictions"];
+    CropHealthMonitoring [label="Crop Health Monitoring\nAnalyzes crop images and data\nto assess health and growth"];
+    AutomatedIrrigation [label="Automated Irrigation Controller\nManages watering schedules\nbased on soil and weather data"];
+    DataAnalyticsEngine [label="Data Analytics Engine\nProcesses and analyzes data for\noptimizing farming practices"];
+    FarmerDashboard [label="Farmer Dashboard\nInteractive interface for monitoring\nand managing farm operations"];
+    MachineLearningModels [label="Machine Learning Models\nPredicts crop yields and detects diseases\nfor preemptive action"];
+    ExternalIntegration [label="External Integration\nConnects with agricultural databases\nand services for enhanced insights"];
+    Logger [label="Logger\nLogs system activities for monitoring"];
+
+    SensorDataCollection -> DataAnalyticsEngine [label="Sensor data"];
+    WeatherForecasting -> DataAnalyticsEngine [label="Weather forecasts"];
+    CropHealthMonitoring -> DataAnalyticsEngine [label="Health and growth data"];
+    DataAnalyticsEngine -> AutomatedIrrigation [label="Irrigation recommendations"];
+    DataAnalyticsEngine -> FarmerDashboard [label="Insights and analytics"];
+    MachineLearningModels -> CropHealthMonitoring [label="Disease detection models"];
+    DataAnalyticsEngine -> MachineLearningModels [label="Data for model training"];
+    ExternalIntegration -> FarmerDashboard [label="External data and services"];
+    SensorDataCollection -> Logger [label="Collection logs"];
+    DataAnalyticsEngine -> Logger [label="Analytics logs"];
+
+    // Styling
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+
