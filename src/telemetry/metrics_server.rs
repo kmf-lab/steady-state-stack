@@ -205,13 +205,12 @@ pub(crate) async fn run(context: SteadyContext
 }
 
 
-const CONTENT_VIZ_LITE_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/viz-lite.js.gz.b64")} else {""};
-const CONTENT_INDEX_HTML_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/index.html.gz.b64")} else {""};
-const CONTENT_DOT_VIEWER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/dot-viewer.js.gz.b64")} else {""};
-const CONTENT_DOT_VIEWER_CSS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/dot-viewer.css.gz.b64")} else {""};
-const CONTENT_WEBWORKER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/webworker.js.gz.b64")} else {""};
-const CONTENT_SPINNER_GIF_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/spinner.gif.b64")} else {""};
-
+const CONTENT_VIZ_LITE_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/viz-lite.js.gz.b64")} else {""};
+const CONTENT_INDEX_HTML_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/index.html.gz.b64")} else {""};
+const CONTENT_DOT_VIEWER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/dot-viewer.js.gz.b64")} else {""};
+const CONTENT_DOT_VIEWER_CSS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/dot-viewer.css.gz.b64")} else {""};
+const CONTENT_WEBWORKER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/webworker.js.gz.b64")} else {""};
+const CONTENT_SPINNER_GIF_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/images/spinner.gif.b64")} else {""};
 const CONTENT_PREVIEW_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/preview-icon.svg")} else {""};
 const CONTENT_REFRESH_TIME_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/refresh-time-icon.svg")} else {""};
 const CONTENT_USER_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/user-icon.svg")} else {""};

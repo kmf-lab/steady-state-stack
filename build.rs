@@ -1,37 +1,38 @@
 use std::process::{Command, Stdio};
-use std::env;
+use std::{env, fs};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
 fn main() {
     // Define the path to the file relative to the project root
-    let project_root = env::var("CARGO_MANIFEST_DIR").unwrap_or(".".to_string());
 
-    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/viz-lite.js"));
-    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/dot-viewer.js"));
-    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/dot-viewer.css"));
-    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/index.html"));
-    gzip_and_base64_encode(&Path::new(&project_root).join("static/telemetry/webworker.js"));
+    gzip_and_base64_encode("static/telemetry/viz-lite.js");
+    gzip_and_base64_encode("static/telemetry/dot-viewer.js");
+    gzip_and_base64_encode("static/telemetry/dot-viewer.css");
+    gzip_and_base64_encode("static/telemetry/index.html");
+    gzip_and_base64_encode("static/telemetry/webworker.js");
 
-    base64_encode(&Path::new(&project_root).join("static/telemetry/images/spinner.gif"));
-
+    base64_encode("static/telemetry/images/spinner.gif");
 
 }
 
 
-fn base64_encode(file_path: &Path) {
-    // Define the output file name
-    let output_file_name = format!("{}.b64", file_path.to_str().unwrap_or("UNKNOWN"));
-
+fn base64_encode(file_path: &str) {
+    let project_root = env::var("CARGO_MANIFEST_DIR").unwrap_or(".".to_string());
+    let output_name = format!("{}.b64", file_path);
+    let target_file = &Path::new(&project_root).join("target").join(output_name);
     // Check if the output file already exists
-    if Path::new(&output_file_name).exists() {
-        println!("{} already exists, skipping", output_file_name);
+    if Path::new(&target_file).exists() {
+        println!("{:?} already exists, skipping", target_file);
         return;
+    }
+    if let Some(parent_dir) = target_file.parent() {
+        fs::create_dir_all(parent_dir).expect("Failed to create output directory");
     }
 
     // Open the output file for writing
-    let mut output_file = File::create(&output_file_name).expect("Failed to create output file");
+    let mut output_file = File::create(&target_file).expect("Failed to create output file");
 
     // Run the base64 command
     let base64_output = Command::new("base64")
@@ -44,22 +45,24 @@ fn base64_encode(file_path: &Path) {
     // Write the base64 encoded data to the output file
     output_file.write_all(&base64_output.stdout).expect("Failed to write to output file");
 
-    println!("Processed and saved to {}", output_file_name);
+    println!("Processed and saved to {:?}", target_file);
 }
 
 
-fn gzip_and_base64_encode(file_path: &Path) {
-    // Define the output file name
-    let output_file_name = format!("{}.gz.b64", file_path.to_str().unwrap_or("UNKNOWN"));
-
+fn gzip_and_base64_encode(file_path: &str) {
+    let project_root = env::var("CARGO_MANIFEST_DIR").unwrap_or(".".to_string());
+    let output_name = format!("{}.gz.b64", file_path);
+    let target_file = &Path::new(&project_root).join("target").join(output_name);
     // Check if the output file already exists
-    if Path::new(&output_file_name).exists() {
-        println!("{} already exists, skipping", output_file_name);
+    if Path::new(&target_file).exists() {
+        println!("{:?} already exists, skipping", target_file);
         return;
     }
-
+    if let Some(parent_dir) = target_file.parent() {
+        fs::create_dir_all(parent_dir).expect("Failed to create output directory");
+    }
     // Open the output file for writing
-    let mut output_file = File::create(&output_file_name).expect("Failed to create output file");
+    let mut output_file = File::create(&target_file).expect("Failed to create output file");
 
     // Run the gzip command and pipe its output to the base64 command
     let gzip_output = Command::new("gzip")
@@ -81,6 +84,6 @@ fn gzip_and_base64_encode(file_path: &Path) {
     // Write the base64 encoded data to the output file
     output_file.write_all(&base64_output.stdout).expect("Failed to write to output file");
 
-    println!("Processed and saved to {}", output_file_name);
+    println!("Processed and saved to {:?}", target_file);
 
 }
