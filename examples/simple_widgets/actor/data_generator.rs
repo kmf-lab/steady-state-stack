@@ -6,6 +6,7 @@ use futures::lock::Mutex;
 use log::*;
 use crate::args::Args;
 use steady_state::*;
+use crate::actor::data_feedback::ChangeRequest;
 
 
 #[derive(Clone, Debug, Copy)]
@@ -25,14 +26,18 @@ struct InternalState {
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , opt: Args
+                 , rx: Arc<Mutex<Rx<ChangeRequest>>>
                  , tx: Arc<Mutex<Tx<WidgetInventory>>> ) -> Result<(),()> {
+
+    let mut rx_guard = rx.lock().await;
+    let rx = rx_guard.deref_mut();
 
     let mut tx_guard = tx.lock().await;
     let tx = tx_guard.deref_mut();
 
     const MULTIPLIER:usize = 256;   //500_000 per second at 500 micros
 
-    let mut monitor = context.into_monitor(&[], &[tx]);
+    let mut monitor = context.into_monitor(&[rx], &[tx]);
 
     //keep long running state in here while you run
 
@@ -54,14 +59,16 @@ pub async fn run(context: SteadyContext
 #[cfg(test)]
 pub async fn run(context: SteadyContext
                  , _opt: Args
+                 , rx: Arc<Mutex<Rx<ChangeRequest>>>
                  , tx: Arc<Mutex<Tx<WidgetInventory>>>) -> Result<(),()> {
+
+    let mut rx_guard = rx.lock().await;
+    let rx = rx_guard.deref_mut();
 
     let mut tx_guard = tx.lock().await;
     let tx = tx_guard.deref_mut();
 
-    let mut monitor = context.into_monitor(&[], &[tx]);
-
-
+    let mut monitor = context.into_monitor(&[rx], &[tx]);
 
     loop {
          relay_test(& mut monitor, tx).await;
@@ -70,7 +77,7 @@ pub async fn run(context: SteadyContext
 }
 #[cfg(test)]
 
-async fn relay_test(monitor: &mut LocalMonitor<0,1>
+async fn relay_test<const R:usize, const T:usize>(monitor: &mut LocalMonitor<R,T>
                     , tx: &mut Tx<WidgetInventory>) {
     use bastion::run;
     use bastion::message::MessageHandler;

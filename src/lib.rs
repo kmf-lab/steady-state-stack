@@ -86,8 +86,8 @@ pub enum Trigger {
     AvgLatencyBelow(Duration),
     StdDevLatencyAbove(StdDev,Duration), // above mean+(std*factor)
     StdDevLatencyBelow(StdDev,Duration), // below mean-(std*factor)
-    LatencyPercentileAbove(Percentile,Duration),
-    LatencyPercentileBelow(Percentile,Duration), //not sure if this is useful
+    PercentileLatencyAbove(Percentile, Duration),
+    PercentileLatencyBelow(Percentile, Duration), //not sure if this is useful
 
 }
 
@@ -616,7 +616,7 @@ impl Percentile {
     // Ensures that all public constructors go through validation.
     fn new(value: f32) -> Option<Self> {
         if value >= 0.0 && value <= 100.0 {
-            Some(Self(value))
+            Some(Self(value/100f32))
         } else {
             None
         }
@@ -624,31 +624,29 @@ impl Percentile {
 
     // Convenience methods for common percentiles
     pub fn p25() -> Self {
-        Self(25.0)
+        Self(25.0/100f32)
     }
 
-    pub fn p50() -> Self {
-        Self(50.0) // Also known as the median
-    }
+    pub fn p50() -> Self {Self(50.0/100f32) }
 
     pub fn p75() -> Self {
-        Self(75.0)
+        Self(75.0/100f32)
     }
 
     pub fn p90() -> Self {
-        Self(90.0)
+        Self(90.0/100f32)
     }
 
     pub fn p80() -> Self {
-        Self(80.0)
+        Self(80.0/100f32)
     }
 
     pub fn p96() -> Self {
-        Self(96.0)
+        Self(96.0/100f32)
     }
 
     pub fn p99() -> Self {
-        Self(99.0)
+        Self(99.0/100f32)
     }
 
     // Allows custom values within the valid range.

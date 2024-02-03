@@ -166,6 +166,7 @@ pub(crate) struct ChannelMetaData {
     pub(crate) yellow: Vec<Trigger>, //if used base is green
     pub(crate) avg_inflight: bool,
     pub(crate) avg_consumed: bool,
+    pub(crate) connects_sidecar: bool,
 }
 
 pub struct SteadyTelemetryTake<const LENGTH: usize> {

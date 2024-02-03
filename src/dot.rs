@@ -40,6 +40,7 @@ pub(crate) struct Edge {
     pub(crate) from: usize, //monitor actor id of the sender
     pub(crate) to: usize, //monitor actor id of the receiver
     pub(crate) color: & 'static str, //results from computer
+    pub(crate) sidecar: bool, //mark this edge as attaching to a sidecar
     pub(crate) pen_width: & 'static str, //results from computer
     pub(crate) display_label: String, //results from computer
     pub(crate) ctl_labels: Vec<&'static str>, //visibility tags for render
@@ -47,10 +48,13 @@ pub(crate) struct Edge {
 }
 impl Edge {
     pub(crate) fn compute_and_refresh(&mut self, send: i128, take: i128) {
-        let (label,color,pen) = self.stats_computer.compute(send, take);
-        self.display_label = label;
-        self.color = color;
-        self.pen_width = pen;
+        if self.stats_computer.capacity > 0 { //TODO: not sure I need this.
+            let (label, color, pen) = self.stats_computer.compute(send, take);
+            // info!("computed edge {} {} {} take:{}",label,color,pen, take);
+            self.display_label = label;
+            self.color = color;
+            self.pen_width = pen;
+        }
     }
 }
 
@@ -108,7 +112,22 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
                     dot_graph.put_slice(b", penwidth=");
                     dot_graph.put_slice(edge.pen_width.as_bytes());
                     dot_graph.put_slice(b"];\n");
-    });
+
+                    //if this edge is a sidecar we document they are in the same row
+                    //to help with readability since this is tight with the other node
+                    if edge.sidecar {
+                        dot_graph.put_slice(b"{rank=same; \"");
+                        dot_graph.put_slice(itoa::Buffer::new()
+                            .format(edge.to)
+                            .as_bytes());
+                        dot_graph.put_slice(b"\" \"");
+                        dot_graph.put_slice(itoa::Buffer::new()
+                            .format(edge.from)
+                            .as_bytes());
+                        dot_graph.put_slice(b"\"}");
+                    }
+
+                });
 
     dot_graph.put_slice(b"}\n");
 }
@@ -149,33 +168,38 @@ pub fn refresh_structure(mut local_state: &mut DotState
     define_unified_edges(&mut local_state, id, channels_in, true);
     define_unified_edges(&mut local_state, id, channels_out, false);
 
-
 }
 
 fn define_unified_edges(local_state: &mut &mut DotState, node_id: usize, mdvec: Arc<Vec<Arc<ChannelMetaData>>>, set_to: bool) {
     mdvec.iter()
         .for_each(|meta| {
-            if meta.id.ge(&local_state.edges.len()) {
-                local_state.edges.resize_with(meta.id + 1, || {
+            let idx = meta.id;
+            //info!("define_unified_edges: {} {} {}",idx, node_id, set_to);
+            if idx.ge(&local_state.edges.len()) {
+                local_state.edges.resize_with(idx + 1, || {
                     Edge {
                         id: usize::MAX,
                         from: usize::MAX,
                         to: usize::MAX,
                         color: "white",
                         pen_width: "3",
+                        sidecar: false,
                         display_label: "".to_string(),//defined when the content arrives
-                        stats_computer: ChannelStatsComputer::new(meta),
+                        stats_computer: ChannelStatsComputer::empty(),
                         ctl_labels: Vec::new(), //for visibility control
                     }
                 });
             }
-            let idx = meta.id;
             assert!(local_state.edges[idx].id == idx || local_state.edges[idx].id == usize::MAX);
             local_state.edges[idx].id = idx;
             if set_to {
                 local_state.edges[idx].to = node_id;
+                local_state.edges[idx].stats_computer.init(meta);
+                local_state.edges[idx].sidecar = meta.connects_sidecar;
             } else {
                 local_state.edges[idx].from = node_id;
+                local_state.edges[idx].stats_computer.init(meta);
+                local_state.edges[idx].sidecar = meta.connects_sidecar;
             }
             // Collect the labels that need to be added
             // This is redundant but provides safety if two dif label lists are in play
@@ -301,7 +325,7 @@ impl FrameHistory {
                 self.file_bytes_written = 0;
                 self.last_file_to_append_onto=file_to_append_onto.clone();
             }
-            info!("attempt to write history");
+            //trace!("attempt to write history");
             let to_be_written = std::mem::replace(&mut self.history_buffer, continued_buffer);
             if let Err(e) = Self::append_to_file(self.output_log_path.join(&file_to_append_onto)
                                                 , to_be_written).await {
@@ -316,7 +340,7 @@ impl FrameHistory {
                 //      so we will just drop the data and hope for the best
 
             } else {
-                info!("wrote to hist log now {} bytes",self.file_bytes_written+self.buffer_bytes_count);
+                //trace!("wrote to hist log now {} bytes",self.file_bytes_written+self.buffer_bytes_count);
             }
             self.file_bytes_written += self.buffer_bytes_count;
 

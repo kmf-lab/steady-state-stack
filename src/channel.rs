@@ -41,6 +41,7 @@ pub struct ChannelBuilder {
     yellow: Vec<Trigger>, //if used base is green
     avg_inflight: bool,
     avg_consumed: bool,
+    connects_sidecar: bool,
 }
 //some ideas to target
 // Primary Label - Latency Estimate (80th Percentile): This gives a quick, representative view of the channel's performance under load.
@@ -71,6 +72,7 @@ impl ChannelBuilder {
             yellow: Vec::new(),
             avg_inflight: false,
             avg_consumed: false,
+            connects_sidecar: false,
         }
     }
 
@@ -99,7 +101,6 @@ impl ChannelBuilder {
         let mut result = self.clone();
         result.capacity = capacity;
         result
-
     }
 
     /// show the type of T for this label
@@ -128,12 +129,21 @@ impl ChannelBuilder {
         result
     }
 
+    pub fn connects_sidecar(&self) -> Self {
+        let mut result = self.clone();
+        result.connects_sidecar = true;
+        result
+    }
+
+
+
     /// show the control labels   TODO: dot filter must still be implemented
     pub fn with_labels(&self, labels: &'static [& 'static str], display: bool) -> Self {
         let mut result = self.clone();
         result.labels = if display {labels} else {&[]};
         result
     }
+
 
     pub fn with_filled_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
@@ -172,16 +182,17 @@ impl ChannelBuilder {
     }
 
     pub(crate) fn to_meta_data(&self, type_name: &'static str) -> ChannelMetaData {
-
+        assert!(self.capacity > 0);
         let channel_id = self.channel_count.fetch_add(1, Ordering::SeqCst);
-
+        let show_type = if self.show_type {Some(type_name.split("::").last().unwrap_or(""))} else {None};
+        //info!("channel_builder::to_meta_data: show_type: {:?} capacity: {}", show_type,self.capacity);
         ChannelMetaData {
             id: channel_id,
             labels: self.labels.into(),
             display_labels: self.display_labels,
             window_bucket_in_bits: self.window_bucket_in_bits,
             line_expansion: self.line_expansion,
-            show_type: if self.show_type {Some(type_name.split("::").last().unwrap_or(""))} else {None},
+            show_type,
             percentiles_inflight: self.percentiles_inflight.clone(),
             percentiles_consumed: self.percentiles_consumed.clone(),
             std_dev_inflight: self.std_dev_inflight.clone(),
@@ -191,6 +202,7 @@ impl ChannelBuilder {
             capacity: self.capacity,
             avg_inflight: self.avg_inflight,
             avg_consumed: self.avg_consumed,
+            connects_sidecar: self.connects_sidecar,
         }
     }
 
@@ -199,15 +211,16 @@ impl ChannelBuilder {
         let rb = AsyncRb::<ChannelBacking<T>>::new(self.capacity);
         let (tx, rx) = rb.split();
 
-        let channel_meta_data = Arc::new(self.to_meta_data(std::any::type_name::<T>()));
+        //trace!("channel_builder::build: type_name: {}", std::any::type_name::<T>());
 
+        let channel_meta_data = Arc::new(self.to_meta_data(std::any::type_name::<T>()));
         let id = channel_meta_data.id;
 
         (  Arc::new(Mutex::new(Tx { id, tx
             , channel_meta_data: channel_meta_data.clone()
             , local_index: MONITOR_UNKNOWN }))
            , Arc::new(Mutex::new(Rx { id, rx
-            , channel_meta_data: channel_meta_data.clone()
+            , channel_meta_data
             , local_index: MONITOR_UNKNOWN }))
         )
 

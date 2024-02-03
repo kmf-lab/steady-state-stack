@@ -2,34 +2,31 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 use futures::lock::Mutex;
 use crate::actor::data_generator::WidgetInventory;
+#[allow(unused_imports)]
 use log::*;
 use steady_state::{LocalMonitor, Rx, SteadyContext, Tx};
-use crate::actor::data_feedback::FailureFeedback;
 
 const BATCH_SIZE: usize = 2000;
 
 #[derive(Clone, Debug, PartialEq, Copy)]
-pub struct ApprovedWidgets {
-    pub original_count: u64,
-    pub approved_count: u64,
+    pub struct FailureFeedback {
+}
+#[derive(Clone, Debug, PartialEq, Copy)]
+    pub struct ChangeRequest {
 }
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
-                 , rx: Arc<Mutex<Rx<WidgetInventory>>>
-                 , tx: Arc<Mutex<Tx<ApprovedWidgets>>>
-                 , feedback: Arc<Mutex<Tx<FailureFeedback>>>
-                ) -> Result<(),()> {
+                 , rx: Arc<Mutex<Rx<FailureFeedback>>>
+                 , tx: Arc<Mutex<Tx<ChangeRequest>>>) -> Result<(),()> {
 
     let mut tx_guard = tx.lock().await;
     let mut rx_guard = rx.lock().await;
-    let mut feedback_guard = feedback.lock().await;
 
     let tx = tx_guard.deref_mut();
     let rx = rx_guard.deref_mut();
-    let feedback = feedback_guard.deref_mut();
 
-    let mut monitor = context.into_monitor(&[rx], &[tx,feedback]);
+    let mut monitor = context.into_monitor(&[rx], &[tx]);
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
     loop {
@@ -51,20 +48,15 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 , rx: Arc<Mutex<Rx<WidgetInventory>>>
-                 , tx: Arc<Mutex<Tx<ApprovedWidgets>>>
-                 , feedback: Arc<Mutex<Tx<FailureFeedback>>>
-) -> Result<(),()> {
+                 , rx: Arc<Mutex<Rx<FailureFeedback>>>
+                 , tx: Arc<Mutex<Tx<ChangeRequest>>>) -> Result<(),()> {
 
       let mut rx_guard = rx.lock().await;
       let mut tx_guard = tx.lock().await;
-      let mut feedback_guard = feedback.lock().await;
-
       let rx = rx_guard.deref_mut();
       let tx = tx_guard.deref_mut();
-      let feedback = feedback_guard.deref_mut();
 
-      let mut monitor = context.into_monitor(&[rx], &[tx,feedback]);
+      let mut monitor = context.into_monitor(&[rx], &[tx]);
       let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
     loop {
@@ -85,45 +77,11 @@ pub async fn run(context: SteadyContext
 
 // important function break out to ensure we have a point to test on
 async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor<R, T>
-                                                      , rx: & mut Rx<WidgetInventory>
-                                                      , tx: & mut Tx<ApprovedWidgets>
+                                                      , rx: & mut Rx<FailureFeedback>
+                                                      , tx: & mut Tx<ChangeRequest>
                                                       , buf: &mut [WidgetInventory; BATCH_SIZE]) -> bool {
 
 
-    if !rx.is_empty() {
-        let count = monitor.take_slice(rx, buf);
-        //TODO: need to re-use this space
-        let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
-        for b in buf.iter().take(count) {
-            approvals.push(ApprovedWidgets {
-                original_count: b.count,
-                approved_count: b.count / 2,
-
-            });
-        }
-
-        let sent = monitor.send_slice_until_full(tx, &approvals);
-        //iterator of sent until the end
-        let send = approvals.into_iter().skip(sent);
-        for send_me in send {
-            let _ = monitor.send_async(tx, send_me).await;
-        }
-    } else {
-
-        //by design we wait here for new work
-        match monitor.take_async(rx).await {
-            Ok(m) => {
-                let _ = monitor.send_async(tx, ApprovedWidgets {
-                    original_count: m.count,
-                    approved_count: m.count / 2,
-
-                }).await;
-            },
-            Err(msg) => {
-                error!("Unexpected error recv_async: {}",msg);
-            }
-        }
-    }
 
     false
 }
@@ -134,8 +92,11 @@ mod tests {
     use super::*;
     use async_std::test;
     use steady_state::{Graph, util};
+    use crate::actor::data_feedback::iterate_once;
+    use crate::actor::WidgetInventory;
 
 
+/*
     #[test]
     async fn test_process() {
         util::logger::initialize();
@@ -172,5 +133,6 @@ mod tests {
         assert_eq!(result.original_count, 5);
         assert_eq!(result.approved_count, 2);
     }
+    */
 
 }

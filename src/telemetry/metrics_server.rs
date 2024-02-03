@@ -144,10 +144,19 @@ pub(crate) async fn run(context: SteadyContext
                                  , total_send)) => {
                               //note on init we may not have the same length...
                               assert_eq!(total_take.len(), total_send.len());
+
+                            //  info!(" seq: {} total_take: {:?} total_send: {:?}",seq, total_take, total_send);
+
                               total_send.iter()
                                         .zip(total_take.iter())
                                         .enumerate()
-                                        .for_each(|(i,(s,t))| dot_state.edges[i].compute_and_refresh(*s,*t));
+                                        .for_each(|(i,(s,t))| {
+                             dot_state.edges[i].compute_and_refresh(*s,*t);
+
+                           // info!("edge:{} {} {} {}",i,*s,*t,dot_state.edges[i].display_label);
+
+
+                        });
 
                               dot_state.seq = seq;
                               //NOTE: generate the new graph

@@ -1,6 +1,7 @@
 mod args;
 
-use std::panic;
+use std::{backtrace, panic};
+use std::backtrace::Backtrace;
 use std::process::exit;
 use structopt::*;
 use log::*;
@@ -21,6 +22,13 @@ mod actor {
     #[cfg(test)]
     pub use data_approval::ApprovedWidgets;
     pub mod data_consumer;
+
+    pub mod data_feedback;
+    #[cfg(test)]
+    pub use data_feedback::FailureFeedback;
+    #[cfg(test)]
+    pub use data_feedback::ChangeRequest;
+
 }
 #[cfg(test)]
 use crate::actor::*;
@@ -93,8 +101,13 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     //TODO: move for special debug flag.
     #[cfg(debug_assertions)]
     panic::set_hook(Box::new(|panic_info| {
+        let backtrace = Backtrace::capture();
+
         // You can log the panic information here if needed
         eprintln!("Application panicked: {}", panic_info);
+
+        eprintln!("Backtrace:\n{:?}", backtrace);
+
         // Exit with status code -1
         exit(-1);
     }));
@@ -117,16 +130,26 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     //upon construction these are set up to be monitored by the telemetry telemetry
     let (generator_tx, generator_rx) = base_builder
-                     .with_rate_percentile(Percentile::p80())
-                     .with_red(Trigger::AvgFilledAbove(Filled::p70()))
-                     .with_yellow(Trigger::StdDevsFilledAbove(StdDev::one(),Filled::p70()))
-                     .with_capacity(example_capacity)
-                     .build();
+                         .with_rate_percentile(Percentile::p80())
+                         .with_red(Trigger::AvgFilledAbove(Filled::p70()))
+                         .with_yellow(Trigger::StdDevsFilledAbove(StdDev::one(),Filled::p70()))
+                         .with_capacity(example_capacity)
+                         .build();
 
     let (consumer_tx, consumer_rx) = base_builder
-                     .with_filled_standard_deviation(StdDev::two_and_a_half())
-                     .with_capacity(example_capacity)
-                     .build();
+                         .with_avg_inflight()
+                         .with_capacity(example_capacity)
+                         .build();
+
+    let (failure_tx, failure_rx) = base_builder
+                        .with_capacity(300)
+                        .connects_sidecar()//hint for display
+                        .build();
+
+    let (change_tx, change_rx) = base_builder
+                        .with_avg_inflight()
+                        .with_capacity(200)
+                        .build();
 
     //the above tx rx objects will be owned by the children closures below then cloned
     //each time we need to startup a new child telemetry instance. This way when an telemetry fails
@@ -141,6 +164,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                    , children.with_redundancy(0)
                                    , move |monitor| actor::data_generator::run(monitor
                                                                       , cli_arg.clone()
+                                                                      , change_rx.clone()
                                                                       , generator_tx.clone()
                                                                      )
                 )
@@ -151,9 +175,21 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                    , move |monitor| actor::data_approval::run(monitor
                                                    , generator_rx.clone()
                                                    , consumer_tx.clone()
+                                                   , failure_tx.clone()
                                                                      )
 
                     )
+
+            })
+            .children(|children| {
+                graph.add_to_graph("feedback"
+                                   , children.with_redundancy(0)
+                                   , move |monitor| actor::data_feedback::run(monitor
+                                                                              , failure_rx.clone()
+                                                                              , change_tx.clone()
+                    )
+
+                )
 
             })
             .children(|children| {
