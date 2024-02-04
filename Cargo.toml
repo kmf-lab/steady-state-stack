@@ -1,6 +1,6 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -75,8 +75,6 @@ const_panic = "0.2.8" # for const panic!()
 #color-eyre = "0.5.5"   # for better error messages
 #rstest = "0.5.2"       # for unit testing
 
-#not in use yet... but this is where I am planning to go for web services
-#askama           = "0.12.1" # for compile time templating
 
 
 # TODO: will support systemd, SQRL and rapid prootyping
@@ -87,15 +85,8 @@ const_panic = "0.2.8" # for const panic!()
 #rustls = "0.20.0" # for https
 #diesel = { version = "1.4.7", features = ["postgres"] }
 
-
-#not in use yet for future code gen
-#petgraph = "0.6.4"  #   for graph data structures
-#dot = "0.1.4"       #  for graphviz dot file parse
-#syn = "2.0.48"  # for building syntax tree for generated projects
-#quote = "1.0.35"  # for converson of syntax tree to text source files
-
-#zip              = "0.5"   # zip compression
-#xz2              = "0.1.6" # lzma compression
+graphviz-rust  = "0.7.1" # for graphviz dot file parse
+askama         = "0.12.1" # for compile time templating
 
 
 #others
@@ -120,4 +111,6 @@ async-std       = {  version = "1.12.0", features = ["attributes"] }  # for asyn
 rand = "0.8.4" # for random number generation
 rand_distr = "0.4.2" # for random number generation
 
-
+[[bin]]
+name = "new_project"
+path = "bin/generate.rs"
