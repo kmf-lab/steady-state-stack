@@ -10,8 +10,9 @@
 
 
     pub const TELEMETRY_SERVER_PORT:u16 = 8080; // need to move to env?
-    pub const TELEMETRY_SERVER_IP:&'static str = "127.0.01"; // need to move to env?
+    pub const TELEMETRY_SERVER_IP:&str = "127.0.01"; // need to move to env?
 
+    pub const TELEMETRY_FOR_ACTORS:bool = true; //TODO: can turn this off as a feature
 
 
     pub const REAL_CHANNEL_LENGTH_TO_FEATURE:usize = 16; //allows features to fall behind with minimal latency

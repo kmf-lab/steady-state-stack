@@ -48,7 +48,6 @@ impl Args {
     }
 }
 
-#[cfg(test)]
 
 #[cfg(test)]
 mod tests {

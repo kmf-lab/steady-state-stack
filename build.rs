@@ -32,7 +32,7 @@ fn base64_encode(file_path: &str) {
     }
 
     // Open the output file for writing
-    let mut output_file = File::create(&target_file).expect("Failed to create output file");
+    let mut output_file = File::create(target_file).expect("Failed to create output file");
 
     // Run the base64 command
     let base64_output = Command::new("base64")
@@ -62,7 +62,7 @@ fn gzip_and_base64_encode(file_path: &str) {
         fs::create_dir_all(parent_dir).expect("Failed to create output directory");
     }
     // Open the output file for writing
-    let mut output_file = File::create(&target_file).expect("Failed to create output file");
+    let mut output_file = File::create(target_file).expect("Failed to create output file");
 
     // Run the gzip command and pipe its output to the base64 command
     let gzip_output = Command::new("gzip")

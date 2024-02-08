@@ -14,14 +14,14 @@ pub(crate) mod config;
 pub(crate) mod dot;
 pub(crate) mod monitor;
 
-pub mod channel;
+pub mod channel_builder;
 pub mod util;
 pub mod serviced;
-pub mod graph;
+pub mod actor_builder;
 
 
 
-use std::any::type_name;
+use std::any::{Any, type_name};
 #[cfg(test)]
 use std::collections::HashMap;
 //re-publish bastion from steady_state for this early version
@@ -29,15 +29,14 @@ pub use bastion;
 use bastion::context::BastionContext;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicU32, AtomicUsize};
 use futures::lock::Mutex;
 use std::ops::{DerefMut, Sub};
 use bastion::{Bastion, run};
-use bastion::children::Children;
 use std::future::{Future, ready};
 use std::thread::sleep;
 use log::error;
-use channel::{InternalReceiver, InternalSender};
+use channel_builder::{InternalReceiver, InternalSender};
 use ringbuf::producer::Producer;
 use async_ringbuf::producer::AsyncProducer;
 use ringbuf::traits::Observer;
@@ -45,8 +44,9 @@ use ringbuf::consumer::Consumer;
 use async_ringbuf::consumer::AsyncConsumer;
 use futures_timer::Delay;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
-use crate::channel::ChannelBuilder;
-use crate::monitor::{ChannelMetaData, SteadyTelemetrySend};
+use actor_builder::ActorBuilder;
+use crate::channel_builder::ChannelBuilder;
+use crate::monitor::{ChannelMetaData, SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::steady_logging_init;// re-publish in public
 
@@ -103,44 +103,56 @@ pub enum GraphLivelinessState {
 
 pub struct SteadyContext {
     pub(crate) id: usize, //unique identifier for this child group
+    pub(crate) redundancy: usize,
     pub(crate) name: & 'static str,
     pub(crate) ctx: Option<BastionContext>,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<Mutex<GraphLivelinessState>>,
+    pub(crate) count_restarts: Arc<AtomicU32>,
+    pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
 }
 
 impl SteadyContext {
 
-    pub fn id(self) -> usize {
+    pub fn args<A: Any>(&self) -> Option<&A> {
+        self.args.downcast_ref::<A>()
+    }
+
+    pub fn id(&self) -> usize {
         self.id
     }
 
-    pub fn name(self) -> & 'static str {
+    pub fn name(&self) -> & 'static str {
         self.name
     }
 
-    pub fn ctx(self) -> Option<BastionContext> {
-        self.ctx
+    pub fn ctx(&self) -> &Option<BastionContext> {
+        &self.ctx
     }
 
-    //method should be convert to_localmonitor
+
     pub fn into_monitor<const RX_LEN: usize, const TX_LEN: usize>(self
                                                       , rx_mons: &[& mut dyn RxDef; RX_LEN]
                                                       , tx_mons: &[& mut dyn TxDef; TX_LEN]
     ) -> LocalMonitor<RX_LEN,TX_LEN> {
 
         //only build telemetry channels if this feature is enabled
-        let (telemetry_send_rx, telemetry_send_tx) = if config::TELEMETRY_HISTORY || config::TELEMETRY_SERVER {
+        let (telemetry_send_rx, telemetry_send_tx, telemetry_state) = if config::TELEMETRY_HISTORY || config::TELEMETRY_SERVER {
              telemetry::setup::build_telemetry_channels(&self, rx_mons, tx_mons)
         } else {
-            (None, None)
+            (None, None, None)
         };
-         // this is my fixed size version for this specific thread
+
+        let start_instant = Instant::now().sub(Duration::from_secs(1+config::TELEMETRY_PRODUCTION_RATE_MS as u64));
+
+
+        // this is my fixed size version for this specific thread
         LocalMonitor::<RX_LEN, TX_LEN> {
             telemetry_send_rx,
             telemetry_send_tx,
-            last_instant: Instant::now().sub(Duration::from_secs(1+config::TELEMETRY_PRODUCTION_RATE_MS as u64)),
+            telemetry_state,
+            last_instant: start_instant,
             id: self.id,
             name: self.name,
             ctx: self.ctx,
@@ -154,7 +166,8 @@ impl SteadyContext {
 
 }
 
-pub struct Graph {
+pub struct Graph  {
+    pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) monitor_count: usize,
     //used by collector but could grow if we get new actors at runtime
@@ -166,7 +179,7 @@ impl Graph {
 
     /// needed for testing only, this monitor assumes we are running without a full graph
     /// and will not be used in production
-    pub fn new_test_monitor(self: &mut Self, name: & 'static str ) -> SteadyContext
+    pub fn new_test_monitor(&mut self, name: & 'static str ) -> SteadyContext
     {
         // assert that we are NOT in release mode
         assert!(cfg!(debug_assertions), "This function is only for testing");
@@ -174,21 +187,30 @@ impl Graph {
         let id = self.monitor_count;
         self.monitor_count += 1;
 
-        let channel_count = self.channel_count.clone();
+        let channel_count    = self.channel_count.clone();
         let all_telemetry_rx = self.all_telemetry_rx.clone();
+
+        let count_restarts   = Arc::new(AtomicU32::new(0));
         SteadyContext {
             channel_count,
             name,
+            args: self.args.clone(),
             ctx: None, //this is key, we are not running in a graph by design
             id,
+            redundancy: 1,
             all_telemetry_rx,
-            runtime_state: self.runtime_state.clone()
+            runtime_state: self.runtime_state.clone(),
+            count_restarts,
         }
     }
 }
 
 
 impl Graph {
+
+    pub fn actor_builder(&mut self, name: & 'static str) -> ActorBuilder{
+        crate::ActorBuilder::new(self, name)
+    }
 
     pub fn start(&mut self) {
         Bastion::start(); //start the graph
@@ -197,23 +219,16 @@ impl Graph {
         *state = GraphLivelinessState::Running;
     }
 
-    pub fn request_shutdown(self: &mut Self) {
+    pub fn request_shutdown(&mut self) {
         let mut guard = run!(self.runtime_state.lock());
         let state = guard.deref_mut();
         *state = GraphLivelinessState::StopRequested;
     }
 
-    /// add new children actors to the graph
-    pub fn add_to_graph<F,I>(&mut self, name: & 'static str, c: Children, init: I ) -> Children
-        where I: Fn(SteadyContext) -> F + Send + 'static + Clone,
-              F: Future<Output = Result<(),()>> + Send + 'static ,  {
-        graph::configure_for_graph(self, name, c, init)
-    }
-
     /// create a new graph for the application typically done in main
-    pub fn new() -> Graph {
-
+    pub fn new<A: Any+Send+Sync>(args: A) -> Graph {
         Graph {
+            args: Arc::new(Box::new(args)),
             channel_count: Arc::new(AtomicUsize::new(0)),
             monitor_count: 0, //this is the count of all monitors
             all_telemetry_rx: Arc::new(Mutex::new(Vec::new())), //this is all telemetry receivers
@@ -269,7 +284,6 @@ pub struct Rx<T> {
     pub(crate) local_index: usize,
 }
 
-
 ////////////////////////////////////////////////////////////////
 impl<T> Tx<T> {
     #[inline]
@@ -318,6 +332,11 @@ impl<T> Tx<T> {
     pub async fn wait_vacant_units(&self, count: usize) {
         self.tx.wait_vacant(count).await
     }
+
+    #[inline]
+    pub async fn wait_empty(&self) {
+        self.tx.wait_vacant(usize::from(self.tx.capacity())).await
+    }
 }
 
 
@@ -347,8 +366,9 @@ impl<T> Rx<T> {
     #[inline]
     pub fn take_slice(&mut self, elems: &mut [T]) -> usize
         where T: Copy {
-           self.rx.pop_slice(elems)
+        self.rx.pop_slice(elems)
     }
+
 
     #[inline]
     pub fn try_peek(&self) -> Option<&T> {
@@ -356,10 +376,36 @@ impl<T> Rx<T> {
     }
 
     #[inline]
+    pub fn try_peek_vec<'a>(&'a self, target:&'a mut Vec<&'a T>) {
+        target.clear();
+        target.extend(self.rx.iter());
+    }
+
+    #[inline]
+    pub fn try_peek_iter(& self) -> impl Iterator<Item = & T>  {
+        self.rx.iter()
+    }
+
+
+    #[inline]
     pub async fn peek_async(& mut self) -> Option<&T> {
         self.rx.wait_occupied(1).await;
         self.rx.first()
     }
+
+    #[inline]
+    pub async fn peek_async_vec<'a>(&'a mut self, wait_for_count: usize, target:&'a mut Vec<&'a T>) -> &mut Vec<&T> {
+        target.clear();
+        self.rx.wait_occupied(wait_for_count).await;
+        target.extend(self.rx.iter());
+        target
+    }
+
+    pub async fn peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
+        self.rx.wait_occupied(wait_for_count).await;
+        self.rx.iter()
+    }
+
 
     #[inline]
     pub fn is_empty(&self) -> bool {
@@ -375,36 +421,46 @@ impl<T> Rx<T> {
         self.rx.wait_occupied(count).await
     }
 
+
 }
 
 pub trait TxDef {
     fn meta_data(&self) -> Arc<ChannelMetaData>;
 }
-
+pub trait RxDef {
+    fn meta_data(&self) -> Arc<ChannelMetaData>;
+}
 impl <T> TxDef for Tx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         self.channel_meta_data.clone()
     }
 }
-
-pub trait RxDef {
-    fn meta_data(&self) -> Arc<ChannelMetaData>;
-}
-
 impl <T> RxDef for Rx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         self.channel_meta_data.clone()
     }
 }
 
+impl <const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
+    //if possible we never want to loose telemetry data so we try to flush it out
+    fn drop(&mut self) {
+        run!(
+            telemetry::setup::send_all_local_telemetry_async(self)
+          );
+    }
+
+}
+
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
-    pub(crate) id: usize, //unique identifier for this child group
-    pub(crate) name: & 'static str,
-    pub(crate) ctx: Option<BastionContext>,
+    pub(crate) id:                usize, //unique identifier for this child group
+    pub(crate) name:              & 'static str,
+    pub(crate) ctx:               Option<BastionContext>,
     pub(crate) telemetry_send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
     pub(crate) telemetry_send_rx: Option<SteadyTelemetrySend<RX_LEN>>,
+    pub(crate) telemetry_state:   Option<SteadyTelemetryActorSend>,
     pub(crate) last_instant:      Instant,
     pub(crate) runtime_state:     Arc<Mutex<GraphLivelinessState>>,
+
     #[cfg(test)]
     pub(crate) test_count: HashMap<&'static str, usize>,
 
@@ -421,6 +477,10 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         self.name
     }
 
+    pub fn runtime_state(&self) -> Arc<Mutex<GraphLivelinessState>> {
+        self.runtime_state.clone()
+    }
+
     pub fn ctx(&self) -> Option<&BastionContext> {
         if let Some(ctx) = &self.ctx {
             Some(ctx)
@@ -429,26 +489,60 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
 
-    pub async fn relay_stats_all(&mut self) {
-        telemetry::setup::send_all_local_telemetry(self).await;
+
+    pub async fn stop(&mut self) -> Result<(),()>  {
+        if let Some(ref mut st) = self.telemetry_state {
+            st.bool_stop = true;
+        }// upon drop we will flush telemetry
+        Ok(())
     }
 
-    pub async fn relay_stats_periodic(self: &mut Self, duration_rate: Duration) {
+    pub async fn relay_stats_all(&mut self) {
+        //NOTE: not time ing this one as it is mine and internal
+        telemetry::setup::try_send_all_local_telemetry(self).await;
+    }
+
+    pub async fn relay_stats_periodic(&mut self, duration_rate: Duration) {
+
+        let mut start: Option<Instant> = None;
+        if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.wait_calls+=1;
+        }
+
         assert!(duration_rate.ge(&Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)));
         Delay::new(duration_rate.saturating_sub(self.last_instant.elapsed())).await;
         self.relay_stats_all().await;
+
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+        }
     }
 
-    pub fn take_slice<T>(& mut self, this: & mut Rx<T>, slice: &mut [T]) -> usize
+    pub fn take_slice<T>(&mut self, this: & mut Rx<T>, slice: &mut [T]) -> usize
         where T: Copy {
+
+        if let Some(ref mut st) = self.telemetry_state {
+            st.batch_read_calls += 1;
+        }
+
         let done = this.take_slice(slice);
         this.local_index = monitor::process_event(&mut self.telemetry_send_rx
                                                   , this.local_index, this.id,
                                                   |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(done));
+
+
         done
     }
 
-    pub fn try_take<T>(& mut self, this: & mut Rx<T>) -> Option<T> {
+    pub fn try_take<T>(&mut self, this: & mut Rx<T>) -> Option<T> {
+
+        if let Some(ref mut st) = self.telemetry_state {
+            st.single_read_calls += 1;
+        }
+
         match this.try_take() {
             Some(msg) => {
                 this.local_index = monitor::process_event(&mut self.telemetry_send_rx
@@ -462,6 +556,55 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub fn try_peek<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
         this.try_peek()
     }
+
+    //TODO:  slice not vec.
+    pub fn try_peek_populate_vec<'a,T>(&'a mut self, this: &'a mut Rx<T>, target:&'a mut Vec<&'a T>) {
+        this.try_peek_vec(target);
+    }
+
+    pub fn try_peek_iter<'a,T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
+       this.try_peek_iter()
+    }
+
+    pub async fn peek_async_populate_vec<'a,T>(&'a mut self, this: &'a mut Rx<T>, wait_for_count: usize, target:&'a mut Vec<&'a T>) -> &mut Vec<&T> {
+
+        let mut start: Option<Instant> = None;
+        if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.other_calls+=1;
+        }
+
+        let result = this.peek_async_vec(wait_for_count,target).await;
+
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+        }
+
+        result
+
+    }
+
+    pub async fn peek_async_iter<'a,T>(&'a mut self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
+
+        let mut start: Option<Instant> = None;
+        if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.other_calls+=1;
+        }
+
+        let result = this.peek_async_iter(wait_for_count).await;
+
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+        }
+        result
+
+    }
+
     pub fn is_empty<T>(& mut self, this: & mut Rx<T>) -> bool {
         this.is_empty()
     }
@@ -471,26 +614,104 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     pub async fn wait(& mut self, duration: Duration) {
+
+        let mut start: Option<Instant> = None;
+        if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.wait_calls+=1;
+        }
+
+
         Delay::new(duration).await;
+
+
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+        };
+
+
     }
 
     //here we just take an async fn and call it async just to wrap it
-    pub async fn call_async<F>(& mut self, f: F) -> F::Output
+    pub async fn call_async<F>(&mut self, f: F) -> F::Output
         where F: Future {
-        f.await
+
+        let mut start: Option<Instant> = None;
+        if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.other_calls+=1;
+        }
+
+        let result = f.await;
+
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+        };
+
+        result
     }
 
 
-    pub async fn wait_avail_units<T>(& mut self, this: & mut Rx<T>, count:usize) {
-        this.wait_avail_units(count).await
+    pub async fn wait_avail_units<T>(&mut self, this: & mut Rx<T>, count:usize) {
+
+        let mut start: Option<Instant> = None;
+        if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.other_calls+=1;
+        }
+
+        let result = this.wait_avail_units(count).await;
+
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+        };
+
+        result
+
+
     }
 
     pub async fn peek_async<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
-        this.peek_async().await
 
+        let mut start: Option<Instant> = None;
+        if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.other_calls+=1;
+        }
+
+        let result = this.peek_async().await;
+
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+        };
+
+        result
     }
     pub async fn take_async<T>(& mut self, this: & mut Rx<T>) -> Result<T, String> {
-        match this.take_async().await {
+
+        let mut start: Option<Instant> = None;
+        if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.single_read_calls+=1;
+        }
+
+        let result = this.take_async().await;
+
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+        }
+
+        match result {
             Ok(result) => {
                 this.local_index = monitor::process_event(&mut self.telemetry_send_rx
                                                           , this.local_index, this.id,
@@ -506,10 +727,16 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 Err(error_msg)
             }
         }
+
     }
 
     pub fn send_slice_until_full<T>(&mut self, this: & mut Tx<T>, slice: &[T]) -> usize
         where T: Copy {
+
+        if let Some(ref mut st) = self.telemetry_state {
+            st.batch_write_calls += 1;
+        }
+
         let done = this.send_slice_until_full(slice);
         this.local_index = monitor::process_event(&mut self.telemetry_send_tx
                                                   , this.local_index, this.id,
@@ -518,6 +745,11 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     pub fn send_iter_until_full<T,I: Iterator<Item = T>>(&mut self, this: & mut Tx<T>, iter: I) -> usize {
+
+        if let Some(ref mut st) = self.telemetry_state {
+            st.batch_write_calls += 1;
+        }
+
         let done = this.send_iter_until_full(iter);
         this.local_index = monitor::process_event(&mut self.telemetry_send_tx
                                                   , this.local_index, this.id,
@@ -526,6 +758,11 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     pub fn try_send<T>(& mut self, this: & mut Tx<T>, msg: T) -> Result<(), T> {
+
+        if let Some(ref mut st) = self.telemetry_state {
+            st.single_write_calls += 1;
+        }
+
         match this.try_send(msg) {
             Ok(_) => {
                 this.local_index = monitor::process_event(&mut self.telemetry_send_tx
@@ -541,18 +778,50 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
     pub fn is_full<T>(& mut self, this: & mut Tx<T>) -> bool {
+
         this.is_full()
     }
 
     pub fn vacant_units<T>(& mut self, this: & mut Tx<T>) -> usize {
+
         this.vacant_units()
     }
     pub async fn wait_vacant_units<T>(& mut self, this: & mut Tx<T>, count:usize) {
-        this.wait_vacant_units(count).await
+
+        let mut start: Option<Instant> = None;
+        if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.wait_calls+=1;
+        }
+
+        let response = this.wait_vacant_units(count).await;
+
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+        }
+
+        response
     }
 
     pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T) -> Result<(), T> {
-       match this.send_async(a).await {
+
+       let mut start: Option<Instant> = None;
+       if let Some(ref mut st) = self.telemetry_state {
+            start = Some(Instant::now());
+            st.single_write_calls+=1;
+       }
+
+       let result = this.send_async(a).await;
+
+       if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = start {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            }
+       }
+
+       match result  {
            Ok(_) => {
                this.local_index = monitor::process_event(&mut self.telemetry_send_tx
                                                          , this.local_index, this.id,
@@ -626,7 +895,7 @@ impl Percentile {
     // Private constructor to directly set the value inside the struct.
     // Ensures that all public constructors go through validation.
     fn new(value: f32) -> Option<Self> {
-        if value >= 0.0 && value <= 100.0 {
+        if (0.0..=100.0).contains(&value) {
             Some(Self(value/100f32))
         } else {
             None
@@ -700,14 +969,14 @@ impl Rate {
     pub fn per_minutes(units: u64) -> Self {
         Self {
             numerator: units,
-            denominator: 1 * 60, // 60 seconds
+            denominator:  60, // 60 seconds
         }
     }
 
     pub fn per_hours(units: u64) -> Self {
         Self {
             numerator: units,
-            denominator: 1 * 60 * 60, // 3600 seconds
+            denominator:  60 * 60, // 3600 seconds
         }
     }
 
@@ -720,7 +989,7 @@ impl Rate {
 
     /// Returns the rate as a rational number (numerator, denominator) to represent the rate per second.
     /// This method ensures the rate can be used without performing division, preserving precision.
-    pub(crate) fn to_rational_per_second(&self) -> (u64, u64) {
+    pub(crate) fn as_rational_per_second(&self) -> (u64, u64) {
         (self.numerator, self.denominator)
     }
 }
@@ -738,7 +1007,7 @@ impl Filled {
     /// Creates a new `Filled` instance representing a percentage filled.
     /// Ensures the percentage is within the valid range of 0.0 to 100.0.
     pub fn percentage(value: f32) -> Option<Self> {
-        if value >= 0.0 && value <= 100.0 {
+        if (0.0..=100.0).contains(&value) {
             Some(Self::Percentage((value * 100_000f32) as u64, 100_000u64))
         } else {
             None

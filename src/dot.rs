@@ -17,7 +17,7 @@ use bytes::{BufMut, BytesMut};
 use log::*;
 use time::{format_description, OffsetDateTime};
 use uuid::Uuid;
-use crate::monitor::ChannelMetaData;
+use crate::monitor::{ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::stats::ChannelStatsComputer;
@@ -28,11 +28,53 @@ pub struct DotState {
     pub seq: u64,
 }
 
+impl Default for DotState {
+    fn default() -> Self {
+        error!("Created new DotState in metrics_server");
+        DotState {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            seq: 0,
+        }
+    }
+}
+
 pub(crate) struct Node {
     pub id: usize,
+
     pub color: & 'static str,
     pub pen_width: & 'static str,
     pub display_label: String, //label may also have (n) for replicas
+}
+
+impl Node {
+    pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus) {
+
+        let num = actor_status.await_total_ns;
+        let den = actor_status.unit_total_ns;
+        let cpu_pct = 100.0 - ((num as f64 / den as f64) * 100.0);
+        //we need running averages?
+
+        //actor_status.batch_write_calls
+        //actor.status.single_write_calls
+
+
+        println!("{} {} {:.2}% {}/{}  restart:{} stop:{} redundancy:{}",self.id
+                 , self.display_label
+                 , cpu_pct,num,den
+                 , actor_status.total_count_restarts
+                 , actor_status.bool_stop
+                 , actor_status.redundancy);// confirm
+
+        //  with_restarts
+        //  with_instance_count
+
+        //  with_metrics   // Metrics:  20% Workload  256 mCPU
+        //  with_wait_upon // time/r/wsingle/r/wbatch/other
+
+
+
+    }
 }
 
 pub(crate) struct Edge {
@@ -48,13 +90,13 @@ pub(crate) struct Edge {
 }
 impl Edge {
     pub(crate) fn compute_and_refresh(&mut self, send: i128, take: i128) {
-        if self.stats_computer.capacity > 0 { //TODO: not sure I need this.
-            let (label, color, pen) = self.stats_computer.compute(send, take);
+
+            let (label, color, pen) = self.stats_computer.compute(self.from, send, take);
             // info!("computed edge {} {} {} take:{}",label,color,pen, take);
             self.display_label = label;
             self.color = color;
             self.pen_width = pen;
-        }
+
     }
 }
 
@@ -143,7 +185,7 @@ pub struct DotGraphFrames {
 
 
 
-pub fn refresh_structure(mut local_state: &mut DotState
+pub fn refresh_structure(local_state: &mut DotState
                          , name: &str
                          , id: usize
                          , channels_in: Arc<Vec<Arc<ChannelMetaData>>>
@@ -165,12 +207,12 @@ pub fn refresh_structure(mut local_state: &mut DotState
 
     //edges are defined by both the sender and the receiver
     //we need to record both monitors in this edge as to and from
-    define_unified_edges(&mut local_state, id, channels_in, true);
-    define_unified_edges(&mut local_state, id, channels_out, false);
+    define_unified_edges(local_state, id, channels_in, true);
+    define_unified_edges(local_state, id, channels_out, false);
 
 }
 
-fn define_unified_edges(local_state: &mut &mut DotState, node_id: usize, mdvec: Arc<Vec<Arc<ChannelMetaData>>>, set_to: bool) {
+fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: Arc<Vec<Arc<ChannelMetaData>>>, set_to: bool) {
     mdvec.iter()
         .for_each(|meta| {
             let idx = meta.id;
@@ -300,11 +342,27 @@ impl FrameHistory {
             });
     }
 
+    //once every 10 min we will write a full record
+    const SAFE_WRITE_LIMIT:usize = (10* 60 * 1000) / super::config::TELEMETRY_PRODUCTION_RATE_MS;
 
     pub fn apply_edge(&mut self, total_take:Vec<i128>, total_send: Vec<i128>) {
              write_long_unsigned(REC_EDGE, &mut self.history_buffer); //message type
-            self.packed_sent_writer.add_vec(&mut self.history_buffer, &total_send);
-            self.packed_take_writer.add_vec(&mut self.history_buffer, &total_take);
+
+            if self.packed_sent_writer.delta_write_count() < Self::SAFE_WRITE_LIMIT {
+                 self.packed_sent_writer.add_vec(&mut self.history_buffer, &total_send);
+            } else {
+                self.packed_sent_writer.sync_data();
+                self.packed_sent_writer.add_vec(&mut self.history_buffer, &total_send);
+
+            };
+
+            if self.packed_take_writer.delta_write_count() < Self::SAFE_WRITE_LIMIT {
+                self.packed_take_writer.add_vec(&mut self.history_buffer, &total_take);
+            } else {
+                self.packed_take_writer.sync_data();
+                self.packed_take_writer.add_vec(&mut self.history_buffer, &total_take);
+            };
+
 
     }
 

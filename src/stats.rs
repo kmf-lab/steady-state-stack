@@ -1,18 +1,20 @@
 use std::cmp::Ordering;
+use std::process::exit;
 use std::sync::Arc;
 use std::time::Duration;
-use log::{info, trace};
+#[allow(unused_imports)]
+use log::*;
 use num_traits::Zero;
 use crate::{config, Filled, Percentile, Rate, StdDev, Trigger};
 use crate::monitor::ChannelMetaData;
 
-const DOT_RED: & 'static str = "red";
-const DOT_GREEN: & 'static str = "green";
-const DOT_YELLOW: & 'static str = "yellow";
-const DOT_WHITE: & 'static str = "white";
+const DOT_RED: &str = "red";
+const DOT_GREEN: &str = "green";
+const DOT_YELLOW: &str = "yellow";
+const DOT_WHITE: &str = "white";
 
 
-static DOT_PEN_WIDTH: [&'static str; 16]
+static DOT_PEN_WIDTH: [&str; 16]
 = ["1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"];
 
 const SQUARE_LIMIT: u128 = (1 << 64)-1; // (u128::MAX as f64).sqrt() as u128;
@@ -130,11 +132,14 @@ impl ChannelStatsComputer {
 
     }
 
-    pub(crate) fn compute(&mut self, send: i128, take: i128)
+    pub(crate) fn compute(&mut self, from_id: usize, send: i128, take: i128)
                           -> (String, & 'static str, & 'static str) {
-        assert!(self.capacity > 0, "capacity must be greater than 0, this was probably not init");
-        assert!(send>=take, "internal error send {} must be greater or eq than take {}",send,take);
+        assert!(self.capacity > 0, "capacity must be greater than 0 from actor {}, this was probably not init", from_id);
 
+        // we are in a bad state just exit and give up
+        #[cfg(debug_assertions)]
+        if take>send { error!("actor {} take:{} is greater than send:{} ",from_id,take,send); exit(-1); }
+        assert!(send>=take, "internal error send {} must be greater or eq than take {}",send,take);
         // compute the running totals
 
         let inflight:u64 = (send-take) as u64;
@@ -149,24 +154,24 @@ impl ChannelStatsComputer {
 
         let mut display_label = String::new();
 
-        self.show_type.map(|f| {
+        self.show_type.iter().for_each(|f| {
             display_label.push_str(f);
-            display_label.push_str("\n");
+            display_label.push('\n');
         });
 
         if !self.buckets_bits.is_zero() {
             display_label.push_str("per ");
             display_label.push_str(&self.time_label);
-            display_label.push_str("\n");
+            display_label.push('\n');
         }
 
-        self.display_labels.as_ref().map(|labels| {
+        self.display_labels.as_ref().iter().for_each(|labels| {
             //display_label.push_str("labels: ");
             labels.iter().for_each(|f| {
                 display_label.push_str(f);
-                display_label.push_str(" ");
+                display_label.push(' ');
             });
-            display_label.push_str("\n");
+            display_label.push('\n');
         });
 
         //do not compute the std_devs/percentiles if we do not have a full window of data.
@@ -180,7 +185,7 @@ impl ChannelStatsComputer {
             display_label.push_str(" Total: ");
             display_label.push_str(itoa::Buffer::new().format(take));
         }
-        display_label.push_str("\n");
+        display_label.push('\n');
 
 
 
@@ -214,48 +219,48 @@ impl ChannelStatsComputer {
 
     }
 
-    fn append_computed_labels(&mut self, mut display_label: &mut String) {
+    fn append_computed_labels(&mut self, display_label: &mut String) {
 
         if self.show_avg_consumed {
             let avg = self.runner_consumed >> self.buckets_bits;
             display_label.push_str(format!("consumed avg: {:?} ", avg).as_str());
-            display_label.push_str("\n");
+            display_label.push('\n');
         }
 
         if self.show_avg_inflight {
             let avg = self.runner_inflight >> self.buckets_bits;
             display_label.push_str(format!("inflight avg: {:?} ", avg).as_str());
-            display_label.push_str("\n");
+            display_label.push('\n');
         }
 
         self.std_dev_inflight.iter().for_each(|f| {
             display_label.push_str(format!("inflight {:.1}StdDev: {:.1} "
                                            , f.value(), f.value() * self.inflight_std_dev()
             ).as_str());
-            display_label.push_str("\n");
+            display_label.push('\n');
         });
 
         self.std_dev_consumed.iter().for_each(|f| {
             display_label.push_str(format!("consumed {:.1}StdDev: {:.1} "
                                            , f.value(), f.value() * self.consumed_std_dev()
             ).as_str());
-            display_label.push_str("\n");
+            display_label.push('\n');
         });
 
         self.percentiles_consumed.iter().for_each(|p| {
             let window = 1u64 << self.buckets_bits;
-            display_label.push_str(&*format!("consumed {:?}%ile {:?}"
+            display_label.push_str(&format!("consumed {:?}%ile {:?}"
                                    , (p.value() * 100f32) as usize
                                    , Self::compute_percentile_est(window, *p, self.percentile_consumed)));
-            display_label.push_str("\n");
+            display_label.push('\n');
         });
 
         self.percentiles_inflight.iter().for_each(|p| {
             let window = 1u64 << self.buckets_bits;
-            display_label.push_str(&*format!("inflight {:.1}%ile {:?}"
+            display_label.push_str(&format!("inflight {:.1}%ile {:?}"
                                    , (p.value() * 100f32) as usize
                                    , Self::compute_percentile_est(window, *p, self.percentile_inflight)));
-            display_label.push_str("\n");
+            display_label.push('\n');
         });
 
         //TODO: add 3 latency display options in the builder.
@@ -280,7 +285,7 @@ impl ChannelStatsComputer {
             let inflight_square = (inflight as u128).pow(2);
             self.sum_of_squares_inflight = self.sum_of_squares_inflight.saturating_add(inflight_square);
             self.sum_of_squares_inflight = self.sum_of_squares_inflight.saturating_sub((self.buckets_inflight[self.buckets_index] as u128).pow(2));
-            self.buckets_inflight[self.buckets_index] = inflight as u64;
+            self.buckets_inflight[self.buckets_index] = inflight;
 
             self.runner_consumed += consumed as u128;
             self.runner_consumed -= self.buckets_consumed[self.buckets_index] as u128;
@@ -292,7 +297,7 @@ impl ChannelStatsComputer {
             let consumed_square = (consumed as u128).pow(2);
             self.sum_of_squares_consumed = self.sum_of_squares_consumed.saturating_add(consumed_square);
             self.sum_of_squares_consumed = self.sum_of_squares_consumed.saturating_sub((self.buckets_consumed[self.buckets_index] as u128).pow(2));
-            self.buckets_consumed[self.buckets_index] = consumed as u64;
+            self.buckets_consumed[self.buckets_index] = consumed;
 
             self.buckets_index = (1 + self.buckets_index) & self.buckets_mask;
         }
@@ -388,43 +393,43 @@ impl ChannelStatsComputer {
             // Rule: all rate values are in message per second so they can remain fixed while other values change
 
             Trigger::AvgRateBelow(rate) => {
-                self.avg_rate(&rate).is_lt()
+                self.avg_rate(rate).is_lt()
             },
             Trigger::AvgRateAbove(rate) => {
-                self.avg_rate(&rate).is_gt()
+                self.avg_rate(rate).is_gt()
             },
             Trigger::StdDevRateBelow(std_devs, rate) => {
-                self.stddev_rate(std_devs, &rate).is_lt()
+                self.stddev_rate(std_devs, rate).is_lt()
             }
             Trigger::StdDevRateAbove(std_devs, rate) => {
-                self.stddev_rate(std_devs, &rate).is_gt()
+                self.stddev_rate(std_devs, rate).is_gt()
             }
             Trigger::PercentileRateAbove(percentile, rate) => {
-                self.percentile_rate(percentile, &rate).is_gt()
+                self.percentile_rate(percentile, rate).is_gt()
             }
             Trigger::PercentileRateBelow(percentile, rate) => {
-                self.percentile_rate(percentile, &rate).is_lt()
+                self.percentile_rate(percentile, rate).is_lt()
             }
             ////////////////////////////////////////
             ////////////////////////////////////////
 
             Trigger::AvgLatencyAbove(duration) => {
-                self.avg_latency(&duration).is_gt()
+                self.avg_latency(duration).is_gt()
             }
             Trigger::AvgLatencyBelow(duration) => {
-                self.avg_latency(&duration).is_lt()
+                self.avg_latency(duration).is_lt()
             }
             Trigger::StdDevLatencyAbove(std_devs,duration) => {
-                self.stddev_latency(std_devs, &duration).is_gt()
+                self.stddev_latency(std_devs, duration).is_gt()
             }
             Trigger::StdDevLatencyBelow(std_devs,duration) => {
-                self.stddev_latency(std_devs, &duration).is_lt()
+                self.stddev_latency(std_devs, duration).is_lt()
             }
             Trigger::PercentileLatencyAbove(percentile, duration) => {
-                self.percentile_latency(percentile, &duration).is_gt()
+                self.percentile_latency(percentile, duration).is_gt()
             }
             Trigger::PercentileLatencyBelow(percentile, duration) => {
-                self.percentile_latency(percentile, &duration).is_lt()
+                self.percentile_latency(percentile, duration).is_lt()
             }
 
         }
@@ -453,8 +458,8 @@ impl ChannelStatsComputer {
 
     fn stddev_latency(&self, std_devs: &StdDev, duration: &Duration) -> Ordering {
         let avg_inflight = self.runner_inflight >> self.buckets_bits;
-        let window_in_micros = 1000u128 * self.frame_rate_ms << self.buckets_bits;
-        let adj_consumed_per_window = self.runner_consumed + ((self.consumed_std_dev() * std_devs.value()) as u128) << self.buckets_bits;
+        let window_in_micros = (1000u128 * self.frame_rate_ms) << self.buckets_bits;
+        let adj_consumed_per_window = self.runner_consumed + (((self.consumed_std_dev() * std_devs.value()) as u128) << self.buckets_bits);
         let adj_inflight = avg_inflight + (self.inflight_std_dev() * std_devs.value()) as u128;
         (adj_inflight * window_in_micros).cmp(&(duration.as_micros() * adj_consumed_per_window))
     }
@@ -463,29 +468,29 @@ impl ChannelStatsComputer {
 
     fn avg_latency(&self, duration: &Duration) -> Ordering {
         let avg_inflight = self.runner_inflight >> self.buckets_bits;
-        let window_in_micros = 1000u128 * self.frame_rate_ms << self.buckets_bits;
+        let window_in_micros = (1000u128 * self.frame_rate_ms) << self.buckets_bits;
         //both sides * by runner_consumed to avoid the division
         (avg_inflight * window_in_micros).cmp(&(duration.as_micros() * self.runner_consumed))
     }
 
     fn percentile_rate(&self, percentile: &Percentile, rate: &Rate) -> Ordering {
         let measured_rate = Self::compute_percentile_est(1 << self.buckets_bits as u32, *percentile, self.percentile_consumed);
-        let window_in_ms = (self.frame_rate_ms << self.buckets_bits) as u128;
-        (measured_rate * 1000 * rate.to_rational_per_second().1 as u128).cmp(&(window_in_ms * rate.to_rational_per_second().0 as u128))
+        let window_in_ms = self.frame_rate_ms << self.buckets_bits;
+        (measured_rate * 1000 * rate.as_rational_per_second().1 as u128).cmp(&(window_in_ms * rate.as_rational_per_second().0 as u128))
     }
 
     fn stddev_rate(&self, std_devs: &StdDev, rate: &Rate) -> Ordering {
-        let std_deviation = ((self.consumed_std_dev() as f32 * std_devs.value()) * ((1 << self.buckets_bits) as f32)) as u128;
+        let std_deviation = ((self.consumed_std_dev() * std_devs.value()) * ((1 << self.buckets_bits) as f32)) as u128;
         let measured_rate_per_window = self.runner_consumed + std_deviation;
         let window_in_ms = self.frame_rate_ms << self.buckets_bits;
-        (measured_rate_per_window * 1000 * rate.to_rational_per_second().1 as u128)
-            .cmp(&(window_in_ms as u128 * rate.to_rational_per_second().0 as u128))
+        (measured_rate_per_window * 1000 * rate.as_rational_per_second().1 as u128)
+            .cmp(&(window_in_ms * rate.as_rational_per_second().0 as u128))
     }
 
     fn avg_rate(&self, rate: &Rate) -> Ordering {
         let window_in_ms = self.frame_rate_ms << self.buckets_bits;
-        (self.runner_consumed * 1000 * rate.to_rational_per_second().1 as u128)
-            .cmp(&(window_in_ms * rate.to_rational_per_second().0 as u128))
+        (self.runner_consumed * 1000 * rate.as_rational_per_second().1 as u128)
+            .cmp(&(window_in_ms * rate.as_rational_per_second().0 as u128))
     }
 
     fn percentile_filled_exact(&self, percentile: &Percentile, exact_full: &u64) -> Ordering {
@@ -541,11 +546,10 @@ fn time_label(total_ms: usize) -> String {
         if minutes< 1.1 {"min".to_string()} else {
             format!("{:.1} mins", minutes)
         }
-    } else {
-        if seconds< 1.1 {"sec".to_string()} else {
-            format!("{:.1} secs", seconds)
-        }
+    } else if seconds< 1.1 {"sec".to_string()} else {
+        format!("{:.1} secs", seconds)
     }
+
 }
 
 #[cfg(test)]

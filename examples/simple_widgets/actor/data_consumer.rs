@@ -21,6 +21,10 @@ pub async fn run(context: SteadyContext
     let mut rx_guard = rx.lock().await;
     let rx = rx_guard.deref_mut();
 
+    //let args:Option<&Args> = context.args(); //you can make the type explicit
+    //let args = context.args::<Args>(); //or you can turbo fish here to get your args
+
+
     let mut monitor =  context.into_monitor(&[rx], &[]);
 
     let mut state = InternalState {
@@ -126,7 +130,7 @@ mod tests {
 
         util::logger::initialize();
 
-        let mut graph = Graph::new();
+        let mut graph = Graph::new("");
         let (tx, rx) = graph.channel_builder().with_capacity(8).build();
         let mock_monitor = graph.new_test_monitor("consumer_monitor");
 

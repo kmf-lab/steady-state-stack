@@ -25,7 +25,6 @@ struct InternalState {
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
-                 , opt: Args
                  , rx: Arc<Mutex<Rx<ChangeRequest>>>
                  , tx: Arc<Mutex<Tx<WidgetInventory>>> ) -> Result<(),()> {
 
@@ -34,6 +33,14 @@ pub async fn run(context: SteadyContext
 
     let mut tx_guard = tx.lock().await;
     let tx = tx_guard.deref_mut();
+
+    //let args = context.args::<Args>(); //or you can turbo fish here to get your args
+
+    let gen_rate_micros = if let Some(a) = context.args::<Args>() {
+        a.gen_rate_micros
+    } else {
+        10_000 //default
+    };
 
     const MULTIPLIER:usize = 256;   //500_000 per second at 500 micros
 
@@ -49,9 +56,14 @@ pub async fn run(context: SteadyContext
          //single pass of work, do not loop in here
         iterate_once(&mut monitor, &mut state, tx, MULTIPLIER).await;
 
+        //if (65536<<2)==state.count {
+        //    return monitor.stop().await; //stop the actor
+        //    panic!("This is a panic");
+        //}
+
         //this is an example of an telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
-        monitor.relay_stats_periodic(Duration::from_micros(opt.gen_rate_micros)).await;
+        monitor.relay_stats_periodic(Duration::from_micros(gen_rate_micros)).await;
     }
 
 }
@@ -112,6 +124,9 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor
         }));
 
     state.count+= multiplier as u64;
+
+
+
 
     let sent = monitor.send_slice_until_full(tx_widget, &wids);
     //iterator of sent until the end

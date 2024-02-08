@@ -1,18 +1,16 @@
 use std::ops::DerefMut;
 use std::sync::Arc;
 use futures::lock::Mutex;
-use crate::actor::data_generator::WidgetInventory;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::{LocalMonitor, Rx, SteadyContext, Tx};
-
-const BATCH_SIZE: usize = 2000;
 
 #[derive(Clone, Debug, PartialEq, Copy)]
     pub struct FailureFeedback {
 }
 #[derive(Clone, Debug, PartialEq, Copy)]
     pub struct ChangeRequest {
+    pub msg: FailureFeedback,
 }
 
 #[cfg(not(test))]
@@ -27,7 +25,6 @@ pub async fn run(context: SteadyContext
     let rx = rx_guard.deref_mut();
 
     let mut monitor = context.into_monitor(&[rx], &[tx]);
-    let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
     loop {
         //in this example iterate once blocks/await until it has work to do
@@ -36,7 +33,6 @@ pub async fn run(context: SteadyContext
         if iterate_once(&mut monitor
                         , rx
                         , tx
-                        , &mut buffer
         ).await {
             break Ok(());
         }
@@ -57,14 +53,12 @@ pub async fn run(context: SteadyContext
       let tx = tx_guard.deref_mut();
 
       let mut monitor = context.into_monitor(&[rx], &[tx]);
-      let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
     loop {
 
         if iterate_once( &mut monitor
                          , rx
                          , tx
-                         , &mut buffer
                          ).await {
             break;
         }
@@ -79,12 +73,13 @@ pub async fn run(context: SteadyContext
 async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor<R, T>
                                                       , rx: & mut Rx<FailureFeedback>
                                                       , tx: & mut Tx<ChangeRequest>
-                                                      , buf: &mut [WidgetInventory; BATCH_SIZE]) -> bool {
+) -> bool {
 
     if let Ok(msg) = monitor.take_async(rx).await {
         //we have a message to process
         //we do not care about the message we just need to send a change request
-        let _ = tx.send_async(ChangeRequest {}).await;
+        let _ = tx.send_async(ChangeRequest {msg}).await;
+
     }
 
     false

@@ -9,6 +9,8 @@
 use bytes::{Buf, BufMut, Bytes};
 use bytes::BytesMut;
 
+#[allow(dead_code)]
+
 pub fn read_long_signed(byte_buffer: &mut Bytes) -> Option<i64> {
     let initial_remaining:usize = byte_buffer.remaining();
     if initial_remaining>0 {
@@ -23,23 +25,28 @@ pub fn read_long_signed(byte_buffer: &mut Bytes) -> Option<i64> {
         None
     }
 }
+
+#[allow(dead_code)]
+
 fn read_long_signed_tail(a: i64, byte_buffer: &mut Bytes,initial_remaining:usize) -> Option<i64> {
     let remaining:usize = byte_buffer.remaining();
     if remaining>0 {
         let v = byte_buffer.get_i8();
         if v < 0 {
             Some(a | (v as i64 & 0x7F))
+        } else if initial_remaining-remaining > 10 {
+            None //we found bad data so we are not going to read
         } else {
-            if initial_remaining-remaining > 10 {
-                None //we found bad data so we are not going to read
-            } else {
-                read_long_signed_tail((a | v as i64) << 7, byte_buffer, initial_remaining)
-            }
+            read_long_signed_tail((a | v as i64) << 7, byte_buffer, initial_remaining)
         }
+
     } else {
         None
     }
 }
+
+// for later when we need to read the history
+#[allow(dead_code)]
 
 pub fn read_long_unsigned(byte_buffer: &mut Bytes) -> Option<u64> {
     let mut value: u64 = 0;
@@ -140,13 +147,12 @@ pub fn write_long_unsigned(value: u64, byte_buffer: &mut BytesMut) {
 pub fn write_long_signed(value: i64, byte_buffer: &mut BytesMut) {
     if value >= 0 {
         write_long_signed_pos(value as u64, byte_buffer);
+    } else if value != i64::MIN {
+        write_long_signed_neg(value, byte_buffer);
     } else {
-        if value != i64::MIN {
-            write_long_signed_neg(value, byte_buffer);
-        } else {
-            byte_buffer.extend_from_slice(&[0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80]);
-        }
+        byte_buffer.extend_from_slice(&[0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80]);
     }
+
 }
 
 //////////////////////////////////////////////////////////////////////////

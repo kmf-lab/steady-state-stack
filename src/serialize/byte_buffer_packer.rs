@@ -88,13 +88,18 @@ impl <T> PackedVecWriter<T>
     }
 }
 
+// we allow this dead code this is for later when we read the history
+#[allow(dead_code)]
 /// reads the deltas so we can write or send less data across the system.
+
 pub(crate) struct PackedVecReader<T> {
     pub(crate) previous: Vec<T>,
 }
 
 impl <T> PackedVecReader<T>
     where T: From<i64> + Sub<Output = T> + Add<Output = T> + Copy {
+
+    #[allow(dead_code)]
 
     fn restore_vec(&mut self, buffer: &mut Bytes) -> Option<Vec<T>> {
         // Read the length of chunks

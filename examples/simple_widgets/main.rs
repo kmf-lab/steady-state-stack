@@ -1,8 +1,6 @@
 mod args;
 
-use std::{backtrace, panic};
-use std::backtrace::Backtrace;
-use std::process::exit;
+
 use structopt::*;
 use log::*;
 
@@ -99,8 +97,9 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     debug!("args: {:?}",&cli_arg);
 
     //TODO: move for special debug flag.
+    /*
     #[cfg(debug_assertions)]
-    panic::set_hook(Box::new(|panic_info| {
+    std::panic::set_hook(Box::new(|panic_info| {
         let backtrace = Backtrace::capture();
 
         // You can log the panic information here if needed
@@ -111,9 +110,10 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
         // Exit with status code -1
         exit(-1);
     }));
+    //  */
 
     //create the mutable graph object
-    let mut graph = steady_state::Graph::new();//TODO: pass A Args to the graph
+    let mut graph = steady_state::Graph::new(cli_arg.clone());//TODO: pass A Args to the graph
 
     Bastion::init(); //init bastion runtime
 
@@ -156,21 +156,17 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let _ = Bastion::supervisor(|supervisor|
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
-                //TODO: this wll be moved into the context for the actor
-                let cli_arg = cli_arg.clone(); //example passing args to child telemetry
-                graph.add_to_graph("generator"
-                                   , children.with_redundancy(0)
-                                   , move |context| actor::data_generator::run(context
-                                                                               , cli_arg.clone()
-                                                                               , change_rx.clone()
-                                                                               , generator_tx.clone()
-                                                                     )
-                )
+                graph.actor_builder("generator")
+                     .build(children,
+                        move |context| actor::data_generator::run(context
+                                                                    , change_rx.clone()
+                                                                    , generator_tx.clone()
+                    ) )
             })
             .children(|children| {
-                    graph.add_to_graph("approval"
-                                      , children.with_redundancy(0)
-                                   , move |context| actor::data_approval::run(context
+                    graph.actor_builder("approval")
+                         .build(children,
+                                 move |context| actor::data_approval::run(context
                                                                               , generator_rx.clone()
                                                                               , consumer_tx.clone()
                                                                               , failure_tx.clone()
@@ -180,20 +176,19 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
             })
             .children(|children| {
-                graph.add_to_graph("feedback"
-                                   , children.with_redundancy(0)
-                                   , move |context| actor::data_feedback::run(context
-                                                                              , failure_rx.clone()
-                                                                              , change_tx.clone()
+                graph.actor_builder("feedback")
+                     .build(children,
+                            move |context| actor::data_feedback::run(context
+                                                                      , failure_rx.clone()
+                                                                      , change_tx.clone()
                     )
 
                 )
 
             })
             .children(|children| {
-                    graph.add_to_graph("consumer"
-                                      , children.with_redundancy(0)
-                                     ,move |context| actor::data_consumer::run(context
+                    graph.actor_builder("consumer")
+                         .build( children, move |context| actor::data_consumer::run(context
                                                                                , consumer_rx.clone()
                                                                         )
 

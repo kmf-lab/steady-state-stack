@@ -19,7 +19,7 @@ fn main() {
 
     // Create a new directory for the project
     let test_folder = Path::new("output_logs");
-    let project_path = test_folder.join(&project_name);
+    let project_path = test_folder.join(project_name);
 
     if project_path.exists() {
         eprintln!("Error: Project directory '{}' already exists.", project_name);

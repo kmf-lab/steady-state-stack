@@ -1,18 +1,107 @@
-use std::ops::{DerefMut, Sub};
-use std::time::{Duration, Instant};
+use std::ops::*;
+use std::time::{Instant};
 use bastion::run;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use futures::lock::Mutex;
 use num_traits::Zero;
 use crate::{config, MONITOR_NOT, MONITOR_UNKNOWN, Percentile, Rx, StdDev, Trigger, Tx};
-use crate::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
+use crate::channel_builder::{SteadyRx, SteadyTx};
 
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
     pub(crate) send: Option<SteadyTelemetryTake<TXL>>,
     pub(crate) take: Option<SteadyTelemetryTake<RXL>>,
+    pub(crate) actor: Option<SteadyRx<ActorStatus>>,
+}
+pub struct SteadyTelemetryTake<const LENGTH: usize> {
+    pub(crate) rx: Arc<Mutex<Rx<[usize; LENGTH]>>>,
+    pub(crate) details: Vec<Arc<ChannelMetaData>>,
 }
 
+#[derive(Clone,Copy,Debug,Default,Eq,PartialEq)]
+pub struct ActorStatus {
+    pub(crate) total_count_restarts: u32, //always max so just pick the latest
+    pub(crate) bool_stop:            bool, //always max so just pick the latest
+
+    pub(crate) await_total_ns:       u64,  //sum records together
+    pub(crate) unit_total_ns:        u64,  //sum records together
+    pub(crate) redundancy:           u16,
+
+    pub(crate) single_read_calls:    u16,  //sum records together
+    pub(crate) batch_read_calls:     u16,  //sum records together
+    pub(crate) single_write_calls:   u16,  //sum records together
+    pub(crate) batch_write_calls:    u16,  //sum records together
+    pub(crate) other_calls:          u16,  //sum records together
+    pub(crate) wait_calls:           u16,  //sum records together
+}
+
+
+pub struct SteadyTelemetryActorSend {
+    pub(crate) tx: SteadyTx<ActorStatus>,
+    pub(crate) last_telemetry_error: Instant,
+
+    pub(crate) await_ns_unit: u64,
+    pub(crate) instant_start: Instant,
+    pub(crate) redundancy: u16,
+
+    pub(crate) single_read_calls: u16,
+    pub(crate) batch_read_calls: u16,
+    pub(crate) single_write_calls: u16,
+    pub(crate) batch_write_calls: u16,
+    pub(crate) other_calls: u16,
+    pub(crate) wait_calls: u16,
+    pub(crate) count_restarts: Arc<AtomicU32>,
+    pub(crate) bool_stop: bool,
+}
+
+impl SteadyTelemetryActorSend {
+
+    pub(crate) fn status_reset(&mut self) {
+        self.await_ns_unit = 0;
+        self.instant_start = Instant::now();
+
+        self.single_read_calls = 0;
+        self.batch_read_calls = 0;
+        self.single_write_calls = 0;
+        self.batch_write_calls = 0;
+        self.other_calls = 0;
+        self.wait_calls = 0;
+    }
+
+    pub(crate) fn status_message(&self) -> Option<ActorStatus> {
+
+        if config::TELEMETRY_FOR_ACTORS {
+            Some(ActorStatus {
+                total_count_restarts: self.count_restarts.load(Ordering::Relaxed),
+                bool_stop: self.bool_stop,
+                await_total_ns: self.await_ns_unit,
+                unit_total_ns: self.instant_start.elapsed().as_nanos() as u64,
+                redundancy: self.redundancy,
+                single_read_calls: self.single_read_calls,
+                batch_read_calls: self.batch_read_calls,
+                single_write_calls: self.single_write_calls,
+                batch_write_calls: self.batch_write_calls,
+                other_calls: self.other_calls,
+                wait_calls: self.wait_calls,
+            })
+        } else {
+            None
+        }
+    }
+
+}
+
+
+pub struct SteadyTelemetrySend<const LENGTH: usize> {
+    pub(crate) tx: SteadyTx<[usize; LENGTH]>,
+    pub(crate) count: [usize; LENGTH],
+    pub(crate) last_telemetry_error: Instant,
+    pub(crate) inverse_local_index: [usize; LENGTH],
+}
+
+
 impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
+
 
     #[inline]
     fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
@@ -31,8 +120,62 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
         }
     }
 
+
+    fn consume_actor(&self) -> Option<ActorStatus> {
+        if let Some(ref act) = &self.actor {
+            let mut buffer = [ActorStatus::default();config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
+            let count = {
+                let mut guard = run!(act.lock());
+                let act = guard.deref_mut();
+                act.take_slice( & mut buffer)
+            };
+
+            let mut await_total_ns:       u64 = 0;
+            let mut unit_total_ns:        u64 = 0;
+            let mut single_read_calls:    u16 = 0;
+            let mut batch_read_calls:     u16 = 0;
+            let mut single_write_calls:   u16 = 0;
+            let mut batch_write_calls:    u16 = 0;
+            let mut other_calls:          u16 = 0;
+            let mut wait_calls:           u16 = 0;
+
+            //let populated_slice = &buffer[0..count];
+            for status in buffer.iter().take(count) {
+                await_total_ns += status.await_total_ns;
+                unit_total_ns += status.unit_total_ns;
+                single_read_calls += status.single_read_calls;
+                batch_read_calls += status.batch_read_calls;
+                single_write_calls += status.single_write_calls;
+                batch_write_calls += status.batch_write_calls;
+                other_calls += status.other_calls;
+                wait_calls += status.wait_calls;
+            }
+            if count>0 {
+                Some(ActorStatus {
+                    total_count_restarts:  buffer[count - 1].total_count_restarts,
+                    bool_stop: buffer[count - 1].bool_stop,
+                    redundancy: buffer[count - 1].redundancy,
+                    await_total_ns,
+                    unit_total_ns,
+                    single_read_calls,
+                    batch_read_calls,
+                    single_write_calls,
+                    batch_write_calls,
+                    other_calls,
+                    wait_calls,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+
+
     #[inline]
-    fn consume_take_into(&self, send_source: &mut Vec<i128>, take_target: &mut Vec<i128>, future_target: &mut Vec<i128>) {
+    fn consume_take_into(&self, send_source: &mut Vec<i128>, take_target: &mut Vec<i128>, future_target: &mut Vec<i128>) -> bool {
         if let Some(ref take) = &self.take {
             let mut buffer = [[0usize;RXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
 
@@ -51,15 +194,20 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             //this is essential to ensure send>=take for all frames before we generate labels
             //this also ensures the data is highly compressable
 
-            //first pull the data from last frame into here
+            //first pull the data we can from last frame into here
             take.details.iter().for_each(|meta| {
-                take_target[meta.id] += future_target[meta.id];
-                future_target[meta.id] = 0;
+                //note we may be spanning the boundary of a failed actor
+                //if that is the case we may not be able to pick up all the data
+                //and must leave some for future frames
+                let max_takeable = send_source[meta.id]-take_target[meta.id];
+                assert!(max_takeable.ge(&0),"internal error");
+                let value_taken = max_takeable.min(future_target[meta.id]);
+                take_target[meta.id] += value_taken;
+                future_target[meta.id] -= value_taken;
             });
 
             //pull in new data for this frame
             populated_slice.iter().for_each(|msg| {
-
                 take.details.iter()
                     .zip(msg.iter())
                     .for_each(|(meta, val)| {
@@ -74,10 +222,13 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                         }
                     });
             });
+            count>0
+        } else {
+            false
         }
     }
     #[inline]
-    fn consume_send_into(&self, send_target: &mut Vec<i128>) {
+    fn consume_send_into(&self, send_target: &mut Vec<i128>) -> bool {
         if let Some(ref send) = &self.send {
             //we only want to gab a max of LOCKED_CHANNEL_LENGTH_TO_COLLECTOR for this frame
             let mut buffer = [[0usize;TXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
@@ -97,7 +248,9 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                         send_target[meta.id] += *val as i128;
                     });
             });
-
+            count > 0
+        } else {
+            false
         }
     }
 
@@ -121,36 +274,25 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
     }
 }
 
-pub struct SteadyTelemetrySend<const LENGTH: usize> {
-    pub(crate) tx: Arc<Mutex<Tx<[usize; LENGTH]>>>,
-    pub(crate) count: [usize; LENGTH],
-    pub(crate) last_telemetry_error: Instant,
-    pub(crate) actor_name: &'static str,
-    pub(crate) inverse_local_index: [usize; LENGTH],
-}
+
 
 impl <const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
 
-    pub fn actor_name(&self) -> &'static str {
-        self.actor_name
-    }
-
     pub fn new(tx: Arc<Mutex<Tx<[usize; LENGTH]>>>,
                count: [usize; LENGTH],
-               actor_name: &'static str,
                inverse_local_index: [usize; LENGTH],
+               start_now: Instant
     ) -> SteadyTelemetrySend<LENGTH> {
         SteadyTelemetrySend{ tx
             , count
-            , last_telemetry_error: Instant::now().sub(Duration::from_secs(1+MAX_TELEMETRY_ERROR_RATE_SECONDS as u64))
-            , actor_name
+            , last_telemetry_error: start_now
             , inverse_local_index
         }
     }
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct ChannelMetaData {
+pub struct ChannelMetaData {
     pub(crate) id: usize,
     pub(crate) labels: Vec<&'static str>,
     pub(crate) capacity: usize,
@@ -169,24 +311,21 @@ pub(crate) struct ChannelMetaData {
     pub(crate) connects_sidecar: bool,
 }
 
-pub struct SteadyTelemetryTake<const LENGTH: usize> {
-    pub(crate) rx: Arc<Mutex<Rx<[usize; LENGTH]>>>,
-    pub(crate) details: Vec<Arc<ChannelMetaData>>,
-}
+
 
 
 pub trait RxTel : Send + Sync {
-
-
     //returns an iterator of usize channel ids
     fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>>;
     fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>>;
+    fn consume_actor(&self) -> Option<ActorStatus>;
 
-    fn consume_take_into(&self, send_source: &mut Vec<i128>, take_target: &mut Vec<i128>, future_target: &mut Vec<i128>);
-    fn consume_send_into(&self, send_target: &mut Vec<i128>);
+    fn consume_take_into(&self, send_source: &mut Vec<i128>, take_target: &mut Vec<i128>, future_target: &mut Vec<i128>) -> bool;
+    fn consume_send_into(&self, send_target: &mut Vec<i128>) -> bool;
 
     fn biggest_tx_id(&self) -> usize;
     fn biggest_rx_id(&self) -> usize;
+
 
 }
 
@@ -209,7 +348,7 @@ pub(crate) mod monitor_tests {
     async fn test_relay_stats_tx_rx_custom() {
         util::logger::initialize();
 
-        let mut graph = Graph::new();
+        let mut graph = Graph::new("");
         let (tx_string, rx_string) = graph.channel_builder()
             .with_capacity(8)
             .build();
@@ -262,7 +401,7 @@ pub(crate) mod monitor_tests {
     async fn test_relay_stats_tx_rx_batch() {
         util::logger::initialize();
 
-        let mut graph = Graph::new();
+        let mut graph = Graph::new("");
         let monitor = graph.new_test_monitor("test");
 
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build();
@@ -336,6 +475,6 @@ pub(crate) fn find_my_index<const LEN:usize>(telemetry: &SteadyTelemetrySend<LEN
         .iter()
         .enumerate()
         .find(|(_, &value)| value == goal)
-        .unwrap_or_else(|| (MONITOR_NOT, &MONITOR_NOT));
+        .unwrap_or( (MONITOR_NOT, &MONITOR_NOT));
     idx
 }

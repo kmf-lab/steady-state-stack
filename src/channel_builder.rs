@@ -9,6 +9,11 @@ pub(crate) type ChannelBacking<T> = Heap<T>;
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
 pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
 
+pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
+pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
+
+
+
 
 //TODO: we should use static for all telemetry work. (next step)
 //      this might lead to a general solution for static in other places
@@ -206,7 +211,7 @@ impl ChannelBuilder {
         }
     }
 
-    pub fn build<T>(& self) -> (Arc<Mutex<Tx<T>>>, Arc<Mutex<Rx<T>>>) {
+    pub fn build<T>(& self) -> (SteadyTx<T>, SteadyRx<T>) {
 
         let rb = AsyncRb::<ChannelBacking<T>>::new(self.capacity);
         let (tx, rx) = rb.split();

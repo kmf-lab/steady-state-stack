@@ -69,6 +69,7 @@ num-traits       = "0.2.17" # for num::Zero and other generic math traits
 # long term stratigy to remain async agnostic.
 tide             = "0.17.0-beta.1"
 tide-websockets  = "0.4.0"
+backtrace = "0.3"
 
 const_panic = "0.2.8" # for const panic!()
 
@@ -96,7 +97,15 @@ dashmap          = "5.5.3"
 bytes = { version = "1.5.0", features = [] }
 signal-hook      = "0.3.17"
 itoa             = "1.0.9"
-lazy_static      = "1.4" # for lazy statics in unit tests
+lazy_static      = "1.4"
+config           = "0.14.0" # for lazy statics in unit tests
+
+# for future consideration
+#kube-core = "0.88.1"
+#kube-derive = "0.88.1"
+#k8s-metrics = "0.15.0"
+#k8s-openapi = "0.21.0" #remove due to mabe_async ?
+
 
 #serde ="0.3.0" # for serialization and deserialization
 #serde_derive = "1.0.64" # for serialization and deserialization

@@ -1,4 +1,5 @@
 use std::ops::{Deref, DerefMut};
+use std::process::exit;
 use std::sync::Arc;
 use futures::lock::Mutex;
 use futures::FutureExt; // Provides the .fuse() method
@@ -13,25 +14,9 @@ use tide::http::mime;
 use crate::*;
 use crate::dot::{build_dot, DotGraphFrames, DotState, FrameHistory, refresh_structure};
 use crate::telemetry::metrics_collector::*;
-use crate::telemetry::metrics_collector::DiagramData::{Edge, Node};
+use crate::telemetry::metrics_collector::DiagramData::{ChannelVolumeData, NodeDef, NodeProcessData};
 
-macro_rules! count_bits {
-    ($num:expr) => {{
-        let mut num = $num;
-        let mut bits = 0;
-        while num > 0 {
-            num >>= 1;
-            bits += 1;
-        }
-        bits
-    }};
-}
 
-//we make the buckets for MA a power of 2 for easy rotate math
-const MA_MIN_BUCKETS: usize = 1000/ config::TELEMETRY_PRODUCTION_RATE_MS;
-const MA_BITS: usize = count_bits!(MA_MIN_BUCKETS);
-const MA_ADJUSTED_BUCKETS:usize = 1 << MA_BITS;
-const MA_BITMASK: usize = MA_ADJUSTED_BUCKETS - 1;
 
 
 
@@ -65,11 +50,7 @@ pub(crate) async fn run(context: SteadyContext
         let _ = context.into_monitor(&[rx], &[]);
     }
 
-    let mut dot_state = DotState {
-        seq: u64::MAX,
-        nodes: Vec::new(), //position is the telemetry id
-        edges: Vec::new(), //position is the channel id
-    };
+    let mut dot_state = DotState::default();
 
     let top_down = false;
     let rankdir = if top_down { "TB" } else { "LR" };
@@ -115,8 +96,6 @@ pub(crate) async fn run(context: SteadyContext
 
     pin_mut!(server_handle);
 
-
-
     loop {
         select! {
             _ = server_handle.as_mut().fuse() => {
@@ -125,8 +104,7 @@ pub(crate) async fn run(context: SteadyContext
             },
             msg = rx.take_async().fuse() => {
                   match msg {
-                         Ok(Node(seq, name, id, channels_in, channels_out)) => {
-
+                         Ok(NodeDef(seq, name, id, channels_in, channels_out)) => {
                               refresh_structure(&mut dot_state
                                                , name
                                                , id
@@ -136,34 +114,50 @@ pub(crate) async fn run(context: SteadyContext
 
                               dot_state.seq = seq;
                               if config::TELEMETRY_HISTORY  {
-                                        history.apply_node(name, id, channels_in.clone(), channels_out.clone());
+                                  history.apply_node(name, id
+                                                  , channels_in.clone()
+                                                  , channels_out.clone());
                               }
                          },
-                         Ok(Edge(seq
+                         Ok(NodeProcessData(seq,actor_status)) => {
+                            actor_status.iter()
+                                        .enumerate()
+                                        .for_each(|(i, status)| {
+
+                                         // we are in a bad state just exit and give up
+                                        #[cfg(debug_assertions)]
+                                        if dot_state.nodes.is_empty() { exit(-1); }
+                                        assert!(!dot_state.nodes.is_empty());
+
+                               dot_state.nodes[i].compute_and_refresh(*status);
+                            });
+                         },
+                         Ok(ChannelVolumeData(seq
                                  , total_take
                                  , total_send)) => {
                               //note on init we may not have the same length...
                               assert_eq!(total_take.len(), total_send.len());
 
-                            //  info!(" seq: {} total_take: {:?} total_send: {:?}",seq, total_take, total_send);
-
                               total_send.iter()
                                         .zip(total_take.iter())
                                         .enumerate()
                                         .for_each(|(i,(s,t))| {
-                             dot_state.edges[i].compute_and_refresh(*s,*t);
 
-                           // info!("edge:{} {} {} {}",i,*s,*t,dot_state.edges[i].display_label);
+                                        // we are in a bad state just exit and give up
+                                        #[cfg(debug_assertions)]
+                                        if dot_state.edges.is_empty() { exit(-1); }
+                                        assert!(!dot_state.edges.is_empty());
 
+                                    dot_state.edges[i].compute_and_refresh(*s,*t);
 
-                        });
+                                 });
 
                               dot_state.seq = seq;
                               //NOTE: generate the new graph
                               frames.active_graph.clear(); // Clear the buffer for reuse
-                              build_dot(&mut dot_state, rankdir, &mut frames.active_graph);
+                              build_dot(&dot_state, rankdir, &mut frames.active_graph);
                               let vec = frames.active_graph.to_vec();
-                                { //block to ensure we drop the guard quckly
+                                { //block to ensure we drop the guard quickly
                                     let mut state_guard = state.lock().await;
                                     state_guard.deref_mut().doc = vec;
                                 }

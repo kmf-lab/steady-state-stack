@@ -90,7 +90,7 @@ impl SystemdManager {
 
             ////
             Command::new(useradd_command)
-                .args(&useradd_args)
+                .args(useradd_args)
                 .status()?;
             info!("Created the service user '{}'", self.service_user);
         } else {
@@ -109,14 +109,14 @@ impl SystemdManager {
         if self.on_boot {
             // Enable the service to start on boot
             Command::new("systemctl")
-                        .args(&["enable", &self.service_name])
+                        .args(["enable", &self.service_name])
                         .status()?;
             info!("Enabled '{}' service to start on boot",self.service_name);
         }
 
         if start_now {
             Command::new("systemctl")
-                        .args(&["start", &self.service_name])
+                        .args(["start", &self.service_name])
                         .status()?;
             info!("Started '{}' service",self.service_name);
             info!("To debug try: journalctl -u {}",self.service_name);
@@ -130,13 +130,13 @@ impl SystemdManager {
 
         // Stop the service
         Command::new("systemctl")
-                    .args(&["stop", &self.service_name])
+                    .args(["stop", &self.service_name])
                     .status()?;
         info!("Stopped '{}' service",self.service_name);
 
         // Disable the service
         Command::new("systemctl")
-                    .args(&["disable", &self.service_name])
+                    .args(["disable", &self.service_name])
                     .status()?;
         info!("Disabled '{}' service from starting on boot",self.service_name);
 
@@ -166,7 +166,7 @@ impl SystemdManager {
     fn create_service_file(&self, start_string: String) -> Result<(), Box<dyn std::error::Error>> {
 
          let mut load_creds = String::new();
-         if self.secrets.len() > 0 {
+         if !self.secrets.is_empty() {
             load_creds.push_str("# systemd's LoadCredential Option (systemd v246+)\n");
          }
          for secret in &self.secrets {
