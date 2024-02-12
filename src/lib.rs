@@ -9,7 +9,7 @@ pub(crate) mod serialize {
     pub(crate) mod byte_buffer_packer;
     pub(crate) mod fast_protocol_packed;
 }
-pub(crate) mod stats;
+pub(crate) mod channel_stats;
 pub(crate) mod config;
 pub(crate) mod dot;
 pub(crate) mod monitor;
@@ -18,7 +18,7 @@ pub mod channel_builder;
 pub mod util;
 pub mod serviced;
 pub mod actor_builder;
-
+mod actor_stats;
 
 
 use std::any::{Any, type_name};
@@ -152,7 +152,7 @@ impl SteadyContext {
             telemetry_send_rx,
             telemetry_send_tx,
             telemetry_state,
-            last_instant: start_instant,
+            last_telemetry_send: start_instant,
             id: self.id,
             name: self.name,
             ctx: self.ctx,
@@ -213,6 +213,23 @@ impl Graph {
     }
 
     pub fn start(&mut self) {
+
+        //TODO: move for special debug flag.
+        /*
+        #[cfg(debug_assertions)]
+        std::panic::set_hook(Box::new(|panic_info| {
+            let backtrace = Backtrace::capture();
+
+            // You can log the panic information here if needed
+            eprintln!("Application panicked: {}", panic_info);
+
+            eprintln!("Backtrace:\n{:?}", backtrace);
+
+            // Exit with status code -1
+            exit(-1);
+        }));
+        //  */
+
         Bastion::start(); //start the graph
         let mut guard = run!(self.runtime_state.lock());
         let state = guard.deref_mut();
@@ -452,14 +469,15 @@ impl <const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
 }
 
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
-    pub(crate) id:                usize, //unique identifier for this child group
-    pub(crate) name:              & 'static str,
-    pub(crate) ctx:               Option<BastionContext>,
-    pub(crate) telemetry_send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
-    pub(crate) telemetry_send_rx: Option<SteadyTelemetrySend<RX_LEN>>,
-    pub(crate) telemetry_state:   Option<SteadyTelemetryActorSend>,
-    pub(crate) last_instant:      Instant,
-    pub(crate) runtime_state:     Arc<Mutex<GraphLivelinessState>>,
+    pub(crate) id:                   usize, //unique identifier for this child group
+    pub(crate) name:                 & 'static str,
+    pub(crate) ctx:                  Option<BastionContext>,
+    pub(crate) telemetry_send_tx:    Option<SteadyTelemetrySend<TX_LEN>>,
+    pub(crate) telemetry_send_rx:    Option<SteadyTelemetrySend<RX_LEN>>,
+    pub(crate) telemetry_state:      Option<SteadyTelemetryActorSend>,
+    pub(crate) last_telemetry_send:  Instant,
+    pub(crate) runtime_state:        Arc<Mutex<GraphLivelinessState>>,
+
 
     #[cfg(test)]
     pub(crate) test_count: HashMap<&'static str, usize>,
@@ -504,28 +522,33 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     pub async fn relay_stats_periodic(&mut self, duration_rate: Duration) {
 
-        let mut start: Option<Instant> = None;
-        if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.wait_calls+=1;
-        }
+        self.start_hot_profile(monitor::CALL_WAIT);
 
         assert!(duration_rate.ge(&Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)));
-        Delay::new(duration_rate.saturating_sub(self.last_instant.elapsed())).await;
+        Delay::new(duration_rate.saturating_sub(self.last_telemetry_send.elapsed())).await;
+        self.rollup_hot_profile();
+
+        //this can not be measured since it sends the measurement of hot_profile.
+        //also this is a special case where we do not want to measure the time it takes to send telemetry
         self.relay_stats_all().await;
 
+
+    }
+
+    fn start_hot_profile(&mut self, x: usize) {
         if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+            st.calls[x] = st.calls[x].saturating_add(1);
+            if st.hot_profile.is_none() {
+                st.hot_profile = Some(Instant::now())
             }
-        }
+        };
     }
 
     pub fn take_slice<T>(&mut self, this: & mut Rx<T>, slice: &mut [T]) -> usize
         where T: Copy {
 
         if let Some(ref mut st) = self.telemetry_state {
-            st.batch_read_calls += 1;
+            st.calls[monitor::CALL_BATCH_READ]=st.calls[monitor::CALL_BATCH_READ].saturating_add(1);
         }
 
         let done = this.take_slice(slice);
@@ -540,7 +563,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub fn try_take<T>(&mut self, this: & mut Rx<T>) -> Option<T> {
 
         if let Some(ref mut st) = self.telemetry_state {
-            st.single_read_calls += 1;
+            st.calls[monitor::CALL_SINGLE_READ]=st.calls[monitor::CALL_SINGLE_READ].saturating_add(1);
         }
 
         match this.try_take() {
@@ -568,19 +591,12 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     pub async fn peek_async_populate_vec<'a,T>(&'a mut self, this: &'a mut Rx<T>, wait_for_count: usize, target:&'a mut Vec<&'a T>) -> &mut Vec<&T> {
 
-        let mut start: Option<Instant> = None;
-        if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.other_calls+=1;
-        }
+        self.start_hot_profile(monitor::CALL_OTHER);
 
         let result = this.peek_async_vec(wait_for_count,target).await;
 
-        if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-            }
-        }
+        self.rollup_hot_profile();
+
 
         result
 
@@ -588,19 +604,12 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     pub async fn peek_async_iter<'a,T>(&'a mut self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
 
-        let mut start: Option<Instant> = None;
-        if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.other_calls+=1;
-        }
+        self.start_hot_profile(monitor::CALL_OTHER);
 
         let result = this.peek_async_iter(wait_for_count).await;
 
-        if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-            }
-        }
+        self.rollup_hot_profile();
+
         result
 
     }
@@ -615,21 +624,11 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     pub async fn wait(& mut self, duration: Duration) {
 
-        let mut start: Option<Instant> = None;
-        if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.wait_calls+=1;
-        }
-
+        self.start_hot_profile(monitor::CALL_WAIT);
 
         Delay::new(duration).await;
 
-
-        if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-            }
-        };
+        self.rollup_hot_profile();
 
 
     }
@@ -638,19 +637,12 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn call_async<F>(&mut self, f: F) -> F::Output
         where F: Future {
 
-        let mut start: Option<Instant> = None;
-        if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.other_calls+=1;
-        }
+        self.start_hot_profile(monitor::CALL_OTHER);
 
         let result = f.await;
 
-        if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-            }
-        };
+        self.rollup_hot_profile();
+
 
         result
     }
@@ -658,19 +650,12 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     pub async fn wait_avail_units<T>(&mut self, this: & mut Rx<T>, count:usize) {
 
-        let mut start: Option<Instant> = None;
-        if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.other_calls+=1;
-        }
+        self.start_hot_profile(monitor::CALL_OTHER);
 
         let result = this.wait_avail_units(count).await;
 
-        if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-            }
-        };
+        self.rollup_hot_profile();
+
 
         result
 
@@ -679,37 +664,23 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     pub async fn peek_async<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
 
-        let mut start: Option<Instant> = None;
-        if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.other_calls+=1;
-        }
+        self.start_hot_profile(monitor::CALL_OTHER);
 
         let result = this.peek_async().await;
 
-        if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-            }
-        };
+        self.rollup_hot_profile();
+
 
         result
     }
     pub async fn take_async<T>(& mut self, this: & mut Rx<T>) -> Result<T, String> {
 
-        let mut start: Option<Instant> = None;
-        if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.single_read_calls+=1;
-        }
+        self.start_hot_profile(monitor::CALL_SINGLE_READ);
 
         let result = this.take_async().await;
 
-        if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-            }
-        }
+        self.rollup_hot_profile();
+
 
         match result {
             Ok(result) => {
@@ -734,7 +705,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         where T: Copy {
 
         if let Some(ref mut st) = self.telemetry_state {
-            st.batch_write_calls += 1;
+            st.calls[monitor::CALL_BATCH_WRITE]=st.calls[monitor::CALL_BATCH_WRITE].saturating_add(1);
         }
 
         let done = this.send_slice_until_full(slice);
@@ -747,7 +718,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub fn send_iter_until_full<T,I: Iterator<Item = T>>(&mut self, this: & mut Tx<T>, iter: I) -> usize {
 
         if let Some(ref mut st) = self.telemetry_state {
-            st.batch_write_calls += 1;
+            st.calls[monitor::CALL_BATCH_WRITE]=st.calls[monitor::CALL_BATCH_WRITE].saturating_add(1);
         }
 
         let done = this.send_iter_until_full(iter);
@@ -760,7 +731,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub fn try_send<T>(& mut self, this: & mut Tx<T>, msg: T) -> Result<(), T> {
 
         if let Some(ref mut st) = self.telemetry_state {
-            st.single_write_calls += 1;
+            st.calls[monitor::CALL_SINGLE_WRITE]=st.calls[monitor::CALL_SINGLE_WRITE].saturating_add(1);
         }
 
         match this.try_send(msg) {
@@ -788,38 +759,23 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
     pub async fn wait_vacant_units<T>(& mut self, this: & mut Tx<T>, count:usize) {
 
-        let mut start: Option<Instant> = None;
-        if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.wait_calls+=1;
-        }
+        self.start_hot_profile(monitor::CALL_WAIT);
 
         let response = this.wait_vacant_units(count).await;
 
-        if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-            }
-        }
+        self.rollup_hot_profile();
+
 
         response
     }
 
     pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T) -> Result<(), T> {
 
-       let mut start: Option<Instant> = None;
-       if let Some(ref mut st) = self.telemetry_state {
-            start = Some(Instant::now());
-            st.single_write_calls+=1;
-       }
+       self.start_hot_profile(monitor::CALL_SINGLE_WRITE);
 
        let result = this.send_async(a).await;
 
-       if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = start {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-            }
-       }
+        self.rollup_hot_profile();
 
        match result  {
            Ok(_) => {
@@ -833,6 +789,19 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                Err(sensitive)
            }
        }
+    }
+
+    fn rollup_hot_profile(&mut self) {
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = st.hot_profile.take() {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+
+                assert!(st.instant_start.le(&d), "unit_start: {:?} call_start: {:?}", st.instant_start, d);
+
+                //let total_ns = st.instant_start.elapsed().as_nanos() as u64;
+                //assert!(total_ns >= st.await_ns_unit, "should be: {} >= {}", total_ns, st.await_ns_unit);
+            }
+        }
     }
 }
 
@@ -889,14 +858,14 @@ impl StdDev {
 ////////////////
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Percentile(f32);
+pub struct Percentile(f64);
 
 impl Percentile {
     // Private constructor to directly set the value inside the struct.
     // Ensures that all public constructors go through validation.
-    fn new(value: f32) -> Option<Self> {
+    fn new(value: f64) -> Option<Self> {
         if (0.0..=100.0).contains(&value) {
-            Some(Self(value/100f32))
+            Some(Self(value))
         } else {
             None
         }
@@ -904,38 +873,38 @@ impl Percentile {
 
     // Convenience methods for common percentiles
     pub fn p25() -> Self {
-        Self(25.0/100f32)
+        Self(25.0)
     }
 
-    pub fn p50() -> Self {Self(50.0/100f32) }
+    pub fn p50() -> Self {Self(50.0) }
 
     pub fn p75() -> Self {
-        Self(75.0/100f32)
+        Self(75.0)
     }
 
     pub fn p90() -> Self {
-        Self(90.0/100f32)
+        Self(90.0)
     }
 
     pub fn p80() -> Self {
-        Self(80.0/100f32)
+        Self(80.0)
     }
 
     pub fn p96() -> Self {
-        Self(96.0/100f32)
+        Self(96.0)
     }
 
     pub fn p99() -> Self {
-        Self(99.0/100f32)
+        Self(99.0)
     }
 
     // Allows custom values within the valid range.
-    pub fn custom(value: f32) -> Option<Self> {
+    pub fn custom(value: f64) -> Option<Self> {
         Self::new(value)
     }
 
     // Getter to access the inner f32 value.
-    pub fn value(&self) -> f32 {
+    pub fn percentile(&self) -> f64 {
         self.0
     }
 }

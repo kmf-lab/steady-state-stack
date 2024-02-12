@@ -15,12 +15,13 @@ use bastion::run;
 use std::fmt::Write;
 use bytes::{BufMut, BytesMut};
 use log::*;
+use num_traits::Zero;
 use time::{format_description, OffsetDateTime};
 use uuid::Uuid;
 use crate::monitor::{ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
-use crate::stats::ChannelStatsComputer;
+use crate::channel_stats::ChannelStatsComputer;
 
 pub struct DotState {
     pub(crate) nodes: Vec<Node<>>, //position matches the node id
@@ -41,37 +42,48 @@ impl Default for DotState {
 
 pub(crate) struct Node {
     pub id: usize,
-
     pub color: & 'static str,
+    pub name: & 'static str,
     pub pen_width: & 'static str,
     pub display_label: String, //label may also have (n) for replicas
 }
 
 impl Node {
-    pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus) {
+    pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus, total_work_ns: u128) {
 
+        //smooth these values out. TODO: add moving avg??
+
+        //  with_metrics   // Metrics:  20% Workload  256 mCPU  (window ma + std dev, 80th percentile)
         let num = actor_status.await_total_ns;
         let den = actor_status.unit_total_ns;
-        let cpu_pct = 100.0 - ((num as f64 / den as f64) * 100.0);
-        //we need running averages?
+        assert!(den.ge(&num), "num: {} den: {}",num,den);
+        let m_cpu = if den.is_zero() {0} else {1024 - ( (num * 1024) / den )};
+        //we need sum of all unit-await value
 
-        //actor_status.batch_write_calls
-        //actor.status.single_write_calls
+        let workload = (actor_status.unit_total_ns-actor_status.await_total_ns) as f32 / total_work_ns as f32;
 
 
-        println!("{} {} {:.2}% {}/{}  restart:{} stop:{} redundancy:{}",self.id
+        //we could build a stats computer similar to the channel.
+        //   with_color_trigger()
+
+        let name = self.name;
+
+
+        //  with_restarts
+        //  with_instance_count  and is stopped
+        println!("{} {} {}mCPU {}/{} {:.1}%Workload  restart:{} stop:{} redundancy:{}"
+                  ,self.id
                  , self.display_label
-                 , cpu_pct,num,den
+                 , m_cpu, num, den, 100f32*workload
                  , actor_status.total_count_restarts
                  , actor_status.bool_stop
                  , actor_status.redundancy);// confirm
 
-        //  with_restarts
-        //  with_instance_count
 
-        //  with_metrics   // Metrics:  20% Workload  256 mCPU
+
         //  with_wait_upon // time/r/wsingle/r/wbatch/other
-
+        //actor_status.batch_write_calls
+        //actor.status.single_write_calls
 
 
     }
@@ -186,7 +198,7 @@ pub struct DotGraphFrames {
 
 
 pub fn refresh_structure(local_state: &mut DotState
-                         , name: &str
+                         , name: &'static str
                          , id: usize
                          , channels_in: Arc<Vec<Arc<ChannelMetaData>>>
                          , channels_out: Arc<Vec<Arc<ChannelMetaData>>>
@@ -198,12 +210,13 @@ pub fn refresh_structure(local_state: &mut DotState
                 id: usize::MAX,
                 color: "grey",
                 pen_width: "2",
-                display_label: "".to_string(),
+                name: name,
+                display_label: "".to_string(), //defined when the content arrives
             }
         });
     }
     local_state.nodes[id].id = id;
-    local_state.nodes[id].display_label = name.to_string();
+    local_state.nodes[id].display_label = name.to_string(); //temp will be replaced when data arrives.
 
     //edges are defined by both the sender and the receiver
     //we need to record both monitors in this edge as to and from

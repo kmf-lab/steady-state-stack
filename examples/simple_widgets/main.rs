@@ -1,9 +1,7 @@
 mod args;
 
-
 use structopt::*;
 use log::*;
-
 use futures_timer::Delay;
 use args::Args;
 use std::time::Duration;
@@ -96,31 +94,15 @@ fn main() {
 fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     debug!("args: {:?}",&cli_arg);
 
-    //TODO: move for special debug flag.
-    /*
-    #[cfg(debug_assertions)]
-    std::panic::set_hook(Box::new(|panic_info| {
-        let backtrace = Backtrace::capture();
-
-        // You can log the panic information here if needed
-        eprintln!("Application panicked: {}", panic_info);
-
-        eprintln!("Backtrace:\n{:?}", backtrace);
-
-        // Exit with status code -1
-        exit(-1);
-    }));
-    //  */
-
     //create the mutable graph object
-    let mut graph = steady_state::Graph::new(cli_arg.clone());//TODO: pass A Args to the graph
+    let mut graph = steady_state::Graph::new(cli_arg.clone());
 
     Bastion::init(); //init bastion runtime
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_builder = graph.channel_builder()
-                            .with_compute_window_floor(Duration::from_secs(12))
+                            .with_compute_refresh_window_floor(Duration::from_secs(10),Duration::from_secs(60))
                             .with_labels(&["widgets"],true)
                             .with_type()
                             .with_line_expansion();

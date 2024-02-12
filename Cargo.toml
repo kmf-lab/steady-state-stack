@@ -76,6 +76,7 @@ const_panic = "0.2.8" # for const panic!()
 #color-eyre = "0.5.5"   # for better error messages
 #rstest = "0.5.2"       # for unit testing
 
+hdrhistogram = "7.5.4"  # for latency histograms
 
 
 # TODO: will support systemd, SQRL and rapid prootyping

@@ -3,6 +3,7 @@ use bastion::children::Children;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize};
+use std::time::Duration;
 use bastion::Callbacks;
 use futures::lock::Mutex;
 use log::*;
@@ -31,6 +32,7 @@ pub struct ActorBuilder {
     channel_count: Arc<AtomicUsize>,
     runtime_state: Arc<Mutex<GraphLivelinessState>>,
     redundancy: usize,
+    window_bucket_in_bits: u8, //ma is 1<<window_bucket_in_bits to ensure power of 2
     id: usize,
 }
 
@@ -45,6 +47,7 @@ impl ActorBuilder {
             id,
             args : graph.args.clone(),
             redundancy: 1,
+            window_bucket_in_bits: 5, // 1<<5 == 32
             telemetry_tx: graph.all_telemetry_rx.clone(),
             channel_count: graph.channel_count.clone(),
             runtime_state: graph.runtime_state.clone(),
@@ -57,6 +60,25 @@ impl ActorBuilder {
         result
     }
 
+
+    /// moving average and percentile window will be at least this size but may be larger
+    pub fn with_compute_window_floor(&self, duration: Duration) -> Self {
+        let result = self.clone();
+        let millis: u128 = duration.as_micros();
+        let frame_ms: u128 = 1000u128 * crate::config::TELEMETRY_PRODUCTION_RATE_MS as u128;
+        let est_buckets = millis / frame_ms;
+        //find the next largest power of 2
+        let window_bucket_in_bits = (est_buckets as f32).log2().ceil() as u8;
+        result.with_compute_window_bucket_bits(window_bucket_in_bits)
+    }
+
+    /// NOTE the default is 1 second
+    pub fn with_compute_window_bucket_bits(&self, window_bucket_in_bits: u8) -> Self {
+        assert!(window_bucket_in_bits <= 30);
+        let mut result = self.clone();
+        result.window_bucket_in_bits = window_bucket_in_bits;
+        result
+    }
 
     pub fn build<F,I>(self, children: Children, init: I) -> Children
         where I: Fn(SteadyContext) -> F + Send + 'static + Clone,

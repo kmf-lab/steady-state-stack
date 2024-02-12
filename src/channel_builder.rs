@@ -35,17 +35,23 @@ pub struct ChannelBuilder {
     capacity: usize,
     labels: &'static [& 'static str],
     display_labels: bool,
+
+    refresh_rate_in_bits: u8,
     window_bucket_in_bits: u8, //ma is 1<<window_bucket_in_bits to ensure power of 2
+
     line_expansion: bool,
     show_type: bool,
     percentiles_inflight: Vec<Percentile>, //each is a row
     percentiles_consumed: Vec<Percentile>, //each is a row
+    percentiles_latency: Vec<Percentile>, //each is a row
     std_dev_inflight: Vec<StdDev>, //each is a row
     std_dev_consumed: Vec<StdDev>, //each is a row
+    std_dev_latency: Vec<StdDev>, //each is a row
     red: Vec<Trigger>, //if used base is green
     yellow: Vec<Trigger>, //if used base is green
     avg_inflight: bool,
     avg_consumed: bool,
+    avg_latency: bool,
     connects_sidecar: bool,
 }
 //some ideas to target
@@ -66,40 +72,55 @@ impl ChannelBuilder {
             capacity: DEFAULT_CAPACITY,
             labels: &[],
             display_labels: false,
+
+            refresh_rate_in_bits: 6, // 1<<6 == 64
             window_bucket_in_bits: 5, // 1<<5 == 32
+
             line_expansion: false,
             show_type: false,
             percentiles_inflight: Vec::new(),
             percentiles_consumed: Vec::new(),
+            percentiles_latency: Vec::new(),
             std_dev_inflight: Vec::new(),
             std_dev_consumed: Vec::new(),
+            std_dev_latency: Vec::new(),
             red: Vec::new(),
             yellow: Vec::new(),
             avg_inflight: false,
             avg_consumed: false,
+            avg_latency: false,
             connects_sidecar: false,
         }
     }
 
-    /// moving average and percentile window will be at least this size but may be larger
-    pub fn with_compute_window_floor(&self, duration: Duration) -> Self {
+    pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
         let result = self.clone();
 
-        let millis: u128 = duration.as_micros();
-        let frame_ms: u128 = 1000u128 * config::TELEMETRY_PRODUCTION_RATE_MS as u128;
-        let est_buckets = millis / frame_ms;
+        //we must compute the refresh rate first before we do the window
+        let frames_per_refresh = refresh.as_micros() / (1000u128 * config::TELEMETRY_PRODUCTION_RATE_MS as u128);
+        let refresh_in_bits = (frames_per_refresh as f32).log2().ceil() as u8;
+
+        let refresh_in_micros = (1000u128<<refresh_in_bits) * config::TELEMETRY_PRODUCTION_RATE_MS as u128;
+
+
+        //now compute the window based on our new bucket size
+        let buckets_per_window:f32 = window.as_micros() as f32 / refresh_in_micros as f32;
+
         //find the next largest power of 2
-        let window_bucket_in_bits = (est_buckets as f32).log2().ceil() as u8;
-        result.with_compute_window_bucket_bits(window_bucket_in_bits)
+        let window_in_bits = (buckets_per_window as f32).log2().ceil() as u8;
+
+        result.with_compute_refresh_window_bucket_bits(refresh_in_bits, window_in_bits)
+
     }
 
-    /// NOTE the default is 1 second
-    pub fn with_compute_window_bucket_bits(&self, window_bucket_in_bits: u8) -> Self {
+    pub fn with_compute_refresh_window_bucket_bits(&self
+                                           , refresh_bucket_in_bits:u8
+                                           , window_bucket_in_bits: u8) -> Self {
         assert!(window_bucket_in_bits <= 30);
         let mut result = self.clone();
+        result.refresh_rate_in_bits = refresh_bucket_in_bits;
         result.window_bucket_in_bits = window_bucket_in_bits;
         result
-
     }
 
     pub fn with_capacity(&self, capacity: usize) -> Self {
@@ -134,6 +155,14 @@ impl ChannelBuilder {
         result
     }
 
+    pub fn with_avg_latency(&self) -> Self {
+        let mut result = self.clone();
+        result.avg_latency = true;
+        result
+    }
+
+
+
     pub fn connects_sidecar(&self) -> Self {
         let mut result = self.clone();
         result.connects_sidecar = true;
@@ -141,8 +170,6 @@ impl ChannelBuilder {
     }
 
 
-
-    /// show the control labels   TODO: dot filter must still be implemented
     pub fn with_labels(&self, labels: &'static [& 'static str], display: bool) -> Self {
         let mut result = self.clone();
         result.labels = if display {labels} else {&[]};
@@ -160,6 +187,11 @@ impl ChannelBuilder {
         result.std_dev_consumed.push(config);
         result
     }
+    pub fn with_latency_standard_deviation(&self, config: StdDev) -> Self {
+        let mut result = self.clone();
+        result.std_dev_latency.push(config);
+        result
+    }
 
 
     pub fn with_filled_percentile(&self, config: Percentile) -> Self {
@@ -167,10 +199,14 @@ impl ChannelBuilder {
         result.percentiles_inflight.push(config);
         result
     }
-
     pub fn with_rate_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_consumed.push(config);
+        result
+    }
+    pub fn with_latency_percentile(&self, config: Percentile) -> Self {
+        let mut result = self.clone();
+        result.percentiles_latency.push(config);
         result
     }
 
@@ -196,17 +232,21 @@ impl ChannelBuilder {
             labels: self.labels.into(),
             display_labels: self.display_labels,
             window_bucket_in_bits: self.window_bucket_in_bits,
+            refresh_rate_in_bits: self.refresh_rate_in_bits,
             line_expansion: self.line_expansion,
             show_type,
             percentiles_inflight: self.percentiles_inflight.clone(),
             percentiles_consumed: self.percentiles_consumed.clone(),
+            percentiles_latency: self.percentiles_latency.clone(),
             std_dev_inflight: self.std_dev_inflight.clone(),
             std_dev_consumed: self.std_dev_consumed.clone(),
+            std_dev_latency: vec![],
             red: self.red.clone(),
             yellow: self.yellow.clone(),
             capacity: self.capacity,
             avg_inflight: self.avg_inflight,
             avg_consumed: self.avg_consumed,
+            avg_latency: false,
             connects_sidecar: self.connects_sidecar,
         }
     }

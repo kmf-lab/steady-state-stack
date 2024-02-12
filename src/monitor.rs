@@ -27,14 +27,15 @@ pub struct ActorStatus {
     pub(crate) unit_total_ns:        u64,  //sum records together
     pub(crate) redundancy:           u16,
 
-    pub(crate) single_read_calls:    u16,  //sum records together
-    pub(crate) batch_read_calls:     u16,  //sum records together
-    pub(crate) single_write_calls:   u16,  //sum records together
-    pub(crate) batch_write_calls:    u16,  //sum records together
-    pub(crate) other_calls:          u16,  //sum records together
-    pub(crate) wait_calls:           u16,  //sum records together
+    pub(crate) calls: [u16; 6],
 }
 
+pub(crate) const CALL_SINGLE_READ: usize=0;
+pub(crate) const CALL_BATCH_READ: usize=1;
+pub(crate) const CALL_SINGLE_WRITE: usize=2;
+pub(crate) const CALL_BATCH_WRITE: usize=3;
+pub(crate) const CALL_OTHER: usize=4;
+pub(crate) const CALL_WAIT: usize=5;
 
 pub struct SteadyTelemetryActorSend {
     pub(crate) tx: SteadyTx<ActorStatus>,
@@ -42,14 +43,13 @@ pub struct SteadyTelemetryActorSend {
 
     pub(crate) await_ns_unit: u64,
     pub(crate) instant_start: Instant,
+    pub(crate) hot_profile:   Option<Instant>,
+
     pub(crate) redundancy: u16,
 
-    pub(crate) single_read_calls: u16,
-    pub(crate) batch_read_calls: u16,
-    pub(crate) single_write_calls: u16,
-    pub(crate) batch_write_calls: u16,
-    pub(crate) other_calls: u16,
-    pub(crate) wait_calls: u16,
+
+    pub(crate) calls: [u16; 6],
+
     pub(crate) count_restarts: Arc<AtomicU32>,
     pub(crate) bool_stop: bool,
 }
@@ -57,32 +57,27 @@ pub struct SteadyTelemetryActorSend {
 impl SteadyTelemetryActorSend {
 
     pub(crate) fn status_reset(&mut self) {
+
+        assert!(self.hot_profile.is_none(),"internal error");
+
         self.await_ns_unit = 0;
         self.instant_start = Instant::now();
-
-        self.single_read_calls = 0;
-        self.batch_read_calls = 0;
-        self.single_write_calls = 0;
-        self.batch_write_calls = 0;
-        self.other_calls = 0;
-        self.wait_calls = 0;
+        self.calls.fill(0);
     }
 
     pub(crate) fn status_message(&self) -> Option<ActorStatus> {
 
         if config::TELEMETRY_FOR_ACTORS {
+            let total_ns = self.instant_start.elapsed().as_nanos() as u64;
+            assert!(self.hot_profile.is_none(),"internal error");
+            assert!(total_ns>=self.await_ns_unit,"should be: {} >= {}",total_ns,self.await_ns_unit);
             Some(ActorStatus {
                 total_count_restarts: self.count_restarts.load(Ordering::Relaxed),
                 bool_stop: self.bool_stop,
                 await_total_ns: self.await_ns_unit,
-                unit_total_ns: self.instant_start.elapsed().as_nanos() as u64,
+                unit_total_ns: total_ns,
                 redundancy: self.redundancy,
-                single_read_calls: self.single_read_calls,
-                batch_read_calls: self.batch_read_calls,
-                single_write_calls: self.single_write_calls,
-                batch_write_calls: self.batch_write_calls,
-                other_calls: self.other_calls,
-                wait_calls: self.wait_calls,
+                calls: self.calls,
             })
         } else {
             None
@@ -140,15 +135,16 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             let mut wait_calls:           u16 = 0;
 
             //let populated_slice = &buffer[0..count];
+            let mut calls = [0u16;6];
             for status in buffer.iter().take(count) {
+                assert!(status.unit_total_ns>=status.await_total_ns,"{} {}",status.unit_total_ns,status.await_total_ns);
+
                 await_total_ns += status.await_total_ns;
                 unit_total_ns += status.unit_total_ns;
-                single_read_calls += status.single_read_calls;
-                batch_read_calls += status.batch_read_calls;
-                single_write_calls += status.single_write_calls;
-                batch_write_calls += status.batch_write_calls;
-                other_calls += status.other_calls;
-                wait_calls += status.wait_calls;
+
+                for (i, call) in status.calls.iter().enumerate() {
+                    calls[i] = calls[i].saturating_add(*call);
+                }
             }
             if count>0 {
                 Some(ActorStatus {
@@ -157,12 +153,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                     redundancy: buffer[count - 1].redundancy,
                     await_total_ns,
                     unit_total_ns,
-                    single_read_calls,
-                    batch_read_calls,
-                    single_write_calls,
-                    batch_write_calls,
-                    other_calls,
-                    wait_calls,
+                    calls,
                 })
             } else {
                 None
@@ -299,15 +290,26 @@ pub struct ChannelMetaData {
     pub(crate) display_labels: bool,
     pub(crate) line_expansion: bool,
     pub(crate) show_type: Option<&'static str>,
-    pub(crate) window_bucket_in_bits: u8, //for percentiles and ma
+
+    pub(crate) refresh_rate_in_bits: u8,
+    pub(crate) window_bucket_in_bits: u8,
+
     pub(crate) percentiles_inflight: Vec<Percentile>, //each is a row
     pub(crate) percentiles_consumed: Vec<Percentile>, //each is a row
+    pub(crate) percentiles_latency: Vec<Percentile>, //each is a row
+
     pub(crate) std_dev_inflight: Vec<StdDev>, //each is a row
     pub(crate) std_dev_consumed: Vec<StdDev>, //each is a row
+    pub(crate) std_dev_latency: Vec<StdDev>, //each is a row
+
+
     pub(crate) red: Vec<Trigger>, //if used base is green
     pub(crate) yellow: Vec<Trigger>, //if used base is green
+
     pub(crate) avg_inflight: bool,
     pub(crate) avg_consumed: bool,
+    pub(crate) avg_latency: bool,
+
     pub(crate) connects_sidecar: bool,
 }
 

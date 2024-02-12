@@ -120,16 +120,27 @@ pub(crate) async fn run(context: SteadyContext
                               }
                          },
                          Ok(NodeProcessData(seq,actor_status)) => {
+
+                            //sum up all actor work so we can find the percentage of each
+                            let total_work_ns:u128 = actor_status.iter()
+                                        .map(|status| {
+                                            assert!(status.unit_total_ns>=status.await_total_ns, "unit_total_ns:{} await_total_ns:{}",status.unit_total_ns,status.await_total_ns);
+                                            (status.unit_total_ns-status.await_total_ns) as u128
+                                        })
+                                        .sum();
+
+
+                            //process each actor status
                             actor_status.iter()
                                         .enumerate()
                                         .for_each(|(i, status)| {
 
-                                         // we are in a bad state just exit and give up
-                                        #[cfg(debug_assertions)]
-                                        if dot_state.nodes.is_empty() { exit(-1); }
-                                        assert!(!dot_state.nodes.is_empty());
+                                 // we are in a bad state just exit and give up
+                                #[cfg(debug_assertions)]
+                                if dot_state.nodes.is_empty() { exit(-1); }
+                                assert!(!dot_state.nodes.is_empty());
 
-                               dot_state.nodes[i].compute_and_refresh(*status);
+                               dot_state.nodes[i].compute_and_refresh(*status, total_work_ns);
                             });
                          },
                          Ok(ChannelVolumeData(seq
