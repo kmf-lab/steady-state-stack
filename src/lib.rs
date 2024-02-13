@@ -35,7 +35,7 @@ use std::ops::{DerefMut, Sub};
 use bastion::{Bastion, run};
 use std::future::{Future, ready};
 use std::thread::sleep;
-use log::error;
+use log::*;
 use channel_builder::{InternalReceiver, InternalSender};
 use ringbuf::producer::Producer;
 use async_ringbuf::producer::AsyncProducer;
@@ -46,7 +46,7 @@ use futures_timer::Delay;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use actor_builder::ActorBuilder;
 use crate::channel_builder::ChannelBuilder;
-use crate::monitor::{ChannelMetaData, SteadyTelemetryActorSend, SteadyTelemetrySend};
+use crate::monitor::{ActorMetaData, ChannelMetaData, SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::steady_logging_init;// re-publish in public
 
@@ -111,6 +111,7 @@ pub struct SteadyContext {
     pub(crate) runtime_state: Arc<Mutex<GraphLivelinessState>>,
     pub(crate) count_restarts: Arc<AtomicU32>,
     pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
+    pub(crate) actor_metadata: Arc<ActorMetaData>,
 }
 
 impl SteadyContext {
@@ -169,7 +170,7 @@ impl SteadyContext {
 pub struct Graph  {
     pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
     pub(crate) channel_count: Arc<AtomicUsize>,
-    pub(crate) monitor_count: usize,
+    pub(crate) monitor_count: Arc<AtomicUsize>,
     //used by collector but could grow if we get new actors at runtime
     pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<Mutex<GraphLivelinessState>>,
@@ -184,9 +185,6 @@ impl Graph {
         // assert that we are NOT in release mode
         assert!(cfg!(debug_assertions), "This function is only for testing");
 
-        let id = self.monitor_count;
-        self.monitor_count += 1;
-
         let channel_count    = self.channel_count.clone();
         let all_telemetry_rx = self.all_telemetry_rx.clone();
 
@@ -196,7 +194,8 @@ impl Graph {
             name,
             args: self.args.clone(),
             ctx: None, //this is key, we are not running in a graph by design
-            id,
+            id: self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            actor_metadata: Arc::new(ActorMetaData::default()),
             redundancy: 1,
             all_telemetry_rx,
             runtime_state: self.runtime_state.clone(),
@@ -208,8 +207,8 @@ impl Graph {
 
 impl Graph {
 
-    pub fn actor_builder(&mut self, name: & 'static str) -> ActorBuilder{
-        crate::ActorBuilder::new(self, name)
+    pub fn actor_builder(&mut self) -> ActorBuilder{
+        crate::ActorBuilder::new(self)
     }
 
     pub fn start(&mut self) {
@@ -247,7 +246,7 @@ impl Graph {
         Graph {
             args: Arc::new(Box::new(args)),
             channel_count: Arc::new(AtomicUsize::new(0)),
-            monitor_count: 0, //this is the count of all monitors
+            monitor_count: Arc::new(AtomicUsize::new(0)), //this is the count of all monitors
             all_telemetry_rx: Arc::new(Mutex::new(Vec::new())), //this is all telemetry receivers
             runtime_state: Arc::new(Mutex::new(GraphLivelinessState::Building))
         }

@@ -101,34 +101,40 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
-    let base_builder = graph.channel_builder()
+    let base_channel_builder = graph.channel_builder()
                             .with_compute_refresh_window_floor(Duration::from_secs(10),Duration::from_secs(60))
                             .with_labels(&["widgets"],true)
                             .with_type()
                             .with_line_expansion();
 
     //upon construction these are set up to be monitored by the telemetry telemetry
-    let (generator_tx, generator_rx) = base_builder
+    let (generator_tx, generator_rx) = base_channel_builder
                          .with_rate_percentile(Percentile::p80())
                          .with_red(Trigger::AvgFilledAbove(Filled::p70()))
                          .with_yellow(Trigger::StdDevsFilledAbove(StdDev::one(),Filled::p70()))
                          .with_capacity(4000)
                          .build();
 
-    let (consumer_tx, consumer_rx) = base_builder
+    let (consumer_tx, consumer_rx) = base_channel_builder
                          .with_avg_consumed()
                          .with_capacity(4000)
                          .build();
 
-    let (failure_tx, failure_rx) = base_builder
+    let (failure_tx, failure_rx) = base_channel_builder
                         .with_capacity(300)
                         .connects_sidecar()//hint for display
                         .build();
 
-    let (change_tx, change_rx) = base_builder
+    let (change_tx, change_rx) = base_channel_builder
                         .with_avg_inflight()
                         .with_capacity(200)
                         .build();
+
+    let base_actor_builder = graph
+        .actor_builder()
+        .with_compute_refresh_window_floor(Duration::from_secs(10),Duration::from_secs(60));
+
+
 
     //the above tx rx objects will be owned by the children closures below then cloned
     //each time we need to startup a new child telemetry instance. This way when an telemetry fails
@@ -138,7 +144,8 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let _ = Bastion::supervisor(|supervisor|
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
-                graph.actor_builder("generator")
+                     base_actor_builder
+                     .with_name("generator")
                      .build(children,
                         move |context| actor::data_generator::run(context
                                                                     , change_rx.clone()
@@ -146,19 +153,20 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                     ) )
             })
             .children(|children| {
-                    graph.actor_builder("approval")
-                         .build(children,
-                                 move |context| actor::data_approval::run(context
-                                                                              , generator_rx.clone()
-                                                                              , consumer_tx.clone()
-                                                                              , failure_tx.clone()
-                                                                     )
-
+                     base_actor_builder
+                     .with_name("approval")
+                     .build(children,
+                             move |context| actor::data_approval::run(context
+                                                                          , generator_rx.clone()
+                                                                          , consumer_tx.clone()
+                                                                          , failure_tx.clone()
+                                                                 )
                     )
 
             })
             .children(|children| {
-                graph.actor_builder("feedback")
+                     base_actor_builder
+                     .with_name("feedback")
                      .build(children,
                             move |context| actor::data_feedback::run(context
                                                                       , failure_rx.clone()
@@ -169,8 +177,9 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
             })
             .children(|children| {
-                    graph.actor_builder("consumer")
-                         .build( children, move |context| actor::data_consumer::run(context
+                    base_actor_builder
+                    .with_name("consumer")
+                    .build( children, move |context| actor::data_consumer::run(context
                                                                                , consumer_rx.clone()
                                                                         )
 

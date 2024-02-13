@@ -104,10 +104,11 @@ pub(crate) async fn run(context: SteadyContext
             },
             msg = rx.take_async().fuse() => {
                   match msg {
-                         Ok(NodeDef(seq, name, id, channels_in, channels_out)) => {
-                              refresh_structure(&mut dot_state
+                         Ok(NodeDef(seq, name, id, actor, channels_in, channels_out)) => {
+                            refresh_structure(&mut dot_state
                                                , name
                                                , id
+                                               , actor
                                                , channels_in.clone()
                                                , channels_out.clone()
                               );

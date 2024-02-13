@@ -73,6 +73,7 @@ pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>
         send: tx_tuple.1,
         take: rx_tuple.1,
         actor: Some(act_tuple.1),
+        actor_metadata: that.actor_metadata.clone(),
     };
 
 
@@ -142,7 +143,8 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 
             outgoing = Some(tx);
             supervisor.children(|children| {
-                graph.actor_builder("telemetry-polling")
+                graph.actor_builder()
+                    .with_name("telemetry-polling")
                     .build(children,move |monitor|
                                        telemetry::metrics_server::run(monitor
                                                                       , rx.clone()
@@ -168,7 +170,8 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
                 //and capture all the telemetry actors as well
                 let all_tel_rx = graph.all_telemetry_rx.clone(); //using Arc here
 
-                graph.actor_builder("telemetry-collector")
+                graph.actor_builder()
+                    .with_name("telemetry-collector")
                     .build(children,move |monitor| {
                         let all_rx = all_tel_rx.clone();
                         telemetry::metrics_collector::run(monitor

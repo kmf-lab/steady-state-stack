@@ -9,13 +9,14 @@ use futures_timer::Delay;
 use log::*; //allow unused import
 
 use time::Instant;
-use crate::monitor::{ActorStatus, ChannelMetaData, RxTel};
+use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
 use crate::{config, SteadyContext, Tx};
 
 #[derive(Clone)]
 pub enum DiagramData {
     //only allocates new space when new telemetry children are added.
     NodeDef(u64, & 'static str, usize
+            , Arc<ActorMetaData>
             , Arc<Vec<Arc<ChannelMetaData>>>, Arc<Vec<Arc<ChannelMetaData>>>),
     //all consumers will share the same seq vec and it is dropped when the last one consumed it
     //this copy was required so we can gather the next seq while the last gets rendered.
@@ -73,7 +74,7 @@ pub(crate) async fn run(_context: SteadyContext
             let nodes: Option<Vec<DiagramData>> = if dynamic_senders.len() == state.actor_count {
                 None
             } else {
-                Some(gather_node_details(&mut state, &dynamic_senders))
+                Some(gather_node_details(&mut state, dynamic_senders))
             };
 
             //collect all volume data AFTER we update the node data first
@@ -141,7 +142,7 @@ pub(crate) async fn run(_context: SteadyContext
 // Async function to append data to a file
 
 
-fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &&mut Vec<CollectorDetail>) -> Vec<DiagramData> {
+fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &mut Vec<CollectorDetail>) -> Vec<DiagramData> {
 //get the max channel ids for the new actors
     let (max_rx, max_tx): (usize, usize) = dynamic_senders.iter()
         .skip(state.actor_count).map(|x| {
@@ -163,12 +164,13 @@ fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &&mut Vec<C
 
     let nodes: Vec<DiagramData> = dynamic_senders.iter()
             .skip(state.actor_count).map(|details| {
-                    let tt = &details.telemetry_take;
+                    let tt = &details.telemetry_take[0];
                     DiagramData::NodeDef(state.sequence
                                          , details.name
                                          , details.monitor_id
-                                         , Arc::new(tt[0].rx_channel_id_vec())
-                                         , Arc::new(tt[0].tx_channel_id_vec())
+                                         , tt.actor_metadata()
+                                         , Arc::new(tt.rx_channel_id_vec())
+                                         , Arc::new(tt.tx_channel_id_vec())
                     )
         }).collect();
     state.actor_count = dynamic_senders.len();
@@ -182,8 +184,11 @@ async fn send_structure_details(consumer: &Option<Arc<Mutex<Tx<DiagramData>>>>
     if let Some(c) = consumer {
             let mut c_guard = c.lock().await;
             let c = c_guard.deref_mut();
+
+           // info!("sending count of {} ", nodes.len());
             let mut to_send = nodes.into_iter();
-            let _ = c.send_iter_until_full(&mut to_send);
+            let _count = c.send_iter_until_full(&mut to_send);
+          //  info!("bulk count {} remaining {} ", _count, to_send.len());
             for send_me in to_send {
                 let _ = c.send_async(send_me).await;
             }

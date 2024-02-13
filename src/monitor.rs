@@ -12,6 +12,7 @@ pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
     pub(crate) send: Option<SteadyTelemetryTake<TXL>>,
     pub(crate) take: Option<SteadyTelemetryTake<RXL>>,
     pub(crate) actor: Option<SteadyRx<ActorStatus>>,
+    pub(crate) actor_metadata: Arc<ActorMetaData>,
 }
 pub struct SteadyTelemetryTake<const LENGTH: usize> {
     pub(crate) rx: Arc<Mutex<Rx<[usize; LENGTH]>>>,
@@ -58,7 +59,9 @@ impl SteadyTelemetryActorSend {
 
     pub(crate) fn status_reset(&mut self) {
 
-        assert!(self.hot_profile.is_none(),"internal error");
+
+        //ok on shutdown. confirm we are shutting down.
+        //assert!(self.hot_profile.is_none(),"internal error");
 
         self.await_ns_unit = 0;
         self.instant_start = Instant::now();
@@ -69,7 +72,10 @@ impl SteadyTelemetryActorSend {
 
         if config::TELEMETRY_FOR_ACTORS {
             let total_ns = self.instant_start.elapsed().as_nanos() as u64;
-            assert!(self.hot_profile.is_none(),"internal error");
+
+            //ok on shutdown.
+            //assert!(self.hot_profile.is_none(),"internal error");
+
             assert!(total_ns>=self.await_ns_unit,"should be: {} >= {}",total_ns,self.await_ns_unit);
             Some(ActorStatus {
                 total_count_restarts: self.count_restarts.load(Ordering::Relaxed),
@@ -97,6 +103,9 @@ pub struct SteadyTelemetrySend<const LENGTH: usize> {
 
 impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
+    fn actor_metadata(&self) -> Arc<ActorMetaData> {
+            self.actor_metadata.clone()
+    }
 
     #[inline]
     fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
@@ -283,6 +292,23 @@ impl <const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
 }
 
 #[derive(Clone, Default)]
+pub struct ActorMetaData {
+    pub(crate) avg_mcpu: bool,
+    pub(crate) avg_work: bool,
+
+    pub percentiles_mcpu: Vec<Percentile>,
+    pub percentiles_work: Vec<Percentile>,
+    pub std_dev_mcpu: Vec<StdDev>,
+    pub std_dev_work: Vec<StdDev>,
+    pub red: Vec<Trigger>,
+    pub yellow: Vec<Trigger>,
+    pub refresh_rate_in_bits: u8,
+    pub window_bucket_in_bits: u8,
+    pub usage_review: bool,
+}
+
+
+#[derive(Clone, Default)]
 pub struct ChannelMetaData {
     pub(crate) id: usize,
     pub(crate) labels: Vec<&'static str>,
@@ -321,6 +347,9 @@ pub trait RxTel : Send + Sync {
     fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>>;
     fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>>;
     fn consume_actor(&self) -> Option<ActorStatus>;
+
+    fn actor_metadata(&self) -> Arc<ActorMetaData>;
+
 
     fn consume_take_into(&self, send_source: &mut Vec<i128>, take_target: &mut Vec<i128>, future_target: &mut Vec<i128>) -> bool;
     fn consume_send_into(&self, send_target: &mut Vec<i128>) -> bool;

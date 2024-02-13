@@ -18,7 +18,8 @@ use log::*;
 use num_traits::Zero;
 use time::{format_description, OffsetDateTime};
 use uuid::Uuid;
-use crate::monitor::{ActorStatus, ChannelMetaData};
+use crate::actor_stats::ActorStatsComputer;
+use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::channel_stats::ChannelStatsComputer;
@@ -31,7 +32,6 @@ pub struct DotState {
 
 impl Default for DotState {
     fn default() -> Self {
-        error!("Created new DotState in metrics_server");
         DotState {
             nodes: Vec::new(),
             edges: Vec::new(),
@@ -45,6 +45,7 @@ pub(crate) struct Node {
     pub color: & 'static str,
     pub name: & 'static str,
     pub pen_width: & 'static str,
+    pub stats_computer: ActorStatsComputer,
     pub display_label: String, //label may also have (n) for replicas
 }
 
@@ -68,7 +69,7 @@ impl Node {
 
         let name = self.name;
 
-
+/*
         //  with_restarts
         //  with_instance_count  and is stopped
         println!("{} {} {}mCPU {}/{} {:.1}%Workload  restart:{} stop:{} redundancy:{}"
@@ -78,7 +79,7 @@ impl Node {
                  , actor_status.total_count_restarts
                  , actor_status.bool_stop
                  , actor_status.redundancy);// confirm
-
+*/
 
 
         //  with_wait_upon // time/r/wsingle/r/wbatch/other
@@ -200,6 +201,7 @@ pub struct DotGraphFrames {
 pub fn refresh_structure(local_state: &mut DotState
                          , name: &'static str
                          , id: usize
+                         , actor: Arc<ActorMetaData>
                          , channels_in: Arc<Vec<Arc<ChannelMetaData>>>
                          , channels_out: Arc<Vec<Arc<ChannelMetaData>>>
 ) {
@@ -211,12 +213,14 @@ pub fn refresh_structure(local_state: &mut DotState
                 color: "grey",
                 pen_width: "2",
                 name: name,
+                stats_computer: ActorStatsComputer::default(),
                 display_label: "".to_string(), //defined when the content arrives
             }
         });
     }
     local_state.nodes[id].id = id;
     local_state.nodes[id].display_label = name.to_string(); //temp will be replaced when data arrives.
+    local_state.nodes[id].stats_computer.init(actor);
 
     //edges are defined by both the sender and the receiver
     //we need to record both monitors in this edge as to and from
@@ -237,7 +241,7 @@ fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: Arc<V
                         from: usize::MAX,
                         to: usize::MAX,
                         sidecar: false,
-                        stats_computer: ChannelStatsComputer::empty(),
+                        stats_computer: ChannelStatsComputer::default(),
                         ctl_labels: Vec::new(), //for visibility control
 
                         color: "white",
@@ -250,13 +254,11 @@ fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: Arc<V
             local_state.edges[idx].id = idx;
             if set_to {
                 local_state.edges[idx].to = node_id;
-                local_state.edges[idx].stats_computer.init(meta);
-                local_state.edges[idx].sidecar = meta.connects_sidecar;
             } else {
                 local_state.edges[idx].from = node_id;
-                local_state.edges[idx].stats_computer.init(meta);
-                local_state.edges[idx].sidecar = meta.connects_sidecar;
             }
+            local_state.edges[idx].stats_computer.init(meta);
+            local_state.edges[idx].sidecar = meta.connects_sidecar;
             // Collect the labels that need to be added
             // This is redundant but provides safety if two dif label lists are in play
             let labels_to_add: Vec<_> = meta.labels.iter()

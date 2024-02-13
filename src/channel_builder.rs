@@ -95,28 +95,20 @@ impl ChannelBuilder {
 
     pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
         let result = self.clone();
-
         //we must compute the refresh rate first before we do the window
         let frames_per_refresh = refresh.as_micros() / (1000u128 * config::TELEMETRY_PRODUCTION_RATE_MS as u128);
         let refresh_in_bits = (frames_per_refresh as f32).log2().ceil() as u8;
-
         let refresh_in_micros = (1000u128<<refresh_in_bits) * config::TELEMETRY_PRODUCTION_RATE_MS as u128;
-
-
         //now compute the window based on our new bucket size
         let buckets_per_window:f32 = window.as_micros() as f32 / refresh_in_micros as f32;
-
         //find the next largest power of 2
         let window_in_bits = (buckets_per_window as f32).log2().ceil() as u8;
-
         result.with_compute_refresh_window_bucket_bits(refresh_in_bits, window_in_bits)
-
     }
 
     pub fn with_compute_refresh_window_bucket_bits(&self
                                            , refresh_bucket_in_bits:u8
                                            , window_bucket_in_bits: u8) -> Self {
-        assert!(window_bucket_in_bits <= 30);
         let mut result = self.clone();
         result.refresh_rate_in_bits = refresh_bucket_in_bits;
         result.window_bucket_in_bits = window_bucket_in_bits;

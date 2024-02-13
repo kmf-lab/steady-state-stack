@@ -29,6 +29,7 @@ pub(crate) struct ChannelBlock {
     sum_of_squares: u128,
 }
 
+#[derive(Default)]
 pub struct ChannelStatsComputer {
     pub(crate) display_labels: Option<Vec<& 'static str>>,
     pub(crate) line_expansion: bool,
@@ -42,12 +43,12 @@ pub struct ChannelStatsComputer {
     pub(crate) std_dev_consumed: Vec<StdDev>, //to show
     pub(crate) std_dev_latency: Vec<StdDev>, //to show
 
-    pub(crate) red_trigger: Vec<Trigger>, //if used base is green
-    pub(crate) yellow_trigger: Vec<Trigger>, //if used base is green
-
     pub(crate) show_avg_inflight:bool,
     pub(crate) show_avg_consumed:bool,
     pub(crate) show_avg_latency:bool,
+
+    pub(crate) red_trigger: Vec<Trigger>, //if used base is green
+    pub(crate) yellow_trigger: Vec<Trigger>, //if used base is green
 
     // every one of these gets the sample, once the sample is full(N) we drop and add one.
     pub(crate) history_inflight: VecDeque<ChannelBlock>,
@@ -70,47 +71,6 @@ pub struct ChannelStatsComputer {
 }
 
 impl ChannelStatsComputer {
-
-    pub(crate) fn empty() -> Self {
-
-        ChannelStatsComputer {
-            current_inflight: None,
-            current_consumed: None,
-            current_latency: None,
-
-            display_labels: None,
-            line_expansion: false,
-            show_type: None,
-
-            percentiles_inflight: Vec::new(),
-            percentiles_consumed: Vec::new(),
-            percentiles_latency: Vec::new(),
-
-            std_dev_inflight: Vec::new(),
-            std_dev_consumed: Vec::new(),
-            std_dev_latency: Vec::new(),
-
-            red_trigger: Vec::new(),
-            yellow_trigger: Vec::new(),
-            history_inflight: VecDeque::new(),
-            history_consumed: VecDeque::new(),
-            history_latency: VecDeque::new(),
-            bucket_frames_count: 0,
-
-            refresh_rate_in_bits: 0,
-            window_bucket_in_bits: 0,
-
-            frame_rate_ms: config::TELEMETRY_PRODUCTION_RATE_MS as u128,
-            time_label: String::new(),
-            prev_take: 0,
-            capacity: 0,
-
-            show_avg_inflight:false,
-            show_avg_consumed:false,
-            show_avg_latency:false,
-
-        }
-    }
 
     pub(crate) fn init(&mut self, meta: &Arc<ChannelMetaData>)  {
         assert!(meta.capacity > 0, "capacity must be greater than 0");
@@ -151,10 +111,10 @@ impl ChannelStatsComputer {
         }
 
         self.frame_rate_ms = config::TELEMETRY_PRODUCTION_RATE_MS as u128;
-
         self.refresh_rate_in_bits=meta.refresh_rate_in_bits;
         self.window_bucket_in_bits=meta.window_bucket_in_bits;
         self.time_label = time_label( self.frame_rate_ms << (meta.refresh_rate_in_bits+meta.window_bucket_in_bits) );
+
 
         self.display_labels = if meta.display_labels {
             Some(meta.labels.clone())
@@ -320,7 +280,6 @@ impl ChannelStatsComputer {
                                 , &"consumed"
                                 , &""
                                 , self.show_avg_consumed
-                                , true
                                 , & self.std_dev_consumed
                                 , & self.percentiles_consumed);
         }
@@ -331,7 +290,6 @@ impl ChannelStatsComputer {
                                 , &"inflight"
                                 , &""
                                 , self.show_avg_inflight
-                                , false
                                 , & self.std_dev_inflight
                                 , & self.percentiles_inflight);
         }
@@ -342,7 +300,6 @@ impl ChannelStatsComputer {
                                 , &"latency"
                                 , &"ms"
                                 , self.show_avg_latency
-                                , false
                                 , & self.std_dev_latency
                                 , & self.percentiles_latency);
         }
@@ -357,7 +314,6 @@ impl ChannelStatsComputer {
                       , label: &str
                       , unit: &str
                       , show_avg: bool
-                      , avg_ms: bool
                       , std_dev: &Vec<StdDev>
                       , percentile: &Vec<Percentile>) {
 
@@ -402,7 +358,7 @@ impl ChannelStatsComputer {
            // Inflight Operations 2.5 Standard Deviations Above Mean: 30455.1 events in 3 ms Frame
 
             target.push_str(label);
-            target.push_str(" ");
+            target.push(' ');
             if *f != StdDev::one() {
                 target.push_str(
                     &format!("{:.1}", f.value()));
@@ -680,16 +636,15 @@ impl ChannelStatsComputer {
 
 //////////////////////
     fn stddev_rate(&self, std_devs: &StdDev, rate: &Rate) -> Ordering {
-
-        if let Some(current_consumed) = &self.current_consumed {
-            let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-
-            (current_consumed.runner * rate.as_rational_per_second().1 as u128)
-                .cmp(&(window_in_ms * 1000u128 * rate.as_rational_per_second().0 as u128 * Self::PLACES_TENS as u128 ))
-
-        } else {
-            Ordering::Equal //unknown
-        }
+    if let Some(current_consumed) = &self.current_consumed {
+        let std_deviation = (self.inflight_std_dev() * std_devs.value()) as u128;
+        let avg = current_consumed.runner >> (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+        // inflight >  avg + f*std
+        ((avg + std_deviation)*(rate.as_rational_per_second().1 as u128) )
+            .cmp(&(Self::PLACES_TENS as u128 * 1000u128 * rate.as_rational_per_second().0 as u128))
+    } else {
+        Ordering::Equal //unknown
+    }
 
     }
 
@@ -718,7 +673,7 @@ impl ChannelStatsComputer {
 
     fn stddev_latency(&self, std_devs: &StdDev, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
-            assert!(1000 == Self::PLACES_TENS);//we assume this with as_micros below
+            assert_eq!(1000, Self::PLACES_TENS);//we assume this with as_micros below
             let std_deviation = (self.latency_std_dev() * std_devs.value()) as u128;
             let avg = current_latency.runner >> (self.window_bucket_in_bits + self.refresh_rate_in_bits);
             // inflight >  avg + f*std
@@ -757,7 +712,7 @@ impl ChannelStatsComputer {
 
     fn percentile_latency(&self, percentile: &Percentile, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
-            assert!(1000 == Self::PLACES_TENS);//we assume this with as_micros below
+            assert_eq!(1000, Self::PLACES_TENS);//we assume this with as_micros below
             let in_flight = current_latency.histogram.value_at_percentile(percentile.percentile()) as u128;
             in_flight.cmp(&(duration.as_micros()))
         } else {
@@ -768,7 +723,7 @@ impl ChannelStatsComputer {
 
 }
 
-fn time_label(total_ms: u128) -> String {
+pub(crate) fn time_label(total_ms: u128) -> String {
     let seconds = total_ms as f64 / 1000.0;
     let minutes = seconds / 60.0;
     let hours = minutes / 60.0;
@@ -812,7 +767,7 @@ mod stats_tests {
         cmd.capacity = 256;
         cmd.window_bucket_in_bits = 2;
         cmd.refresh_rate_in_bits = 2;
-        let mut computer = ChannelStatsComputer::empty();
+        let mut computer = ChannelStatsComputer::default();
         computer.init(&Arc::new(cmd));
         computer.frame_rate_ms = 3; // one refresh is 4x3 = 12ms one window is 12ms * 4 = 48ms
         computer
@@ -1009,10 +964,10 @@ mod stats_tests {
 
 
         // Define a trigger with a standard deviation condition
-        assert!(computer.triggered(&Trigger::StdDevRateAbove(StdDev::one(), Rate::per_millis(68))), "Trigger should fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered(&Trigger::StdDevRateAbove(StdDev::one(), Rate::per_millis(73))), "Trigger should not fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered(&Trigger::StdDevRateBelow(StdDev::one(), Rate::per_millis(68))), "Trigger should fire when standard deviation from the average filled is below the threshold");
-        assert!(computer.triggered(&Trigger::StdDevRateBelow(StdDev::one(), Rate::per_millis(73))), "Trigger should not fire when standard deviation from the average filled is below the threshold");
+        assert!(computer.triggered(&Trigger::StdDevRateAbove(StdDev::one(), Rate::per_millis(80))), "Trigger should fire when standard deviation from the average filled is above the threshold");
+        assert!(!computer.triggered(&Trigger::StdDevRateAbove(StdDev::one(), Rate::per_millis(220))), "Trigger should not fire when standard deviation from the average filled is above the threshold");
+        assert!(!computer.triggered(&Trigger::StdDevRateBelow(StdDev::one(), Rate::per_millis(80))), "Trigger should fire when standard deviation from the average filled is below the threshold");
+        assert!(computer.triggered(&Trigger::StdDevRateBelow(StdDev::one(), Rate::per_millis(220))), "Trigger should not fire when standard deviation from the average filled is below the threshold");
 
     }
 
