@@ -1,52 +1,30 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use bastion::{Bastion, run};
 use bastion::prelude::SupervisionStrategy;
 use log::*;
 use num_traits::Zero;
-use crate::{config, Graph, LocalMonitor, MONITOR_NOT, MONITOR_UNKNOWN, RxDef, SteadyContext, telemetry, TxDef};
+use ringbuf::traits::Observer;
+use crate::{config, Graph, LocalMonitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyContext, telemetry};
 use crate::channel_builder::{ChannelBuilder};
 use crate::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
-use crate::monitor::{find_my_index, RxTel, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
+use crate::monitor::{ChannelMetaData, find_my_index, RxTel, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
 use crate::telemetry::metrics_collector::CollectorDetail;
 
-pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(that: &SteadyContext
-                                                                      , rx_defs: &[&mut dyn RxDef; RX_LEN]
-                                                                      , tx_defs: &[&mut dyn TxDef; TX_LEN]
-) -> (Option<SteadyTelemetrySend< RX_LEN >>
-      , Option<SteadyTelemetrySend< TX_LEN >>
-      , Option<SteadyTelemetryActorSend>)
-{
-
-    let mut rx_meta_data = Vec::new();
-    let mut rx_inverse_local_idx = [0; RX_LEN];
-    rx_defs.iter()
-        .enumerate()
-        .for_each(|(c, rx)| {
-            assert!(rx.meta_data().id < usize::MAX);
-            rx_meta_data.push(rx.meta_data());
-            rx_inverse_local_idx[c]=rx.meta_data().id;
-        });
-
-    let mut tx_meta_data = Vec::new();
-    let mut tx_inverse_local_idx = [0; TX_LEN];
-    tx_defs.iter()
-        .enumerate()
-        .for_each(|(c, tx)| {
-            assert!(tx.meta_data().id < usize::MAX);
-            tx_meta_data.push(tx.meta_data());
-            tx_inverse_local_idx[c]=tx.meta_data().id;
-        });
-
-    //NOTE: if this child telemetry is monitored so we will create the appropriate channels
-    let start_now = Instant::now().sub(Duration::from_secs(1+MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
+pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(that: &SteadyContext
+                                                                                     , rx_meta_data: Vec<Arc<ChannelMetaData>>
+                                                                                     , rx_inverse_local_idx: [usize; RX_LEN]
+                                                                                     , tx_meta_data: Vec<Arc<ChannelMetaData>>
+                                                                                     , tx_inverse_local_idx: [usize; TX_LEN]) -> (Option<SteadyTelemetrySend<{ RX_LEN }>>, Option<SteadyTelemetrySend<{ TX_LEN }>>, Option<SteadyTelemetryActorSend>) {
+//NOTE: if this child telemetry is monitored so we will create the appropriate channels
+    let start_now = Instant::now().sub(Duration::from_secs(1 + MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
 
     let channel_builder = ChannelBuilder::new(that.channel_count.clone())
         .with_labels(&["steady_state-telemetry"], false)
-        .with_compute_refresh_window_bucket_bits(0,0)
+        .with_compute_refresh_window_bucket_bits(0, 0)
         .with_capacity(config::REAL_CHANNEL_LENGTH_TO_COLLECTOR);
-
 
     let rx_tuple: (Option<SteadyTelemetrySend<RX_LEN>>, Option<SteadyTelemetryTake<RX_LEN>>)
         = if 0usize == RX_LEN {
@@ -67,16 +45,12 @@ pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>
     };
 
     let act_tuple = channel_builder.build();
-
-
     let det = SteadyTelemetryRx {
         send: tx_tuple.1,
         take: rx_tuple.1,
         actor: Some(act_tuple.1),
         actor_metadata: that.actor_metadata.clone(),
     };
-
-
 
     //need to hand off to the collector
     run!(async{
@@ -104,23 +78,22 @@ pub(crate) fn build_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>
 
     let telemetry_actor =
 
-       Some(SteadyTelemetryActorSend {
-                tx: act_tuple.0,
-                last_telemetry_error: start_now,
-                await_ns_unit: 0,
-                instant_start: Instant::now(),
-                hot_profile: None,
-                redundancy: 1,
-                calls: [0;6],
-                count_restarts: that.count_restarts.clone(),
-                bool_stop: false,
-            });
+        Some(SteadyTelemetryActorSend {
+            tx: act_tuple.0,
+            last_telemetry_error: start_now,
+            await_ns_unit: 0,
+            instant_start: Instant::now(),
+            hot_profile: None,
+            redundancy: 1,
+            calls: [0; 6],
+            count_restarts: that.count_restarts.clone(),
+            bool_stop: false,
+        });
 
     let telemetry_send_rx = rx_tuple.0;
     let telemetry_send_tx = tx_tuple.0;
     (telemetry_send_rx, telemetry_send_tx, telemetry_actor)
 }
-
 
 
 pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
@@ -220,8 +193,8 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                                 let dif = now.duration_since(actor_status.last_telemetry_error);
                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                     //Check metrics_consumer for slowness
-                                    error!("relay all tx, full telemetry channel detected upon tx from telemetry: {:?} value:{:?} full:{:?} "
-                                             , this.name, a, tx.is_full());
+                                    error!("relay all tx, full telemetry channel detected upon tx from telemetry: {:?} value:{:?} full:{:?} capacity: {:?} "
+                                             , this.name, a, tx.is_full(), tx.tx.capacity());
                                     //store time to do this again later.
                                     actor_status.last_telemetry_error = now;
                                 }
@@ -243,6 +216,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
             // we always clear the count so we can confirm this in testing
 
             if send_tx.count.iter().any(|x| !x.is_zero()) {
+
                 //we only send the result if we have a context, ie a graph we are monitoring
                 if is_in_bastion {
                     let mut lock_guard = send_tx.tx.lock().await;
@@ -279,6 +253,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
 
         if let Some(ref mut send_rx) = this.telemetry_send_rx {
             if send_rx.count.iter().any(|x| !x.is_zero()) {
+
                 //we only send the result if we have a context, ie a graph we are monitoring
                 if is_in_bastion {
                     let mut lock_guard = send_rx.tx.lock().await;

@@ -1,22 +1,24 @@
 use std::ops::DerefMut;
-use std::sync::Arc;
-use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*;
-use steady_state::{LocalMonitor, Rx, SteadyContext, Tx};
+use steady_state::{LocalMonitor, Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
 
-#[derive(Clone, Debug, PartialEq, Copy)]
-    pub struct FailureFeedback {
+#[derive(Clone, Debug, PartialEq)]
+pub struct FailureFeedback {
+    pub count: u64,
+    pub message: String,
 }
-#[derive(Clone, Debug, PartialEq, Copy)]
+#[derive(Clone, Debug, PartialEq)]
     pub struct ChangeRequest {
     pub msg: FailureFeedback,
 }
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
-                 , rx: Arc<Mutex<Rx<FailureFeedback>>>
-                 , tx: Arc<Mutex<Tx<ChangeRequest>>>) -> Result<(),()> {
+                 , rx: SteadyRx<FailureFeedback>
+                 , tx: SteadyTx<ChangeRequest>) -> Result<(),()> {
+
+    let mut monitor = context.into_monitor([&rx], [&tx]);
 
     let mut tx_guard = tx.lock().await;
     let mut rx_guard = rx.lock().await;
@@ -24,7 +26,6 @@ pub async fn run(context: SteadyContext
     let tx = tx_guard.deref_mut();
     let rx = rx_guard.deref_mut();
 
-    let mut monitor = context.into_monitor(&[rx], &[tx]);
 
     loop {
         //in this example iterate once blocks/await until it has work to do
@@ -44,15 +45,15 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 , rx: Arc<Mutex<Rx<FailureFeedback>>>
-                 , tx: Arc<Mutex<Tx<ChangeRequest>>>) -> Result<(),()> {
+                 , rx: SteadyRx<FailureFeedback>
+                 , tx: SteadyTx<ChangeRequest>) -> Result<(),()> {
+
+      let mut monitor = context.into_monitor([&rx], [&tx]);
 
       let mut rx_guard = rx.lock().await;
       let mut tx_guard = tx.lock().await;
       let rx = rx_guard.deref_mut();
       let tx = tx_guard.deref_mut();
-
-      let mut monitor = context.into_monitor(&[rx], &[tx]);
 
     loop {
 
@@ -78,8 +79,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
     if let Ok(msg) = monitor.take_async(rx).await {
         //we have a message to process
         //we do not care about the message we just need to send a change request
-        let _ = tx.send_async(ChangeRequest {msg}).await;
-
+        let _ = monitor.send_async(tx,ChangeRequest {msg}).await;
     }
 
     false

@@ -10,19 +10,18 @@ use log::*; //allow unused import
 
 use time::Instant;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-use crate::{config, SteadyContext, Tx};
+use crate::{config, SteadyContext, SteadyTx, Tx};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DiagramData {
-    //only allocates new space when new telemetry children are added.
-    NodeDef(u64, & 'static str, usize
-            , Arc<ActorMetaData>
-            , Arc<Vec<Arc<ChannelMetaData>>>, Arc<Vec<Arc<ChannelMetaData>>>),
+    //uses heap but only when a new actor is added so we can define it and its channels
+    NodeDef(u64 //TODO: for clarity convert this to a Box of Boxes
+            , Arc<(Arc<ActorMetaData>,Vec<Arc<ChannelMetaData>>,Vec<Arc<ChannelMetaData>>)>  //immutable data
+    ),
     //all consumers will share the same seq vec and it is dropped when the last one consumed it
     //this copy was required so we can gather the next seq while the last gets rendered.
-    ChannelVolumeData(u64, Vec<i128>, Vec<i128>),
-      //, total_take, consumed_this_cycle, ma_consumed_per_second, in_flight_this_cycle, ma_inflight_per_second
-    NodeProcessData(u64, Vec<ActorStatus>),
+    ChannelVolumeData(u64, Box<[(i128,i128)]>),
+    NodeProcessData(u64, Box<[ActorStatus]>),
 }
 
 #[derive(Default)]
@@ -30,8 +29,7 @@ struct RawDiagramState {
     sequence: u64,
     actor_count: usize,
     actor_status: Vec<ActorStatus>,
-    total_sent: Vec<i128>,
-    total_take: Vec<i128>,
+    total_take_send: Vec<(i128,i128)>,
     future_take: Vec<i128>, //these are for the next frame since we do not have the matching sent yet
 }
 
@@ -39,16 +37,14 @@ struct RawDiagramState {
 
 pub(crate) async fn run(_context: SteadyContext
        , dynamic_senders_vec: Arc<Mutex<Vec< CollectorDetail >>>
-       , optional_server: Option<Arc<Mutex<Tx<DiagramData>>>>
+       , optional_server: Option<SteadyTx<DiagramData>>
 ) -> Result<(),()> {
 
     if let Some(c) = &optional_server {
-        let mut c_guard = c.lock().await;
-        let c = c_guard.deref_mut();
 
         if config::SHOW_TELEMETRY_ON_TELEMETRY {
             //NOTE: this line makes this node monitored on the telemetry only when the server is monitored.
-            _context.into_monitor(&[], &[c]);
+            _context.into_monitor([], [c]);
 
             //TODO: add monitoring of the gathering channels. We have support for replaced
             //    actors which rebuild the monitor channels on the fly matching the tx,rx count.
@@ -81,7 +77,7 @@ pub(crate) async fn run(_context: SteadyContext
 
             //we then consume all the send data available for this frame
             for x in dynamic_senders.iter_mut() {
-                let has_data = x.telemetry_take[0].consume_send_into(&mut state.total_sent);
+                let has_data = x.telemetry_take[0].consume_send_into(&mut state.total_take_send);
                 x.temp_barrier = has_data; //first so we just set it
 
                 #[cfg(debug_assertions)]
@@ -92,7 +88,7 @@ pub(crate) async fn run(_context: SteadyContext
             //but some of this data may be for the next frame so we will
             //consume it into the future_take vec
             for x in dynamic_senders.iter_mut() {
-                let has_data = x.telemetry_take[0].consume_take_into(&mut state.total_sent, &mut state.total_take, &mut state.future_take);
+                let has_data = x.telemetry_take[0].consume_take_into(&mut state.total_take_send, &mut state.future_take);
                 x.temp_barrier |= has_data; //if we have data here or in the previous
             }
 
@@ -121,7 +117,7 @@ pub(crate) async fn run(_context: SteadyContext
         }; //dropped senders guard so list can be updated with new nodes if needed
 
         if let Some(nodes) = nodes {//only happens when we have new nodes
-            send_structure_details(&optional_server, nodes).await;
+             send_structure_details(&optional_server, nodes).await;
         }
         send_data_details(&optional_server, &state).await;
 
@@ -156,21 +152,17 @@ fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &mut Vec<Co
     let max_channels_len = std::cmp::max(max_rx, max_tx)+1; //add one to convert from index to length
 
     //grow our vecs as needed for the max ids found
-    state.total_take.resize(max_channels_len, 0); //index to length so we add 1
-    state.total_sent.resize(max_channels_len, 0); //index to length so we add 1
+    state.total_take_send.resize(max_channels_len, (0,0)); //index to length so we add 1
     state.future_take.resize(max_channels_len, 0);
 
-    assert_eq!(state.total_take.len(), state.total_sent.len());
 
     let nodes: Vec<DiagramData> = dynamic_senders.iter()
             .skip(state.actor_count).map(|details| {
                     let tt = &details.telemetry_take[0];
                     DiagramData::NodeDef(state.sequence
-                                         , details.name
-                                         , details.monitor_id
-                                         , tt.actor_metadata()
-                                         , Arc::new(tt.rx_channel_id_vec())
-                                         , Arc::new(tt.tx_channel_id_vec())
+                                         , Arc::new((tt.actor_metadata().clone()
+                                                   ,tt.rx_channel_id_vec()
+                                                   ,tt.tx_channel_id_vec()))
                     )
         }).collect();
     state.actor_count = dynamic_senders.len();
@@ -197,20 +189,20 @@ async fn send_structure_details(consumer: &Option<Arc<Mutex<Tx<DiagramData>>>>
 
 async fn send_data_details(consumer: &Option<Arc<Mutex<Tx<DiagramData>>>>, state: &RawDiagramState) {
     //info!("compute send_edge_details {:?} {:?}",state.running_total_sent,state.running_total_take);
-    assert_eq!(state.total_take.len(), state.total_sent.len());
 
-    if let Some(c) = consumer {
+    if let Some(consumer) = consumer {
 
-        let mut c_guard = c.lock().await;
-        let c = c_guard.deref_mut();
+        let mut c_guard = consumer.lock().await;
+        let consumer = c_guard.deref_mut();
 
-        let _ = c.send_async(DiagramData::NodeProcessData(state.sequence
-                      , state.actor_status.clone()
+        let _ = consumer.send_async(DiagramData::NodeProcessData(state.sequence
+                                                                 , state.actor_status.clone().into_boxed_slice()
                 )).await;
 
-        let _ = c.send_async(DiagramData::ChannelVolumeData(state.sequence
-                        , state.total_take.clone()
-                        , state.total_sent.clone()
+
+        let _ = consumer.send_async(DiagramData::ChannelVolumeData(state.sequence
+                                                                 ,  state.total_take_send.clone().into_boxed_slice()
+
                 )).await;
 
     }

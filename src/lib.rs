@@ -24,6 +24,7 @@ mod actor_stats;
 use std::any::{Any, type_name};
 #[cfg(test)]
 use std::collections::HashMap;
+use std::fmt::Debug;
 //re-publish bastion from steady_state for this early version
 pub use bastion;
 use bastion::context::BastionContext;
@@ -31,7 +32,7 @@ use std::time::{Duration, Instant};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize};
 use futures::lock::Mutex;
-use std::ops::{DerefMut, Sub};
+use std::ops::{Deref, DerefMut, Sub};
 use bastion::{Bastion, run};
 use std::future::{Future, ready};
 use std::thread::sleep;
@@ -42,13 +43,23 @@ use async_ringbuf::producer::AsyncProducer;
 use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use async_ringbuf::consumer::AsyncConsumer;
+use futures::StreamExt;
 use futures_timer::Delay;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use actor_builder::ActorBuilder;
 use crate::channel_builder::ChannelBuilder;
 use crate::monitor::{ActorMetaData, ChannelMetaData, SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::telemetry::metrics_collector::CollectorDetail;
+use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
+
+
+pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
+pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
+
+pub type SteadyTxBundle<T,const LEN:usize> = Arc<[Arc<Mutex<Tx<T>>>;LEN]>;
+pub type SteadyRxBundle<T,const LEN:usize> = Arc<[Arc<Mutex<Rx<T>>>;LEN]>;
+
 
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
@@ -63,7 +74,7 @@ pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 
 /// Used when setting up new channels to specify when they should change to Red or Yellow state.
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
 pub enum Trigger {
     AvgFilledAbove(Filled),
     AvgFilledBelow(Filled),
@@ -134,13 +145,38 @@ impl SteadyContext {
 
 
     pub fn into_monitor<const RX_LEN: usize, const TX_LEN: usize>(self
-                                                      , rx_mons: &[& mut dyn RxDef; RX_LEN]
-                                                      , tx_mons: &[& mut dyn TxDef; TX_LEN]
+                                                      , rx_mons: [& dyn RxDef; RX_LEN]
+                                                      , tx_mons: [& dyn TxDef; TX_LEN]
     ) -> LocalMonitor<RX_LEN,TX_LEN> {
 
         //only build telemetry channels if this feature is enabled
         let (telemetry_send_rx, telemetry_send_tx, telemetry_state) = if config::TELEMETRY_HISTORY || config::TELEMETRY_SERVER {
-             telemetry::setup::build_telemetry_channels(&self, rx_mons, tx_mons)
+
+            let mut rx_meta_data = Vec::new();
+            let mut rx_inverse_local_idx = [0; RX_LEN];
+            rx_mons.iter()
+                .map(|rx| rx.meta_data())
+                .enumerate()
+                .for_each(|(c, md)| {
+                    assert!(md.id < usize::MAX);
+                    rx_inverse_local_idx[c]=md.id;
+                    rx_meta_data.push(md);
+                });
+
+            let mut tx_meta_data = Vec::new();
+            let mut tx_inverse_local_idx = [0; TX_LEN];
+            tx_mons.iter()
+                .map(|tx| tx.meta_data())
+                .enumerate()
+                .for_each(|(c, md)| {
+                    assert!(md.id < usize::MAX);
+                    tx_inverse_local_idx[c]=md.id;
+                    tx_meta_data.push(md);
+                });
+
+            setup::construct_telemetry_channels(&self
+                                                , rx_meta_data, rx_inverse_local_idx
+                                                , tx_meta_data, tx_inverse_local_idx)
         } else {
             (None, None, None)
         };
@@ -304,25 +340,91 @@ pub struct Rx<T> {
 impl<T> Tx<T> {
     #[inline]
     pub fn try_send(& mut self, msg: T) -> Result<(), T> {
+        self.shared_try_send(msg)
+    }
+    #[inline]
+    pub fn send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
+        self.shared_send_iter_until_full(iter)
+    }
+    #[inline]
+    pub fn send_slice_until_full(&mut self, slice: &[T]) -> usize
+       where T: Copy {
+        self.shared_send_slice_until_full(slice)
+    }
+    #[inline]
+    pub fn is_full(&self) -> bool {
+        self.shared_is_full()
+    }
+    #[inline]
+    pub fn vacant_units(&self) -> usize {
+        self.shared_vacant_units()
+    }
+    #[inline]
+    pub async fn wait_vacant_units(&self, count: usize) {
+        self.shared_wait_vacant_units(count).await
+    }
+    #[inline]
+    pub async fn wait_empty(&self) {
+        self.shared_wait_empty().await
+    }
+    #[inline]
+    pub async fn send_async(& mut self, msg: T) -> Result<(), T> {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_send_async(msg).await
+    }
+
+    //////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////
+
+    fn direct_use_check_and_warn(&self) {
+        if self.channel_meta_data.expects_to_be_monitored {
+            warn!("you called this without the monitor but monitoring for this channel is enabled. see the monitor version of this method");
+            //print stacktrace
+            let stack = backtrace::Backtrace::new();
+            error!("stack: {:?}", stack);
+        }
+    }
+    ////////////////////////////////////////////////////////////////
+    // Shared implmentations, if you need to swap out the channel it is done here
+    ////////////////////////////////////////////////////////////////
+
+    #[inline]
+    pub fn shared_try_send(& mut self, msg: T) -> Result<(), T> {
         match self.tx.try_push(msg) {
             Ok(_) => {Ok(())}
             Err(m) => {Err(m)}
         }
     }
-
     #[inline]
-    pub fn send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
+    pub fn shared_send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
         self.tx.push_iter(iter)
     }
-
     #[inline]
-    pub fn send_slice_until_full(&mut self, slice: &[T]) -> usize
-       where T: Copy {
+    pub fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
+        where T: Copy {
         self.tx.push_slice(slice)
+    }
+    #[inline]
+    pub fn shared_is_full(&self) -> bool {
+        self.tx.is_full()
+    }
+    #[inline]
+    pub fn shared_vacant_units(&self) -> usize {
+        self.tx.vacant_len()
+    }
+    #[inline]
+    pub async fn shared_wait_vacant_units(&self, count: usize) {
+        self.tx.wait_vacant(count).await
     }
 
     #[inline]
-    pub async fn send_async(& mut self, msg: T) -> Result<(), T> {
+    pub async fn shared_wait_empty(&self) {
+        self.tx.wait_vacant(usize::from(self.tx.capacity())).await
+    }
+
+    #[inline]
+    pub async fn shared_send_async(& mut self, msg: T) -> Result<(), T> {
         match self.tx.try_push(msg) {
             Ok(_) => {Ok(())},
             Err(msg) => {
@@ -334,33 +436,135 @@ impl<T> Tx<T> {
         }
     }
 
-    #[inline]
-    pub fn is_full(&self) -> bool {
-        self.tx.is_full()
-    }
 
-    #[inline]
-    pub fn vacant_units(&self) -> usize {
-        self.tx.vacant_len()
-    }
-
-    #[inline]
-    pub async fn wait_vacant_units(&self, count: usize) {
-        self.tx.wait_vacant(count).await
-    }
-
-    #[inline]
-    pub async fn wait_empty(&self) {
-        self.tx.wait_vacant(usize::from(self.tx.capacity())).await
-    }
 }
 
 
 
 
 impl<T> Rx<T> {
+
+    #[inline]
+    pub fn try_peek_slice(&self, elems: &mut [T]) -> usize
+           where T: Copy {
+           self.shared_try_peek_slice(elems)
+    }
+
+    #[inline]
+    pub async fn peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
+       where T: Copy {
+        self.shared_peek_async_slice(wait_for_count, elems).await
+    }
+    #[inline]
+    pub fn take_slice(&mut self, elems: &mut [T]) -> usize
+        where T: Copy {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_take_slice(elems)
+    }
+    #[inline]
+    pub fn try_take(& mut self) -> Option<T> {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_try_take()
+    }
     #[inline]
     pub async fn take_async(& mut self) -> Result<T,String> {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_take_async().await
+    }
+    #[inline]
+    pub fn try_peek(&self) -> Option<&T> {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_try_peek()
+    }
+    #[inline]
+    pub fn try_peek_iter(& self) -> impl Iterator<Item = & T>  {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_try_peek_iter()
+    }
+    #[inline]
+    pub async fn peek_async(& mut self) -> Option<&T> {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_peek_async().await
+    }
+    pub async fn peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_peek_async_iter(wait_for_count).await
+    }
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        //not async and immutable so no need to check
+        self.shared_is_empty()
+    }
+    #[inline]
+    pub fn avail_units(& mut self) -> usize {
+        //not async and immutable so no need to check
+        self.shared_avail_units()
+    }
+    #[inline]
+    pub async fn wait_avail_units(& mut self, count: usize) {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_wait_avail_units(count).await
+    }
+    //////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////
+
+    fn direct_use_check_and_warn(&self) {
+        if self.channel_meta_data.expects_to_be_monitored {
+            warn!("you called this without the monitor but monitoring for this channel is enabled. see the monitor version of this method");
+            //print stacktrace
+            let stack = backtrace::Backtrace::new();
+            error!("stack: {:?}", stack);
+        }
+    }
+
+    ///////////////////////////////////////////////////////////////////
+    // these are the shared internal private implementations
+    // if you want to swap out the channel implementation you can do it here
+    ///////////////////////////////////////////////////////////////////
+
+    #[inline]
+    fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
+        where T: Copy {
+        let mut last_index = 0;
+        for (i, e) in self.rx.iter().enumerate() {
+            if i < elems.len() {
+                elems[i] = *e; // Assuming e is a reference and needs dereferencing
+                last_index = i;
+            } else {
+                break;
+            }
+        }
+        // Return the count of elements written, adjusted for 0-based indexing
+        last_index + 1
+    }
+
+    #[inline]
+    async fn shared_peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
+        where T: Copy {
+        self.rx.wait_occupied(wait_for_count).await;
+        let mut last_index = 0;
+        for (i, e) in self.rx.iter().enumerate() {
+            if i < elems.len() {
+                elems[i] = *e; // Assuming e is a reference and needs dereferencing
+                last_index = i;
+            } else {
+                break;
+            }
+        }
+        // Return the count of elements written, adjusted for 0-based indexing
+        last_index + 1
+    }
+
+    #[inline]
+    async fn shared_take_async(& mut self) -> Result<T,String> {
         // implementation favors a full channel
         if let Some(m) = self.rx.try_pop() {
             Ok(m)
@@ -373,88 +577,127 @@ impl<T> Rx<T> {
     }
 
     #[inline]
-    pub fn try_take(& mut self) -> Option<T> {
-        self.rx.try_pop()
-    }
-
-    //removes items from the channel and Copy's them into the slice
-    //returns the number of items removed
-    #[inline]
-    pub fn take_slice(&mut self, elems: &mut [T]) -> usize
-        where T: Copy {
-        self.rx.pop_slice(elems)
-    }
-
-
-    #[inline]
-    pub fn try_peek(&self) -> Option<&T> {
-        self.rx.first()
-    }
-
-    #[inline]
-    pub fn try_peek_vec<'a>(&'a self, target:&'a mut Vec<&'a T>) {
-        target.clear();
-        target.extend(self.rx.iter());
-    }
-
-    #[inline]
-    pub fn try_peek_iter(& self) -> impl Iterator<Item = & T>  {
+    fn shared_try_peek_iter(& self) -> impl Iterator<Item = & T>  {
         self.rx.iter()
     }
 
-
     #[inline]
-    pub async fn peek_async(& mut self) -> Option<&T> {
+    async fn shared_peek_async(& mut self) -> Option<&T> {
         self.rx.wait_occupied(1).await;
         self.rx.first()
     }
 
     #[inline]
-    pub async fn peek_async_vec<'a>(&'a mut self, wait_for_count: usize, target:&'a mut Vec<&'a T>) -> &mut Vec<&T> {
-        target.clear();
-        self.rx.wait_occupied(wait_for_count).await;
-        target.extend(self.rx.iter());
-        target
-    }
-
-    pub async fn peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
+    async fn shared_peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
         self.rx.wait_occupied(wait_for_count).await;
         self.rx.iter()
     }
 
-
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    fn shared_is_empty(&self) -> bool {
         self.rx.is_empty()
     }
     #[inline]
-    pub fn avail_units(& mut self) -> usize {
+    fn shared_avail_units(& mut self) -> usize {
         self.rx.occupied_len()
     }
 
     #[inline]
-    pub async fn wait_avail_units(& mut self, count: usize) {
+    async fn shared_wait_avail_units(& mut self, count: usize) {
         self.rx.wait_occupied(count).await
     }
 
+    #[inline]
+    fn shared_try_take(& mut self) -> Option<T> {
+        self.rx.try_pop()
+    }
+
+    #[inline]
+    fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
+        where T: Copy {
+        self.rx.pop_slice(elems)
+    }
+
+    #[inline]
+    fn shared_try_peek(&self) -> Option<&T> {
+        self.rx.first()
+    }
 
 }
 
-pub trait TxDef {
+
+pub trait TxDef: Debug {
     fn meta_data(&self) -> Arc<ChannelMetaData>;
 }
-pub trait RxDef {
+pub trait RxDef: Debug {
     fn meta_data(&self) -> Arc<ChannelMetaData>;
 }
-impl <T> TxDef for Tx<T> {
+
+impl <T> TxDef for SteadyTx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
-        self.channel_meta_data.clone()
+        run!( async {
+                let guard = self.lock().await;
+                let this = guard.deref();
+                this.channel_meta_data.clone()
+            })
     }
 }
-impl <T> RxDef for Rx<T> {
+
+impl <T> RxDef for SteadyRx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
-        self.channel_meta_data.clone()
+        run!( async {
+                let guard = self.lock().await;
+                let this = guard.deref();
+                this.channel_meta_data.clone()
+            })
+    }}
+
+
+pub struct SteadyBundle{}
+
+impl SteadyBundle {
+    pub fn tx_def_slice<T, const GIRTH: usize>(this: & SteadyTxBundle<T, GIRTH>) -> [& dyn TxDef; GIRTH] {
+        this.iter()
+            .map(|x| x as &dyn TxDef)
+            .collect::<Vec<&dyn TxDef>>()
+            .try_into()
+            .expect("Internal Error")
     }
+    pub fn tx_new_bundle<T, const GIRTH: usize>(txs: Vec<SteadyTx<T>>) -> SteadyTxBundle<T, GIRTH> {
+        let result: [SteadyTx<T>; GIRTH] = txs.try_into().expect("Incorrect length");
+        Arc::new(result)
+    }
+
+
+    pub fn rx_def_slice< T, const GIRTH: usize>(this: & SteadyRxBundle<T, GIRTH>) -> [& dyn RxDef; GIRTH] {
+        this.iter()
+            .map(|x| x as &dyn RxDef)
+            .collect::<Vec<&dyn RxDef>>()
+            .try_into()
+            .expect("Internal Error")
+    }
+    pub fn rx_new_bundle<T, const GIRTH: usize>(rxs: Vec<SteadyRx<T>>) -> SteadyRxBundle<T, GIRTH> {
+        let result: [SteadyRx<T>; GIRTH] = rxs.try_into().expect("Incorrect length");
+        Arc::new(result)
+    }
+
+    pub fn new_bundles<T, const GIRTH: usize>(base_channel_builder: &ChannelBuilder) -> (SteadyTxBundle<T,GIRTH>, SteadyRxBundle<T,GIRTH>) {
+
+        // Initialize vectors to hold the separate components
+        let mut tx_vec: Vec<SteadyTx<T>> = Vec::with_capacity(GIRTH);
+        let mut rx_vec: Vec<SteadyRx<T>> = Vec::with_capacity(GIRTH);
+
+        (0..GIRTH).for_each(|i| {
+            let (t,r) = base_channel_builder.build();
+            tx_vec.push(t);
+            rx_vec.push(r);
+        });
+
+        (SteadyBundle::tx_new_bundle::<T, GIRTH>(tx_vec), SteadyBundle::rx_new_bundle::<T, GIRTH>(rx_vec))
+
+    }
+
+
 }
 
 impl <const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
@@ -494,6 +737,13 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         self.name
     }
 
+    pub async fn stop(&mut self) -> Result<(),()>  {
+        if let Some(ref mut st) = self.telemetry_state {
+            st.bool_stop = true;
+        }// upon drop we will flush telemetry
+        Ok(())
+    }
+
     pub fn runtime_state(&self) -> Arc<Mutex<GraphLivelinessState>> {
         self.runtime_state.clone()
     }
@@ -507,31 +757,18 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
 
-    pub async fn stop(&mut self) -> Result<(),()>  {
-        if let Some(ref mut st) = self.telemetry_state {
-            st.bool_stop = true;
-        }// upon drop we will flush telemetry
-        Ok(())
-    }
-
     pub async fn relay_stats_all(&mut self) {
         //NOTE: not time ing this one as it is mine and internal
         telemetry::setup::try_send_all_local_telemetry(self).await;
     }
-
     pub async fn relay_stats_periodic(&mut self, duration_rate: Duration) {
-
         self.start_hot_profile(monitor::CALL_WAIT);
-
         assert!(duration_rate.ge(&Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)));
         Delay::new(duration_rate.saturating_sub(self.last_telemetry_send.elapsed())).await;
         self.rollup_hot_profile();
-
         //this can not be measured since it sends the measurement of hot_profile.
         //also this is a special case where we do not want to measure the time it takes to send telemetry
         self.relay_stats_all().await;
-
-
     }
 
     fn start_hot_profile(&mut self, x: usize) {
@@ -542,154 +779,112 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             }
         };
     }
+    fn rollup_hot_profile(&mut self) {
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = st.hot_profile.take() {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+                assert!(st.instant_start.le(&d), "unit_start: {:?} call_start: {:?}", st.instant_start, d);
+            }
+        }
+    }
+
+    pub fn try_peek_slice<T>(& mut self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+        where T: Copy {
+        this.shared_try_peek_slice(elems)
+    }
+    pub async fn peek_async_slice<T>(&mut self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
+    where T: Copy {
+        this.shared_peek_async_slice(wait_for_count,elems).await
+    }
 
     pub fn take_slice<T>(&mut self, this: & mut Rx<T>, slice: &mut [T]) -> usize
         where T: Copy {
-
         if let Some(ref mut st) = self.telemetry_state {
-            st.calls[monitor::CALL_BATCH_READ]=st.calls[monitor::CALL_BATCH_READ].saturating_add(1);
+            st.calls[monitor::CALL_BATCH_READ] = st.calls[monitor::CALL_BATCH_READ].saturating_add(1);
         }
-
-        let done = this.take_slice(slice);
-        this.local_index = monitor::process_event(&mut self.telemetry_send_rx
-                                                  , this.local_index, this.id,
-                                                  |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(done));
-
-
+        let done = this.shared_take_slice(slice);
+        this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
+            tel.process_event(this.local_index, this.id, done)
+        } else {
+            MONITOR_NOT
+        };
         done
     }
-
     pub fn try_take<T>(&mut self, this: & mut Rx<T>) -> Option<T> {
-
         if let Some(ref mut st) = self.telemetry_state {
             st.calls[monitor::CALL_SINGLE_READ]=st.calls[monitor::CALL_SINGLE_READ].saturating_add(1);
         }
-
-        match this.try_take() {
+        match this.shared_try_take() {
             Some(msg) => {
-                this.local_index = monitor::process_event(&mut self.telemetry_send_rx
-                                                          , this.local_index, this.id,
-                                                          |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(1));
+                this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
+                    tel.process_event(this.local_index, this.id, 1)
+                } else {
+                    MONITOR_NOT
+                };
                 Some(msg)
             },
             None => {None}
         }
     }
     pub fn try_peek<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
-        this.try_peek()
+        this.shared_try_peek()
     }
-
-    //TODO:  slice not vec.
-    pub fn try_peek_populate_vec<'a,T>(&'a mut self, this: &'a mut Rx<T>, target:&'a mut Vec<&'a T>) {
-        this.try_peek_vec(target);
-    }
-
     pub fn try_peek_iter<'a,T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
-       this.try_peek_iter()
+        this.shared_try_peek_iter()
     }
-
-    pub async fn peek_async_populate_vec<'a,T>(&'a mut self, this: &'a mut Rx<T>, wait_for_count: usize, target:&'a mut Vec<&'a T>) -> &mut Vec<&T> {
-
-        self.start_hot_profile(monitor::CALL_OTHER);
-
-        let result = this.peek_async_vec(wait_for_count,target).await;
-
-        self.rollup_hot_profile();
-
-
-        result
-
-    }
-
     pub async fn peek_async_iter<'a,T>(&'a mut self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
-
         self.start_hot_profile(monitor::CALL_OTHER);
-
-        let result = this.peek_async_iter(wait_for_count).await;
-
+        let result = this.shared_peek_async_iter(wait_for_count).await;
         self.rollup_hot_profile();
-
         result
-
     }
-
     pub fn is_empty<T>(& mut self, this: & mut Rx<T>) -> bool {
-        this.is_empty()
+        this.shared_is_empty()
     }
-
     pub fn avail_units<T>(& mut self, this: & mut Rx<T>) -> usize {
-        this.avail_units()
+        this.shared_avail_units()
     }
-
     pub async fn wait(& mut self, duration: Duration) {
-
         self.start_hot_profile(monitor::CALL_WAIT);
-
         Delay::new(duration).await;
-
         self.rollup_hot_profile();
-
-
     }
-
     //here we just take an async fn and call it async just to wrap it
     pub async fn call_async<F>(&mut self, f: F) -> F::Output
         where F: Future {
-
         self.start_hot_profile(monitor::CALL_OTHER);
-
         let result = f.await;
-
         self.rollup_hot_profile();
-
-
         result
     }
 
 
     pub async fn wait_avail_units<T>(&mut self, this: & mut Rx<T>, count:usize) {
-
         self.start_hot_profile(monitor::CALL_OTHER);
-
-        let result = this.wait_avail_units(count).await;
-
+        let result = this.shared_wait_avail_units(count).await;
         self.rollup_hot_profile();
-
-
         result
-
-
     }
 
     pub async fn peek_async<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
-
         self.start_hot_profile(monitor::CALL_OTHER);
-
-        let result = this.peek_async().await;
-
+        let result = this.shared_peek_async().await;
         self.rollup_hot_profile();
-
-
         result
     }
     pub async fn take_async<T>(& mut self, this: & mut Rx<T>) -> Result<T, String> {
-
         self.start_hot_profile(monitor::CALL_SINGLE_READ);
-
-        let result = this.take_async().await;
-
+        let result = this.shared_take_async().await;
         self.rollup_hot_profile();
-
-
         match result {
             Ok(result) => {
-                this.local_index = monitor::process_event(&mut self.telemetry_send_rx
-                                                          , this.local_index, this.id,
-                   |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(1));
-
+                this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
+                    tel.process_event(this.local_index, this.id, 1)
+                } else {
+                    MONITOR_NOT
+                };
                 #[cfg(test)]
                 self.test_count.entry("take_async").and_modify(|e| *e += 1).or_insert(1);
-
                 Ok(result)
             },
             Err(error_msg) => {
@@ -697,8 +892,11 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 Err(error_msg)
             }
         }
-
     }
+
+
+
+
 
     pub fn send_slice_until_full<T>(&mut self, this: & mut Tx<T>, slice: &[T]) -> usize
         where T: Copy {
@@ -708,9 +906,13 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
 
         let done = this.send_slice_until_full(slice);
-        this.local_index = monitor::process_event(&mut self.telemetry_send_tx
-                                                  , this.local_index, this.id,
-             |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(done));
+
+        this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+            tel.process_event(this.local_index, this.id, done)
+        } else {
+            MONITOR_NOT
+        };
+
         done
     }
 
@@ -721,9 +923,13 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
 
         let done = this.send_iter_until_full(iter);
-        this.local_index = monitor::process_event(&mut self.telemetry_send_tx
-                                                  , this.local_index, this.id,
-             |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(done));
+
+        this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+            tel.process_event(this.local_index, this.id, done)
+        } else {
+            MONITOR_NOT
+        };
+
         done
     }
 
@@ -735,9 +941,12 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
         match this.try_send(msg) {
             Ok(_) => {
-                this.local_index = monitor::process_event(&mut self.telemetry_send_tx
-                                                          , this.local_index, this.id,
-                                                          |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(1));
+
+                this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+                    tel.process_event(this.local_index, this.id, 1)
+                } else {
+                    MONITOR_NOT
+                };
                 Ok(())
             },
             Err(sensitive) => {
@@ -753,34 +962,34 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     pub fn vacant_units<T>(& mut self, this: & mut Tx<T>) -> usize {
-
-        this.vacant_units()
+        this.shared_vacant_units()
     }
     pub async fn wait_vacant_units<T>(& mut self, this: & mut Tx<T>, count:usize) {
-
         self.start_hot_profile(monitor::CALL_WAIT);
-
-        let response = this.wait_vacant_units(count).await;
-
+        let response = this.shared_wait_vacant_units(count).await;
         self.rollup_hot_profile();
-
-
+        response
+    }
+    pub async fn wait_empty<T>(& mut self, this: & mut Tx<T>) {
+        self.start_hot_profile(monitor::CALL_WAIT);
+        let response = this.shared_wait_empty().await;
+        self.rollup_hot_profile();
         response
     }
 
+
+
     pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T) -> Result<(), T> {
-
        self.start_hot_profile(monitor::CALL_SINGLE_WRITE);
-
-       let result = this.send_async(a).await;
-
-        self.rollup_hot_profile();
-
+       let result = this.shared_send_async(a).await;
+       self.rollup_hot_profile();
        match result  {
            Ok(_) => {
-               this.local_index = monitor::process_event(&mut self.telemetry_send_tx
-                                                         , this.local_index, this.id,
-                    |telemetry, index| telemetry.count[index] = telemetry.count[index].saturating_add(1));
+               this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+                   tel.process_event(this.local_index, this.id, 1)
+               } else {
+                   MONITOR_NOT
+               };
                Ok(())
            },
            Err(sensitive) => {
@@ -790,18 +999,6 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
        }
     }
 
-    fn rollup_hot_profile(&mut self) {
-        if let Some(ref mut st) = self.telemetry_state {
-            if let Some(d) = st.hot_profile.take() {
-                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
-
-                assert!(st.instant_start.le(&d), "unit_start: {:?} call_start: {:?}", st.instant_start, d);
-
-                //let total_ns = st.instant_start.elapsed().as_nanos() as u64;
-                //assert!(total_ns >= st.await_ns_unit, "should be: {} >= {}", total_ns, st.await_ns_unit);
-            }
-        }
-    }
 }
 
 

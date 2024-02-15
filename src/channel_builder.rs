@@ -9,10 +9,6 @@ pub(crate) type ChannelBacking<T> = Heap<T>;
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
 pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
 
-pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
-pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
-
-
 
 
 //TODO: we should use static for all telemetry work. (next step)
@@ -25,7 +21,7 @@ use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 #[allow(unused_imports)]
 use log::*;
 use ringbuf::storage::Heap;
-use crate::{config, MONITOR_UNKNOWN, Percentile, Rx, StdDev, Trigger, Tx};
+use crate::{config, MONITOR_UNKNOWN, Percentile, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx};
 use crate::monitor::ChannelMetaData;
 
 
@@ -214,7 +210,7 @@ impl ChannelBuilder {
         result
     }
 
-    pub(crate) fn to_meta_data(&self, type_name: &'static str) -> ChannelMetaData {
+    pub(crate) fn to_meta_data(&self, type_name: &'static str, type_byte_count: usize) -> ChannelMetaData {
         assert!(self.capacity > 0);
         let channel_id = self.channel_count.fetch_add(1, Ordering::SeqCst);
         let show_type = if self.show_type {Some(type_name.split("::").last().unwrap_or(""))} else {None};
@@ -226,13 +222,13 @@ impl ChannelBuilder {
             window_bucket_in_bits: self.window_bucket_in_bits,
             refresh_rate_in_bits: self.refresh_rate_in_bits,
             line_expansion: self.line_expansion,
-            show_type,
+            show_type, type_byte_count,
             percentiles_inflight: self.percentiles_inflight.clone(),
             percentiles_consumed: self.percentiles_consumed.clone(),
             percentiles_latency: self.percentiles_latency.clone(),
             std_dev_inflight: self.std_dev_inflight.clone(),
             std_dev_consumed: self.std_dev_consumed.clone(),
-            std_dev_latency: vec![],
+            std_dev_latency: self.std_dev_latency.clone(),
             red: self.red.clone(),
             yellow: self.yellow.clone(),
             capacity: self.capacity,
@@ -240,6 +236,22 @@ impl ChannelBuilder {
             avg_consumed: self.avg_consumed,
             avg_latency: false,
             connects_sidecar: self.connects_sidecar,
+
+            //TODO: deeper review here.
+            expects_to_be_monitored: self.window_bucket_in_bits>0
+                                      && ( self.display_labels
+                                   || self.line_expansion
+                                   || show_type.is_some()
+                                   || !self.percentiles_inflight.is_empty()
+                                   || !self.percentiles_latency.is_empty()
+                                   || !self.percentiles_consumed.is_empty()
+                                    || self.avg_inflight
+                                    || self.avg_latency
+                                    || self.avg_consumed
+                                    || !self.std_dev_inflight.is_empty()
+                                    || !self.std_dev_latency.is_empty()
+                                    || !self.std_dev_consumed.is_empty())
+
         }
     }
 
@@ -250,7 +262,10 @@ impl ChannelBuilder {
 
         //trace!("channel_builder::build: type_name: {}", std::any::type_name::<T>());
 
-        let channel_meta_data = Arc::new(self.to_meta_data(std::any::type_name::<T>()));
+        //the number of bytes consumed by T
+        let type_byte_count = std::mem::size_of::<T>();
+        let type_string_name = std::any::type_name::<T>();
+        let channel_meta_data = Arc::new(self.to_meta_data(type_string_name,type_byte_count));
         let id = channel_meta_data.id;
 
         (  Arc::new(Mutex::new(Tx { id, tx

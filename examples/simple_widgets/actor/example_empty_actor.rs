@@ -5,7 +5,6 @@ use futures::lock::Mutex;
 use steady_state::*;
 use log::*;
 
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct SomeExampleRecord {
 }
@@ -18,16 +17,16 @@ struct SomeLocalState {
 #[allow(dead_code)]
 #[cfg(not(test))]
 pub async fn run(monitor: SteadyContext
-                 , tx: Arc<Mutex<Tx<SomeExampleRecord>>>
-                 , rx: Arc<Mutex<Rx<SomeExampleRecord>>>) -> Result<(),()> {
+                 , tx: SteadyTx<SomeExampleRecord>
+                 , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
+
+    let mut monitor = monitor.into_monitor([&rx], [&tx]);
+    let mut state = SomeLocalState{};
 
     let mut rx_guard = rx.lock().await;
     let mut tx_guard = tx.lock().await;
     let rx = rx_guard.deref_mut();
     let tx = tx_guard.deref_mut();
-
-    let mut monitor = monitor.into_monitor(&[rx], &[tx]);
-    let mut state = SomeLocalState{};
 
     loop {
         //single pass of work, do not loop in here
@@ -48,15 +47,16 @@ pub async fn run(monitor: SteadyContext
 #[allow(dead_code)]
 #[cfg(test)]
 pub async fn run(monitor: SteadyContext
-                 , tx: Arc<Mutex<Tx<SomeExampleRecord>>>
-                 , rx: Arc<Mutex<Rx<SomeExampleRecord>>>) -> Result<(),()> {
+                 , tx: SteadyTx<SomeExampleRecord>
+                 , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
+
+    let mut monitor = monitor.into_monitor([&rx], [&tx]);
 
     let mut rx_guard = rx.lock().await;
     let mut tx_guard = tx.lock().await;
     let rx = rx_guard.deref_mut();
     let tx = tx_guard.deref_mut();
 
-    let mut monitor = monitor.into_monitor(&[rx], &[tx]);
     let mut state = SomeLocalState{};
 
 
@@ -109,9 +109,12 @@ mod tests {
 
         util::logger::initialize();
 
-        let mut graph = Graph::new();
+        let mut graph = Graph::new("");
         let (tx_in, rx_in) = graph.channel_builder().with_capacity(8).build();
         let (tx_out, rx_out) = graph.channel_builder().with_capacity(8).build();
+
+        let mock_monitor = graph.new_test_monitor("example_test");
+        let mut mock_monitor = mock_monitor.into_monitor([&rx_in], [&tx_out]);
 
         let mut tx_in_guard = tx_in.lock().await;
         let mut rx_in_guard = rx_in.lock().await;
@@ -123,9 +126,7 @@ mod tests {
         let tx_out = tx_out_guard.deref_mut();
         let rx_out = rx_out_guard.deref_mut();
 
-        let mock_monitor = graph.new_test_monitor("example_test");
 
-        let mut mock_monitor = mock_monitor.into_monitor(&mut[rx_in], &mut[tx_out]);
         let mut state = SomeLocalState{};
 
         let _ = mock_monitor.send_async(tx_in, SomeExampleRecord{}).await;

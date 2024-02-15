@@ -125,8 +125,9 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                         .connects_sidecar()//hint for display
                         .build();
 
+    //TODO: need max and min per window...
     let (change_tx, change_rx) = base_channel_builder
-                        .with_avg_inflight()
+                        .with_filled_percentile(Percentile::p25())
                         .with_capacity(200)
                         .build();
 

@@ -52,41 +52,19 @@ pub(crate) struct Node {
 impl Node {
     pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus, total_work_ns: u128) {
 
-        //smooth these values out. TODO: add moving avg??
-
-        //  with_metrics   // Metrics:  20% Workload  256 mCPU  (window ma + std dev, 80th percentile)
         let num = actor_status.await_total_ns;
         let den = actor_status.unit_total_ns;
         assert!(den.ge(&num), "num: {} den: {}",num,den);
-        let m_cpu = if den.is_zero() {0} else {1024 - ( (num * 1024) / den )};
-        //we need sum of all unit-await value
-
-        let workload = (actor_status.unit_total_ns-actor_status.await_total_ns) as f32 / total_work_ns as f32;
-
-
-        //we could build a stats computer similar to the channel.
-        //   with_color_trigger()
-
-        let name = self.name;
-
-/*
-        //  with_restarts
-        //  with_instance_count  and is stopped
-        println!("{} {} {}mCPU {}/{} {:.1}%Workload  restart:{} stop:{} redundancy:{}"
-                  ,self.id
-                 , self.display_label
-                 , m_cpu, num, den, 100f32*workload
-                 , actor_status.total_count_restarts
-                 , actor_status.bool_stop
-                 , actor_status.redundancy);// confirm
-*/
-
-
-        //  with_wait_upon // time/r/wsingle/r/wbatch/other
-        //actor_status.batch_write_calls
-        //actor.status.single_write_calls
-
-
+        let mcpu = if den.is_zero() {0} else {1024 - ( (num * 1024) / den )};
+        let work = (100u64 *(actor_status.unit_total_ns-actor_status.await_total_ns) )
+                              / total_work_ns as u64;
+        let id = self.id;
+        let (label, color) = self.stats_computer.compute(id, mcpu, work
+                                        , actor_status.total_count_restarts
+                                        , actor_status.bool_stop
+                                        , actor_status.redundancy);
+        self.display_label = label;
+        self.color = color;
     }
 }
 
@@ -118,6 +96,10 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
     dot_graph.put_slice(b"digraph G {\nrankdir=");
     dot_graph.put_slice(rankdir.as_bytes());
     dot_graph.put_slice(b";\n");
+    //     keep side cars near with nodesep and ranksep spreads the rest out for label room.
+    dot_graph.put_slice(b"graph [nodesep=.5, ranksep=2.5];\n");
+    dot_graph.put_slice(b"node [margin=0.1];\n"); //gap around text inside the circle
+
     dot_graph.put_slice(b"node [style=filled, fillcolor=white, fontcolor=black];\n");
     dot_graph.put_slice(b"edge [color=white, fontcolor=white];\n");
     dot_graph.put_slice(b"graph [bgcolor=black];\n");
@@ -201,9 +183,9 @@ pub struct DotGraphFrames {
 pub fn refresh_structure(local_state: &mut DotState
                          , name: &'static str
                          , id: usize
-                         , actor: Arc<ActorMetaData>
-                         , channels_in: Arc<Vec<Arc<ChannelMetaData>>>
-                         , channels_out: Arc<Vec<Arc<ChannelMetaData>>>
+                         , actor:           Arc<ActorMetaData>
+                         , channels_in: Vec<Arc<ChannelMetaData>>
+                         , channels_out: Vec<Arc<ChannelMetaData>>
 ) {
 //rare but needed to ensure vector length
     if id.ge(&local_state.nodes.len()) {
@@ -220,7 +202,7 @@ pub fn refresh_structure(local_state: &mut DotState
     }
     local_state.nodes[id].id = id;
     local_state.nodes[id].display_label = name.to_string(); //temp will be replaced when data arrives.
-    local_state.nodes[id].stats_computer.init(actor);
+    local_state.nodes[id].stats_computer.init(actor, id, name);
 
     //edges are defined by both the sender and the receiver
     //we need to record both monitors in this edge as to and from
@@ -229,7 +211,7 @@ pub fn refresh_structure(local_state: &mut DotState
 
 }
 
-fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: Arc<Vec<Arc<ChannelMetaData>>>, set_to: bool) {
+fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: Vec<Arc<ChannelMetaData>>, set_to: bool) {
     mdvec.iter()
         .for_each(|meta| {
             let idx = meta.id;
@@ -244,7 +226,7 @@ fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: Arc<V
                         stats_computer: ChannelStatsComputer::default(),
                         ctl_labels: Vec::new(), //for visibility control
 
-                        color: "white",
+                        color: "grey",
                         pen_width: "3",
                         display_label: "".to_string(),//defined when the content arrives
                     }
@@ -327,8 +309,8 @@ impl FrameHistory {
     }
 
     pub fn apply_node(&mut self, name: & 'static str, id:usize
-                      , chin: Arc<Vec<Arc<ChannelMetaData>>>
-                      , chout: Arc<Vec<Arc<ChannelMetaData>>>) {
+                      , chin: Vec<Arc<ChannelMetaData>>
+                      , chout: Vec<Arc<ChannelMetaData>>) {
 
         write_long_unsigned(REC_NODE, &mut self.history_buffer); //message type
         write_long_unsigned(id as u64, &mut self.history_buffer); //message type
@@ -360,24 +342,25 @@ impl FrameHistory {
     //once every 10 min we will write a full record
     const SAFE_WRITE_LIMIT:usize = (10* 60 * 1000) / super::config::TELEMETRY_PRODUCTION_RATE_MS;
 
-    pub fn apply_edge(&mut self, total_take:Vec<i128>, total_send: Vec<i128>) {
-             write_long_unsigned(REC_EDGE, &mut self.history_buffer); //message type
+    pub fn apply_edge(&mut self, total_take_send: Box<[(i128,i128)]>) {
+        write_long_unsigned(REC_EDGE, &mut self.history_buffer); //message type
 
-            if self.packed_sent_writer.delta_write_count() < Self::SAFE_WRITE_LIMIT {
+        let total_take:Vec<i128> = total_take_send.iter().map(|(t,_)| *t).collect();
+        let total_send:Vec<i128> = total_take_send.iter().map(|(_,s)| *s).collect();
+
+        if self.packed_sent_writer.delta_write_count() < Self::SAFE_WRITE_LIMIT {
                  self.packed_sent_writer.add_vec(&mut self.history_buffer, &total_send);
-            } else {
+        } else {
                 self.packed_sent_writer.sync_data();
                 self.packed_sent_writer.add_vec(&mut self.history_buffer, &total_send);
+        };
 
-            };
-
-            if self.packed_take_writer.delta_write_count() < Self::SAFE_WRITE_LIMIT {
+        if self.packed_take_writer.delta_write_count() < Self::SAFE_WRITE_LIMIT {
                 self.packed_take_writer.add_vec(&mut self.history_buffer, &total_take);
-            } else {
+        } else {
                 self.packed_take_writer.sync_data();
                 self.packed_take_writer.add_vec(&mut self.history_buffer, &total_take);
-            };
-
+        };
 
     }
 

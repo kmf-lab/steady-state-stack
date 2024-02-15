@@ -14,7 +14,7 @@ const DOT_RED: &str = "red";
 const DOT_GREEN: &str = "green";
 const DOT_YELLOW: &str = "yellow";
 const DOT_WHITE: &str = "white";
-
+const DOT_GREY: &str = "grey";
 
 static DOT_PEN_WIDTH: [&str; 16]
 = ["1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"];
@@ -24,16 +24,18 @@ const SQUARE_LIMIT: u128 = (1 << 64)-1; // (u128::MAX as f64).sqrt() as u128;
 
 
 pub(crate) struct ChannelBlock {
-    histogram:      Histogram<u64>,
-    runner:         u128,
-    sum_of_squares: u128,
+    pub(crate) histogram:      Histogram<u64>,
+    pub(crate) runner:         u128,
+    pub(crate) sum_of_squares: u128,
 }
 
 #[derive(Default)]
 pub struct ChannelStatsComputer {
     pub(crate) display_labels: Option<Vec<& 'static str>>,
     pub(crate) line_expansion: bool,
+
     pub(crate) show_type: Option<& 'static str>,
+    pub(crate) type_byte_count: usize, //used to know bytes/sec sent
 
     pub(crate) percentiles_inflight: Vec<Percentile>, //to show
     pub(crate) percentiles_consumed: Vec<Percentile>, //to show
@@ -123,6 +125,7 @@ impl ChannelStatsComputer {
         };
         self.line_expansion = meta.line_expansion;
         self.show_type = meta.show_type;
+        self.type_byte_count = meta.type_byte_count;
 
         self.show_avg_inflight = meta.avg_inflight;
         self.show_avg_consumed = meta.avg_consumed;
@@ -396,6 +399,10 @@ impl ChannelStatsComputer {
 
     pub(crate) fn compute(&mut self, from_id: usize, send: i128, take: i128)
                           -> (String, & 'static str, & 'static str) {
+
+        if self.capacity==0 {
+            return ("".to_string(),DOT_GREY,"1");
+        }
         assert!(self.capacity > 0, "capacity must be greater than 0 from actor {}, this was probably not init", from_id);
 
         // we are in a bad state just exit and give up
@@ -440,17 +447,13 @@ impl ChannelStatsComputer {
 
         display_label.push_str("Capacity: ");
         display_label.push_str(itoa::Buffer::new().format(self.capacity));
-        if !take.is_zero() { //only show when data starts getting sent
-            display_label.push_str(" Total: ");
-            display_label.push_str(itoa::Buffer::new().format(take));
-        }
+        display_label.push_str(" Total: ");
+        display_label.push_str(itoa::Buffer::new().format(take));
         display_label.push('\n');
 
 
-
-
         //set the default color in case we have no alerts.
-        let mut line_color = DOT_WHITE;
+        let mut line_color = DOT_GREY;
         if  (!self.red_trigger.is_empty() || !self.yellow_trigger.is_empty())
             && !self.window_bucket_in_bits.is_zero() {
             line_color = DOT_GREEN;

@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use futures::lock::Mutex;
 use num_traits::Zero;
-use crate::{config, MONITOR_NOT, MONITOR_UNKNOWN, Percentile, Rx, StdDev, Trigger, Tx};
-use crate::channel_builder::{SteadyRx, SteadyTx};
+use crate::{config, MONITOR_NOT, MONITOR_UNKNOWN, Percentile, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx};
+
 
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
     pub(crate) send: Option<SteadyTelemetryTake<TXL>>,
@@ -92,7 +92,6 @@ impl SteadyTelemetryActorSend {
 
 }
 
-
 pub struct SteadyTelemetrySend<const LENGTH: usize> {
     pub(crate) tx: SteadyTx<[usize; LENGTH]>,
     pub(crate) count: [usize; LENGTH],
@@ -151,6 +150,13 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                 await_total_ns += status.await_total_ns;
                 unit_total_ns += status.unit_total_ns;
 
+                single_read_calls += status.calls[CALL_SINGLE_READ];
+                batch_read_calls += status.calls[CALL_BATCH_READ];
+                single_write_calls += status.calls[CALL_SINGLE_WRITE];
+                batch_write_calls += status.calls[CALL_BATCH_WRITE];
+                other_calls += status.calls[CALL_OTHER];
+                wait_calls += status.calls[CALL_WAIT];
+
                 for (i, call) in status.calls.iter().enumerate() {
                     calls[i] = calls[i].saturating_add(*call);
                 }
@@ -175,7 +181,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
 
     #[inline]
-    fn consume_take_into(&self, send_source: &mut Vec<i128>, take_target: &mut Vec<i128>, future_target: &mut Vec<i128>) -> bool {
+    fn consume_take_into(&self, take_send_source: &mut Vec<(i128,i128)>, future_target: &mut Vec<i128>) -> bool {
         if let Some(ref take) = &self.take {
             let mut buffer = [[0usize;RXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
 
@@ -199,10 +205,10 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                 //note we may be spanning the boundary of a failed actor
                 //if that is the case we may not be able to pick up all the data
                 //and must leave some for future frames
-                let max_takeable = send_source[meta.id]-take_target[meta.id];
+                let max_takeable = take_send_source[meta.id].1-take_send_source[meta.id].0;
                 assert!(max_takeable.ge(&0),"internal error");
                 let value_taken = max_takeable.min(future_target[meta.id]);
-                take_target[meta.id] += value_taken;
+                take_send_source[meta.id].0 += value_taken;
                 future_target[meta.id] -= value_taken;
             });
 
@@ -211,12 +217,12 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                 take.details.iter()
                     .zip(msg.iter())
                     .for_each(|(meta, val)| {
-                        let limit = send_source[meta.id];
+                        let limit = take_send_source[meta.id].1;
                         let val = *val as i128;
                         //we can go up to the limit but no more
                         //once we hit the limit we start putting the data into the future
-                        if i128::is_zero(&future_target[meta.id]) && val+take_target[meta.id] <= limit {
-                            take_target[meta.id] += val;
+                        if i128::is_zero(&future_target[meta.id]) && val+take_send_source[meta.id].0 <= limit {
+                            take_send_source[meta.id].0 += val;
                         } else {
                             future_target[meta.id] += val;
                         }
@@ -228,7 +234,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
         }
     }
     #[inline]
-    fn consume_send_into(&self, send_target: &mut Vec<i128>) -> bool {
+    fn consume_send_into(&self, take_send_target: &mut Vec<(i128,i128)>) -> bool {
         if let Some(ref send) = &self.send {
             //we only want to gab a max of LOCKED_CHANNEL_LENGTH_TO_COLLECTOR for this frame
             let mut buffer = [[0usize;TXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
@@ -245,7 +251,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                 send.details.iter()
                     .zip(msg.iter())
                     .for_each(|(meta, val)| {
-                        send_target[meta.id] += *val as i128;
+                        take_send_target[meta.id].1 += *val as i128;
                     });
             });
             count > 0
@@ -289,13 +295,31 @@ impl <const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
             , inverse_local_index
         }
     }
+
+    pub(crate) fn process_event(&mut self, index: usize, id: usize, done: usize) -> usize {
+        let telemetry = self;
+        if index < MONITOR_NOT {
+            telemetry.count[index] = telemetry.count[index].saturating_add(done);
+            index
+        } else if index == MONITOR_UNKNOWN {
+            let local_index = find_my_index(telemetry, id);
+            if local_index < MONITOR_NOT {
+                telemetry.count[local_index] = telemetry.count[local_index].saturating_add(done);
+            }
+            local_index
+        } else {
+            index
+        }
+    }
+
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct ActorMetaData {
+    pub(crate) id: usize,
+    pub(crate) name: &'static str,
     pub(crate) avg_mcpu: bool,
     pub(crate) avg_work: bool,
-
     pub percentiles_mcpu: Vec<Percentile>,
     pub percentiles_work: Vec<Percentile>,
     pub std_dev_mcpu: Vec<StdDev>,
@@ -307,8 +331,8 @@ pub struct ActorMetaData {
     pub usage_review: bool,
 }
 
-
-#[derive(Clone, Default)]
+//this struct is immutable once built and must never change again
+#[derive(Clone, Default, Debug)]
 pub struct ChannelMetaData {
     pub(crate) id: usize,
     pub(crate) labels: Vec<&'static str>,
@@ -316,7 +340,6 @@ pub struct ChannelMetaData {
     pub(crate) display_labels: bool,
     pub(crate) line_expansion: bool,
     pub(crate) show_type: Option<&'static str>,
-
     pub(crate) refresh_rate_in_bits: u8,
     pub(crate) window_bucket_in_bits: u8,
 
@@ -328,7 +351,6 @@ pub struct ChannelMetaData {
     pub(crate) std_dev_consumed: Vec<StdDev>, //each is a row
     pub(crate) std_dev_latency: Vec<StdDev>, //each is a row
 
-
     pub(crate) red: Vec<Trigger>, //if used base is green
     pub(crate) yellow: Vec<Trigger>, //if used base is green
 
@@ -337,6 +359,8 @@ pub struct ChannelMetaData {
     pub(crate) avg_latency: bool,
 
     pub(crate) connects_sidecar: bool,
+    pub(crate) type_byte_count: usize,
+    pub(crate) expects_to_be_monitored: bool,
 }
 
 
@@ -351,8 +375,8 @@ pub trait RxTel : Send + Sync {
     fn actor_metadata(&self) -> Arc<ActorMetaData>;
 
 
-    fn consume_take_into(&self, send_source: &mut Vec<i128>, take_target: &mut Vec<i128>, future_target: &mut Vec<i128>) -> bool;
-    fn consume_send_into(&self, send_target: &mut Vec<i128>) -> bool;
+    fn consume_take_into(&self, take_send_source: &mut Vec<(i128,i128)>, future_target: &mut Vec<i128>) -> bool;
+    fn consume_send_into(&self, take_send_source: &mut Vec<(i128,i128)>) -> bool;
 
     fn biggest_tx_id(&self) -> usize;
     fn biggest_rx_id(&self) -> usize;
@@ -385,13 +409,14 @@ pub(crate) mod monitor_tests {
             .build();
 
         let monitor = graph.new_test_monitor("test");
+        let mut monitor = monitor.into_monitor([&rx_string], [&tx_string]);
+
         let mut rx_string_guard = rx_string.lock().await;
         let mut tx_string_guard = tx_string.lock().await;
 
         let rxd: &mut Rx<String> = rx_string_guard.deref_mut();
         let txd: &mut Tx<String> = tx_string_guard.deref_mut();
 
-        let mut monitor = monitor.into_monitor(&[rxd], &[txd]);
 
         let threshold = 5;
         let mut count = 0;
@@ -436,6 +461,7 @@ pub(crate) mod monitor_tests {
         let monitor = graph.new_test_monitor("test");
 
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build();
+        let mut monitor = monitor.into_monitor([&rx_string], [&tx_string]);
 
         let mut rx_string_guard = rx_string.lock().await;
         let mut tx_string_guard = tx_string.lock().await;
@@ -443,7 +469,6 @@ pub(crate) mod monitor_tests {
         let rxd: &mut Rx<String> = rx_string_guard.deref_mut();
         let txd: &mut Tx<String> = tx_string_guard.deref_mut();
 
-        let mut monitor = monitor.into_monitor(&[rxd], &[txd]);
 
         let threshold = 5;
         let mut count = 0;
@@ -475,29 +500,6 @@ pub(crate) mod monitor_tests {
         if let Some(ref mut rx) = monitor.telemetry_send_rx {
             assert_eq!(rx.count[rxd.local_index], 0);
         }
-    }
-}
-
-pub(crate) fn process_event<const LEN:usize, F>(target: &mut Option<SteadyTelemetrySend<LEN>>
-                                                , index: usize
-                                                , id: usize
-                                                , mut f: F) -> usize
-    where F: FnMut( &mut SteadyTelemetrySend<{ LEN }>, usize), {
-    if let Some(ref mut telemetry) = target {
-        if index < MONITOR_NOT {
-            f(telemetry, index);
-            index
-        } else if index == MONITOR_UNKNOWN {
-            let local_index = find_my_index(telemetry, id);
-            if local_index < MONITOR_NOT {
-                f(telemetry, local_index);
-            }
-            local_index
-        } else {
-            index
-        }
-    } else {
-        MONITOR_NOT
     }
 }
 

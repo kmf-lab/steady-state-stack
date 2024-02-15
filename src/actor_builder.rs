@@ -28,6 +28,7 @@ fn build_node_monitor_callback( count_restarts: &Arc<AtomicU32>
 #[derive(Clone)]
 pub struct ActorBuilder {
     name: &'static str,
+    suffix: Option<usize>,
     args: Arc<Box<dyn Any+Send+Sync>>,
     telemetry_tx: Arc<Mutex<Vec<CollectorDetail>>>,
     channel_count: Arc<AtomicUsize>,
@@ -56,6 +57,7 @@ impl ActorBuilder {
 
         ActorBuilder {
             name: "",
+            suffix: None,
             monitor_count: graph.monitor_count.clone(),
             args : graph.args.clone(),
             redundancy: 1,
@@ -104,6 +106,12 @@ impl ActorBuilder {
     pub fn with_name(&self, name: &'static str) -> Self {
         let mut result = self.clone();
         result.name = name;
+        result
+    }
+
+    pub fn with_name_suffix(&self, suffix: usize) -> Self {
+        let mut result = self.clone();
+        result.suffix = Some(suffix);
         result
     }
 
@@ -174,6 +182,7 @@ impl ActorBuilder {
 
                 let actor_metadata = Arc::new(
                     ActorMetaData {
+                        id, name,
                         avg_mcpu: self.avg_mcpu,
                         avg_work: self.avg_work,
                         percentiles_mcpu: self.percentiles_mcpu.clone(),

@@ -15,7 +15,7 @@
     pub const TELEMETRY_FOR_ACTORS:bool = true; //TODO: can turn this off as a feature
 
 
-    pub const REAL_CHANNEL_LENGTH_TO_FEATURE:usize = 16; //allows features to fall behind with minimal latency
+    pub const REAL_CHANNEL_LENGTH_TO_FEATURE:usize = 256; //allows features to fall behind with minimal latency
     pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR:usize = 128; //larger values take up memory but allow faster capture rates
     pub const LOCKED_CHANNEL_LENGTH_TO_COLLECTOR:usize = REAL_CHANNEL_LENGTH_TO_COLLECTOR>>1; //larger values take up memory but allow faster capture rates
 

@@ -4,9 +4,6 @@ node [style=filled, fillcolor=white, fontcolor=black];
 edge [color=white, fontcolor=white];
 graph [bgcolor=black];
 
-//TODO: we need to with caution add a way to set these in rare cases
-//      perhaps we should look for "sidecars" as a control label or boolean?
-
 
 "0" [label="generator", color=grey, penwidth=2];
 "1" [label="approval", color=grey, penwidth=2];

@@ -14,7 +14,6 @@ use tide::http::mime;
 use crate::*;
 use crate::dot::{build_dot, DotGraphFrames, DotState, FrameHistory, refresh_structure};
 use crate::telemetry::metrics_collector::*;
-use crate::telemetry::metrics_collector::DiagramData::{ChannelVolumeData, NodeDef, NodeProcessData};
 
 
 
@@ -38,17 +37,17 @@ struct State {
 }
 
 pub(crate) async fn run(context: SteadyContext
-                        , rx: Arc<Mutex<Rx<DiagramData>>>) -> std::result::Result<(),()> {
-
-    let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
+                        , rx: SteadyRx<DiagramData>) -> std::result::Result<(),()> {
 
     let runtime_state = context.runtime_state.clone();
 
     if config::SHOW_TELEMETRY_ON_TELEMETRY {
         //NOTE: this line makes this node monitored on the telemetry
-        let _ = context.into_monitor(&[rx], &[]);
+        let _ = context.into_monitor([&rx], []);
     }
+
+    let mut rx_guard = rx.lock().await;
+    let rx = rx_guard.deref_mut();
 
     let mut dot_state = DotState::default();
 
@@ -104,7 +103,12 @@ pub(crate) async fn run(context: SteadyContext
             },
             msg = rx.take_async().fuse() => {
                   match msg {
-                         Ok(NodeDef(seq, name, id, actor, channels_in, channels_out)) => {
+                         Ok(DiagramData::NodeDef(seq, defs)) => {
+                            // these are all immutable constants for the life of the node
+                            let (actor, channels_in, channels_out) = Arc::try_unwrap(defs).unwrap_or_else(|arc| (*arc).clone());
+
+                            let name = actor.name;
+                            let id = actor.id;
                             refresh_structure(&mut dot_state
                                                , name
                                                , id
@@ -120,7 +124,7 @@ pub(crate) async fn run(context: SteadyContext
                                                   , channels_out.clone());
                               }
                          },
-                         Ok(NodeProcessData(seq,actor_status)) => {
+                         Ok(DiagramData::NodeProcessData(seq,actor_status)) => {
 
                             //sum up all actor work so we can find the percentage of each
                             let total_work_ns:u128 = actor_status.iter()
@@ -141,19 +145,17 @@ pub(crate) async fn run(context: SteadyContext
                                 if dot_state.nodes.is_empty() { exit(-1); }
                                 assert!(!dot_state.nodes.is_empty());
 
-                               dot_state.nodes[i].compute_and_refresh(*status, total_work_ns);
+                                dot_state.nodes[i].compute_and_refresh(*status, total_work_ns);
                             });
                          },
-                         Ok(ChannelVolumeData(seq
-                                 , total_take
-                                 , total_send)) => {
-                              //note on init we may not have the same length...
-                              assert_eq!(total_take.len(), total_send.len());
+                         Ok(DiagramData::ChannelVolumeData(seq
+                                 , total_take_send)) => {
 
-                              total_send.iter()
-                                        .zip(total_take.iter())
+                              // trace!("new data {:?} ",total_take_send);
+
+                              total_take_send.iter()
                                         .enumerate()
-                                        .for_each(|(i,(s,t))| {
+                                        .for_each(|(i,(t,s))| {
 
                                         // we are in a bad state just exit and give up
                                         #[cfg(debug_assertions)]
@@ -178,7 +180,7 @@ pub(crate) async fn run(context: SteadyContext
 
                                   //NOTE we do not expect to get any more messages for this seq
                                   //    and we have 32ms or so to record the history log file
-                                  history.apply_edge(total_take, total_send);
+                                  history.apply_edge(total_take_send);
 
                                   //since we got the edge data we know we have a full frame
                                   //and we can update the history

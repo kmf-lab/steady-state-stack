@@ -25,16 +25,8 @@ struct InternalState {
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
-                 , rx: Arc<Mutex<Rx<ChangeRequest>>>
-                 , tx: Arc<Mutex<Tx<WidgetInventory>>> ) -> Result<(),()> {
-
-    let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
-
-    let mut tx_guard = tx.lock().await;
-    let tx = tx_guard.deref_mut();
-
-    //let args = context.args::<Args>(); //or you can turbo fish here to get your args
+                 , feedback: SteadyRx<ChangeRequest>
+                 , tx: SteadyTx<WidgetInventory> ) -> Result<(),()> {
 
     let gen_rate_micros = if let Some(a) = context.args::<Args>() {
         a.gen_rate_micros
@@ -42,9 +34,19 @@ pub async fn run(context: SteadyContext
         10_000 //default
     };
 
+    let mut monitor = context.into_monitor([&feedback], [&tx]);
+
+    let mut rx_guard = feedback.lock().await;
+    let feedback = rx_guard.deref_mut();
+
+    let mut tx_guard = tx.lock().await;
+    let tx = tx_guard.deref_mut();
+
+    //let args = context.args::<Args>(); //or you can turbo fish here to get your args
+
+
     const MULTIPLIER:usize = 256;   //500_000 per second at 500 micros
 
-    let mut monitor = context.into_monitor(&[rx], &[tx]);
 
     //keep long running state in here while you run
 
@@ -56,6 +58,11 @@ pub async fn run(context: SteadyContext
          //single pass of work, do not loop in here
         iterate_once(&mut monitor, &mut state, tx, MULTIPLIER).await;
 
+        if let Some(feedback) = monitor.try_take(feedback) {
+              trace!("data_generator feedback: {:?}", feedback);
+        }
+
+        //Using this block to test the panic and stop support
         //if (65536<<2)==state.count {
         //    return monitor.stop().await; //stop the actor
         //    panic!("This is a panic");
@@ -70,17 +77,16 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 , _opt: Args
-                 , rx: Arc<Mutex<Rx<ChangeRequest>>>
-                 , tx: Arc<Mutex<Tx<WidgetInventory>>>) -> Result<(),()> {
+                 , rx: SteadyRx<ChangeRequest>
+                 , tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
+
+    let mut monitor = context.into_monitor([&rx], [&tx]);
 
     let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
+    let _rx = rx_guard.deref_mut();
 
     let mut tx_guard = tx.lock().await;
     let tx = tx_guard.deref_mut();
-
-    let mut monitor = context.into_monitor(&[rx], &[tx]);
 
     loop {
          relay_test(& mut monitor, tx).await;
@@ -149,16 +155,16 @@ mod tests {
     async fn test_iterate_once() {
         util::logger::initialize();
 
-        let mut graph = Graph::new();
+        let mut graph = Graph::new("");
         let (tx, rx) = graph.channel_builder().with_capacity(5).build();
+
         let mock_monitor = graph.new_test_monitor("generator_monitor");
+        let mut mock_monitor = mock_monitor.into_monitor([&rx], [&tx]);
 
         let mut steady_tx_guard = tx.lock().await;
         let mut steady_rx_guard = rx.lock().await;
         let steady_tx = steady_tx_guard.deref_mut();
         let steady_rx = steady_rx_guard.deref_mut();
-
-        let mut mock_monitor = mock_monitor.into_monitor(&mut[steady_rx], &mut[steady_tx]);
         let mut state = InternalState {
             count: 10,
         };

@@ -1,6 +1,4 @@
 use std::ops::DerefMut;
-use std::sync::Arc;
-use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
@@ -16,16 +14,17 @@ struct InternalState {
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
-                 , rx: Arc<Mutex<Rx<ApprovedWidgets>>>) -> Result<(),()> {
+                 , rx: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
 
-    let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
 
     //let args:Option<&Args> = context.args(); //you can make the type explicit
     //let args = context.args::<Args>(); //or you can turbo fish here to get your args
 
 
-    let mut monitor =  context.into_monitor(&[rx], &[]);
+    let mut monitor =  context.into_monitor([&rx], []);
+
+    let mut rx_guard = rx.lock().await;
+    let rx = rx_guard.deref_mut();
 
     let mut state = InternalState {
         last_approval: None,
@@ -85,12 +84,13 @@ fn process_msg(state: &mut InternalState, msg: Result<ApprovedWidgets, String>) 
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 , rx: Arc<Mutex<Rx<ApprovedWidgets>>>) -> Result<(),()> {
+                 , rx: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
+    let mut monitor = context.into_monitor([&rx], []);
+
     //guards for the channels, NOTE: we could share one channel across actors.
     let mut rx_guard = rx.lock().await;
     let rx = rx_guard.deref_mut();
 
-    let mut monitor = context.into_monitor(&[rx], &[]);
 
     loop {
         relay_test(&mut monitor, rx).await;
@@ -141,7 +141,7 @@ mod tests {
         let steady_rx = steady_rx_guard.deref_mut();
 
 
-        let mut mock_monitor = mock_monitor.into_monitor(&mut[], &mut[]);
+        let mut mock_monitor = mock_monitor.into_monitor([], []);
         let mut state = InternalState {
             last_approval: None,
             buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
