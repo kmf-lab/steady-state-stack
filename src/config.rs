@@ -16,10 +16,13 @@
 
 
     pub const REAL_CHANNEL_LENGTH_TO_FEATURE:usize = 256; //allows features to fall behind with minimal latency
-    pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR:usize = 128; //larger values take up memory but allow faster capture rates
+    pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR:usize = 256; //larger values take up memory but allow faster capture rates
     pub const LOCKED_CHANNEL_LENGTH_TO_COLLECTOR:usize = REAL_CHANNEL_LENGTH_TO_COLLECTOR>>1; //larger values take up memory but allow faster capture rates
 
-    pub const TELEMETRY_PRODUCTION_RATE_MS:usize = 32; //values faster than 32 can not be seen my normal humans
+    pub const TELEMETRY_PRODUCTION_RATE_MS:usize = 32;
+                 //values smaller than 32 can not be seen my normal humans
+                 //values larger than 1000 are not supported at this time
+
     pub const MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS:usize
                = (1000*TELEMETRY_PRODUCTION_RATE_MS)/LOCKED_CHANNEL_LENGTH_TO_COLLECTOR;
 

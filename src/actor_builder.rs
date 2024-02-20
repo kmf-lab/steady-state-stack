@@ -7,7 +7,7 @@ use std::time::Duration;
 use bastion::Callbacks;
 use futures::lock::Mutex;
 use log::*;
-use crate::{Graph, GraphLivelinessState, Percentile, StdDev, SteadyContext, Trigger};
+use crate::{AlertColor, Graph, GraphLivelinessState, MCPU, Percentile, StdDev, SteadyContext, Trigger, Work};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 
@@ -44,8 +44,8 @@ pub struct ActorBuilder {
     percentiles_work: Vec<Percentile>,
     std_dev_mcpu: Vec<StdDev>,
     std_dev_work: Vec<StdDev>,
-    red: Vec<Trigger>,
-    yellow: Vec<Trigger>,
+    trigger_mcpu: Vec<(Trigger<MCPU>,AlertColor)>,
+    trigger_work: Vec<(Trigger<Work>,AlertColor)>,
     avg_mcpu: bool,
     avg_work: bool,
 
@@ -72,8 +72,8 @@ impl ActorBuilder {
             percentiles_work: Vec::new(),
             std_dev_mcpu: Vec::new(),
             std_dev_work: Vec::new(),
-            red: Vec::new(),
-            yellow: Vec::new(),
+            trigger_mcpu: Vec::new(),
+            trigger_work: Vec::new(),
             avg_mcpu: false,
             avg_work: false,
             usage_review: false,
@@ -114,16 +114,37 @@ impl ActorBuilder {
         result.suffix = Some(suffix);
         result
     }
-
-    pub fn with_red(&self, bound: Trigger) -> Self {
+    pub fn with_mcpu_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
-        result.red.push(bound);
+        result.percentiles_mcpu.push(config);
+        result
+    }
+    pub fn with_work_percentile(&self, config: Percentile) -> Self {
+        let mut result = self.clone();
+        result.percentiles_work.push(config);
         result
     }
 
-    pub fn with_yellow(&self, bound: Trigger) -> Self {
+    pub fn with_avg_mcpu(&self) -> Self {
         let mut result = self.clone();
-        result.yellow.push(bound);
+        result.avg_mcpu=true;
+        result
+    }
+    pub fn with_avg_work(&self) -> Self {
+        let mut result = self.clone();
+        result.avg_work = true;
+        result
+    }
+
+    pub fn with_mcpu_trigger(&self, bound: Trigger<MCPU>, color: AlertColor) -> Self {
+        let mut result = self.clone();
+        result.trigger_mcpu.push((bound,color));
+        result
+    }
+
+    pub fn with_work_trigger(&self, bound: Trigger<Work>, color: AlertColor) -> Self {
+        let mut result = self.clone();
+        result.trigger_work.push((bound,color));
         result
     }
 
@@ -189,8 +210,8 @@ impl ActorBuilder {
                         percentiles_work: self.percentiles_work.clone(),
                         std_dev_mcpu: self.std_dev_mcpu.clone(),
                         std_dev_work: self.std_dev_work.clone(),
-                        red: self.red.clone(),
-                        yellow: self.yellow.clone(),
+                        trigger_mcpu: self.trigger_mcpu.clone(),
+                        trigger_work: self.trigger_work.clone(),
                         usage_review: self.usage_review,
                         refresh_rate_in_bits: self.refresh_rate_in_bits,
                         window_bucket_in_bits: self.window_bucket_in_bits,

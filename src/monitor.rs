@@ -1,11 +1,12 @@
 use std::ops::*;
-use std::time::{Instant};
+use std::time::{Duration, Instant};
 use bastion::run;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use futures::lock::Mutex;
+use log::{error, trace};
 use num_traits::Zero;
-use crate::{config, MONITOR_NOT, MONITOR_UNKNOWN, Percentile, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx};
+use crate::{AlertColor, config, Filled, MCPU, MONITOR_NOT, MONITOR_UNKNOWN, Percentile, Rate, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx, Work};
 
 
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
@@ -28,7 +29,7 @@ pub struct ActorStatus {
     pub(crate) unit_total_ns:        u64,  //sum records together
     pub(crate) redundancy:           u16,
 
-    pub(crate) calls: [u16; 6],
+    pub(crate) calls: [u32; 6],
 }
 
 pub(crate) const CALL_SINGLE_READ: usize=0;
@@ -49,7 +50,7 @@ pub struct SteadyTelemetryActorSend {
     pub(crate) redundancy: u16,
 
 
-    pub(crate) calls: [u16; 6],
+    pub(crate) calls: [u32; 6],
 
     pub(crate) count_restarts: Arc<AtomicU32>,
     pub(crate) bool_stop: bool,
@@ -135,15 +136,15 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
             let mut await_total_ns:       u64 = 0;
             let mut unit_total_ns:        u64 = 0;
-            let mut single_read_calls:    u16 = 0;
-            let mut batch_read_calls:     u16 = 0;
-            let mut single_write_calls:   u16 = 0;
-            let mut batch_write_calls:    u16 = 0;
-            let mut other_calls:          u16 = 0;
-            let mut wait_calls:           u16 = 0;
+            let mut single_read_calls:    u32 = 0;
+            let mut batch_read_calls:     u32 = 0;
+            let mut single_write_calls:   u32 = 0;
+            let mut batch_write_calls:    u32 = 0;
+            let mut other_calls:          u32 = 0;
+            let mut wait_calls:           u32 = 0;
 
             //let populated_slice = &buffer[0..count];
-            let mut calls = [0u16;6];
+            let mut calls = [0u32;6];
             for status in buffer.iter().take(count) {
                 assert!(status.unit_total_ns>=status.await_total_ns,"{} {}",status.unit_total_ns,status.await_total_ns);
 
@@ -181,7 +182,10 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
 
     #[inline]
-    fn consume_take_into(&self, take_send_source: &mut Vec<(i128,i128)>, future_target: &mut Vec<i128>) -> bool {
+    fn consume_take_into(&self, take_send_source: &mut Vec<(i128,i128)>
+                         , future_take: &mut Vec<i128>
+                         , future_send: &mut Vec<i128>
+                    ) -> bool {
         if let Some(ref take) = &self.take {
             let mut buffer = [[0usize;RXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
 
@@ -192,13 +196,18 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             };
             let populated_slice = &buffer[0..count];
 
+
             //this logic is key because we must find the break point between frames.
             //we use send as a boundary to know that these takes on the same channel
-            //ether belong to this frame or the next frame.  Data from the last frame
+            //either belong to this frame or the next frame.  Data from the last frame
             //is then used to start our new target data.
 
             //this is essential to ensure send>=take for all frames before we generate labels
-            //this also ensures the data is highly compressable
+            //this also ensures the data is highly compressible
+
+            //further the count on the channel is send-take so we must also be sure that
+            //send cannot be bigger than take+capacity. This will be adjusted at the end
+
 
             //first pull the data we can from last frame into here
             take.details.iter().for_each(|meta| {
@@ -207,9 +216,9 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                 //and must leave some for future frames
                 let max_takeable = take_send_source[meta.id].1-take_send_source[meta.id].0;
                 assert!(max_takeable.ge(&0),"internal error");
-                let value_taken = max_takeable.min(future_target[meta.id]);
+                let value_taken = max_takeable.min(future_take[meta.id]);
                 take_send_source[meta.id].0 += value_taken;
-                future_target[meta.id] -= value_taken;
+                future_take[meta.id] -= value_taken;
             });
 
             //pull in new data for this frame
@@ -221,20 +230,34 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                         let val = *val as i128;
                         //we can go up to the limit but no more
                         //once we hit the limit we start putting the data into the future
-                        if i128::is_zero(&future_target[meta.id]) && val+take_send_source[meta.id].0 <= limit {
-                            take_send_source[meta.id].0 += val;
+                        if i128::is_zero(&future_take[meta.id])
+                            && val+take_send_source[meta.id].0 <= limit {
+                                take_send_source[meta.id].0 += val;
                         } else {
-                            future_target[meta.id] += val;
+                                future_take[meta.id] += val;
                         }
                     });
             });
+
+            //check all values and ensure we do not have more than capacity between send and take
+            take.details.iter().for_each(|(meta)| {
+                let dif = take_send_source[meta.id].1-take_send_source[meta.id].0;
+                if dif > (meta.capacity as i128) {
+                    //trace!("too many sends this frame, pushing some off to next frame");
+                    let extra = dif - (meta.capacity as i128);
+                    future_send[meta.id] += extra;
+                    take_send_source[meta.id].1 -= extra; //adjust the send
+                }
+            });
+
             count>0
         } else {
             false
         }
     }
     #[inline]
-    fn consume_send_into(&self, take_send_target: &mut Vec<(i128,i128)>) -> bool {
+    fn consume_send_into(&self, take_send_target: &mut Vec<(i128,i128)>
+                              , future_send: &mut Vec<i128>) -> bool {
         if let Some(ref send) = &self.send {
             //we only want to gab a max of LOCKED_CHANNEL_LENGTH_TO_COLLECTOR for this frame
             let mut buffer = [[0usize;TXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
@@ -251,6 +274,10 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                 send.details.iter()
                     .zip(msg.iter())
                     .for_each(|(meta, val)| {
+                        //consume any send left over from last frame
+                        take_send_target[meta.id].1 += future_send[meta.id];
+                        future_send[meta.id] = 0;//clear so it is ready for the take phase
+                        //consume the new send values for this frame
                         take_send_target[meta.id].1 += *val as i128;
                     });
             });
@@ -324,8 +351,8 @@ pub struct ActorMetaData {
     pub percentiles_work: Vec<Percentile>,
     pub std_dev_mcpu: Vec<StdDev>,
     pub std_dev_work: Vec<StdDev>,
-    pub red: Vec<Trigger>,
-    pub yellow: Vec<Trigger>,
+    pub trigger_mcpu: Vec<(Trigger<MCPU>,AlertColor)>,
+    pub trigger_work: Vec<(Trigger<Work>,AlertColor)>,
     pub refresh_rate_in_bits: u8,
     pub window_bucket_in_bits: u8,
     pub usage_review: bool,
@@ -351,11 +378,13 @@ pub struct ChannelMetaData {
     pub(crate) std_dev_consumed: Vec<StdDev>, //each is a row
     pub(crate) std_dev_latency: Vec<StdDev>, //each is a row
 
-    pub(crate) red: Vec<Trigger>, //if used base is green
-    pub(crate) yellow: Vec<Trigger>, //if used base is green
+    pub(crate) trigger_rate: Vec<(Trigger<Rate>,AlertColor)>, //if used base is green
+    pub(crate) trigger_filled: Vec<(Trigger<Filled>,AlertColor)>, //if used base is green
+    pub(crate) trigger_latency: Vec<(Trigger<Duration>,AlertColor)>, //if used base is green
 
-    pub(crate) avg_inflight: bool,
-    pub(crate) avg_consumed: bool,
+
+    pub(crate) avg_filled: bool,
+    pub(crate) avg_rate: bool,
     pub(crate) avg_latency: bool,
 
     pub(crate) connects_sidecar: bool,
@@ -375,8 +404,12 @@ pub trait RxTel : Send + Sync {
     fn actor_metadata(&self) -> Arc<ActorMetaData>;
 
 
-    fn consume_take_into(&self, take_send_source: &mut Vec<(i128,i128)>, future_target: &mut Vec<i128>) -> bool;
-    fn consume_send_into(&self, take_send_source: &mut Vec<(i128,i128)>) -> bool;
+    fn consume_take_into(&self, take_send_source: &mut Vec<(i128,i128)>
+                              , future_take: &mut Vec<i128>
+                              , future_send: &mut Vec<i128>
+                         ) -> bool;
+    fn consume_send_into(&self, take_send_source: &mut Vec<(i128,i128)>
+                              , future_send: &mut Vec<i128>) -> bool;
 
     fn biggest_tx_id(&self) -> usize;
     fn biggest_rx_id(&self) -> usize;

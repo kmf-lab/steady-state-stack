@@ -59,12 +59,13 @@ impl Node {
         let work = (100u64 *(actor_status.unit_total_ns-actor_status.await_total_ns) )
                               / total_work_ns as u64;
         let id = self.id;
-        let (label, color) = self.stats_computer.compute(id, mcpu, work
+        let (label, color, pen_width) = self.stats_computer.compute(id, mcpu, work
                                         , actor_status.total_count_restarts
                                         , actor_status.bool_stop
                                         , actor_status.redundancy);
         self.display_label = label;
         self.color = color;
+        self.pen_width = pen_width;
     }
 }
 

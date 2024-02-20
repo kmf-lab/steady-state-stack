@@ -30,7 +30,8 @@ struct RawDiagramState {
     actor_count: usize,
     actor_status: Vec<ActorStatus>,
     total_take_send: Vec<(i128,i128)>,
-    future_take: Vec<i128>, //these are for the next frame since we do not have the matching sent yet
+    future_take: Vec<i128>, //these are for the next frame since we do not have the matching sent yet.
+    future_send: Vec<i128>, //these are for the next frame if we ended up with too many items.
 }
 
 
@@ -77,7 +78,8 @@ pub(crate) async fn run(_context: SteadyContext
 
             //we then consume all the send data available for this frame
             for x in dynamic_senders.iter_mut() {
-                let has_data = x.telemetry_take[0].consume_send_into(&mut state.total_take_send);
+                let has_data = x.telemetry_take[0].consume_send_into(&mut state.total_take_send
+                                                                     ,&mut state.future_send);
                 x.temp_barrier = has_data; //first so we just set it
 
                 #[cfg(debug_assertions)]
@@ -88,7 +90,10 @@ pub(crate) async fn run(_context: SteadyContext
             //but some of this data may be for the next frame so we will
             //consume it into the future_take vec
             for x in dynamic_senders.iter_mut() {
-                let has_data = x.telemetry_take[0].consume_take_into(&mut state.total_take_send, &mut state.future_take);
+                let has_data = x.telemetry_take[0].consume_take_into(&mut state.total_take_send
+                                                                     , &mut state.future_take
+                                                                     , &mut state.future_send
+                                                                    );
                 x.temp_barrier |= has_data; //if we have data here or in the previous
             }
 
@@ -154,6 +159,7 @@ fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &mut Vec<Co
     //grow our vecs as needed for the max ids found
     state.total_take_send.resize(max_channels_len, (0,0)); //index to length so we add 1
     state.future_take.resize(max_channels_len, 0);
+    state.future_send.resize(max_channels_len, 0);
 
 
     let nodes: Vec<DiagramData> = dynamic_senders.iter()
@@ -214,7 +220,11 @@ pub struct CollectorDetail {
     pub(crate) telemetry_take: VecDeque<Box<dyn RxTel>>,
     pub(crate) temp_barrier: bool,
     pub(crate) name: &'static str,
-    pub(crate) monitor_id: usize
+    pub(crate) monitor_id: usize,
+
+    //pub(crate) telemetry_send: VecDeque<Box<dyn TxTel>>,
+    //TODO: add the send end here so we can determine dead locks?
+
 }
 
 

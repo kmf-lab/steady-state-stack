@@ -102,7 +102,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_channel_builder = graph.channel_builder()
-                            .with_compute_refresh_window_floor(Duration::from_secs(10),Duration::from_secs(60))
+                            .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
                             .with_labels(&["widgets"],true)
                             .with_type()
                             .with_line_expansion();
@@ -110,13 +110,17 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     //upon construction these are set up to be monitored by the telemetry telemetry
     let (generator_tx, generator_rx) = base_channel_builder
                          .with_rate_percentile(Percentile::p80())
-                         .with_red(Trigger::AvgFilledAbove(Filled::p70()))
-                         .with_yellow(Trigger::StdDevsFilledAbove(StdDev::one(),Filled::p70()))
+
+                        .with_filled_trigger(Trigger::AvgAbove(Filled::p70())
+                                             ,AlertColor::Red)
+                        .with_filled_trigger(Trigger::StdDevsAbove(StdDev::one(), Filled::p70())
+                                             ,AlertColor::Yellow)
+
                          .with_capacity(4000)
                          .build();
 
     let (consumer_tx, consumer_rx) = base_channel_builder
-                         .with_avg_consumed()
+                         .with_avg_rate()
                          .with_capacity(4000)
                          .build();
 
@@ -125,15 +129,18 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                         .connects_sidecar()//hint for display
                         .build();
 
-    //TODO: need max and min per window...
     let (change_tx, change_rx) = base_channel_builder
+        // .with_fillled_max()  //TODO: new feature to add
+        // .with_fillled_min() //TODO: new feature to add
                         .with_filled_percentile(Percentile::p25())
                         .with_capacity(200)
                         .build();
 
     let base_actor_builder = graph
         .actor_builder()
-        .with_compute_refresh_window_floor(Duration::from_secs(10),Duration::from_secs(60));
+        .with_mcpu_percentile(Percentile::p80())
+        .with_work_percentile(Percentile::p80())
+        .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
 
 
 

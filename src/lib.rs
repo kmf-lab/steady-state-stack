@@ -22,6 +22,7 @@ mod actor_stats;
 
 
 use std::any::{Any, type_name};
+use std::backtrace::Backtrace;
 #[cfg(test)]
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -35,6 +36,8 @@ use futures::lock::Mutex;
 use std::ops::{Deref, DerefMut, Sub};
 use bastion::{Bastion, run};
 use std::future::{Future, ready};
+use std::num::NonZeroUsize;
+use std::process::exit;
 use std::thread::sleep;
 use log::*;
 use channel_builder::{InternalReceiver, InternalSender};
@@ -57,8 +60,8 @@ use crate::util::steady_logging_init;// re-publish in public
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
 
-pub type SteadyTxBundle<T,const LEN:usize> = Arc<[Arc<Mutex<Tx<T>>>;LEN]>;
-pub type SteadyRxBundle<T,const LEN:usize> = Arc<[Arc<Mutex<Rx<T>>>;LEN]>;
+pub type SteadyTxBundle<T,const GURTH:usize> = Arc<[Arc<Mutex<Tx<T>>>;GURTH]>;
+pub type SteadyRxBundle<T,const GURTH:usize> = Arc<[Arc<Mutex<Rx<T>>>;GURTH]>;
 
 
 /// Initialize logging for the steady_state crate.
@@ -71,36 +74,6 @@ pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
     steady_logging_init(loglevel)
 }
 
-
-
-/// Used when setting up new channels to specify when they should change to Red or Yellow state.
-#[derive(Clone, Copy, Debug)]
-pub enum Trigger {
-    AvgFilledAbove(Filled),
-    AvgFilledBelow(Filled),
-    StdDevsFilledAbove(StdDev, Filled), // above mean+(std*factor)
-    StdDevsFilledBelow(StdDev, Filled), // below mean-(std*factor)
-    PercentileFilledAbove(Percentile, Filled),
-    PercentileFilledBelow(Percentile, Filled),
-    /////////////////////////////////////////////
-
-    AvgRateBelow(Rate),
-    AvgRateAbove(Rate),
-    StdDevRateBelow(StdDev,Rate), // below mean-(std*factor)
-    StdDevRateAbove(StdDev,Rate), // above mean+(std*factor)
-    PercentileRateAbove(Percentile, Rate),
-    PercentileRateBelow(Percentile, Rate),
-
-    //////////////////////////
-
-    AvgLatencyAbove(Duration),
-    AvgLatencyBelow(Duration),
-    StdDevLatencyAbove(StdDev,Duration), // above mean+(std*factor)
-    StdDevLatencyBelow(StdDev,Duration), // below mean-(std*factor)
-    PercentileLatencyAbove(Percentile, Duration),
-    PercentileLatencyBelow(Percentile, Duration), //not sure if this is useful
-
-}
 
 
 #[derive(PartialEq, Eq, Debug)]
@@ -250,7 +223,7 @@ impl Graph {
     pub fn start(&mut self) {
 
         //TODO: move for special debug flag.
-        /*
+
         #[cfg(debug_assertions)]
         std::panic::set_hook(Box::new(|panic_info| {
             let backtrace = Backtrace::capture();
@@ -326,7 +299,7 @@ pub struct Tx<T> {
     pub(crate) tx: InternalSender<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
     pub(crate) local_index: usize,
-
+    pub(crate) last_error_send: Instant,
 }
 
 pub struct Rx<T> {
@@ -338,6 +311,10 @@ pub struct Rx<T> {
 
 ////////////////////////////////////////////////////////////////
 impl<T> Tx<T> {
+    #[inline]
+    pub fn capacity(&self) -> NonZeroUsize {
+        self.shared_capacity()
+    }
     #[inline]
     pub fn try_send(& mut self, msg: T) -> Result<(), T> {
         self.shared_try_send(msg)
@@ -390,46 +367,57 @@ impl<T> Tx<T> {
     ////////////////////////////////////////////////////////////////
 
     #[inline]
-    pub fn shared_try_send(& mut self, msg: T) -> Result<(), T> {
+    fn shared_capacity(&self) -> NonZeroUsize {
+        self.tx.capacity()
+    }
+
+    #[inline]
+    fn shared_try_send(& mut self, msg: T) -> Result<(), T> {
         match self.tx.try_push(msg) {
             Ok(_) => {Ok(())}
             Err(m) => {Err(m)}
         }
     }
     #[inline]
-    pub fn shared_send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
+    fn shared_send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
         self.tx.push_iter(iter)
     }
     #[inline]
-    pub fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
+    fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
         where T: Copy {
         self.tx.push_slice(slice)
     }
     #[inline]
-    pub fn shared_is_full(&self) -> bool {
+    fn shared_is_full(&self) -> bool {
         self.tx.is_full()
     }
     #[inline]
-    pub fn shared_vacant_units(&self) -> usize {
+    fn shared_vacant_units(&self) -> usize {
         self.tx.vacant_len()
     }
     #[inline]
-    pub async fn shared_wait_vacant_units(&self, count: usize) {
+    async fn shared_wait_vacant_units(&self, count: usize) {
         self.tx.wait_vacant(count).await
     }
 
     #[inline]
-    pub async fn shared_wait_empty(&self) {
+    async fn shared_wait_empty(&self) {
         self.tx.wait_vacant(usize::from(self.tx.capacity())).await
     }
 
     #[inline]
-    pub async fn shared_send_async(& mut self, msg: T) -> Result<(), T> {
+    async fn shared_send_async(& mut self, msg: T) -> Result<(), T> {
         match self.tx.try_push(msg) {
             Ok(_) => {Ok(())},
             Err(msg) => {
-                error!("full channel detected tx labels:{:?} capacity:{:?} sending type:{} "
-                , self.channel_meta_data.labels, self.tx.capacity(), type_name::<T>());
+                //NOTE: we slow the rate of errors reported
+                if self.last_error_send.elapsed().as_secs() > 10 {
+                       let type_name = type_name::<T>().split("::").last().unwrap();
+                                error!("tx full channel #{} {:?} cap:{:?} type:{} "
+                   , self.id, self.channel_meta_data.labels, self.tx.capacity(), type_name);
+
+                         self.last_error_send = Instant::now();
+                }
                 //here we will await until there is room in the channel
                 self.tx.push(msg).await
             }
@@ -443,6 +431,11 @@ impl<T> Tx<T> {
 
 
 impl<T> Rx<T> {
+
+    #[inline]
+    pub fn capacity(&self) -> NonZeroUsize {
+        self.shared_capacity()
+    }
 
     #[inline]
     pub fn try_peek_slice(&self, elems: &mut [T]) -> usize
@@ -531,6 +524,11 @@ impl<T> Rx<T> {
     ///////////////////////////////////////////////////////////////////
 
     #[inline]
+    fn shared_capacity(&self) -> NonZeroUsize {
+        self.rx.capacity()
+    }
+
+    #[inline]
     fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
         where T: Copy {
         let mut last_index = 0;
@@ -604,6 +602,7 @@ impl<T> Rx<T> {
 
     #[inline]
     async fn shared_wait_avail_units(& mut self, count: usize) {
+        //TODO: we need a timeout here as well for better control
         self.rx.wait_occupied(count).await
     }
 
@@ -763,7 +762,9 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
     pub async fn relay_stats_periodic(&mut self, duration_rate: Duration) {
         self.start_hot_profile(monitor::CALL_WAIT);
-        assert!(duration_rate.ge(&Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)));
+        assert!(duration_rate.ge(&Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)),
+              "the set rate is too fast, it must be at least {} micro seconds but found {:?}", config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS,duration_rate);
+
         Delay::new(duration_rate.saturating_sub(self.last_telemetry_send.elapsed())).await;
         self.rollup_hot_profile();
         //this can not be measured since it sends the measurement of hot_profile.
@@ -798,7 +799,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     pub fn take_slice<T>(&mut self, this: & mut Rx<T>, slice: &mut [T]) -> usize
-        where T: Copy {
+    where T: Copy {
         if let Some(ref mut st) = self.telemetry_state {
             st.calls[monitor::CALL_BATCH_READ] = st.calls[monitor::CALL_BATCH_READ].saturating_add(1);
         }
@@ -826,6 +827,8 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             None => {None}
         }
     }
+
+
     pub fn try_peek<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
         this.shared_try_peek()
     }
@@ -1106,55 +1109,147 @@ impl Percentile {
 }
 
 ////////////////////
+pub trait Metric {
+}
+pub trait DataMetric: Metric {
+}
+pub trait ComputeMetric: Metric {
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AlertColor {
+    Yellow,
+    Orange,
+    Red,
+}
+
+impl Metric for MCPU {}
+impl Metric for Work {}
+
+impl Metric for Rate {}
+
+impl Metric for Filled {}
+
+impl Metric for Duration {}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Trigger<T> where T: Metric {
+    AvgAbove(T),
+    AvgBelow(T),
+    StdDevsAbove(StdDev, T), // above mean+(std*factor)
+    StdDevsBelow(StdDev, T), // below mean-(std*factor)
+    PercentileAbove(Percentile, T),
+    PercentileBelow(Percentile, T),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MCPU {
+    mcpu: u16, // max 1024
+}
+
+impl MCPU {
+    pub fn new(value: u16) -> Option<Self> {
+        if value<=1024 {
+            Some(Self {
+                mcpu: value,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn rational(&self) -> (u64,u64) {
+        (self.mcpu as u64,1024)
+    }
+
+    pub fn m16() -> Self { MCPU{mcpu:16}}
+    pub fn m64() -> Self { MCPU{mcpu:64}}
+    pub fn m256() -> Self { MCPU{mcpu:256}}
+    pub fn m512() -> Self { MCPU{mcpu:512}}
+    pub fn m768() -> Self { MCPU{mcpu:768}}
+    pub fn m1024() -> Self { MCPU{mcpu:1024}}
+
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Work {
+    work: u16, // out of 10000 where 10000 is 100%
+}
+
+impl Work {
+    pub fn new(value: f32) -> Option<Self> {
+        if (0.0..=100.00).contains(&value) {
+            Some(Work{work: (value * 100.0) as u16}) //10_000 is 100%
+        } else {
+            None
+        }
+    }
+
+    pub fn rational(&self) -> (u64,u64) {
+        (self.work as u64, 10_000)
+    }
+
+    pub fn p10() -> Self { Work{ work: 1000 }}
+    pub fn p20() -> Self { Work{ work: 2000 }}
+    pub fn p30() -> Self { Work{ work: 3000 }}
+    pub fn p40() -> Self { Work{ work: 4000 }}
+    pub fn p50() -> Self { Work{ work: 5000 }}
+    pub fn p60() -> Self { Work{ work: 6000 }}
+    pub fn p70() -> Self { Work{ work: 7000 }}
+    pub fn p80() -> Self { Work{ work: 8000 }}
+    pub fn p90() -> Self { Work{ work: 9000 }}
+    pub fn p100() -> Self { Work{ work: 10000 }}
+
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rate {
-    // Internal representation as a rational number of the rate per second
-    // Numerator: units, Denominator: time in seconds
+    // Internal representation as a rational number of the rate per ms
+    // Numerator: units, Denominator: time in ms
     numerator: u64,
     denominator: u64,
 }
 
 impl Rate {
-    // Milliseconds are represented as fractions of a second
+    // Milliseconds
     pub fn per_millis(units: u64) -> Self {
-        Self {
-            numerator: units,
-            denominator: 1000,
-        }
-    }
-
-    pub fn per_seconds(units: u64) -> Self {
         Self {
             numerator: units,
             denominator: 1,
         }
     }
 
+    pub fn per_seconds(units: u64) -> Self {
+        Self {
+            numerator: units * 1000,
+            denominator: 1,
+        }
+    }
+
     pub fn per_minutes(units: u64) -> Self {
         Self {
-            numerator: units,
-            denominator:  60, // 60 seconds
+            numerator: units * 1000 * 60,
+            denominator:  1,
         }
     }
 
     pub fn per_hours(units: u64) -> Self {
         Self {
-            numerator: units,
-            denominator:  60 * 60, // 3600 seconds
+            numerator: units * 1000 * 60 * 60,
+            denominator:  1,
         }
     }
 
     pub fn per_days(units: u64) -> Self {
         Self {
-            numerator: units,
-            denominator: 24 * 60 * 60, // 86400 seconds
+            numerator: units * 1000 * 60 * 60 * 24,
+            denominator: 1,
         }
     }
 
-    /// Returns the rate as a rational number (numerator, denominator) to represent the rate per second.
+    /// Returns the rate as a rational number (numerator, denominator) to represent the rate per ms.
     /// This method ensures the rate can be used without performing division, preserving precision.
-    pub(crate) fn as_rational_per_second(&self) -> (u64, u64) {
+    pub(crate) fn rational_ms(&self) -> (u64, u64) {
         (self.numerator, self.denominator)
     }
 }

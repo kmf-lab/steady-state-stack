@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use futures::lock::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 
 
@@ -21,7 +21,7 @@ use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 #[allow(unused_imports)]
 use log::*;
 use ringbuf::storage::Heap;
-use crate::{config, MONITOR_UNKNOWN, Percentile, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx};
+use crate::{AlertColor, config, Filled, MONITOR_UNKNOWN, Percentile, Rate, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx};
 use crate::monitor::ChannelMetaData;
 
 
@@ -37,16 +37,17 @@ pub struct ChannelBuilder {
 
     line_expansion: bool,
     show_type: bool,
-    percentiles_inflight: Vec<Percentile>, //each is a row
-    percentiles_consumed: Vec<Percentile>, //each is a row
+    percentiles_filled: Vec<Percentile>, //each is a row
+    percentiles_rate: Vec<Percentile>, //each is a row
     percentiles_latency: Vec<Percentile>, //each is a row
-    std_dev_inflight: Vec<StdDev>, //each is a row
-    std_dev_consumed: Vec<StdDev>, //each is a row
+    std_dev_filled: Vec<StdDev>, //each is a row
+    std_dev_rate: Vec<StdDev>, //each is a row
     std_dev_latency: Vec<StdDev>, //each is a row
-    red: Vec<Trigger>, //if used base is green
-    yellow: Vec<Trigger>, //if used base is green
-    avg_inflight: bool,
-    avg_consumed: bool,
+    trigger_rate: Vec<(Trigger<Rate>, AlertColor)>, //if used base is green
+    trigger_filled: Vec<(Trigger<Filled>, AlertColor)>, //if used base is green
+    trigger_latency: Vec<(Trigger<Duration>, AlertColor)>, //if used base is green
+    avg_rate: bool,
+    avg_filled: bool,
     avg_latency: bool,
     connects_sidecar: bool,
 }
@@ -74,16 +75,17 @@ impl ChannelBuilder {
 
             line_expansion: false,
             show_type: false,
-            percentiles_inflight: Vec::new(),
-            percentiles_consumed: Vec::new(),
+            percentiles_filled: Vec::new(),
+            percentiles_rate: Vec::new(),
             percentiles_latency: Vec::new(),
-            std_dev_inflight: Vec::new(),
-            std_dev_consumed: Vec::new(),
+            std_dev_filled: Vec::new(),
+            std_dev_rate: Vec::new(),
             std_dev_latency: Vec::new(),
-            red: Vec::new(),
-            yellow: Vec::new(),
-            avg_inflight: false,
-            avg_consumed: false,
+            trigger_rate: Vec::new(),
+            trigger_filled: Vec::new(),
+            trigger_latency: Vec::new(),
+            avg_filled: false,
+            avg_rate: false,
             avg_latency: false,
             connects_sidecar: false,
         }
@@ -131,15 +133,15 @@ impl ChannelBuilder {
         result
     }
 
-    pub fn with_avg_inflight(&self) -> Self {
+    pub fn with_avg_filled(&self) -> Self {
         let mut result = self.clone();
-        result.avg_inflight = true;
+        result.avg_filled = true;
         result
     }
 
-    pub fn with_avg_consumed(&self) -> Self {
+    pub fn with_avg_rate(&self) -> Self {
         let mut result = self.clone();
-        result.avg_consumed = true;
+        result.avg_rate = true;
         result
     }
 
@@ -167,12 +169,12 @@ impl ChannelBuilder {
 
     pub fn with_filled_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
-        result.std_dev_inflight.push(config);
+        result.std_dev_filled.push(config);
         result
     }
     pub fn with_rate_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
-        result.std_dev_consumed.push(config);
+        result.std_dev_rate.push(config);
         result
     }
     pub fn with_latency_standard_deviation(&self, config: StdDev) -> Self {
@@ -184,12 +186,12 @@ impl ChannelBuilder {
 
     pub fn with_filled_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
-        result.percentiles_inflight.push(config);
+        result.percentiles_filled.push(config);
         result
     }
     pub fn with_rate_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
-        result.percentiles_consumed.push(config);
+        result.percentiles_rate.push(config);
         result
     }
     pub fn with_latency_percentile(&self, config: Percentile) -> Self {
@@ -198,15 +200,22 @@ impl ChannelBuilder {
         result
     }
 
-    pub fn with_red(&self, bound: Trigger) -> Self {
+    pub fn with_rate_trigger(&self, bound: Trigger<Rate>, color: AlertColor) -> Self {
         let mut result = self.clone();
-        result.red.push(bound);
+        //need sequence number for these triggers?
+        result.trigger_rate.push((bound, color));
         result
     }
-
-    pub fn with_yellow(&self, bound: Trigger) -> Self {
+    pub fn with_filled_trigger(&self, bound: Trigger<Filled>, color: AlertColor) -> Self {
         let mut result = self.clone();
-        result.yellow.push(bound);
+        //need sequence number for these triggers?
+        result.trigger_filled.push((bound, color));
+        result
+    }
+    pub fn with_latency_trigger(&self, bound: Trigger<Duration>, color: AlertColor) -> Self {
+        let mut result = self.clone();
+        //need sequence number for these triggers?
+        result.trigger_latency.push((bound, color));
         result
     }
 
@@ -223,18 +232,23 @@ impl ChannelBuilder {
             refresh_rate_in_bits: self.refresh_rate_in_bits,
             line_expansion: self.line_expansion,
             show_type, type_byte_count,
-            percentiles_inflight: self.percentiles_inflight.clone(),
-            percentiles_consumed: self.percentiles_consumed.clone(),
+            percentiles_inflight: self.percentiles_filled.clone(),
+            percentiles_consumed: self.percentiles_rate.clone(),
             percentiles_latency: self.percentiles_latency.clone(),
-            std_dev_inflight: self.std_dev_inflight.clone(),
-            std_dev_consumed: self.std_dev_consumed.clone(),
+            std_dev_inflight: self.std_dev_filled.clone(),
+            std_dev_consumed: self.std_dev_rate.clone(),
             std_dev_latency: self.std_dev_latency.clone(),
-            red: self.red.clone(),
-            yellow: self.yellow.clone(),
+
+            trigger_rate: self.trigger_rate.clone(),
+            trigger_filled: self.trigger_filled.clone(),
+            trigger_latency: self.trigger_latency.clone(),
+
+
+
             capacity: self.capacity,
-            avg_inflight: self.avg_inflight,
-            avg_consumed: self.avg_consumed,
-            avg_latency: false,
+            avg_filled: self.avg_filled,
+            avg_rate: self.avg_rate,
+            avg_latency: self.avg_latency,
             connects_sidecar: self.connects_sidecar,
 
             //TODO: deeper review here.
@@ -242,15 +256,15 @@ impl ChannelBuilder {
                                       && ( self.display_labels
                                    || self.line_expansion
                                    || show_type.is_some()
-                                   || !self.percentiles_inflight.is_empty()
+                                   || !self.percentiles_filled.is_empty()
                                    || !self.percentiles_latency.is_empty()
-                                   || !self.percentiles_consumed.is_empty()
-                                    || self.avg_inflight
+                                   || !self.percentiles_rate.is_empty()
+                                    || self.avg_filled
                                     || self.avg_latency
-                                    || self.avg_consumed
-                                    || !self.std_dev_inflight.is_empty()
+                                    || self.avg_rate
+                                    || !self.std_dev_filled.is_empty()
                                     || !self.std_dev_latency.is_empty()
-                                    || !self.std_dev_consumed.is_empty())
+                                    || !self.std_dev_rate.is_empty())
 
         }
     }
@@ -270,7 +284,9 @@ impl ChannelBuilder {
 
         (  Arc::new(Mutex::new(Tx { id, tx
             , channel_meta_data: channel_meta_data.clone()
-            , local_index: MONITOR_UNKNOWN }))
+            , local_index: MONITOR_UNKNOWN
+            , last_error_send: Instant::now() //TODO: roll back a few seconds..
+        }))
            , Arc::new(Mutex::new(Rx { id, rx
             , channel_meta_data
             , local_index: MONITOR_UNKNOWN }))

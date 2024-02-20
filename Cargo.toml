@@ -45,11 +45,15 @@ unwrap_used = "deny" # forbid use of unwrap
 #{{/if}}
 
 [dependencies]
+# CLI Linux specific to be featured or moved to new crate in the future
 structopt        = "0.3.26"  # CLI parse for type safe arguments
+nuclei           = { version = "0.4.4", features = ["async-exec","iouring","attributes"] } # for proactor based IO also part of bastion
+
+
+# Common, the goal here is to be WASM compatible eventually
 bastion          = "0.4.5"   # The telemetry framwork with supervisors to recover from panics
 ringbuf          = "0.4.0-rc.1"
 async-ringbuf    = "0.2.0-rc.4"
-nuclei           = { version = "0.4.4", features = ["async-exec","iouring","attributes"] } # for proactor based IO also part of bastion
 log              = "0.4.20"  # common logging traits
 
                   # great logger but I would like to see a new crate using

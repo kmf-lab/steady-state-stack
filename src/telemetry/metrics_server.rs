@@ -86,7 +86,7 @@ pub(crate) async fn run(context: SteadyContext
             Ok(res)
         });
 
-    //
+    // NOTE: this must be done after we defined all our routes
     let server_handle = app.listen(format!("{}:{}",config::TELEMETRY_SERVER_IP,config::TELEMETRY_SERVER_PORT));
 
     // This future must be pinned before awaiting it to ensure it remains fixed in memory,
