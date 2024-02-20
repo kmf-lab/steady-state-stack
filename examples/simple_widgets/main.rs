@@ -104,6 +104,10 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let base_channel_builder = graph.channel_builder()
                             .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
                             .with_labels(&["widgets"],true)
+                        .with_filled_trigger(Trigger::AvgAbove(Filled::p50())
+                                             ,AlertColor::Red)
+                        .with_filled_trigger(Trigger::AvgAbove(Filled::p20())
+                                             ,AlertColor::Yellow)
                             .with_type()
                             .with_line_expansion();
 
@@ -111,10 +115,6 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let (generator_tx, generator_rx) = base_channel_builder
                          .with_rate_percentile(Percentile::p80())
 
-                        .with_filled_trigger(Trigger::AvgAbove(Filled::p70())
-                                             ,AlertColor::Red)
-                        .with_filled_trigger(Trigger::StdDevsAbove(StdDev::one(), Filled::p70())
-                                             ,AlertColor::Yellow)
 
                          .with_capacity(4000)
                          .build();
@@ -140,6 +140,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
         .actor_builder()
         .with_mcpu_percentile(Percentile::p80())
         .with_work_percentile(Percentile::p80())
+        .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m64()),AlertColor::Red)
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
 
 

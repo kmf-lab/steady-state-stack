@@ -5,6 +5,10 @@
 ![Telemetry Visualization Example](simple-example.gif)
 *An animated GIF demonstrating real-time telemetry visualization in action.*
 
+![Telemetry Visualization Example](overload.png)
+![Telemetry Visualization Example](overload2.png)
+*A snapshots of a more complex example
+
 ## Why `steady_state`?
 
 Named for its commitment to maintaining a consistent, optimal operational state, `steady_state` offers:
@@ -13,13 +17,7 @@ Named for its commitment to maintaining a consistent, optimal operational state,
 - **Embedded Observability**: Built-in telemetry features for real-time performance insights, facilitating targeted optimizations.
 - **Erlang-Inspired Fault Tolerance**: Leveraging an advanced supervision system to ensure service continuity, even in the face of unexpected failures.
 
-## Getting Started
-Dive into steady_state and explore its capabilities through examples:
 
-'''
-git clone https://github.com/steady-state/steady-state.git
-cd steady-state/examples
-'''
 
 ## Core Features
 
