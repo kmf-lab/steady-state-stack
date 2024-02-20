@@ -28,7 +28,7 @@ fn main() {
     fs::create_dir_all(project_path.join("src")).expect("Failed to create project directories.");
 
     // Create a basic Cargo.toml
-    let mut cargo_toml = fs::File::create(project_path.join("Cargo.toml")).expect("Failed to create Cargo.toml");
+    let mut cargo_toml = fs::File::create(project_path.join("../notes/Cargo.toml")).expect("Failed to create Cargo.toml");
     writeln!(cargo_toml, "[package]\nname = \"{}\"\nversion = \"0.1.0\"\nedition = \"2018\"\n\n[dependencies]\nyour_crate = \"0.1.0\"", project_name).expect("Failed to write Cargo.toml");
 
     // Create a basic main.rs
