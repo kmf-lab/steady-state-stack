@@ -6,8 +6,10 @@ use std::path::{Path, PathBuf};
 
 fn main() {
 
-    let project_root = env::var("CARGO_TARGET_DIR").unwrap_or(".".to_string());
-    let base_target_path:PathBuf = Path::new(&project_root).join("target");
+    let base_target_path: PathBuf = env::var("CARGO_TARGET_DIR").map_or_else(
+        |_| PathBuf::from("target"), // Fallback to local target directory if CARGO_TARGET_DIR is not set
+        PathBuf::from,
+    );
 
     gzip_and_base64_encode(&base_target_path,"static/telemetry/viz-lite.js");
     gzip_and_base64_encode(&base_target_path,"static/telemetry/dot-viewer.js");
