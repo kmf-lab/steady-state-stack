@@ -53,12 +53,15 @@ use crate::monitor::{ActorMetaData, ChannelMetaData, SteadyTelemetryActorSend, S
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
+use futures::FutureExt; // Provides the .fuse() method
+use futures::pin_mut; // Add pin_mut
 
 // Re-exporting Bastion and run from bastion
 pub use bastion::{Bastion, run};
 pub use bastion::context::BastionContext;
 pub use bastion::prelude::SupervisionStrategy;
 pub use bastion::message::MessageHandler;
+use futures::select;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
@@ -79,7 +82,7 @@ pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum GraphLivelinessState {
     Building,
     Running,
@@ -170,7 +173,7 @@ impl SteadyContext {
             name: self.name,
             ctx: self.ctx,
             redundancy: self.redundancy,
-            runtime_state: self.runtime_state.clone(),
+            runtime_state: self.runtime_state,
             #[cfg(test)]
             test_count: HashMap::new(),
         }
@@ -251,7 +254,7 @@ impl Graph {
         Bastion::stop();
     }
 
-        pub fn request_shutdown(&mut self) {
+    pub fn request_shutdown(&mut self) {
         let mut guard = run!(self.runtime_state.lock());
         let state = guard.deref_mut();
         *state = GraphLivelinessState::StopRequested;
@@ -532,8 +535,18 @@ impl<T> Tx<T> {
                                    , type_name);
                        self.last_error_send = Instant::now();
                 }
-                //here we will await until there is room in the channel
-                self.tx.push(msg).await
+                // here we will wait until there is room in the channel
+
+                //TODO: a timeout here may be a good idea also abandon on shutdown
+              // elf.tx.push(msg).await
+
+                select! {
+                    _ = self.tx.wait_vacant(1).fuse() => {
+                        self.tx.push(msg).await;
+                        Ok(())
+                    }
+                }
+
             }
         }
     }
@@ -962,6 +975,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 
 ///////////////////
 impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
+
 
     /// Returns the unique identifier of the LocalMonitor instance.
     ///

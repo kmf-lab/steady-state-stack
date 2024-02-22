@@ -150,8 +150,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let _ = Bastion::supervisor(|supervisor|
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
-                     base_actor_builder
-                     .with_name("generator")
+                     base_actor_builder.with_name("generator")
                      .build(children,
                         move |context| actor::data_generator::run(context
                                                                     , change_rx.clone()
@@ -159,8 +158,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                     ) )
             })
             .children(|children| {
-                     base_actor_builder
-                     .with_name("approval")
+                     base_actor_builder.with_name("approval")
                      .build(children,
                              move |context| actor::data_approval::run(context
                                                                           , generator_rx.clone()
@@ -171,8 +169,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
             })
             .children(|children| {
-                     base_actor_builder
-                     .with_name("feedback")
+                     base_actor_builder.with_name("feedback")
                      .build(children,
                             move |context| actor::data_feedback::run(context
                                                                       , failure_rx.clone()

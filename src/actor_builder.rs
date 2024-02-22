@@ -220,7 +220,7 @@ impl ActorBuilder {
 
                 async move {
                     let monitor = SteadyContext {
-                        runtime_state:  runtime_state.clone(),
+                        runtime_state,
                         channel_count: channel_count.clone(),
                         name,
                         ctx: Some(ctx),

@@ -35,7 +35,31 @@ pub async fn run<const GURTH:usize>(context: SteadyContext
     let capacity = tx[0].lock().await.capacity();
     let limit:usize = capacity/4;
 
+    let mut last_state = GraphLivelinessState::Stopped;
     loop {
+
+            let state = monitor.runtime_state();
+            match state.try_lock() {
+                Some(mut lock) => {
+                    let mut state = lock.deref_mut();
+                    if last_state != *state {
+                        error!("GraphLivelinessState: {:?}",state);
+                        last_state = state.clone();
+                        if GraphLivelinessState::StopRequested.eq(state) {
+                            return Ok(())  //exit now we have nothing worth doing
+                        }
+                    }
+                    drop(lock);
+                }
+                None => {
+                    error!("Error getting state lock !! ");
+                }
+
+            }
+
+
+
+
         loop {
             let route = thread_rng().gen::<u16>();
             let packet = Packet {

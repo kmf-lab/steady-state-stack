@@ -116,9 +116,16 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 
             outgoing = Some(tx);
             supervisor.children(|children| {
-                graph.actor_builder()
-                    .with_name("telemetry-polling")
-                    .build(children,move |monitor|
+                let bldr = graph.actor_builder()
+                    .with_name("telemetry-polling");
+
+                let bldr = if config::SHOW_TELEMETRY_ON_TELEMETRY {
+                    bldr.with_avg_mcpu().with_avg_work()
+                } else {
+                    bldr
+                };
+
+                bldr.build(children,move |monitor|
                                        telemetry::metrics_server::run(monitor
                                                                       , rx.clone()
                                        )
@@ -143,9 +150,17 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
                 //and capture all the telemetry actors as well
                 let all_tel_rx = graph.all_telemetry_rx.clone(); //using Arc here
 
-                graph.actor_builder()
-                    .with_name("telemetry-collector")
-                    .build(children,move |monitor| {
+                let bldr = graph.actor_builder()
+                    .with_name("telemetry-collector");
+
+                let bldr = if config::SHOW_TELEMETRY_ON_TELEMETRY {
+                    bldr.with_avg_mcpu().with_avg_work()
+                } else {
+                    bldr
+                };
+
+
+                    bldr.build(children,move |monitor| {
                         let all_rx = all_tel_rx.clone();
                         telemetry::metrics_collector::run(monitor
                                                           , all_rx

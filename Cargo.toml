@@ -74,6 +74,7 @@ const_panic      = "0.2.8" # for const panic!()
 hdrhistogram     = "7.5.4"  # for latency histograms
 getrandom        = { version = "0.2.12", features = ["js"] }
 bytes            = { version = "1.5.0", features = [] }
+base64           = "0.21.7" # mostly unstable but we are trying it
 
 #color-eyre = "0.5.5"   # for better error messages
 #rstest = "0.5.2"       # for unit testing
@@ -107,6 +108,8 @@ bytes            = { version = "1.5.0", features = [] }
 # turbine = { git = "https://github.com/polyfractal/Turbine", branch = "main" }
 # disruptor        = "0.2.0"   # does not integreate with bastion, but is a lock free ring buffer
 
+[build-dependencies]
+tempfile = "3.10.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tide             = "0.17.0-beta.1"

@@ -1,5 +1,5 @@
 use std::ops::{Deref, DerefMut};
-use std::process::exit;
+use std::process::{Command, exit};
 use std::sync::Arc;
 use futures::lock::Mutex;
 use futures::FutureExt; // Provides the .fuse() method
@@ -39,12 +39,13 @@ struct State {
 pub(crate) async fn run(context: SteadyContext
                         , rx: SteadyRx<DiagramData>) -> std::result::Result<(),()> {
 
-    let runtime_state = context.runtime_state.clone();
-
-    if config::SHOW_TELEMETRY_ON_TELEMETRY {
+    let runtime_state = if config::SHOW_TELEMETRY_ON_TELEMETRY {
         //NOTE: this line makes this node monitored on the telemetry
-        let _ = context.into_monitor([&rx], []);
-    }
+        let m = context.into_monitor([&rx], []);
+        m.runtime_state()
+    } else {
+        context.runtime_state
+    };
 
     let mut rx_guard = rx.lock().await;
     let rx = rx_guard.deref_mut();
@@ -187,15 +188,18 @@ pub(crate) async fn run(context: SteadyContext
                                   //since we got the edge data we know we have a full frame
                                   //and we can update the history
 
-                            let flush_all:bool = {
-                                 let runtime_guard = runtime_state.lock().await;
-                                 let state = runtime_guard.deref();
-                                   state == &GraphLivelinessState::StopInProgress
-                                || state == &GraphLivelinessState::StopRequested
-                                || state == &GraphLivelinessState::Stopped
-                            };
+                                let flush_all:bool =
+                                    if let Some(state) = runtime_state.try_lock() {
+                                        *state == GraphLivelinessState::StopInProgress
+                                        || *state == GraphLivelinessState::StopRequested
+                                        || *state == GraphLivelinessState::Stopped
+                                    } else {
+                                        //unable to lock so be safe and flush
+                                        true
+                                    };
 
-                            history.update(dot_state.seq,flush_all).await;
+
+                                  history.update(dot_state.seq,flush_all).await;
 
                                   //must mark this for next time
                                   history.mark_position();

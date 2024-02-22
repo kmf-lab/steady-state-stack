@@ -69,10 +69,10 @@ fn main() {
     Bastion::block_until_stopped();
 }
 
-const LEVEL_1: usize = 3;
-const LEVEL_2: usize = 3;
-const LEVEL_3: usize = 2;
-const LEVEL_4: usize = 1;
+const LEVEL_1: usize = 2; //3
+const LEVEL_2: usize = 1; //3
+const LEVEL_3: usize = 1; //2
+const LEVEL_4: usize = 2; //One will remove all the user filters and loggers
 
 fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     debug!("args: {:?}",&cli_arg);
@@ -83,7 +83,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_channel_builder = graph.channel_builder()
-                            .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
+                            .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(5))
                             .with_line_expansion()
                             .with_avg_filled()
                             .with_avg_rate()
@@ -168,60 +168,72 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                             )
                     });
 
-                    for f in 0..LEVEL_4 {
-                        let local_rx = brx[f].clone();
-
-                        let (filter_tx, filter_rx) = base_channel_builder.build();
-
-                        supervisor = supervisor.children(|children| {
-                            base_actor_builder
-                                .with_name("filter")
-                                .with_name_suffix(z)
-                                .build(children, move |context| actor::data_process::run(context
-                                                                                         , local_rx.clone()
-                                                                                         , filter_tx.clone()
-                                )
-                                )
-                        });
-
-                        let (logging_tx, logging_rx) = base_channel_builder.build();
-
-                        supervisor = supervisor.children(|children| {
-                            base_actor_builder
-                                .with_name("logger")
-                                .with_name_suffix(z)
-                                .build(children, move |context| actor::data_process::run(context
-                                                                                         , filter_rx.clone()
-                                                                                         , logging_tx.clone()
-                                )
-                                )
-                        });
-
-                        let (decrypt_tx, decrypt_rx) = base_channel_builder.build();
-
-                        supervisor = supervisor.children(|children| {
-                            base_actor_builder
-                                .with_name("decrypt")
-                                .with_name_suffix(z)
-                                .build(children, move |context| actor::data_process::run(context
-                                                                                         , logging_rx.clone()
-                                                                                         , decrypt_tx.clone()
-                                )
-                                )
-                        });
-
+                    if 1 == LEVEL_4 {
+                        let local_rx = brx[0].clone();
                         supervisor = supervisor.children(|children| {
                             base_actor_builder
                                 .with_name("user")
                                 .with_name_suffix(z)
                                 .build(children, move |context| actor::data_user::run(context
-                                                                                      , decrypt_rx.clone()
+                                                                                      , local_rx.clone()
                                 )
                                 )
                         });
 
 
+                    } else {
+                        for f in 0..LEVEL_4 {
+                            let local_rx = brx[f].clone();
 
+                            let (filter_tx, filter_rx) = base_channel_builder.build();
+
+                            supervisor = supervisor.children(|children| {
+                                base_actor_builder
+                                    .with_name("filter")
+                                    .with_name_suffix(z)
+                                    .build(children, move |context| actor::data_process::run(context
+                                                                                             , local_rx.clone()
+                                                                                             , filter_tx.clone()
+                                    )
+                                    )
+                            });
+
+                            let (logging_tx, logging_rx) = base_channel_builder.build();
+
+                            supervisor = supervisor.children(|children| {
+                                base_actor_builder
+                                    .with_name("logger")
+                                    .with_name_suffix(z)
+                                    .build(children, move |context| actor::data_process::run(context
+                                                                                             , filter_rx.clone()
+                                                                                             , logging_tx.clone()
+                                    )
+                                    )
+                            });
+
+                            let (decrypt_tx, decrypt_rx) = base_channel_builder.build();
+
+                            supervisor = supervisor.children(|children| {
+                                base_actor_builder
+                                    .with_name("decrypt")
+                                    .with_name_suffix(z)
+                                    .build(children, move |context| actor::data_process::run(context
+                                                                                             , logging_rx.clone()
+                                                                                             , decrypt_tx.clone()
+                                    )
+                                    )
+                            });
+
+                            supervisor = supervisor.children(|children| {
+                                base_actor_builder
+                                    .with_name("user")
+                                    .with_name_suffix(z)
+                                    .build(children, move |context| actor::data_user::run(context
+                                                                                          , decrypt_rx.clone()
+                                    )
+                                    )
+                            });
+                        }
                     }
 
                 }
