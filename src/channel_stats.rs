@@ -6,7 +6,7 @@ use std::time::Duration;
 #[allow(unused_imports)]
 use log::*;
 use num_traits::Zero;
-use crate::{AlertColor, config, Filled, Metric, Percentile, Rate, StdDev, Trigger};
+use crate::*;
 use crate::monitor::ChannelMetaData;
 use hdrhistogram::{Counter, Histogram};
 
@@ -14,9 +14,6 @@ pub(crate) const DOT_GREEN: &str = "green";
 pub(crate) const DOT_YELLOW: &str = "yellow";
 pub(crate) const DOT_ORANGE: &str = "orange";
 pub(crate) const DOT_RED: &str = "red";
-
-
-const DOT_WHITE: &str = "white";
 pub(crate) const DOT_GREY: &str = "grey";
 
 
@@ -121,7 +118,6 @@ impl ChannelStatsComputer {
             }
         }
 
-        assert!(config::TELEMETRY_PRODUCTION_RATE_MS<=1000);
 
         self.frame_rate_ms = config::TELEMETRY_PRODUCTION_RATE_MS as u128;
         self.refresh_rate_in_bits=meta.refresh_rate_in_bits;
@@ -352,9 +348,9 @@ impl ChannelStatsComputer {
         if let Some(ref current_rate) = self.current_rate {
             compute_labels(self.frame_rate_ms
                            , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                           , &mut display_label, &current_rate
-                                , &"rate"
-                                , &"per/sec"
+                           , &mut display_label, current_rate
+                                , "rate"
+                                , "per/sec"
                                 , (1000, self.frame_rate_ms as usize)
                                 , self.show_avg_consumed
                                 , & self.std_dev_consumed
@@ -365,9 +361,9 @@ impl ChannelStatsComputer {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
             compute_labels(self.frame_rate_ms
                                 , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                                , &mut display_label, &current_filled
-                                , &"filled"
-                                , &"%"
+                                , &mut display_label, current_filled
+                                , "filled"
+                                , "%"
                                 , (100, self.capacity)
                                 , self.show_avg_inflight
                                 , & self.std_dev_inflight
@@ -378,9 +374,9 @@ impl ChannelStatsComputer {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
             compute_labels(self.frame_rate_ms
                                 , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                                , &mut display_label, &current_latency
-                                , &"latency"
-                                , &"ms"
+                                , &mut display_label, current_latency
+                                , "latency"
+                                , "ms"
                                 , (1,1)
                                 , self.show_avg_latency
                                 , & self.std_dev_latency
@@ -418,9 +414,9 @@ impl ChannelStatsComputer {
     }
 
     fn trigger_alert_level(&mut self, c1: &AlertColor) -> bool {
-        self.rate_trigger.iter().filter(|f| f.1.eq(&c1)).any(|f| self.triggered_rate(&f.0))
-        || self.filled_trigger.iter().filter(|f| f.1.eq(&c1)).any(|f| self.triggered_filled(&f.0))
-        || self.latency_trigger.iter().filter(|f| f.1.eq(&c1)).any(|f| self.triggered_latency(&f.0))
+        self.rate_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_rate(&f.0))
+        || self.filled_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_filled(&f.0))
+        || self.latency_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_latency(&f.0))
     }
 
 
@@ -465,12 +461,12 @@ impl ChannelStatsComputer {
                 avg_rational(window_in_ms, &self.current_rate, rate.rational_ms()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, expected_rate) => {
-                let window_bits = (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
                 stddev_rational(self.rate_std_dev(), window_bits, std_devs
                                 , &self.current_rate, expected_rate.rational_ms()).is_lt()
             }
             Trigger::StdDevsAbove(std_devs, expected_rate) => {
-                let window_bits = (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
                 stddev_rational(self.rate_std_dev(), window_bits, std_devs
                                 , &self.current_rate, expected_rate.rational_ms()).is_gt()
             }
@@ -554,11 +550,10 @@ impl ChannelStatsComputer {
         }
     }
 
-
-
+    const MS_PER_SEC:u64 = 1000;
     fn avg_latency(&self, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
-            assert!(1000 == PLACES_TENS);//we assume this with as_micros below
+            assert_eq!(Self::MS_PER_SEC, PLACES_TENS);//we assume this with as_micros below
             current_latency.runner
                 .cmp(&((duration.as_micros())
                     << (self.window_bucket_in_bits + self.refresh_rate_in_bits)))
@@ -676,7 +671,6 @@ pub(crate) fn time_label(total_ms: u128) -> String {
 #[cfg(test)]
 mod stats_tests {
     use super::*;
-    use rand::prelude::*;
     use rand_distr::{Normal, Distribution};
     use rand::{SeedableRng, rngs::StdRng};
     use std::sync::Arc;
@@ -1523,15 +1517,17 @@ pub(crate) fn compute_std_dev(bits: u8, window: usize, runner: u128, sum_sqr: u1
 }
 
 const PLACES_TENS:u64 = 1000u64;
-pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128, window_in_bits: u8
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
+                  , window_in_bits: u8
                   , target: &mut String
                   , current: &ChannelBlock<T>
-                  , label: &str
-                  , unit: &str
+                  , label: &str, unit: &str
                   , rational_adjust: (usize,usize)
                   , show_avg: bool
-                  , std_dev: &Vec<StdDev>
-                  , percentile: &Vec<Percentile>) {
+                  , std_dev: &[StdDev]
+                  , percentile: &[Percentile]) {
 
     //we have frames, refresh rates and windows
     //  a frame is a single slice of time, viewable
@@ -1607,7 +1603,7 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128, window_in_bits: u8
 
     percentile.iter().for_each(|p| {
         target.push_str(label);
-        target.push_str(" ");
+        target.push(' ');
 
         target.push_str(
             &format!("{:?}"

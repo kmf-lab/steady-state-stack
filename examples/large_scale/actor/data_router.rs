@@ -1,4 +1,5 @@
 use std::ops::DerefMut;
+#[allow(unused_imports)]
 use log::*;
 use steady_state::*;
 use crate::actor::data_generator::Packet;
@@ -18,7 +19,7 @@ pub async fn run<const LEN:usize>(context: SteadyContext
 
     loop {
 
-        monitor.wait_avail_units(rx,rx.capacity().get()/3).await; //TODO: need Timeout??
+        monitor.wait_avail_units(rx,rx.capacity()/3).await; //TODO: need Timeout??
 
         while let Some(packet) = monitor.try_take(rx) {
             let index = ((packet.route / block_size) as usize) % tx.len();

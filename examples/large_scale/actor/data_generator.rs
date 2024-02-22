@@ -1,12 +1,9 @@
 use std::mem;
-use std::num::NonZeroUsize;
-use std::ops::{Deref, DerefMut};
-use std::time::Duration;
+use std::ops::{DerefMut};
 use bytes::Bytes;
 #[allow(unused_imports)]
 use log::*;
 use rand::{Rng, thread_rng};
-use crate::args::Args;
 use steady_state::*;
 
 
@@ -19,28 +16,31 @@ pub struct Packet {
 
 
 #[cfg(not(test))]
+#[allow(unreachable_code)]
 pub async fn run<const GURTH:usize>(context: SteadyContext
                                   , tx: SteadyTxBundle<Packet,GURTH>) -> Result<(),()> {
 
-    let gen_rate_micros = if let Some(a) = context.args::<Args>() {
+    /*
+     let gen_rate_micros = if let Some(a) = context.args::<Args>() {
         a.gen_rate_micros
     } else {
         10_000 //default
     };
+    */
     let mut monitor = context.into_monitor([], SteadyBundle::tx_def_slice(&tx));
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
 
     let mut buffers:[Vec<Packet>;GURTH] = [ARRAY_REPEAT_VALUE;GURTH];
     let capacity = tx[0].lock().await.capacity();
-    let limit:usize = capacity.get()/4;
+    let limit:usize = capacity/4;
 
     loop {
         loop {
             let route = thread_rng().gen::<u16>();
             let packet = Packet {
                 route,
-                data: Bytes::from_static(&[0u8; 250]),
+                data: Bytes::from_static(&[0u8; 128]),
             };
             let index = (packet.route as usize) % tx.len();
             buffers[index].push(packet);

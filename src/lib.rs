@@ -23,20 +23,19 @@ mod actor_stats;
 
 use std::any::{Any, type_name};
 use std::backtrace::Backtrace;
+
 #[cfg(test)]
 use std::collections::HashMap;
+
 use std::fmt::Debug;
 //re-publish bastion from steady_state for this early version
 pub use bastion;
-use bastion::context::BastionContext;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize};
 use futures::lock::Mutex;
 use std::ops::{Deref, DerefMut, Sub};
-use bastion::{Bastion, run};
 use std::future::{Future, ready};
-use std::num::NonZeroUsize;
 use std::process::exit;
 use std::thread::sleep;
 use log::*;
@@ -46,7 +45,6 @@ use async_ringbuf::producer::AsyncProducer;
 use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use async_ringbuf::consumer::AsyncConsumer;
-use futures::StreamExt;
 use futures_timer::Delay;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use actor_builder::ActorBuilder;
@@ -56,6 +54,11 @@ use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
 
+// Re-exporting Bastion and run from bastion
+pub use bastion::{Bastion, run};
+pub use bastion::context::BastionContext;
+pub use bastion::prelude::SupervisionStrategy;
+pub use bastion::message::MessageHandler;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
@@ -166,6 +169,7 @@ impl SteadyContext {
             id: self.id,
             name: self.name,
             ctx: self.ctx,
+            redundancy: self.redundancy,
             runtime_state: self.runtime_state.clone(),
             #[cfg(test)]
             test_count: HashMap::new(),
@@ -243,8 +247,11 @@ impl Graph {
         let state = guard.deref_mut();
         *state = GraphLivelinessState::Running;
     }
+    pub fn stop(&mut self) {
+        Bastion::stop();
+    }
 
-    pub fn request_shutdown(&mut self) {
+        pub fn request_shutdown(&mut self) {
         let mut guard = run!(self.runtime_state.lock());
         let state = guard.deref_mut();
         *state = GraphLivelinessState::StopRequested;
@@ -280,15 +287,19 @@ fn init_nuclei() {
     };
     let _ = nuclei::Proactor::with_config(nuclei_config);
 
-    nuclei::spawn_blocking(|| {
-        // nuclei::drive(pending::<()>());
-        nuclei::drive(async {
-            loop {
-                sleep(Duration::from_secs(10));
-                ready(()).await;
-            };
-        });
-    }).detach();
+    if cfg!(target_arch = "wasm32") {
+        //we can not write log files when in wasm
+    } else {
+        nuclei::spawn_blocking(|| {
+            nuclei::drive(async {
+                loop {
+                    sleep(Duration::from_secs(10));
+                    ready(()).await;
+                };
+            });
+        }).detach();
+    }
+
 }
 
 const MONITOR_UNKNOWN: usize = usize::MAX;
@@ -311,40 +322,140 @@ pub struct Rx<T> {
 
 ////////////////////////////////////////////////////////////////
 impl<T> Tx<T> {
-    #[inline]
-    pub fn capacity(&self) -> NonZeroUsize {
+    /// Returns the total capacity of the channel.
+    /// This method retrieves the maximum number of messages the channel can hold.
+    ///
+    /// # Returns
+    /// A `usize` indicating the total capacity of the channel.
+    ///
+    /// # Example Usage
+    /// This method is useful for understanding the size constraints of the channel
+    /// and for configuring buffer sizes or for performance tuning.
+
+    pub fn capacity(&self) -> usize {
         self.shared_capacity()
     }
-    #[inline]
+
+    /// Attempts to send a message to the channel without blocking.
+    /// If the channel is full, the send operation will fail and return the message.
+    ///
+    /// # Parameters
+    /// - `msg`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
+    ///
+    /// # Example Usage
+    /// Use this method for non-blocking send operations where immediate feedback on send success is required.
+    /// Not suitable for scenarios where ensuring message delivery is critical without additional handling for failed sends.
     pub fn try_send(& mut self, msg: T) -> Result<(), T> {
         self.shared_try_send(msg)
     }
-    #[inline]
+
+    /// Sends messages from an iterator to the channel until the channel is full.
+    /// Each message is sent in a non-blocking manner.
+    ///
+    /// # Parameters
+    /// - `iter`: An iterator that yields messages of type `T`.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
+    ///
+    /// # Example Usage
+    /// Ideal for batch sending operations where partial success is acceptable.
+    /// Less suitable when all messages must be sent without loss, as this method does not guarantee all messages are sent.
     pub fn send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
         self.shared_send_iter_until_full(iter)
     }
-    #[inline]
+
+    /// Sends messages from a slice to the channel until the channel is full.
+    /// Operates in a non-blocking manner, similar to `send_iter_until_full`, but specifically for slices.
+    /// This method requires `T` to implement the `Copy` trait, ensuring that messages can be copied into the channel without taking ownership.
+    ///
+    /// # Requirements
+    /// - `T` must implement the `Copy` trait. This allows the method to efficiently handle the messages without needing to manage ownership or deal with borrowing complexities.
+    ///
+    /// # Parameters
+    /// - `slice`: A slice of messages to be sent.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
+    ///
+    /// # Example Usage
+    /// Useful for efficiently sending multiple messages when partial delivery is sufficient.
+    /// May not be appropriate for use cases requiring guaranteed delivery of all messages.
+    ///
+    /// # Pros and Cons of `T: Copy`
+    /// ## Pros:
+    /// - **Efficiency**: Allows for the fast and straightforward copying of messages into the channel, leveraging the stack when possible.
+    /// - **Simplicity**: Simplifies message handling by avoiding the complexities of ownership and borrowing rules inherent in more complex types.
+    /// - **Predictability**: Ensures that messages remain unchanged after being sent, providing clear semantics for message passing.
+    ///
+    /// ## Cons:
+    /// - **Flexibility**: Restricts the types of messages that can be sent through the channel to those that implement `Copy`, potentially limiting the use of the channel with more complex data structures.
+    /// - **Resource Use**: For types where `Copy` might involve deep copying (though typically `Copy` is for inexpensive-to-copy types), it could lead to unintended resource use.
+    /// - **Design Constraints**: Imposes a design constraint on the types used with the channel, which might not always align with the broader application architecture or data handling strategies.
+    ///
+    /// By requiring `T: Copy`, this method optimizes for scenarios where messages are lightweight and can be copied without significant overhead, making it an excellent choice for high-throughput, low-latency applications.
     pub fn send_slice_until_full(&mut self, slice: &[T]) -> usize
        where T: Copy {
         self.shared_send_slice_until_full(slice)
     }
-    #[inline]
+
+    /// Checks if the channel is currently full.
+    ///
+    /// # Returns
+    /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
+    ///
+    /// # Example Usage
+    /// Can be used to avoid calling `try_send` on a full channel, or to implement backpressure mechanisms.
     pub fn is_full(&self) -> bool {
         self.shared_is_full()
     }
-    #[inline]
+
+    /// Returns the number of vacant units in the channel.
+    /// Indicates how many more messages the channel can accept before becoming full.
+    ///
+    /// # Returns
+    /// The number of messages that can still be sent before the channel is full.
+    ///
+    /// # Example Usage
+    /// Useful for dynamically adjusting the rate of message sends or for implementing custom backpressure strategies.
     pub fn vacant_units(&self) -> usize {
         self.shared_vacant_units()
     }
-    #[inline]
+
+    /// Asynchronously waits until at least a specified number of units are vacant in the channel.
+    ///
+    /// # Parameters
+    /// - `count`: The number of vacant units to wait for.
+    ///
+    /// # Example Usage
+    /// Use this method to delay message sending until there's sufficient space, suitable for scenarios where message delivery must be paced or regulated.
     pub async fn wait_vacant_units(&self, count: usize) {
         self.shared_wait_vacant_units(count).await
     }
-    #[inline]
+
+    /// Asynchronously waits until the channel is empty.
+    /// This method can be used to ensure that all messages have been processed before performing further actions.
+    ///
+    /// # Example Usage
+    /// Ideal for scenarios where a clean state is required before proceeding, such as before shutting down a system or transitioning to a new state.
     pub async fn wait_empty(&self) {
         self.shared_wait_empty().await
     }
-    #[inline]
+
+    /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
+    ///
+    /// # Parameters
+    /// - `msg`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
+    ///
+    /// # Example Usage
+    /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
+    /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
     pub async fn send_async(& mut self, msg: T) -> Result<(), T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
@@ -367,8 +478,8 @@ impl<T> Tx<T> {
     ////////////////////////////////////////////////////////////////
 
     #[inline]
-    fn shared_capacity(&self) -> NonZeroUsize {
-        self.tx.capacity()
+    fn shared_capacity(&self) -> usize {
+        self.tx.capacity().get()
     }
 
     #[inline]
@@ -412,11 +523,14 @@ impl<T> Tx<T> {
             Err(msg) => {
                 //NOTE: we slow the rate of errors reported
                 if self.last_error_send.elapsed().as_secs() > 10 {
-                       let type_name = type_name::<T>().split("::").last().unwrap();
-                                error!("tx full channel #{} {:?} cap:{:?} type:{} "
-                   , self.id, self.channel_meta_data.labels, self.tx.capacity(), type_name);
+                       let type_name = type_name::<T>().split("::").last();
 
-                         self.last_error_send = Instant::now();
+                       error!("tx full channel #{} {:?} cap:{:?} type:{:?} "
+                                   , self.id
+                                   , self.channel_meta_data.labels
+                                   , self.tx.capacity()
+                                   , type_name);
+                       self.last_error_send = Instant::now();
                 }
                 //here we will await until there is room in the channel
                 self.tx.push(msg).await
@@ -432,75 +546,203 @@ impl<T> Tx<T> {
 
 impl<T> Rx<T> {
 
-    #[inline]
-    pub fn capacity(&self) -> NonZeroUsize {
+    /// Returns the total capacity of the channel.
+    /// This method retrieves the maximum number of messages the channel can hold.
+    ///
+    /// # Returns
+    /// A `usize` indicating the total capacity of the channel.
+    ///
+    /// # Example Usage
+    /// Useful for initial configuration and monitoring of channel capacity to ensure it aligns with expected load.
+    pub fn capacity(&self) -> usize {
         self.shared_capacity()
     }
 
-    #[inline]
+    /// Attempts to peek at a slice of messages from the channel without removing them.
+    /// This operation is non-blocking and allows multiple messages to be inspected simultaneously.
+    ///
+    /// Requires T: Copy but this is still up for debate as it is not clear if this is the best way to handle this
+    ///
+    /// # Parameters
+    /// - `elems`: A mutable slice to store the peeked messages. Its length determines the maximum number of messages to peek.
+    ///
+    /// # Returns
+    /// The number of messages actually peeked and stored in `elems`.
+    ///
+    /// # Example Usage
+    /// Ideal for scenarios where processing or decision making is based on a batch of incoming messages without consuming them.
     pub fn try_peek_slice(&self, elems: &mut [T]) -> usize
            where T: Copy {
            self.shared_try_peek_slice(elems)
     }
 
-    #[inline]
+    /// Asynchronously waits to peek at a slice of messages from the channel without removing them.
+    /// Waits until the specified number of messages is available or the channel is closed.
+    ///
+    /// Requires T: Copy but this is still up for debate as it is not clear if this is the best way to handle this
+    ///
+    /// # Parameters
+    /// - `wait_for_count`: The number of messages to wait for before peeking.
+    /// - `elems`: A mutable slice to store the peeked messages.
+    ///
+    /// # Returns
+    /// The number of messages actually peeked and stored in `elems`.
+    ///
+    /// # Example Usage
+    /// Suitable for use cases requiring a specific number of messages to be available for batch processing.
     pub async fn peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
        where T: Copy {
         self.shared_peek_async_slice(wait_for_count, elems).await
     }
-    #[inline]
+
+    /// Retrieves and removes a slice of messages from the channel.
+    /// This operation is blocking and will remove the messages from the channel.
+    /// Note: May take fewer messages than the slice length if the channel is not full.
+    /// This method requires `T` to implement the `Copy` trait, ensuring efficient handling of message data.
+    ///
+    /// # Requirements
+    /// - `T` must implement the `Copy` trait. This constraint ensures that messages can be efficiently copied out of the channel without ownership issues.
+    ///
+    /// # Parameters
+    /// - `elems`: A mutable slice where the taken messages will be stored.
+    ///
+    /// # Returns
+    /// The number of messages actually taken and stored in `elems`.
+    ///
+    /// # Example Usage
+    /// Useful for batch processing where multiple messages are consumed at once for efficiency. Particularly effective in scenarios where processing overhead needs to be minimized.
+    ///
+    /// # Pros and Cons of `T: Copy`
+    /// ## Pros:
+    /// - **Performance Optimization**: Facilitates quick, lightweight operations by leveraging the ability to copy data directly, without the overhead of more complex memory management.
+    /// - **Simplicity in Message Handling**: Reduces the complexity of managing message lifecycles and ownership, streamlining channel operations.
+    /// - **Reliability**: Ensures that the operation does not inadvertently alter or lose message data during transfer, maintaining message integrity.
+    ///
+    /// ## Cons:
+    /// - **Type Limitation**: Limits the use of the channel to data types that implement `Copy`, potentially excluding more complex or resource-managed types that might require more nuanced handling.
+    /// - **Overhead for Larger Types**: While `Copy` is intended for lightweight types, using it with larger, though still `Copy`, data types could introduce unnecessary copying overhead.
+    /// - **Design Rigidity**: Imposes a strict design requirement on the types that can be used with the channel, which might not align with all application designs or data models.
+    ///
+    /// Incorporating the `T: Copy` requirement, `take_slice` is optimized for use cases prioritizing efficiency and simplicity in handling a series of lightweight messages, making it a key method for high-performance message processing tasks.
     pub fn take_slice(&mut self, elems: &mut [T]) -> usize
         where T: Copy {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_take_slice(elems)
     }
-    #[inline]
+
+    /// Attempts to take a single message from the channel without blocking.
+    ///
+    /// # Returns
+    /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
+    ///
+    /// # Example Usage
+    /// Ideal for non-blocking single message consumption, allowing for immediate feedback on message availability.
     pub fn try_take(& mut self) -> Option<T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_try_take()
     }
-    #[inline]
+
+    /// Asynchronously retrieves and removes a single message from the channel.
+    ///
+    /// # Returns
+    /// A `Result<T, String>`, where `Ok(T)` is the message if available, and `Err(String)` contains an error message if the retrieval fails.
+    ///
+    /// # Example Usage
+    /// Suitable for async processing where messages are consumed one at a time as they become available.
     pub async fn take_async(& mut self) -> Result<T,String> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_take_async().await
     }
-    #[inline]
+
+    /// Attempts to peek at the next message in the channel without removing it.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
+    ///
+    /// # Example Usage
+    /// Can be used to inspect the next message without consuming it, useful in decision-making scenarios.
     pub fn try_peek(&self) -> Option<&T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_try_peek()
     }
-    #[inline]
+
+    /// Returns an iterator over the messages currently in the channel without removing them.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
+    ///
+    /// # Example Usage
+    /// Enables iterating over messages for inspection or conditional processing without consuming them.
     pub fn try_peek_iter(& self) -> impl Iterator<Item = & T>  {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_try_peek_iter()
     }
-    #[inline]
+
+    /// Asynchronously peeks at the next message in the channel without removing it.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
+    ///
+    /// # Example Usage
+    /// Useful for async scenarios where inspecting the next message without consuming it is required.
     pub async fn peek_async(& mut self) -> Option<&T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_peek_async().await
     }
+
+    /// Asynchronously returns an iterator over the messages in the channel, waiting for a specified number of messages to be available.
+    ///
+    /// # Parameters
+    /// - `wait_for_count`: The number of messages to wait for before returning the iterator.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
+    ///
+    /// # Example Usage
+    /// Ideal for async batch processing where a specific number of messages are needed for processing.
     pub async fn peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_peek_async_iter(wait_for_count).await
     }
-    #[inline]
+
+    /// Checks if the channel is currently empty.
+    ///
+    /// # Returns
+    /// `true` if the channel has no messages available, otherwise `false`.
+    ///
+    /// # Example Usage
+    /// Useful for determining if the channel is empty before attempting to consume messages.
     pub fn is_empty(&self) -> bool {
         //not async and immutable so no need to check
         self.shared_is_empty()
     }
-    #[inline]
+
+    /// Returns the number of messages currently available in the channel.
+    ///
+    /// # Returns
+    /// A `usize` indicating the number of available messages.
+    ///
+    /// # Example Usage
+    /// Enables monitoring of the current load or backlog of messages in the channel for adaptive processing strategies.
     pub fn avail_units(& mut self) -> usize {
         //not async and immutable so no need to check
         self.shared_avail_units()
     }
-    #[inline]
+
+    /// Asynchronously waits for a specified number of messages to be available in the channel.
+    ///
+    /// # Parameters
+    /// - `count`: The number of messages to wait for.
+    ///
+    /// # Example Usage
+    /// Suitable for scenarios requiring batch processing where a certain number of messages are needed before processing begins.
     pub async fn wait_avail_units(& mut self, count: usize) {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
@@ -524,12 +766,13 @@ impl<T> Rx<T> {
     ///////////////////////////////////////////////////////////////////
 
     #[inline]
-    fn shared_capacity(&self) -> NonZeroUsize {
-        self.rx.capacity()
+    fn shared_capacity(&self) -> usize {
+        self.rx.capacity().get()
     }
 
     #[inline]
     fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
+      // TODO: rewrite
         where T: Copy {
         let mut last_index = 0;
         for (i, e) in self.rx.iter().enumerate() {
@@ -548,18 +791,15 @@ impl<T> Rx<T> {
     async fn shared_peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
         where T: Copy {
         self.rx.wait_occupied(wait_for_count).await;
-        let mut last_index = 0;
-        for (i, e) in self.rx.iter().enumerate() {
-            if i < elems.len() {
-                elems[i] = *e; // Assuming e is a reference and needs dereferencing
-                last_index = i;
-            } else {
-                break;
-            }
-        }
-        // Return the count of elements written, adjusted for 0-based indexing
-        last_index + 1
+        self.shared_try_peek_slice(elems)
     }
+
+    #[inline]
+    fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
+        where T: Copy {
+        self.rx.pop_slice(elems)
+    }
+
 
     #[inline]
     async fn shared_take_async(& mut self) -> Result<T,String> {
@@ -609,12 +849,6 @@ impl<T> Rx<T> {
     #[inline]
     fn shared_try_take(& mut self) -> Option<T> {
         self.rx.try_pop()
-    }
-
-    #[inline]
-    fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
-        where T: Copy {
-        self.rx.pop_slice(elems)
     }
 
     #[inline]
@@ -686,7 +920,7 @@ impl SteadyBundle {
         let mut tx_vec: Vec<SteadyTx<T>> = Vec::with_capacity(GIRTH);
         let mut rx_vec: Vec<SteadyRx<T>> = Vec::with_capacity(GIRTH);
 
-        (0..GIRTH).for_each(|i| {
+        (0..GIRTH).for_each(|_| {
             let (t,r) = base_channel_builder.build();
             tx_vec.push(t);
             rx_vec.push(r);
@@ -718,6 +952,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) telemetry_state:      Option<SteadyTelemetryActorSend>,
     pub(crate) last_telemetry_send:  Instant,
     pub(crate) runtime_state:        Arc<Mutex<GraphLivelinessState>>,
+    pub(crate) redundancy:           usize,
 
 
     #[cfg(test)]
@@ -728,14 +963,34 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 ///////////////////
 impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
+    /// Returns the unique identifier of the LocalMonitor instance.
+    ///
+    /// # Returns
+    /// A `usize` representing the monitor's unique ID.
     pub fn id(&self) -> usize {
         self.id
     }
 
+    /// Retrieves the static name assigned to the LocalMonitor instance.
+    ///
+    /// # Returns
+    /// A static string slice (`&'static str`) representing the monitor's name.
     pub fn name(&self) -> & 'static str {
         self.name
     }
 
+    /// Indicates the level of redundancy applied to the monitoring process.
+    ///
+    /// # Returns
+    /// A `usize` value representing the redundancy level.
+    pub fn redundancy(&self) -> usize {
+        self.redundancy
+    }
+
+    /// Initiates a stop signal for the LocalMonitor, halting its monitoring activities.
+    ///
+    /// # Returns
+    /// A `Result` indicating successful cessation of monitoring activities.
     pub async fn stop(&mut self) -> Result<(),()>  {
         if let Some(ref mut st) = self.telemetry_state {
             st.bool_stop = true;
@@ -743,10 +998,19 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         Ok(())
     }
 
+    /// Provides access to the shared runtime state of the application.
+    ///
+    /// # Returns
+    /// An `Arc<Mutex<GraphLivelinessState>>` that encapsulates the application's runtime state,
+    /// allowing for concurrent access and modification.
     pub fn runtime_state(&self) -> Arc<Mutex<GraphLivelinessState>> {
         self.runtime_state.clone()
     }
 
+    /// Retrieves an optional reference to the `BastionContext` associated with the LocalMonitor.
+    ///
+    /// # Returns
+    /// An `Option` containing a reference to the `BastionContext` if available.
     pub fn ctx(&self) -> Option<&BastionContext> {
         if let Some(ctx) = &self.ctx {
             Some(ctx)
@@ -756,10 +1020,20 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
 
+    /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
+    ///
+    /// # Asynchronous
     pub async fn relay_stats_all(&mut self) {
         //NOTE: not time ing this one as it is mine and internal
         telemetry::setup::try_send_all_local_telemetry(self).await;
     }
+
+    /// Periodically relays telemetry data at a specified rate.
+    ///
+    /// # Parameters
+    /// - `duration_rate`: The interval at which telemetry data should be sent.
+    ///
+    /// # Asynchronous
     pub async fn relay_stats_periodic(&mut self, duration_rate: Duration) {
         self.start_hot_profile(monitor::CALL_WAIT);
         assert!(duration_rate.ge(&Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)),
@@ -772,6 +1046,10 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         self.relay_stats_all().await;
     }
 
+    /// Marks the start of a high-activity profile period for telemetry monitoring.
+    ///
+    /// # Parameters
+    /// - `x`: The index representing the type of call being monitored.
     fn start_hot_profile(&mut self, x: usize) {
         if let Some(ref mut st) = self.telemetry_state {
             st.calls[x] = st.calls[x].saturating_add(1);
@@ -780,6 +1058,8 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             }
         };
     }
+
+    /// Finalizes the current hot profile period, aggregating the collected telemetry data.
     fn rollup_hot_profile(&mut self) {
         if let Some(ref mut st) = self.telemetry_state {
             if let Some(d) = st.hot_profile.take() {
@@ -789,15 +1069,52 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
 
+    /// Attempts to peek at a slice of messages without removing them from the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance for peeking.
+    /// - `elems`: A mutable slice to store the peeked messages.
+    ///
+    /// # Returns
+    /// The number of messages peeked and stored in `elems`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
     pub fn try_peek_slice<T>(& mut self, this: &mut Rx<T>, elems: &mut [T]) -> usize
         where T: Copy {
         this.shared_try_peek_slice(elems)
     }
+
+    /// Asynchronously peeks at a slice of messages, waiting for a specified count to be available.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `wait_for_count`: The number of messages to wait for before peeking.
+    /// - `elems`: A mutable slice to store the peeked messages.
+    ///
+    /// # Returns
+    /// The number of messages peeked and stored in `elems`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    ///
+    /// # Asynchronous
     pub async fn peek_async_slice<T>(&mut self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
     where T: Copy {
         this.shared_peek_async_slice(wait_for_count,elems).await
     }
 
+    /// Retrieves and removes a slice of messages from the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `slice`: A mutable slice where the taken messages will be stored.
+    ///
+    /// # Returns
+    /// The number of messages actually taken and stored in `slice`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
     pub fn take_slice<T>(&mut self, this: & mut Rx<T>, slice: &mut [T]) -> usize
     where T: Copy {
         if let Some(ref mut st) = self.telemetry_state {
@@ -811,6 +1128,14 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         };
         done
     }
+
+    /// Attempts to take a single message from the channel without blocking.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
     pub fn try_take<T>(&mut self, this: & mut Rx<T>) -> Option<T> {
         if let Some(ref mut st) = self.telemetry_state {
             st.calls[monitor::CALL_SINGLE_READ]=st.calls[monitor::CALL_SINGLE_READ].saturating_add(1);
@@ -828,31 +1153,89 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
 
-
+    /// Attempts to peek at the next message in the channel without removing it.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
     pub fn try_peek<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
         this.shared_try_peek()
     }
+
+    /// Returns an iterator over the messages currently in the channel without removing them.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
     pub fn try_peek_iter<'a,T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
         this.shared_try_peek_iter()
     }
+
+    /// Asynchronously returns an iterator over the messages in the channel,
+    /// waiting for a specified number of messages to be available.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `wait_for_count`: The number of messages to wait for before returning the iterator.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
+    ///
+    /// # Asynchronous
     pub async fn peek_async_iter<'a,T>(&'a mut self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
         self.start_hot_profile(monitor::CALL_OTHER);
         let result = this.shared_peek_async_iter(wait_for_count).await;
         self.rollup_hot_profile();
         result
     }
+
+    /// Checks if the channel is currently empty.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// `true` if the channel has no messages available, otherwise `false`.
     pub fn is_empty<T>(& mut self, this: & mut Rx<T>) -> bool {
         this.shared_is_empty()
     }
+
+    /// Returns the number of messages currently available in the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// A `usize` indicating the number of available messages.
     pub fn avail_units<T>(& mut self, this: & mut Rx<T>) -> usize {
         this.shared_avail_units()
     }
+
+    /// Asynchronously waits for a specified duration.
+    ///
+    /// # Parameters
+    /// - `duration`: The duration to wait.
+    ///
+    /// # Asynchronous
     pub async fn wait(& mut self, duration: Duration) {
         self.start_hot_profile(monitor::CALL_WAIT);
         Delay::new(duration).await;
         self.rollup_hot_profile();
     }
-    //here we just take an async fn and call it async just to wrap it
+
+    /// Calls an asynchronous function and monitors its execution for telemetry.
+    ///
+    /// # Parameters
+    /// - `f`: The asynchronous function to call.
+    ///
+    /// # Returns
+    /// The output of the asynchronous function `f`.
+    ///
+    /// # Asynchronous
     pub async fn call_async<F>(&mut self, f: F) -> F::Output
         where F: Future {
         self.start_hot_profile(monitor::CALL_OTHER);
@@ -861,7 +1244,13 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         result
     }
 
-
+    /// Asynchronously waits until a specified number of units are available in the Rx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `count`: The number of units to wait for availability.
+    ///
+    /// # Asynchronous
     pub async fn wait_avail_units<T>(&mut self, this: & mut Rx<T>, count:usize) {
         self.start_hot_profile(monitor::CALL_OTHER);
         let result = this.shared_wait_avail_units(count).await;
@@ -869,12 +1258,31 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         result
     }
 
+    /// Asynchronously peeks at the next available message in the channel without removing it.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
+    ///
+    /// # Asynchronous
     pub async fn peek_async<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
         self.start_hot_profile(monitor::CALL_OTHER);
         let result = this.shared_peek_async().await;
         self.rollup_hot_profile();
         result
     }
+
+    /// Asynchronously retrieves and removes a single message from the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// A `Result<T, String>`, where `Ok(T)` is the message if available, and `Err(String)` contains an error message if the retrieval fails.
+    ///
+    /// # Asynchronous
     pub async fn take_async<T>(& mut self, this: & mut Rx<T>) -> Result<T, String> {
         self.start_hot_profile(monitor::CALL_SINGLE_READ);
         let result = this.shared_take_async().await;
@@ -897,10 +1305,17 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
 
-
-
-
-
+    /// Sends a slice of messages to the Tx channel until it is full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `slice`: A slice of messages to be sent.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
     pub fn send_slice_until_full<T>(&mut self, this: & mut Tx<T>, slice: &[T]) -> usize
         where T: Copy {
 
@@ -919,6 +1334,14 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         done
     }
 
+    /// Sends messages from an iterator to the Tx channel until it is full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `iter`: An iterator that yields messages of type `T`.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
     pub fn send_iter_until_full<T,I: Iterator<Item = T>>(&mut self, this: & mut Tx<T>, iter: I) -> usize {
 
         if let Some(ref mut st) = self.telemetry_state {
@@ -936,6 +1359,14 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         done
     }
 
+    /// Attempts to send a single message to the Tx channel without blocking.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `msg`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
     pub fn try_send<T>(& mut self, this: & mut Tx<T>, msg: T) -> Result<(), T> {
 
         if let Some(ref mut st) = self.telemetry_state {
@@ -959,20 +1390,49 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             }
         }
     }
-    pub fn is_full<T>(& mut self, this: & mut Tx<T>) -> bool {
 
+    /// Checks if the Tx channel is currently full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Returns
+    /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
+    pub fn is_full<T>(& mut self, this: & mut Tx<T>) -> bool {
         this.is_full()
     }
 
+    /// Returns the number of vacant units in the Tx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Returns
+    /// The number of messages that can still be sent before the channel is full.
     pub fn vacant_units<T>(& mut self, this: & mut Tx<T>) -> usize {
         this.shared_vacant_units()
     }
+
+    /// Asynchronously waits until at least a specified number of units are vacant in the Tx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `count`: The number of vacant units to wait for.
+    ///
+    /// # Asynchronous
     pub async fn wait_vacant_units<T>(& mut self, this: & mut Tx<T>, count:usize) {
         self.start_hot_profile(monitor::CALL_WAIT);
         let response = this.shared_wait_vacant_units(count).await;
         self.rollup_hot_profile();
         response
     }
+
+    /// Asynchronously waits until the Tx channel is empty.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Asynchronous
     pub async fn wait_empty<T>(& mut self, this: & mut Tx<T>) {
         self.start_hot_profile(monitor::CALL_WAIT);
         let response = this.shared_wait_empty().await;
@@ -980,8 +1440,16 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         response
     }
 
-
-
+    /// Sends a message to the Tx channel asynchronously, waiting if necessary until space is available.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `a`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
+    ///
+    /// # Asynchronous
     pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T) -> Result<(), T> {
        self.start_hot_profile(monitor::CALL_SINGLE_WRITE);
        let result = this.shared_send_async(a).await;

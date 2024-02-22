@@ -1,6 +1,4 @@
 use std::ops::DerefMut;
-use std::sync::Arc;
-use futures::lock::Mutex;
 use crate::actor::data_generator::WidgetInventory;
 use log::*;
 use steady_state::{LocalMonitor, Rx, SteadyContext, SteadyRx, SteadyTx, Tx};

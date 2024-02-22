@@ -4,7 +4,8 @@ use bastion::run;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use futures::lock::Mutex;
-use log::{error, trace};
+#[allow(unused_imports)]
+use log::*; //allowed for all modules
 use num_traits::Zero;
 use crate::{AlertColor, config, Filled, MCPU, MONITOR_NOT, MONITOR_UNKNOWN, Percentile, Rate, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx, Work};
 
@@ -29,7 +30,7 @@ pub struct ActorStatus {
     pub(crate) unit_total_ns:        u64,  //sum records together
     pub(crate) redundancy:           u16,
 
-    pub(crate) calls: [u32; 6],
+    pub(crate) calls: [u16; 6],
 }
 
 pub(crate) const CALL_SINGLE_READ: usize=0;
@@ -50,7 +51,7 @@ pub struct SteadyTelemetryActorSend {
     pub(crate) redundancy: u16,
 
 
-    pub(crate) calls: [u32; 6],
+    pub(crate) calls: [u16; 6],
 
     pub(crate) count_restarts: Arc<AtomicU32>,
     pub(crate) bool_stop: bool,
@@ -136,27 +137,13 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
             let mut await_total_ns:       u64 = 0;
             let mut unit_total_ns:        u64 = 0;
-            let mut single_read_calls:    u32 = 0;
-            let mut batch_read_calls:     u32 = 0;
-            let mut single_write_calls:   u32 = 0;
-            let mut batch_write_calls:    u32 = 0;
-            let mut other_calls:          u32 = 0;
-            let mut wait_calls:           u32 = 0;
 
-            //let populated_slice = &buffer[0..count];
-            let mut calls = [0u32;6];
+            let mut calls = [0u16;6];
             for status in buffer.iter().take(count) {
                 assert!(status.unit_total_ns>=status.await_total_ns,"{} {}",status.unit_total_ns,status.await_total_ns);
 
                 await_total_ns += status.await_total_ns;
                 unit_total_ns += status.unit_total_ns;
-
-                single_read_calls += status.calls[CALL_SINGLE_READ];
-                batch_read_calls += status.calls[CALL_BATCH_READ];
-                single_write_calls += status.calls[CALL_SINGLE_WRITE];
-                batch_write_calls += status.calls[CALL_BATCH_WRITE];
-                other_calls += status.calls[CALL_OTHER];
-                wait_calls += status.calls[CALL_WAIT];
 
                 for (i, call) in status.calls.iter().enumerate() {
                     calls[i] = calls[i].saturating_add(*call);
@@ -240,7 +227,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             });
 
             //check all values and ensure we do not have more than capacity between send and take
-            take.details.iter().for_each(|(meta)| {
+            take.details.iter().for_each(|meta| {
                 let dif = take_send_source[meta.id].1-take_send_source[meta.id].0;
                 if dif > (meta.capacity as i128) {
                     //trace!("too many sends this frame, pushing some off to next frame");

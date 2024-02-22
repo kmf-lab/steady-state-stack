@@ -14,9 +14,11 @@ use crate::{config, SteadyContext, SteadyTx, Tx};
 
 #[derive(Clone, Debug)]
 pub enum DiagramData {
+    #[allow(clippy::type_complexity)]
     //uses heap but only when a new actor is added so we can define it and its channels
-    NodeDef(u64 //TODO: for clarity convert this to a Box of Boxes
-            , Arc<(Arc<ActorMetaData>,Vec<Arc<ChannelMetaData>>,Vec<Arc<ChannelMetaData>>)>  //immutable data
+    NodeDef(u64    ,Box<(Arc<ActorMetaData>
+                        ,Box<[Arc<ChannelMetaData>]>
+                        ,Box<[Arc<ChannelMetaData>]>)>
     ),
     //all consumers will share the same seq vec and it is dropped when the last one consumed it
     //this copy was required so we can gather the next seq while the last gets rendered.
@@ -143,7 +145,7 @@ pub(crate) async fn run(_context: SteadyContext
 // Async function to append data to a file
 
 
-fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &mut Vec<CollectorDetail>) -> Vec<DiagramData> {
+fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &mut [CollectorDetail]) -> Vec<DiagramData> {
 //get the max channel ids for the new actors
     let (max_rx, max_tx): (usize, usize) = dynamic_senders.iter()
         .skip(state.actor_count).map(|x| {
@@ -165,10 +167,13 @@ fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &mut Vec<Co
     let nodes: Vec<DiagramData> = dynamic_senders.iter()
             .skip(state.actor_count).map(|details| {
                     let tt = &details.telemetry_take[0];
+                    let dd =Box::new((tt.actor_metadata().clone()
+                               ,tt.rx_channel_id_vec().clone().into_boxed_slice()
+                               ,tt.tx_channel_id_vec().clone().into_boxed_slice()
+                    ));
+
                     DiagramData::NodeDef(state.sequence
-                                         , Arc::new((tt.actor_metadata().clone()
-                                                   ,tt.rx_channel_id_vec()
-                                                   ,tt.tx_channel_id_vec()))
+                                         , dd
                     )
         }).collect();
     state.actor_count = dynamic_senders.len();

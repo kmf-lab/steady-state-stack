@@ -24,29 +24,21 @@ use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::channel_stats::ChannelStatsComputer;
 
+#[derive(Default)]
 pub struct DotState {
     pub(crate) nodes: Vec<Node<>>, //position matches the node id
     pub(crate) edges: Vec<Edge<>>, //position matches the channel id
     pub seq: u64,
 }
 
-impl Default for DotState {
-    fn default() -> Self {
-        DotState {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            seq: 0,
-        }
-    }
-}
+
 
 pub(crate) struct Node {
-    pub id: usize,
-    pub color: & 'static str,
-    pub name: & 'static str,
-    pub pen_width: & 'static str,
-    pub stats_computer: ActorStatsComputer,
-    pub display_label: String, //label may also have (n) for replicas
+    pub(crate) id: usize,
+    pub(crate) color: & 'static str,
+    pub(crate) pen_width: & 'static str,
+    pub(crate) stats_computer: ActorStatsComputer,
+    pub(crate) display_label: String, //label may also have (n) for replicas
 }
 
 impl Node {
@@ -58,8 +50,8 @@ impl Node {
         let mcpu = if den.is_zero() {0} else {1024 - ( (num * 1024) / den )};
         let work = (100u64 *(actor_status.unit_total_ns-actor_status.await_total_ns) )
                               / total_work_ns as u64;
-        let id = self.id;
-        let (label, color, pen_width) = self.stats_computer.compute(id, mcpu, work
+
+        let (label, color, pen_width) = self.stats_computer.compute(mcpu, work
                                         , actor_status.total_count_restarts
                                         , actor_status.bool_stop
                                         , actor_status.redundancy);
@@ -185,8 +177,8 @@ pub fn refresh_structure(local_state: &mut DotState
                          , name: &'static str
                          , id: usize
                          , actor:           Arc<ActorMetaData>
-                         , channels_in: Vec<Arc<ChannelMetaData>>
-                         , channels_out: Vec<Arc<ChannelMetaData>>
+                         , channels_in: &[Arc<ChannelMetaData>]
+                         , channels_out: &[Arc<ChannelMetaData>]
 ) {
 //rare but needed to ensure vector length
     if id.ge(&local_state.nodes.len()) {
@@ -195,7 +187,6 @@ pub fn refresh_structure(local_state: &mut DotState
                 id: usize::MAX,
                 color: "grey",
                 pen_width: "2",
-                name: name,
                 stats_computer: ActorStatsComputer::default(),
                 display_label: "".to_string(), //defined when the content arrives
             }
@@ -212,7 +203,7 @@ pub fn refresh_structure(local_state: &mut DotState
 
 }
 
-fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: Vec<Arc<ChannelMetaData>>, set_to: bool) {
+fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: &[Arc<ChannelMetaData>], set_to: bool) {
     mdvec.iter()
         .for_each(|meta| {
             let idx = meta.id;
@@ -310,8 +301,8 @@ impl FrameHistory {
     }
 
     pub fn apply_node(&mut self, name: & 'static str, id:usize
-                      , chin: Vec<Arc<ChannelMetaData>>
-                      , chout: Vec<Arc<ChannelMetaData>>) {
+                      , chin: &[Arc<ChannelMetaData>]
+                      , chout: &[Arc<ChannelMetaData>]) {
 
         write_long_unsigned(REC_NODE, &mut self.history_buffer); //message type
         write_long_unsigned(id as u64, &mut self.history_buffer); //message type
@@ -343,7 +334,7 @@ impl FrameHistory {
     //once every 10 min we will write a full record
     const SAFE_WRITE_LIMIT:usize = (10* 60 * 1000) / super::config::TELEMETRY_PRODUCTION_RATE_MS;
 
-    pub fn apply_edge(&mut self, total_take_send: Box<[(i128,i128)]>) {
+    pub fn apply_edge(&mut self, total_take_send: &[(i128,i128)]) {
         write_long_unsigned(REC_EDGE, &mut self.history_buffer); //message type
 
         let total_take:Vec<i128> = total_take_send.iter().map(|(t,_)| *t).collect();

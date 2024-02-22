@@ -88,11 +88,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use async_std::test;
-    use steady_state::{Graph, util};
-    use crate::actor::data_feedback::iterate_once;
-    use crate::actor::WidgetInventory;
 
 
 /*

@@ -90,7 +90,7 @@ impl ActorBuilder {
         //now compute the window based on our new bucket size
         let buckets_per_window:f32 = window.as_micros() as f32 / refresh_in_micros as f32;
         //find the next largest power of 2
-        let window_in_bits = (buckets_per_window as f32).log2().ceil() as u8;
+        let window_in_bits = buckets_per_window.log2().ceil() as u8;
         result.with_compute_refresh_window_bucket_bits(refresh_in_bits, window_in_bits)
     }
 

@@ -1,7 +1,5 @@
 use std::ops::DerefMut;
-use std::sync::Arc;
 use std::time::Duration;
-use futures::lock::Mutex;
 use steady_state::*;
 use log::*;
 

@@ -1,14 +1,12 @@
 use std::ops::DerefMut;
-use std::sync::Arc;
-use std::time::Duration;
-use futures::lock::Mutex;
+
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
 use crate::actor::data_generator::Packet;
 
 
-
+#[allow(unreachable_code)]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>
                  , tx: SteadyTx<Packet>) -> Result<(),()> {
@@ -23,13 +21,14 @@ pub async fn run(context: SteadyContext
     let tx = tx_guard.deref_mut();
 
     loop {
-       monitor.wait_avail_units(rx,3* (rx.capacity().get()/4)).await;
+       monitor.wait_avail_units(rx,3* (rx.capacity()/4)).await;
 
            let mut max_now = tx.vacant_units();
            if max_now>0 {
                while max_now>0 {
                    if let Some(packet) = monitor.try_take(rx) {
                        if let Err(e) = monitor.try_send(tx,packet) {
+                           error!("Error sending packet: {:?}",e);
                            break;
                        }
                        max_now -= 1;

@@ -1,7 +1,5 @@
 use std::ops::DerefMut;
-use std::sync::Arc;
-use std::time::Duration;
-use futures::lock::Mutex;
+
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
@@ -19,6 +17,7 @@ pub async fn run(context: SteadyContext
 
     loop {
         if let Ok(packet) = monitor.take_async(rx).await {
+            assert_eq!(packet.data.len(),128);
             //info!("data_router: {:?}", packet);
         }
         monitor.relay_stats_all().await;

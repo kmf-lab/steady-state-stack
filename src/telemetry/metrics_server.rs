@@ -105,26 +105,28 @@ pub(crate) async fn run(context: SteadyContext
                   match msg {
                          Ok(DiagramData::NodeDef(seq, defs)) => {
                             // these are all immutable constants for the life of the node
-                            let (actor, channels_in, channels_out) = Arc::try_unwrap(defs).unwrap_or_else(|arc| (*arc).clone());
 
-                            let name = actor.name;
-                            let id = actor.id;
-                            refresh_structure(&mut dot_state
-                                               , name
-                                               , id
-                                               , actor
-                                               , channels_in.clone()
-                                               , channels_out.clone()
-                              );
+                                let (actor, channels_in, channels_out) = *defs;
 
-                              dot_state.seq = seq;
-                              if config::TELEMETRY_HISTORY  {
-                                  history.apply_node(name, id
-                                                  , channels_in.clone()
-                                                  , channels_out.clone());
-                              }
+                                let name = actor.name;
+                                let id = actor.id;
+                                refresh_structure(&mut dot_state
+                                                   , name
+                                                   , id
+                                                   , actor
+                                                   , &channels_in
+                                                   , &channels_out
+                                  );
+
+                                  dot_state.seq = seq;
+                                  if config::TELEMETRY_HISTORY  {
+                                      history.apply_node(name, id
+                                                      , &channels_in
+                                                      , &channels_out);
+                                  }
+
                          },
-                         Ok(DiagramData::NodeProcessData(seq,actor_status)) => {
+                         Ok(DiagramData::NodeProcessData(_,actor_status)) => {
 
                             //sum up all actor work so we can find the percentage of each
                             let total_work_ns:u128 = actor_status.iter()
@@ -180,7 +182,7 @@ pub(crate) async fn run(context: SteadyContext
 
                                   //NOTE we do not expect to get any more messages for this seq
                                   //    and we have 32ms or so to record the history log file
-                                  history.apply_edge(total_take_send);
+                                  history.apply_edge(&total_take_send);
 
                                   //since we got the edge data we know we have a full frame
                                   //and we can update the history

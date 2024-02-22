@@ -1,13 +1,11 @@
-use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::sync::Arc;
-use graphviz_rust::attributes::color_name::red;
 use hdrhistogram::Histogram;
 
 #[allow(unused_imports)]
 use log::*;
 
-use crate::{AlertColor, channel_stats, config, MCPU, Percentile, Rate, StdDev, Trigger, Work};
+use crate::*;
 use crate::channel_stats::{ChannelBlock, compute_labels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW};
 use crate::monitor::{ActorMetaData};
 
@@ -48,7 +46,6 @@ impl ActorStatsComputer {
     const PLACES_TENS:u64 = 1000u64;
 
     pub(crate) fn compute(&mut self
-                          , id: usize
                           , mcpu: u64
                           , work: u64
                           , total_count_restarts: u32
@@ -58,9 +55,9 @@ impl ActorStatsComputer {
         self.accumulate_data_frame(mcpu, work);
         let mut display_label = String::new();
 
-        display_label.push_str("#");
-        display_label.push_str(itoa::Buffer::new().format(id));
-        display_label.push_str(" ");
+        display_label.push('#');
+        display_label.push_str(itoa::Buffer::new().format(self.id));
+        display_label.push(' ');
         display_label.push_str(self.name);
         display_label.push('\n');
 
@@ -91,9 +88,9 @@ impl ActorStatsComputer {
         if let Some(ref current_work) = &self.current_work {
             compute_labels(self.frame_rate_ms
                            , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                           , &mut display_label, &current_work
-                           , &"work"
-                           , &"%"
+                           , &mut display_label, current_work
+                           , "work"
+                           , "%"
                            , (1,1)
                            , self.show_avg_work
                            , & self.std_dev_work
@@ -102,9 +99,9 @@ impl ActorStatsComputer {
         if let Some(ref current_mcpu) = &self.current_mcpu {
             compute_labels(self.frame_rate_ms
                            , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                           , &mut display_label, &current_mcpu
-                           , &"mCPU"
-                           , &""
+                           , &mut display_label, current_mcpu
+                           , "mCPU"
+                           , ""
                            , (1,1)
                            , self.show_avg_mcpu
                            , & self.std_dev_mcpu
@@ -133,7 +130,8 @@ impl ActorStatsComputer {
 
 
     pub(crate) fn init(&mut self, meta: Arc<ActorMetaData>
-                       , id:usize, name:&'static str) {
+                       , id:usize
+                       , name:&'static str) {
 
         self.id = id;
         self.name = name;
@@ -156,16 +154,14 @@ impl ActorStatsComputer {
         self.std_dev_work  = meta.std_dev_work.clone();
         self.usage_review = meta.usage_review;
 
+        let trigger_uses_histogram = self.mcpu_trigger.iter().any(|t|
+            matches!(t, (Trigger::PercentileAbove(_,_),_) | (Trigger::PercentileBelow(_,_),_))
+        );
 
-        let trigger_uses_histogram = self.mcpu_trigger.iter().any(|t| match t {
-                                        (Trigger::PercentileAbove(_,_),_) => true,
-                                        (Trigger::PercentileBelow(_,_),_) => true,
-                                            _ => false
-                });
         self.build_mcpu_histogram = trigger_uses_histogram || !self.percentiles_mcpu.is_empty();
 
         if self.build_mcpu_histogram {
-            let mcpu_top = 1024 as u64;
+            let mcpu_top = 1024;
             match Histogram::<u16>::new_with_bounds(1, mcpu_top, 1) {
                 Ok(h) => {
                     self.history_mcpu.push_back(ChannelBlock {
@@ -187,15 +183,15 @@ impl ActorStatsComputer {
             });
         }
 
-        let trigger_uses_histogram = self.work_trigger.iter().any(|t| match t {
-            (Trigger::PercentileAbove(_,_),_) => true,
-            (Trigger::PercentileBelow(_,_),_) => true,
-            _ => false
-        });
+        let trigger_uses_histogram = self.work_trigger.iter().any( |t|
+            matches!(t, (Trigger::PercentileAbove(_,_),_) | (Trigger::PercentileBelow(_,_),_))
+        );
+
+
         self.build_work_histogram = trigger_uses_histogram || !self.percentiles_work.is_empty();
 
         if self.build_work_histogram {
-            let work_top = 100 as u64;
+            let work_top = 100;
             match Histogram::<u8>::new_with_bounds(1, work_top, 1) {
                 Ok(h) => {
                     self.history_work.push_back(ChannelBlock {
@@ -258,7 +254,7 @@ impl ActorStatsComputer {
             }
 
             if self.build_mcpu_histogram {
-                let mcpu_top = 1024 as u64;
+                let mcpu_top = 1024;
                 match Histogram::<u16>::new_with_bounds(1, mcpu_top, 1) {
                     Ok(h) => {
                         self.history_mcpu.push_back(ChannelBlock {
@@ -281,7 +277,7 @@ impl ActorStatsComputer {
             }
 
             if self.build_work_histogram {
-                let work_top = 100 as u64;
+                let work_top = 100;
                 match Histogram::<u8>::new_with_bounds(1, work_top, 1) {
                     Ok(h) => {
                         self.history_work.push_back(ChannelBlock {
@@ -309,8 +305,8 @@ impl ActorStatsComputer {
 
 
     fn trigger_alert_level(&mut self, c1: &AlertColor) -> bool {
-        self.mcpu_trigger.iter().filter(|f| f.1.eq(&c1)).any(|f| self.triggered_mcpu(&f.0))
-            || self.work_trigger.iter().filter(|f| f.1.eq(&c1)).any(|f| self.triggered_work(&f.0))
+        self.mcpu_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_mcpu(&f.0))
+            || self.work_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_work(&f.0))
     }
 
 
@@ -326,11 +322,11 @@ impl ActorStatsComputer {
                 channel_stats::avg_rational(window_in_ms, &self.current_mcpu, mcpu.rational()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, mcpu) => {
-                let window_bits = (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
                 channel_stats::stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu, mcpu.rational()).is_lt()
             }
             Trigger::StdDevsAbove(std_devs, mcpu) => {
-                let window_bits = (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
                 channel_stats::stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu, mcpu.rational()).is_gt()
             }
             Trigger::PercentileAbove(percentile, mcpu) => {
@@ -355,11 +351,11 @@ impl ActorStatsComputer {
                 channel_stats::avg_rational(window_in_ms,&self.current_work, work.rational()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, work) => {
-                let window_bits = (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
                 channel_stats::stddev_rational( self.work_std_dev(), window_bits, std_devs, &self.current_work, work.rational()).is_lt()
             }
             Trigger::StdDevsAbove(std_devs, work) => {
-                let window_bits = (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
                 channel_stats::stddev_rational(self.work_std_dev(),  window_bits, std_devs, &self.current_work, work.rational()).is_gt()
             }
             Trigger::PercentileAbove(percentile, work) => {

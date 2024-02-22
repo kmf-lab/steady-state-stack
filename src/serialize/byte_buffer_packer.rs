@@ -26,7 +26,7 @@ impl<T> PackedVecWriter<T> {
 impl <T> PackedVecWriter<T>
     where T: Sub<Output = T> + Into<i128> + Copy + Zero + PartialEq {
 
-    fn consume_to_u64(bits:&Vec<u8>) -> Vec<u64> {
+    fn consume_to_u64(bits:&[u8]) -> Vec<u64> {
         let mut u64_values = Vec::with_capacity(1+(bits.len() >> 6));
         let mut p:usize = 0;
         while p<bits.len() {
@@ -43,7 +43,7 @@ impl <T> PackedVecWriter<T>
         }
         u64_values
     }
-    pub(crate) fn add_vec(&mut self, target: &mut BytesMut, source: &Vec<T>) {
+    pub(crate) fn add_vec(&mut self, target: &mut BytesMut, source: &[T]) {
         assert!(source.len() >= self.previous.len(), "new source {:?} >= prev {:?}", source.len(), self.previous.len() );
 
         if !self.sync_required {

@@ -1,6 +1,5 @@
 mod args;
 
-use std::sync::Arc;
 use structopt::*;
 use log::*;
 use futures_timer::Delay;
@@ -26,8 +25,6 @@ mod actor {
 #[cfg(test)]
 use crate::actor::*;
 
-use bastion::{Bastion, run};
-use bastion::prelude::SupervisionStrategy;
 use steady_state::*;
 
 
@@ -64,7 +61,7 @@ fn main() {
         info!("exit now");
         graph.request_shutdown();
         //TODO:: need some way to wait for clean shutdown to complete
-        Bastion::stop();
+        graph.stop();
     });
 
     //wait for bastion to cleanly stop all actors
@@ -82,9 +79,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     //create the mutable graph object
     let mut graph = steady_state::Graph::new(cli_arg.clone());
-
-    Bastion::init(); //init bastion runtime
-
+    graph.start();
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_channel_builder = graph.channel_builder()
@@ -275,8 +270,7 @@ mod tests {
             let answer_consumer: Result<&str, SendError> = distribute_consumer.request(expected_message).await.unwrap();
             assert_eq!("ok",answer_consumer.unwrap());
 
-
-            Bastion::stop();
+            graph.stop();
         });
         Bastion::block_until_stopped();
     }
