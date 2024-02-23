@@ -174,6 +174,9 @@ impl ActorBuilder {
         result
     }
 
+    //TODO: can we push children last and add it in secret on build??
+    //TODO: remove bastion supervisor etc.
+
     pub fn build<F,I>(self, children: Children, init: I) -> Children
         where I: Fn(SteadyContext) -> F + Send + 'static + Clone,
              F: Future<Output = Result<(),()>> + Send + 'static ,

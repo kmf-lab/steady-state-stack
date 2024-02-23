@@ -101,9 +101,9 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let base_channel_builder = graph.channel_builder()
                             .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
                             .with_labels(&["widgets"],true)
-                        .with_filled_trigger(Trigger::AvgAbove(Filled::p50())
+                            .with_filled_trigger(Trigger::AvgAbove(Filled::p50())
                                              ,AlertColor::Red)
-                        .with_filled_trigger(Trigger::AvgAbove(Filled::p20())
+                            .with_filled_trigger(Trigger::AvgAbove(Filled::p20())
                                              ,AlertColor::Yellow)
                             .with_type()
                             .with_line_expansion();
@@ -111,8 +111,6 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     //upon construction these are set up to be monitored by the telemetry telemetry
     let (generator_tx, generator_rx) = base_channel_builder
                          .with_rate_percentile(Percentile::p80())
-
-
                          .with_capacity(4000)
                          .build();
 
@@ -150,12 +148,14 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let _ = Bastion::supervisor(|supervisor|
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
+
                      base_actor_builder.with_name("generator")
                      .build(children,
                         move |context| actor::data_generator::run(context
                                                                     , change_rx.clone()
-                                                                    , generator_tx.clone()
-                    ) )
+                                                                    , generator_tx.clone())
+                    )
+
             })
             .children(|children| {
                      base_actor_builder.with_name("approval")
