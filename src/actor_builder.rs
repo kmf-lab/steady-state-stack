@@ -1,6 +1,7 @@
 use std::any::Any;
 use bastion::children::Children;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize};
 use std::time::Duration;
@@ -177,9 +178,18 @@ impl ActorBuilder {
     //TODO: can we push children last and add it in secret on build??
     //TODO: remove bastion supervisor etc.
 
-    pub fn build<F,I>(self, children: Children, init: I) -> Children
-        where I: Fn(SteadyContext) -> F + Send + 'static + Clone,
-             F: Future<Output = Result<(),()>> + Send + 'static ,
+    pub fn build_with_exec<F,I>(self, exec: I) -> (Self, I)
+        where
+            I: Fn(SteadyContext) -> F + Send + Sync + 'static,
+            F: Future<Output = Result<(), ()>> + Send + 'static,
+    {
+        (self,exec)
+    }
+
+    pub fn finish<F,I>(self, children: Children, exec: I) -> Children
+        where
+            I: Fn(SteadyContext) -> F + Send + Sync + 'static,
+            F: Future<Output = Result<(), ()>> + Send + 'static,
     {
         let name          = self.name;
         let id            = self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -189,77 +199,74 @@ impl ActorBuilder {
         let args          = self.args;
         let redundancy    = self.redundancy;
 
-        let result = {
             let count_restarts = Arc::new(AtomicU32::new(0));
             let watch_node_callback = build_node_monitor_callback(&count_restarts);
             let count_restarts = count_restarts.clone();
 
-            children.with_redundancy(self.redundancy)
-                    .with_exec(move |ctx| {
+            let children = children.with_redundancy(self.redundancy)
+                .with_name(name)//.with_resizer()  TODO: add later.
+                .with_callbacks(watch_node_callback);
 
-                let init_fn_clone  = init.clone();
-                let channel_count  = channel_count.clone();
-                let telemetry_tx   = telemetry_tx.clone();
-                let runtime_state  = runtime_state.clone();
-                let args           = args.clone();
-                let count_restarts = count_restarts.clone();
+            #[cfg(debug_assertions)]
+            let children = {
+                use bastion::distributor::Distributor;
+                children.with_distributor(Distributor::named(format!("testing-{name}")))
+            };
 
-                let actor_metadata = Arc::new(
-                    ActorMetaData {
-                        id, name,
-                        avg_mcpu: self.avg_mcpu,
-                        avg_work: self.avg_work,
-                        percentiles_mcpu: self.percentiles_mcpu.clone(),
-                        percentiles_work: self.percentiles_work.clone(),
-                        std_dev_mcpu: self.std_dev_mcpu.clone(),
-                        std_dev_work: self.std_dev_work.clone(),
-                        trigger_mcpu: self.trigger_mcpu.clone(),
-                        trigger_work: self.trigger_work.clone(),
-                        usage_review: self.usage_review,
-                        refresh_rate_in_bits: self.refresh_rate_in_bits,
-                        window_bucket_in_bits: self.window_bucket_in_bits,
-                    }
-                );
+                children.with_exec(move |ctx| {
 
-                async move {
-                    let monitor = SteadyContext {
-                        runtime_state,
-                        channel_count: channel_count.clone(),
-                        name,
-                        ctx: Some(ctx),
-                        id,
-                        redundancy,
-                        args: args.clone(),
-                        all_telemetry_rx: telemetry_tx.clone(),
-                        count_restarts: count_restarts.clone(),
-                        actor_metadata
-                    };
+                    let channel_count  = channel_count.clone();
+                    let telemetry_tx   = telemetry_tx.clone();
+                    let runtime_state  = runtime_state.clone();
+                    let args           = args.clone();
+                    let count_restarts = count_restarts.clone();
 
-                    match init_fn_clone(monitor).await {
-                        Ok(_) => {
-                            trace!("Actor {:?} finished ", name);
-                        },
-                        Err(e) => {
-                            error!("{:?}", e);
-                            return Err(e);
+                    let actor_metadata = Arc::new(
+                        ActorMetaData {
+                            id, name,
+                            avg_mcpu: self.avg_mcpu,
+                            avg_work: self.avg_work,
+                            percentiles_mcpu: self.percentiles_mcpu.clone(),
+                            percentiles_work: self.percentiles_work.clone(),
+                            std_dev_mcpu: self.std_dev_mcpu.clone(),
+                            std_dev_work: self.std_dev_work.clone(),
+                            trigger_mcpu: self.trigger_mcpu.clone(),
+                            trigger_work: self.trigger_work.clone(),
+                            usage_review: self.usage_review,
+                            refresh_rate_in_bits: self.refresh_rate_in_bits,
+                            window_bucket_in_bits: self.window_bucket_in_bits,
                         }
-                    }
-                    Ok(())
-                }
-            })
-                .with_name(name)
-                .with_callbacks(watch_node_callback)
-                //.with_resizer()  TODO: add later.
-        };
+                    );
 
-        #[cfg(debug_assertions)]
-        {
-            use bastion::distributor::Distributor;
-            result.with_distributor(Distributor::named(format!("testing-{name}")))
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            result
-        }
+                    let monitor = SteadyContext {
+                                        runtime_state,
+                                        channel_count: channel_count.clone(),
+                                        name,
+                                        ctx: Some(ctx),
+                                        id,
+                                        redundancy,
+                                        args: args.clone(),
+                                        all_telemetry_rx: telemetry_tx.clone(),
+                                        count_restarts: count_restarts.clone(),
+                                        actor_metadata
+                    };
+                    let future = exec(monitor);
+
+                    async move {
+
+                        match future.await {
+                            Ok(_) => {
+                                trace!("Actor {:?} finished ", name);
+                            },
+                            Err(e) => {
+                                error!("{:?}", e);
+                                return Err(e);
+                            }
+                        }
+                        Ok(())
+                    }
+                })
+
+
     }
 }

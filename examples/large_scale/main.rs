@@ -113,43 +113,48 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
         let (btx,brx) = SteadyBundle::new_bundles::<Packet, LEVEL_1>(&base_channel_builder);
         supervisor = supervisor.children(|children| {
-            base_actor_builder
+            let (c,i) = base_actor_builder
                 .with_name("generator")
-                .build(children,
+                .build_with_exec(
                        move |context| actor::data_generator::run(context
                                                   , btx.clone()
-                       ))
+                       ));
+             c.finish(children,i)
+
         });
 
         for x in 0..LEVEL_1 {
             let local_rx = brx[x].clone();
             let (btx,brx) = SteadyBundle::new_bundles::<Packet, LEVEL_2>(&base_channel_builder);
             supervisor = supervisor.children(|children| {
-                    base_actor_builder
+                    let (c,i) = base_actor_builder
                         .with_name("router")
                         .with_name_suffix(x)
-                        .build(children,
+                        .build_with_exec(
                                move |context| actor::data_router::run(context
                                                       , LEVEL_1
                                                       , local_rx.clone()
                                                       , btx.clone()
                                )
-                        )
+                        );
+                    c.finish(children,i)
+
                 });
 
             for y in 0..LEVEL_2 {
                 let local_rx = brx[y].clone();
                 let (btx,brx) = SteadyBundle::new_bundles::<Packet, LEVEL_3>(&base_channel_builder);
                 supervisor = supervisor.children(|children| {
-                    base_actor_builder
+                    let (c,i) = base_actor_builder
                         .with_name("router")
                         .with_name_suffix(y)
-                        .build(children, move |context| actor::data_router::run(context
-                                               , LEVEL_1*LEVEL_2
-                                               , local_rx.clone()
-                                               , btx.clone()
+                        .build_with_exec(move |context| actor::data_router::run(context
+                                                                                , LEVEL_1*LEVEL_2
+                                                                                , local_rx.clone()
+                                                                                , btx.clone()
                         )
-                        )
+                        );
+                    c.finish(children,i)
                 });
 
                 for z in 0..LEVEL_3 {
@@ -157,27 +162,31 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                     let (btx,brx) = SteadyBundle::new_bundles::<Packet, LEVEL_4>(&base_channel_builder);
 
                     supervisor = supervisor.children(|children| {
-                        base_actor_builder
+                        let (c,i) = base_actor_builder
                             .with_name("router")
                             .with_name_suffix(z)
-                            .build(children, move |context| actor::data_router::run(context
-                                                                       , LEVEL_1*LEVEL_2*LEVEL_3
-                                                                       , local_rx.clone()
-                                                                       , btx.clone()
+                            .build_with_exec(move |context| actor::data_router::run(context
+                                                                                    , LEVEL_1*LEVEL_2*LEVEL_3
+                                                                                    , local_rx.clone()
+                                                                                    , btx.clone()
                             )
-                            )
+                            );
+                        c.finish(children,i)
+
+
                     });
 
                     if 1 == LEVEL_4 {
                         let local_rx = brx[0].clone();
                         supervisor = supervisor.children(|children| {
-                            base_actor_builder
+                            let (c,i) = base_actor_builder
                                 .with_name("user")
                                 .with_name_suffix(z)
-                                .build(children, move |context| actor::data_user::run(context
+                                .build_with_exec(move |context| actor::data_user::run(context
                                                                                       , local_rx.clone()
                                 )
-                                )
+                                );
+                            c.finish(children,i)
                         });
 
 
@@ -188,50 +197,57 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                             let (filter_tx, filter_rx) = base_channel_builder.build();
 
                             supervisor = supervisor.children(|children| {
-                                base_actor_builder
+                                let (c,i) = base_actor_builder
                                     .with_name("filter")
                                     .with_name_suffix(z)
-                                    .build(children, move |context| actor::data_process::run(context
+                                    .build_with_exec(move |context| actor::data_process::run(context
                                                                                              , local_rx.clone()
                                                                                              , filter_tx.clone()
                                     )
-                                    )
+                                    );
+                                c.finish(children,i)
                             });
 
                             let (logging_tx, logging_rx) = base_channel_builder.build();
 
                             supervisor = supervisor.children(|children| {
-                                base_actor_builder
+                                let (c,i) = base_actor_builder
                                     .with_name("logger")
                                     .with_name_suffix(z)
-                                    .build(children, move |context| actor::data_process::run(context
+                                    .build_with_exec(move |context| actor::data_process::run(context
                                                                                              , filter_rx.clone()
                                                                                              , logging_tx.clone()
                                     )
-                                    )
+                                    );
+                                c.finish(children,i)
+
                             });
 
                             let (decrypt_tx, decrypt_rx) = base_channel_builder.build();
 
                             supervisor = supervisor.children(|children| {
-                                base_actor_builder
+                                let (c,i) = base_actor_builder
                                     .with_name("decrypt")
                                     .with_name_suffix(z)
-                                    .build(children, move |context| actor::data_process::run(context
+                                    .build_with_exec(move |context| actor::data_process::run(context
                                                                                              , logging_rx.clone()
                                                                                              , decrypt_tx.clone()
                                     )
-                                    )
+                                    );
+                                c.finish(children,i)
                             });
 
                             supervisor = supervisor.children(|children| {
-                                base_actor_builder
+                                let (c,i) = base_actor_builder
                                     .with_name("user")
                                     .with_name_suffix(z)
-                                    .build(children, move |context| actor::data_user::run(context
+                                    .build_with_exec(move |context| actor::data_user::run(context
                                                                                           , decrypt_rx.clone()
-                                    )
-                                    )
+                                         )
+                                    );
+
+                                c.finish(children,i)
+
                             });
                         }
                     }

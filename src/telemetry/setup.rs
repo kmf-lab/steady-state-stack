@@ -116,6 +116,7 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 
             outgoing = Some(tx);
             supervisor.children(|children| {
+
                 let bldr = graph.actor_builder()
                     .with_name("telemetry-polling");
 
@@ -125,11 +126,13 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
                     bldr
                 };
 
-                bldr.build(children,move |monitor|
-                                       telemetry::metrics_server::run(monitor
-                                                                      , rx.clone()
-                                       )
-                )
+                let (c,i) = bldr.build_with_exec(move |monitor|
+                        telemetry::metrics_server::run(monitor
+                                                       , rx.clone()
+                        ));
+
+                c.finish(children, i)
+
             })
         } else {
             supervisor
@@ -159,15 +162,16 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
                     bldr
                 };
 
+                let (c,i) = bldr.build_with_exec(move |monitor| {
+                    let all_rx = all_tel_rx.clone();
+                    telemetry::metrics_collector::run(monitor
+                                                      , all_rx
+                                                      , outgoing.clone()
+                    )
+                });
 
-                    bldr.build(children,move |monitor| {
-                        let all_rx = all_tel_rx.clone();
-                        telemetry::metrics_collector::run(monitor
-                                                          , all_rx
-                                                          , outgoing.clone()
-                        )
-                    }
-                )
+                c.finish(children, i)
+
             }
             )
         } else {

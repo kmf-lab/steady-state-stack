@@ -149,45 +149,53 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
         supervisor.with_strategy(SupervisionStrategy::OneForOne)
             .children(|children| {
 
-                     base_actor_builder.with_name("generator")
-                     .build(children,
-                        move |context| actor::data_generator::run(context
-                                                                    , change_rx.clone()
-                                                                    , generator_tx.clone())
-                    )
+                    let (c,i) = base_actor_builder
+                         .with_name("generator")
+                     .build_with_exec( move |context| actor::data_generator::run(context
+                                                                                 , change_rx.clone()
+                                                                                 , generator_tx.clone())
+                    );
+
+                    c.finish(children,i)
 
             })
             .children(|children| {
-                     base_actor_builder.with_name("approval")
-                     .build(children,
+                     let (c,i) = base_actor_builder
+                         .with_name("approval")
+                         .build_with_exec(
                              move |context| actor::data_approval::run(context
                                                                           , generator_rx.clone()
                                                                           , consumer_tx.clone()
                                                                           , failure_tx.clone()
                                                                  )
-                    )
+                    );
+                      c.finish(children,i)
+
 
             })
             .children(|children| {
-                     base_actor_builder.with_name("feedback")
-                     .build(children,
+                   let (c,i) = base_actor_builder.with_name("feedback")
+                     .build_with_exec(
                             move |context| actor::data_feedback::run(context
                                                                       , failure_rx.clone()
                                                                       , change_tx.clone()
-                    )
+                            )
+                    );
+                    c.finish(children,i)
 
-                )
 
             })
             .children(|children| {
-                    base_actor_builder
+                    let (c,i) = base_actor_builder
                     .with_name("consumer")
-                    .build( children, move |context| actor::data_consumer::run(context
+                    .build_with_exec( move |context| actor::data_consumer::run(context
                                                                                , consumer_rx.clone()
-                                                                        )
+                                                                   )
 
 
-                            )
+                            );
+                    c.finish(children,i)
+
             })
     ).expect("OneForOne supervisor creation error.");
 
