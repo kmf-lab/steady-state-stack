@@ -1,7 +1,7 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.5"
-documentation = "https://docs.rs/crate/steady_state/0.0.5"
+version = "0.0.6"
+documentation = "https://docs.rs/crate/steady_state/0.0.6"
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -44,6 +44,8 @@ unwrap_used = "deny" # forbid use of unwrap
 
 [package.metadata.docs.rs]
 features = []
+no-default-features = true
+
 # Ensure 'telemetry_server' is not listed here since docs.rs does not support it
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
