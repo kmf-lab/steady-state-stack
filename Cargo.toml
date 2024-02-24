@@ -1,7 +1,7 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.4"
-documentation = "https://docs.rs/crate/steady_state/0.0.4"
+version = "0.0.5"
+documentation = "https://docs.rs/crate/steady_state/0.0.5"
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -15,9 +15,6 @@ exclude = ["**/*.txt", "**/*.sh", "notes/", "temp/"]
 [lib]
 name = "steady_state"
 path = "src/lib.rs"
-
-[package.metadata.docs.rs]
-cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 
 # cargo build --release --features telemetry_history,telemetry_server
@@ -41,13 +38,16 @@ unwrap_used = "deny" # forbid use of unwrap
 #  cargo build --target thumbv6m-none-eabi
 #
 [features]
-### will add cargo-generate support later
-#{{#if telemetry_server}}
 "telemetry_server" = []
-#{{/if}}
-#{{#if telemetry_history}}
 "telemetry_history" = []
-#{{/if}}
+
+
+[package.metadata.docs.rs]
+features = []
+# Ensure 'telemetry_server' is not listed here since docs.rs does not support it
+cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
+
+
 
 [dependencies]
 # Common, the goal here is to be WASM compatible eventually
