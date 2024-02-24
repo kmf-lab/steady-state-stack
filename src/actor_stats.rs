@@ -157,7 +157,6 @@ impl ActorStatsComputer {
         let trigger_uses_histogram = self.mcpu_trigger.iter().any(|t|
             matches!(t, (Trigger::PercentileAbove(_,_),_) | (Trigger::PercentileBelow(_,_),_))
         );
-
         self.build_mcpu_histogram = trigger_uses_histogram || !self.percentiles_mcpu.is_empty();
 
         if self.build_mcpu_histogram {
@@ -176,18 +175,12 @@ impl ActorStatsComputer {
                 }
             }
         } else {
-            self.history_mcpu.push_back(ChannelBlock {
-                histogram: None,
-                runner: 0,
-                sum_of_squares: 0,
-            });
+            self.history_mcpu.push_back(ChannelBlock::default());
         }
 
         let trigger_uses_histogram = self.work_trigger.iter().any( |t|
             matches!(t, (Trigger::PercentileAbove(_,_),_) | (Trigger::PercentileBelow(_,_),_))
         );
-
-
         self.build_work_histogram = trigger_uses_histogram || !self.percentiles_work.is_empty();
 
         if self.build_work_histogram {
@@ -206,11 +199,7 @@ impl ActorStatsComputer {
                 }
             }
         } else {
-            self.history_work.push_back(ChannelBlock {
-                histogram: None,
-                runner: 0,
-                sum_of_squares: 0,
-            });
+            self.history_work.push_back(ChannelBlock::default());
         }
 
     }
@@ -269,11 +258,7 @@ impl ActorStatsComputer {
                     }
                 }
             } else {
-                self.history_mcpu.push_back(ChannelBlock {
-                    histogram: None,
-                    runner: 0,
-                    sum_of_squares: 0,
-                });
+                self.history_mcpu.push_back(ChannelBlock::default());
             }
 
             if self.build_work_histogram {
@@ -292,11 +277,7 @@ impl ActorStatsComputer {
                     }
                 }
             } else {
-                self.history_work.push_back(ChannelBlock {
-                    histogram: None,
-                    runner: 0,
-                    sum_of_squares: 0,
-                });
+                self.history_work.push_back(ChannelBlock::default());
             }
 
 

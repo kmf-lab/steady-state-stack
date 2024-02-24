@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures::lock::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 
@@ -398,8 +398,8 @@ impl ChannelBuilder {
             refresh_rate_in_bits: self.refresh_rate_in_bits,
             line_expansion: self.line_expansion,
             show_type, type_byte_count,
-            percentiles_inflight: self.percentiles_filled.clone(),
-            percentiles_consumed: self.percentiles_rate.clone(),
+            percentiles_filled: self.percentiles_filled.clone(),
+            percentiles_rate: self.percentiles_rate.clone(),
             percentiles_latency: self.percentiles_latency.clone(),
             std_dev_inflight: self.std_dev_filled.clone(),
             std_dev_consumed: self.std_dev_rate.clone(),
@@ -446,19 +446,23 @@ impl ChannelBuilder {
         //trace!("channel_builder::build: type_name: {}", std::any::type_name::<T>());
 
         //the number of bytes consumed by T
-        let type_byte_count = std::mem::size_of::<T>();
+        let type_byte_count = std::mem::size_of::<T>(); //TODO: new feature to add
         let type_string_name = std::any::type_name::<T>();
         let channel_meta_data = Arc::new(self.to_meta_data(type_string_name,type_byte_count));
         let id = channel_meta_data.id;
+        let is_closed = Arc::new(AtomicBool::new(false));
 
         (  Arc::new(Mutex::new(Tx { id, tx
             , channel_meta_data: channel_meta_data.clone()
             , local_index: MONITOR_UNKNOWN
+            , is_closed: is_closed.clone()
             , last_error_send: Instant::now() //TODO: roll back a few seconds..
         }))
            , Arc::new(Mutex::new(Rx { id, rx
             , channel_meta_data
-            , local_index: MONITOR_UNKNOWN }))
+            , local_index: MONITOR_UNKNOWN
+            , is_closed
+        }))
         )
 
     }

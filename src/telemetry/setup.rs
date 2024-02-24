@@ -2,8 +2,7 @@ use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use bastion::{Bastion, run};
-use bastion::prelude::SupervisionStrategy;
+use crate::run;
 use log::*;
 use num_traits::Zero;
 use ringbuf::traits::Observer;
@@ -58,7 +57,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
                 let shared_vec = shared_vec_guard.deref_mut();
                 let index:Option<usize> = shared_vec.iter()
                                         .enumerate()
-                                        .find(|(_,x)|x.monitor_id == that.id && x.name == that.name)
+                                        .find(|(_,x)|x.monitor_id == that.ident.id && x.name == that.ident.name)
                                         .map(|(idx,_)|idx);
                 if let Some(idx) = index {
                   //we add new SteadyTelemetryRx which waits for the old one to be consumed first
@@ -67,8 +66,8 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
                     let mut tt:VecDeque<Box<dyn RxTel>> = VecDeque::new();
                     tt.push_back(Box::new(det));
                     let details = CollectorDetail {
-                        name: that.name,
-                        monitor_id: that.id,
+                        name: that.ident.name,
+                        monitor_id: that.ident.id,
                         temp_barrier: false,
                         telemetry_take: tt,
                     };
@@ -98,59 +97,42 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
 
 pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 {
-//The Troupe is restarted together if one telemetry fails
 
-    let _ = Bastion::supervisor(|supervisor| {
-        //NOTE: I think I want something more clean but this will have to do for now.
-        let supervisor = supervisor.with_strategy(SupervisionStrategy::OneForOne);
 
-        let mut outgoing = None;
-
-        let supervisor = if config::TELEMETRY_SERVER {
+        if config::TELEMETRY_SERVER {
             //build channel for DiagramData type
             let (tx, rx) = graph.channel_builder()
-                .with_compute_refresh_window_bucket_bits(0,0)
+                .with_compute_refresh_window_bucket_bits(0, 0)
                 .with_labels(&["steady_state-telemetry"], true)
                 .with_capacity(config::REAL_CHANNEL_LENGTH_TO_FEATURE)
                 .build();
 
-            outgoing = Some(tx);
-            supervisor.children(|children| {
+            let outgoing = Some(tx);
 
-                let bldr = graph.actor_builder()
-                    .with_name("telemetry-polling");
+            let bldr = graph.actor_builder()
+                .with_name("telemetry-polling");
 
-                let bldr = if config::SHOW_TELEMETRY_ON_TELEMETRY {
-                    bldr.with_avg_mcpu().with_avg_work()
-                } else {
-                    bldr
-                };
+            let bldr = if config::SHOW_TELEMETRY_ON_TELEMETRY {
+                bldr.with_avg_mcpu().with_avg_work()
+            } else {
+                bldr
+            };
 
-                let (c,i) = bldr.build_with_exec(move |monitor|
-                        telemetry::metrics_server::run(monitor
-                                                       , rx.clone()
-                        ));
-
-                c.finish(children, i)
-
-            })
-        } else {
-            supervisor
-        };
+            bldr.build_with_exec(move |context|
+                telemetry::metrics_server::run(context
+                                               , rx.clone()
+                ));
 
 
-        let senders_count: usize = {
-            let guard = run!(graph.all_telemetry_rx.lock());
-            let v = guard.deref();
-            v.len()
-        };
+            let senders_count: usize = {
+                let guard = run!(graph.all_telemetry_rx.lock());
+                let v = guard.deref();
+                v.len()
+            };
 
-        //only spin up the metrics collector if we have a consumer
-        //OR if some actors are sending data we need to consume
-        if config::TELEMETRY_SERVER || senders_count > 0 {
-            supervisor.children(|children| {
-                //we create this child last so we can clone the rx_vec
-                //and capture all the telemetry actors as well
+            //only spin up the metrics collector if we have a consumer
+            //OR if some actors are sending data we need to consume
+            if config::TELEMETRY_SERVER || senders_count > 0 {
                 let all_tel_rx = graph.all_telemetry_rx.clone(); //using Arc here
 
                 let bldr = graph.actor_builder()
@@ -162,22 +144,15 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
                     bldr
                 };
 
-                let (c,i) = bldr.build_with_exec(move |monitor| {
+                bldr.build_with_exec(move |context| {
                     let all_rx = all_tel_rx.clone();
-                    telemetry::metrics_collector::run(monitor
+                    telemetry::metrics_collector::run(context
                                                       , all_rx
                                                       , outgoing.clone()
                     )
                 });
-
-                c.finish(children, i)
-
             }
-            )
-        } else {
-            supervisor
         }
-    }).expect("Telemetry supervisor creation error.");
 }
 
 
@@ -213,7 +188,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                     //Check metrics_consumer for slowness
                                     error!("relay all tx, full telemetry channel detected upon tx from telemetry: {:?} value:{:?} full:{:?} capacity: {:?} "
-                                             , this.name, a, tx.is_full(), tx.tx.capacity());
+                                             , this.ident.name, a, tx.is_full(), tx.tx.capacity());
                                     //store time to do this again later.
                                     actor_status.last_telemetry_error = now;
                                 }
@@ -258,7 +233,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                             if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                 //Check metrics_consumer for slowness
                                 error!("relay all tx, full telemetry channel detected upon tx from telemetry: {} value:{:?} full:{} "
-                                             , this.name, a, tx.is_full());
+                                             , this.ident.name, a, tx.is_full());
                                 //store time to do this again later.
                                 send_tx.last_telemetry_error = now;
                             }
@@ -296,7 +271,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                             if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                 //Check metrics_consumer for slowness
                                 error!("relay all rx, full telemetry channel detected upon rx from telemetry: {} value:{:?} full:{} "
-                                             , this.name, a, rx.is_full());
+                                             , this.ident.name, a, rx.is_full());
                                 //store time to do this again later.
                                 send_rx.last_telemetry_error = now;
                             }

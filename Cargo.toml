@@ -63,7 +63,6 @@ futures          = "0.3.29"  # for Select! Barrier etc and lock::Mutex
 itertools        = "0.12.0"  # helpful smart iter methods
 async-recursion  = "1.0.5"   # simplify the writing of async recursive functions
 structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
-time             = { version = "0.3.31", features = ["formatting"] }# for time::Instant::now()
 uuid             = { version = "0.8.2", features = ["v4"] }
 num-traits       = "0.2.17" # for num::Zero and other generic math traits
 backtrace        = "0.3"
@@ -74,9 +73,8 @@ const_panic      = "0.2.8" # for const panic!()
 hdrhistogram     = "7.5.4"  # for latency histograms
 getrandom        = { version = "0.2.12", features = ["js"] }
 bytes            = { version = "1.5.0", features = [] }
-base64           = "0.21.7" # mostly unstable but we are trying it
+time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] } # for time formatting and supports no-std
 
-#color-eyre = "0.5.5"   # for better error messages
 #rstest = "0.5.2"       # for unit testing
 # TODO: will support systemd, SQRL and rapid prootyping
 
@@ -109,7 +107,9 @@ base64           = "0.21.7" # mostly unstable but we are trying it
 # disruptor        = "0.2.0"   # does not integreate with bastion, but is a lock free ring buffer
 
 [build-dependencies]
-tempfile = "3.10.0"
+tempfile         = "3.10.0"
+color-eyre       = "0.6.2"   # for better error messages
+
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tide             = "0.17.0-beta.1"

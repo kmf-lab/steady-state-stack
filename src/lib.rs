@@ -32,7 +32,7 @@ use std::fmt::Debug;
 pub use bastion;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use futures::lock::Mutex;
 use std::ops::{Deref, DerefMut, Sub};
 use std::future::{Future, ready};
@@ -54,7 +54,6 @@ use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
 use futures::FutureExt; // Provides the .fuse() method
-use futures::pin_mut; // Add pin_mut
 
 // Re-exporting Bastion and run from bastion
 pub use bastion::{Bastion, run};
@@ -86,19 +85,48 @@ pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
 pub enum GraphLivelinessState {
     Building,
     Running,
-    StopRequested, //not yet confirmed by all nodes TODO: not yet implemented
-    StopInProgress, //confirmed by all nodes and now stopping  TODO: not yet implemented
+    StopRequested, //All actors should finish immediate work, may be killed shortly
+    StopVetoed, //Actor must log why they vetoed the stop but can return to StopRequested
+                //only if there are no outstanding raised exceptions
+                //if true and the timeout is also expired we will go to the Stopped state
     Stopped,
 }
 
+pub struct GraphLiveliness {
+    pub(crate) state: GraphLivelinessState,
+    pub(crate) objections: Arc<Vec<RaisedObjection>>,
+    pub(crate) confirmations: Arc<Vec<ActorIdentity>>, //steadyContext
+}
+impl GraphLiveliness {
+    pub fn new() -> Self {
+        GraphLiveliness {
+            state: GraphLivelinessState::Building,
+            objections: Arc::new(Vec::new()),
+            confirmations: Arc::new(Vec::new()),
+        }
+    }
+
+}
+
+pub struct RaisedObjection {
+    actor_id: usize,
+    actor_name: &'static str,
+    reason: String
+}
+
+#[derive(Clone,Debug,Default,Copy)]
+pub struct ActorIdentity {
+    pub(crate) id: usize,
+    pub(crate) name: &'static str,
+}
+
 pub struct SteadyContext {
-    pub(crate) id: usize, //unique identifier for this child group
+    pub(crate) ident: ActorIdentity,
     pub(crate) redundancy: usize,
-    pub(crate) name: & 'static str,
     pub(crate) ctx: Option<BastionContext>,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
-    pub(crate) runtime_state: Arc<Mutex<GraphLivelinessState>>,
+    pub(crate) runtime_state: Arc<Mutex<GraphLiveliness>>,
     pub(crate) count_restarts: Arc<AtomicU32>,
     pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
     pub(crate) actor_metadata: Arc<ActorMetaData>,
@@ -106,16 +134,16 @@ pub struct SteadyContext {
 
 impl SteadyContext {
 
+    pub fn liveliness(&self) -> Arc<Mutex<GraphLiveliness>> {
+        self.runtime_state.clone()
+    }
+
     pub fn args<A: Any>(&self) -> Option<&A> {
         self.args.downcast_ref::<A>()
     }
 
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
-    pub fn name(&self) -> & 'static str {
-        self.name
+    pub fn identity(&self) -> ActorIdentity {
+        self.ident
     }
 
     pub fn ctx(&self) -> &Option<BastionContext> {
@@ -169,11 +197,14 @@ impl SteadyContext {
             telemetry_send_tx,
             telemetry_state,
             last_telemetry_send: start_instant,
-            id: self.id,
-            name: self.name,
+
+            ident: self.ident,
+
+
             ctx: self.ctx,
             redundancy: self.redundancy,
             runtime_state: self.runtime_state,
+
             #[cfg(test)]
             test_count: HashMap::new(),
         }
@@ -189,7 +220,7 @@ pub struct Graph  {
     pub(crate) monitor_count: Arc<AtomicUsize>,
     //used by collector but could grow if we get new actors at runtime
     pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
-    pub(crate) runtime_state: Arc<Mutex<GraphLivelinessState>>,
+    pub(crate) runtime_state: Arc<Mutex<GraphLiveliness>>,
 }
 
 impl Graph {
@@ -207,10 +238,9 @@ impl Graph {
         let count_restarts   = Arc::new(AtomicU32::new(0));
         SteadyContext {
             channel_count,
-            name,
+            ident: ActorIdentity{name, id: self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst)},
             args: self.args.clone(),
             ctx: None, //this is key, we are not running in a graph by design
-            id: self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
             actor_metadata: Arc::new(ActorMetaData::default()),
             redundancy: 1,
             all_telemetry_rx,
@@ -227,38 +257,91 @@ impl Graph {
         crate::ActorBuilder::new(self)
     }
 
-    pub fn start(&mut self) {
 
-        //TODO: move for special debug flag.
-
-        #[cfg(debug_assertions)]
+    fn enable_fail_fast(&self) {
         std::panic::set_hook(Box::new(|panic_info| {
             let backtrace = Backtrace::capture();
-
             // You can log the panic information here if needed
             eprintln!("Application panicked: {}", panic_info);
-
             eprintln!("Backtrace:\n{:?}", backtrace);
-
-            // Exit with status code -1
             exit(-1);
         }));
-        //  */
+    }
+
+    pub fn start(&mut self) {
+
+        // if we are not in release mode we will enable fail fast
+        // this is most helpful while new code is under development
+        if !config::DISABLE_DEBUG_FAIL_FAST {
+            #[cfg(debug_assertions)]
+            self.enable_fail_fast();
+        }
 
         Bastion::start(); //start the graph
         let mut guard = run!(self.runtime_state.lock());
         let state = guard.deref_mut();
-        *state = GraphLivelinessState::Running;
-    }
-    pub fn stop(&mut self) {
-        Bastion::stop();
+        state.state = GraphLivelinessState::Running;
     }
 
-    pub fn request_shutdown(&mut self) {
-        let mut guard = run!(self.runtime_state.lock());
-        let state = guard.deref_mut();
-        *state = GraphLivelinessState::StopRequested;
+
+    pub fn stop(&mut self, clean_shutdown_timeout: Duration) {
+        let now = Instant::now();
+        //duration is not allowed to be less than 3 frames of telemetry
+        //this ensures with safety that all actors had an opportunity to
+        //raise objections and delay the stop. we just take the max of both
+        //durations and do not error or panic since we are shutting down
+        let timeout = clean_shutdown_timeout.max(
+            Duration::from_millis(3*config::TELEMETRY_PRODUCTION_RATE_MS as u64));
+
+        {
+          let mut guard = run!(self.runtime_state.lock());
+          let state = guard.deref_mut();
+          state.state = GraphLivelinessState::StopRequested;
+        }
+        //wait for either the timeout or the state to be Stopped
+        //while try lock then yield and do until time has passed
+        //if we are stopped we will return immediately
+        loop {
+            //yield to other threads as we are trying to stop
+            std::thread::yield_now();
+            //allow bastion to process other work while we wait one frame
+            run!(Delay::new(Duration::from_millis(config::TELEMETRY_PRODUCTION_RATE_MS as u64)));
+            //now check the lock
+            if let Some(mut lock) = self.runtime_state.try_lock() {
+              if lock.state.eq(&GraphLivelinessState::Stopped) {
+                  //TODO: how to make the eager? count down to stopped?
+                  break;
+              }
+              if lock.state.eq(&GraphLivelinessState::StopRequested) {
+                  assert!(lock.objections.is_empty(), "raised objections must be cleared before we can stop");
+                  if now.elapsed() > timeout {
+                      lock.state = GraphLivelinessState::Stopped; //release block
+                      break;
+                  }
+              }
+          }
+        }
+        Bastion::kill();
     }
+
+    pub fn block_until_stopped(&mut self) {
+        run!(async { //TODO: may also need to check for ctrl-c ??? check later
+
+
+         //stay here until we see Stopped!!
+
+
+          //  self.runtime_state.lock
+
+          //  GraphLivelinessState::Stopped
+
+            //Delay::new(Duration::from_secs(opt.duration)).await;
+            //graph.stop(Duration::from_secs(2));
+        });
+
+    }
+
+
 
     /// create a new graph for the application typically done in main
     pub fn new<A: Any+Send+Sync>(args: A) -> Graph {
@@ -267,7 +350,7 @@ impl Graph {
             channel_count: Arc::new(AtomicUsize::new(0)),
             monitor_count: Arc::new(AtomicUsize::new(0)), //this is the count of all monitors
             all_telemetry_rx: Arc::new(Mutex::new(Vec::new())), //this is all telemetry receivers
-            runtime_state: Arc::new(Mutex::new(GraphLivelinessState::Building))
+            runtime_state: Arc::new(Mutex::new(GraphLiveliness::new())),
         }
     }
 
@@ -314,6 +397,7 @@ pub struct Tx<T> {
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
     pub(crate) local_index: usize,
     pub(crate) last_error_send: Instant,
+    pub(crate) is_closed: Arc<AtomicBool>, //only on shutdown
 }
 
 pub struct Rx<T> {
@@ -321,10 +405,19 @@ pub struct Rx<T> {
     pub(crate) rx: InternalReceiver<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
     pub(crate) local_index: usize,
+    pub(crate) is_closed: Arc<AtomicBool>, //only on shutdown
 }
 
 ////////////////////////////////////////////////////////////////
 impl<T> Tx<T> {
+
+    ///the Rx should not expect any more messages than those already found
+    ///on the channel. This is a signal that this actor has probably stopped
+    pub fn mark_closed(&mut self) {
+        self.is_closed.store(true, Ordering::SeqCst);
+    }
+
+
     /// Returns the total capacity of the channel.
     /// This method retrieves the maximum number of messages the channel can hold.
     ///
@@ -538,12 +631,17 @@ impl<T> Tx<T> {
                 // here we will wait until there is room in the channel
 
                 //TODO: a timeout here may be a good idea also abandon on shutdown
-              // elf.tx.push(msg).await
 
                 select! {
                     _ = self.tx.wait_vacant(1).fuse() => {
-                        self.tx.push(msg).await;
-                        Ok(())
+                        match self.tx.push(msg).await {
+                            Ok(_) => {Ok(())}
+                            Err(_) => { //should not happen, internal error
+                                error!("channel is closed");
+                                Ok(())
+                            }
+                        }
+
                     }
                 }
 
@@ -558,6 +656,10 @@ impl<T> Tx<T> {
 
 
 impl<T> Rx<T> {
+
+    pub fn is_closed(&self) {
+        self.is_closed.load(Ordering::SeqCst);
+    }
 
     /// Returns the total capacity of the channel.
     /// This method retrieves the maximum number of messages the channel can hold.
@@ -957,14 +1059,13 @@ impl <const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
 }
 
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
-    pub(crate) id:                   usize, //unique identifier for this child group
-    pub(crate) name:                 & 'static str,
+    pub(crate) ident:                ActorIdentity,
     pub(crate) ctx:                  Option<BastionContext>,
     pub(crate) telemetry_send_tx:    Option<SteadyTelemetrySend<TX_LEN>>,
     pub(crate) telemetry_send_rx:    Option<SteadyTelemetrySend<RX_LEN>>,
     pub(crate) telemetry_state:      Option<SteadyTelemetryActorSend>,
     pub(crate) last_telemetry_send:  Instant,
-    pub(crate) runtime_state:        Arc<Mutex<GraphLivelinessState>>,
+    pub(crate) runtime_state:        Arc<Mutex<GraphLiveliness>>,
     pub(crate) redundancy:           usize,
 
 
@@ -982,7 +1083,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Returns
     /// A `usize` representing the monitor's unique ID.
     pub fn id(&self) -> usize {
-        self.id
+        self.ident.id
     }
 
     /// Retrieves the static name assigned to the LocalMonitor instance.
@@ -990,7 +1091,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Returns
     /// A static string slice (`&'static str`) representing the monitor's name.
     pub fn name(&self) -> & 'static str {
-        self.name
+        self.ident.name
     }
 
     /// Indicates the level of redundancy applied to the monitoring process.
@@ -1012,12 +1113,8 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         Ok(())
     }
 
-    /// Provides access to the shared runtime state of the application.
-    ///
-    /// # Returns
-    /// An `Arc<Mutex<GraphLivelinessState>>` that encapsulates the application's runtime state,
-    /// allowing for concurrent access and modification.
-    pub fn runtime_state(&self) -> Arc<Mutex<GraphLivelinessState>> {
+
+    pub fn liveliness(&self) -> Arc<Mutex<GraphLiveliness>> {
         self.runtime_state.clone()
     }
 
@@ -1313,7 +1410,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 Ok(result)
             },
             Err(error_msg) => {
-                error!("Unexpected error take_async: {} {}", error_msg, self.name);
+                error!("Unexpected error take_async: {} {}", error_msg, self.ident.name);
                 Err(error_msg)
             }
         }
@@ -1399,7 +1496,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             },
             Err(sensitive) => {
                 error!("Unexpected error try_send  telemetry: {} type: {}"
-                    , self.name, type_name::<T>());
+                    , self.ident.name, type_name::<T>());
                 Err(sensitive)
             }
         }
@@ -1478,7 +1575,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                Ok(())
            },
            Err(sensitive) => {
-               error!("Unexpected error send_async telemetry: {} type: {}", self.name, type_name::<T>());
+               error!("Unexpected error send_async telemetry: {} type: {}", self.ident.name, type_name::<T>());
                Err(sensitive)
            }
        }

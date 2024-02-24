@@ -23,7 +23,7 @@ static DOT_PEN_WIDTH: [&str; 16]
 const SQUARE_LIMIT: u128 = (1 << 64)-1; // (u128::MAX as f64).sqrt() as u128;
 
 
-
+#[derive(Default)]
 pub(crate) struct ChannelBlock<T> where T: Counter {
     pub(crate) histogram:      Option<Histogram<T>>,
     pub(crate) runner:         u128,
@@ -38,16 +38,16 @@ pub struct ChannelStatsComputer {
     pub(crate) show_type: Option<& 'static str>,
     pub(crate) type_byte_count: usize, //used to know bytes/sec sent
 
-    pub(crate) percentiles_inflight: Vec<Percentile>, //to show
-    pub(crate) percentiles_consumed: Vec<Percentile>, //to show
+    pub(crate) percentiles_filled: Vec<Percentile>, //to show
+    pub(crate) percentiles_rate: Vec<Percentile>, //to show
     pub(crate) percentiles_latency: Vec<Percentile>, //to show
 
-    pub(crate) std_dev_inflight: Vec<StdDev>, //to show
-    pub(crate) std_dev_consumed: Vec<StdDev>, //to show
+    pub(crate) std_dev_filled: Vec<StdDev>, //to show
+    pub(crate) std_dev_rate: Vec<StdDev>, //to show
     pub(crate) std_dev_latency: Vec<StdDev>, //to show
 
-    pub(crate) show_avg_inflight:bool,
-    pub(crate) show_avg_consumed:bool,
+    pub(crate) show_avg_filled:bool,
+    pub(crate) show_avg_rate:bool,
     pub(crate) show_avg_latency:bool,
 
     pub(crate) rate_trigger: Vec<(Trigger<Rate>, AlertColor)>, //if used base is green
@@ -55,8 +55,8 @@ pub struct ChannelStatsComputer {
     pub(crate) latency_trigger: Vec<(Trigger<Duration>, AlertColor)>, //if used base is green
 
     // every one of these gets the sample, once the sample is full(N) we drop and add one.
-    pub(crate) history_inflight: VecDeque<ChannelBlock<u16>>, //biggest channel length is 64K?
-    pub(crate) history_consumed: VecDeque<ChannelBlock<u64>>,
+    pub(crate) history_filled: VecDeque<ChannelBlock<u16>>, //biggest channel length is 64K?
+    pub(crate) history_rate: VecDeque<ChannelBlock<u64>>,
     pub(crate) history_latency: VecDeque<ChannelBlock<u64>>,
 
     pub(crate) bucket_frames_count: usize, //when this bucket is full we add a new one
@@ -67,6 +67,10 @@ pub struct ChannelStatsComputer {
     pub(crate) time_label: String,
     pub(crate) prev_take: i128,
     pub(crate) capacity: usize,
+
+    pub(crate) build_filled_histogram: bool,
+    pub(crate) build_rate_histogram: bool,
+    pub(crate) build_latency_histogram: bool,
 
     pub(crate) current_filled: Option<ChannelBlock<u16>>,
     pub(crate) current_rate: Option<ChannelBlock<u64>>,
@@ -79,45 +83,6 @@ impl ChannelStatsComputer {
     pub(crate) fn init(&mut self, meta: &Arc<ChannelMetaData>)  {
         assert!(meta.capacity > 0, "capacity must be greater than 0");
         self.capacity = meta.capacity;
-
-        //self.filled_trigger
-        //   let build_inflight_histogram =  !self.percentiles_inflight.is_empty();
-
-
-        match Histogram::<u16>::new_with_bounds(1, self.capacity as u64, 0) {
-            Ok(h) => {
-                self.history_inflight.push_back(ChannelBlock {
-                    histogram: Some(h), runner: 0, sum_of_squares: 0,
-                });
-            }
-            Err(e) => {
-                error!("unexpected, unable to create histogram of 1 to {} capacity with sigfig {} err: {}"
-                             ,self.capacity, 2, e);
-            }
-        }
-
-        match Histogram::<u64>::new(2) {
-            Ok(h) => {
-                self.history_consumed.push_back(ChannelBlock {
-                    histogram: Some(h), runner: 0, sum_of_squares: 0,
-                });
-            }
-            Err(e) => {
-                error!("unexpected, unable to create histogram of 2 sigfig err: {}", e);
-            }
-        }
-
-        match Histogram::<u64>::new(2) {
-            Ok(h) => {
-                self.history_latency.push_back(ChannelBlock {
-                    histogram: Some(h), runner: 0, sum_of_squares: 0,
-                });
-            }
-            Err(e) => {
-                error!("unexpected, unable to create histogram of 2 sigfig err: {}", e);
-            }
-        }
-
 
         self.frame_rate_ms = config::TELEMETRY_PRODUCTION_RATE_MS as u128;
         self.refresh_rate_in_bits=meta.refresh_rate_in_bits;
@@ -134,48 +99,119 @@ impl ChannelStatsComputer {
         self.show_type = meta.show_type;
         self.type_byte_count = meta.type_byte_count;
 
-        self.show_avg_inflight = meta.avg_filled;
-        self.show_avg_consumed = meta.avg_rate;
+        self.show_avg_filled = meta.avg_filled;
+        self.show_avg_rate = meta.avg_rate;
         self.show_avg_latency = meta.avg_latency;
 
-        self.percentiles_inflight = meta.percentiles_inflight.clone();
-        self.percentiles_consumed = meta.percentiles_consumed.clone();
+        self.percentiles_filled = meta.percentiles_filled.clone();
+        self.percentiles_rate = meta.percentiles_rate.clone();
         self.percentiles_latency = meta.percentiles_latency.clone();
 
-        self.std_dev_inflight = meta.std_dev_inflight.clone();
-        self.std_dev_consumed = meta.std_dev_consumed.clone();
+        self.std_dev_filled = meta.std_dev_inflight.clone();
+        self.std_dev_rate = meta.std_dev_consumed.clone();
         self.std_dev_latency  = meta.std_dev_latency.clone();
 
         self.rate_trigger = meta.trigger_rate.clone();
         self.filled_trigger = meta.trigger_filled.clone();
         self.latency_trigger = meta.trigger_latency.clone();
 
+
+
+        //we set the build * histograms last after we bring in all the triggers
+
+        let trigger_uses_histogram = self.filled_trigger.iter().any(|t|
+            matches!(t, (Trigger::PercentileAbove(_,_),_) | (Trigger::PercentileBelow(_,_),_))
+        );
+        self.build_filled_histogram = trigger_uses_histogram || !self.percentiles_filled.is_empty();
+
+        if self.build_filled_histogram {
+            match Histogram::<u16>::new_with_bounds(1, self.capacity as u64, 0) {
+                Ok(h) => {
+                    self.history_filled.push_back(ChannelBlock {
+                        histogram: Some(h),
+                        runner: 0,
+                        sum_of_squares: 0,
+                    });
+                }
+                Err(e) => {
+                    error!("unexpected, unable to create histogram of 1 to {} capacity with sigfig {} err: {}"
+                             ,self.capacity, 2, e);
+                }
+            }
+        } else {
+            self.history_filled.push_back(ChannelBlock::default());
+        }
+
+        let trigger_uses_histogram = self.rate_trigger.iter().any(|t|
+            matches!(t, (Trigger::PercentileAbove(_,_),_) | (Trigger::PercentileBelow(_,_),_))
+        );
+        self.build_rate_histogram = trigger_uses_histogram || !self.percentiles_rate.is_empty();
+
+        if self.build_rate_histogram {
+            match Histogram::<u64>::new(2) {
+                Ok(h) => {
+                    self.history_rate.push_back(ChannelBlock {
+                        histogram: Some(h),
+                        runner: 0,
+                        sum_of_squares: 0,
+                    });
+                }
+                Err(e) => {
+                    error!("unexpected, unable to create histogram of 2 sigfig err: {}", e);
+                }
+            }
+        } else {
+            self.history_rate.push_back(ChannelBlock::default());
+        }
+
+
+        let trigger_uses_histogram = self.latency_trigger.iter().any(|t|
+            matches!(t, (Trigger::PercentileAbove(_,_),_) | (Trigger::PercentileBelow(_,_),_))
+        );
+        self.build_latency_histogram = trigger_uses_histogram || !self.percentiles_latency.is_empty();
+
+        if self.build_latency_histogram {
+            match Histogram::<u64>::new(2) {
+                Ok(h) => {
+                    self.history_latency.push_back(ChannelBlock {
+                        histogram: Some(h),
+                        runner: 0,
+                        sum_of_squares: 0,
+                    });
+                }
+                Err(e) => {
+                    error!("unexpected, unable to create histogram of 2 sigfig err: {}", e);
+                }
+            }
+        } else {
+            self.history_latency.push_back(ChannelBlock::default());
+        }
         self.prev_take = 0i128;
     }
 
     pub(crate) fn accumulate_data_frame(&mut self, filled: u64, rate: u64) {
 
-            self.history_inflight.iter_mut().for_each(|f| {
+            self.history_filled.iter_mut().for_each(|f| {
                  if let Some(ref mut h) = &mut f.histogram {
                      if let Err(e) = h.record(filled) {
                          error!("unexpected, unable to record filled {} err: {}", filled, e);
                      }
                  }
-                 let inflight:u64 = PLACES_TENS* filled;
-                 f.runner = f.runner.saturating_add(inflight as u128);
-                 f.sum_of_squares = f.sum_of_squares.saturating_add((inflight as u128).pow(2));
+                 let filled:u64 = PLACES_TENS* filled;
+                 f.runner = f.runner.saturating_add(filled as u128);
+                 f.sum_of_squares = f.sum_of_squares.saturating_add((filled as u128).pow(2));
             });
 
-            self.history_consumed.iter_mut().for_each(|f| {
+            self.history_rate.iter_mut().for_each(|f| {
                 if let Some(ref mut h) = &mut f.histogram {
                     if let Err(e) = h.record(rate) {
                         //histogram only does raw values
-                        error!("unexpected, unable to record inflight {} err: {}", rate, e);
+                        error!("unexpected, unable to record rate {} err: {}", rate, e);
                     }
                 }
-                let consumed:u64 = PLACES_TENS* rate;
-                f.runner = f.runner.saturating_add(consumed as u128);
-                f.sum_of_squares = f.sum_of_squares.saturating_add((consumed as u128).pow(2));
+                let rate:u64 = PLACES_TENS* rate;
+                f.runner = f.runner.saturating_add(rate as u128);
+                f.sum_of_squares = f.sum_of_squares.saturating_add((rate as u128).pow(2));
 
             });
 
@@ -208,52 +244,63 @@ impl ChannelStatsComputer {
             if self.bucket_frames_count >= (1<<self.refresh_rate_in_bits) {
                 self.bucket_frames_count = 0;
 
-                if self.history_inflight.len() >= (1<<self.window_bucket_in_bits) {
-                    self.current_filled = self.history_inflight.pop_front();
+                if self.history_filled.len() >= (1<<self.window_bucket_in_bits) {
+                    self.current_filled = self.history_filled.pop_front();
                 }
-                if self.history_consumed.len() >= (1<<self.window_bucket_in_bits) {
-                    self.current_rate = self.history_consumed.pop_front();
+                if self.history_rate.len() >= (1<<self.window_bucket_in_bits) {
+                    self.current_rate = self.history_rate.pop_front();
                 }
                 if self.history_latency.len() >= (1<<self.window_bucket_in_bits) {
                     self.current_latency = self.history_latency.pop_front();
                 }
 
-                //if we can not create a histogram we act like the window is disabled and provide no data
-                match Histogram::<u16>::new_with_bounds(1, self.capacity as u64, 0) {
-                    Ok(h) => {
-                        self.history_inflight.push_back(ChannelBlock {
-                            histogram: Some(h), runner: 0, sum_of_squares: 0,
-                        });
-                    }
-                    Err(e) => {
-                        error!("unexpected, unable to create histogram of 1 to {} capacity with sigfig {} err: {}"
+                if self.build_filled_histogram {
+                    //if we can not create a histogram we act like the window is disabled and provide no data
+                    match Histogram::<u16>::new_with_bounds(1, self.capacity as u64, 0) {
+                        Ok(h) => {
+                            self.history_filled.push_back(ChannelBlock {
+                                histogram: Some(h), runner: 0, sum_of_squares: 0,
+                            });
+                        }
+                        Err(e) => {
+                            error!("unexpected, unable to create histogram of 1 to {} capacity with sigfig {} err: {}"
                              ,self.capacity, 2, e);
+                        }
                     }
+                } else {
+                    self.history_filled.push_back(ChannelBlock::default());
                 }
 
-
-                //if we can not create a histogram we act like the window is disabled and provide no data
-                match Histogram::<u64>::new(2) {
-                    Ok(h) => {
-                        self.history_consumed.push_back(ChannelBlock {
-                            histogram: Some(h), runner: 0, sum_of_squares: 0,
-                        });
+                if self.build_rate_histogram {
+                    //if we can not create a histogram we act like the window is disabled and provide no data
+                    match Histogram::<u64>::new(2) {
+                        Ok(h) => {
+                            self.history_rate.push_back(ChannelBlock {
+                                histogram: Some(h), runner: 0, sum_of_squares: 0,
+                            });
+                        }
+                        Err(e) => {
+                            error!("unexpected, unable to create histogram of 2 sigfig err: {}", e);
+                        }
                     }
-                    Err(e) => {
-                        error!("unexpected, unable to create histogram of 2 sigfig err: {}", e);
-                    }
+                } else {
+                    self.history_rate.push_back(ChannelBlock::default());
                 }
 
-                //if we can not create a histogram we act like the window is disabled and provide no data
-                match Histogram::<u64>::new(2) {
-                    Ok(h) => {
-                        self.history_latency.push_back(ChannelBlock {
-                            histogram: Some(h), runner: 0, sum_of_squares: 0,
-                        });
+                if self.build_latency_histogram {
+                    //if we can not create a histogram we act like the window is disabled and provide no data
+                    match Histogram::<u64>::new(2) {
+                        Ok(h) => {
+                            self.history_latency.push_back(ChannelBlock {
+                                histogram: Some(h), runner: 0, sum_of_squares: 0,
+                            });
+                        }
+                        Err(e) => {
+                            error!("unexpected, unable to create histogram of 2 sigfig err: {}", e);
+                        }
                     }
-                    Err(e) => {
-                        error!("unexpected, unable to create histogram of 2 sigfig err: {}", e);
-                    }
+                } else {
+                    self.history_latency.push_back(ChannelBlock::default());
                 }
 
             }
@@ -352,9 +399,9 @@ impl ChannelStatsComputer {
                                 , "rate"
                                 , "per/sec"
                                 , (1000, self.frame_rate_ms as usize)
-                                , self.show_avg_consumed
-                                , & self.std_dev_consumed
-                                , & self.percentiles_consumed);
+                                , self.show_avg_rate
+                                , & self.std_dev_rate
+                                , & self.percentiles_rate);
         }
 
         if let Some(ref current_filled) = self.current_filled {
@@ -365,9 +412,9 @@ impl ChannelStatsComputer {
                                 , "filled"
                                 , "%"
                                 , (100, self.capacity)
-                                , self.show_avg_inflight
-                                , & self.std_dev_inflight
-                                , & self.percentiles_inflight);
+                                , self.show_avg_filled
+                                , & self.std_dev_filled
+                                , & self.percentiles_filled);
         }
 
         if let Some(ref current_latency) = self.current_latency {
@@ -678,7 +725,12 @@ mod stats_tests {
     use log::*;
     use crate::util;
 
-    fn build_start_computer() -> ChannelStatsComputer {
+    ////////////////////////////////
+    // each of these tests cover both sides of above and below triggers with the matching label display
+    ///////////////////////////////
+
+    #[test]
+    fn filled_avg_percent_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -687,18 +739,8 @@ mod stats_tests {
         cmd.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
         computer.init(&Arc::new(cmd));
-        computer.frame_rate_ms = 3; // one refresh is 4x3 = 12ms one window is 12ms * 4 = 48ms
-        computer
-    }
-
-    ////////////////////////////////
-    // each of these tests cover both sides of above and below triggers with the matching label display
-    ///////////////////////////////
-
-    #[test]
-    fn filled_avg_percent_trigger() {
-        let mut computer = build_start_computer();
-        computer.show_avg_inflight = true;
+        computer.frame_rate_ms = 3;
+        computer.show_avg_filled = true;
 
         let c = 1<<(computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
         for _ in 0..c {                     // 256 * 0.81 = 207
@@ -715,9 +757,9 @@ mod stats_tests {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_inflight) = computer.current_filled {
@@ -728,9 +770,9 @@ mod stats_tests {
                                     , &"filled"
                                     , &"%"
                                     ,(100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -756,14 +798,22 @@ mod stats_tests {
 
     #[test]
     fn filled_avg_fixed_trigger() {
-        let mut computer = build_start_computer();
-        computer.show_avg_inflight = true;
+        util::logger::initialize();
+
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 256;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd));
+        computer.frame_rate_ms = 3;
+        computer.show_avg_filled = true;
 
         let c = 1<<(computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
         for _ in 0..c {                     // 256 * 0.81 = 207
-            let inflight = (computer.capacity as f32 * 0.81f32) as u64;
+            let filled = (computer.capacity as f32 * 0.81f32) as u64;
             let consumed = 100;
-            computer.accumulate_data_frame(inflight,consumed);
+            computer.accumulate_data_frame(filled, consumed);
         }
 
         let mut display_label = String::new();
@@ -774,9 +824,9 @@ mod stats_tests {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
@@ -787,9 +837,9 @@ mod stats_tests {
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -816,8 +866,16 @@ mod stats_tests {
 
     #[test]
     fn filled_std_dev_trigger() {
-        let mut computer = build_start_computer();
-        computer.show_avg_inflight = true;
+        util::logger::initialize();
+
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 256;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd));
+        computer.frame_rate_ms = 3;
+        computer.show_avg_filled = true;
 
         let mean = computer.capacity as f64 * 0.81; // mean value just above test
         let expected_std_dev = 10.0; // standard deviation
@@ -831,7 +889,7 @@ mod stats_tests {
              computer.accumulate_data_frame(value, 100, );
         }
 
-        computer.std_dev_inflight.push(StdDev::two_and_a_half());
+        computer.std_dev_filled.push(StdDev::two_and_a_half());
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
             compute_labels(computer.frame_rate_ms
@@ -840,9 +898,9 @@ mod stats_tests {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
@@ -853,9 +911,9 @@ mod stats_tests {
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -872,8 +930,8 @@ mod stats_tests {
         } //note this is "near" expected std
         assert_eq!(display_label, "Avg filled: 80 %\nfilled 2.5StdDev: 30.455 per frame (3ms duration)\n");
 
-        computer.std_dev_inflight.clear();
-        computer.std_dev_inflight.push(StdDev::one());
+        computer.std_dev_filled.clear();
+        computer.std_dev_filled.push(StdDev::one());
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
             compute_labels(computer.frame_rate_ms
@@ -882,9 +940,9 @@ mod stats_tests {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
@@ -895,9 +953,9 @@ mod stats_tests {
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -926,8 +984,23 @@ mod stats_tests {
 
     #[test]
     fn filled_percentile_trigger() {
+        util::logger::initialize();
 
-        let mut computer = build_start_computer();
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 256;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+
+        cmd.percentiles_filled.push(Percentile::p25());
+        cmd.percentiles_filled.push(Percentile::p50());
+        cmd.percentiles_filled.push(Percentile::p75());
+        cmd.percentiles_filled.push(Percentile::p90());
+
+        let mut computer = ChannelStatsComputer::default();
+        computer.frame_rate_ms = 3;
+        assert!(computer.percentiles_filled.is_empty());
+        computer.init(&Arc::new(cmd));
+        assert!(!computer.percentiles_filled.is_empty());
 
         let mean = computer.capacity as f64 * 0.13;
         let expected_std_dev = 10.0; // standard deviation
@@ -941,10 +1014,7 @@ mod stats_tests {
             computer.accumulate_data_frame(value, 100, );
         }
 
-        computer.percentiles_inflight.push(Percentile::p25());
-        computer.percentiles_inflight.push(Percentile::p50());
-        computer.percentiles_inflight.push(Percentile::p75());
-        computer.percentiles_inflight.push(Percentile::p90());
+
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
             compute_labels(computer.frame_rate_ms
@@ -953,26 +1023,30 @@ mod stats_tests {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
+            assert!(computer.build_filled_histogram);
+            assert!(!computer.percentiles_filled.is_empty());
             compute_labels(computer.frame_rate_ms
                            , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
                            ,&mut display_label, &current_filled
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
+        } else {
+            assert!(!computer.build_filled_histogram);
+            assert!(false); //we should not be here
         }
 
         if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
+
             compute_labels(computer.frame_rate_ms
                            , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
                            ,&mut display_label, &current_latency
@@ -1003,9 +1077,16 @@ mod stats_tests {
     ////////////////////////////////////////////////////////
     #[test]
     fn rate_avg_trigger() {
+        util::logger::initialize();
 
-        let mut computer = build_start_computer();
-        computer.show_avg_consumed = true;
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 256;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd));
+        computer.frame_rate_ms = 3;
+        computer.show_avg_rate = true;
 
         //we consume 100 messages every computer.frame_rate_ms which is 3 ms
         //so per ms we are consuming about 33.3 messages
@@ -1025,9 +1106,9 @@ mod stats_tests {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
@@ -1038,9 +1119,9 @@ mod stats_tests {
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -1070,8 +1151,16 @@ mod stats_tests {
 
     #[test]
     fn rate_std_dev_trigger() {
-        let mut computer = build_start_computer();
-        computer.show_avg_consumed = true;
+        util::logger::initialize();
+
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 256;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd));
+        computer.frame_rate_ms = 3;
+        computer.show_avg_rate = true;
 
         let mean = computer.capacity as f64 * 0.81; // mean value just above test
         let expected_std_dev = 10.0; // standard deviation
@@ -1085,7 +1174,7 @@ mod stats_tests {
             computer.accumulate_data_frame(100, value, );
         }
 
-        computer.std_dev_consumed.push(StdDev::two_and_a_half());
+        computer.std_dev_rate.push(StdDev::two_and_a_half());
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
             compute_labels(computer.frame_rate_ms
@@ -1094,9 +1183,9 @@ mod stats_tests {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
@@ -1107,9 +1196,9 @@ mod stats_tests {
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -1126,8 +1215,8 @@ mod stats_tests {
         } //note this is "near" expected std
         assert_eq!(display_label, "Avg rate: 68395 per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
 
-        computer.std_dev_consumed.clear();
-        computer.std_dev_consumed.push(StdDev::one());
+        computer.std_dev_rate.clear();
+        computer.std_dev_rate.push(StdDev::one());
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
             compute_labels(computer.frame_rate_ms
@@ -1136,9 +1225,9 @@ mod stats_tests {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
@@ -1149,9 +1238,9 @@ mod stats_tests {
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -1180,8 +1269,19 @@ mod stats_tests {
     ///////////////////
     #[test]
     fn rate_percentile_trigger() {
+        util::logger::initialize();
 
-        let mut computer = build_start_computer();
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 256;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+        cmd.percentiles_rate.push(Percentile::p25());
+        cmd.percentiles_rate.push(Percentile::p50());
+        cmd.percentiles_rate.push(Percentile::p75());
+        cmd.percentiles_rate.push(Percentile::p90());
+        let mut computer = ChannelStatsComputer::default();
+        computer.frame_rate_ms = 3;
+        computer.init(&Arc::new(cmd));
 
         let mean = computer.capacity as f64 * 0.13;
         let expected_std_dev = 10.0; // standard deviation
@@ -1195,10 +1295,7 @@ mod stats_tests {
             computer.accumulate_data_frame(100, value, );
         }
 
-        computer.percentiles_consumed.push(Percentile::p25());
-        computer.percentiles_consumed.push(Percentile::p50());
-        computer.percentiles_consumed.push(Percentile::p75());
-        computer.percentiles_consumed.push(Percentile::p90());
+
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
             compute_labels(computer.frame_rate_ms
@@ -1207,9 +1304,9 @@ mod stats_tests {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
@@ -1220,9 +1317,9 @@ mod stats_tests {
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -1237,7 +1334,7 @@ mod stats_tests {
                                     , & computer.std_dev_latency
                                     , & computer.percentiles_latency);
         } //note this is "near" expected std
-        assert_eq!(display_label, "rate 25%ile 8333 per/sec\nrate 50%ile 9333 per/sec\nrate 75%ile 12667 per/sec\nrate 90%ile 16333 per/sec\n");
+        assert_eq!(display_label, "rate 25%ile 781 per/sec\nrate 50%ile 875 per/sec\nrate 75%ile 1188 per/sec\nrate 90%ile 1531 per/sec\n");
 
         // Define a trigger with a standard deviation condition
         assert!(computer.triggered_rate(&Trigger::PercentileAbove(Percentile::p90(), Rate::per_millis(47))), "Trigger should fire when standard deviation from the average filled is above the threshold");
@@ -1251,8 +1348,15 @@ mod stats_tests {
 
 #[test]
 fn latency_avg_trigger() {
+    util::logger::initialize();
 
-    let mut computer = build_start_computer();
+    let mut cmd = ChannelMetaData::default();
+    cmd.capacity = 256;
+    cmd.window_bucket_in_bits = 2;
+    cmd.refresh_rate_in_bits = 2;
+    let mut computer = ChannelStatsComputer::default();
+    computer.init(&Arc::new(cmd));
+    computer.frame_rate_ms = 3;
     computer.show_avg_latency = true;
 
     let mean = computer.capacity as f64 * 0.81; // mean value just above test
@@ -1276,9 +1380,9 @@ fn latency_avg_trigger() {
                                 , &"rate"
                                 , &"per/sec"
                                 , (1000, computer.frame_rate_ms as usize)
-                                , computer.show_avg_consumed
-                                , & computer.std_dev_consumed
-                                , & computer.percentiles_consumed);
+                                , computer.show_avg_rate
+                                , & computer.std_dev_rate
+                                , & computer.percentiles_rate);
     }
 
     if let Some(ref current_filled) = computer.current_filled {
@@ -1289,9 +1393,9 @@ fn latency_avg_trigger() {
                                 , &"filled"
                                 , &"%"
                                 , (100, computer.capacity)
-                                , computer.show_avg_inflight
-                                , & computer.std_dev_inflight
-                                , & computer.percentiles_inflight);
+                                , computer.show_avg_filled
+                                , & computer.std_dev_filled
+                                , & computer.percentiles_filled);
     }
 
     if let Some(ref current_latency) = computer.current_latency {
@@ -1320,7 +1424,15 @@ fn latency_avg_trigger() {
 
     #[test]
     fn latency_std_dev_trigger() {
-        let mut computer = build_start_computer();
+        util::logger::initialize();
+
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 256;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd));
+        computer.frame_rate_ms = 3;
         computer.show_avg_latency = true;
         let mean = 5.0; // mean rate
         let std_dev = 1.0; // standard deviation
@@ -1344,9 +1456,9 @@ fn latency_avg_trigger() {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
@@ -1357,9 +1469,9 @@ fn latency_avg_trigger() {
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -1386,17 +1498,27 @@ fn latency_avg_trigger() {
 
     #[test]
     fn latency_percentile_trigger() {
-        let mut computer = build_start_computer();
+        util::logger::initialize();
+
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 256;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+        cmd.percentiles_latency.push(Percentile::p25());
+        cmd.percentiles_latency.push(Percentile::p50());
+        cmd.percentiles_latency.push(Percentile::p75());
+        cmd.percentiles_latency.push(Percentile::p90());
+        let mut computer = ChannelStatsComputer::default();
+        computer.frame_rate_ms = 3;
+        computer.init(&Arc::new(cmd));
+
         // Simulate rate data accumulation
         let c = 1<<(computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
         for _ in 0..c {
             computer.accumulate_data_frame((computer.capacity-1) as u64, (5.0 * 1.2) as u64, ); // Simulating rate being consistently above a certain value
         }
 
-        computer.percentiles_latency.push(Percentile::p25());
-        computer.percentiles_latency.push(Percentile::p50());
-        computer.percentiles_latency.push(Percentile::p75());
-        computer.percentiles_latency.push(Percentile::p90());
+
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
             compute_labels(computer.frame_rate_ms
@@ -1405,9 +1527,9 @@ fn latency_avg_trigger() {
                                     , &"rate"
                                     , &"per/sec"
                                     , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_consumed
-                                    , & computer.std_dev_consumed
-                                    , & computer.percentiles_consumed);
+                                    , computer.show_avg_rate
+                                    , & computer.std_dev_rate
+                                    , & computer.percentiles_rate);
         }
 
         if let Some(ref current_filled) = computer.current_filled {
@@ -1418,9 +1540,9 @@ fn latency_avg_trigger() {
                                     , &"filled"
                                     , &"%"
                                     , (100, computer.capacity)
-                                    , computer.show_avg_inflight
-                                    , & computer.std_dev_inflight
-                                    , & computer.percentiles_inflight);
+                                    , computer.show_avg_filled
+                                    , & computer.std_dev_filled
+                                    , & computer.percentiles_filled);
         }
 
         if let Some(ref current_latency) = computer.current_latency {
@@ -1434,15 +1556,18 @@ fn latency_avg_trigger() {
                                     , computer.show_avg_latency
                                     , & computer.std_dev_latency
                                     , & computer.percentiles_latency);
-        } //note this is "near" expected std
-        assert_eq!(display_label, "latency 25%ile 127 ms\nlatency 50%ile 127 ms\nlatency 75%ile 127 ms\nlatency 90%ile 127 ms\n");
+        } else {
+            assert!(!computer.build_latency_histogram);
+
+        }//note this is "near" expected std
+        assert_eq!(display_label, "latency 25%ile 1367 ms\nlatency 50%ile 1367 ms\nlatency 75%ile 1367 ms\nlatency 90%ile 1367 ms\n");
 
 
         // Define a trigger for average rate above a threshold
-        assert!(computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(100) )), "Trigger should fire when the average rate is above 5");
-        assert!(!computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(202) )), "Trigger should fire when the average rate is above 5");
-        assert!(!computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(100) )), "Trigger should fire when the average rate is above 5");
-        assert!(computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(202) )), "Trigger should fire when the average rate is above 5");
+        assert!(computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(100) )), "Trigger should fire when the average rate is above");
+        assert!(!computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(2000) )), "Trigger should fire when the average rate is above");
+        assert!(!computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(100) )), "Trigger should fire when the average rate is below");
+        assert!(computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(2000) )), "Trigger should fire when the average rate is below");
 
 
 
@@ -1618,6 +1743,9 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
                          , (rational_adjust.0 as f32 * h.value_at_percentile(p.percentile()) as f32)
                              / rational_adjust.1 as f32
                 ));
+        } else {
+            target.push_str("InternalError"); //not expected to happen
+            error!("InternalError: no histogram for required percentile {:?}",p);
         }
         target.push(' ');
         target.push_str(unit);

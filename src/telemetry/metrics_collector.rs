@@ -2,13 +2,13 @@ use std::collections::VecDeque;
 
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::time::Instant;
 use futures::lock::Mutex;
 use futures_timer::Delay;
 
 #[allow(unused_imports)]
 use log::*; //allow unused import
 
-use time::Instant;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
 use crate::{config, SteadyContext, SteadyTx, Tx};
 
@@ -131,7 +131,7 @@ pub(crate) async fn run(_context: SteadyContext
         //NOTE: target 32ms updates for 30FPS, with a queue of 8 so writes must be no faster than 4ms
         //      we could double this speed if we have real animation needs but that is unlikely
 
-        let duration_micros = last_instant.elapsed().whole_microseconds();
+        let duration_micros = last_instant.elapsed().as_micros() as i128;
         let sleep_duration = (1000i128*config::TELEMETRY_PRODUCTION_RATE_MS as i128)-duration_micros;
         if sleep_duration.is_positive() { //only sleep as long as we need
             Delay::new(std::time::Duration::from_micros(sleep_duration as u64)).await;

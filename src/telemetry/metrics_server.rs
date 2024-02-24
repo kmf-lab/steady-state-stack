@@ -1,5 +1,5 @@
 use std::ops::{Deref, DerefMut};
-use std::process::{Command, exit};
+use std::process::{exit};
 use std::sync::Arc;
 use futures::lock::Mutex;
 use futures::FutureExt; // Provides the .fuse() method
@@ -39,12 +39,12 @@ struct State {
 pub(crate) async fn run(context: SteadyContext
                         , rx: SteadyRx<DiagramData>) -> std::result::Result<(),()> {
 
-    let runtime_state = if config::SHOW_TELEMETRY_ON_TELEMETRY {
+    let liveliness = if config::SHOW_TELEMETRY_ON_TELEMETRY {
         //NOTE: this line makes this node monitored on the telemetry
         let m = context.into_monitor([&rx], []);
-        m.runtime_state()
+        m.liveliness()
     } else {
-        context.runtime_state
+        context.liveliness()
     };
 
     let mut rx_guard = rx.lock().await;
@@ -88,7 +88,9 @@ pub(crate) async fn run(context: SteadyContext
         });
 
     // NOTE: this must be done after we defined all our routes
-    let server_handle = app.listen(format!("{}:{}",config::TELEMETRY_SERVER_IP,config::TELEMETRY_SERVER_PORT));
+    let server_handle = app.listen(format!("{}:{}"
+                                           ,config::telemetry_server_ip()
+                                           ,config::telemetry_server_port()));
 
     // This future must be pinned before awaiting it to ensure it remains fixed in memory,
     // as it might contain self-references or internal state that requires stable addresses.
@@ -188,11 +190,14 @@ pub(crate) async fn run(context: SteadyContext
                                   //since we got the edge data we know we have a full frame
                                   //and we can update the history
 
+                              //TODO: we can not stop early we need to know that the other
+                              //      actors have not raised objections to the shutdown.
                                 let flush_all:bool =
-                                    if let Some(state) = runtime_state.try_lock() {
-                                        *state == GraphLivelinessState::StopInProgress
-                                        || *state == GraphLivelinessState::StopRequested
-                                        || *state == GraphLivelinessState::Stopped
+                                    if let Some(lock) = liveliness.try_lock() {
+
+                                        lock.state == GraphLivelinessState::StopRequested
+                                        || lock.state == GraphLivelinessState::Stopped
+
                                     } else {
                                         //unable to lock so be safe and flush
                                         true

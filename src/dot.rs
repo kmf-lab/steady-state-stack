@@ -16,7 +16,9 @@ use std::fmt::Write;
 use bytes::{BufMut, BytesMut};
 use log::*;
 use num_traits::Zero;
-use time::{format_description, OffsetDateTime};
+
+
+
 use uuid::Uuid;
 use crate::actor_stats::ActorStatsComputer;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
@@ -254,7 +256,6 @@ pub(crate) struct FrameHistory {
     pub(crate) packed_take_writer: PackedVecWriter<i128>,
     pub(crate) history_buffer: BytesMut,
     pub(crate) guid: String,
-    pub(crate) format: Vec<format_description::FormatItem<'static>>,
     output_log_path: PathBuf,
     file_bytes_written: usize,
     file_buffer_last_seq: u64,
@@ -284,7 +285,6 @@ impl FrameHistory {
             history_buffer: BytesMut::new(),
             //immutable details
             guid: Uuid::new_v4().to_string(), // Unique GUID for the run instance
-            format: format_description::parse("[year]_[month]_[day]").expect("Invalid format description"),
             output_log_path: PathBuf::from("output_logs"),
             //running state
             file_bytes_written: 0usize,
@@ -358,16 +358,21 @@ impl FrameHistory {
 
 
     pub async fn update(&mut self, sequence: u64, flush_all: bool) {
+        use time::OffsetDateTime;
+        use time::macros::format_description;
+
         //we write to disk in blocks just under a fixed power of two size
         //if we are about to enter a new block ensure we write the old one
         if flush_all || self.will_span_into_next_block()  {
             let continued_buffer:BytesMut = self.history_buffer.split_off(self.buffer_bytes_count);
+            let format = format_description!("[year]_[month]_[day]");
+            // Assume `log_time` is an instance of `OffsetDateTime`. For example:
             let log_time = OffsetDateTime::now_utc();
-            let file_to_append_onto = format!("{}_{}_log.dat"
-                                              , log_time
-                                                  .format(&self.format)
-                                                  .unwrap_or("0000_00_00".to_string())
-                                              , self.guid);
+            // Use the format description to format `log_time`.
+            let file_to_append_onto = format!("{}_{}_log.dat",
+                                              log_time.format(&format).unwrap_or_else(|_| "0000_00_00".to_string()),
+                                              self.guid);
+
 
             //if we are starting a new file reset our counter to zero
             if !self.last_file_to_append_onto.eq(&file_to_append_onto) {

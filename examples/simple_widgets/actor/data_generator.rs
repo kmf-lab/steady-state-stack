@@ -1,11 +1,11 @@
 use std::ops::DerefMut;
 use std::time::Duration;
+
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
 use crate::actor::data_feedback::ChangeRequest;
 use crate::args::Args;
-
 
 #[derive(Clone, Debug, Copy)]
 pub struct WidgetInventory {
@@ -66,7 +66,7 @@ pub async fn run(context: SteadyContext
         //    panic!("This is a panic");
         //}
 
-        //this is an example of an telemetry running periodically
+        //this is an example of a telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
         monitor.relay_stats_periodic(Duration::from_micros(gen_rate_micros)).await;
     }

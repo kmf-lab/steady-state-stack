@@ -50,42 +50,18 @@ fn main() {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
-
-
     let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
     graph.start();
-
-
 
     //remove this block to run forever.
     //run! is a macro provided by bastion that will block until the future is resolved.
     run!(async {
-
-        /*  TODO: we should watch for break
-        use futures::prelude::*;
-        use nuclei::*;
-        use std::os::unix::net::UnixStream;
-        use signal_hook::low_level::pipe;
-
-         nuclei::spawn(async move {
-                let (a, mut b) = Handle::<UnixStream>::pair()?;
-                signal_hook::pipe::register(signal_hook::SIGINT, a)?;
-                println!("Waiting for Ctrl-C...");
-                b.read_exact(&mut [0]).await?
-         });
-         */
-
-
-
-        // note we use (&opt) just to show we did NOT transfer ownership
         Delay::new(Duration::from_secs(opt.duration)).await;
-        graph.request_shutdown();
-        //TODO:: need some way to wait for shutdown to complete
-        graph.stop();
+        graph.stop(Duration::from_secs(2));
     });
 
-    //wait for bastion to cleanly stop all actors
-    Bastion::block_until_stopped();
+    graph.block_until_stopped();
+
 }
 
 
@@ -131,73 +107,35 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                         .with_capacity(200)
                         .build();
 
-    let base_actor_builder = graph
-        .actor_builder()
+    let base_actor_builder = graph.actor_builder()//with default OneForOne supervisor....
         .with_mcpu_percentile(Percentile::p80())
         .with_work_percentile(Percentile::p80())
         .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m64()),AlertColor::Red)
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
 
+        base_actor_builder.with_name("generator")
+             .build_with_exec( move |context| actor::data_generator::run(context
+                                                                     , change_rx.clone()
+                                                                     , generator_tx.clone())
+        );
 
+        base_actor_builder.with_name("approval")
+             .build_with_exec( move |context| actor::data_approval::run(context
+                                                              , generator_rx.clone()
+                                                              , consumer_tx.clone()
+                                                              , failure_tx.clone()   )
+        );
 
-    //the above tx rx objects will be owned by the children closures below then cloned
-    //each time we need to startup a new child telemetry instance. This way when an telemetry fails
-    //we still have the original to clone from.
-    //
-    //given your supervision strategy create the children to be added to the graph.
-    let _ = Bastion::supervisor(|supervisor|
-        supervisor.with_strategy(SupervisionStrategy::OneForOne)
-            .children(|children| {
+        base_actor_builder.with_name("feedback")
+             .build_with_exec( move |context| actor::data_feedback::run(context
+                                                              , failure_rx.clone()
+                                                              , change_tx.clone() )
+            );
 
-                    let (c,i) = base_actor_builder
-                         .with_name("generator")
-                     .build_with_exec( move |context| actor::data_generator::run(context
-                                                                                 , change_rx.clone()
-                                                                                 , generator_tx.clone())
-                    );
-
-                    c.finish(children,i)
-
-            })
-            .children(|children| {
-                     let (c,i) = base_actor_builder
-                         .with_name("approval")
-                         .build_with_exec(
-                             move |context| actor::data_approval::run(context
-                                                                          , generator_rx.clone()
-                                                                          , consumer_tx.clone()
-                                                                          , failure_tx.clone()
-                                                                 )
-                    );
-                      c.finish(children,i)
-
-
-            })
-            .children(|children| {
-                   let (c,i) = base_actor_builder.with_name("feedback")
-                     .build_with_exec(
-                            move |context| actor::data_feedback::run(context
-                                                                      , failure_rx.clone()
-                                                                      , change_tx.clone()
-                            )
-                    );
-                    c.finish(children,i)
-
-
-            })
-            .children(|children| {
-                    let (c,i) = base_actor_builder
-                    .with_name("consumer")
-                    .build_with_exec( move |context| actor::data_consumer::run(context
-                                                                               , consumer_rx.clone()
-                                                                   )
-
-
-                            );
-                    c.finish(children,i)
-
-            })
-    ).expect("OneForOne supervisor creation error.");
+       base_actor_builder.with_name("consumer")
+            .build_with_exec( move |context| actor::data_consumer::run(context
+                                                        , consumer_rx.clone() )
+            );
 
     graph.init_telemetry();
     graph
@@ -244,9 +182,9 @@ mod tests {
             let answer_consumer: Result<&str, SendError> = distribute_consumer.request(expected_message).await.unwrap();
             assert_eq!("ok",answer_consumer.unwrap());
 
-            graph.stop();
+            graph.stop(Duration::from_secs(3));
         });
-        Bastion::block_until_stopped();
+        graph.block_until_stopped();
     }
 
 }

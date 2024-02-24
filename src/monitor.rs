@@ -357,8 +357,8 @@ pub struct ChannelMetaData {
     pub(crate) refresh_rate_in_bits: u8,
     pub(crate) window_bucket_in_bits: u8,
 
-    pub(crate) percentiles_inflight: Vec<Percentile>, //each is a row
-    pub(crate) percentiles_consumed: Vec<Percentile>, //each is a row
+    pub(crate) percentiles_filled: Vec<Percentile>, //each is a row
+    pub(crate) percentiles_rate: Vec<Percentile>, //each is a row
     pub(crate) percentiles_latency: Vec<Percentile>, //each is a row
 
     pub(crate) std_dev_inflight: Vec<StdDev>, //each is a row

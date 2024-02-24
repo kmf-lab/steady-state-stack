@@ -1,4 +1,6 @@
-    #[cfg(feature = "telemetry_server")]
+use std::env;
+
+#[cfg(feature = "telemetry_server")]
     pub const TELEMETRY_SERVER: bool = true;
     #[cfg(not(feature = "telemetry_server"))]
     pub const TELEMETRY_SERVER: bool = false;
@@ -8,9 +10,29 @@
     #[cfg(not(feature = "telemetry_history"))]
     pub const TELEMETRY_HISTORY: bool = false;
 
+    //only set true if you want supervisors to restart actors while debug symbols are on
+    //you normally want this false so you can debug the actor that failed while developing
+    //supervisors will always restart actors for production release, no need to change this
+    #[cfg(not(feature = "restart_actors_when_debugging"))]
+    pub const DISABLE_DEBUG_FAIL_FAST:bool = false;
+    #[cfg(feature = "restart_actors_when_debugging")]
+    pub const DISABLE_DEBUG_FAIL_FAST:bool = true;
 
-    pub const TELEMETRY_SERVER_PORT:u16 = 8080; // need to move to env?
-    pub const TELEMETRY_SERVER_IP:&str = "127.0.01"; // need to move to env?
+    const DEFAULT_TELEMETRY_SERVER_PORT:&str = "8080";
+    pub(crate) fn telemetry_server_port() -> u16 {
+        env::var("TELEMETRY_SERVER_PORT")
+            .unwrap_or_else(|_| DEFAULT_TELEMETRY_SERVER_PORT.to_string())
+            .parse::<u16>()
+            .expect("TELEMETRY_SERVER_PORT must be a valid u16")
+    }
+
+    pub const DEFAULT_TELEMETRY_SERVER_IP:&str = "127.0.01"; // need to move to env?
+    pub(crate) fn telemetry_server_ip() -> String {
+        env::var("TELEMETRY_SERVER_IP")
+            .unwrap_or_else(|_| DEFAULT_TELEMETRY_SERVER_IP.to_string())
+}
+
+
 
     pub const TELEMETRY_FOR_ACTORS:bool = true; //TODO: can turn this off as a feature
 
@@ -31,4 +53,5 @@
 
 
     pub const SHOW_TELEMETRY_ON_TELEMETRY:bool = false;
+
 
