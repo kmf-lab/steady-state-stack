@@ -1,3 +1,5 @@
+use std::error::Error;
+use std::future::Future;
 use std::ops::DerefMut;
 use std::time::Duration;
 
@@ -93,21 +95,26 @@ pub async fn run(context: SteadyContext
 }
 #[cfg(test)]
 
-async fn relay_test<const R:usize, const T:usize>(monitor: &mut LocalMonitor<R,T>
+
+
+async fn relay_test<const R:usize, const T:usize>(
+                     monitor: &mut LocalMonitor<R,T>
                     , tx: &mut Tx<WidgetInventory>) {
 
+    if let Some(simulator) = monitor.edge_simulator() {
 
-    if let Some(ctx) = monitor.ctx() {
-        MessageHandler::new(ctx.recv().await.unwrap())
-            .on_question(|message: WidgetInventory, answer_sender| {
-                info!("relay_test: {:?}", message);
-                run!(async {
-                    let _ = monitor.send_async(tx, message).await;
-                    answer_sender.reply("ok").unwrap();
-                   });
-            });
+        simulator.respond_to_request(|message| {
+            info!("relay_test: {:?}", message);
+            match monitor.try_send(tx, message) {
+                Ok(()) => GraphTestResult::Ok("ok".to_string()),
+                Err(m) => GraphTestResult::Err(m),
+            }
+        }).await;
+
     }
+
 }
+
 
 
 async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor<R, T>

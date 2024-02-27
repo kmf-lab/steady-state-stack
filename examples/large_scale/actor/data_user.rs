@@ -1,4 +1,5 @@
 use std::ops::DerefMut;
+use std::time::Duration;
 
 #[allow(unused_imports)]
 use log::*;
@@ -50,19 +51,30 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< Packet>) {
-    use bastion::prelude::*;
-/*
-    if let Some(ctx) = monitor.ctx() {
-        MessageHandler::new(ctx.recv().await.unwrap())
-            .on_question(|expected: ApprovedWidgets, answer_sender| {
-                run!(async {
-                let recevied = monitor.take_async(rx).await.unwrap();
-                answer_sender.reply(if expected == recevied {"ok"} else {"err"}).unwrap();
-               });
-            });
+
+    if let Some(simulator) = monitor.edge_simulator() {
+        simulator.respond_to_request(|expected: Packet| {
+
+            rx.block_until_not_empty(Duration::from_secs(20));
+            match monitor.try_take(rx) {
+                Some(measured) => {
+                    let result = expected.cmp(&measured);
+                    if result.is_eq() {
+                        GraphTestResult::Ok(())
+                    } else {
+                        GraphTestResult::Err(format!("no match {:?} {:?} {:?}"
+                                             ,expected
+                                             ,result
+                                             ,measured))
+                    }
+                },
+                None => GraphTestResult::Err("no data".to_string()),
+            }
+
+        }).await;
     }
 
- */
+
 }
 
 

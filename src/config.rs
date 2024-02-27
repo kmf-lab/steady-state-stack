@@ -1,12 +1,12 @@
 use std::env;
 
 #[cfg(feature = "telemetry_server")]
-    pub const TELEMETRY_SERVER: bool = !std::env::var("DOCS_RS").is_ok();
+    pub const TELEMETRY_SERVER: bool = true;
     #[cfg(not(feature = "telemetry_server"))]
     pub const TELEMETRY_SERVER: bool = false;
 
     #[cfg(feature = "telemetry_history")]
-    pub const TELEMETRY_HISTORY: bool = !std::env::var("DOCS_RS").is_ok();
+    pub const TELEMETRY_HISTORY: bool = true;
     #[cfg(not(feature = "telemetry_history"))]
     pub const TELEMETRY_HISTORY: bool = false;
 

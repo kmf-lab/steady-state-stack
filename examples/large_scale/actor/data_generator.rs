@@ -89,8 +89,6 @@ pub async fn run<const LEN:usize>(context: SteadyContext
 #[cfg(test)]
 async fn relay_test<const R:usize, const T:usize, const LEN:usize>(monitor: &mut LocalMonitor<R,T>
                     , tx: &[SteadyTx<Packet>;LEN]) {
-    use bastion::run;
-    use bastion::message::MessageHandler;
 
     /*
     if let Some(ctx) = monitor.ctx() {
@@ -104,6 +102,8 @@ async fn relay_test<const R:usize, const T:usize, const LEN:usize>(monitor: &mut
             });
     }
     //      */
+
+
 }
 
 

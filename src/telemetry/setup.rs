@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use crate::run;
 use log::*;
 use num_traits::Zero;
 use ringbuf::traits::Observer;
@@ -52,28 +51,28 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
     };
 
     //need to hand off to the collector
-    run!(async{
-                let mut shared_vec_guard = that.all_telemetry_rx.lock().await;
-                let shared_vec = shared_vec_guard.deref_mut();
-                let index:Option<usize> = shared_vec.iter()
-                                        .enumerate()
-                                        .find(|(_,x)|x.monitor_id == that.ident.id && x.name == that.ident.name)
-                                        .map(|(idx,_)|idx);
-                if let Some(idx) = index {
-                  //we add new SteadyTelemetryRx which waits for the old one to be consumed first
-                  shared_vec[idx].telemetry_take.push_back(Box::new(det));
-                } else {
-                    let mut tt:VecDeque<Box<dyn RxTel>> = VecDeque::new();
-                    tt.push_back(Box::new(det));
-                    let details = CollectorDetail {
-                        name: that.ident.name,
-                        monitor_id: that.ident.id,
-                        temp_barrier: false,
-                        telemetry_take: tt,
-                    };
-                    shared_vec.push(details); //add new telemetry channels
-                }
-            });
+    let mut shared_vec_guard = bastion::run!(that.all_telemetry_rx.lock());
+
+    let shared_vec = shared_vec_guard.deref_mut();
+    let index:Option<usize> = shared_vec.iter()
+                            .enumerate()
+                            .find(|(_,x)|x.monitor_id == that.ident.id && x.name == that.ident.name)
+                            .map(|(idx,_)|idx);
+    if let Some(idx) = index {
+      //we add new SteadyTelemetryRx which waits for the old one to be consumed first
+      shared_vec[idx].telemetry_take.push_back(Box::new(det));
+    } else {
+        let mut tt:VecDeque<Box<dyn RxTel>> = VecDeque::new();
+        tt.push_back(Box::new(det));
+        let details = CollectorDetail {
+            name: that.ident.name,
+            monitor_id: that.ident.id,
+            temp_barrier: false,
+            telemetry_take: tt,
+        };
+        shared_vec.push(details); //add new telemetry channels
+    }
+
 
     let telemetry_actor =
 
@@ -125,7 +124,7 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 
 
             let senders_count: usize = {
-                let guard = run!(graph.all_telemetry_rx.lock());
+                let guard = bastion::run!(graph.all_telemetry_rx.lock());
                 let v = guard.deref();
                 v.len()
             };
@@ -160,11 +159,11 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
 //only relay if we are withing the bounds of the telemetry channel limits.
     if this.last_telemetry_send.elapsed().as_micros() >= config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u128 {
 
-        let is_in_bastion: bool = { this.ctx().is_some() };
+        let is_in_graph: bool = this.is_in_graph();
 
         if let Some(ref mut actor_status) = this.telemetry_state {
             if let Some(msg) = actor_status.status_message() {
-                if is_in_bastion {
+                if is_in_graph {
                     let clear_status = {
                         let mut lock_guard = actor_status.tx.lock().await;
                         let tx = lock_guard.deref_mut();
@@ -212,7 +211,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
             if send_tx.count.iter().any(|x| !x.is_zero()) {
 
                 //we only send the result if we have a context, ie a graph we are monitoring
-                if is_in_bastion {
+                if is_in_graph {
                     let mut lock_guard = send_tx.tx.lock().await;
                     let tx = lock_guard.deref_mut();
                     match tx.try_send(send_tx.count) {
@@ -249,7 +248,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
             if send_rx.count.iter().any(|x| !x.is_zero()) {
 
                 //we only send the result if we have a context, ie a graph we are monitoring
-                if is_in_bastion {
+                if is_in_graph {
                     let mut lock_guard = send_rx.tx.lock().await;
                     let rx = lock_guard.deref_mut();
                     match rx.try_send(send_rx.count) {
@@ -295,7 +294,7 @@ pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX
         #[cfg(debug_assertions)]
         trace!("start last send of all local telemetry");
 
-        if this.ctx().is_some() {
+        if this.is_in_graph() {
             if let Some(ref mut actor_status) = this.telemetry_state {
                 if let Some(msg) = actor_status.status_message() {
                     {

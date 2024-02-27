@@ -1,4 +1,6 @@
 use std::ops::DerefMut;
+use std::time::Duration;
+
 #[allow(unused_imports)]
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
@@ -17,6 +19,8 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
 
 
+
+
     //let args:Option<&Args> = context.args(); //you can make the type explicit
     //let args = context.args::<Args>(); //or you can turbo fish here to get your args
 
@@ -31,14 +35,27 @@ pub async fn run(context: SteadyContext
         buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
     };
 
-    loop {
+    //do avoid blocking code but if you must...
+    blocking!({
+        trace!("this is an example of blocking code");
+        //you could do some short blocking work as needed but
+        //while here the telemetry will not be sent and
+        //the actor will not check for shutdown
+        //NOTE: stay tuned for a better feature on the way.
+    });
+
+
+    //predicate which affirms or denies the shutdown request
+    while monitor.is_running(&mut || rx.is_closed()) {
         //single pass of work, in this high volume example we stay in iterate_once as long
         //as the input channel as more work to process.
         if iterate_once(&mut monitor, &mut state, rx).await {
-            break Ok(());
+            return Ok(());
         }
     }
+    Ok(())
 }
+
 
 async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonitor<R,T>
                                                       , state: &mut InternalState
@@ -104,17 +121,29 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< ApprovedWidgets>) {
-    use bastion::prelude::*;
 
-    if let Some(ctx) = monitor.ctx() {
-        MessageHandler::new(ctx.recv().await.unwrap())
-            .on_question(|expected: ApprovedWidgets, answer_sender| {
-                run!(async {
-                let recevied = monitor.take_async(rx).await.unwrap();
-                answer_sender.reply(if expected == recevied {"ok"} else {"err"}).unwrap();
-               });
-            });
+    if let Some(simulator) = monitor.edge_simulator() {
+        simulator.respond_to_request(|expected: ApprovedWidgets| {
+
+            rx.block_until_not_empty(Duration::from_secs(20));
+            match monitor.try_take(rx) {
+                Some(measured) => {
+                    let result = expected.cmp(&measured);
+                    if result.is_eq() {
+                        GraphTestResult::Ok(())
+                    } else {
+                        GraphTestResult::Err(format!("no match {:?} {:?} {:?}"
+                                             ,expected
+                                             ,result
+                                             ,measured))
+                    }
+                },
+                None => GraphTestResult::Err("no data".to_string()),
+            }
+
+        }).await;
     }
+
 }
 
 

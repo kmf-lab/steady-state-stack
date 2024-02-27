@@ -1,5 +1,6 @@
 mod args;
 
+use std::thread::sleep;
 use structopt::*;
 use log::*;
 use futures_timer::Delay;
@@ -50,17 +51,12 @@ fn main() {
     let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
     graph.start();
 
-
-
-    //remove this block to run forever.
-    //run! is a macro provided by bastion that will block until the future is resolved.
-    run!(async {
-        info!("waiting for duration: {:?}", Duration::from_secs(opt.duration));
-        // note we use (&opt) just to show we did NOT transfer ownership
-        Delay::new(Duration::from_secs(opt.duration)).await;
-        info!("exit now");
+    {   //remove this block to run forever.
+        sleep(Duration::from_secs(opt.duration));
         graph.stop(Duration::from_secs(3));
-    });
+    }
+
+
     graph.block_until_stopped();
 
 }
@@ -220,41 +216,16 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
 #[cfg(test)]
 mod tests {
-    use bastion::prelude::{Distributor, SendError};
-    use bastion::run;
+
     use super::*;
 
-    /*
     #[async_std::test]
     async fn test_graph_one() {
 
-        let test_ops = Args {
-            duration: 21,
-            loglevel: "debug".to_string(),
-            gen_rate_micros: 0,
-        };
-
-        let mut graph = build_graph(&test_ops);
-        graph.start();
-
-        let distribute_generator:Distributor = Distributor::named("testing-generator");
-        let distribute_consumer:Distributor = Distributor::named("testing-consumer");
-
-        run!(async {
 
 
-
-            let answer_generator: Result<&str, SendError> = distribute_generator.request(to_send).await.unwrap();
-            assert_eq!("ok",answer_generator.unwrap());
-
-            let answer_consumer: Result<&str, SendError> = distribute_consumer.request(expected_message).await.unwrap();
-            assert_eq!("ok",answer_consumer.unwrap());
-
-            graph.stop();
-        });
-        Bastion::block_until_stopped();
     }
-    //  */
+
 
 }
 

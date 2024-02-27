@@ -62,7 +62,7 @@ pub(crate) async fn run(context: SteadyContext
     let state = Arc::new(Mutex::new(State {
         doc: Vec::new()
     }));
-    let mut history = FrameHistory::new().await;
+    let mut history = FrameHistory::new();
 
     let mut app = tide::with_state(state.clone());
 
@@ -193,11 +193,9 @@ pub(crate) async fn run(context: SteadyContext
                               //TODO: we can not stop early we need to know that the other
                               //      actors have not raised objections to the shutdown.
                                 let flush_all:bool =
-                                    if let Some(lock) = liveliness.try_lock() {
-
+                                    if let Ok(lock) = liveliness.try_read() {
                                         lock.state == GraphLivelinessState::StopRequested
                                         || lock.state == GraphLivelinessState::Stopped
-
                                     } else {
                                         //unable to lock so be safe and flush
                                         true

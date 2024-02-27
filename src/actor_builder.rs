@@ -1,12 +1,11 @@
 use std::any::Any;
 use std::future::Future;
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, AtomicUsize};
 use std::time::Duration;
-use bastion::{Bastion, Callbacks};
-use bastion::prelude::SupervisionStrategy;
-use bastion::supervisor::SupervisorRef;
+use bastion::*;
+use bastion::supervisor::*;
 use futures::lock::Mutex;
 use log::*;
 use crate::{ActorIdentity, AlertColor, Graph, GraphLiveliness, MCPU, Percentile, StdDev, SteadyContext, Trigger, Work};
@@ -34,7 +33,7 @@ pub struct ActorBuilder {
     args: Arc<Box<dyn Any+Send+Sync>>,
     telemetry_tx: Arc<Mutex<Vec<CollectorDetail>>>,
     channel_count: Arc<AtomicUsize>,
-    runtime_state: Arc<Mutex<GraphLiveliness>>,
+    runtime_state: Arc<RwLock<GraphLiveliness>>,
     redundancy: usize,
     monitor_count: Arc<AtomicUsize>,
 
@@ -53,6 +52,53 @@ pub struct ActorBuilder {
     supervisor: SupervisorRef,
 }
 
+/// Defines the strategies for supervising groups of child actors or processes within a system.
+/// These strategies determine the system's response to failures encountered by child groups,
+/// such as panics, errors, or explicit termination requests. The choice of strategy influences
+/// the resilience and recovery behavior of the system, addressing various degrees of dependency
+/// and coupling between child groups.
+pub enum SupervisionStrategy {
+    /// Applies a targeted recovery approach upon failure of a child group.
+    ///
+    /// Only the directly affected child group is restarted, isolating the failure impact
+    /// and recovery effort. This strategy is most suitable for systems where child groups
+    /// operate independently, ensuring minimal disruption by confining restarts to the
+    /// components directly impacted by the failure.
+    ///
+    /// **Use Case Example**: In a microservices architecture, where each child group
+    /// represents a distinct microservice, this strategy ensures that a failure in one
+    /// service leads to its isolated restart, without affecting the continuity of others.
+    OneForOne,
+
+    /// Adopts a comprehensive recovery approach, restarting all child groups under
+    /// supervision upon any single failure.
+    ///
+    /// This includes restarting even those groups that were previously stopped, in the
+    /// same order they were initially added to the supervisor. This strategy is fitting
+    /// for systems with tightly coupled child groups, where a failure in one could imply
+    /// systemic issues, requiring a full system reset to ensure consistency and integrity
+    /// across all components.
+    ///
+    /// **Use Case Example**: In a data processing pipeline with interdependent stages,
+    /// a failure in one stage might corrupt the process, necessitating a complete restart
+    /// of the pipeline to ensure data integrity across all stages.
+    OneForAll,
+
+    /// Offers a balanced recovery approach, targeting the failed child group and any
+    /// subsequent groups added after it to the supervisor.
+    ///
+    /// Upon a failure, the affected group and all later groups are restarted, including
+    /// those previously stopped, while maintaining their initial addition order. This
+    /// strategy is effective in scenarios where child groups have sequential or partial
+    /// dependencies, ensuring that all dependent groups operate on a consistent and valid
+    /// state following a failure.
+    ///
+    /// **Use Case Example**: In a sequential processing system where certain processes
+    /// prepare data for subsequent ones, a failure in a mid-sequence process necessitates
+    /// restarting it along with all dependent processes to maintain the sequence’s integrity
+    /// and correctness.
+    RestForOne,
+}
 
 impl ActorBuilder {
 
@@ -67,7 +113,7 @@ impl ActorBuilder {
     /// A new instance of `ActorBuilder`.
     pub fn new( graph: &mut Graph) -> ActorBuilder {
 
-        let default_super = Bastion::supervisor(|supervisor| supervisor.with_strategy(SupervisionStrategy::OneForOne))
+        let default_super = Bastion::supervisor(|supervisor| supervisor.with_strategy(bastion::supervisor::SupervisionStrategy::OneForOne))
                             .expect("Internal error, Check if OneForOne is no longer supported?");
         ActorBuilder {
             name: "",
@@ -162,9 +208,15 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the specified supervision strategy.
-    pub fn with_supervisor(&self, strategy: SupervisionStrategy) -> Self {
+    pub fn with_supervisor(&self, strategy: self::SupervisionStrategy) -> Self {
         let mut result = self.clone();
-        result.supervisor = Bastion::supervisor(|supervisor| supervisor.with_strategy(strategy))
+        let strat = match strategy {
+            SupervisionStrategy::OneForOne => bastion::supervisor::SupervisionStrategy::OneForOne,
+            SupervisionStrategy::OneForAll => bastion::supervisor::SupervisionStrategy::OneForAll,
+            SupervisionStrategy::RestForOne => bastion::supervisor::SupervisionStrategy::RestForOne,
+        };
+
+        result.supervisor = Bastion::supervisor(|supervisor| supervisor.with_strategy(strat))
             .expect("Internal error, Check if {strategy} is no longer supported?");
         result
     }
@@ -385,7 +437,7 @@ impl ActorBuilder {
                                     runtime_state: runtime_state.clone(),
                                     channel_count: channel_count.clone(),
                                     ident: ActorIdentity{id,name},
-                                    ctx: Some(ctx),
+                                    ctx: Some(Arc::new(ctx)),
                                     redundancy,
                                     args: args.clone(),
                                     all_telemetry_rx: telemetry_tx.clone(),

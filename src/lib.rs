@@ -19,24 +19,24 @@ pub mod util;
 pub mod serviced;
 pub mod actor_builder;
 mod actor_stats;
-
+mod graph_testing;
+pub use graph_testing::GraphTestResult;
+pub use actor_builder::SupervisionStrategy;
 
 use std::any::{Any, type_name};
-use std::backtrace::Backtrace;
 
 #[cfg(test)]
 use std::collections::HashMap;
 
 use std::fmt::Debug;
-//re-publish bastion from steady_state for this early version
-pub use bastion;
 use std::time::{Duration, Instant};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use futures::lock::Mutex;
 use std::ops::{Deref, DerefMut, Sub};
 use std::future::{Future, ready};
 use std::process::exit;
+
 use std::thread::sleep;
 use log::*;
 use channel_builder::{InternalReceiver, InternalSender};
@@ -55,12 +55,13 @@ use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
 use futures::FutureExt; // Provides the .fuse() method
 
-// Re-exporting Bastion and run from bastion
-pub use bastion::{Bastion, run};
-pub use bastion::context::BastionContext;
-pub use bastion::prelude::SupervisionStrategy;
-pub use bastion::message::MessageHandler;
+// Re-exporting Bastion blocking for use in actors
+pub use bastion::blocking;
+
+
+use futures::channel::oneshot::Receiver;
 use futures::select;
+use crate::graph_testing::EdgeSimulator;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
@@ -106,6 +107,14 @@ impl GraphLiveliness {
         }
     }
 
+    pub fn stop_graph(&mut self) {
+        if self.state.eq(&GraphLivelinessState::Running) {
+            self.state = GraphLivelinessState::StopRequested;
+        }
+    }
+
+
+
 }
 
 pub struct RaisedObjection {
@@ -123,10 +132,10 @@ pub struct ActorIdentity {
 pub struct SteadyContext {
     pub(crate) ident: ActorIdentity,
     pub(crate) redundancy: usize,
-    pub(crate) ctx: Option<BastionContext>,
+    pub(crate) ctx: Option<Arc<bastion::context::BastionContext>>,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
-    pub(crate) runtime_state: Arc<Mutex<GraphLiveliness>>,
+    pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) count_restarts: Arc<AtomicU32>,
     pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
     pub(crate) actor_metadata: Arc<ActorMetaData>,
@@ -134,7 +143,11 @@ pub struct SteadyContext {
 
 impl SteadyContext {
 
-    pub fn liveliness(&self) -> Arc<Mutex<GraphLiveliness>> {
+    pub fn edge_simulator(&self) -> Option<EdgeSimulator> {
+        self.ctx.as_ref().map(|ctx| EdgeSimulator::new(ctx.clone()))
+    }
+
+    pub fn liveliness(&self) -> Arc<RwLock<GraphLiveliness>> {
         self.runtime_state.clone()
     }
 
@@ -144,10 +157,6 @@ impl SteadyContext {
 
     pub fn identity(&self) -> ActorIdentity {
         self.ident
-    }
-
-    pub fn ctx(&self) -> &Option<BastionContext> {
-        &self.ctx
     }
 
 
@@ -220,7 +229,7 @@ pub struct Graph  {
     pub(crate) monitor_count: Arc<AtomicUsize>,
     //used by collector but could grow if we get new actors at runtime
     pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
-    pub(crate) runtime_state: Arc<Mutex<GraphLiveliness>>,
+    pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
 }
 
 impl Graph {
@@ -250,6 +259,43 @@ impl Graph {
     }
 }
 
+pub struct EdgeSimulationDirector {
+    distributor: bastion::distributor::Distributor,
+}
+
+impl EdgeSimulationDirector {
+    pub fn new(graph: &Graph, name: & 'static str) -> EdgeSimulationDirector {
+        EdgeSimulationDirector {
+            distributor: bastion::distributor::Distributor::named(name)
+        }
+    }
+
+    pub async fn send_request<T: 'static, K, E>(&self, msg: T) -> Option<GraphTestResult<K, E>>
+      where T: Any + Send + Sync + Debug + Clone,
+            K: Any + Send + Sync + Debug,
+            E: Any + Send + Sync + Debug
+    {
+        let answer_consumer:Receiver<Result<GraphTestResult<K,E>,bastion::errors::SendError>> = self.distributor.request(msg);
+        match answer_consumer.await {
+            Ok(ac) => {
+                match ac {
+                    Ok(response) => {
+                        return Some(response);
+                    },
+                    Err(e) => {
+                        error!("failed to send request: {:?}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!("failed to send request: {:?}", e);
+            }
+        }
+       None
+    }
+
+}
+
 
 impl Graph {
 
@@ -260,12 +306,17 @@ impl Graph {
 
     fn enable_fail_fast(&self) {
         std::panic::set_hook(Box::new(|panic_info| {
-            let backtrace = Backtrace::capture();
+            let backtrace = std::backtrace::Backtrace::capture();
             // You can log the panic information here if needed
             eprintln!("Application panicked: {}", panic_info);
             eprintln!("Backtrace:\n{:?}", backtrace);
             exit(-1);
         }));
+    }
+
+
+    pub fn edge_simulator(&self, name: & 'static str) -> EdgeSimulationDirector {
+        EdgeSimulationDirector::new(self, name)
     }
 
     pub fn start(&mut self) {
@@ -277,10 +328,15 @@ impl Graph {
             self.enable_fail_fast();
         }
 
-        Bastion::start(); //start the graph
-        let mut guard = run!(self.runtime_state.lock());
-        let state = guard.deref_mut();
-        state.state = GraphLivelinessState::Running;
+        bastion::Bastion::start(); //start the graph
+        match self.runtime_state.write() {
+            Ok(mut state) => {
+                state.state = GraphLivelinessState::Running;
+            }
+            Err(e) => {
+                error!("failed to start graph: {:?}", e);
+            }
+        }
     }
 
 
@@ -293,11 +349,15 @@ impl Graph {
         let timeout = clean_shutdown_timeout.max(
             Duration::from_millis(3*config::TELEMETRY_PRODUCTION_RATE_MS as u64));
 
-        {
-          let mut guard = run!(self.runtime_state.lock());
-          let state = guard.deref_mut();
-          state.state = GraphLivelinessState::StopRequested;
+        match self.runtime_state.write() {
+            Ok(mut state) => {
+                state.state = GraphLivelinessState::StopRequested;
+            }
+            Err(e) => {
+                error!("failed to request stop of graph: {:?}", e);
+            }
         }
+
         //wait for either the timeout or the state to be Stopped
         //while try lock then yield and do until time has passed
         //if we are stopped we will return immediately
@@ -305,27 +365,48 @@ impl Graph {
             //yield to other threads as we are trying to stop
             std::thread::yield_now();
             //allow bastion to process other work while we wait one frame
-            run!(Delay::new(Duration::from_millis(config::TELEMETRY_PRODUCTION_RATE_MS as u64)));
+            bastion::run!(Delay::new(Duration::from_millis(config::TELEMETRY_PRODUCTION_RATE_MS as u64)));
             //now check the lock
-            if let Some(mut lock) = self.runtime_state.try_lock() {
-              if lock.state.eq(&GraphLivelinessState::Stopped) {
-                  //TODO: how to make the eager? count down to stopped?
-                  break;
-              }
-              if lock.state.eq(&GraphLivelinessState::StopRequested) {
-                  assert!(lock.objections.is_empty(), "raised objections must be cleared before we can stop");
-                  if now.elapsed() > timeout {
-                      lock.state = GraphLivelinessState::Stopped; //release block
-                      break;
-                  }
-              }
-          }
+
+            let timed_out = match self.runtime_state.read() {
+                Ok(state) => { //TODO: use pattern matching
+                    if state.state.eq(&GraphLivelinessState::Stopped) {
+                        //TODO: how to make the eager? count down to stopped?
+                        break;
+                    }
+                    if state.state.eq(&GraphLivelinessState::StopRequested) {
+                        assert!(state.objections.is_empty(), "raised objections must be cleared before we can stop");
+                        now.elapsed() > timeout
+                    } else {
+                        false
+                    }
+                }
+                Err(e) => {
+                    error!("failed to read liveliness of graph: {:?}", e);
+                    false
+                }
+            };
+            if timed_out {
+                match self.runtime_state.write() {
+                    Ok(mut state) => {
+                        if state.state.eq(&GraphLivelinessState::StopRequested) {
+                            state.state = GraphLivelinessState::Stopped;
+                        } else {
+                            error!("internal error: we should have been in StopRequested state");
+                        }
+                    }
+                    Err(e) => {
+                        error!("failed to request stop of graph: {:?}", e);
+                    }
+                }
+            }
+
         }
-        Bastion::kill();
+        bastion::Bastion::kill();
     }
 
     pub fn block_until_stopped(&mut self) {
-        run!(async { //TODO: may also need to check for ctrl-c ??? check later
+        bastion::run!(async { //TODO: may also need to check for ctrl-c ??? check later
 
 
          //stay here until we see Stopped!!
@@ -350,7 +431,7 @@ impl Graph {
             channel_count: Arc::new(AtomicUsize::new(0)),
             monitor_count: Arc::new(AtomicUsize::new(0)), //this is the count of all monitors
             all_telemetry_rx: Arc::new(Mutex::new(Vec::new())), //this is all telemetry receivers
-            runtime_state: Arc::new(Mutex::new(GraphLiveliness::new())),
+            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new())),
         }
     }
 
@@ -657,8 +738,25 @@ impl<T> Tx<T> {
 
 impl<T> Rx<T> {
 
-    pub fn is_closed(&self) {
-        self.is_closed.load(Ordering::SeqCst);
+    /// only for use in unit tests
+    pub fn block_until_not_empty(&self, duration: Duration) {
+        assert!(cfg!(debug_assertions), "This function is only for testing");
+        let start = Instant::now();
+        loop {
+            if !self.is_empty() {
+                break;
+            }
+            if start.elapsed() > duration {
+                error!("timeout waiting for channel to not be empty");
+                break;
+            }
+            std::thread::yield_now();
+        }
+    }
+
+
+    pub fn is_closed(&self) -> bool {
+        self.is_closed.load(Ordering::SeqCst)
     }
 
     /// Returns the total capacity of the channel.
@@ -983,21 +1081,17 @@ pub trait RxDef: Debug {
 
 impl <T> TxDef for SteadyTx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
-        run!( async {
-                let guard = self.lock().await;
-                let this = guard.deref();
-                this.channel_meta_data.clone()
-            })
+        let guard = bastion::run!(self.lock());
+        let this = guard.deref();
+        this.channel_meta_data.clone()
     }
 }
 
 impl <T> RxDef for SteadyRx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
-        run!( async {
-                let guard = self.lock().await;
-                let this = guard.deref();
-                this.channel_meta_data.clone()
-            })
+        let guard = bastion::run!(self.lock());
+        let this = guard.deref();
+        this.channel_meta_data.clone()
     }}
 
 
@@ -1051,21 +1145,19 @@ impl SteadyBundle {
 impl <const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
     //if possible we never want to loose telemetry data so we try to flush it out
     fn drop(&mut self) {
-        run!(
-            telemetry::setup::send_all_local_telemetry_async(self)
-          );
+        bastion::run!(telemetry::setup::send_all_local_telemetry_async(self));
     }
 
 }
 
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) ident:                ActorIdentity,
-    pub(crate) ctx:                  Option<BastionContext>,
+    pub(crate) ctx:                  Option<Arc<bastion::context::BastionContext>>,
     pub(crate) telemetry_send_tx:    Option<SteadyTelemetrySend<TX_LEN>>,
     pub(crate) telemetry_send_rx:    Option<SteadyTelemetrySend<RX_LEN>>,
     pub(crate) telemetry_state:      Option<SteadyTelemetryActorSend>,
     pub(crate) last_telemetry_send:  Instant,
-    pub(crate) runtime_state:        Arc<Mutex<GraphLiveliness>>,
+    pub(crate) runtime_state:        Arc<RwLock<GraphLiveliness>>,
     pub(crate) redundancy:           usize,
 
 
@@ -1109,25 +1201,55 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn stop(&mut self) -> Result<(),()>  {
         if let Some(ref mut st) = self.telemetry_state {
             st.bool_stop = true;
+            //TODO: probably rewrite to use the closed boolean on the channel.
         }// upon drop we will flush telemetry
         Ok(())
     }
 
+    //TODO: clone this for the systemcontext.
+    pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
 
-    pub fn liveliness(&self) -> Arc<Mutex<GraphLiveliness>> {
+        match self.runtime_state.read() {
+            Ok(runtime) => {
+                match runtime.state {
+                    GraphLivelinessState::Running => {
+                        return true;
+                    }
+                    GraphLivelinessState::StopRequested => {
+                        //TODO: move out..
+                        if accept_fn() {
+                            //TODO: record our acceptance
+                            return false;
+                        } else {
+                            //TODO: record our rejection
+                            return true;
+                        }
+                    }
+                    _ => {}
+
+                }
+            }
+            Err(_) => {
+                return true;
+            }
+        }
+
+
+        true
+    }
+
+
+    pub fn liveliness(&self) -> Arc<RwLock<GraphLiveliness>> {
         self.runtime_state.clone()
     }
 
-    /// Retrieves an optional reference to the `BastionContext` associated with the LocalMonitor.
-    ///
-    /// # Returns
-    /// An `Option` containing a reference to the `BastionContext` if available.
-    pub fn ctx(&self) -> Option<&BastionContext> {
-        if let Some(ctx) = &self.ctx {
-            Some(ctx)
-        } else {
-            None
-        }
+    pub fn is_in_graph(&self) -> bool {
+        self.ctx.is_some()
+    }
+
+
+    pub fn edge_simulator(&self) -> Option<EdgeSimulator> {
+        self.ctx.as_ref().map(|ctx| EdgeSimulator::new(ctx.clone()))
     }
 
 

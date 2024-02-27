@@ -10,7 +10,6 @@ use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::PathBuf;
 
 use std::sync::Arc;
-use bastion::run;
 
 use std::fmt::Write;
 use bytes::{BufMut, BytesMut};
@@ -270,7 +269,7 @@ const HISTORY_WRITE_BLOCK_SIZE:usize = 1 << 13; //13 is 8K NOTE: must be power o
 
 impl FrameHistory {
 
-    pub async fn new() -> FrameHistory {
+    pub fn new() -> FrameHistory {
         let result = FrameHistory {
             packed_sent_writer: PackedVecWriter { //TODO: use a constructor
                 previous: Vec::new(),
@@ -292,7 +291,7 @@ impl FrameHistory {
             last_file_to_append_onto: "".to_string(),
             buffer_bytes_count: 0usize,
         };
-        run!(async {let _ = create_dir_all(&result.output_log_path);});
+        let _ = create_dir_all(&result.output_log_path);
         result
     }
 

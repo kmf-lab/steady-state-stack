@@ -1,6 +1,6 @@
 use std::ops::*;
 use std::time::{Duration, Instant};
-use bastion::run;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use futures::lock::Mutex;
@@ -130,7 +130,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
         if let Some(ref act) = &self.actor {
             let mut buffer = [ActorStatus::default();config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
             let count = {
-                let mut guard = run!(act.lock());
+                let mut guard = bastion::run!(act.lock());
                 let act = guard.deref_mut();
                 act.take_slice( & mut buffer)
             };
@@ -177,7 +177,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             let mut buffer = [[0usize;RXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
 
             let count = {
-                let mut rx_guard = run!(take.rx.lock());
+                let mut rx_guard = bastion::run!(take.rx.lock());
                 let rx = rx_guard.deref_mut();
                 rx.take_slice( & mut buffer)
             };
@@ -250,7 +250,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             let mut buffer = [[0usize;TXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
 
             let count = {
-                let mut tx_guard = run!(send.rx.lock());
+                let mut tx_guard = bastion::run!(send.rx.lock());
                 let tx = tx_guard.deref_mut();
                 tx.take_slice( & mut buffer)
             };
@@ -262,6 +262,8 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                     .zip(msg.iter())
                     .for_each(|(meta, val)| {
                         //consume any send left over from last frame
+                        //TODO: we have a race condition here sometimes
+                        //      must check meta.id that take_send_target grows...
                         take_send_target[meta.id].1 += future_send[meta.id];
                         future_send[meta.id] = 0;//clear so it is ready for the take phase
                         //consume the new send values for this frame
