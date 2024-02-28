@@ -101,117 +101,132 @@ pub(crate) async fn run(context: SteadyContext
     loop {
         select! {
             _ = server_handle.as_mut().fuse() => {
-                println!("Web server exited.");
+                warn!("Web server exited.");
                 break;
             },
-            msg = rx.take_async().fuse() => {
-                  match msg {
-                         Ok(DiagramData::NodeDef(seq, defs)) => {
-                            // these are all immutable constants for the life of the node
+            mut msg = rx.take_async().fuse() => {
+                 loop {
+                      match msg {
+                             Ok(DiagramData::NodeDef(seq, defs)) => {
+                                // these are all immutable constants for the life of the node
 
-                                let (actor, channels_in, channels_out) = *defs;
+                                    let (actor, channels_in, channels_out) = *defs;
 
-                                let name = actor.name;
-                                let id = actor.id;
-                                refresh_structure(&mut dot_state
-                                                   , name
-                                                   , id
-                                                   , actor
-                                                   , &channels_in
-                                                   , &channels_out
-                                  );
+                                    let name = actor.name;
+                                    let id = actor.id;
+                                    refresh_structure(&mut dot_state
+                                                       , name
+                                                       , id
+                                                       , actor
+                                                       , &channels_in
+                                                       , &channels_out
+                                      );
 
+                                      dot_state.seq = seq;
+                                      if config::TELEMETRY_HISTORY  {
+                                          history.apply_node(name, id
+                                                          , &channels_in
+                                                          , &channels_out);
+                                      }
+
+                             },
+                             Ok(DiagramData::NodeProcessData(_,actor_status)) => {
+
+                                //sum up all actor work so we can find the percentage of each
+                                let total_work_ns:u128 = actor_status.iter()
+                                            .map(|status| {
+                                                assert!(status.unit_total_ns>=status.await_total_ns, "unit_total_ns:{} await_total_ns:{}",status.unit_total_ns,status.await_total_ns);
+                                                (status.unit_total_ns-status.await_total_ns) as u128
+                                            })
+                                            .sum();
+
+
+                                //process each actor status
+                                actor_status.iter()
+                                            .enumerate()
+                                            .for_each(|(i, status)| {
+
+                                     // we are in a bad state just exit and give up
+                                    #[cfg(debug_assertions)]
+                                    if dot_state.nodes.is_empty() { exit(-1); }
+                                    assert!(!dot_state.nodes.is_empty());
+
+                                    dot_state.nodes[i].compute_and_refresh(*status, total_work_ns);
+                                });
+                             },
+                             Ok(DiagramData::ChannelVolumeData(seq
+                                     , total_take_send)) => {
+
+                                  // trace!("new data {:?} ",total_take_send);
+
+                                  total_take_send.iter()
+                                            .enumerate()
+                                            .for_each(|(i,(t,s))| {
+
+                                            // we are in a bad state just exit and give up
+                                            #[cfg(debug_assertions)]
+                                            if dot_state.edges.is_empty() { exit(-1); }
+                                            assert!(!dot_state.edges.is_empty());
+
+                                        dot_state.edges[i].compute_and_refresh(*s,*t);
+                                     });
                                   dot_state.seq = seq;
-                                  if config::TELEMETRY_HISTORY  {
-                                      history.apply_node(name, id
-                                                      , &channels_in
-                                                      , &channels_out);
-                                  }
 
-                         },
-                         Ok(DiagramData::NodeProcessData(_,actor_status)) => {
+                              //if history is on we may never skip it since it is our log
+                                if config::TELEMETRY_HISTORY  {
 
-                            //sum up all actor work so we can find the percentage of each
-                            let total_work_ns:u128 = actor_status.iter()
-                                        .map(|status| {
-                                            assert!(status.unit_total_ns>=status.await_total_ns, "unit_total_ns:{} await_total_ns:{}",status.unit_total_ns,status.await_total_ns);
-                                            (status.unit_total_ns-status.await_total_ns) as u128
-                                        })
-                                        .sum();
+                                      //NOTE we do not expect to get any more messages for this seq
+                                      //    and we have 32ms or so to record the history log file
+                                      history.apply_edge(&total_take_send);
+
+                                      //since we got the edge data we know we have a full frame
+                                      //and we can update the history
+
+                                  //TODO: we can not stop early we need to know that the other
+                                  //      actors have not raised objections to the shutdown.
+                                    let flush_all:bool =
+                                        if let Ok(lock) = liveliness.try_read() {
+                                            lock.state == GraphLivelinessState::StopRequested
+                                            || lock.state == GraphLivelinessState::Stopped
+                                        } else {
+                                            //unable to lock so be safe and flush
+                                            true
+                                        };
 
 
-                            //process each actor status
-                            actor_status.iter()
-                                        .enumerate()
-                                        .for_each(|(i, status)| {
+                                      history.update(dot_state.seq,flush_all).await;
 
-                                 // we are in a bad state just exit and give up
-                                #[cfg(debug_assertions)]
-                                if dot_state.nodes.is_empty() { exit(-1); }
-                                assert!(!dot_state.nodes.is_empty());
-
-                                dot_state.nodes[i].compute_and_refresh(*status, total_work_ns);
-                            });
-                         },
-                         Ok(DiagramData::ChannelVolumeData(seq
-                                 , total_take_send)) => {
-
-                              // trace!("new data {:?} ",total_take_send);
-
-                              total_take_send.iter()
-                                        .enumerate()
-                                        .for_each(|(i,(t,s))| {
-
-                                        // we are in a bad state just exit and give up
-                                        #[cfg(debug_assertions)]
-                                        if dot_state.edges.is_empty() { exit(-1); }
-                                        assert!(!dot_state.edges.is_empty());
-
-                                    dot_state.edges[i].compute_and_refresh(*s,*t);
-
-                                 });
-
-                              dot_state.seq = seq;
-                              //NOTE: generate the new graph
-                              frames.active_graph.clear(); // Clear the buffer for reuse
-                              build_dot(&dot_state, rankdir, &mut frames.active_graph);
-                              let vec = frames.active_graph.to_vec();
-                                { //block to ensure we drop the guard quickly
-                                    let mut state_guard = state.lock().await;
-                                    state_guard.deref_mut().doc = vec;
+                                      //must mark this for next time
+                                      history.mark_position();
                                 }
 
-                            if config::TELEMETRY_HISTORY  {
+                               //visual graph is after history to give more time
+                               //for more frames to arrive
 
-                                  //NOTE we do not expect to get any more messages for this seq
-                                  //    and we have 32ms or so to record the history log file
-                                  history.apply_edge(&total_take_send);
+                              if rx.is_empty() {
+                                      //NOTE: generate the new graph, this is costly so we
+                                      //      skip it if we have more data to process
+                                      frames.active_graph.clear(); // Clear the buffer for reuse
+                                      build_dot(&dot_state, rankdir, &mut frames.active_graph);
+                                      let vec = frames.active_graph.to_vec();
+                                      { //block to ensure we drop the guard quickly
+                                            let mut state_guard = state.lock().await;
+                                            state_guard.deref_mut().doc = vec;
+                                      }
+                                }
 
-                                  //since we got the edge data we know we have a full frame
-                                  //and we can update the history
+                             },
 
-                              //TODO: we can not stop early we need to know that the other
-                              //      actors have not raised objections to the shutdown.
-                                let flush_all:bool =
-                                    if let Ok(lock) = liveliness.try_read() {
-                                        lock.state == GraphLivelinessState::StopRequested
-                                        || lock.state == GraphLivelinessState::Stopped
-                                    } else {
-                                        //unable to lock so be safe and flush
-                                        true
-                                    };
+                            Err(msg) => {error!("Unexpected error on incoming message: {}",msg)}
+                      }
+                      //if we an consume the rest without async or blocking do so
+                      if let Some(new_msg) = rx.try_take() {
+                        msg = Ok(new_msg);
+                        continue;
+                      } else {
+                         break;
+                      }
 
-
-                                  history.update(dot_state.seq,flush_all).await;
-
-                                  //must mark this for next time
-                                  history.mark_position();
-                            }
-
-
-                         },
-
-                        Err(msg) => {error!("Unexpected error on incoming message: {}",msg)}
                   }
 
             }

@@ -449,16 +449,17 @@ impl ChannelBuilder {
         let type_byte_count = std::mem::size_of::<T>(); //TODO: new feature to add
         let type_string_name = std::any::type_name::<T>();
         let channel_meta_data = Arc::new(self.to_meta_data(type_string_name,type_byte_count));
-        let id = channel_meta_data.id;
         let is_closed = Arc::new(AtomicBool::new(false));
 
-        (  Arc::new(Mutex::new(Tx { id, tx
+        (  Arc::new(Mutex::new(Tx {
+            tx
             , channel_meta_data: channel_meta_data.clone()
             , local_index: MONITOR_UNKNOWN
             , is_closed: is_closed.clone()
             , last_error_send: Instant::now() //TODO: roll back a few seconds..
         }))
-           , Arc::new(Mutex::new(Rx { id, rx
+           , Arc::new(Mutex::new(Rx {
+            rx
             , channel_meta_data
             , local_index: MONITOR_UNKNOWN
             , is_closed

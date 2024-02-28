@@ -31,7 +31,7 @@ pub struct ActorBuilder {
     name: &'static str,
     suffix: Option<usize>,
     args: Arc<Box<dyn Any+Send+Sync>>,
-    telemetry_tx: Arc<Mutex<Vec<CollectorDetail>>>,
+    telemetry_tx: Arc<RwLock<Vec<CollectorDetail>>>,
     channel_count: Arc<AtomicUsize>,
     runtime_state: Arc<RwLock<GraphLiveliness>>,
     redundancy: usize,

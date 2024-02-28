@@ -44,7 +44,7 @@ pub async fn run(context: SteadyContext
             break Ok(());
         }
         //we relay all our telemetry and return to the top to block for more work.
-        monitor.relay_stats_all().await;
+        monitor.relay_stats_smartly().await;
     }
 }
 
@@ -80,7 +80,7 @@ pub async fn run(context: SteadyContext
         }
 
 
-            monitor.relay_stats_all().await;
+            monitor.relay_stats_smartly().await;
     }
     Ok(())
 }
@@ -106,7 +106,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
                 let _ = monitor.send_async(feedback, FailureFeedback {
                     count: b.count,
                     message: "count is a multiple of 20000".to_string(),
-                }).await;
+                },false).await;
             }
         }
 
@@ -114,7 +114,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
         //iterator of sent until the end
         let send = approvals.into_iter().skip(sent);
         for send_me in send {
-            let _ = monitor.send_async(tx, send_me).await;
+            let _ = monitor.send_async(tx, send_me,false).await;
         }
     } else {
 
@@ -125,7 +125,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
                     original_count: m.count,
                     approved_count: m.count / 2,
 
-                }).await;
+                },false).await;
             },
             Err(msg) => {
                 error!("Unexpected error recv_async: {}",msg);

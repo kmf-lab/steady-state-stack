@@ -21,7 +21,7 @@ pub async fn run(context: SteadyContext
             assert_eq!(packet.data.len(),128);
             //info!("data_router: {:?}", packet);
         }
-        monitor.relay_stats_all().await;
+        monitor.relay_stats_smartly().await;
 
     }
 }

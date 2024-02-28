@@ -68,7 +68,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     //create the mutable graph object
     let mut graph = steady_state::Graph::new(cli_arg.clone());
-    graph.start();
+
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
@@ -134,8 +134,6 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
             .build_with_exec( move |context| actor::data_consumer::run(context
                                                         , consumer_rx.clone() )
             );
-
-    graph.init_telemetry();
     graph
 }
 

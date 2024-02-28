@@ -208,7 +208,6 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
         }
 
-    graph.init_telemetry();
     graph
 }
 

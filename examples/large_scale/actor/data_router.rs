@@ -4,6 +4,11 @@ use log::*;
 use steady_state::*;
 use crate::actor::data_generator::Packet;
 
+use futures::future::{FutureExt, pending};
+use std::task::{Context, Poll};
+use std::pin::Pin;
+
+
 pub async fn run<const LEN:usize>(context: SteadyContext
                  , one_of: usize
                  , rx: SteadyRx<Packet>
@@ -21,13 +26,18 @@ pub async fn run<const LEN:usize>(context: SteadyContext
 
         monitor.wait_avail_units(rx,rx.capacity()/3).await; //TODO: need Timeout??
 
-        while let Some(packet) = monitor.try_take(rx) {
+        while let Some(packet) = monitor.try_peek(rx) {
             let index = ((packet.route / block_size) as usize) % tx.len();
-            let mut lock = tx[index].lock().await;
-            let _ = monitor.send_async(lock.deref_mut(),packet).await;
-        }
+            let mut sender = tx[index].lock().await;
+                let to_send = packet.clone();
+                let _ = monitor.send_async(sender.deref_mut(),to_send,true).await;
+                let consumed = monitor.try_take(rx);
+                assert!(consumed.is_some());
+                monitor.relay_stats_smartly().await;
 
-        monitor.relay_stats_all().await;
+        }
+        monitor.relay_stats_smartly().await;
+
 
     }
 }

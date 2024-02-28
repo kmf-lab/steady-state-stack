@@ -16,7 +16,7 @@ pub struct Args {
     pub(crate) gen_rate_micros: u64,
 
     #[structopt(short = "d", long = "duration", validator = run_duration_validator
-    , default_value = "20")]
+    , default_value = "120")]
     pub(crate) duration: u64,
 
 }

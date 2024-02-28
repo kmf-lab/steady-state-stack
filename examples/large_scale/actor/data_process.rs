@@ -36,7 +36,7 @@ pub async fn run(context: SteadyContext
                        break;
                    }
                }
-               monitor.relay_stats_all().await;
+               monitor.relay_stats_smartly().await;
            }
 
     }

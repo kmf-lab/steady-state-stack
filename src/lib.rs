@@ -25,17 +25,20 @@ pub use actor_builder::SupervisionStrategy;
 
 use std::any::{Any, type_name};
 
+use std::time::{Instant, Duration};
+use rand::Rng; // Bring Rng trait into scope for random number generation
+
 #[cfg(test)]
 use std::collections::HashMap;
 
 use std::fmt::Debug;
-use std::time::{Duration, Instant};
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use futures::lock::Mutex;
-use std::ops::{Deref, DerefMut, Sub};
+use std::ops::{Add, Deref, DerefMut, Sub};
 use std::future::{Future, ready};
 use std::process::exit;
+use std::task::Context;
 
 use std::thread::sleep;
 use log::*;
@@ -60,6 +63,7 @@ pub use bastion::blocking;
 
 
 use futures::channel::oneshot::Receiver;
+use futures::future::pending;
 use futures::select;
 use crate::graph_testing::EdgeSimulator;
 
@@ -123,7 +127,7 @@ pub struct RaisedObjection {
     reason: String
 }
 
-#[derive(Clone,Debug,Default,Copy)]
+#[derive(Clone,Debug,Default,Copy,PartialEq,Eq,Hash)]
 pub struct ActorIdentity {
     pub(crate) id: usize,
     pub(crate) name: &'static str,
@@ -134,7 +138,7 @@ pub struct SteadyContext {
     pub(crate) redundancy: usize,
     pub(crate) ctx: Option<Arc<bastion::context::BastionContext>>,
     pub(crate) channel_count: Arc<AtomicUsize>,
-    pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
+    pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) count_restarts: Arc<AtomicU32>,
     pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
@@ -142,6 +146,23 @@ pub struct SteadyContext {
 }
 
 impl SteadyContext {
+
+    /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
+    ///
+    /// # Parameters
+    /// - `msg`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
+    ///
+    /// # Example Usage
+    /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
+    /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
+    pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T,saturation_ok:bool) -> Result<(), T> {
+        #[cfg(debug_assertions)]
+        this.direct_use_check_and_warn();
+        this.shared_send_async(a, self.ident,saturation_ok).await
+    }
 
     pub fn edge_simulator(&self) -> Option<EdgeSimulator> {
         self.ctx.as_ref().map(|ctx| EdgeSimulator::new(ctx.clone()))
@@ -197,19 +218,15 @@ impl SteadyContext {
             (None, None, None)
         };
 
-        let start_instant = Instant::now().sub(Duration::from_secs(1+config::TELEMETRY_PRODUCTION_RATE_MS as u64));
-
-
         // this is my fixed size version for this specific thread
         LocalMonitor::<RX_LEN, TX_LEN> {
             telemetry_send_rx,
             telemetry_send_tx,
             telemetry_state,
-            last_telemetry_send: start_instant,
-
+            // to avoid stampede of elephants on startup we stagger and delay
+            // the first telemetry send
+            last_telemetry_send: Instant::now(),
             ident: self.ident,
-
-
             ctx: self.ctx,
             redundancy: self.redundancy,
             runtime_state: self.runtime_state,
@@ -228,7 +245,7 @@ pub struct Graph  {
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) monitor_count: Arc<AtomicUsize>,
     //used by collector but could grow if we get new actors at runtime
-    pub(crate) all_telemetry_rx: Arc<Mutex<Vec<CollectorDetail>>>,
+    pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
 }
 
@@ -264,7 +281,7 @@ pub struct EdgeSimulationDirector {
 }
 
 impl EdgeSimulationDirector {
-    pub fn new(graph: &Graph, name: & 'static str) -> EdgeSimulationDirector {
+    pub fn new(_graph: &Graph, name: & 'static str) -> EdgeSimulationDirector {
         EdgeSimulationDirector {
             distributor: bastion::distributor::Distributor::named(name)
         }
@@ -319,6 +336,7 @@ impl Graph {
         EdgeSimulationDirector::new(self, name)
     }
 
+    /// start the graph, this should be done after building the graph
     pub fn start(&mut self) {
 
         // if we are not in release mode we will enable fail fast
@@ -402,13 +420,15 @@ impl Graph {
             }
 
         }
+        error!("kill bastion");
+
         bastion::Bastion::kill();
     }
 
     pub fn block_until_stopped(&mut self) {
         bastion::run!(async { //TODO: may also need to check for ctrl-c ??? check later
 
-
+          error!("todo finish the block until stopped");
          //stay here until we see Stopped!!
 
 
@@ -426,22 +446,22 @@ impl Graph {
 
     /// create a new graph for the application typically done in main
     pub fn new<A: Any+Send+Sync>(args: A) -> Graph {
-        Graph {
+        let mut result = Graph {
             args: Arc::new(Box::new(args)),
             channel_count: Arc::new(AtomicUsize::new(0)),
             monitor_count: Arc::new(AtomicUsize::new(0)), //this is the count of all monitors
-            all_telemetry_rx: Arc::new(Mutex::new(Vec::new())), //this is all telemetry receivers
+            all_telemetry_rx: Arc::new(RwLock::new(Vec::new())), //this is all telemetry receivers
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new())),
-        }
+        };
+        //this is based on features in the config
+        telemetry::setup::build_optional_telemetry_graph(&mut result);
+        result
     }
 
     pub fn channel_builder(&mut self) -> ChannelBuilder {
         ChannelBuilder::new(self.channel_count.clone())
     }
 
-    pub fn init_telemetry(&mut self) {
-        telemetry::setup::build_optional_telemetry_graph(self);
-    }
 }
 
 
@@ -473,7 +493,6 @@ const MONITOR_UNKNOWN: usize = usize::MAX;
 const MONITOR_NOT: usize = MONITOR_UNKNOWN-1; //any value below this is a valid monitor index
 
 pub struct Tx<T> {
-    pub(crate) id: usize,
     pub(crate) tx: InternalSender<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
     pub(crate) local_index: usize,
@@ -482,7 +501,6 @@ pub struct Tx<T> {
 }
 
 pub struct Rx<T> {
-    pub(crate) id: usize,
     pub(crate) rx: InternalReceiver<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
     pub(crate) local_index: usize,
@@ -543,6 +561,24 @@ impl<T> Tx<T> {
     /// Less suitable when all messages must be sent without loss, as this method does not guarantee all messages are sent.
     pub fn send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
         self.shared_send_iter_until_full(iter)
+    }
+
+    /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
+    ///
+    /// # Parameters
+    /// - `ident`: The identity of the actor sending the message. Get this from the SteadyContext.
+    /// - `msg`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
+    ///
+    /// # Example Usage
+    /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
+    /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
+    pub async fn send_async(&mut self, ident:ActorIdentity, a: T, saturation_ok:bool) -> Result<(), T> {
+        #[cfg(debug_assertions)]
+        self.direct_use_check_and_warn();
+        self.shared_send_async(a, ident, saturation_ok).await
     }
 
     /// Sends messages from a slice to the channel until the channel is full.
@@ -622,22 +658,7 @@ impl<T> Tx<T> {
         self.shared_wait_empty().await
     }
 
-    /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
-    ///
-    /// # Parameters
-    /// - `msg`: The message to be sent.
-    ///
-    /// # Returns
-    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
-    ///
-    /// # Example Usage
-    /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
-    /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    pub async fn send_async(& mut self, msg: T) -> Result<(), T> {
-        #[cfg(debug_assertions)]
-        self.direct_use_check_and_warn();
-        self.shared_send_async(msg).await
-    }
+
 
     //////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////
@@ -694,23 +715,26 @@ impl<T> Tx<T> {
     }
 
     #[inline]
-    async fn shared_send_async(& mut self, msg: T) -> Result<(), T> {
+    async fn shared_send_async(& mut self, msg: T, ident: ActorIdentity, saturation_ok: bool) -> Result<(), T> {
         match self.tx.try_push(msg) {
             Ok(_) => {Ok(())},
             Err(msg) => {
-                //NOTE: we slow the rate of errors reported
-                if self.last_error_send.elapsed().as_secs() > 10 {
-                       let type_name = type_name::<T>().split("::").last();
-
-                       error!("tx full channel #{} {:?} cap:{:?} type:{:?} "
-                                   , self.id
+                //caller can decide this is ok and not a warning
+                if !saturation_ok {
+                    //NOTE: we slow the rate of errors reported
+                    // TODO: this "slow" rate should be a happy little macro done everywhere
+                    if self.last_error_send.elapsed().as_secs() > 10 {
+                        let type_name = type_name::<T>().split("::").last();
+                        warn!("{:?} tx full channel #{} {:?} cap:{:?} type:{:?} "
+                                   , ident
+                                   , self.channel_meta_data.id
                                    , self.channel_meta_data.labels
                                    , self.tx.capacity()
                                    , type_name);
-                       self.last_error_send = Instant::now();
+                        self.last_error_send = Instant::now();
+                    }
+                    // here we will wait until there is room in the channel
                 }
-                // here we will wait until there is room in the channel
-
                 //TODO: a timeout here may be a good idea also abandon on shutdown
 
                 select! {
@@ -1247,6 +1271,12 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         self.ctx.is_some()
     }
 
+    //testing
+    async fn async_yield_now() {
+        pending::<()>().poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()));
+        // Immediately after polling, we return control, effectively yielding.
+    }
+
 
     pub fn edge_simulator(&self) -> Option<EdgeSimulator> {
         self.ctx.as_ref().map(|ctx| EdgeSimulator::new(ctx.clone()))
@@ -1254,9 +1284,11 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
+    /// Will hold the data if it is called more frequently than the collector can consume the data.
+    /// This is designed for use in tight loops where telemetry data is collected frequently.
     ///
     /// # Asynchronous
-    pub async fn relay_stats_all(&mut self) {
+    pub async fn relay_stats_smartly(&mut self) {
         //NOTE: not time ing this one as it is mine and internal
         telemetry::setup::try_send_all_local_telemetry(self).await;
     }
@@ -1269,14 +1301,14 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Asynchronous
     pub async fn relay_stats_periodic(&mut self, duration_rate: Duration) {
         self.start_hot_profile(monitor::CALL_WAIT);
-        assert!(duration_rate.ge(&Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)),
-              "the set rate is too fast, it must be at least {} micro seconds but found {:?}", config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS,duration_rate);
-
+        //TODO: we should reuse teh Delay object in self
+        //TODO: we may need a global clock for all the actors together to be more accurate.
+        //   Warning: Delay can sometimes way many times longer than expected
         Delay::new(duration_rate.saturating_sub(self.last_telemetry_send.elapsed())).await;
         self.rollup_hot_profile();
         //this can not be measured since it sends the measurement of hot_profile.
         //also this is a special case where we do not want to measure the time it takes to send telemetry
-        self.relay_stats_all().await;
+        self.relay_stats_smartly().await;
     }
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
@@ -1355,7 +1387,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
         let done = this.shared_take_slice(slice);
         this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
-            tel.process_event(this.local_index, this.id, done)
+            tel.process_event(this.local_index, this.channel_meta_data.id, done)
         } else {
             MONITOR_NOT
         };
@@ -1376,7 +1408,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         match this.shared_try_take() {
             Some(msg) => {
                 this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
-                    tel.process_event(this.local_index, this.id, 1)
+                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
                 } else {
                     MONITOR_NOT
                 };
@@ -1523,7 +1555,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         match result {
             Ok(result) => {
                 this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
-                    tel.process_event(this.local_index, this.id, 1)
+                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
                 } else {
                     MONITOR_NOT
                 };
@@ -1559,7 +1591,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let done = this.send_slice_until_full(slice);
 
         this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
-            tel.process_event(this.local_index, this.id, done)
+            tel.process_event(this.local_index, this.channel_meta_data.id, done)
         } else {
             MONITOR_NOT
         };
@@ -1584,7 +1616,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let done = this.send_iter_until_full(iter);
 
         this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
-            tel.process_event(this.local_index, this.id, done)
+            tel.process_event(this.local_index, this.channel_meta_data.id, done)
         } else {
             MONITOR_NOT
         };
@@ -1610,7 +1642,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             Ok(_) => {
 
                 this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
-                    tel.process_event(this.local_index, this.id, 1)
+                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
                 } else {
                     MONITOR_NOT
                 };
@@ -1683,14 +1715,16 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
     ///
     /// # Asynchronous
-    pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T) -> Result<(), T> {
-       self.start_hot_profile(monitor::CALL_SINGLE_WRITE);
-       let result = this.shared_send_async(a).await;
+    pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T, saturation_ok: bool) -> Result<(), T> {
+       // TODO: instead of boolean we should have more descriptive enum.
+        //      IgnoreAndWait, IgnoreAndErr, Warn (default), IgnoreInRelease
+        self.start_hot_profile(monitor::CALL_SINGLE_WRITE);
+       let result = this.shared_send_async(a, self.ident, saturation_ok).await;
        self.rollup_hot_profile();
        match result  {
            Ok(_) => {
                this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
-                   tel.process_event(this.local_index, this.id, 1)
+                   tel.process_event(this.local_index, this.channel_meta_data.id, 1)
                } else {
                    MONITOR_NOT
                };

@@ -70,26 +70,23 @@ impl SteadyTelemetryActorSend {
         self.calls.fill(0);
     }
 
-    pub(crate) fn status_message(&self) -> Option<ActorStatus> {
+    pub(crate) fn status_message(&self) -> ActorStatus {
 
-        if config::TELEMETRY_FOR_ACTORS {
             let total_ns = self.instant_start.elapsed().as_nanos() as u64;
 
             //ok on shutdown.
             //assert!(self.hot_profile.is_none(),"internal error");
 
             assert!(total_ns>=self.await_ns_unit,"should be: {} >= {}",total_ns,self.await_ns_unit);
-            Some(ActorStatus {
+            ActorStatus {
                 total_count_restarts: self.count_restarts.load(Ordering::Relaxed),
                 bool_stop: self.bool_stop,
                 await_total_ns: self.await_ns_unit,
                 unit_total_ns: total_ns,
                 redundancy: self.redundancy,
                 calls: self.calls,
-            })
-        } else {
-            None
-        }
+            }
+
     }
 
 }
@@ -125,10 +122,22 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
         }
     }
 
+    fn wait_for_actor_count(&self, count: usize) -> bool {
+        if let Some(ref act) = &self.actor {
+            bastion::run!(
+                let mut guard = act.lock().await;
+                guard.deref_mut().wait_avail_units(count).await;
+            );
+            true
+        } else {
+            false
+        }
+    }
 
     fn consume_actor(&self) -> Option<ActorStatus> {
         if let Some(ref act) = &self.actor {
-            let mut buffer = [ActorStatus::default();config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
+
+            let mut buffer = [ActorStatus::default();config::CONSUMED_MESSAGES_BY_COLLECTOR +1];
             let count = {
                 let mut guard = bastion::run!(act.lock());
                 let act = guard.deref_mut();
@@ -167,14 +176,13 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
     }
 
 
-
     #[inline]
     fn consume_take_into(&self, take_send_source: &mut Vec<(i128,i128)>
                          , future_take: &mut Vec<i128>
                          , future_send: &mut Vec<i128>
                     ) -> bool {
         if let Some(ref take) = &self.take {
-            let mut buffer = [[0usize;RXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
+            let mut buffer = [[0usize;RXL];config::CONSUMED_MESSAGES_BY_COLLECTOR +1];
 
             let count = {
                 let mut rx_guard = bastion::run!(take.rx.lock());
@@ -247,7 +255,7 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                               , future_send: &mut Vec<i128>) -> bool {
         if let Some(ref send) = &self.send {
             //we only want to gab a max of LOCKED_CHANNEL_LENGTH_TO_COLLECTOR for this frame
-            let mut buffer = [[0usize;TXL];config::LOCKED_CHANNEL_LENGTH_TO_COLLECTOR+1];
+            let mut buffer = [[0usize;TXL];config::CONSUMED_MESSAGES_BY_COLLECTOR +1];
 
             let count = {
                 let mut tx_guard = bastion::run!(send.rx.lock());
@@ -256,14 +264,14 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             };
             let populated_slice = &buffer[0..count];
 
+            assert_eq!(future_send.len(),take_send_target.len());
+
             // each message, each details then each channel
             populated_slice.iter().for_each(|msg| {
                 send.details.iter()
                     .zip(msg.iter())
                     .for_each(|(meta, val)| {
                         //consume any send left over from last frame
-                        //TODO: we have a race condition here sometimes
-                        //      must check meta.id that take_send_target grows...
                         take_send_target[meta.id].1 += future_send[meta.id];
                         future_send[meta.id] = 0;//clear so it is ready for the take phase
                         //consume the new send values for this frame
@@ -278,22 +286,6 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
 
 
-    fn biggest_tx_id(&self) -> usize {
-        if let Some(tx) = &self.send {
-            *tx.details.iter().map(|m|&m.id).max().unwrap_or(&0)
-        } else {
-            0
-        }
-
-    }
-
-    fn biggest_rx_id(&self) -> usize {
-        if let Some(tx) = &self.take {
-            *tx.details.iter().map(|m|&m.id).max().unwrap_or(&0)
-        } else {
-            0
-        }
-    }
 }
 
 
@@ -400,10 +392,8 @@ pub trait RxTel : Send + Sync {
     fn consume_send_into(&self, take_send_source: &mut Vec<(i128,i128)>
                               , future_send: &mut Vec<i128>) -> bool;
 
-    fn biggest_tx_id(&self) -> usize;
-    fn biggest_rx_id(&self) -> usize;
 
-
+    fn wait_for_actor_count(&self, count: usize) -> bool;
 }
 
 #[cfg(test)]
@@ -443,7 +433,7 @@ pub(crate) mod monitor_tests {
         let threshold = 5;
         let mut count = 0;
         while count < threshold {
-            let _ = monitor.send_async(txd, "test".to_string()).await;
+            let _ = monitor.send_async(txd, "test".to_string(),false).await;
             count += 1;
         }
 
@@ -451,7 +441,7 @@ pub(crate) mod monitor_tests {
             assert_eq!(tx.count[txd.local_index], threshold);
         }
 
-        monitor.relay_stats_all().await;
+        monitor.relay_stats_smartly().await;
 
         if let Some(ref mut tx) = monitor.telemetry_send_tx {
             assert_eq!(tx.count[txd.local_index], 0);
@@ -468,7 +458,7 @@ pub(crate) mod monitor_tests {
         }
         Delay::new(Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)).await;
 
-        monitor.relay_stats_all().await;
+        monitor.relay_stats_smartly().await;
 
         if let Some(ref mut rx) = monitor.telemetry_send_rx {
             assert_eq!(rx.count[rxd.local_index], 0);
@@ -495,12 +485,12 @@ pub(crate) mod monitor_tests {
         let threshold = 5;
         let mut count = 0;
         while count < threshold {
-            let _ = monitor.send_async(txd, "test".to_string()).await;
+            let _ = monitor.send_async(txd, "test".to_string(),false).await;
             count += 1;
             if let Some(ref mut tx) = monitor.telemetry_send_tx {
                 assert_eq!(tx.count[txd.local_index], count);
             }
-            monitor.relay_stats_all().await;
+            monitor.relay_stats_smartly().await;
         }
 
         if let Some(ref mut tx) = monitor.telemetry_send_tx {
@@ -517,7 +507,7 @@ pub(crate) mod monitor_tests {
         }
         Delay::new(Duration::from_micros(config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u64)).await;
 
-        monitor.relay_stats_all().await;
+        monitor.relay_stats_smartly().await;
 
         if let Some(ref mut rx) = monitor.telemetry_send_rx {
             assert_eq!(rx.count[rxd.local_index], 0);

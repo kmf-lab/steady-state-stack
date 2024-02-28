@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
-use std::sync::Arc;
+use std::process::exit;
+use std::sync::{Arc, LockResult};
 use std::time::{Duration, Instant};
 use log::*;
 use num_traits::Zero;
@@ -50,28 +51,43 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         actor_metadata: that.actor_metadata.clone(),
     };
 
-    //need to hand off to the collector
-    let mut shared_vec_guard = bastion::run!(that.all_telemetry_rx.lock());
+    let idx:Option<usize> = match that.all_telemetry_rx.read() {
+        Ok(guard) => {
+            //need to hand off to the collector
+            let shared_vec = guard.deref();
+            let index:Option<usize> = shared_vec.iter()
+                .enumerate()
+                .find(|(_,x)| x.ident == that.ident)
+                .map(|(idx,_)|idx);
+            index
+        }
+        Err(_) => {
+            error!("internal error: unable to get read lock");
+            None
+        }
+    };
 
-    let shared_vec = shared_vec_guard.deref_mut();
-    let index:Option<usize> = shared_vec.iter()
-                            .enumerate()
-                            .find(|(_,x)|x.monitor_id == that.ident.id && x.name == that.ident.name)
-                            .map(|(idx,_)|idx);
-    if let Some(idx) = index {
-      //we add new SteadyTelemetryRx which waits for the old one to be consumed first
-      shared_vec[idx].telemetry_take.push_back(Box::new(det));
-    } else {
-        let mut tt:VecDeque<Box<dyn RxTel>> = VecDeque::new();
-        tt.push_back(Box::new(det));
-        let details = CollectorDetail {
-            name: that.ident.name,
-            monitor_id: that.ident.id,
-            temp_barrier: false,
-            telemetry_take: tt,
-        };
-        shared_vec.push(details); //add new telemetry channels
+    match that.all_telemetry_rx.write() {
+        Ok(mut guard) => {
+            let shared_vec = guard.deref_mut();
+            if let Some(idx) = idx {
+                //we add new SteadyTelemetryRx which waits for the old one to be consumed first
+                shared_vec[idx].telemetry_take.push_back(Box::new(det));
+            } else {
+                let mut telemetry_take:VecDeque<Box<dyn RxTel>> = VecDeque::new();
+                telemetry_take.push_back(Box::new(det));
+                shared_vec.push(CollectorDetail {
+                    ident: that.ident, telemetry_take
+                }); //add new telemetry channels
+            }
+        }
+        Err(_) => {
+            error!("internal error: failed to write to all_telemetry_rx");
+        }
     }
+
+
+
 
 
     let telemetry_actor =
@@ -122,16 +138,7 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
                                                , rx.clone()
                 ));
 
-
-            let senders_count: usize = {
-                let guard = bastion::run!(graph.all_telemetry_rx.lock());
-                let v = guard.deref();
-                v.len()
-            };
-
-            //only spin up the metrics collector if we have a consumer
-            //OR if some actors are sending data we need to consume
-            if config::TELEMETRY_SERVER || senders_count > 0 {
+            if config::TELEMETRY_SERVER  {
                 let all_tel_rx = graph.all_telemetry_rx.clone(); //using Arc here
 
                 let bldr = graph.actor_builder()
@@ -154,26 +161,70 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
         }
 }
 
-
+#[inline]
 pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(this: &mut LocalMonitor<RX_LEN, TX_LEN>) {
-//only relay if we are withing the bounds of the telemetry channel limits.
-    if this.last_telemetry_send.elapsed().as_micros() >= config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u128 {
+    //do not relay faster than this to ensure we do not overload the channel
+    //we will continue to roll up data if we do not send it
+    let last_elapsed = this.last_telemetry_send.elapsed();
+    if last_elapsed.as_micros() >= config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u128 {
 
         let is_in_graph: bool = this.is_in_graph();
 
         if let Some(ref mut actor_status) = this.telemetry_state {
-            if let Some(msg) = actor_status.status_message() {
+            {
+                let msg = actor_status.status_message();
+                //NOTE: actor status MUST be sent every MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS
+                //      until we reach half of channel capacity, then we will back off
+                //      this fill level is used to "trigger" the collector as a timer
+                //      channel take/send data can skip tx if it is all zeros but that
+                //      can never be done here since this is critical for the collector
+
+
+
                 if is_in_graph {
                     let clear_status = {
                         let mut lock_guard = actor_status.tx.lock().await;
                         let tx = lock_guard.deref_mut();
+
+                        let capacity = tx.capacity();
+                        let vacant_units = tx.vacant_units();
+
+                        if vacant_units >= (capacity>>1) {
+                            //ok we are not in danger of filling up
+                        } else {
+                            let scale = calculate_exponential_channel_backoff(capacity, vacant_units);
+                            if last_elapsed.as_micros() < scale as u128 * config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u128 {
+
+                                //data is backing up why is the consumer not..
+                                if scale>30 {
+                                    error!("{:?} EXIT hard delay on actor status: {} empty{} of{}",this.ident,scale,vacant_units,capacity);
+                                    exit(-1);
+                                }
+
+                                //we have discovered that the consumer is not keeping up
+                                //so we will make use of the exponential backoff.
+                                return;
+                            }
+                        }
                         match tx.try_send(msg) {
                             Ok(_) => {
                                 if let Some(ref mut send_tx) = this.telemetry_send_tx {
-                                    if tx.local_index.lt(&MONITOR_NOT) { //only record those turned on (init)
+                                    if tx.local_index.lt(&MONITOR_NOT) {
+                                        //only record those turned on (init)
+                                        //this happy path where we already have our index
                                         send_tx.count[tx.local_index] += 1;
+                                        //we know this has already happened once therefore we can check for slowness
+                                        //between now the last time we sent telemetry
+                                        if last_elapsed.as_millis() >= config::TELEMETRY_PRODUCTION_RATE_MS as u128 {
+                                            let now = Instant::now();
+                                            let dif = now.duration_since(actor_status.last_telemetry_error);
+                                            if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+                                                warn!("{:?} consider shortening period of relay_stats_periodic or adding relay_stats_all() in your work loop,\n it is called too infrequently at {}ms which is larger than your frame rate of {}ms",this.ident, last_elapsed.as_millis(), config::TELEMETRY_PRODUCTION_RATE_MS);
+                                                actor_status.last_telemetry_error = now;
+                                            }
+                                        }
                                     } else if tx.local_index.eq(&MONITOR_UNKNOWN) {
-                                        tx.local_index = find_my_index(send_tx, tx.id);
+                                        tx.local_index = find_my_index(send_tx, tx.channel_meta_data.id);
                                         if tx.local_index.lt(&MONITOR_NOT) {
                                             send_tx.count[tx.local_index] += 1;
                                         }
@@ -186,10 +237,13 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                                 let dif = now.duration_since(actor_status.last_telemetry_error);
                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                     //Check metrics_consumer for slowness
-                                    error!("relay all tx, full telemetry channel detected upon tx from telemetry: {:?} value:{:?} full:{:?} capacity: {:?} "
-                                             , this.ident.name, a, tx.is_full(), tx.tx.capacity());
+                                    warn!("full telemetry state channel detected from {:?} value:{:?} full:{:?} capacity: {:?} "
+                                             , this.ident, a, tx.is_full(), tx.tx.capacity());
+
+
                                     //store time to do this again later.
                                     actor_status.last_telemetry_error = now;
+
                                 }
                                 false
                             }
@@ -220,7 +274,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                             if tx.local_index.lt(&MONITOR_NOT) { //only record those turned on (init)
                                 send_tx.count[tx.local_index] = 1;
                             } else if tx.local_index.eq(&MONITOR_UNKNOWN) {
-                                    tx.local_index = find_my_index(send_tx, tx.id);
+                                    tx.local_index = find_my_index(send_tx, tx.channel_meta_data.id);
                                     if tx.local_index.lt(&MONITOR_NOT) {
                                         send_tx.count[tx.local_index] = 1;
                                     }
@@ -231,8 +285,8 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                             let dif = now.duration_since(send_tx.last_telemetry_error);
                             if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                 //Check metrics_consumer for slowness
-                                error!("relay all tx, full telemetry channel detected upon tx from telemetry: {} value:{:?} full:{} "
-                                             , this.ident.name, a, tx.is_full());
+                                warn!("full telemetry tx channel detected from {:?} value:{:?} full:{:?} capacity: {:?} "
+                                             , this.ident, a, tx.is_full(), tx.tx.capacity());
                                 //store time to do this again later.
                                 send_tx.last_telemetry_error = now;
                             }
@@ -257,7 +311,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                             if rx.local_index.lt(&MONITOR_NOT) { //only record those turned on (init)
                                 send_rx.count[rx.local_index] = 1;
                             } else if rx.local_index.eq(&MONITOR_UNKNOWN) {
-                                rx.local_index = find_my_index(send_rx, rx.id);
+                                rx.local_index = find_my_index(send_rx, rx.channel_meta_data.id);
                                 if rx.local_index.lt(&MONITOR_NOT) {
                                     send_rx.count[rx.local_index] = 1;
                                 }
@@ -269,8 +323,9 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                             let dif = now.duration_since(send_rx.last_telemetry_error);
                             if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                 //Check metrics_consumer for slowness
-                                error!("relay all rx, full telemetry channel detected upon rx from telemetry: {} value:{:?} full:{} "
-                                             , this.ident.name, a, rx.is_full());
+                                warn!("full telemetry rx channel detected from {:?} value:{:?} full:{:?} capacity: {:?} "
+                                             , this.ident, a, rx.is_full(), rx.tx.capacity());
+
                                 //store time to do this again later.
                                 send_rx.last_telemetry_error = now;
                             }
@@ -287,6 +342,16 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
     }
 }
 
+pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_units: usize) -> u32 {
+    // Number of bits required to represent the capacity
+    let bits_count = (capacity as f64).log2().ceil() as u32;
+    // Number of bits required in the u32 vacant count
+    let bit_to_represent_vacant_count = 32-(vacant_units as u32).leading_zeros();
+    // If vacant is large then our delay will be small by design
+    // As vacant gets small the delay will grow exponentially
+    (1 + bits_count - bit_to_represent_vacant_count).pow(3)
+}
+
 
 pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: usize>(this: &mut LocalMonitor<RX_LEN, TX_LEN>) {
         // send the last data before this struct is dropped.
@@ -296,37 +361,37 @@ pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX
 
         if this.is_in_graph() {
             if let Some(ref mut actor_status) = this.telemetry_state {
-                if let Some(msg) = actor_status.status_message() {
+                let msg = actor_status.status_message();
                     {
                         let mut lock_guard = actor_status.tx.lock().await;
                         let tx = lock_guard.deref_mut();
-                        let _ = tx.send_async(msg).await;
+                        //TODO: prod/dev bool
+                        let _ = tx.send_async(this.ident, msg,false).await;
                     }
                     actor_status.status_reset();
-                }
+
             }
             if let Some(ref mut send_tx) = this.telemetry_send_tx {
                 if send_tx.count.iter().any(|x| !x.is_zero()) {
                     let mut lock_guard = send_tx.tx.lock().await;
                     let tx = lock_guard.deref_mut();
-                    let _ = tx.send_async(send_tx.count).await;
+                    //TODO: prod/dev bool
+                    let _ = tx.send_async(this.ident,send_tx.count,false).await;
                 }
             }
             if let Some(ref mut send_rx) = this.telemetry_send_rx {
                 if send_rx.count.iter().any(|x| !x.is_zero()) {
                     let mut lock_guard = send_rx.tx.lock().await;
                     let rx = lock_guard.deref_mut();
-                    let _ = rx.send_async(send_rx.count).await;
+                    //TODO: prod/dev bool
+                    let _ = rx.send_async(this.ident, send_rx.count,false).await;
                 }
             }
 
-
             if let Some(ref mut actor_status) = this.telemetry_state {
-                if actor_status.status_message().is_some() {
                     let mut lock_guard = actor_status.tx.lock().await;
                     let tx = lock_guard.deref_mut();
                     tx.wait_empty().await;
-                }
             }
             if let Some(ref send_tx) = this.telemetry_send_tx {
                 if send_tx.count.iter().any(|x| !x.is_zero()) {
@@ -346,6 +411,37 @@ pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX
         }
     #[cfg(debug_assertions)]
     trace!("send of all local telemetry complete");
+
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    #[test]
+    fn test_compute_scale_up_delay() {
+
+        let capacity = 128;
+
+        for vacant_units in (0..capacity).rev() {
+            let backoff = calculate_exponential_channel_backoff(capacity, vacant_units);
+            ///println!("vacant:{} backoff:{}",vacant_units, backoff);
+            match vacant_units {
+                64..=127 => assert_eq!(backoff, 1), //the first half is always 1
+                32..=63 =>  assert_eq!(backoff, 8),
+                16..=31 => assert_eq!(backoff, 27), //then we rapidly scale up
+                8..=15 =>  assert_eq!(backoff, 64),
+                4..=7 =>  assert_eq!(backoff, 125),
+                2..=3 =>  assert_eq!(backoff, 216),
+                1 =>      assert_eq!(backoff, 343),
+                0 =>      assert_eq!(backoff, 512),
+                _=> {}
+            }
+        }
+
+    }
+
 
 }
 

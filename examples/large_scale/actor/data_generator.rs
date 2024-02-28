@@ -1,10 +1,12 @@
 use std::mem;
 use std::ops::{DerefMut};
+use std::time::Duration;
 use bytes::Bytes;
 #[allow(unused_imports)]
 use log::*;
 use rand::{Rng, thread_rng};
 use steady_state::*;
+use crate::args::Args;
 
 
 #[derive(Clone, Debug)]
@@ -20,13 +22,13 @@ pub struct Packet {
 pub async fn run<const GURTH:usize>(context: SteadyContext
                                   , tx: SteadyTxBundle<Packet,GURTH>) -> Result<(),()> {
 
-    /*
+
      let gen_rate_micros = if let Some(a) = context.args::<Args>() {
         a.gen_rate_micros
     } else {
         10_000 //default
     };
-    */
+
     let mut monitor = context.into_monitor([], SteadyBundle::tx_def_slice(&tx));
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
@@ -60,7 +62,7 @@ pub async fn run<const GURTH:usize>(context: SteadyContext
             monitor.wait_vacant_units(tx, buffers[i].len()).await;
             monitor.send_iter_until_full(tx,iter);
         }
-        monitor.relay_stats_all().await;
+        monitor.relay_stats_smartly().await;
         //monitor.relay_stats_periodic(Duration::from_micros(gen_rate_micros)).await;
     }
     Ok(())
@@ -83,7 +85,7 @@ pub async fn run<const LEN:usize>(context: SteadyContext
 
     loop {
          relay_test(& mut monitor, &tx).await;
-         monitor.relay_stats_all().await;
+         monitor.relay_stats_smartly().await;
    }
 }
 #[cfg(test)]

@@ -75,7 +75,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonito
             }
 
             //based on the channel capacity this will send batched updates so most calls do nothing.
-            monitor.relay_stats_all().await;
+            monitor.relay_stats_smartly().await;
 
     }
 

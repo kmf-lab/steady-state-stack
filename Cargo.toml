@@ -74,7 +74,7 @@ lazy_static      = "1.4"
 config           = "0.14.0" # for lazy statics in unit tests
 const_panic      = "0.2.8" # for const panic!()
 hdrhistogram     = "7.5.4"  # for latency histograms
-getrandom        = { version = "0.2.12", features = ["js"] }
+rand             = "0.8.4" # for random number generation
 bytes            = { version = "1.5.0", features = [] }
 time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] } # for time formatting and supports no-std
 stun-rs          = "0.1.5"  # for stun server
@@ -125,7 +125,6 @@ nuclei           = { version = "0.4.4", features = ["async-exec","iouring","attr
 
 [dev-dependencies]
 async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
-rand             = "0.8.4" # for random number generation
 rand_distr       = "0.4.2" # for random number generation
 
 [target.armv7-unknown-linux-gnueabihf]

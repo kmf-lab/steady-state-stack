@@ -1334,7 +1334,7 @@ mod stats_tests {
                                     , & computer.std_dev_latency
                                     , & computer.percentiles_latency);
         } //note this is "near" expected std
-        assert_eq!(display_label, "rate 25%ile 781 per/sec\nrate 50%ile 875 per/sec\nrate 75%ile 1188 per/sec\nrate 90%ile 1531 per/sec\n");
+        assert_eq!(display_label, "rate 25%ile 625 per/sec\nrate 50%ile 700 per/sec\nrate 75%ile 950 per/sec\nrate 90%ile 1225 per/sec\n");
 
         // Define a trigger with a standard deviation condition
         assert!(computer.triggered_rate(&Trigger::PercentileAbove(Percentile::p90(), Rate::per_millis(47))), "Trigger should fire when standard deviation from the average filled is above the threshold");
@@ -1560,7 +1560,7 @@ fn latency_avg_trigger() {
             assert!(!computer.build_latency_histogram);
 
         }//note this is "near" expected std
-        assert_eq!(display_label, "latency 25%ile 1367 ms\nlatency 50%ile 1367 ms\nlatency 75%ile 1367 ms\nlatency 90%ile 1367 ms\n");
+        assert_eq!(display_label, "latency 25%ile 1703 ms\nlatency 50%ile 1703 ms\nlatency 75%ile 1703 ms\nlatency 90%ile 1703 ms\n");
 
 
         // Define a trigger for average rate above a threshold

@@ -34,19 +34,24 @@ use std::env;
 
 
 
-    pub const TELEMETRY_FOR_ACTORS:bool = true; //TODO: can turn this off as a feature
+    pub const REAL_CHANNEL_LENGTH_TO_FEATURE:usize = 128; //allows features to fall behind with minimal latency
 
+    // granularity of the frames:
+    // big values do consume a more memory. This controls the accuracy of the data
+    // it could be off my as much as 1/VAL of a frame.
+    // ALSO: the first half of the channel will fill at the expected 1/VAL rate
+    // where VAL is this REAL length/2.  The latter half will fill more slowly as an
+    // exponential backoff.
+    pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR:usize = 128;
+    pub const CONSUMED_MESSAGES_BY_COLLECTOR:usize = REAL_CHANNEL_LENGTH_TO_COLLECTOR>>1; //larger values take up memory but allow faster capture rates
 
-    pub const REAL_CHANNEL_LENGTH_TO_FEATURE:usize = 256; //allows features to fall behind with minimal latency
-    pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR:usize = 256; //larger values take up memory but allow faster capture rates
-    pub const LOCKED_CHANNEL_LENGTH_TO_COLLECTOR:usize = REAL_CHANNEL_LENGTH_TO_COLLECTOR>>1; //larger values take up memory but allow faster capture rates
-
-    pub const TELEMETRY_PRODUCTION_RATE_MS:usize = 32;
-                 //values smaller than 32 can not be seen my normal humans
-                 //values larger than 1000 are not supported at this time
+    // TELEMETRY_PRODUCTION_RATE_MS defines the rate at which telemetry data is produced, measured in milliseconds.
+    // This rate determines the frame capture rate, with a default setting of 40 milliseconds corresponding to 25 frames per second (1000 ms / 40 ms = 25 fps).
+    // Adjusting this value affects how frequently data frames are generated and collected.
+    pub const TELEMETRY_PRODUCTION_RATE_MS: usize = 40;
 
     pub const MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS:usize
-               = (1000*TELEMETRY_PRODUCTION_RATE_MS)/LOCKED_CHANNEL_LENGTH_TO_COLLECTOR;
+               = (1000*TELEMETRY_PRODUCTION_RATE_MS)/ CONSUMED_MESSAGES_BY_COLLECTOR;
 
 
     pub const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 60;

@@ -84,13 +84,13 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
     while (!rx.is_empty()) && !tx.is_full() {
         match monitor.take_async(rx).await {
             Ok(m) => {
-                let _ = monitor.send_async(tx, m).await;
+                let _ = monitor.send_async(tx, m,false).await;
             },
             Err(msg) => {
                 error!("Unexpected error recv_async {}", msg);
             }
         }
-        monitor.relay_stats_all().await;
+        monitor.relay_stats_smartly().await;
     }
     false
 }

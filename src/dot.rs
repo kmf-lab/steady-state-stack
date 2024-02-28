@@ -265,7 +265,7 @@ pub(crate) struct FrameHistory {
 const REC_NODE:u64 = 1;
 const REC_EDGE:u64 = 0;
 
-const HISTORY_WRITE_BLOCK_SIZE:usize = 1 << 13; //13 is 8K NOTE: must be power of 2 and 4096 or larger
+const HISTORY_WRITE_BLOCK_SIZE:usize = 1 << 12; //must be power of 2 and 4096 or larger
 
 impl FrameHistory {
 

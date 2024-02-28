@@ -90,7 +90,7 @@ pub async fn run(context: SteadyContext
 
     loop {
          relay_test(& mut monitor, tx).await;
-         monitor.relay_stats_all().await;
+         monitor.relay_stats_smartly().await;
    }
 }
 #[cfg(test)]
@@ -142,7 +142,7 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor
     //iterator of sent until the end
     let consume = wids.into_iter().skip(sent);
     for send_me in consume {
-        let _ = monitor.send_async(tx_widget, send_me).await;
+        let _ = monitor.send_async(tx_widget, send_me, false).await;
     }
 
     false
