@@ -5,6 +5,8 @@ use bastion::context::BastionContext;
 use bastion::message::MessageHandler;
 
 use log::error;
+use futures::channel::oneshot::Receiver;
+use crate::Graph;
 
 #[derive(Debug)]
 pub enum GraphTestResult<K,E>
@@ -52,6 +54,43 @@ impl EdgeSimulator {
             }
         }
 
+    }
+
+}
+
+pub struct EdgeSimulationDirector {
+    distributor: bastion::distributor::Distributor,
+}
+
+impl EdgeSimulationDirector {
+    pub fn new(_graph: &Graph, name: & 'static str) -> EdgeSimulationDirector {
+        EdgeSimulationDirector {
+            distributor: bastion::distributor::Distributor::named(name)
+        }
+    }
+
+    pub async fn send_request<T: 'static, K, E>(&self, msg: T) -> Option<GraphTestResult<K, E>>
+      where T: Any + Send + Sync + Debug + Clone,
+            K: Any + Send + Sync + Debug,
+            E: Any + Send + Sync + Debug
+    {
+        let answer_consumer:Receiver<Result<GraphTestResult<K,E>,bastion::errors::SendError>> = self.distributor.request(msg);
+        match answer_consumer.await {
+            Ok(ac) => {
+                match ac {
+                    Ok(response) => {
+                        return Some(response);
+                    },
+                    Err(e) => {
+                        error!("failed to send request: {:?}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!("failed to send request: {:?}", e);
+            }
+        }
+       None
     }
 
 }

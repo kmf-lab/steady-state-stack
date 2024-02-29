@@ -1,15 +1,16 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::process::exit;
-use std::sync::{Arc, LockResult};
+use std::sync::{Arc};
 use std::time::{Duration, Instant};
 use log::*;
 use num_traits::Zero;
 use ringbuf::traits::Observer;
-use crate::{config, Graph, LocalMonitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyContext, telemetry};
-use crate::channel_builder::{ChannelBuilder};
+use crate::{config, Graph, MONITOR_NOT, MONITOR_UNKNOWN, SteadyContext, telemetry};
+use crate::channel_builder::ChannelBuilder;
 use crate::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
-use crate::monitor::{ChannelMetaData, find_my_index, RxTel, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
+use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
+use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
 
 pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(that: &SteadyContext
@@ -50,7 +51,6 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         actor: Some(act_tuple.1),
         actor_metadata: that.actor_metadata.clone(),
     };
-
     let idx:Option<usize> = match that.all_telemetry_rx.read() {
         Ok(guard) => {
             //need to hand off to the collector
@@ -66,7 +66,6 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
             None
         }
     };
-
     match that.all_telemetry_rx.write() {
         Ok(mut guard) => {
             let shared_vec = guard.deref_mut();
@@ -85,10 +84,6 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
             error!("internal error: failed to write to all_telemetry_rx");
         }
     }
-
-
-
-
 
     let telemetry_actor =
 
@@ -115,20 +110,31 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 
 
         if config::TELEMETRY_SERVER {
+
+            let base = if config::SHOW_TELEMETRY_ON_TELEMETRY {
+                graph.channel_builder()
+                    .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
+                    .with_type() //TODO: not sure why total is not changing here.
+
+            } else {
+                graph.channel_builder()
+                    .with_compute_refresh_window_bucket_bits(0, 0)
+            };
+
             //build channel for DiagramData type
-            let (tx, rx) = graph.channel_builder()
-                .with_compute_refresh_window_bucket_bits(0, 0)
-                .with_labels(&["steady_state-telemetry"], true)
+            let (tx, rx) = base.with_labels(&["steady_state-telemetry"], true)
                 .with_capacity(config::REAL_CHANNEL_LENGTH_TO_FEATURE)
                 .build();
 
             let outgoing = Some(tx);
 
             let bldr = graph.actor_builder()
-                .with_name("telemetry-polling");
+                .with_name(metrics_server::NAME);
 
             let bldr = if config::SHOW_TELEMETRY_ON_TELEMETRY {
-                bldr.with_avg_mcpu().with_avg_work()
+                bldr.with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
+                    .with_avg_mcpu()
+                    .with_avg_work()
             } else {
                 bldr
             };
@@ -142,10 +148,12 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
                 let all_tel_rx = graph.all_telemetry_rx.clone(); //using Arc here
 
                 let bldr = graph.actor_builder()
-                    .with_name("telemetry-collector");
+                    .with_name(metrics_collector::NAME);
 
                 let bldr = if config::SHOW_TELEMETRY_ON_TELEMETRY {
-                    bldr.with_avg_mcpu().with_avg_work()
+                    bldr.with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
+                        .with_avg_mcpu()
+                        .with_avg_work()
                 } else {
                     bldr
                 };

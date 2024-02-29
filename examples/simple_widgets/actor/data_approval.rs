@@ -1,7 +1,8 @@
 use std::ops::DerefMut;
 use crate::actor::data_generator::WidgetInventory;
 use log::*;
-use steady_state::{LocalMonitor, Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
+use steady_state::{Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
+use steady_state::monitor::LocalMonitor;
 use crate::actor::data_feedback::FailureFeedback;
 
 const BATCH_SIZE: usize = 2000;
@@ -68,9 +69,11 @@ pub async fn run(context: SteadyContext
 
       let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
-    loop {
-
-        if iterate_once( &mut monitor
+    //short circuit logic only closes outgoing if the incoming is empty and closed
+    while monitor.is_running(&mut ||
+        rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()
+    ) {
+       if iterate_once( &mut monitor
                          , rx
                          , tx
                          , feedback
@@ -78,9 +81,7 @@ pub async fn run(context: SteadyContext
                          ).await {
             break;
         }
-
-
-            monitor.relay_stats_smartly().await;
+        monitor.relay_stats_smartly().await;
     }
     Ok(())
 }
@@ -172,7 +173,7 @@ mod tests {
         let _ = mock_monitor.send_async(tx_in, WidgetInventory {
             count: 5
             , _payload: 42
-        }).await;
+        },false).await;
         let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
         let exit= iterate_once(&mut mock_monitor, rx_in, tx_out, tx_feedback, &mut buffer ).await;

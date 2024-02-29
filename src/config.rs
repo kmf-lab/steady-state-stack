@@ -57,6 +57,8 @@ use std::env;
     pub const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 60;
 
 
+   //TODO: not fully implemented yet, monitor actors still need
+   //      to send monitor data about themself to them self
     pub const SHOW_TELEMETRY_ON_TELEMETRY:bool = false;
 
 

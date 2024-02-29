@@ -2,6 +2,7 @@ use std::ops::DerefMut;
 use std::time::Duration;
 use steady_state::*;
 use log::*;
+use steady_state::monitor::LocalMonitor;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SomeExampleRecord {
@@ -127,7 +128,7 @@ mod tests {
 
         let mut state = SomeLocalState{};
 
-        let _ = mock_monitor.send_async(tx_in, SomeExampleRecord{}).await;
+        let _ = mock_monitor.send_async(tx_in, SomeExampleRecord{}, false).await;
         let result = iterate_once(&mut mock_monitor, &mut state, tx_out, rx_in).await;
         assert_eq!(false, result);
         assert_eq!(false, rx_out.is_empty());

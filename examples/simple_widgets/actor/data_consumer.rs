@@ -5,6 +5,7 @@ use std::time::Duration;
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use steady_state::*;
+use steady_state::monitor::LocalMonitor;
 
 const BATCH_SIZE: usize = 2000;
 #[derive(Clone, Debug, PartialEq, Copy)]
@@ -44,9 +45,8 @@ pub async fn run(context: SteadyContext
         //NOTE: stay tuned for a better feature on the way.
     });
 
-
     //predicate which affirms or denies the shutdown request
-    while monitor.is_running(&mut || rx.is_closed()) {
+    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed()) {
         //single pass of work, in this high volume example we stay in iterate_once as long
         //as the input channel as more work to process.
         if iterate_once(&mut monitor, &mut state, rx).await {
@@ -182,7 +182,7 @@ mod tests {
             approved_count: 2,
 
 
-        }).await;
+        },false).await;
 
 
         let exit= iterate_once(&mut mock_monitor, &mut state, steady_rx).await;

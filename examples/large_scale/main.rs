@@ -27,6 +27,7 @@ mod actor {
 use crate::actor::*;
 
 use steady_state::*;
+use steady_state::channel_builder::Filled;
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -53,17 +54,17 @@ fn main() {
 
     {   //remove this block to run forever.
         sleep(Duration::from_secs(opt.duration));
-        graph.stop(Duration::from_secs(3));
+        graph.stop();
     }
 
 
-    graph.block_until_stopped();
+    graph.block_until_stopped(Duration::from_secs(3));
 
 }
 
 const LEVEL_1: usize = 2; //3
-const LEVEL_2: usize = 1; //3
-const LEVEL_3: usize = 1; //2
+const LEVEL_2: usize = 2; //3
+const LEVEL_3: usize = 2; //2
 const LEVEL_4: usize = 2; //One will remove all the user filters and loggers
 
 fn build_graph(cli_arg: &Args) -> steady_state::Graph {
@@ -215,9 +216,6 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
 #[cfg(test)]
 mod tests {
-
-    use super::*;
-
     #[async_std::test]
     async fn test_graph_one() {
 

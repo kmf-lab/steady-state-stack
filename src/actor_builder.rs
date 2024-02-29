@@ -8,7 +8,8 @@ use bastion::*;
 use bastion::supervisor::*;
 use futures::lock::Mutex;
 use log::*;
-use crate::{ActorIdentity, AlertColor, Graph, GraphLiveliness, MCPU, Percentile, StdDev, SteadyContext, Trigger, Work};
+use crate::{AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
+use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 
@@ -461,5 +462,121 @@ impl ActorBuilder {
             })
         });
 
+    }
+}
+
+impl Metric for Work {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Work {
+    work: u16, // out of 10000 where 10000 is 100%
+}
+
+impl Work {
+    pub fn new(value: f32) -> Option<Self> {
+        if (0.0..=100.00).contains(&value) {
+            Some(Work{work: (value * 100.0) as u16}) //10_000 is 100%
+        } else {
+            None
+        }
+    }
+
+    pub fn rational(&self) -> (u64,u64) {
+        (self.work as u64, 10_000)
+    }
+
+    pub fn p10() -> Self { Work{ work: 1000 }}
+    pub fn p20() -> Self { Work{ work: 2000 }}
+    pub fn p30() -> Self { Work{ work: 3000 }}
+    pub fn p40() -> Self { Work{ work: 4000 }}
+    pub fn p50() -> Self { Work{ work: 5000 }}
+    pub fn p60() -> Self { Work{ work: 6000 }}
+    pub fn p70() -> Self { Work{ work: 7000 }}
+    pub fn p80() -> Self { Work{ work: 8000 }}
+    pub fn p90() -> Self { Work{ work: 9000 }}
+    pub fn p100() -> Self { Work{ work: 10000 }}
+
+}
+
+impl Metric for MCPU {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MCPU {
+    mcpu: u16, // max 1024
+}
+
+impl MCPU {
+    pub fn new(value: u16) -> Option<Self> {
+        if value<=1024 {
+            Some(Self {
+                mcpu: value,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn rational(&self) -> (u64,u64) {
+        (self.mcpu as u64,1024)
+    }
+
+    pub fn m16() -> Self { MCPU{mcpu:16}}
+    pub fn m64() -> Self { MCPU{mcpu:64}}
+    pub fn m256() -> Self { MCPU{mcpu:256}}
+    pub fn m512() -> Self { MCPU{mcpu:512}}
+    pub fn m768() -> Self { MCPU{mcpu:768}}
+    pub fn m1024() -> Self { MCPU{mcpu:1024}}
+
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Percentile(f64);
+
+impl Percentile {
+    // Private constructor to directly set the value inside the struct.
+    // Ensures that all public constructors go through validation.
+    fn new(value: f64) -> Option<Self> {
+        if (0.0..=100.0).contains(&value) {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    // Convenience methods for common percentiles
+    pub fn p25() -> Self {
+        Self(25.0)
+    }
+
+    pub fn p50() -> Self {Self(50.0) }
+
+    pub fn p75() -> Self {
+        Self(75.0)
+    }
+
+    pub fn p90() -> Self {
+        Self(90.0)
+    }
+
+    pub fn p80() -> Self {
+        Self(80.0)
+    }
+
+    pub fn p96() -> Self {
+        Self(96.0)
+    }
+
+    pub fn p99() -> Self {
+        Self(99.0)
+    }
+
+    // Allows custom values within the valid range.
+    pub fn custom(value: f64) -> Option<Self> {
+        Self::new(value)
+    }
+
+    // Getter to access the inner f32 value.
+    pub fn percentile(&self) -> f64 {
+        self.0
     }
 }

@@ -29,7 +29,7 @@ use crate::telemetry::metrics_collector::*;
 
 
 
-
+pub const NAME: &str = "metrics_server";
 
 #[derive(Clone)]
 struct State {
@@ -39,13 +39,17 @@ struct State {
 pub(crate) async fn run(context: SteadyContext
                         , rx: SteadyRx<DiagramData>) -> std::result::Result<(),()> {
 
-    let liveliness = if config::SHOW_TELEMETRY_ON_TELEMETRY {
+    let liveliness = context.liveliness();
+
+    let mut monitor:Option<_> =
+    if config::SHOW_TELEMETRY_ON_TELEMETRY {
         //NOTE: this line makes this node monitored on the telemetry
-        let m = context.into_monitor([&rx], []);
-        m.liveliness()
+        let result = context.into_monitor([&rx], []);
+        Some(result)
     } else {
-        context.liveliness()
+        None
     };
+
 
     let mut rx_guard = rx.lock().await;
     let rx = rx_guard.deref_mut();
@@ -55,6 +59,7 @@ pub(crate) async fn run(context: SteadyContext
     let top_down = false;
     let rankdir = if top_down { "TB" } else { "LR" };
     let mut frames = DotGraphFrames {
+        last_graph: Instant::now(),
         active_graph: BytesMut::new(),
     };
 
@@ -99,6 +104,17 @@ pub(crate) async fn run(context: SteadyContext
     pin_mut!(server_handle);
 
     loop {
+
+       //
+       // //TODO: not sure how I want to support monitoring of the monitors yet
+       //  let c: bool = monitor.map_or_else(
+       //      || rx.is_empty(), // This lambda is executed if monitor is None
+       //      |mut monitor| monitor.is_empty(rx), // This lambda is executed if monitor is Some
+       //  );
+
+
+
+
         select! {
             _ = server_handle.as_mut().fuse() => {
                 warn!("Web server exited.");
@@ -106,6 +122,9 @@ pub(crate) async fn run(context: SteadyContext
             },
             mut msg = rx.take_async().fuse() => {
                  loop {
+                        if let Some(ref mut monitor) = monitor {
+                            monitor.relay_stats_smartly().await; //TODO: if this is not done must detect and give helpful warning.
+                        }
                       match msg {
                              Ok(DiagramData::NodeDef(seq, defs)) => {
                                 // these are all immutable constants for the life of the node
@@ -203,7 +222,9 @@ pub(crate) async fn run(context: SteadyContext
                                //visual graph is after history to give more time
                                //for more frames to arrive
 
-                              if rx.is_empty() {
+                              if rx.is_empty()
+                                || frames.last_graph.elapsed().as_millis() > 2*config::TELEMETRY_PRODUCTION_RATE_MS as u128
+                                 {
                                       //NOTE: generate the new graph, this is costly so we
                                       //      skip it if we have more data to process
                                       frames.active_graph.clear(); // Clear the buffer for reuse
@@ -213,6 +234,7 @@ pub(crate) async fn run(context: SteadyContext
                                             let mut state_guard = state.lock().await;
                                             state_guard.deref_mut().doc = vec;
                                       }
+                                      frames.last_graph = Instant::now();
                                 }
 
                              },

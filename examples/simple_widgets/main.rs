@@ -20,16 +20,13 @@ mod actor {
     pub mod data_consumer;
 
     pub mod data_feedback;
-    #[cfg(test)]
-    pub use data_feedback::FailureFeedback;
-    #[cfg(test)]
-    pub use data_feedback::ChangeRequest;
-
 }
 #[cfg(test)]
 use crate::actor::*;
 
 use steady_state::*;
+use steady_state::actor_builder::{MCPU, Percentile};
+use steady_state::channel_builder::Filled;
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -55,10 +52,10 @@ fn main() {
 
     {  //remove this block to run forever.
        sleep(Duration::from_secs(opt.duration));
-       graph.stop(Duration::from_secs(2));
+       graph.stop();
     }
 
-    graph.block_until_stopped();
+    graph.block_until_stopped(Duration::from_secs(2));
 
 }
 
@@ -179,8 +176,8 @@ mod tests {
             panic!("bad response from generator: {:?}", response);
         }
 
-        graph.stop(Duration::from_secs(3));
-        graph.block_until_stopped();
+        graph.stop();
+        graph.block_until_stopped(Duration::from_secs(3));
 
     }
 }

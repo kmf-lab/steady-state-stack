@@ -4,6 +4,7 @@ use std::time::Duration;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
+use steady_state::monitor::LocalMonitor;
 use crate::actor::data_generator::Packet;
 
 #[cfg(not(test))]
@@ -81,10 +82,7 @@ async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< Packet>) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use async_std::test;
-    use steady_state::Graph;
-
     /*
     #[test]
     async fn test_iterate_once() {

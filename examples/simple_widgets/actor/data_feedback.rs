@@ -1,7 +1,8 @@
 use std::ops::DerefMut;
 #[allow(unused_imports)]
 use log::*;
-use steady_state::{LocalMonitor, Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
+use steady_state::{Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
+use steady_state::monitor::LocalMonitor;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FailureFeedback {

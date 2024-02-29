@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use std::fmt::Write;
+use std::time::Instant;
 use bytes::{BufMut, BytesMut};
 use log::*;
 use num_traits::Zero;
@@ -167,6 +168,7 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
 
 pub struct DotGraphFrames {
     pub(crate) active_graph: BytesMut,
+    pub(crate) last_graph: Instant,
 
 }
 

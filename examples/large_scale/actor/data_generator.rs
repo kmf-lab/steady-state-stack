@@ -1,6 +1,5 @@
 use std::mem;
-use std::ops::{DerefMut};
-use std::time::Duration;
+use std::ops::DerefMut;
 use bytes::Bytes;
 #[allow(unused_imports)]
 use log::*;

@@ -1,26 +1,22 @@
 use std::collections::VecDeque;
-
-use std::ops::{Add, Deref, DerefMut};
-use std::sync::{Arc, LockResult, RwLock};
-use std::thread::yield_now;
-use std::time::{Duration, Instant};
+use std::ops::{ Deref, DerefMut};
+use std::sync::{Arc, RwLock};
 use futures::lock::Mutex;
-use futures_timer::Delay;
 
 #[allow(unused_imports)]
 use log::*; //allow unused import
 
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-use crate::{ActorIdentity, config, SteadyContext, SteadyTx, Tx};
+use crate::{config, RxDef, SteadyContext, SteadyTx, Tx, util};
 
-use futures::future::{FutureExt, pending};
-use std::task::{Context, Poll};
+use futures::future::{BoxFuture, FutureExt, select_all};
 use std::pin::Pin;
+use crate::graph_liveliness::ActorIdentity;
+use crate::telemetry::{metrics_collector, metrics_server};
 
-async fn async_yield_now() {
-    let _= pending::<()>().poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()));
-    // Immediately after polling, we return control, effectively yielding.
-}
+pub const NAME: &str = "metrics_collector";
+
+
 
 
 #[derive(Clone, Debug)]
@@ -61,24 +57,49 @@ pub(crate) async fn run(context: SteadyContext
 ) -> Result<(),()> {
 
     let ident = context.identity();
+    let mut monitor:Option<_> = None;
     if let Some(c) = &optional_server {
+
+        monitor =
         if config::SHOW_TELEMETRY_ON_TELEMETRY {
             //NOTE: this line makes this node monitored on the telemetry only when the server is monitored.
-            context.into_monitor([], [c]);
+            let  result = context.into_monitor([], [c]);
 
             //TODO: add monitoring of the gathering channels. We have support for replaced
             //    actors which rebuild the monitor channels on the fly matching the tx,rx count.
             //    Something similar needs to be done here. The channels can be rebuilt each time
             //    we discover the dynamic_senders_vec length has changed. This is a bit tricky
-
-        }
+            Some(result)
+        } else {
+            None
+        };
     }
 
     let mut state = RawDiagramState::default();
 
+    let mut scan: Option<Vec<Box<dyn RxDef>>> = None;
 
     loop {
+        if let Some(ref mut monitor) = monitor {
+            monitor.relay_stats_smartly().await; //TODO: if this is not done must detect and give helpful warning.
+        }
+
+        //we wait here without holding the large lock
+        if let Some(ref scan) = scan {
+            let futures = collect_futures_for_one_frame(scan);
+            let (_result, _index, _remaining) = select_all(futures).await;
+        } else {
+            scan = gather_scan_rx(&dynamic_senders_vec);
+            if let Some(ref scan) = scan {
+                let futures = collect_futures_for_one_frame(scan);
+                let (_result, _index, _remaining) = select_all(futures).await;
+            } else {
+                util::async_yield_now().await;
+            }
+        }
+
         let (nodes, to_pop) = {
+
             //we want to drop this as soon as we can
             //collect all the new data out of it release the guard then send the data
             //warn!("blocking on read");
@@ -87,26 +108,19 @@ pub(crate) async fn run(context: SteadyContext
                     //warn!("ok on read lock");
                     let dynamic_senders = guard.deref();
 
-                    //we must wait for at least one channel to have data
-                    dynamic_senders.iter()
-                                   .any(|f| //find a node with monitoring
-                              f.telemetry_take.iter().any(|g| //telemetry may be swapping
-                                //true if we locked and waited
-                                //we must wait on someone to say we have 1 frame
-                                g.wait_for_actor_count(config::CONSUMED_MESSAGES_BY_COLLECTOR)
-                        )
-                    );
-
                     let structure_unchanged = dynamic_senders.len() == state.actor_count;
                     //only done when we have new nodes, nodes can never be removed
                     if structure_unchanged {
                         (None, collect_channel_data(&mut state, dynamic_senders))
-                    } else if let Some(n) = gather_node_details(&mut state, dynamic_senders) {
-                        (Some(n), collect_channel_data(&mut state, dynamic_senders))
                     } else {
-                        //we have a channel that is not connected
-                        //do not send data yet
-                        (None, Vec::new())
+                        scan = None;
+                        if let Some(n) = gather_node_details(&mut state, dynamic_senders) {
+                            (Some(n), collect_channel_data(&mut state, dynamic_senders))
+                        } else {
+                            //we have a channel that is not connected
+                            //do not send data yet
+                            (None, Vec::new())
+                        }
                     }
                 },
                 Err(_) => { //unable to get read lock
@@ -150,6 +164,36 @@ pub(crate) async fn run(context: SteadyContext
         send_data_details(ident, &optional_server, &state).await;
 
         state.sequence += 1; //increment next frame
+    }
+}
+
+fn collect_futures_for_one_frame(scan: &Vec<Box<dyn RxDef>>) -> Vec<BoxFuture<()>> {
+    // TODO: if we end up with scan > 200+ we may want to consider taking a
+    //       random sample of the actors to avoid unnecessary load on the system.
+    // this can be done with just one actor however we are more accurate if we
+    // use more to compensate for the occasional bad actor.
+    scan.into_iter().map(|item| {
+        item.wait_avail_units(config::CONSUMED_MESSAGES_BY_COLLECTOR).boxed()
+    }).collect()
+}
+
+fn gather_scan_rx(dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>) -> Option<Vec<Box<dyn RxDef>>> {
+    if let Ok(guard) = dynamic_senders_vec.read() {
+        let dynamic_senders = guard.deref();
+        let v: Vec<Box<dyn RxDef>> = dynamic_senders.iter()
+            .filter(|f|  (f.ident.name != metrics_collector::NAME)
+                      && (f.ident.name != metrics_server::NAME))
+            .map(|f| f.telemetry_take.iter().map(|g| g.actor_rx())  )
+            .flatten()
+            .filter_map(|x| x)
+            .collect();
+        if !v.is_empty() {
+            Some(v)
+        } else {
+            None
+        }
+    } else {
+        None
     }
 }
 
@@ -230,8 +274,14 @@ fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &[Collector
           });
       });
   });
+
+
   if !matches.iter().all(|x| *x==3 || *x==0) {
-       // error!("can not get structure due to some bad value");
+            /*
+          matches.iter().filter(|x| !*x==3 && !*x==0).for_each(|x| {
+                error!("can not get structure due to some bad value: {:?}",x);
+          });*/
+        error!("can not get structure due to some bad value");
         return None;
   }
   //error!("all looks good");

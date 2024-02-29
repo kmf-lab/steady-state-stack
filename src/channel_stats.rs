@@ -9,6 +9,9 @@ use num_traits::Zero;
 use crate::*;
 use crate::monitor::ChannelMetaData;
 use hdrhistogram::{Counter, Histogram};
+use crate::actor_stats;
+use crate::actor_stats::ChannelBlock;
+use crate::channel_builder::{Filled, Rate};
 
 pub(crate) const DOT_GREEN: &str = "green";
 pub(crate) const DOT_YELLOW: &str = "yellow";
@@ -18,17 +21,7 @@ pub(crate) const DOT_GREY: &str = "grey";
 
 
 static DOT_PEN_WIDTH: [&str; 16]
-= ["1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"];
-
-const SQUARE_LIMIT: u128 = (1 << 64)-1; // (u128::MAX as f64).sqrt() as u128;
-
-
-#[derive(Default)]
-pub(crate) struct ChannelBlock<T> where T: Counter {
-    pub(crate) histogram:      Option<Histogram<T>>,
-    pub(crate) runner:         u128,
-    pub(crate) sum_of_squares: u128,
-}
+= ["1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"]; // (u128::MAX as f64).sqrt() as u128;
 
 #[derive(Default)]
 pub struct ChannelStatsComputer {
@@ -87,7 +80,7 @@ impl ChannelStatsComputer {
         self.frame_rate_ms = config::TELEMETRY_PRODUCTION_RATE_MS as u128;
         self.refresh_rate_in_bits=meta.refresh_rate_in_bits;
         self.window_bucket_in_bits=meta.window_bucket_in_bits;
-        self.time_label = time_label( self.frame_rate_ms << (meta.refresh_rate_in_bits+meta.window_bucket_in_bits) );
+        self.time_label = actor_stats::time_label( self.frame_rate_ms << (meta.refresh_rate_in_bits+meta.window_bucket_in_bits) );
 
 
         self.display_labels = if meta.display_labels {
@@ -310,10 +303,10 @@ impl ChannelStatsComputer {
     #[inline]
     fn rate_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_rate {
-            compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
-                                  , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
-                                  , c.runner
-                                  , c.sum_of_squares)
+            actor_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
+                                         , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
+                                         , c.runner
+                                         , c.sum_of_squares)
         } else {
             info!("skipping std no current data");
             0f32
@@ -322,10 +315,10 @@ impl ChannelStatsComputer {
     #[inline]
     fn filled_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_filled {
-            compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
-                                  , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
-                                  , c.runner
-                                  , c.sum_of_squares)
+            actor_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
+                                         , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
+                                         , c.runner
+                                         , c.sum_of_squares)
         } else {
             0f32
         }
@@ -334,10 +327,10 @@ impl ChannelStatsComputer {
     #[inline]
     fn latency_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_latency {
-            compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
-                                  , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
-                                  , c.runner
-                                  , c.sum_of_squares)
+            actor_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
+                                         , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
+                                         , c.runner
+                                         , c.sum_of_squares)
         } else {
             0f32
         }
@@ -501,27 +494,27 @@ impl ChannelStatsComputer {
         match rule {
             Trigger::AvgBelow(rate) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                avg_rational(window_in_ms, &self.current_rate, rate.rational_ms()).is_lt()
+                actor_stats::avg_rational(window_in_ms, &self.current_rate, rate.rational_ms()).is_lt()
             },
             Trigger::AvgAbove(rate) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                avg_rational(window_in_ms, &self.current_rate, rate.rational_ms()).is_gt()
+                actor_stats::avg_rational(window_in_ms, &self.current_rate, rate.rational_ms()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, expected_rate) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                stddev_rational(self.rate_std_dev(), window_bits, std_devs
-                                , &self.current_rate, expected_rate.rational_ms()).is_lt()
+                actor_stats::stddev_rational(self.rate_std_dev(), window_bits, std_devs
+                                             , &self.current_rate, expected_rate.rational_ms()).is_lt()
             }
             Trigger::StdDevsAbove(std_devs, expected_rate) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                stddev_rational(self.rate_std_dev(), window_bits, std_devs
-                                , &self.current_rate, expected_rate.rational_ms()).is_gt()
+                actor_stats::stddev_rational(self.rate_std_dev(), window_bits, std_devs
+                                             , &self.current_rate, expected_rate.rational_ms()).is_gt()
             }
             Trigger::PercentileAbove(percentile, rate) => {
-                percentile_rational(percentile, &self.current_rate, rate.rational_ms()).is_gt()
+                actor_stats::percentile_rational(percentile, &self.current_rate, rate.rational_ms()).is_gt()
             }
             Trigger::PercentileBelow(percentile, rate) => {
-                percentile_rational(percentile, &self.current_rate, rate.rational_ms()).is_lt()
+                actor_stats::percentile_rational(percentile, &self.current_rate, rate.rational_ms()).is_lt()
             }
 
         }
@@ -689,37 +682,13 @@ impl ChannelStatsComputer {
 
 }
 
-pub(crate) fn time_label(total_ms: u128) -> String {
-    let seconds = total_ms as f64 / 1000.0;
-    let minutes = seconds / 60.0;
-    let hours = minutes / 60.0;
-    let days = hours / 24.0;
-
-    if days >= 1.0 {
-        if days< 1.1 {"day".to_string()} else {
-            format!("{:.1} days", days)
-        }
-    } else if hours >= 1.0 {
-        if hours< 1.1 {"hr".to_string()} else {
-            format!("{:.1} hrs", hours)
-        }
-    } else if minutes >= 1.0 {
-        if minutes< 1.1 {"min".to_string()} else {
-            format!("{:.1} mins", minutes)
-        }
-    } else if seconds< 1.1 {"sec".to_string()} else {
-        format!("{:.1} secs", seconds)
-    }
-
-}
-
 //#TODO: we need a new test to show the recovery from a panic
 
 #[cfg(test)]
 mod stats_tests {
     use super::*;
-    use rand_distr::{Normal, Distribution};
-    use rand::{SeedableRng, rngs::StdRng};
+    use rand_distr::{Distribution, Normal};
+    use rand::{rngs::StdRng, SeedableRng};
     use std::sync::Arc;
     #[allow(unused_imports)]
     use log::*;
@@ -750,42 +719,21 @@ mod stats_tests {
         }
 
         let mut display_label = String::new();
-        if let Some(ref current_consumed) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                            ,   &mut display_label, &current_consumed
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+        if let Some(ref current_rate) = computer.current_rate {
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
-        if let Some(ref current_inflight) = computer.current_filled {
+        if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                                    , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                                    ,&mut display_label, &current_inflight
-                                    , &"filled"
-                                    , &"%"
-                                    ,(100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                                    , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                                    ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         }
         assert_eq!(display_label, "Avg filled: 80 %\n");
 
@@ -817,42 +765,21 @@ mod stats_tests {
         }
 
         let mut display_label = String::new();
-        if let Some(ref current_consumed) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_consumed
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+        if let Some(ref current_rate) = computer.current_rate {
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    ,  (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         }
         assert_eq!(display_label, "Avg filled: 80 %\n");
 
@@ -892,41 +819,20 @@ mod stats_tests {
         computer.std_dev_filled.push(StdDev::two_and_a_half());
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                                    , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                                    ,&mut display_label, &current_rate
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         } //note this is "near" expected std
         assert_eq!(display_label, "Avg filled: 80 %\nfilled 2.5StdDev: 30.455 per frame (3ms duration)\n");
 
@@ -934,41 +840,20 @@ mod stats_tests {
         computer.std_dev_filled.push(StdDev::one());
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_rate
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                                    , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                                    ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         } //note this is "near" expected std
         assert_eq!(display_label, "Avg filled: 80 %\nfilled StdDev: 12.182 per frame (3ms duration)\n");
 
@@ -1017,29 +902,15 @@ mod stats_tests {
 
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_rate
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             assert!(computer.build_filled_histogram);
             assert!(!computer.percentiles_filled.is_empty());
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         } else {
             assert!(!computer.build_filled_histogram);
             assert!(false); //we should not be here
@@ -1047,15 +918,8 @@ mod stats_tests {
 
         if let Some(ref current_latency) = computer.current_latency {
 
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         } //note this is "near" expected std
         assert_eq!(display_label, "filled 25%ile 12 %\nfilled 50%ile 12 %\nfilled 75%ile 25 %\nfilled 90%ile 25 %\n");
 
@@ -1100,41 +964,20 @@ mod stats_tests {
 
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_rate
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         }
         assert_eq!(display_label, "Avg rate: 33333 per/sec\n");
         //TODO: we may want to go with per/frame and add the 3ms on another line
@@ -1177,41 +1020,20 @@ mod stats_tests {
         computer.std_dev_rate.push(StdDev::two_and_a_half());
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_rate
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         } //note this is "near" expected std
         assert_eq!(display_label, "Avg rate: 68395 per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
 
@@ -1219,41 +1041,20 @@ mod stats_tests {
         computer.std_dev_rate.push(StdDev::one());
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                                    , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                                    ,&mut display_label, &current_rate
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         } //note this is "near" expected std
         assert_eq!(display_label, "Avg rate: 68395 per/sec\nrate StdDev: 12.182 per frame (3ms duration)\n");
 
@@ -1298,41 +1099,20 @@ mod stats_tests {
 
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_rate
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         } //note this is "near" expected std
         assert_eq!(display_label, "rate 25%ile 625 per/sec\nrate 50%ile 700 per/sec\nrate 75%ile 950 per/sec\nrate 90%ile 1225 per/sec\n");
 
@@ -1374,41 +1154,17 @@ fn latency_avg_trigger() {
 
     let mut display_label = String::new();
     if let Some(ref current_rate) = computer.current_rate {
-        compute_labels(computer.frame_rate_ms
-                       , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                       ,&mut display_label, &current_rate
-                                , &"rate"
-                                , &"per/sec"
-                                , (1000, computer.frame_rate_ms as usize)
-                                , computer.show_avg_rate
-                                , & computer.std_dev_rate
-                                , & computer.percentiles_rate);
+        compute_rate_labels(&computer, &mut display_label, &current_rate);
     }
 
     if let Some(ref current_filled) = computer.current_filled {
         //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-        compute_labels(computer.frame_rate_ms
-                       , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                       ,&mut display_label, &current_filled
-                                , &"filled"
-                                , &"%"
-                                , (100, computer.capacity)
-                                , computer.show_avg_filled
-                                , & computer.std_dev_filled
-                                , & computer.percentiles_filled);
+        compute_filled_labels(&computer, &mut display_label, &current_filled);
     }
 
     if let Some(ref current_latency) = computer.current_latency {
         //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-        compute_labels(computer.frame_rate_ms
-                       , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                       ,&mut display_label, &current_latency
-                                , &"latency"
-                                , &"ms"
-                                , (1,1)
-                                , computer.show_avg_latency
-                                , & computer.std_dev_latency
-                                , & computer.percentiles_latency);
+        compute_latency_labels(&computer, &mut display_label, &current_latency);
     }
     assert_eq!(display_label, "Avg latency: 18 ms\n");
 
@@ -1420,6 +1176,41 @@ fn latency_avg_trigger() {
 
 }
 
+fn compute_rate_labels(computer: &ChannelStatsComputer, mut display_label: &mut String, current_rate: &&ChannelBlock<u64>) {
+    compute_labels(computer.frame_rate_ms
+                   , computer.window_bucket_in_bits + computer.refresh_rate_in_bits
+                   , &mut display_label, &current_rate
+                   , &"rate"
+                   , &"per/sec"
+                   , (1000, computer.frame_rate_ms as usize)
+                   , computer.show_avg_rate
+                   , &computer.std_dev_rate
+                   , &computer.percentiles_rate);
+}
+
+    fn compute_filled_labels(computer: &ChannelStatsComputer, mut display_label: &mut String, current_filled: &&ChannelBlock<u16>) {
+    compute_labels(computer.frame_rate_ms
+                   , computer.window_bucket_in_bits + computer.refresh_rate_in_bits
+                   , &mut display_label, &current_filled
+                   , &"filled"
+                   , &"%"
+                   , (100, computer.capacity)
+                   , computer.show_avg_filled
+                   , &computer.std_dev_filled
+                   , &computer.percentiles_filled);
+}
+
+    fn compute_latency_labels(computer: &ChannelStatsComputer, mut display_label: &mut String, current_latency: &&ChannelBlock<u64>) {
+    compute_labels(computer.frame_rate_ms
+                   , computer.window_bucket_in_bits + computer.refresh_rate_in_bits
+                   , &mut display_label, &current_latency
+                   , &"latency"
+                   , &"ms"
+                   , (1, 1)
+                   , computer.show_avg_latency
+                   , &computer.std_dev_latency
+                   , &computer.percentiles_latency);
+}
 
 
     #[test]
@@ -1450,41 +1241,20 @@ fn latency_avg_trigger() {
         computer.std_dev_latency.push(StdDev::two_and_a_half());
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_rate
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           , &mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           , &mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         }
         assert_eq!(display_label, "Avg latency: 95 ms\nlatency 2.5StdDev: 79.329 per frame (3ms duration)\n");
 
@@ -1521,41 +1291,20 @@ fn latency_avg_trigger() {
 
         let mut display_label = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_rate
-                                    , &"rate"
-                                    , &"per/sec"
-                                    , (1000, computer.frame_rate_ms as usize)
-                                    , computer.show_avg_rate
-                                    , & computer.std_dev_rate
-                                    , & computer.percentiles_rate);
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+
         }
 
         if let Some(ref current_filled) = computer.current_filled {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_filled
-                                    , &"filled"
-                                    , &"%"
-                                    , (100, computer.capacity)
-                                    , computer.show_avg_filled
-                                    , & computer.std_dev_filled
-                                    , & computer.percentiles_filled);
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+
         }
 
         if let Some(ref current_latency) = computer.current_latency {
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(computer.frame_rate_ms
-                           , computer.window_bucket_in_bits+computer.refresh_rate_in_bits
-                           ,&mut display_label, &current_latency
-                                    , &"latency"
-                                    , &"ms"
-                                    , (1,1)
-                                    , computer.show_avg_latency
-                                    , & computer.std_dev_latency
-                                    , & computer.percentiles_latency);
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+
         } else {
             assert!(!computer.build_latency_histogram);
 
@@ -1578,70 +1327,7 @@ fn latency_avg_trigger() {
 
 }
 
-////////////////////////////////////////////////////////////////
-// could move this into a shared module for channels and actors
-/////////////////////////////////////////////////////////////////////////////
-
-//used for avg_rate, avg_mcpu and avg_work as a common implementation
-pub(crate) fn avg_rational<T: Counter>(window_in_ms: u128, current: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> Ordering {
-    if let Some(current) = current {
-        (current.runner * rational.1 as u128)
-            .cmp(&(PLACES_TENS as u128 * window_in_ms * rational.0 as u128))
-    } else {
-        Ordering::Equal //unknown
-    }
-}
-
-// self.inflight_std_dev()  (self.window_bucket_in_bits + self.refresh_rate_in_bits)
-//used for avg_rate, avg_mcpu and avg_work as a common implementation
-pub(crate) fn stddev_rational<T: Counter>(std_dev: f32, window_bits: u8
-                                          , std_devs: &StdDev
-                                          , current: &Option<ChannelBlock<T>>,
-                                           expected: (u64,u64)  ) -> Ordering {
-    if let Some(current) = current {
-
-        let std_deviation = (std_dev * std_devs.value()) as u128;
-       // let measured_value = ((current.runner >> window_bits) + std_deviation)/ PLACES_TENS as u128;
-        //let expected_value = expected.0 as f32 * expected.1 as f32;
-        //info!("stddev value: {} vs {} ", measured_value,expected_value);
-        (expected.1 as u128 * ((current.runner >> window_bits) + std_deviation)).cmp( &(PLACES_TENS as u128 * expected.0 as u128) )
-
-    } else {
-        Ordering::Equal //unknown
-    }
-}
-
-//used for avg_rate, avg_mcpu and avg_work as a common implementation
-pub(crate) fn percentile_rational<T: Counter>(percentile: &Percentile, consumed: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> Ordering {
-    if let Some(current_consumed) = consumed {
-        if let Some(h) = &current_consumed.histogram {
-            let measured_rate_ms = h.value_at_percentile(percentile.percentile()) as u128;
-            (measured_rate_ms * rational.1 as u128).cmp(&(rational.0 as u128))
-        } else {
-            Ordering::Equal //unknown
-        }
-    } else {
-        Ordering::Equal //unknown
-    }
-}
-
-#[inline]
-pub(crate) fn compute_std_dev(bits: u8, window: usize, runner: u128, sum_sqr: u128) -> f32 {
-    if runner < SQUARE_LIMIT {
-        let r2 = (runner*runner)>>bits;
-        //trace!("{} {} {} {} -> {} ",bits,window,runner,sum_sqr,r2);
-        if sum_sqr > r2 {
-            (((sum_sqr - r2) >> bits) as f32).sqrt() //TODO: someday we may need to implement sqrt for u128
-        } else {
-            ((sum_sqr as f32 / window as f32) - (runner as f32 / window as f32).powi(2)).sqrt()
-        }
-    } else {
-        //trace!("{:?} {:?} {:?} {:?} " ,bits ,window,runner ,sum_sqr);
-        ((sum_sqr as f32 / window as f32) - (runner as f32 / window as f32).powi(2)).sqrt()
-    }
-}
-
-const PLACES_TENS:u64 = 1000u64;
+pub(crate) const PLACES_TENS:u64 = 1000u64;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
@@ -1701,10 +1387,10 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
     }
 
     let std = if !std_dev.is_empty() {
-        compute_std_dev(window_in_bits
-                        , 1 << window_in_bits
-                        , current.runner
-                        , current.sum_of_squares)
+        actor_stats::compute_std_dev(window_in_bits
+                                     , 1 << window_in_bits
+                                     , current.runner
+                                     , current.sum_of_squares)
 
     } else { 0f32 };
     std_dev.iter().for_each(|f| {

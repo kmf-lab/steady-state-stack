@@ -1,13 +1,24 @@
+use std::any::type_name;
 use std::ops::*;
 use std::time::{Duration, Instant};
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 use std::sync::atomic::{AtomicU32, Ordering};
 use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*; //allowed for all modules
 use num_traits::Zero;
-use crate::{AlertColor, config, Filled, MCPU, MONITOR_NOT, MONITOR_UNKNOWN, Percentile, Rate, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx, Work};
+use std::collections::HashMap;
+use futures::future::pending;
+use std::task::Context;
+use futures_timer::Delay;
+use std::future::Future;
+use futures::FutureExt;
+use crate::{AlertColor, config, MONITOR_NOT, MONITOR_UNKNOWN, Rx, RxDef, StdDev, SteadyRx, SteadyTx, telemetry, Trigger, Tx};
+use crate::actor_builder::{MCPU, Percentile, Work};
+use crate::channel_builder::{Filled, Rate};
+use crate::graph_liveliness::{ActorIdentity, GraphLiveliness, GraphLivelinessState};
+use crate::graph_testing::EdgeSimulator;
 
 
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
@@ -122,15 +133,11 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
         }
     }
 
-    fn wait_for_actor_count(&self, count: usize) -> bool {
+    fn actor_rx(&self) -> Option<Box<dyn RxDef>> {
         if let Some(ref act) = &self.actor {
-            bastion::run!(
-                let mut guard = act.lock().await;
-                guard.deref_mut().wait_avail_units(count).await;
-            );
-            true
+            Some(Box::new(act.clone()))
         } else {
-            false
+            None
         }
     }
 
@@ -393,7 +400,7 @@ pub trait RxTel : Send + Sync {
                               , future_send: &mut Vec<i128>) -> bool;
 
 
-    fn wait_for_actor_count(&self, count: usize) -> bool;
+    fn actor_rx(&self) -> Option<Box<dyn RxDef>>;
 }
 
 #[cfg(test)]
@@ -522,4 +529,572 @@ pub(crate) fn find_my_index<const LEN:usize>(telemetry: &SteadyTelemetrySend<LEN
         .find(|(_, &value)| value == goal)
         .unwrap_or( (MONITOR_NOT, &MONITOR_NOT));
     idx
+}
+
+impl <const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
+    //if possible we never want to loose telemetry data so we try to flush it out
+    fn drop(&mut self) {
+        bastion::run!(telemetry::setup::send_all_local_telemetry_async(self));
+    }
+
+}
+
+pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
+    pub(crate) ident:                ActorIdentity,
+    pub(crate) ctx:                  Option<Arc<bastion::context::BastionContext>>,
+    pub(crate) telemetry_send_tx:    Option<SteadyTelemetrySend<TX_LEN>>,
+    pub(crate) telemetry_send_rx:    Option<SteadyTelemetrySend<RX_LEN>>,
+    pub(crate) telemetry_state:      Option<SteadyTelemetryActorSend>,
+    pub(crate) last_telemetry_send:  Instant,
+    pub(crate) runtime_state:        Arc<RwLock<GraphLiveliness>>,
+    pub(crate) redundancy:           usize,
+
+
+    #[cfg(test)]
+    pub(crate) test_count: HashMap<&'static str, usize>,
+
+}
+
+///////////////////
+impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
+
+
+    /// Returns the unique identifier of the LocalMonitor instance.
+    ///
+    /// # Returns
+    /// A `usize` representing the monitor's unique ID.
+    pub fn id(&self) -> usize {
+        self.ident.id
+    }
+
+    /// Retrieves the static name assigned to the LocalMonitor instance.
+    ///
+    /// # Returns
+    /// A static string slice (`&'static str`) representing the monitor's name.
+    pub fn name(&self) -> & 'static str {
+        self.ident.name
+    }
+
+    /// Indicates the level of redundancy applied to the monitoring process.
+    ///
+    /// # Returns
+    /// A `usize` value representing the redundancy level.
+    pub fn redundancy(&self) -> usize {
+        self.redundancy
+    }
+
+    /// Initiates a stop signal for the LocalMonitor, halting its monitoring activities.
+    ///
+    /// # Returns
+    /// A `Result` indicating successful cessation of monitoring activities.
+    pub async fn stop(&mut self) -> Result<(),()>  {
+        if let Some(ref mut st) = self.telemetry_state {
+            st.bool_stop = true;
+            //TODO: probably rewrite to use the closed boolean on the channel.
+        }// upon drop we will flush telemetry
+        Ok(())
+    }
+
+    #[inline]
+    pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
+        match self.runtime_state.read() {
+            Ok(liveliness) => {
+                liveliness.is_running(self.ident, accept_fn )
+            }
+            Err(e) => {
+                trace!("internal error,unable to get liveliness read lock {}",e);
+                true //keep running as the default under error conditions
+            }
+        }
+    }
+
+    #[inline]
+    pub fn request_graph_stop(&self) -> bool {
+        match self.runtime_state.write() {
+            Ok(mut liveliness) => {
+                liveliness.request_shutdown();
+                true
+            }
+            Err(e) => {
+                trace!("internal error,unable to get liveliness write lock {}",e);
+                false //keep running as the default under error conditions
+            }
+        }
+    }
+
+        #[inline]
+    pub fn liveliness(&self) -> Arc<RwLock<GraphLiveliness>> {
+        self.runtime_state.clone()
+    }
+
+    pub fn is_in_graph(&self) -> bool {
+        self.ctx.is_some()
+    }
+
+    //testing
+    async fn async_yield_now() {
+        pending::<()>().poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()));
+        // Immediately after polling, we return control, effectively yielding.
+    }
+
+
+    pub fn edge_simulator(&self) -> Option<EdgeSimulator> {
+        self.ctx.as_ref().map(|ctx| EdgeSimulator::new(ctx.clone()))
+    }
+
+
+    /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
+    /// Will hold the data if it is called more frequently than the collector can consume the data.
+    /// This is designed for use in tight loops where telemetry data is collected frequently.
+    ///
+    /// # Asynchronous
+    pub async fn relay_stats_smartly(&mut self) {
+        //NOTE: not time ing this one as it is mine and internal
+        telemetry::setup::try_send_all_local_telemetry(self).await;
+    }
+
+    /// Periodically relays telemetry data at a specified rate.
+    ///
+    /// # Parameters
+    /// - `duration_rate`: The interval at which telemetry data should be sent.
+    ///
+    /// # Asynchronous
+    pub async fn relay_stats_periodic(&mut self, duration_rate: Duration) {
+        self.start_hot_profile(CALL_WAIT);
+        //TODO: we should reuse teh Delay object in self
+        //TODO: we may need a global clock for all the actors together to be more accurate.
+        //   Warning: Delay can sometimes way many times longer than expected
+        Delay::new(duration_rate.saturating_sub(self.last_telemetry_send.elapsed())).await;
+        self.rollup_hot_profile();
+        //this can not be measured since it sends the measurement of hot_profile.
+        //also this is a special case where we do not want to measure the time it takes to send telemetry
+        self.relay_stats_smartly().await;
+    }
+
+    /// Marks the start of a high-activity profile period for telemetry monitoring.
+    ///
+    /// # Parameters
+    /// - `x`: The index representing the type of call being monitored.
+    fn start_hot_profile(&mut self, x: usize) {
+        if let Some(ref mut st) = self.telemetry_state {
+            st.calls[x] = st.calls[x].saturating_add(1);
+            if st.hot_profile.is_none() {
+                st.hot_profile = Some(Instant::now())
+            }
+        };
+    }
+
+    /// Finalizes the current hot profile period, aggregating the collected telemetry data.
+    fn rollup_hot_profile(&mut self) {
+        if let Some(ref mut st) = self.telemetry_state {
+            if let Some(d) = st.hot_profile.take() {
+                st.await_ns_unit += Instant::elapsed(&d).as_nanos() as u64;
+                assert!(st.instant_start.le(&d), "unit_start: {:?} call_start: {:?}", st.instant_start, d);
+            }
+        }
+    }
+
+    /// Attempts to peek at a slice of messages without removing them from the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance for peeking.
+    /// - `elems`: A mutable slice to store the peeked messages.
+    ///
+    /// # Returns
+    /// The number of messages peeked and stored in `elems`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    pub fn try_peek_slice<T>(& mut self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+        where T: Copy {
+        this.shared_try_peek_slice(elems)
+    }
+
+    /// Asynchronously peeks at a slice of messages, waiting for a specified count to be available.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `wait_for_count`: The number of messages to wait for before peeking.
+    /// - `elems`: A mutable slice to store the peeked messages.
+    ///
+    /// # Returns
+    /// The number of messages peeked and stored in `elems`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    ///
+    /// # Asynchronous
+    pub async fn peek_async_slice<T>(&mut self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
+    where T: Copy {
+        this.shared_peek_async_slice(wait_for_count,elems).await
+    }
+
+    /// Retrieves and removes a slice of messages from the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `slice`: A mutable slice where the taken messages will be stored.
+    ///
+    /// # Returns
+    /// The number of messages actually taken and stored in `slice`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    pub fn take_slice<T>(&mut self, this: & mut Rx<T>, slice: &mut [T]) -> usize
+    where T: Copy {
+        if let Some(ref mut st) = self.telemetry_state {
+            st.calls[CALL_BATCH_READ] = st.calls[CALL_BATCH_READ].saturating_add(1);
+        }
+        let done = this.shared_take_slice(slice);
+        this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
+            tel.process_event(this.local_index, this.channel_meta_data.id, done)
+        } else {
+            MONITOR_NOT
+        };
+        done
+    }
+
+    /// Attempts to take a single message from the channel without blocking.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
+    pub fn try_take<T>(&mut self, this: & mut Rx<T>) -> Option<T> {
+        if let Some(ref mut st) = self.telemetry_state {
+            st.calls[CALL_SINGLE_READ]=st.calls[CALL_SINGLE_READ].saturating_add(1);
+        }
+        match this.shared_try_take() {
+            Some(msg) => {
+                this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
+                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
+                } else {
+                    MONITOR_NOT
+                };
+                Some(msg)
+            },
+            None => {None}
+        }
+    }
+
+    /// Attempts to peek at the next message in the channel without removing it.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
+    pub fn try_peek<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
+        this.shared_try_peek()
+    }
+
+    /// Returns an iterator over the messages currently in the channel without removing them.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
+    pub fn try_peek_iter<'a,T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
+        this.shared_try_peek_iter()
+    }
+
+    /// Asynchronously returns an iterator over the messages in the channel,
+    /// waiting for a specified number of messages to be available.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `wait_for_count`: The number of messages to wait for before returning the iterator.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
+    ///
+    /// # Asynchronous
+    pub async fn peek_async_iter<'a,T>(&'a mut self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
+        self.start_hot_profile(CALL_OTHER);
+        let result = this.shared_peek_async_iter(wait_for_count).await;
+        self.rollup_hot_profile();
+        result
+    }
+
+    /// Checks if the channel is currently empty.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// `true` if the channel has no messages available, otherwise `false`.
+    pub fn is_empty<T>(& mut self, this: & mut Rx<T>) -> bool {
+        this.shared_is_empty()
+    }
+
+    /// Returns the number of messages currently available in the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// A `usize` indicating the number of available messages.
+    pub fn avail_units<T>(& mut self, this: & mut Rx<T>) -> usize {
+        this.shared_avail_units()
+    }
+
+    /// Asynchronously waits for a specified duration.
+    ///
+    /// # Parameters
+    /// - `duration`: The duration to wait.
+    ///
+    /// # Asynchronous
+    pub async fn wait(& mut self, duration: Duration) {
+        self.start_hot_profile(CALL_WAIT);
+        Delay::new(duration).await;
+        self.rollup_hot_profile();
+    }
+
+    /// Calls an asynchronous function and monitors its execution for telemetry.
+    ///
+    /// # Parameters
+    /// - `f`: The asynchronous function to call.
+    ///
+    /// # Returns
+    /// The output of the asynchronous function `f`.
+    ///
+    /// # Asynchronous
+    pub async fn call_async<F>(&mut self, f: F) -> F::Output
+        where F: Future {
+        self.start_hot_profile(CALL_OTHER);
+        let result = f.await;
+        self.rollup_hot_profile();
+        result
+    }
+
+    /// Asynchronously waits until a specified number of units are available in the Rx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `count`: The number of units to wait for availability.
+    ///
+    /// # Asynchronous
+    pub async fn wait_avail_units<T>(&mut self, this: & mut Rx<T>, count:usize) {
+        self.start_hot_profile(CALL_OTHER);
+        let result = this.shared_wait_avail_units(count).await;
+        self.rollup_hot_profile();
+        result
+    }
+
+    /// Asynchronously peeks at the next available message in the channel without removing it.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
+    ///
+    /// # Asynchronous
+    pub async fn peek_async<'a,T>(&'a mut self, this: &'a mut Rx<T>) -> Option<&T> {
+        self.start_hot_profile(CALL_OTHER);
+        let result = this.shared_peek_async().await;
+        self.rollup_hot_profile();
+        result
+    }
+
+    /// Asynchronously retrieves and removes a single message from the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// A `Result<T, String>`, where `Ok(T)` is the message if available, and `Err(String)` contains an error message if the retrieval fails.
+    ///
+    /// # Asynchronous
+    pub async fn take_async<T>(& mut self, this: & mut Rx<T>) -> Result<T, String> {
+        self.start_hot_profile(CALL_SINGLE_READ);
+        let result = this.shared_take_async().await;
+        self.rollup_hot_profile();
+        match result {
+            Ok(result) => {
+                this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
+                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
+                } else {
+                    MONITOR_NOT
+                };
+                #[cfg(test)]
+                self.test_count.entry("take_async").and_modify(|e| *e += 1).or_insert(1);
+                Ok(result)
+            },
+            Err(error_msg) => {
+                error!("Unexpected error take_async: {} {}", error_msg, self.ident.name);
+                Err(error_msg)
+            }
+        }
+    }
+
+    /// Sends a slice of messages to the Tx channel until it is full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `slice`: A slice of messages to be sent.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    pub fn send_slice_until_full<T>(&mut self, this: & mut Tx<T>, slice: &[T]) -> usize
+        where T: Copy {
+
+        if let Some(ref mut st) = self.telemetry_state {
+            st.calls[CALL_BATCH_WRITE]=st.calls[CALL_BATCH_WRITE].saturating_add(1);
+        }
+
+        let done = this.send_slice_until_full(slice);
+
+        this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+            tel.process_event(this.local_index, this.channel_meta_data.id, done)
+        } else {
+            MONITOR_NOT
+        };
+
+        done
+    }
+
+    /// Sends messages from an iterator to the Tx channel until it is full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `iter`: An iterator that yields messages of type `T`.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
+    pub fn send_iter_until_full<T,I: Iterator<Item = T>>(&mut self, this: & mut Tx<T>, iter: I) -> usize {
+
+        if let Some(ref mut st) = self.telemetry_state {
+            st.calls[CALL_BATCH_WRITE]=st.calls[CALL_BATCH_WRITE].saturating_add(1);
+        }
+
+        let done = this.send_iter_until_full(iter);
+
+        this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+            tel.process_event(this.local_index, this.channel_meta_data.id, done)
+        } else {
+            MONITOR_NOT
+        };
+
+        done
+    }
+
+    /// Attempts to send a single message to the Tx channel without blocking.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `msg`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
+    pub fn try_send<T>(& mut self, this: & mut Tx<T>, msg: T) -> Result<(), T> {
+
+        if let Some(ref mut st) = self.telemetry_state {
+            st.calls[CALL_SINGLE_WRITE]=st.calls[CALL_SINGLE_WRITE].saturating_add(1);
+        }
+
+        match this.try_send(msg) {
+            Ok(_) => {
+
+                this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
+                } else {
+                    MONITOR_NOT
+                };
+                Ok(())
+            },
+            Err(sensitive) => {
+                error!("Unexpected error try_send  telemetry: {} type: {}"
+                    , self.ident.name, type_name::<T>());
+                Err(sensitive)
+            }
+        }
+    }
+
+    /// Checks if the Tx channel is currently full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Returns
+    /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
+    pub fn is_full<T>(& mut self, this: & mut Tx<T>) -> bool {
+        this.is_full()
+    }
+
+    /// Returns the number of vacant units in the Tx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Returns
+    /// The number of messages that can still be sent before the channel is full.
+    pub fn vacant_units<T>(& mut self, this: & mut Tx<T>) -> usize {
+        this.shared_vacant_units()
+    }
+
+    /// Asynchronously waits until at least a specified number of units are vacant in the Tx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `count`: The number of vacant units to wait for.
+    ///
+    /// # Asynchronous
+    pub async fn wait_vacant_units<T>(& mut self, this: & mut Tx<T>, count:usize) {
+        self.start_hot_profile(CALL_WAIT);
+        let response = this.shared_wait_vacant_units(count).await;
+        self.rollup_hot_profile();
+        response
+    }
+
+    /// Asynchronously waits until the Tx channel is empty.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Asynchronous
+    pub async fn wait_empty<T>(& mut self, this: & mut Tx<T>) {
+        self.start_hot_profile(CALL_WAIT);
+        let response = this.shared_wait_empty().await;
+        self.rollup_hot_profile();
+        response
+    }
+
+    /// Sends a message to the Tx channel asynchronously, waiting if necessary until space is available.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `a`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
+    ///
+    /// # Asynchronous
+    pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T, saturation_ok: bool) -> Result<(), T> {
+       // TODO: instead of boolean we should have more descriptive enum.
+        //      IgnoreAndWait, IgnoreAndErr, Warn (default), IgnoreInRelease
+        self.start_hot_profile(CALL_SINGLE_WRITE);
+       let result = this.shared_send_async(a, self.ident, saturation_ok).await;
+       self.rollup_hot_profile();
+       match result  {
+           Ok(_) => {
+               this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+                   tel.process_event(this.local_index, this.channel_meta_data.id, 1)
+               } else {
+                   MONITOR_NOT
+               };
+               Ok(())
+           },
+           Err(sensitive) => {
+               error!("Unexpected error send_async telemetry: {} type: {}", self.ident.name, type_name::<T>());
+               Err(sensitive)
+           }
+       }
+    }
+
 }

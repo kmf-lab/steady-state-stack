@@ -6,6 +6,7 @@ use std::time::Duration;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
+use steady_state::monitor::LocalMonitor;
 use crate::actor::data_feedback::ChangeRequest;
 use crate::args::Args;
 
@@ -53,7 +54,7 @@ pub async fn run(context: SteadyContext
     let mut state = InternalState {
         count: 0,
     };
-    loop {
+    while monitor.is_running(&mut || tx.mark_closed() ) {
 
          //single pass of work, do not loop in here
         iterate_once(&mut monitor, &mut state, tx, MULTIPLIER).await;
@@ -72,7 +73,7 @@ pub async fn run(context: SteadyContext
         //we send telemetry and wait for the next time we are to run here
         monitor.relay_stats_periodic(Duration::from_micros(gen_rate_micros)).await;
     }
-
+    Ok(())
 }
 
 #[cfg(test)]

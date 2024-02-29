@@ -1,13 +1,15 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
-use hdrhistogram::Histogram;
+use hdrhistogram::{Counter, Histogram};
 
 #[allow(unused_imports)]
 use log::*;
+use std::cmp;
 
 use crate::*;
-use crate::channel_stats::{ChannelBlock, compute_labels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW};
-use crate::monitor::{ActorMetaData};
+use crate::actor_builder::{MCPU, Work};
+use crate::channel_stats::{compute_labels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW, PLACES_TENS};
+use crate::monitor::ActorMetaData;
 
 #[derive(Default)]
 pub struct ActorStatsComputer {
@@ -144,7 +146,7 @@ impl ActorStatsComputer {
         self.frame_rate_ms = config::TELEMETRY_PRODUCTION_RATE_MS as u128;
         self.refresh_rate_in_bits = meta.refresh_rate_in_bits;
         self.window_bucket_in_bits = meta.window_bucket_in_bits;
-        self.time_label = crate::channel_stats::time_label( self.frame_rate_ms << (meta.refresh_rate_in_bits+meta.window_bucket_in_bits) );
+        self.time_label = time_label( self.frame_rate_ms << (meta.refresh_rate_in_bits+meta.window_bucket_in_bits) );
 
         self.show_avg_mcpu = meta.avg_mcpu;
         self.show_avg_work = meta.avg_work;
@@ -296,25 +298,25 @@ impl ActorStatsComputer {
         match rule {
             Trigger::AvgBelow(mcpu) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                channel_stats::avg_rational(window_in_ms, &self.current_mcpu, mcpu.rational()).is_lt()
+                avg_rational(window_in_ms, &self.current_mcpu, mcpu.rational()).is_lt()
             },
             Trigger::AvgAbove(mcpu) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                channel_stats::avg_rational(window_in_ms, &self.current_mcpu, mcpu.rational()).is_gt()
+                avg_rational(window_in_ms, &self.current_mcpu, mcpu.rational()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, mcpu) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                channel_stats::stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu, mcpu.rational()).is_lt()
+                stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu, mcpu.rational()).is_lt()
             }
             Trigger::StdDevsAbove(std_devs, mcpu) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                channel_stats::stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu, mcpu.rational()).is_gt()
+                stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu, mcpu.rational()).is_gt()
             }
             Trigger::PercentileAbove(percentile, mcpu) => {
-                channel_stats::percentile_rational(percentile, &self.current_mcpu, mcpu.rational()).is_gt()
+                percentile_rational(percentile, &self.current_mcpu, mcpu.rational()).is_gt()
             }
             Trigger::PercentileBelow(percentile, mcpu) => {
-                channel_stats::percentile_rational(percentile, &self.current_mcpu, mcpu.rational()).is_lt()
+                percentile_rational(percentile, &self.current_mcpu, mcpu.rational()).is_lt()
             }
 
         }
@@ -325,25 +327,25 @@ impl ActorStatsComputer {
         match rule {
             Trigger::AvgBelow(work) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                channel_stats::avg_rational(window_in_ms,&self.current_work, work.rational()).is_lt()
+                avg_rational(window_in_ms, &self.current_work, work.rational()).is_lt()
             },
             Trigger::AvgAbove(work) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                channel_stats::avg_rational(window_in_ms,&self.current_work, work.rational()).is_gt()
+                avg_rational(window_in_ms, &self.current_work, work.rational()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, work) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                channel_stats::stddev_rational( self.work_std_dev(), window_bits, std_devs, &self.current_work, work.rational()).is_lt()
+                stddev_rational(self.work_std_dev(), window_bits, std_devs, &self.current_work, work.rational()).is_lt()
             }
             Trigger::StdDevsAbove(std_devs, work) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                channel_stats::stddev_rational(self.work_std_dev(),  window_bits, std_devs, &self.current_work, work.rational()).is_gt()
+                stddev_rational(self.work_std_dev(), window_bits, std_devs, &self.current_work, work.rational()).is_gt()
             }
             Trigger::PercentileAbove(percentile, work) => {
-                channel_stats::percentile_rational(percentile, &self.current_work, work.rational()).is_gt()
+                percentile_rational(percentile, &self.current_work, work.rational()).is_gt()
             }
             Trigger::PercentileBelow(percentile, work) => {
-                channel_stats::percentile_rational(percentile, &self.current_work, work.rational()).is_lt()
+                percentile_rational(percentile, &self.current_work, work.rational()).is_lt()
             }
 
         }
@@ -352,10 +354,10 @@ impl ActorStatsComputer {
     #[inline]
     fn mcpu_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_mcpu {
-            channel_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
-                                  , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
-                                  , c.runner
-                                  , c.sum_of_squares)
+            compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
+                            , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
+                            , c.runner
+                            , c.sum_of_squares)
         } else {
             info!("skipping std no current data");
             0f32
@@ -364,10 +366,10 @@ impl ActorStatsComputer {
     #[inline]
     fn work_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_work {
-            channel_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
-                                  , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
-                                  , c.runner
-                                  , c.sum_of_squares)
+            compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
+                            , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
+                            , c.runner
+                            , c.sum_of_squares)
         } else {
             info!("skipping std no current data");
             0f32
@@ -375,4 +377,97 @@ impl ActorStatsComputer {
     }
 
 
+}
+
+pub(crate) fn time_label(total_ms: u128) -> String {
+    let seconds = total_ms as f64 / 1000.0;
+    let minutes = seconds / 60.0;
+    let hours = minutes / 60.0;
+    let days = hours / 24.0;
+
+    if days >= 1.0 {
+        if days< 1.1 {"day".to_string()} else {
+            format!("{:.1} days", days)
+        }
+    } else if hours >= 1.0 {
+        if hours< 1.1 {"hr".to_string()} else {
+            format!("{:.1} hrs", hours)
+        }
+    } else if minutes >= 1.0 {
+        if minutes< 1.1 {"min".to_string()} else {
+            format!("{:.1} mins", minutes)
+        }
+    } else if seconds< 1.1 {"sec".to_string()} else {
+        format!("{:.1} secs", seconds)
+    }
+
+}
+
+//used for avg_rate, avg_mcpu and avg_work as a common implementation
+pub(crate) fn avg_rational<T: Counter>(window_in_ms: u128, current: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> cmp::Ordering {
+    if let Some(current) = current {
+        (current.runner * rational.1 as u128)
+            .cmp(&(PLACES_TENS as u128 * window_in_ms * rational.0 as u128))
+    } else {
+        cmp::Ordering::Equal //unknown
+    }
+}
+
+// self.inflight_std_dev()  (self.window_bucket_in_bits + self.refresh_rate_in_bits)
+//used for avg_rate, avg_mcpu and avg_work as a common implementation
+pub(crate) fn stddev_rational<T: Counter>(std_dev: f32, window_bits: u8
+                                          , std_devs: &StdDev
+                                          , current: &Option<ChannelBlock<T>>,
+                                          expected: (u64,u64)  ) -> cmp::Ordering {
+    if let Some(current) = current {
+
+        let std_deviation = (std_dev * std_devs.value()) as u128;
+       // let measured_value = ((current.runner >> window_bits) + std_deviation)/ PLACES_TENS as u128;
+        //let expected_value = expected.0 as f32 * expected.1 as f32;
+        //info!("stddev value: {} vs {} ", measured_value,expected_value);
+        (expected.1 as u128 * ((current.runner >> window_bits) + std_deviation)).cmp( &(PLACES_TENS as u128 * expected.0 as u128) )
+
+    } else {
+        cmp::Ordering::Equal //unknown
+    }
+}
+
+//used for avg_rate, avg_mcpu and avg_work as a common implementation
+pub(crate) fn percentile_rational<T: Counter>(percentile: &Percentile, consumed: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> cmp::Ordering {
+    if let Some(current_consumed) = consumed {
+        if let Some(h) = &current_consumed.histogram {
+            let measured_rate_ms = h.value_at_percentile(percentile.percentile()) as u128;
+            (measured_rate_ms * rational.1 as u128).cmp(&(rational.0 as u128))
+        } else {
+            cmp::Ordering::Equal //unknown
+        }
+    } else {
+        cmp::Ordering::Equal //unknown
+    }
+}
+
+#[inline]
+pub(crate) fn compute_std_dev(bits: u8, window: usize, runner: u128, sum_sqr: u128) -> f32 {
+    if runner < SQUARE_LIMIT {
+        let r2 = (runner*runner)>>bits;
+        //trace!("{} {} {} {} -> {} ",bits,window,runner,sum_sqr,r2);
+        if sum_sqr > r2 {
+            (((sum_sqr - r2) >> bits) as f32).sqrt() //TODO: someday we may need to implement sqrt for u128
+        } else {
+            ((sum_sqr as f32 / window as f32) - (runner as f32 / window as f32).powi(2)).sqrt()
+        }
+    } else {
+        //trace!("{:?} {:?} {:?} {:?} " ,bits ,window,runner ,sum_sqr);
+        ((sum_sqr as f32 / window as f32) - (runner as f32 / window as f32).powi(2)).sqrt()
+    }
+}
+
+pub(crate) const SQUARE_LIMIT: u128 = (1 << 64)-1;
+
+
+#[derive(Default)]
+pub(crate) struct ChannelBlock<T> where T: Counter {
+    pub(crate) histogram:      Option<Histogram<T>>,
+    pub(crate) runner:         u128,
+    pub(crate) sum_of_squares: u128,
 }

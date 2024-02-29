@@ -21,7 +21,8 @@ use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 #[allow(unused_imports)]
 use log::*;
 use ringbuf::storage::Heap;
-use crate::{AlertColor, config, Filled, MONITOR_UNKNOWN, Percentile, Rate, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx};
+use crate::{AlertColor, config, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx};
+use crate::actor_builder::Percentile;
 use crate::monitor::ChannelMetaData;
 
 
@@ -468,5 +469,97 @@ impl ChannelBuilder {
 
     }
 
+}
+
+impl Metric for Rate {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rate {
+    // Internal representation as a rational number of the rate per ms
+    // Numerator: units, Denominator: time in ms
+    numerator: u64,
+    denominator: u64,
+}
+
+impl Rate {
+    // Milliseconds
+    pub fn per_millis(units: u64) -> Self {
+        Self {
+            numerator: units,
+            denominator: 1,
+        }
+    }
+
+    pub fn per_seconds(units: u64) -> Self {
+        Self {
+            numerator: units * 1000,
+            denominator: 1,
+        }
+    }
+
+    pub fn per_minutes(units: u64) -> Self {
+        Self {
+            numerator: units * 1000 * 60,
+            denominator:  1,
+        }
+    }
+
+    pub fn per_hours(units: u64) -> Self {
+        Self {
+            numerator: units * 1000 * 60 * 60,
+            denominator:  1,
+        }
+    }
+
+    pub fn per_days(units: u64) -> Self {
+        Self {
+            numerator: units * 1000 * 60 * 60 * 24,
+            denominator: 1,
+        }
+    }
+
+    /// Returns the rate as a rational number (numerator, denominator) to represent the rate per ms.
+    /// This method ensures the rate can be used without performing division, preserving precision.
+    pub(crate) fn rational_ms(&self) -> (u64, u64) {
+        (self.numerator, self.denominator)
+    }
+}
+
+impl Metric for Filled {}
+
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Filled {
+    Percentage(u64,u64),  // Represents a percentage filled, as numerator and denominator
+    Exact(u64),           // Represents an exact fill level
+}
+
+impl Filled {
+    /// Creates a new `Filled` instance representing a percentage filled.
+    /// Ensures the percentage is within the valid range of 0.0 to 100.0.
+    pub fn percentage(value: f32) -> Option<Self> {
+        if (0.0..=100.0).contains(&value) {
+            Some(Self::Percentage((value * 100_000f32) as u64, 100_000u64))
+        } else {
+            None
+        }
+    }
+
+    pub fn p10() -> Self { Self::Percentage(10, 100)}
+    pub fn p20() -> Self { Self::Percentage(20, 100)}
+    pub fn p30() -> Self { Self::Percentage(30, 100)}
+    pub fn p40() -> Self { Self::Percentage(40, 100)}
+    pub fn p50() -> Self { Self::Percentage(50, 100)}
+    pub fn p60() -> Self { Self::Percentage(60, 100)}
+    pub fn p70() -> Self { Self::Percentage(70, 100)}
+    pub fn p80() -> Self { Self::Percentage(80, 100)}
+    pub fn p90() -> Self { Self::Percentage(90, 100)}
+    pub fn p100() -> Self { Self::Percentage(100, 100)}
+
+
+    /// Creates a new `Filled` instance representing an exact fill level.
+    pub fn exact(value: u64) -> Self {
+        Self::Exact(value)
+    }
 }
 

@@ -15,6 +15,9 @@ use futures::io::SeekFrom;
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 #[allow(unused_imports)]
 use std::fs::{create_dir_all, File, OpenOptions};
+use std::task::Context;
+use futures::future::pending;
+use futures::FutureExt;
 
 pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), std::io::Error> {
     Handle::<File>::new(file)?.write_all(data).await?;
@@ -126,7 +129,10 @@ impl LogLineFilter for TideHide {
 }
 ////////////////////////////////////////////
 ////////////////////////////////////////////
-
+pub async fn async_yield_now() {
+    let _= pending::<()>().poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()));
+    // Immediately after polling, we return control, effectively yielding.
+}
 ////////////////////////////////////////////
 ////////////////////////////////////////////
 pub mod logger {
