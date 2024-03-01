@@ -1,0 +1,134 @@
+[package]
+name = "steady_state"   # rename from sss
+version = "0.0.8"
+documentation = "https://docs.rs/steady_state/0.0.7/steady_state/"
+               #"https://docs.rs/crate/steady_state/0.0.8"  #debugging
+edition = "2021"
+description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
+license = "MIT"
+build = "build.rs" # assumes we have gzip and base64 installed, the base64 crate is very broken and must not be used.
+
+repository = "https://github.com/kmf-lab/steady-state-stack"
+
+# Exclude specific files and directories
+exclude = ["**/*.txt", "**/*.sh", "notes/", "temp/"]
+
+[lib]
+name = "steady_state"
+path = "src/lib.rs"
+
+
+# cargo build --release --features telemetry_history,telemetry_server
+[profile.release]
+opt-level = 'z' # optimize for size
+lto = true # link time optimization
+codegen-units = 1 # only one codegen unit to reduce binary size
+panic = 'abort' # no unwinding
+strip = 'symbols' # strip symbols
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+enum_glob_use = "deny" # forbid use of enum glob imports
+unwrap_used = "deny" # forbid use of unwrap
+
+
+#
+# to test if the code compiles for no_std use this command:
+#  cargo build --target thumbv6m-none-eabi
+#
+[features]
+"telemetry_server" = []
+"telemetry_history" = []
+
+
+[package.metadata.docs.rs]
+features = []
+no-default-features = true
+
+# Ensure 'telemetry_server' is not listed here since docs.rs does not support it
+cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
+
+
+
+[dependencies]
+# Common, the goal here is to be WASM compatible eventually
+bastion          = "0.4.5"   # The telemetry framwork with supervisors to recover from panics
+ringbuf          = "0.4.0-rc.1"
+async-ringbuf    = "0.2.0-rc.4"
+log              = "0.4.20"  # common logging traits
+                  # great logger but I would like to see a new crate using
+                  # nuclei with log to provide a more async friendly logger
+flexi_logger     = "0.27.3"  # default flexable logging implementation
+futures-timer    = "3.0.2"   # for async Delay::new(check_rate).await used places where we poll
+futures          = "0.3.29"  # for Select! Barrier etc and lock::Mutex
+itertools        = "0.12.0"  # helpful smart iter methods
+async-recursion  = "1.0.5"   # simplify the writing of async recursive functions
+structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
+uuid             = { version = "0.8.2", features = ["v4"] }
+num-traits       = "0.2.17" # for num::Zero and other generic math traits
+backtrace        = "0.3"
+itoa             = "1.0.9"
+lazy_static      = "1.4"
+config           = "0.14.0" # for lazy statics in unit tests
+const_panic      = "0.2.8" # for const panic!()
+hdrhistogram     = "7.5.4"  # for latency histograms
+rand             = "0.8.4" # for random number generation
+bytes            = { version = "1.5.0", features = [] }
+time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] } # for time formatting and supports no-std
+stun-rs          = "0.1.5"  # for stun server
+  #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
+  #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
+
+#rstest = "0.5.2"       # for unit testing
+# TODO: will support systemd, SQRL and rapid prootyping
+
+## for SQRL will integrate later and use tide
+#ring   = "0.16.20" # for sha
+#qrcode = "0.13.0"  # for qr code generation
+#rustls = "0.20.0" # for https
+#diesel = { version = "1.4.7", features = ["postgres"] }
+
+#askama         = "0.12.1"
+
+#others
+#rand             = "0.8.4" # for random number generation
+#regex            = "1.5.4" # for regex
+#dashmap          = "5.5.3"
+#signal-hook      = "0.3.17"
+
+# for future consideration
+#kube-core = "0.88.1"
+#kube-derive = "0.88.1"
+#k8s-metrics = "0.15.0"
+#k8s-openapi = "0.21.0" #remove due to mabe_async ?
+#serde ="0.3.0" # for serialization and deserialization
+#serde_derive = "1.0.64" # for serialization and deserialization
+#serde_json = "1.0.64" # for serialization and deserialization
+
+# for future consideration
+# turbine = { git = "https://github.com/polyfractal/Turbine", branch = "main" }
+# disruptor        = "0.2.0"   # does not integreate with bastion, but is a lock free ring buffer
+
+[build-dependencies]
+tempfile         = "3.10.0"
+color-eyre       = "0.6.2"   # for better error messages
+
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tide             = "0.17.0-beta.1"
+structopt        = "0.3.26"  # CLI parse for type safe arguments
+nuclei           = { version = "0.4.4", features = ["async-exec","iouring","attributes"] } # for proactor based IO also part of bastion
+
+
+[dev-dependencies]
+async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
+rand_distr       = "0.4.2" # for random number generation
+
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+[[bin]]
+name = "new_project"
+path = "bin/generate.rs"

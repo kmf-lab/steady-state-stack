@@ -286,7 +286,7 @@ impl FrameHistory {
             history_buffer: BytesMut::new(),
             //immutable details
             guid: Uuid::new_v4().to_string(), // Unique GUID for the run instance
-            output_log_path: PathBuf::from("output_logs"),
+            output_log_path: PathBuf::from("../output_logs"),
             //running state
             file_bytes_written: 0usize,
             file_buffer_last_seq: 0u64,

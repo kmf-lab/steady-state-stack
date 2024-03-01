@@ -1,0 +1,11 @@
+[package]
+name = "cargo-steady-init" # This name is crucial for Cargo to recognize the subcommand.
+version = "0.0.1"
+edition = "2021"
+# Other metadata like authors, description, etc.
+
+[dependencies]
+# Here, list your dependencies.
+#steady_state   = "0.0.8"
+graphviz-rust  = "0.7.1"
+structopt = "0.3.26" # for graphviz dot file parse
