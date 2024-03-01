@@ -633,7 +633,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     //testing
     async fn async_yield_now() {
-        pending::<()>().poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()));
+        let _ = pending::<()>().poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()));
         // Immediately after polling, we return control, effectively yielding.
     }
 

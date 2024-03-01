@@ -183,8 +183,8 @@ fn gather_scan_rx(dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>) -> Op
         let v: Vec<Box<dyn RxDef>> = dynamic_senders.iter()
             .filter(|f|  (f.ident.name != metrics_collector::NAME)
                       && (f.ident.name != metrics_server::NAME))
-            .map(|f| f.telemetry_take.iter().map(|g| g.actor_rx())  )
-            .flatten()
+            .flat_map(|f| f.telemetry_take.iter().map(|g| g.actor_rx())  )
+
             .filter_map(|x| x)
             .collect();
         if !v.is_empty() {

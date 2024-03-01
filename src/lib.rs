@@ -141,7 +141,7 @@ impl SteadyContext {
             }
             Err(e) => {
                 trace!("internal error,unable to get liveliness read lock {}",e);
-                return true
+                true
             }
         }
     }
@@ -212,7 +212,7 @@ impl SteadyContext {
         };
 
         // this is my fixed size version for this specific thread
-        let result = LocalMonitor::<RX_LEN, TX_LEN> {
+        LocalMonitor::<RX_LEN, TX_LEN> {
             telemetry_send_rx,
             telemetry_send_tx,
             telemetry_state,
@@ -224,9 +224,7 @@ impl SteadyContext {
 
             #[cfg(test)]
             test_count: HashMap::new(),
-        };
-
-        result
+        }
     }
 
 
