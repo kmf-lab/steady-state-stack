@@ -86,6 +86,7 @@ pub type SteadyTxBundle<T,const GURTH:usize> = Arc<[Arc<Mutex<Tx<T>>>;GURTH]>;
 pub type SteadyRxBundle<T,const GURTH:usize> = Arc<[Arc<Mutex<Rx<T>>>;GURTH]>;
 
 
+
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
 pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -966,9 +967,26 @@ impl <T> RxDef for SteadyRx<T> where T: Send {
 }
 
 
+
 pub struct SteadyBundle{}
 
 impl SteadyBundle {
+
+    pub fn mark_closed<T, const GIRTH: usize>(this: & SteadyTxBundle<T, GIRTH>) -> bool {
+        this.iter().all(|tx| {
+            let mut guard = bastion::run!(tx.lock());
+            guard.deref_mut().mark_closed()
+        })
+    }
+
+    pub fn is_closed<T, const GIRTH: usize>(this: & SteadyRxBundle<T, GIRTH>) -> bool {
+        this.iter().all(|rx| {
+            let mut guard = bastion::run!(rx.lock());
+            guard.deref_mut().is_closed()
+        })
+    }
+
+
     pub fn tx_def_slice<T, const GIRTH: usize>(this: & SteadyTxBundle<T, GIRTH>) -> [& dyn TxDef; GIRTH] {
         this.iter()
             .map(|x| x as &dyn TxDef)

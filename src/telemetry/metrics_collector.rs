@@ -277,11 +277,14 @@ fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &[Collector
 
 
   if !matches.iter().all(|x| *x==3 || *x==0) {
-            /*
+
+          // this happens by design on startup at times.
+      // TODO: if it happens long term we should report to the user
+      //  because they have one side and not the other of a channel
           matches.iter().filter(|x| !*x==3 && !*x==0).for_each(|x| {
-                error!("can not get structure due to some bad value: {:?}",x);
-          });*/
-        error!("can not get structure due to some bad value");
+                trace!("can not get structure due to some bad value: {:?}",x);
+          });
+
         return None;
   }
   //error!("all looks good");

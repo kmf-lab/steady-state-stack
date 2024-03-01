@@ -28,7 +28,9 @@ pub async fn run(context: SteadyContext
     let rx = rx_guard.deref_mut();
 
 
-    loop {
+    while monitor.is_running(
+        &mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()
+      ) {
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
@@ -36,11 +38,12 @@ pub async fn run(context: SteadyContext
                         , rx
                         , tx
         ).await {
-            break Ok(());
+            return Ok(());
         }
         //we relay all our telemetry and return to the top to block for more work.
         monitor.relay_stats_smartly().await;
     }
+    Ok(())
 }
 
 

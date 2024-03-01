@@ -22,7 +22,9 @@ pub async fn run<const LEN:usize>(context: SteadyContext
     let mut rx_guard = rx.lock().await;
     let rx = rx_guard.deref_mut();
 
-    loop {
+    while monitor.is_running(
+        &mut || rx.is_empty() && rx.is_closed() && SteadyBundle::mark_closed(&tx)
+    ) {
 
         monitor.wait_avail_units(rx,rx.capacity()/3).await; //TODO: need Timeout??
 
@@ -40,6 +42,7 @@ pub async fn run<const LEN:usize>(context: SteadyContext
 
 
     }
+    Ok(())
 }
 
 

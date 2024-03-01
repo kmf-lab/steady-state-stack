@@ -36,8 +36,8 @@ pub async fn run<const GURTH:usize>(context: SteadyContext
     let capacity = tx[0].lock().await.capacity();
     let limit:usize = capacity/4;
 
-    loop {
-
+    while monitor.is_running(
+        &mut || SteadyBundle::mark_closed(&tx) ) {
 
         loop {
             let route = thread_rng().gen::<u16>();
