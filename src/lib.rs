@@ -946,7 +946,7 @@ impl <T> TxDef for SteadyTx<T> {
     }
 }
 
-impl <T> RxDef for SteadyRx<T> where T: Send {
+impl <T: std::marker::Send> RxDef for SteadyRx<T>  {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         let guard = bastion::run!(self.lock());
         let this = guard.deref();
