@@ -173,7 +173,7 @@ fn collect_futures_for_one_frame(scan: &Vec<Box<dyn RxDef>>) -> Vec<BoxFuture<()
     // this can be done with just one actor however we are more accurate if we
     // use more to compensate for the occasional bad actor.
     scan.iter().map(|item| {
-        item.wait_avail_units(config::CONSUMED_MESSAGES_BY_COLLECTOR).boxed()
+        item.wait_avail_units(config::CONSUMED_MESSAGES_BY_COLLECTOR)
     }).collect()
 }
 

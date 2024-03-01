@@ -71,7 +71,7 @@ use futures::FutureExt; // Provides the .fuse() method
 
 // Re-exporting Bastion blocking for use in actors
 pub use bastion::blocking;
-
+use futures::future::BoxFuture;
 
 
 use futures::select;
@@ -935,8 +935,11 @@ pub trait TxDef: Debug {
 }
 pub trait RxDef: Debug + Send {
     fn meta_data(&self) -> Arc<ChannelMetaData>;
-    fn wait_avail_units(&self, count: usize) -> Pin<Box<dyn Future<Output=()> + Send + '_>>;
-}
+    fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, ()>;
+
+    }
+
+//BoxFuture
 
 impl <T> TxDef for SteadyTx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
@@ -954,13 +957,14 @@ impl <T: std::marker::Send> RxDef for SteadyRx<T>  {
     }
 
     #[inline]
-    fn wait_avail_units(&self, count: usize) -> Pin<Box<dyn Future<Output=()> + Send + '_>>
-    {
-        Box::pin(async move {
+    fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, ()> {
+        async move {
             let mut guard = self.lock().await;
             guard.deref_mut().shared_wait_avail_units(count).await;
-        })
+        }.boxed() // Use the `.boxed()` method to convert the future into a BoxFuture
     }
+
+
 }
 
 
