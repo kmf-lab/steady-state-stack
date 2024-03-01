@@ -168,13 +168,21 @@ pub(crate) async fn run(context: SteadyContext
 }
 
 fn collect_futures_for_one_frame(scan: &Vec<Box<dyn RxDef>>) -> Vec<BoxFuture<()>> {
-    // TODO: if we end up with scan > 200+ we may want to consider taking a
-    //       random sample of the actors to avoid unnecessary load on the system.
-    // this can be done with just one actor however we are more accurate if we
-    // use more to compensate for the occasional bad actor.
-    scan.iter().map(|item| {
-        item.wait_avail_units(config::CONSUMED_MESSAGES_BY_COLLECTOR)
-    }).collect()
+
+    //we do not need to check every channel every time
+    let skip_interval = if scan.len() > 61 {
+        scan.len() / 31
+    } else {
+        2
+    };
+
+    scan.iter()
+        .enumerate()
+        .filter(|(index, _)| 0 == index % skip_interval )
+        .map(|(index, item)| {
+            item.wait_avail_units(config::CONSUMED_MESSAGES_BY_COLLECTOR)
+        })
+        .collect()
 }
 
 fn gather_scan_rx(dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>) -> Option<Vec<Box<dyn RxDef>>> {
