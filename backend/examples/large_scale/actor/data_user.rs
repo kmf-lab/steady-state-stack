@@ -59,13 +59,11 @@ async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< Packet>) {
             rx.block_until_not_empty(Duration::from_secs(20));
             match monitor.try_take(rx) {
                 Some(measured) => {
-                    let result = expected.cmp(&measured);
-                    if result.is_eq() {
+                    if expected.eq(&measured) {
                         GraphTestResult::Ok(())
                     } else {
-                        GraphTestResult::Err(format!("no match {:?} {:?} {:?}"
+                        GraphTestResult::Err(format!("no match {:?} {:?}"
                                              ,expected
-                                             ,result
                                              ,measured))
                     }
                 },

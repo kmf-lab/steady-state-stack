@@ -65,7 +65,7 @@ mod tests {
             gen_rate_micros: 3000000,
             duration: 7
         };
-        let to_test = orig_args.to_cli_string("myapp");
+        let to_test = orig_args._to_cli_string("myapp");
         trace!("to_test: {}", to_test);
         let cli_args = Args::from_iter(to_test.split_whitespace());
         assert_eq!(cli_args, *orig_args);

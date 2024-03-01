@@ -8,7 +8,7 @@ use steady_state::*;
 use crate::args::Args;
 
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Packet {
     pub(crate) route: u16,
     pub(crate) data: Bytes,
@@ -73,23 +73,24 @@ pub async fn run<const GURTH:usize>(context: SteadyContext
 
 
 #[cfg(test)]
-pub async fn run<const LEN:usize>(context: SteadyContext
-                 , tx: [&SteadyTx<Packet>;LEN]) -> Result<(),()> {
+pub async fn run<const GURTH:usize>(context: SteadyContext
+                 , tx: SteadyTxBundle<Packet,GURTH>) -> Result<(),()> {
 
-    let mut monitor = context.into_monitor([], tx);
+    let mut monitor = context.into_monitor([], SteadyBundle::tx_def_slice(&tx));
 
-    let mut tx_guard = tx.lock().await;
+
+    let mut tx_guard = tx[0].lock().await;
     let tx = tx_guard.deref_mut();
 
 
     loop {
-         relay_test(& mut monitor, &tx).await;
+         relay_test(& mut monitor, tx).await;
          monitor.relay_stats_smartly().await;
    }
 }
 #[cfg(test)]
-async fn relay_test<const R:usize, const T:usize, const LEN:usize>(monitor: &mut LocalMonitor<R,T>
-                    , tx: &[SteadyTx<Packet>;LEN]) {
+async fn relay_test<const R:usize, const T:usize>(monitor: &mut LocalMonitor<R,T>
+                    , tx: &Tx<Packet>) {
 
     /*
     if let Some(ctx) = monitor.ctx() {
