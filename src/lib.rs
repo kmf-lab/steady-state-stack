@@ -949,7 +949,7 @@ impl <T> TxDef for SteadyTx<T> {
     }
 }
 
-impl <T: std::marker::Send> RxDef for SteadyRx<T>  {
+impl <T: Send + Sync > RxDef for SteadyRx<T>  {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         let guard = bastion::run!(self.lock());
         let this = guard.deref();
@@ -1001,8 +1001,8 @@ impl SteadyBundle {
     }
 
 
-    pub fn rx_def_slice< T, const GIRTH: usize>(this: & SteadyRxBundle<T, GIRTH>) -> [& dyn RxDef; GIRTH]
-     where T: Send {
+    pub fn rx_def_slice< T: Send + Sync, const GIRTH: usize>(this: & SteadyRxBundle<T, GIRTH>) -> [& dyn RxDef; GIRTH]
+     {
         this.iter()
             .map(|x| x as &dyn RxDef)
             .collect::<Vec<&dyn RxDef>>()
