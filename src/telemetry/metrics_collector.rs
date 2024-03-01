@@ -10,7 +10,7 @@ use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
 use crate::{config, RxDef, SteadyContext, SteadyTx, Tx, util};
 
 use futures::future::{BoxFuture, FutureExt, select_all};
-use std::pin::Pin;
+
 use crate::graph_liveliness::ActorIdentity;
 use crate::telemetry::{metrics_collector, metrics_server};
 
@@ -172,7 +172,7 @@ fn collect_futures_for_one_frame(scan: &Vec<Box<dyn RxDef>>) -> Vec<BoxFuture<()
     //       random sample of the actors to avoid unnecessary load on the system.
     // this can be done with just one actor however we are more accurate if we
     // use more to compensate for the occasional bad actor.
-    scan.into_iter().map(|item| {
+    scan.iter().map(|item| {
         item.wait_avail_units(config::CONSUMED_MESSAGES_BY_COLLECTOR).boxed()
     }).collect()
 }
@@ -184,7 +184,6 @@ fn gather_scan_rx(dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>) -> Op
             .filter(|f|  (f.ident.name != metrics_collector::NAME)
                       && (f.ident.name != metrics_server::NAME))
             .flat_map(|f| f.telemetry_take.iter().map(|g| g.actor_rx())  )
-
             .filter_map(|x| x)
             .collect();
         if !v.is_empty() {

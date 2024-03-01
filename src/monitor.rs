@@ -1,14 +1,17 @@
 use std::any::type_name;
+
+#[cfg(test)]
+use std::collections::HashMap;
+
 use std::ops::*;
 use std::time::{Duration, Instant};
 
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, Ordering};
 use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*; //allowed for all modules
 use num_traits::Zero;
-use std::collections::HashMap;
 use futures::future::pending;
 use std::task::Context;
 use futures_timer::Delay;
@@ -17,7 +20,7 @@ use futures::FutureExt;
 use crate::{AlertColor, config, MONITOR_NOT, MONITOR_UNKNOWN, Rx, RxDef, StdDev, SteadyRx, SteadyTx, telemetry, Trigger, Tx};
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
-use crate::graph_liveliness::{ActorIdentity, GraphLiveliness, GraphLivelinessState};
+use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::EdgeSimulator;
 
 

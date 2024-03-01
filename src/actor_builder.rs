@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicU32, AtomicUsize};
 use std::time::Duration;
 use bastion::*;
 use bastion::supervisor::*;
-use futures::lock::Mutex;
 use log::*;
 use crate::{AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};

@@ -1,7 +1,7 @@
 use crate::util;
 use std::ops::DerefMut;
-use std::sync::{Arc, LockResult, RwLock, RwLockReadGuard};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicUsize};
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
 use std::process::exit;
@@ -90,7 +90,7 @@ impl GraphLiveliness {
             GraphLivelinessState::StopRequested => {
                  bastion::run! {
                     let mut guard =self.votes[ident.id].lock().await;
-                    let mut vote = guard.deref_mut();
+                    let vote = guard.deref_mut();
                     vote.ident = ident; //signature it is me
                     vote.in_favor = accept_fn();
                     !vote.in_favor //return the opposite to keep running when we vote no
