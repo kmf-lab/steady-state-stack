@@ -3,6 +3,8 @@ name = "{{ name }}"
 version = "0.0.1"
 edition = "2021"
 
+[workspace]
+
 [dependencies]
 steady_state     = "0.0.8"
 structopt        = "0.3.26"

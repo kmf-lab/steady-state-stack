@@ -126,7 +126,7 @@ fn write_project_files(pm: ProjectModel
 mod tests {
     use std::env;
     use std::path::PathBuf;
-    use std::process::Command;
+    use std::process::{Command, Stdio};
     use crate::process_dot;
 
     #[test]
@@ -162,18 +162,23 @@ mod tests {
                 /////
                 process_dot(g, "unnamed1");
                 let build_me = PathBuf::from("unnamed1");
+                let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
+
                 ////
-                let output = Command::new("cargo")
+                let mut output = Command::new("cargo")
                     .arg("build")
-                    .current_dir(build_me)
-                    .output()
+                    .arg("--manifest-path")
+                    .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
+                    .current_dir(build_me_absolute)
+                    .stdout(Stdio::inherit()) // This line ensures that stdout from the command is printed directly to the terminal
+                    .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal
+                    .spawn()
                     .expect("failed to execute process");
 
-                if !output.status.success() {
-                    println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-                    eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-                }
-                assert!(output.status.success(), "Cargo build failed");
+                // Wait for the command to finish
+                let output = output.wait().expect("failed to wait on child");
+
+                assert!(output.success());
             }
             Err(e) => {
                 panic!("Failed to change directory to test_run: {}", e);

@@ -3,6 +3,12 @@ use structopt::StructOpt;
 use log::*;
 use crate::args::Args;
 
+mod actor {
+    {% for actor in actors %}
+        pub mod {{actor.mod_name}};
+    {% endfor %}
+}
+
 fn main() {
     let opt = Args::from_args();
     if let Err(e) = steady_state::init_logging(&opt.loglevel) {
@@ -10,4 +16,61 @@ fn main() {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
     info!("Starting up");
+
+    let mut graph = build_graph(&opt);
+
+    graph.start();
+
+    {  //remove this block to run forever.
+       sleep(Duration::from_secs(60));
+       graph.stop(); //actors can also call stop as desired on the context or monitor
+    }
+
+    graph.block_until_stopped(Duration::from_secs(2));
+}
+
+fn build_graph(cli_arg: &Args) -> steady_state::Graph {
+    debug!("args: {:?}",&cli_arg);
+
+    let mut graph = steady_state::Graph::new(cli_arg.clone());
+
+    //this common root of the channel builder allows for common config of all channels
+    let base_channel_builder = graph.channel_builder()
+        .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
+        .with_type()
+        .with_line_expansion();
+
+    //this common root of the actor builder allows for common config of all actors
+    let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor
+        .with_mcpu_percentile(Percentile::p80())
+        .with_work_percentile(Percentile::p80())
+        .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
+
+    //build channels
+    {% for channel in channels %}
+    let ({{channel.name}}_tx, {{channel.name}}_rx) = base_channel_builder.clone()
+        .with_name("{{channel.name}}")
+        .with_capacity({{channel.capacity}})
+        .build();
+    {% endfor %}
+
+    //build actors
+    {% for actor in actors %}
+     base_actor_builder.with_name("{{actor.display_name}}")
+                 .build_with_exec( move |context| actor::{{actor.mod_name}}::run(context
+                                                  {% for channel in actor.channels %}
+                                                    , {{channel.name}}_{{channel.end}}.clone()
+                                                  {% endfor %}
+                                                 )
+                 );
+    {% endfor %}
+
+    graph
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+     //TODO: add example test once we have all the actors working
 }
