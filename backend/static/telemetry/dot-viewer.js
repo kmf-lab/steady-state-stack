@@ -1,9 +1,10 @@
 const BW = 2; // border width
 const BW2 = BW * 2; // border width times 2
-//const DOT_URL = `http://${host}:${port}/graph.dot`;
+
+const {host} = this.location;
+const DOT_URL = `http://${host}/graph.dot`;
 //const DOT_URL = 'graph.dot';
-//const DOT_URL = 'graph2.dot';
-const DOT_URL = 'http://127.0.0.1:8080/graph.dot';
+
 const ZOOM_DELTA = 40;
 //const ZOOM_DELTA = 200;
 //const ZOOM_FROM_CENTER = false;
@@ -13,7 +14,7 @@ const MAX_SCALE = 0.4;
 
 const speedMap = {
   'No refresh': 0,
-  '33 ms': 33,
+  '40 ms': 40,
   '100 ms': 100,
   '200 ms': 200,
   '1 sec': 1000,

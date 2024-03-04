@@ -26,7 +26,7 @@ use std::env;
             .expect("TELEMETRY_SERVER_PORT must be a valid u16")
     }
 
-    pub const DEFAULT_TELEMETRY_SERVER_IP:&str = "127.0.01"; // need to move to env?
+    pub const DEFAULT_TELEMETRY_SERVER_IP:&str = "0.0.0.0"; // need to move to env?
     pub(crate) fn telemetry_server_ip() -> String {
         env::var("TELEMETRY_SERVER_IP")
             .unwrap_or_else(|_| DEFAULT_TELEMETRY_SERVER_IP.to_string())

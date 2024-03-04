@@ -24,6 +24,15 @@ struct InternalState {
 
 }
 
+//TODO: can we put this on SteadyTX?
+/*async fn lock_and_deref(&self) -> (impl DerefMut<Target = T> + '_, &mut T) {
+    let mut guard = self.feedback.lock().await;
+    let deref = guard.deref_mut();
+    (guard, deref)
+}
+
+*/
+
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , feedback: SteadyRx<ChangeRequest>
@@ -41,7 +50,7 @@ pub async fn run(context: SteadyContext
     let feedback = rx_guard.deref_mut();
 
     let mut tx_guard = tx.lock().await;
-    let tx = tx_guard.deref_mut();
+    let tx = &mut *tx_guard;
 
     //let args = context.args::<Args>(); //or you can turbo fish here to get your args
 

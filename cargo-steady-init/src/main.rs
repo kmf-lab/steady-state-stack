@@ -1,57 +1,187 @@
-use graphviz_rust::dot_generator::{graph, id};
-use graphviz_rust::dot_structures::Graph;
-use graphviz_rust::parse;
-use structopt::StructOpt;
+mod extract_details;
+mod args;
+mod templates;
 
+use std::error::Error;
+use std::fs;
+use std::ops::Index;
+use std::path::PathBuf;
+use std::str::FromStr;
+use askama::Template;
+use dot_parser::{ast, canonical};
+use dot_parser::canonical::AttrStmt::Edge;
+use dot_parser::canonical::Graph;
+use log::*;
+use structopt::StructOpt;
+use crate::args::Args;
+
+#[derive(Default)]
+struct ProjectModel {
+    pub(crate) name: String,
+}
 
 fn main() {
+    let opt = Args::from_args();
+    if let Err(e) = steady_state::init_logging(&opt.loglevel) {
+        //do not use logger to report logger could not start
+        eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
+    }
 
-
-
-    println!("This is cargo-steady-init!");
-    parse_test();
-    // Your command logic here.
-
-    //take the dot file and parse it
-    //send to code generation for project construction
-    //also generate svg?
-    //can we validate this with LLM?
+    if let Ok(g) = fs::read_to_string(&opt.dotfile) {
+        process_dot(&g, &opt.name);
+    } else {
+        error!("Failed to read dot file: {}", &opt.dotfile);
+    }
 
 }
 
-
-fn parse_test() {
-    let g: Result<Graph, String> = parse(
-        r#"
-        strict digraph t {
-            aa[color=green]
-            subgraph v {
-                aa[shape=square]
-                subgraph vv{a2 -> b2}
-                aaa[color=red]
-                aaa -> bbb
+fn process_dot(dot: &str, name: &str) {
+    //
+    match ast::Graph::read_dot(dot) {
+        Ok(ast) => {
+            //Dot is clean now try to build the folders
+            ///////////
+            ///////////
+            // Create the project directory
+            let mut working_path = PathBuf::from(name);
+            if let Err(e) = fs::create_dir_all(&working_path) {
+                error!("Failed to create project directory: {}", e);
+                return;
             }
-            aa -> be -> subgraph v { d -> aaa}
-            aa -> aaa -> v
+            let base_folder_path = working_path.clone();
+
+            // Construct the source folder path
+            working_path.push("src");
+            if let Err(e) = fs::create_dir_all(&working_path) {
+                error!("Failed to create source directory: {}", e);
+                return;
+            }
+            // Save the source folder path for later use
+            let source_folder_path = working_path.clone();
+
+            // Construct the actor folder path
+            working_path.push("actor");
+            if let Err(e) = fs::create_dir_all(&working_path) {
+                error!("Failed to create actor directory: {}", e);
+                return;
+            }
+            // Save the actor folder path for later use
+            let actor_folder_path = working_path.clone();
+
+            info!("Project folder created at: {}", base_folder_path.display());
+            info!("Source folder created at: {}", source_folder_path.display());
+            info!("Actor folder created at: {}", actor_folder_path.display());
+
+            ///////////
+            ///////////
+            //folders done now extract the project details
+            ///////////
+            match extract_details::extract_project_model(name, canonical::Graph::from(ast)) {
+                Ok(project_model) => {
+                    info!("Project model extracted");
+                    //last write out the project files
+                    if let Err(e) = write_project_files(project_model, base_folder_path, source_folder_path, actor_folder_path) {
+                        error!("Partial project files written: {}", e);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to extract project model: {}", e);
+                }
+            }
         }
-        "#,
-    );
+        Err(e) => {
+            error!("Failed to parse dot file: {}", e);
+        }
+    }
 
-
-
-/*
-    assert_eq!(
-        g,
-        graph!(strict di id!("t");
-          node!("aa";attr!("color","green")),
-          subgraph!("v";
-            node!("aa"; attr!("shape","square")),
-            subgraph!("vv"; edge!(node_id!("a2") => node_id!("b2"))),
-            node!("aaa";attr!("color","red")),
-            edge!(node_id!("aaa") => node_id!("bbb"))
-            ),
-          edge!(node_id!("aa") => node_id!("be") => subgraph!("v"; edge!(node_id!("d") => node_id!("aaa")))),
-          edge!(node_id!("aa") => node_id!("aaa") => node_id!("v"))
-        )
-    ) */
 }
+
+fn write_project_files(pm: ProjectModel
+                       , folder_base: PathBuf
+                       , folder_src: PathBuf
+                       , folder_actor: PathBuf) -> Result<(), Box<dyn Error>> {
+
+   let cargo = folder_base.join("Cargo.toml");
+   fs::write(cargo, templates::CargoTemplate { name: &pm.name }.render()?)?;
+
+   let gitignore = folder_base.join(".gitignore");
+   fs::write(gitignore, templates::GitIgnoreTemplate {}.render()?)?;
+
+    let main_rs = folder_src.join("main.rs");
+    fs::write(main_rs, templates::MainTemplate {}.render()?)?;
+
+    let args_rs = folder_src.join("args.rs");
+    fs::write(args_rs, templates::ArgsTemplate {}.render()?)?;
+
+
+
+
+    println!("test: \n {}",templates::ChannelTypeTemplate { name: &pm.name }.render().unwrap());
+
+   Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+    use std::path::PathBuf;
+    use std::process::Command;
+    use crate::process_dot;
+
+    #[test]
+    fn test_unnamed1_project() {
+        let g = r#"
+        digraph G {
+    IMAPClient [label="IMAP Client\nConnects to IMAP server\nto fetch emails"];
+    EmailFilter [label="Email Filter\nAnalyzes emails to determine spam"];
+    SpamAssassin [label="SpamAssassin Integration\nOptionally uses SpamAssassin for detection"];
+    EmailMover [label="Email Mover\nMoves spam emails to a designated folder"];
+    ConfigLoader [label="Config Loader\nLoads configuration for IMAP and settings"];
+    Logger [label="Logger\nLogs system activities for monitoring"];
+
+    ConfigLoader -> IMAPClient [label="IMAP server details\nemail, password"];
+    IMAPClient -> EmailFilter [label="Emails\nRaw email data"];
+    EmailFilter -> SpamAssassin [label="Email content\nFor SpamAssassin analysis"];
+    SpamAssassin -> EmailFilter [label="Spam verdict\nSpam or Ham"];
+    EmailFilter -> EmailMover [label="Spam emails\nIdentified spam messages"];
+    EmailMover -> Logger [label="Move operations\nSuccess or failure logs"];
+    IMAPClient -> Logger [label="Connection logs\nSuccess or failure"];
+    EmailFilter -> Logger [label="Filtering logs\nProcessed emails and results"];
+
+    edge [color=blue];
+    node [style=filled, color=lightgrey];
+}
+        "#;
+
+        //move to our test_run folder to ensure we do not generate test code on top of ourself
+        match env::set_current_dir("test_run") {
+            Ok(_) => {
+                let current_dir = env::current_dir().expect("Failed to get current directory");
+                println!("Current working directory is: {:?}", current_dir);
+                /////
+                process_dot(g, "unnamed1");
+                let build_me = PathBuf::from("unnamed1");
+                ////
+                let output = Command::new("cargo")
+                    .arg("build")
+                    .current_dir(build_me)
+                    .output()
+                    .expect("failed to execute process");
+
+                if !output.status.success() {
+                    println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+                    eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+                }
+                assert!(output.status.success(), "Cargo build failed");
+            }
+            Err(e) => {
+                panic!("Failed to change directory to test_run: {}", e);
+            }
+        }
+    }
+}
+
+
+
+

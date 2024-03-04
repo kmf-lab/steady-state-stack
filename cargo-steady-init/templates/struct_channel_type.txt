@@ -1,0 +1,5 @@
+
+// if this is Copy type you can then use the slice methods.
+struct {{ name }} {
+   //TODO: add any fields you nee here
+}

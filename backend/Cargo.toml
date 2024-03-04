@@ -66,7 +66,7 @@ futures          = "0.3.29"  # for Select! Barrier etc and lock::Mutex
 itertools        = "0.12.0"  # helpful smart iter methods
 async-recursion  = "1.0.5"   # simplify the writing of async recursive functions
 structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
-uuid             = { version = "0.8.2", features = ["v4"] }
+uuid             = { version = "1.7.0", features = ["v4"] }
 num-traits       = "0.2.17" # for num::Zero and other generic math traits
 backtrace        = "0.3"
 itoa             = "1.0.9"
@@ -80,6 +80,8 @@ time             = { version = "0.3.34", features = ["macros","formatting", "par
 stun-rs          = "0.1.5"  # for stun server
   #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
+
+crossbeam-utils = "0.8.3" # for crossbeam::channel
 
 #rstest = "0.5.2"       # for unit testing
 # TODO: will support systemd, SQRL and rapid prootyping

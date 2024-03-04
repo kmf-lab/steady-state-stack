@@ -1,0 +1,24 @@
+use flexi_logger::LogSpecification;
+use structopt_derive::StructOpt;
+
+#[derive(StructOpt, Debug, PartialEq, Clone)]
+pub struct Args {
+
+    #[structopt(short = "l", long = "loglevel"
+                , default_value = "info"
+                , possible_values = log_variants()
+                , validator = validate_logging_level
+                , case_insensitive = true)]
+    pub(crate) loglevel: String,
+
+}
+
+fn log_variants() -> &'static [&'static str] {
+    &["error", "warn", "info", "debug", "trace"]
+}
+
+fn validate_logging_level(level: String) -> Result<(), String> {
+    LogSpecification::parse(level)
+        .map(|_| ())
+        .map_err(|_| String::from("Invalid logging level format."))
+}

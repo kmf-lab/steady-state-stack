@@ -6,9 +6,6 @@ use log::*;
 use args::Args;
 use std::time::Duration;
 
-// here are the actors that will be used in the graph.
-// note that the actors are in a separate module and we must use the structs/enums and
-// bring in the behavior functions
 mod actor {
     pub mod example_empty_actor;
     pub mod data_generator;
@@ -18,12 +15,10 @@ mod actor {
     #[cfg(test)]
     pub use data_approval::ApprovedWidgets;
     pub mod data_consumer;
-
     pub mod data_feedback;
 }
 #[cfg(test)]
 use crate::actor::*;
-
 use steady_state::*;
 use steady_state::actor_builder::{MCPU, Percentile};
 use steady_state::channel_builder::Filled;
@@ -48,15 +43,13 @@ fn main() {
     }
 
     let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
-    graph.start();
 
+    graph.start();
     {  //remove this block to run forever.
        sleep(Duration::from_secs(opt.duration));
        graph.stop();
     }
-
     graph.block_until_stopped(Duration::from_secs(2));
-
 }
 
 

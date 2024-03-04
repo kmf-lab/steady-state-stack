@@ -14,6 +14,7 @@ worker.onmessage = async message => {
     const svg = Viz(dot, {format: 'svg', engine: 'dot'});
     worker.postMessage(svg);
   } catch (e) {
+    console.log('dotUrl',dotUrl);
     console.error('Error:', e);
   }
 };
