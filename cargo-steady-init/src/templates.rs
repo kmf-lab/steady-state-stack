@@ -22,7 +22,23 @@ pub(crate) struct GitIgnoreTemplate {
 pub(crate) struct ArgsTemplate {
 }
 
+pub(crate) struct Actor {
+    pub(crate) display_name: String,
+    pub(crate) mod_name: String,
+    pub(crate) channels: Vec<Channel>,
+
+}
+pub(crate) struct Channel {
+    pub(crate) name: String,
+    pub(crate) end: String,
+    pub(crate) capacity: usize,
+}
+
 #[derive(Template)]
 #[template(path = "file_main.txt")]
 pub(crate) struct MainTemplate {
+    pub(crate) actors: Vec<Actor>,
+    pub(crate) channels: Vec<Channel>,
+
+
 }

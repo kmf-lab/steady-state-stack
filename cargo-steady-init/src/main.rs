@@ -108,7 +108,10 @@ fn write_project_files(pm: ProjectModel
    fs::write(gitignore, templates::GitIgnoreTemplate {}.render()?)?;
 
     let main_rs = folder_src.join("main.rs");
-    fs::write(main_rs, templates::MainTemplate {}.render()?)?;
+    fs::write(main_rs, templates::MainTemplate {
+        channels: Vec::new(),
+        actors: Vec::new(),
+    }.render()?)?;
 
     let args_rs = folder_src.join("args.rs");
     fs::write(args_rs, templates::ArgsTemplate {}.render()?)?;

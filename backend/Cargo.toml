@@ -77,11 +77,11 @@ hdrhistogram     = "7.5.4"  # for latency histograms
 rand             = "0.8.4" # for random number generation
 bytes            = { version = "1.5.0", features = [] }
 time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] } # for time formatting and supports no-std
-stun-rs          = "0.1.5"  # for stun server
+#stun-rs          = "0.1.5"  # for stun server
   #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
 
-crossbeam-utils = "0.8.3" # for crossbeam::channel
+#crossbeam-utils = "0.8.3" # for crossbeam::channel
 
 #rstest = "0.5.2"       # for unit testing
 # TODO: will support systemd, SQRL and rapid prootyping
