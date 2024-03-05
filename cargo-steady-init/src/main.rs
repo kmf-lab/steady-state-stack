@@ -127,9 +127,10 @@ fn write_project_files(pm: ProjectModel
 
 #[cfg(test)]
 mod tests {
-    use std::env;
+    use std::{env, fs};
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
+    use log::error;
     use crate::process_dot;
 
     #[test]
@@ -156,6 +157,12 @@ mod tests {
     node [style=filled, color=lightgrey];
 }
         "#;
+        //ensure test_run folder exists
+        let mut working_path = PathBuf::from("test_run");
+        if let Err(e) = fs::create_dir_all(&working_path) {
+            error!("Failed to create test_run directory: {}", e);
+            return;
+        }
 
         //move to our test_run folder to ensure we do not generate test code on top of ourself
         match env::set_current_dir("test_run") {
