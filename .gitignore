@@ -14,14 +14,22 @@ Cargo.lock
 *.pdb
 kmf-lab
 kmf-lab.pub
-cargo_*.txt
+cargo_audit.txt
+cargo_bloat.txt
+cargo_outdated.txt
+cargo_tokei.txt
+backend/cargo_audit.txt
+backend/cargo_bloat.txt
+backend/cargo_outdated.txt
+backend/cargo_tokei.txt
+
 
 **/*.b64
 
 /.idea
 
-/target
-/target/**
-/target/**/*
+target
+target/**
+target/**/*
 /output_logs
 /notes

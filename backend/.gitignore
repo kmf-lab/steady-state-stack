@@ -15,10 +15,14 @@ Cargo.lock
 kmf-lab
 kmf-lab.pub
 
+cargo_*.txt
+
 **/*.b64
 
 /.idea
 
 /target
+/target/**.*
+
 /output_logs
 /notes
