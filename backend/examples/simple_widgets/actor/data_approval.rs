@@ -1,4 +1,4 @@
-use std::ops::DerefMut;
+use std::error::Error;
 use crate::actor::data_generator::WidgetInventory;
 use log::*;
 use steady_state::{Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
@@ -18,7 +18,7 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<WidgetInventory>
                  , tx: SteadyTx<ApprovedWidgets>
                  , feedback: SteadyTx<FailureFeedback>
-                ) -> Result<(),()> {
+                ) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = context.into_monitor([&rx], [&tx,&feedback]);
 
@@ -26,9 +26,9 @@ pub async fn run(context: SteadyContext
     let mut rx_guard = rx.lock().await;
     let mut feedback_guard = feedback.lock().await;
 
-    let tx = tx_guard.deref_mut();
-    let rx = rx_guard.deref_mut();
-    let feedback = feedback_guard.deref_mut();
+    let tx = &mut *tx_guard;
+    let rx = &mut *rx_guard;
+    let feedback = &mut *feedback_guard;
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
@@ -55,7 +55,7 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<WidgetInventory>
                  , tx: SteadyTx<ApprovedWidgets>
                  , feedback: SteadyTx<FailureFeedback>
-) -> Result<(),()> {
+) -> Result<(),Box<dyn Error>> {
 
       let mut monitor = context.into_monitor([&rx], [&tx,&feedback]);
 
@@ -63,9 +63,9 @@ pub async fn run(context: SteadyContext
       let mut tx_guard = tx.lock().await;
       let mut feedback_guard = feedback.lock().await;
 
-      let rx = rx_guard.deref_mut();
-      let tx = tx_guard.deref_mut();
-      let feedback = feedback_guard.deref_mut();
+      let rx = &mut *rx_guard;
+      let tx = &mut *tx_guard;
+      let feedback = &mut *feedback_guard;
 
       let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
@@ -164,11 +164,11 @@ mod tests {
         let mut rx_out_guard = rx_out.lock().await;
         let mut tx_feedback_guard = tx_feedback.lock().await;
 
-        let tx_in = tx_in_guard.deref_mut();
-        let rx_in = rx_in_guard.deref_mut();
-        let tx_out = tx_out_guard.deref_mut();
-        let rx_out = rx_out_guard.deref_mut();
-        let tx_feedback = tx_feedback_guard.deref_mut();
+        let tx_in = &mut *tx_in_guard;
+        let rx_in = &mut *rx_in_guard;
+        let tx_out = &mut *tx_out_guard;
+        let rx_out = &mut *rx_out_guard;
+        let tx_feedback = &mut *tx_feedback_guard;
 
         let _ = mock_monitor.send_async(tx_in, WidgetInventory {
             count: 5

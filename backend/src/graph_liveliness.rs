@@ -49,7 +49,7 @@ impl GraphLiveliness {
 
    pub fn request_shutdown(&mut self) {
        if self.state.eq(&GraphLivelinessState::Running) {
-           self.votes.iter().for_each(|mut f| {
+           self.votes.iter().for_each(|f| {
                bastion::run!(
                            f.lock().await.deref_mut().in_favor = false;
                         );
@@ -61,7 +61,7 @@ impl GraphLiveliness {
 
     pub fn block_until_shutdown(&self, now:Instant, timeout:Duration) -> Option<GraphLivelinessState> {
         assert_eq!(self.state, GraphLivelinessState::StopRequested);
-        let is_unanimous = self.votes.iter().all(|mut f| {
+        let is_unanimous = self.votes.iter().all(|f| {
             bastion::run!(
                             async {
                                 f.lock().await.deref_mut().in_favor

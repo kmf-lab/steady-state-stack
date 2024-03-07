@@ -4,20 +4,20 @@ mod templates;
 
 use std::error::Error;
 use std::fs;
-use std::ops::Index;
 use std::path::PathBuf;
-use std::str::FromStr;
 use askama::Template;
 use dot_parser::{ast, canonical};
-use dot_parser::canonical::AttrStmt::Edge;
-use dot_parser::canonical::Graph;
+#[allow(unused_imports)]
 use log::*;
 use structopt::StructOpt;
 use crate::args::Args;
+use crate::templates::{Actor, Channel};
 
 #[derive(Default)]
 struct ProjectModel {
     pub(crate) name: String,
+    pub(crate) actors: Vec<Actor>,
+    pub(crate) channels: Vec<Channel>,
 }
 
 fn main() {
@@ -107,20 +107,25 @@ fn write_project_files(pm: ProjectModel
    let gitignore = folder_base.join(".gitignore");
    fs::write(gitignore, templates::GitIgnoreTemplate {}.render()?)?;
 
-    let main_rs = folder_src.join("main.rs");
-    fs::write(main_rs, templates::MainTemplate {
-        channels: Vec::new(),
-        actors: Vec::new(),
-    }.render()?)?;
+   let args_rs = folder_src.join("args.rs");
+   fs::write(args_rs, templates::ArgsTemplate {}.render()?)?;
 
-    let args_rs = folder_src.join("args.rs");
-    fs::write(args_rs, templates::ArgsTemplate {}.render()?)?;
+    warn!("write main");
+   let main_rs = folder_src.join("main.rs");
+   fs::write(main_rs, templates::MainTemplate {
+        channels: &pm.channels,
+        actors: &pm.actors,
+   }.render()?)?;
 
-
-
-
-    println!("test: \n {}",templates::ChannelTypeTemplate { name: &pm.name }.render().unwrap());
-
+    warn!("write actors: {:?}",pm.actors.len());
+   for actor in pm.actors {
+       let actor_rs = folder_actor.join(actor.mod_name + ".rs");
+       fs::write(actor_rs, templates::ActorTemplate {
+               display_name: actor.display_name,
+               rx_channels: actor.rx_channels,
+               tx_channels: actor.tx_channels,
+       }.render()?)?;
+   }
    Ok(())
 }
 
@@ -158,7 +163,7 @@ mod tests {
 }
         "#;
         //ensure test_run folder exists
-        let mut working_path = PathBuf::from("test_run");
+        let working_path = PathBuf::from("test_run");
         if let Err(e) = fs::create_dir_all(&working_path) {
             error!("Failed to create test_run directory: {}", e);
             return;
@@ -174,21 +179,23 @@ mod tests {
                 let build_me = PathBuf::from("unnamed1");
                 let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
 
-                ////
-                let mut output = Command::new("cargo")
-                    .arg("build")
-                    .arg("--manifest-path")
-                    .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
-                    .current_dir(build_me_absolute)
-                    .stdout(Stdio::inherit()) // This line ensures that stdout from the command is printed directly to the terminal
-                    .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal
-                    .spawn()
-                    .expect("failed to execute process");
+                if true {
+                    ////
+                    let mut output = Command::new("cargo")
+                        .arg("build")
+                        .arg("--manifest-path")
+                        .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
+                        .current_dir(build_me_absolute)
+                        .stdout(Stdio::inherit()) // This line ensures that stdout from the command is printed directly to the terminal
+                        .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal
+                        .spawn()
+                        .expect("failed to execute process");
 
-                // Wait for the command to finish
-                let output = output.wait().expect("failed to wait on child");
+                    // Wait for the command to finish
+                    let output = output.wait().expect("failed to wait on child");
 
-                assert!(output.success());
+                    assert!(output.success());
+                }
             }
             Err(e) => {
                 panic!("Failed to change directory to test_run: {}", e);

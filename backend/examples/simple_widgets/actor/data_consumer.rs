@@ -1,4 +1,4 @@
-use std::ops::DerefMut;
+use std::error::Error;
 use std::time::Duration;
 
 #[allow(unused_imports)]
@@ -17,10 +17,7 @@ struct InternalState {
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
-
-
-
+                 , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
 
     //let args:Option<&Args> = context.args(); //you can make the type explicit
     //let args = context.args::<Args>(); //or you can turbo fish here to get your args
@@ -29,7 +26,7 @@ pub async fn run(context: SteadyContext
     let mut monitor =  context.into_monitor([&rx], []);
 
     let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
+    let rx = &mut *rx_guard;
 
     let mut state = InternalState {
         last_approval: None,
@@ -101,12 +98,12 @@ fn process_msg(state: &mut InternalState, msg: Result<ApprovedWidgets, String>) 
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<ApprovedWidgets>) -> Result<(),()> {
+                 , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
     let mut monitor = context.into_monitor([&rx], []);
 
     //guards for the channels, NOTE: we could share one channel across actors.
     let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
+    let rx = &mut *rx_guard;
 
 
     loop {
@@ -166,8 +163,8 @@ mod tests {
         let mut steady_tx_guard = tx.lock().await;
         let mut steady_rx_guard = rx.lock().await;
 
-        let steady_tx = steady_tx_guard.deref_mut();
-        let steady_rx = steady_rx_guard.deref_mut();
+        let steady_tx = &mut *steady_tx_guard;
+        let steady_rx = &mut *steady_rx_guard;
 
 
         let mut mock_monitor = mock_monitor.into_monitor([], []);

@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::ops::{Deref, DerefMut};
 use std::process::{exit};
 use std::sync::Arc;
@@ -37,7 +38,7 @@ struct State {
 }
 
 pub(crate) async fn run(context: SteadyContext
-                        , rx: SteadyRx<DiagramData>) -> std::result::Result<(),()> {
+                        , rx: SteadyRx<DiagramData>) -> std::result::Result<(),Box<dyn Error>> {
 
     let liveliness = context.liveliness();
 

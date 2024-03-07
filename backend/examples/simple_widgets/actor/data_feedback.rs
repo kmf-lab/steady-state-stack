@@ -1,4 +1,4 @@
-use std::ops::DerefMut;
+use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::{Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
@@ -17,15 +17,15 @@ pub struct FailureFeedback {
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
-                 , tx: SteadyTx<ChangeRequest>) -> Result<(),()> {
+                 , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = context.into_monitor([&rx], [&tx]);
 
     let mut tx_guard = tx.lock().await;
     let mut rx_guard = rx.lock().await;
 
-    let tx = tx_guard.deref_mut();
-    let rx = rx_guard.deref_mut();
+    let tx = &mut *tx_guard;
+    let rx = &mut *rx_guard;
 
 
     while monitor.is_running(
@@ -50,14 +50,14 @@ pub async fn run(context: SteadyContext
 #[cfg(test)]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
-                 , tx: SteadyTx<ChangeRequest>) -> Result<(),()> {
+                 , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
 
       let mut monitor = context.into_monitor([&rx], [&tx]);
 
       let mut rx_guard = rx.lock().await;
       let mut tx_guard = tx.lock().await;
-      let rx = rx_guard.deref_mut();
-      let tx = tx_guard.deref_mut();
+      let rx = &mut *rx_guard;
+      let tx = &mut *tx_guard;
 
     loop {
 

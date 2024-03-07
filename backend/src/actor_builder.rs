@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::error::Error;
 use std::future::Future;
 
 use std::sync::{Arc, RwLock};
@@ -388,7 +389,7 @@ impl ActorBuilder {
     pub fn build_with_exec<F,I>(self, exec: I)
         where
             I: Fn(SteadyContext) -> F + Send + Sync + 'static,
-            F: Future<Output = Result<(), ()>> + Send + 'static,
+            F: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
     {
 
         let id            = self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -452,8 +453,8 @@ impl ActorBuilder {
                             trace!("Actor {:?} finished ", name);
                         },
                         Err(e) => {
-                            error!("{:?}", e);
-                            return Err(e);
+                            error!("{:?}", e); //we log the error here
+                            return Err(()); //bastion can not accept error details
                         }
                     }
                     Ok(())

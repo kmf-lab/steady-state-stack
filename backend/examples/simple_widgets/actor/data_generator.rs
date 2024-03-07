@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::future::Future;
-use std::ops::DerefMut;
+
 use std::time::Duration;
 
 #[allow(unused_imports)]
@@ -36,7 +36,7 @@ struct InternalState {
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , feedback: SteadyRx<ChangeRequest>
-                 , tx: SteadyTx<WidgetInventory> ) -> Result<(),()> {
+                 , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
 
     let gen_rate_micros = if let Some(a) = context.args::<Args>() {
         a.gen_rate_micros
@@ -47,7 +47,7 @@ pub async fn run(context: SteadyContext
     let mut monitor = context.into_monitor([&feedback], [&tx]);
 
     let mut rx_guard = feedback.lock().await;
-    let feedback = rx_guard.deref_mut();
+    let feedback = &mut *rx_guard;
 
     let mut tx_guard = tx.lock().await;
     let tx = &mut *tx_guard;
@@ -88,15 +88,15 @@ pub async fn run(context: SteadyContext
 #[cfg(test)]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ChangeRequest>
-                 , tx: SteadyTx<WidgetInventory>) -> Result<(),()> {
+                 , tx: SteadyTx<WidgetInventory>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = context.into_monitor([&rx], [&tx]);
 
     let mut rx_guard = rx.lock().await;
-    let _rx = rx_guard.deref_mut();
+    let _rx = &mut *rx_guard;
 
     let mut tx_guard = tx.lock().await;
-    let tx = tx_guard.deref_mut();
+    let tx = &mut *tx_guard;
 
     loop {
          relay_test(& mut monitor, tx).await;

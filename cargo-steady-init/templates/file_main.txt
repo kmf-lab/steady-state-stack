@@ -1,5 +1,6 @@
 mod args;
 use structopt::StructOpt;
+#[allow(unused_imports)]
 use log::*;
 use crate::args::Args;
 use std::time::Duration;
@@ -51,7 +52,6 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     //build channels
     {% for channel in channels %}
     let ({{channel.name}}_tx, {{channel.name}}_rx) = base_channel_builder.clone()
-        .with_name("{{channel.name}}")
         .with_capacity({{channel.capacity}})
         .build();
     {% endfor %}
@@ -60,12 +60,13 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     {% for actor in actors %}
      base_actor_builder.with_name("{{actor.display_name}}")
                  .build_with_exec( move |context| actor::{{actor.mod_name}}::run(context
-                                                  {% for channel in actor.channels %}
-                                                    , {{channel.name}}_{{channel.end}}.clone()
-                                                  {% endfor %}
-                                                 )
+                                          {%- for channel in actor.rx_channels %}
+                                            , {{channel.name}}_rx.clone(){% endfor -%}
+                                          {%- for channel in actor.tx_channels %}
+                                            , {{channel.name}}_tx.clone(){% endfor -%}
+                                         )
                  );
-    {% endfor %}
+    {%- endfor -%}
 
     graph
 }

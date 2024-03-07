@@ -1,5 +1,4 @@
-use std::ops::DerefMut;
-
+use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
@@ -9,16 +8,16 @@ use crate::actor::data_generator::Packet;
 #[allow(unreachable_code)]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>
-                 , tx: SteadyTx<Packet>) -> Result<(),()> {
+                 , tx: SteadyTx<Packet>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = context.into_monitor([&rx], [&tx]);
 
     //guards for the channels, NOTE: we could share one channel across actors.
     let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
+    let rx = &mut *rx_guard;
 
     let mut tx_guard = tx.lock().await;
-    let tx = tx_guard.deref_mut();
+    let tx = &mut *tx_guard;
 
     loop {
        monitor.wait_avail_units(rx,3* (rx.capacity()/4)).await;

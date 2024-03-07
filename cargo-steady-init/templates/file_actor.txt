@@ -1,7 +1,105 @@
+#[allow(unused_imports)]
 use log::*;
 use steady_state::*;
 use steady_state::monitor::LocalMonitor;
+use crate::Args;
+use std::error::Error;
+//TODO: we need to limit this to unique ones
+{% for connection in rx_channels -%}
+use crate::actor::{{connection.from_mod}}::{{connection.message_type}};
+{%- endfor %}
 
 
+//if no internal state is required (recommended) feel free to remove this.
+#[derive(Default)]
+struct {{ display_name|capitalize }}InternalState {
+}
+impl {{ display_name|capitalize }}InternalState {
+    fn new(cli_args: &Args) -> Self {
+        Self {
+        }
+    }
+}
+
+//TODO: we need to limit this to unique ones
+{% for connection in tx_channels -%}
+pub(crate) struct {{connection.message_type}} {
+}
+{%- endfor %}
+
+#[cfg(not(test))]
+pub async fn run(context: SteadyContext
+    {%- for connection in rx_channels %}
+        ,{{connection.name}}_rx: SteadyRx<{{connection.message_type}}>{%- endfor -%}
+    {%- for connection in tx_channels %}
+        ,{{connection.name}}_tx: SteadyTx<{{connection.message_type}}>{%- endfor -%}
+    ) -> Result<(),Box<dyn Error>> {
+
+    let cli_args = context.args::<Args>();
+    let mut state = if let Some(args) = cli_args {
+        {{ display_name|capitalize }}InternalState::new(args)
+    } else {
+        {{ display_name|capitalize }}InternalState::default()
+    }
+
+    let mut monitor =  context.into_monitor([{% for connection in rx_channels %}
+                        &{{connection.name}}_rx{%- if loop.last %}{% else -%}
+                           ,{%- endif %}{% endfor %}], [{% for connection in tx_channels %}
+                         &{{connection.name}}_tx{%- if loop.last %}{% else -%}
+                            ,{%- endif %}{% endfor %}]);
+
+ {% for connection in rx_channels -%}
+    let mut {{connection.name}}_rx_guard = {{connection.name}}_rx.lock().await;
+    let {{connection.name}}_rx = &mut *{{connection.name}}_rx_guard;
+ {% endfor %}
+ {% for connection in tx_channels %}
+    let mut {{connection.name}}_tx_guard = {{connection.name}}_tx.lock().await;
+    let {{connection.name}}_tx = &mut *{{connection.name}}_tx_guard;
+ {%- endfor %}
+
+    while monitor.is_running(&mut ||
+ {%- for connection in rx_channels %}
+    {{connection.name}}_rx.is_empty() && {{connection.name}}_rx.is_closed()
+    {%- if loop.last %}{% else %} && {% endif -%}
+ {% endfor %}
+ {%- for connection in tx_channels %}
+    {%- if loop.first && !rx_channels.is_empty() %} && {% else %}{% endif -%}
+    {{connection.name}}_tx.mark_closed()
+    {%- if loop.last %}{% else %} && {% endif -%}
+ {% endfor %}
+    ) {
+         process_once(&mut monitor
+                   , &mut state
+          {%- for connection in rx_channels %}
+             , {{connection.name}}_rx{%- endfor -%}
+          {%- for connection in tx_channels %}
+             , {{connection.name}}_tx{%- endfor -%}
+         ).await;
+    }
+    Ok(())
+}
+
+
+async fn process_once<const R: usize, const T: usize>(monitor: & mut LocalMonitor<R,T>
+                          , state: &mut {{ display_name|capitalize }}InternalState
+                          {%- for channel in rx_channels %}
+                             , {{channel.name}}_rx: &mut Rx<{{channel.message_type}}>{% endfor %}
+                          {%- for channel in tx_channels %}
+                             , {{channel.name}}_tx: &mut Tx<{{channel.message_type}}>{% endfor %}) {
+
+}
+
+#[cfg(test)]
+pub async fn run(context: SteadyContext
+                {%- for connection in rx_channels %}
+                    ,{{connection.name}}_rx: SteadyRx<{{connection.message_type}}>
+                {%- endfor -%}
+                {%- for connection in tx_channels %}
+                    ,{{connection.name}}_tx: SteadyTx<{{connection.message_type}}>
+                {%- endfor -%}) -> Result<(),Box<dyn Error>> {
+
+
+
+}
 
 

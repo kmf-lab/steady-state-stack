@@ -1,4 +1,4 @@
-use std::ops::DerefMut;
+use std::error::Error;
 use std::time::Duration;
 
 #[allow(unused_imports)]
@@ -9,13 +9,13 @@ use crate::actor::data_generator::Packet;
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<Packet>) -> Result<(),()> {
+                 , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor =  context.into_monitor([&rx], []);
 
 
     let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
+    let rx = &mut *rx_guard;
 
     loop {
         if let Ok(packet) = monitor.take_async(rx).await {
@@ -32,13 +32,13 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<Packet>) -> Result<(),()> {
+                 , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = context.into_monitor([&rx], []);
 
     //guards for the channels, NOTE: we could share one channel across actors.
     let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
+    let rx = &mut *rx_guard;
 
     loop {
         relay_test(&mut monitor, rx).await;

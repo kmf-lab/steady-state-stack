@@ -1,4 +1,3 @@
-use std::ops::DerefMut;
 use std::time::Duration;
 use steady_state::*;
 use log::*;
@@ -24,8 +23,8 @@ pub async fn run(monitor: SteadyContext
 
     let mut rx_guard = rx.lock().await;
     let mut tx_guard = tx.lock().await;
-    let rx = rx_guard.deref_mut();
-    let tx = tx_guard.deref_mut();
+    let rx = &mut *rx_guard;
+    let tx = &mut *tx_guard;
 
     loop {
         //single pass of work, do not loop in here
@@ -53,12 +52,10 @@ pub async fn run(monitor: SteadyContext
 
     let mut rx_guard = rx.lock().await;
     let mut tx_guard = tx.lock().await;
-    let rx = rx_guard.deref_mut();
-    let tx = tx_guard.deref_mut();
+    let rx = &mut *rx_guard;
+    let tx = &mut *tx_guard;
 
     let mut state = SomeLocalState{};
-
-
 
     loop {
         //single pass of work, do not loop in here

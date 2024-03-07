@@ -1,5 +1,5 @@
+use std::error::Error;
 use std::mem;
-use std::ops::DerefMut;
 use bytes::Bytes;
 #[allow(unused_imports)]
 use log::*;
@@ -19,7 +19,7 @@ pub struct Packet {
 #[cfg(not(test))]
 #[allow(unreachable_code)]
 pub async fn run<const GURTH:usize>(context: SteadyContext
-                                  , tx: SteadyTxBundle<Packet,GURTH>) -> Result<(),()> {
+                                  , tx: SteadyTxBundle<Packet,GURTH>) -> Result<(),Box<dyn Error>> {
 
 
      let gen_rate_micros = if let Some(a) = context.args::<Args>() {
@@ -57,7 +57,7 @@ pub async fn run<const GURTH:usize>(context: SteadyContext
             let iter = mem::replace(&mut buffers[i], Vec::new()).into_iter();
 
             let mut lock = tx[i].lock().await;
-            let tx = lock.deref_mut();
+            let tx = &mut *lock;
             monitor.wait_vacant_units(tx, buffers[i].len()).await;
             monitor.send_iter_until_full(tx,iter);
         }
@@ -74,13 +74,13 @@ pub async fn run<const GURTH:usize>(context: SteadyContext
 
 #[cfg(test)]
 pub async fn run<const GURTH:usize>(context: SteadyContext
-                 , tx: SteadyTxBundle<Packet,GURTH>) -> Result<(),()> {
+                 , tx: SteadyTxBundle<Packet,GURTH>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = context.into_monitor([], SteadyBundle::tx_def_slice(&tx));
 
 
     let mut tx_guard = tx[0].lock().await;
-    let tx = tx_guard.deref_mut();
+    let tx = &mut *tx_guard;
 
 
     loop {

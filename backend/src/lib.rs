@@ -45,10 +45,7 @@ use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use futures::lock::Mutex;
 use std::ops::{Deref, DerefMut};
-use std::future::{Future, ready};
-use std::pin::Pin;
-
-use std::task::Context;
+use std::future::ready;
 
 use std::thread::sleep;
 use log::*;
@@ -63,9 +60,9 @@ use backtrace::Backtrace;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use actor_builder::ActorBuilder;
 use crate::channel_builder::ChannelBuilder;
-use crate::monitor::{ActorMetaData, ChannelMetaData, SteadyTelemetryActorSend, SteadyTelemetrySend};
+use crate::monitor::{ActorMetaData, ChannelMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
-use crate::telemetry::{metrics_collector, setup};
+use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
 use futures::FutureExt; // Provides the .fuse() method
 
@@ -75,7 +72,6 @@ use futures::future::BoxFuture;
 
 
 use futures::select;
-use graph_liveliness::{ActorIdentity, GraphLiveliness, GraphLivelinessState};
 use crate::graph_testing::EdgeSimulator;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;

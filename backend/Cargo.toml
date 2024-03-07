@@ -93,6 +93,7 @@ time             = { version = "0.3.34", features = ["macros","formatting", "par
 #diesel = { version = "1.4.7", features = ["postgres"] }
 
 #askama         = "0.12.1"
+#minimal-lexical = "0.5.0" # for fast number parsing
 
 #others
 #rand             = "0.8.4" # for random number generation

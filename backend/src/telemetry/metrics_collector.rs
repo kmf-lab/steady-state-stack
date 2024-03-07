@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::error::Error;
 use std::ops::{ Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 use futures::lock::Mutex;
@@ -54,7 +55,7 @@ struct RawDiagramState {
 pub(crate) async fn run(context: SteadyContext
        , dynamic_senders_vec: Arc<RwLock<Vec< CollectorDetail >>>
        , optional_server: Option<SteadyTx<DiagramData>>
-) -> Result<(),()> {
+) -> Result<(),Box<dyn Error>> {
 
     let ident = context.identity();
     let mut monitor:Option<_> = None;
@@ -179,7 +180,7 @@ fn collect_futures_for_one_frame(scan: &Vec<Box<dyn RxDef>>) -> Vec<BoxFuture<()
     scan.iter()
         .enumerate()
         .filter(|(index, _)| 0 == index % skip_interval )
-        .map(|(index, item)| {
+        .map(|(_, item)| {
             item.wait_avail_units(config::CONSUMED_MESSAGES_BY_COLLECTOR)
         })
         .collect()
@@ -243,11 +244,7 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[Collecto
             //we have no data here so if we had non on the others and we have a waiting
             //new set of channels then we should remove the old one in favor of the new.
             //this logic is key for a smooth hand off when an actor is restarted.
-            if !has_data_in && f.telemetry_take.len().gt(&1) {
-                true
-            } else {
-                false
-            }
+            !has_data_in && f.telemetry_take.len().gt(&1)
         }
     }).map( |(_,c)| c.ident).collect();
     to_pop

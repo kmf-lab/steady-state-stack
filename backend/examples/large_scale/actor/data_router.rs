@@ -1,4 +1,4 @@
-use std::ops::DerefMut;
+use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
@@ -13,14 +13,14 @@ pub async fn run<const LEN:usize>(context: SteadyContext
                  , one_of: usize
                  , rx: SteadyRx<Packet>
                  , tx: SteadyTxBundle<Packet,LEN>
-                ) -> Result<(),()> {
+                ) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = context.into_monitor([&rx], SteadyBundle::tx_def_slice(&tx));
 
     let block_size = u16::MAX / one_of as u16;
 
     let mut rx_guard = rx.lock().await;
-    let rx = rx_guard.deref_mut();
+    let rx = &mut *rx_guard;
 
     while monitor.is_running(
         &mut || rx.is_empty() && rx.is_closed() && SteadyBundle::mark_closed(&tx)
@@ -32,7 +32,7 @@ pub async fn run<const LEN:usize>(context: SteadyContext
             let index = ((packet.route / block_size) as usize) % tx.len();
             let mut sender = tx[index].lock().await;
                 let to_send = packet.clone();
-                let _ = monitor.send_async(sender.deref_mut(),to_send,true).await;
+                let _ = monitor.send_async(&mut *sender,to_send,true).await;
                 let consumed = monitor.try_take(rx);
                 assert!(consumed.is_some());
                 monitor.relay_stats_smartly().await;
