@@ -11,7 +11,7 @@ use dot_parser::{ast, canonical};
 use log::*;
 use structopt::StructOpt;
 use crate::args::Args;
-use crate::templates::{Actor, Channel};
+use crate::templates::{Actor, Channel, ConsumePattern};
 
 #[derive(Default)]
 struct ProjectModel {
@@ -120,13 +120,41 @@ fn write_project_files(pm: ProjectModel
     warn!("write actors: {:?}",pm.actors.len());
    for actor in pm.actors {
        let actor_rs = folder_actor.join(actor.mod_name + ".rs");
+
+       //need list of unique message types, do we dedup here??
+       let mut my_struct_use:Vec<String> = actor.rx_channels
+            .iter()
+            .map(|f| format!("use crate::actor::{}::{}",f.from_mod, f.message_type))
+            .collect();
+       my_struct_use.sort();
+       my_struct_use.dedup();
+
+       let mut my_struct_def:Vec<String> = actor.rx_channels
+           .iter()
+           .map(|f| format!("{}pub(crate) struct {}", derive_block(f.copy), f.message_type))
+           .collect();
+       my_struct_def.sort();
+       my_struct_def.dedup();
+
+
+
        fs::write(actor_rs, templates::ActorTemplate {
+               note_for_the_user: "TODO", //do not change, this is not for you
                display_name: actor.display_name,
                rx_channels: actor.rx_channels,
                tx_channels: actor.tx_channels,
+               message_types_to_use: my_struct_use,
+               message_types_to_define: my_struct_def,
        }.render()?)?;
    }
    Ok(())
+}
+
+fn derive_block(copy: bool) -> &'static str {
+    match copy {
+        true =>  "#[derive(Default,Copy)]\n",
+        false => "#[derive(Default)]\n",
+    }
 }
 
 

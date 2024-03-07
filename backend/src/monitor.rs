@@ -12,12 +12,12 @@ use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*; //allowed for all modules
 use num_traits::Zero;
-use futures::future::pending;
+use futures::future::{pending, select_all};
 use std::task::Context;
 use futures_timer::Delay;
 use std::future::Future;
 use futures::FutureExt;
-use crate::{AlertColor, config, MONITOR_NOT, MONITOR_UNKNOWN, Rx, RxDef, StdDev, SteadyRx, SteadyTx, telemetry, Trigger, Tx};
+use crate::{AlertColor, config, MONITOR_NOT, MONITOR_UNKNOWN, Rx, RxDef, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, telemetry, Trigger, Tx};
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
@@ -635,7 +635,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     //testing
-    async fn async_yield_now() {
+    async fn _async_yield_now() {
         let _ = pending::<()>().poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()));
         // Immediately after polling, we return control, effectively yielding.
     }
@@ -695,6 +695,79 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 assert!(st.instant_start.le(&d), "unit_start: {:?} call_start: {:?}", st.instant_start, d);
             }
         }
+    }
+
+
+    pub async fn wait_bundle_avail_units<T, const GIRTH: usize>(& mut self
+                                                         , this: & SteadyRxBundle<T, GIRTH>
+                                                         , avail_count: usize
+                                                         , ready_channels: usize)
+        where T: Send + Sync {
+
+        self.start_hot_profile(CALL_OTHER);
+
+        let futures = this.iter().map(|rx| {
+            let rx = rx.clone();
+            async move {
+                let mut guard = rx.lock().await;
+                guard.shared_wait_avail_units(avail_count).await;
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let mut futures: Vec<_> = futures.collect();
+
+        let mut count_down = ready_channels.min(GIRTH);
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+
+        self.rollup_hot_profile();
+
+    }
+
+    pub async fn wait_bundle_vacant_units<T, const GIRTH: usize>(& mut self
+                                                                , this: & SteadyTxBundle<T, GIRTH>
+                                                                , avail_count: usize
+                                                                , ready_channels: usize)
+        where T: Send + Sync {
+
+        self.start_hot_profile(CALL_OTHER);
+
+        let futures = this.iter().map(|tx| {
+            let tx = tx.clone();
+            async move {
+                let mut guard = tx.lock().await;
+                guard.shared_wait_vacant_units(avail_count).await;
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let mut futures: Vec<_> = futures.collect();
+
+        let mut count_down = ready_channels.min(GIRTH);
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+
+        self.rollup_hot_profile();
+
     }
 
     /// Attempts to peek at a slice of messages without removing them from the channel.

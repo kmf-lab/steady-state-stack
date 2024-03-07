@@ -10,7 +10,7 @@ use log::*; //allow unused import
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
 use crate::{config, RxDef, SteadyContext, SteadyTx, Tx, util};
 
-use futures::future::{BoxFuture, FutureExt, select_all};
+use futures::future::*;
 
 use crate::graph_liveliness::ActorIdentity;
 use crate::telemetry::{metrics_collector, metrics_server};
@@ -44,7 +44,6 @@ struct RawDiagramState {
     total_take_send: Vec<(i128,i128)>,
     future_take: Vec<i128>, //these are for the next frame since we do not have the matching sent yet.
     future_send: Vec<i128>, //these are for the next frame if we ended up with too many items.
-    start_index: usize,
 }
 
 //TODO: the collector is starting up after the others, this is not good. We need to start it first
@@ -168,7 +167,7 @@ pub(crate) async fn run(context: SteadyContext
     }
 }
 
-fn collect_futures_for_one_frame(scan: &Vec<Box<dyn RxDef>>) -> Vec<BoxFuture<()>> {
+fn collect_futures_for_one_frame(scan: &[Box<dyn RxDef>]) -> Vec<BoxFuture<()>> {
 
     //we do not need to check every channel every time
     let skip_interval = if scan.len() > 61 {
@@ -192,8 +191,7 @@ fn gather_scan_rx(dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>) -> Op
         let v: Vec<Box<dyn RxDef>> = dynamic_senders.iter()
             .filter(|f|  (f.ident.name != metrics_collector::NAME)
                       && (f.ident.name != metrics_server::NAME))
-            .flat_map(|f| f.telemetry_take.iter().map(|g| g.actor_rx())  )
-            .filter_map(|x| x)
+            .flat_map(|f| f.telemetry_take.iter().filter_map(|g| g.actor_rx())  )
             .collect();
         if !v.is_empty() {
             Some(v)

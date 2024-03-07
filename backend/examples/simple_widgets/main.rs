@@ -98,6 +98,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let base_actor_builder = graph.actor_builder()//with default OneForOne supervisor....
         .with_mcpu_percentile(Percentile::p80())
         .with_work_percentile(Percentile::p80())
+        .with_redundancy(1)
         .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m64()),AlertColor::Red)
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
 

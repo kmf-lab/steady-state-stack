@@ -732,7 +732,7 @@ dependencies = [
  "dot-parser",
  "flexi_logger",
  "log",
- "steady_state 0.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "steady_state 0.0.8",
  "structopt",
  "structopt-derive",
 ]
@@ -2503,9 +2503,9 @@ checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
 
 [[package]]
 name = "ringbuf"
-version = "0.4.0-rc.3"
+version = "0.4.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdbd88a807ef07d0f243843ecccf4e7383638e536284fc0adf1663790faec4ef"
+checksum = "d0e88bb7654ac0363537fcfcaf3d95647788fbc0971698eb52091e8e72ffa53f"
 dependencies = [
  "crossbeam-utils 0.8.19",
 ]
@@ -2883,40 +2883,6 @@ checksum = "213701ba3370744dcd1a12960caa4843b3d68b4d1c0a5d575e0d65b2ee9d16c0"
 [[package]]
 name = "steady_state"
 version = "0.0.8"
-dependencies = [
- "async-recursion",
- "async-ringbuf",
- "async-std",
- "backtrace",
- "bastion",
- "bytes",
- "color-eyre",
- "config",
- "const_panic",
- "flexi_logger",
- "futures",
- "futures-timer",
- "hdrhistogram",
- "itertools 0.12.1",
- "itoa",
- "lazy_static",
- "log",
- "nuclei 0.4.4",
- "num-traits",
- "rand 0.8.5",
- "rand_distr",
- "ringbuf",
- "structopt",
- "structopt-derive",
- "tempfile",
- "tide",
- "time 0.3.34",
- "uuid 1.7.0",
-]
-
-[[package]]
-name = "steady_state"
-version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d81344ee9438e9a9c7f349de009a887865e6519783632b9a9d13a8563a09d77"
 dependencies = [
@@ -2947,6 +2913,40 @@ dependencies = [
  "tide",
  "time 0.3.34",
  "uuid 0.8.2",
+]
+
+[[package]]
+name = "steady_state"
+version = "0.0.9"
+dependencies = [
+ "async-recursion",
+ "async-ringbuf",
+ "async-std",
+ "backtrace",
+ "bastion",
+ "bytes",
+ "color-eyre",
+ "config",
+ "const_panic",
+ "flexi_logger",
+ "futures",
+ "futures-timer",
+ "hdrhistogram",
+ "itertools 0.12.1",
+ "itoa",
+ "lazy_static",
+ "log",
+ "nuclei 0.4.4",
+ "num-traits",
+ "rand 0.8.5",
+ "rand_distr",
+ "ringbuf",
+ "structopt",
+ "structopt-derive",
+ "tempfile",
+ "tide",
+ "time 0.3.34",
+ "uuid 1.7.0",
 ]
 
 [[package]]

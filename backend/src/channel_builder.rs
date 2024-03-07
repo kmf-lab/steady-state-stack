@@ -21,7 +21,7 @@ use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 #[allow(unused_imports)]
 use log::*;
 use ringbuf::storage::Heap;
-use crate::{AlertColor, config, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyRx, SteadyTx, Trigger, Tx};
+use crate::{AlertColor, config, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyBundle, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger, Tx};
 use crate::actor_builder::Percentile;
 use crate::monitor::ChannelMetaData;
 
@@ -112,6 +112,19 @@ impl ChannelBuilder {
         result.refresh_rate_in_bits = refresh_bucket_in_bits;
         result.window_bucket_in_bits = window_bucket_in_bits;
         result
+    }
+
+    pub fn build_as_bundle<T, const GIRTH:usize>(&self) -> (SteadyTxBundle<T, GIRTH>, SteadyRxBundle<T, GIRTH>) {
+        let mut tx_vec = Vec::with_capacity(GIRTH); //: Vec<SteadyTx<T>>
+        let mut rx_vec = Vec::with_capacity(GIRTH); //: Vec<SteadyRx<T>>
+
+        (0..GIRTH).for_each(|_| {
+            let (t,r) = self.build();
+            tx_vec.push(t);
+            rx_vec.push(r);
+        });
+
+        (SteadyBundle::tx_new_bundle::<T, GIRTH>(tx_vec), SteadyBundle::rx_new_bundle::<T, GIRTH>(rx_vec))
     }
 
     /// Sets the capacity for the channel being built.

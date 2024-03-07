@@ -6,8 +6,6 @@ use log::*;
 use futures_timer::Delay;
 use args::Args;
 use std::time::Duration;
-use crate::actor::data_generator::Packet;
-
 
 
 // here are the actors that will be used in the graph.
@@ -18,8 +16,7 @@ mod actor {
     pub mod data_router;
     pub mod data_user;
     pub mod data_process;
-    #[cfg(test)]
-    pub use data_generator::Packet;
+
 
 
 }
@@ -27,7 +24,7 @@ mod actor {
 use crate::actor::*;
 
 use steady_state::*;
-use steady_state::channel_builder::Filled;
+use steady_state::channel_builder::{ChannelBuilder, Filled};
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -62,7 +59,7 @@ fn main() {
 
 }
 
-const LEVEL_1: usize = 2; //3
+pub(crate) const LEVEL_1: usize = 2; //3
 const LEVEL_2: usize = 2; //3
 const LEVEL_3: usize = 2; //2
 const LEVEL_4: usize = 2; //One will remove all the user filters and loggers
@@ -95,7 +92,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                            // .with_mcpu_percentile(Percentile::p80())
                             .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
 
-        let (btx,brx) = SteadyBundle::new_bundles::<Packet, LEVEL_1>(&base_channel_builder);
+        let (btx,brx) = base_channel_builder.build_as_bundle::<_,LEVEL_1>();
 
             base_actor_builder
                 .with_name("generator")
@@ -106,7 +103,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
         for x in 0..LEVEL_1 {
             let local_rx = brx[x].clone();
-            let (btx,brx) = SteadyBundle::new_bundles::<Packet, LEVEL_2>(&base_channel_builder);
+            let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_2>();
                 base_actor_builder
                     .with_name("router")
                     .with_name_suffix(x)
@@ -120,7 +117,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
             for y in 0..LEVEL_2 {
                 let local_rx = brx[y].clone();
-                let (btx,brx) = SteadyBundle::new_bundles::<Packet, LEVEL_3>(&base_channel_builder);
+                let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_3>();
                 base_actor_builder
                     .with_name("router")
                     .with_name_suffix(y)
@@ -133,7 +130,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
                 for z in 0..LEVEL_3 {
                     let local_rx = brx[z].clone();
-                    let (btx,brx) = SteadyBundle::new_bundles::<Packet, LEVEL_4>(&base_channel_builder);
+                    let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_4>();
                         base_actor_builder
                             .with_name("router")
                             .with_name_suffix(z)
@@ -200,13 +197,10 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                                                                           , decrypt_rx.clone()
                                          )
                                     );
-
                         }
                     }
-
                 }
             }
-
         }
 
     graph

@@ -16,19 +16,24 @@ use askama::Template;
 /// - Define actors with a name.
 /// - Document the actor's module, consume pattern, driver patterns, and redundancy using a label.
 ///   - Module: Use `mod::ModuleName` to specify the Rust module name.
-///   - Consume Pattern: Indicate how the actor consumes data with `>>` followed by the pattern (e.g., `TakeCopy`).
-///   - Driver Patterns: Specify activation triggers using `->` and combine conditions with `&` (AND) and `|` (OR).
+///   - Driver Patterns: Specify activation triggers using AtLeastEvery, OnEvent etc and combine conditions with `&&`
+///      - AtLeastEvery: Denote a minimum time interval between actor activations.
+///      - AtMostEvery: Denote a maximum time interval between actor activations.
+///      - OnEvent: channelName//batchSize(optional, default is 1)//gurthApplication(Optional, is all or any or x%)
+///      - OnCapacity: Denote an actor that activates when a specific target node has capacity.
+///      - Other: Denote any other activation conditions.
 ///   - Redundancy: Denote multiple instances of an actor with `*` followed by the count (omit if only one instance).
 ///
 /// Channel Notation:
 /// - Define channels by their source and target node names
 /// - Use labels to specify channel capacity with `#` followed by the number and optionally the bundle size with `*`.
+///   - Consume Pattern: Indicate how the actor consumes data with `>>` followed by the pattern (e.g., `TakeCopy`).
 ///   Labels also contain a display name as name::DisplayName and the message struct type in angle brackets (e.g., `<Widget>`).
 ///
 /// Examples:
 /// ```
-/// "A1" [label="mod::mod_a, >>TakeCopy, Every(5000ms) && OnEvent(C1//10||B2//10) && OnCapacity(C2//20||A1//20) && Other(server2,socet1), *2"];
-/// "A1" -> "B2" [label="name::goes <String> #1024, *3"]; // Channel with capacity of 1024 and bundled in groups of 3
+/// "A1" [label="mod::mod_a, AtLeastEvery(5000ms) && OnEvent(goes//10//32%||feedback//10) && OnCapacity(feedback//20||goes//20) && Other(server2,socet1), *2"];
+/// "A1" -> "B2" [label="name::goes >>TakeCopy, <String> #1024, *3"]; // Channel with capacity of 1024 and bundled in groups of 3
 /// "C2" -> "A1" [label="name::feedback <Data> #512"]; // Channel with capacity of 512, no bundling indicated
 /// ```
 ///
@@ -47,28 +52,31 @@ use askama::Template;
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum ActorDriver {
-    Periodic(Duration),
+    AtLeastEvery(Duration),
+    AtMostEvery(Duration),
     EventDriven(Vec<(String,usize)>), //source_node, available batch required
     CapacityDriven(Vec<(String,usize)>), //target_node, vacant batch required
     Other(Vec<String>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub(crate) enum ConsumePattern {
     PeekCopy, //do work on peek copy for greater durability
     TakeCopy, //take using copy for faster slice processing
-    Take, //take using traditional ownership semantics
+    Take, //take using traditional ownership handoff semantics
 }
-pub(crate) struct ActorBehaviorStrategy {
-    pub(crate) driver: Vec<ActorDriver>,
-    pub(crate) consume: ConsumePattern,
-}
+
 
 #[derive(Eq, PartialEq, Hash, Clone)]
 pub(crate) struct Channel {
     pub(crate) name: String,
     pub(crate) from_mod: String, //this is where the struct message_type is defined
     pub(crate) message_type: String,
+    pub(crate) peek: bool,
+    pub(crate) copy: bool,
+    pub(crate) batch_read: usize,
+
+    pub(crate) batch_write: usize,
     pub(crate) capacity: usize,
     // >1 is a bundle, which means this represents <Gurth> channel defs
     // these can be consolidated into a single vec on Tx, Rx or both ends
@@ -78,9 +86,10 @@ pub(crate) struct Channel {
 pub(crate) struct Actor {
     pub(crate) display_name: String,
     pub(crate) mod_name: String,
+    pub(crate) redundancy_count: usize,
     pub(crate) rx_channels: Vec<Channel>,
     pub(crate) tx_channels: Vec<Channel>,
-    pub(crate) behavior: ActorBehaviorStrategy,
+    pub(crate) driver: Vec<ActorDriver>,
 }
 
 
@@ -113,10 +122,11 @@ pub(crate) struct MainTemplate<'a> {
 #[derive(Template)]
 #[template(path = "file_actor.txt")]
 pub(crate) struct ActorTemplate {
+    pub(crate) note_for_the_user: &'static str,
     pub(crate) display_name: String,
     pub(crate) rx_channels: Vec<Channel>,
     pub(crate) tx_channels: Vec<Channel>,
-    //pub(crate) message_types_to_use: Vec<String>, //full namespace
-    //pub(crate) message_types_to_define: Vec<String>, //struct name, with copy trate?
+    pub(crate) message_types_to_use: Vec<String>, //full namespace
+    pub(crate) message_types_to_define: Vec<String>, //struct name, with copy trate?
 
 }

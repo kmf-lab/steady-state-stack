@@ -1,8 +1,8 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.8"
-documentation = "https://docs.rs/steady_state/0.0.7/steady_state/"
-               #"https://docs.rs/crate/steady_state/0.0.8"  #debugging
+version = "0.0.9"
+documentation = "https://docs.rs/steady_state/0.0.9/steady_state/"
+               #"https://docs.rs/crate/steady_state/0.0.9"  #debugging
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -55,26 +55,26 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 [dependencies]
 # Common, the goal here is to be WASM compatible eventually
 bastion          = "0.4.5"   # The telemetry framwork with supervisors to recover from panics
-ringbuf          = "0.4.0-rc.1"
-async-ringbuf    = "0.2.0-rc.4"
-log              = "0.4.20"  # common logging traits
+ringbuf          = "0.4.0-rc.4"
+async-ringbuf    = "0.2.0-rc.5"
+log              = "0.4.21"  # common logging traits
                   # great logger but I would like to see a new crate using
                   # nuclei with log to provide a more async friendly logger
-flexi_logger     = "0.27.3"  # default flexable logging implementation
-futures-timer    = "3.0.2"   # for async Delay::new(check_rate).await used places where we poll
-futures          = "0.3.29"  # for Select! Barrier etc and lock::Mutex
-itertools        = "0.12.0"  # helpful smart iter methods
+flexi_logger     = "0.27.4"  # default flexable logging implementation
+futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
+futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
+itertools        = "0.12.1"  # helpful smart iter methods
 async-recursion  = "1.0.5"   # simplify the writing of async recursive functions
 structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
 uuid             = { version = "1.7.0", features = ["v4"] }
-num-traits       = "0.2.17" # for num::Zero and other generic math traits
-backtrace        = "0.3"
-itoa             = "1.0.9"
+num-traits       = "0.2.18" # for num::Zero and other generic math traits
+backtrace        = "0.3.69"
+itoa             = "1.0.10"
 lazy_static      = "1.4"
 config           = "0.14.0" # for lazy statics in unit tests
 const_panic      = "0.2.8" # for const panic!()
 hdrhistogram     = "7.5.4"  # for latency histograms
-rand             = "0.8.4" # for random number generation
+rand             = "0.8.5" # for random number generation
 bytes            = { version = "1.5.0", features = [] }
 time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] } # for time formatting and supports no-std
 #stun-rs          = "0.1.5"  # for stun server
@@ -115,7 +115,7 @@ time             = { version = "0.3.34", features = ["macros","formatting", "par
 # disruptor        = "0.2.0"   # does not integreate with bastion, but is a lock free ring buffer
 
 [build-dependencies]
-tempfile         = "3.10.0"
+tempfile         = "3.10.1"
 color-eyre       = "0.6.2"   # for better error messages
 
 

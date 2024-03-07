@@ -59,6 +59,9 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     //build actors
     {% for actor in actors %}
      base_actor_builder.with_name("{{actor.display_name}}")
+                 {% if actor.redundancy_count > 1 %}
+                 .with_redundancy({{actor.redundancy_count}})
+                 {% endif %}
                  .build_with_exec( move |context| actor::{{actor.mod_name}}::run(context
                                           {%- for channel in actor.rx_channels %}
                                             , {{channel.name}}_rx.clone(){% endfor -%}

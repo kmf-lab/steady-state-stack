@@ -49,11 +49,14 @@ impl GraphLiveliness {
 
    pub fn request_shutdown(&mut self) {
        if self.state.eq(&GraphLivelinessState::Running) {
-           self.votes.iter().for_each(|f| {
-               bastion::run!(
-                           f.lock().await.deref_mut().in_favor = false;
-                        );
-           });
+           let voters = self.voters.load(std::sync::atomic::Ordering::SeqCst);
+
+           //print new ballots for this new election
+           let votes:Vec<Mutex<ShutdownVote>> = (0..voters)
+                             .map(|_| Mutex::new(ShutdownVote::default()) )
+                             .collect();
+           self.votes = Arc::new(votes);
+
            //after clearning the votes, this triggers all actors to vote now.
            self.state = GraphLivelinessState::StopRequested;
        }

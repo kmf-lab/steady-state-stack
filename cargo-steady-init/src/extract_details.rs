@@ -3,7 +3,7 @@ use std::error::Error;
 use std::time::Duration;
 use log::error;
 use crate::ProjectModel;
-use crate::templates::{Actor, ActorBehaviorStrategy, ActorDriver, Channel, ConsumePattern};
+use crate::templates::{Actor, ActorDriver, Channel, ConsumePattern};
 
 fn extract_type_name_from_edge_label(label_text: &str, from_node: &str, to_node: &str) -> String {
     ///////////////////////////////////
@@ -139,16 +139,14 @@ fn extract_consume_pattern_from_label(label: &str) -> ConsumePattern {
         ConsumePattern::PeekCopy
     } else if label.contains(">>TakeCopy") {
         ConsumePattern::TakeCopy
-    } else if label.contains(">>Take") {
-        ConsumePattern::Take
-    } else { //default
+    } else { // could be ">>Take" or unknown default
         ConsumePattern::Take
     }
 }
 
 
 fn find_start_position(label: &str) -> usize {
-    let keywords = ["Every(", "OnEvent(", "OnCapacity(", "Other("];
+    let keywords = ["AtMostEvery(", "AtLeastEvery(", "OnEvent(", "OnCapacity(", "Other("];
     keywords.iter()
         .filter_map(|&keyword| label.find(keyword))
         .min() // Find the earliest occurrence of any keyword
@@ -162,12 +160,18 @@ fn extract_actor_driver_from_label(label: &str) -> Vec<ActorDriver> {
     let mut result: Vec<ActorDriver> =
     label[start_pos..].split("&&").filter_map(|part| {
         let part = part.trim();
-        if part.starts_with("Every") {
-            part.strip_prefix("Every(")
+        if part.starts_with("AtMostEvery") { //Timeout, Countdown. AtLestEvery, AtMostEvery
+            part.strip_prefix("AtMostEvery(")
                 .and_then(|s| s.strip_suffix("ms)"))
                 .and_then(|ms| ms.trim().parse::<u64>().ok())
                 .map(Duration::from_millis)
-                .map(ActorDriver::Periodic)
+                .map(ActorDriver::AtMostEvery)
+        } else if part.starts_with("AtLeastEvery") { //Timeout, Countdown. AtLestEvery, AtMostEvery
+                part.strip_prefix("AtLeastEvery(")
+                    .and_then(|s| s.strip_suffix("ms)"))
+                    .and_then(|ms| ms.trim().parse::<u64>().ok())
+                    .map(Duration::from_millis)
+                    .map(ActorDriver::AtLeastEvery)
         } else if part.starts_with("OnEvent") {
             Some(ActorDriver::EventDriven(parse_pairs(part, "OnEvent")))
         } else if part.starts_with("OnCapacity") {
@@ -183,7 +187,7 @@ fn extract_actor_driver_from_label(label: &str) -> Vec<ActorDriver> {
     }).collect();
     if result.is_empty() {
         // Default driver, probably not right; but we have little choice
-        result.push(ActorDriver::Periodic(Duration::from_secs(1)));
+        result.push(ActorDriver::AtMostEvery(Duration::from_secs(1)));
     }
     result
 }
@@ -222,8 +226,7 @@ fn extract_channel_name(label_text: &str, from_node: &str, to_node: &str) -> Str
 /////////////////////////
 ////////////////////////
 pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a str)>) -> Result<ProjectModel, Box<dyn Error>> {
-    let mut pm = ProjectModel::default();
-    pm.name = name.to_string();
+    let mut pm = ProjectModel { name: name.to_string(), ..Default::default() };
 
     // Iterate over nodes to populate actors
     for node in &g.nodes.set {
@@ -233,18 +236,17 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
                           .find_map(|(key, value)| if "label".eq(*key) { Some(*value) } else { None }).unwrap_or_default();
 
         let mod_name = extract_module_name(id, label_text);
-        let consume_pattern = extract_consume_pattern_from_label(label_text);
+
+        let redundancy_count = extract_redundancy_count(label_text);
 
         // Create an Actor instance based on extracted details
         let actor = Actor {
             display_name: id.to_string(),  // Assuming the display_name is the node id
             mod_name,
+            redundancy_count,
             rx_channels: Vec::new(),  // Populated later based on edges
             tx_channels: Vec::new(),  // Populated later based on edges
-            behavior: ActorBehaviorStrategy {
-                driver: extract_actor_driver_from_label(label_text),  // This returns Vec<ActorDriver>, adjust as needed
-                consume: consume_pattern,
-            },
+            driver: extract_actor_driver_from_label(label_text),
         };
         pm.actors.push(actor);
     }
@@ -259,23 +261,53 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
         let capacity = extract_capacity_from_edge_label(label_text, 8);  // Assuming 8 as default if not specified
         let gurth = extract_gurth_from_edge_label(label_text);
         let name = extract_channel_name(label_text, e.from, e.to);
+        let consume_pattern = extract_consume_pattern_from_label(label_text);
+
+        //lookup batch slices from actor and store them in the channel for easy use later.
+        //TODO: finsih
+
 
         if let Some(mod_name) = pm.actors.iter().filter(|f| f.display_name == e.from).map(|a| a.mod_name.clone()).next() {
             // Create a Channel instance based on extracted details
-            let channel = Channel {
+            let mut channel = Channel {
                 name,  // Constructing a name based on from and to nodes
                 from_mod: mod_name,
+                batch_read: 1,
+                batch_write: 1,
                 message_type: type_name,
+                peek: consume_pattern == ConsumePattern::PeekCopy,
+                copy: consume_pattern != ConsumePattern::Take,
                 capacity,
                 gurth,
             };
 
             // Find the actor with the same id as the from node and add the channel to its tx_channels
             if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name == e.from) {
-               a.tx_channels.push(channel.clone());
+                  //we found the actor which is the source of this channel
+
+                  //review this actor and see if it has some batched write size
+                  a.driver.iter().for_each(|f| {
+                        if let ActorDriver::CapacityDriven(pairs) = f {
+                            pairs.iter()
+                                .filter(|(n, b)| n.eq(&channel.name))
+                                .for_each(|(n, b)| channel.batch_write=*b );
+                        };
+                  });
+                  a.tx_channels.push(channel.clone());
+
             }
             if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name == e.to) {
-                a.rx_channels.push(channel.clone());
+                  //we found the actor which is the source of this channel
+
+                  //review this actor and see if it has some batched write size
+                  a.driver.iter().for_each(|f| {
+                        if let ActorDriver::EventDriven(pairs) = f {
+                            pairs.iter()
+                                .filter(|(n, b)| n.eq(&channel.name))
+                                .for_each(|(n, b)| channel.batch_read=*b );
+                        };
+                  });
+                  a.rx_channels.push(channel.clone());
             }
 
             pm.channels.push(channel);
@@ -374,11 +406,11 @@ mod tests {
 
     #[test]
     fn test_extract_actor_driver_from_label() {
-        let label = "Every(5000ms) && OnEvent(C1//10||B2//10) && OnCapacity(C2//20||A1//20)";
+        let label = "AtLeastEvery(5000ms) && OnEvent(C1//10||B2//10) && OnCapacity(C2//20||A1//20)";
         let drivers = extract_actor_driver_from_label(label);
         // This would check for the presence and correctness of each driver type
         // This example assumes you have PartialEq derived for your ActorDriver and other types for simplicity
-        assert!(drivers.contains(&ActorDriver::Periodic(Duration::from_millis(5000))));
+        assert!(drivers.contains(&ActorDriver::AtLeastEvery(Duration::from_millis(5000))));
         assert!(drivers.iter().any(|d| matches!(d, ActorDriver::EventDriven(_))));
         assert!(drivers.iter().any(|d| matches!(d, ActorDriver::CapacityDriven(_))));
     }

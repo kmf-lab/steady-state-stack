@@ -46,6 +46,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use futures::lock::Mutex;
 use std::ops::{Deref, DerefMut};
 use std::future::ready;
+use std::iter::Map;
+use std::slice::Iter;
 
 use std::thread::sleep;
 use log::*;
@@ -64,11 +66,11 @@ use crate::monitor::{ActorMetaData, ChannelMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
-use futures::FutureExt; // Provides the .fuse() method
+use futures::*; // Provides the .fuse() method
 
 // Re-exporting Bastion blocking for use in actors
 pub use bastion::blocking;
-use futures::future::BoxFuture;
+use futures::future::{BoxFuture, select_all};
 
 
 use futures::select;
@@ -839,8 +841,10 @@ impl<T> Rx<T> {
 
     #[inline]
     fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
-      // TODO: rewrite
         where T: Copy {
+
+        // TODO: rewrite
+
         let mut last_index = 0;
         for (i, e) in self.rx.iter().enumerate() {
             if i < elems.len() {
@@ -969,6 +973,66 @@ pub struct SteadyBundle{}
 
 impl SteadyBundle {
 
+
+    pub async fn wait_avail_units<T, const GIRTH: usize>(this: & SteadyRxBundle<T, GIRTH>
+                                                             , avail_count: usize
+                                                             , ready_channels: usize)
+     where T: Send + Sync {
+            let futures = this.iter().map(|rx| {
+                let rx = rx.clone();
+                async move {
+                    let mut guard = rx.lock().await;
+                    guard.wait_avail_units(avail_count).await;
+                }
+                    .boxed() // Box the future to make them the same type
+            });
+
+        let mut futures: Vec<_> = futures.collect();
+
+        let mut count_down = ready_channels.min(GIRTH);
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+
+    }
+
+    pub async fn wait_vacant_units<T, const GIRTH: usize>(this: & SteadyTxBundle<T, GIRTH>
+                                                         , avail_count: usize
+                                                         , ready_channels: usize)
+        where T: Send + Sync {
+        let futures = this.iter().map(|tx| {
+            let tx = tx.clone();
+            async move {
+                let mut guard = tx.lock().await;
+                guard.wait_vacant_units(avail_count).await;
+            }
+                .boxed() // Box the future to make them the same type
+        });
+        let mut futures: Vec<_> = futures.collect();
+
+        let mut count_down = ready_channels.min(GIRTH);
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+    }
+
+
     pub fn mark_closed<T, const GIRTH: usize>(this: & SteadyTxBundle<T, GIRTH>) -> bool {
         this.iter().all(|tx| {
             let mut guard = bastion::run!(tx.lock());
@@ -1009,24 +1073,6 @@ impl SteadyBundle {
         let result: [SteadyRx<T>; GIRTH] = rxs.try_into().expect("Incorrect length");
         Arc::new(result)
     }
-
-    pub fn new_bundles<T, const GIRTH: usize>(base_channel_builder: &ChannelBuilder) -> (SteadyTxBundle<T,GIRTH>, SteadyRxBundle<T,GIRTH>) {
-
-        // Initialize vectors to hold the separate components
-        let mut tx_vec: Vec<SteadyTx<T>> = Vec::with_capacity(GIRTH);
-        let mut rx_vec: Vec<SteadyRx<T>> = Vec::with_capacity(GIRTH);
-
-        (0..GIRTH).for_each(|_| {
-            let (t,r) = base_channel_builder.build();
-            tx_vec.push(t);
-            rx_vec.push(r);
-        });
-
-        (SteadyBundle::tx_new_bundle::<T, GIRTH>(tx_vec), SteadyBundle::rx_new_bundle::<T, GIRTH>(rx_vec))
-
-    }
-
-
 }
 
 
