@@ -388,7 +388,7 @@ mod tests {
 
         // Test default module name based on node ID
         let label_missing_module = "No module here";
-        assert_eq!(extract_module_name("NodeA", label_missing_module), "mod_NodeA");
+        assert_eq!(extract_module_name("NodeA", label_missing_module), "mod_node_a");
     }
 
     #[test]

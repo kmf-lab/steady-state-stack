@@ -1,7 +1,10 @@
 ## steady_state: The Next Frontier in Rust Frameworks for Resilient Services
-'steady_state' embarks on an ambitious journey to revolutionize the development of resilient, high-performance services in Rust. With a clear vision of integrating advanced latency management, system observability, and unparalleled fault tolerance, steady_state is designed to set new standards in software reliability and efficiency.
+'steady_state' embarks on an ambitious journey to revolutionize the development of resilient, high-performance services in Rust.
+With a clear vision of integrating advanced latency management, system observability, and unparalleled fault tolerance, 
+steady_state is designed to set new standards in software reliability and efficiency.
 
-*Please note: steady_state is in the early stages of development. This initial release is intended to showcase our vision and the framework's potential direction.
+*Please note: steady_state is in the early stages of development.
+Our early releases are intended to showcase our vision and the framework's potential and  direction.
 ![Telemetry Visualization Example](simple-example.gif)
 *An animated GIF demonstrating real-time telemetry visualization in action.*
 
@@ -28,12 +31,20 @@ Named for its commitment to maintaining a consistent, optimal operational state,
 - **Visibility**: Find and fix performance bottlenecks quickly with built-in telemetry, enabling real-time monitoring and analysis of your service's operational state.
 - **Rapid Prototyping**: Mock up your ideas in graphiz DOT files, then generate your Rust service project to get started.
 
+# New project code generation is well underway.
+- * You will write a small graphiz Dot file with clear annotations in the labels
+- * The code generator will take that and rough in your new project so you can start to add business logic.
+- * We are building a ChatGPT prompt so you can have a discussion with it about your product and then have it build the dot for you. 
+
+## ALSO: I am open to work 
+https://www.linkedin.com/in/nathan-tippy-985211/
+
+
 ## Vision and Roadmap
 
 `steady_state` is more than just a framework; it's a vision for building the future of service development in Rust. Our roadmap includes:
 
 - **Prebuilt Actors for Cloud Services**: Simplifying the integration with popular cloud platforms and services.
-- **Automatic Code Generation**: Accelerating development with tools that generate actor and channel scaffolds from DOT file descriptions.
 - **Cross-Machine Telemetry**: Extending observability across distributed system deployments, essential for comprehensive performance management.
 
 ### Commitment to Testing
