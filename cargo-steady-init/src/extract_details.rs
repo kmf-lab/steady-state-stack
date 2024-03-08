@@ -289,8 +289,8 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
                   a.driver.iter().for_each(|f| {
                         if let ActorDriver::CapacityDriven(pairs) = f {
                             pairs.iter()
-                                .filter(|(n, b)| n.eq(&channel.name))
-                                .for_each(|(n, b)| channel.batch_write=*b );
+                                .filter(|(n, _)| n.eq(&channel.name))
+                                .for_each(|(_, b)| channel.batch_write=*b );
                         };
                   });
                   a.tx_channels.push(channel.clone());
@@ -303,8 +303,8 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
                   a.driver.iter().for_each(|f| {
                         if let ActorDriver::EventDriven(pairs) = f {
                             pairs.iter()
-                                .filter(|(n, b)| n.eq(&channel.name))
-                                .for_each(|(n, b)| channel.batch_read=*b );
+                                .filter(|(n, _)| n.eq(&channel.name))
+                                .for_each(|(_, b)| channel.batch_read=*b );
                         };
                   });
                   a.rx_channels.push(channel.clone());

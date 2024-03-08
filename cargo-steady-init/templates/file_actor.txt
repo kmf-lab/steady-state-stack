@@ -6,7 +6,7 @@ use crate::Args;
 use std::error::Error;
 {% for u in message_types_to_use -%}
 {{u}};
-{%- endfor %}
+{% endfor %}
 
 
 //if no internal state is required (recommended) feel free to remove this.
@@ -32,31 +32,27 @@ impl {{ display_name|capitalize }}InternalState {
     }
 }
 
-
-
-
 {% for st in message_types_to_define -%}
 {{st}} {
    //{{note_for_the_user}}: add your fields here
 }
-{%- endfor %}
+{% endfor %}
 #[cfg(not(test))]
 pub async fn run
     {%- for connection in rx_channels -%}
-        <%- if connection.gurth>1 %>const {{connection.name|uppercase}}_GURTH:usize,<% endif -%>
+        {%- if connection.gurth>1 %}const {{connection.name|uppercase}}_GURTH:usize,{% endif -%}
     {%- endfor -%}
     {%- for connection in tx_channels -%}
-        <%- if connection.gurth>1 %>const {{connection.name|uppercase}}_GURTH:usize,<% endif -%>
+        {%- if connection.gurth>1 %}const {{connection.name|uppercase}}_GURTH:usize,{% endif -%}
     {%- endfor -%}
-
 
   (context: SteadyContext
     {%- for connection in rx_channels %}
-        ,{{connection.name}}_rx: <% if connection.gurth>1 %>SteadyRxBundle<{{connection.message_type}}, {{connection.name|uppercase}}_GURTH>
-                                  <%- else %>SteadyRx<{{connection.message_type}}><% endif %>{%- endfor -%}
+        ,{{connection.name}}_rx: {% if connection.gurth>1 %}SteadyRxBundle<{{connection.message_type}}, {{connection.name|uppercase}}_GURTH>
+                                  {%- else %}SteadyRx<{{connection.message_type}}>{% endif %}{%- endfor -%}
     {%- for connection in tx_channels %}
-        ,{{connection.name}}_tx: <% if connection.gurth>1 %>SteadyTxBundle<{{connection.message_type}}, {{connection.name|uppercase}}_GURTH>
-                                  <%- else %>SteadyTx<{{connection.message_type}}><% endif %>{%- endfor -%}
+        ,{{connection.name}}_tx: {% if connection.gurth>1 %}SteadyTxBundle<{{connection.message_type}}, {{connection.name|uppercase}}_GURTH>
+                                  {%- else %}SteadyTx<{{connection.message_type}}>{% endif %}{%- endfor -%}
     ) -> Result<(),Box<dyn Error>> {
 
     let cli_args = context.args::<Args>();
@@ -64,7 +60,7 @@ pub async fn run
         {{ display_name|capitalize }}InternalState::new(args)
     } else {
         {{ display_name|capitalize }}InternalState::default()
-    }
+    };
 
     let mut monitor =  context.into_monitor([{% for connection in rx_channels %}
                         &{{connection.name}}_rx{%- if loop.last %}{% else -%}
