@@ -109,12 +109,10 @@ pub(crate) struct ArgsTemplate {
 }
 
 
-
-
-
 #[derive(Template)]
 #[template(path = "file_main.txt")]
 pub(crate) struct MainTemplate<'a> {
+    pub(crate) test_only: &'static str,
     pub(crate) actors: &'a Vec<Actor>,
     pub(crate) channels: &'a Vec<Channel>,
 }

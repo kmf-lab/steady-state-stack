@@ -6,6 +6,12 @@ use crate::args::Args;
 use std::time::Duration;
 use steady_state::Percentile;
 
+
+{{test_only}}
+
+
+
+
 mod actor {
     {% for actor in actors %}
         pub mod {{actor.mod_name}};

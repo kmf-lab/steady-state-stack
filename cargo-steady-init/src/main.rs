@@ -110,9 +110,14 @@ fn write_project_files(pm: ProjectModel
    let args_rs = folder_src.join("args.rs");
    fs::write(args_rs, templates::ArgsTemplate {}.render()?)?;
 
-    warn!("write main");
+    #[cfg(test)]
+        let test_only = "#[allow(unused)]";
+    #[cfg(not(test))]
+        let test_only = "";
+
    let main_rs = folder_src.join("main.rs");
    fs::write(main_rs, templates::MainTemplate {
+        test_only,
         channels: &pm.channels,
         actors: &pm.actors,
    }.render()?)?;
@@ -129,13 +134,12 @@ fn write_project_files(pm: ProjectModel
        my_struct_use.sort();
        my_struct_use.dedup();
 
-       let mut my_struct_def:Vec<String> = actor.rx_channels
+       let mut my_struct_def:Vec<String> = actor.tx_channels
            .iter()
            .map(|f| format!("{}pub(crate) struct {}", derive_block(f.copy), f.message_type))
            .collect();
        my_struct_def.sort();
        my_struct_def.dedup();
-
 
 
        fs::write(actor_rs, templates::ActorTemplate {
@@ -163,11 +167,20 @@ mod tests {
     use std::{env, fs};
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
-    use log::error;
+    use log::{error, info};
     use crate::process_dot;
 
     #[test]
     fn test_unnamed1_project() {
+
+        if let Err(e) = steady_state::init_logging("info") {
+            //do not use logger to report logger could not start
+            eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
+        }
+
+
+        let do_compile_test = true;
+
         let g = r#"
         digraph G {
     ImapClient [label="IMAP Client\nConnects to IMAP server\nto fetch emails"];
@@ -202,26 +215,30 @@ mod tests {
             Ok(_) => {
                 let current_dir = env::current_dir().expect("Failed to get current directory");
                 println!("Current working directory is: {:?}", current_dir);
+                //NOTE: must delete the unnamed1 folder if it exists
+                if let Err(e) = fs::remove_dir_all("unnamed1") {
+                    error!("Failed to remove test_run/unnamed1 directory: {}", e);
+                } else {
+                    info!("Removed test_run/unnamed1 directory");
+                }
+
                 /////
                 process_dot(g, "unnamed1");
                 let build_me = PathBuf::from("unnamed1");
                 let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
 
-                let do_compile_test = false;
-
                 if do_compile_test {
+
                     ////
                     let mut output = Command::new("cargo")
                         .arg("build")
                         .arg("--manifest-path")
                         .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
-                        .current_dir(build_me_absolute)
+                        .current_dir(build_me_absolute.clone())
                         .stdout(Stdio::inherit()) // This line ensures that stdout from the command is printed directly to the terminal
                         .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal
                         .spawn()
                         .expect("failed to execute process");
-
-                    // Wait for the command to finish
                     let output = output.wait().expect("failed to wait on child");
 
                     assert!(output.success());

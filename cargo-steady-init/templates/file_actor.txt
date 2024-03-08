@@ -1,3 +1,4 @@
+
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
@@ -6,6 +7,12 @@ use crate::Args;
 use std::error::Error;
 {% for u in message_types_to_use -%}
 {{u}};
+{% endfor %}
+
+{% for st in message_types_to_define -%}
+{{st}} {
+   //{{note_for_the_user}}: add your fields here
+}
 {% endfor %}
 
 
@@ -32,11 +39,8 @@ impl {{ display_name|capitalize }}InternalState {
     }
 }
 
-{% for st in message_types_to_define -%}
-{{st}} {
-   //{{note_for_the_user}}: add your fields here
-}
-{% endfor %}
+
+
 #[cfg(not(test))]
 pub async fn run
     {%- for connection in rx_channels -%}
