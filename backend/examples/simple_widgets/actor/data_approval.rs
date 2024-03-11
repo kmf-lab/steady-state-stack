@@ -22,13 +22,9 @@ pub async fn run(context: SteadyContext
 
     let mut monitor = context.into_monitor([&rx], [&tx,&feedback]);
 
-    let mut tx_guard = tx.lock().await;
-    let mut rx_guard = rx.lock().await;
-    let mut feedback_guard = feedback.lock().await;
-
-    let tx = &mut *tx_guard;
-    let rx = &mut *rx_guard;
-    let feedback = &mut *feedback_guard;
+    let mut tx = tx.lock().await;
+    let mut rx = rx.lock().await;
+    let mut feedback = feedback.lock().await;
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
@@ -37,9 +33,9 @@ pub async fn run(context: SteadyContext
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
         if iterate_once(&mut monitor
-                        , rx
-                        , tx
-                        , feedback
+                        , &mut rx
+                        , &mut tx
+                        , &mut feedback
                         , &mut buffer
         ).await {
             break Ok(());

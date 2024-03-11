@@ -13,12 +13,10 @@ pub async fn run(context: SteadyContext
 
     let mut monitor =  context.into_monitor([&rx], []);
 
-
-    let mut rx_guard = rx.lock().await;
-    let rx = &mut *rx_guard;
+    let mut rx = rx.lock().await;
 
     loop {
-        if let Ok(packet) = monitor.take_async(rx).await {
+        if let Ok(packet) = monitor.take_async(&mut rx).await {
             assert_eq!(packet.data.len(),128);
             //info!("data_router: {:?}", packet);
         }
@@ -37,11 +35,10 @@ pub async fn run(context: SteadyContext
     let mut monitor = context.into_monitor([&rx], []);
 
     //guards for the channels, NOTE: we could share one channel across actors.
-    let mut rx_guard = rx.lock().await;
-    let rx = &mut *rx_guard;
+    let mut rx = rx.lock().await;
 
     loop {
-        relay_test(&mut monitor, rx).await;
+        relay_test(&mut monitor, &mut rx).await;
         if false {
             break;
         }

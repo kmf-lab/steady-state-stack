@@ -21,11 +21,9 @@ pub async fn run(context: SteadyContext
 
     let mut monitor = context.into_monitor([&rx], [&tx]);
 
-    let mut tx_guard = tx.lock().await;
-    let mut rx_guard = rx.lock().await;
+    let mut tx = tx.lock().await;
+    let mut rx = rx.lock().await;
 
-    let tx = &mut *tx_guard;
-    let rx = &mut *rx_guard;
 
 
     while monitor.is_running(
@@ -35,8 +33,8 @@ pub async fn run(context: SteadyContext
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
         if iterate_once(&mut monitor
-                        , rx
-                        , tx
+                        , &mut rx
+                        , &mut tx
         ).await {
             return Ok(());
         }

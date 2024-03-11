@@ -13,20 +13,18 @@ pub async fn run(context: SteadyContext
     let mut monitor = context.into_monitor([&rx], [&tx]);
 
     //guards for the channels, NOTE: we could share one channel across actors.
-    let mut rx_guard = rx.lock().await;
-    let rx = &mut *rx_guard;
-
-    let mut tx_guard = tx.lock().await;
-    let tx = &mut *tx_guard;
+    let mut rx = rx.lock().await;
+    let mut tx = tx.lock().await;
 
     loop {
-       monitor.wait_avail_units(rx,3* (rx.capacity()/4)).await;
+       let count = 3* (rx.capacity()/4);
+       monitor.wait_avail_units(&mut rx, count).await;
 
            let mut max_now = tx.vacant_units();
            if max_now>0 {
                while max_now>0 {
-                   if let Some(packet) = monitor.try_take(rx) {
-                       if let Err(e) = monitor.try_send(tx,packet) {
+                   if let Some(packet) = monitor.try_take(&mut rx) {
+                       if let Err(e) = monitor.try_send(&mut tx,packet) {
                            error!("Error sending packet: {:?}",e);
                            break;
                        }

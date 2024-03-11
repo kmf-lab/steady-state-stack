@@ -43,11 +43,9 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
-use futures::lock::Mutex;
+use futures::lock::{Mutex, MutexLockFuture};
 use std::ops::{Deref, DerefMut};
 use std::future::ready;
-use std::iter::Map;
-use std::slice::Iter;
 
 use std::thread::sleep;
 use log::*;
@@ -61,7 +59,6 @@ use backtrace::Backtrace;
 
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use actor_builder::ActorBuilder;
-use crate::channel_builder::ChannelBuilder;
 use crate::monitor::{ActorMetaData, ChannelMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
@@ -70,10 +67,12 @@ use futures::*; // Provides the .fuse() method
 
 // Re-exporting Bastion blocking for use in actors
 pub use bastion::blocking;
-use futures::future::{BoxFuture, select_all};
+use futures::future::{BoxFuture, join_all, JoinAll, select_all};
 
 
 use futures::select;
+use futures::stream::FuturesOrdered;
+use futures_util::lock::MutexGuard;
 use crate::graph_testing::EdgeSimulator;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
@@ -81,6 +80,11 @@ pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
 
 pub type SteadyTxBundle<T,const GURTH:usize> = Arc<[Arc<Mutex<Tx<T>>>;GURTH]>;
 pub type SteadyRxBundle<T,const GURTH:usize> = Arc<[Arc<Mutex<Rx<T>>>;GURTH]>;
+
+
+pub type TxBundle<'a, T> = Vec<MutexGuard<'a, Tx<T>>>;
+
+pub type RxBundle<'a, T> = Vec<MutexGuard<'a, Rx<T>>>;
 
 
 
@@ -96,7 +100,6 @@ pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 pub struct SteadyContext {
     pub(crate) ident: ActorIdentity,
-    pub(crate) redundancy: usize,
     pub(crate) ctx: Option<Arc<bastion::context::BastionContext>>,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
@@ -216,7 +219,6 @@ impl SteadyContext {
             last_telemetry_send: Instant::now(),
             ident: self.ident,
             ctx: self.ctx,
-            redundancy: self.redundancy,
             runtime_state: self.runtime_state,
 
             #[cfg(test)]
@@ -256,7 +258,6 @@ impl Graph {
             args: self.args.clone(),
             ctx: None, //this is key, we are not running in a graph by design
             actor_metadata: Arc::new(ActorMetaData::default()),
-            redundancy: 1,
             all_telemetry_rx,
             runtime_state: self.runtime_state.clone(),
             count_restarts,
@@ -968,112 +969,132 @@ impl <T: Send + Sync > RxDef for SteadyRx<T>  {
 }
 
 
+//TODO: better design with full lock feature for simple in place use!!!!!
 
-pub struct SteadyBundle{}
-
-impl SteadyBundle {
-
-
-    pub async fn wait_avail_units<T, const GIRTH: usize>(this: & SteadyRxBundle<T, GIRTH>
-                                                             , avail_count: usize
-                                                             , ready_channels: usize)
-     where T: Send + Sync {
-            let futures = this.iter().map(|rx| {
-                let rx = rx.clone();
-                async move {
-                    let mut guard = rx.lock().await;
-                    guard.wait_avail_units(avail_count).await;
-                }
-                    .boxed() // Box the future to make them the same type
-            });
-
-        let mut futures: Vec<_> = futures.collect();
-
-        let mut count_down = ready_channels.min(GIRTH);
-        let mut futures = futures;
-
-        while !futures.is_empty() {
-            // Wait for the first future to complete
-            let (_result, _index, remaining) = select_all(futures).await;
-            futures = remaining;
-            count_down -= 1;
-            if 0 == count_down {
-                break;
-            }
-        }
-
+pub trait SteadyTxBundleTrait<T,const GIRTH:usize> {
+    fn lock(&self) -> JoinAll<MutexLockFuture<'_, Tx<T>>>;
+    fn def_slice(&self) -> [& dyn TxDef; GIRTH];
+    async fn wait_vacant_units(&self
+                                                      , avail_count: usize
+                                                      , ready_channels: usize);
+}
+impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyTxBundle<T, GIRTH> {
+    fn lock(&self) -> JoinAll<MutexLockFuture<'_, Tx<T>>> {
+        join_all(self.iter().map(|m| m.lock()))
     }
 
-    pub async fn wait_vacant_units<T, const GIRTH: usize>(this: & SteadyTxBundle<T, GIRTH>
-                                                         , avail_count: usize
-                                                         , ready_channels: usize)
-        where T: Send + Sync {
-        let futures = this.iter().map(|tx| {
-            let tx = tx.clone();
-            async move {
-                let mut guard = tx.lock().await;
-                guard.wait_vacant_units(avail_count).await;
-            }
-                .boxed() // Box the future to make them the same type
-        });
-        let mut futures: Vec<_> = futures.collect();
-
-        let mut count_down = ready_channels.min(GIRTH);
-        let mut futures = futures;
-
-        while !futures.is_empty() {
-            // Wait for the first future to complete
-            let (_result, _index, remaining) = select_all(futures).await;
-            futures = remaining;
-            count_down -= 1;
-            if 0 == count_down {
-                break;
-            }
-        }
-    }
-
-
-    pub fn mark_closed<T, const GIRTH: usize>(this: & SteadyTxBundle<T, GIRTH>) -> bool {
-        this.iter().all(|tx| {
-            let mut guard = bastion::run!(tx.lock());
-            guard.deref_mut().mark_closed()
-        })
-    }
-
-    pub fn is_closed<T, const GIRTH: usize>(this: & SteadyRxBundle<T, GIRTH>) -> bool {
-        this.iter().all(|rx| {
-            let mut guard = bastion::run!(rx.lock());
-            guard.deref_mut().is_closed()
-        })
-    }
-
-
-    pub fn tx_def_slice<T, const GIRTH: usize>(this: & SteadyTxBundle<T, GIRTH>) -> [& dyn TxDef; GIRTH] {
-        this.iter()
+    fn def_slice(&self) -> [& dyn TxDef; GIRTH] {
+        self.iter()
             .map(|x| x as &dyn TxDef)
             .collect::<Vec<&dyn TxDef>>()
             .try_into()
             .expect("Internal Error")
     }
-    pub fn tx_new_bundle<T, const GIRTH: usize>(txs: Vec<SteadyTx<T>>) -> SteadyTxBundle<T, GIRTH> {
-        let result: [SteadyTx<T>; GIRTH] = txs.try_into().expect("Incorrect length");
-        Arc::new(result)
+
+    async fn wait_vacant_units(&self
+                                                          , avail_count: usize
+                                                          , ready_channels: usize)
+        {
+        let futures = self.iter().map(|tx| {
+            let tx = tx.clone();
+            async move {
+                let tx = tx.lock().await;
+                tx.wait_vacant_units(avail_count).await;
+            }.boxed() // Box the future to make them the same type
+        });
+        let mut futures: Vec<_> = futures.collect();
+
+        let mut count_down = ready_channels.min(GIRTH);
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
     }
 
+}
 
-    pub fn rx_def_slice< T: Send + Sync, const GIRTH: usize>(this: & SteadyRxBundle<T, GIRTH>) -> [& dyn RxDef; GIRTH]
-     {
-        this.iter()
+pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
+    fn lock(&self) -> JoinAll<MutexLockFuture<'_, Rx<T>>>;
+    fn def_slice(&self) -> [& dyn RxDef; GIRTH];
+    async fn wait_avail_units(&self
+                                                     , avail_count: usize
+                                                     , ready_channels: usize);
+}
+impl<T: std::marker::Send + std::marker::Sync, const GIRTH: usize> crate::SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> {
+    fn lock(&self) -> JoinAll<MutexLockFuture<'_, Rx<T>>> {
+        join_all(self.iter().map(|m| m.lock()))
+    }
+    fn def_slice(&self) -> [& dyn RxDef; GIRTH]
+    {
+        self.iter()
             .map(|x| x as &dyn RxDef)
             .collect::<Vec<&dyn RxDef>>()
             .try_into()
             .expect("Internal Error")
     }
-    pub fn rx_new_bundle<T, const GIRTH: usize>(rxs: Vec<SteadyRx<T>>) -> SteadyRxBundle<T, GIRTH> {
-        let result: [SteadyRx<T>; GIRTH] = rxs.try_into().expect("Incorrect length");
-        Arc::new(result)
+
+    async fn wait_avail_units(&self
+                                                         , avail_count: usize
+                                                         , ready_channels: usize)
+         {
+        let futures = self.iter().map(|rx| {
+            let rx = rx.clone();
+            async move {
+                let mut guard = rx.lock().await;
+                guard.wait_avail_units(avail_count).await;
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let futures: Vec<_> = futures.collect();
+
+        let mut count_down = ready_channels.min(GIRTH);
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+
+    }
+
+
+
+
+}
+
+
+pub trait RxBundleTrait {
+    fn is_closed(&mut self) -> bool;
+}
+impl<T> crate::RxBundleTrait for RxBundle<'_, T> {
+    fn is_closed(&mut self) -> bool {
+        self.iter().all(|mut f| f.is_closed() )
     }
 }
+
+
+pub trait TxBundleTrait {
+    fn mark_closed(&mut self) -> bool;
+}
+impl<T> crate::TxBundleTrait for TxBundle<'_, T> {
+    fn mark_closed(&mut self) -> bool {
+        self.iter_mut().all(|mut f| f.mark_closed() )
+    }
+}
+
+
 
 
 #[derive(Debug, Clone, Copy, PartialEq)]

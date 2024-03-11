@@ -25,8 +25,7 @@ pub async fn run(context: SteadyContext
 
     let mut monitor =  context.into_monitor([&rx], []);
 
-    let mut rx_guard = rx.lock().await;
-    let rx = &mut *rx_guard;
+    let mut rx = rx.lock().await;
 
     let mut state = InternalState {
         last_approval: None,
@@ -46,7 +45,7 @@ pub async fn run(context: SteadyContext
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed()) {
         //single pass of work, in this high volume example we stay in iterate_once as long
         //as the input channel as more work to process.
-        if iterate_once(&mut monitor, &mut state, rx).await {
+        if iterate_once(&mut monitor, &mut state, &mut rx).await {
             return Ok(());
         }
     }

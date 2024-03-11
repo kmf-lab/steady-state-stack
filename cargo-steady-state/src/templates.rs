@@ -1,3 +1,4 @@
+
 use std::time::Duration;
 use askama::Template;
 
@@ -19,21 +20,20 @@ use askama::Template;
 ///   - Driver Patterns: Specify activation triggers using AtLeastEvery, OnEvent etc and combine conditions with `&&`
 ///      - AtLeastEvery: Denote a minimum time interval between actor activations.
 ///      - AtMostEvery: Denote a maximum time interval between actor activations.
-///      - OnEvent: channelName//batchSize(optional, default is 1)//gurthApplication(Optional, is all or any or x%)
+///      - OnEvent: channelName:batchSize(optional, default is 1):girthApplication(Optional, is all or any or x%)
 ///      - OnCapacity: Denote an actor that activates when a specific target node has capacity.
 ///      - Other: Denote any other activation conditions.
-///   - Redundancy: Denote multiple instances of an actor with `*` followed by the count (omit if only one instance).
 ///
 /// Channel Notation:
 /// - Define channels by their source and target node names
-/// - Use labels to specify channel capacity with `#` followed by the number and optionally the bundle size with `*`.
+/// - Use labels to specify channel capacity with `#` followed by the number and optionally the bundle flag with `*B`.
 ///   - Consume Pattern: Indicate how the actor consumes data with `>>` followed by the pattern (e.g., `TakeCopy`).
 ///   Labels also contain a display name as name::DisplayName and the message struct type in angle brackets (e.g., `<Widget>`).
 ///
 /// Examples:
 /// ```
-/// "A1" [label="mod::mod_a, AtLeastEvery(5000ms) && OnEvent(goes//10//32%||feedback//10) && OnCapacity(feedback//20||goes//20) && Other(server2,socet1), *2"];
-/// "A1" -> "B2" [label="name::goes >>TakeCopy, <String> #1024, *3"]; // Channel with capacity of 1024 and bundled in groups of 3
+/// "A1" [label="mod::mod_a, AtLeastEvery(5000ms) && OnEvent(goes:10:32%||feedback:10) && OnCapacity(feedback:20||goes:20) && Other(server2||socet1), *2"];
+/// "A1" -> "B2" [label="name::goes >>TakeCopy, <String> #1024, *B"]; // Channel with capacity of 1024 and bundled in groups of 3
 /// "C2" -> "A1" [label="name::feedback <Data> #512"]; // Channel with capacity of 512, no bundling indicated
 /// ```
 ///
@@ -67,7 +67,7 @@ pub(crate) enum ConsumePattern {
 }
 
 
-#[derive(Eq, PartialEq, Hash, Clone)]
+#[derive(Eq, PartialEq, Clone)]
 pub(crate) struct Channel {
     pub(crate) name: String,
     pub(crate) from_mod: String, //this is where the struct message_type is defined
@@ -78,17 +78,25 @@ pub(crate) struct Channel {
 
     pub(crate) batch_write: usize,
     pub(crate) capacity: usize,
-    // >1 is a bundle, which means this represents <Gurth> channel defs
-    // these can be consolidated into a single vec on Tx, Rx or both ends
-    // this does not change behavior just provides and easier way to write it
-    pub(crate) gurth: usize,  // <=1 is not a bundle
+    pub(crate) part_of_bundle: bool,
 }
+
+impl Channel {
+
+    pub fn should_build_read_buffer(&self) -> bool {
+        self.batch_read > 1 && self.copy
+    }
+    pub fn should_build_write_buffer(&self) -> bool {
+        self.batch_write > 1 && self.copy
+    }
+}
+
+
 pub(crate) struct Actor {
     pub(crate) display_name: String,
     pub(crate) mod_name: String,
-    pub(crate) redundancy_count: usize,
-    pub(crate) rx_channels: Vec<Channel>,
-    pub(crate) tx_channels: Vec<Channel>,
+    pub(crate) rx_channels: Vec<Vec<Channel>>,
+    pub(crate) tx_channels: Vec<Vec<Channel>>,
     pub(crate) driver: Vec<ActorDriver>,
 }
 
@@ -114,7 +122,8 @@ pub(crate) struct ArgsTemplate {
 pub(crate) struct MainTemplate<'a> {
     pub(crate) test_only: &'static str,
     pub(crate) actors: &'a Vec<Actor>,
-    pub(crate) channels: &'a Vec<Channel>,
+    pub(crate) actor_mods: Vec<String>,
+    pub(crate) channels: &'a Vec<Vec<Channel>>,
 }
 
 #[derive(Template)]
@@ -122,8 +131,9 @@ pub(crate) struct MainTemplate<'a> {
 pub(crate) struct ActorTemplate {
     pub(crate) note_for_the_user: &'static str,
     pub(crate) display_name: String,
-    pub(crate) rx_channels: Vec<Channel>,
-    pub(crate) tx_channels: Vec<Channel>,
+    pub(crate) has_bundles: bool,
+    pub(crate) rx_channels: Vec<Vec<Channel>>,
+    pub(crate) tx_channels: Vec<Vec<Channel>>,
     pub(crate) message_types_to_use: Vec<String>, //full namespace
     pub(crate) message_types_to_define: Vec<String>, //struct name, with copy trate?
 

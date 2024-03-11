@@ -46,11 +46,8 @@ pub async fn run(context: SteadyContext
 
     let mut monitor = context.into_monitor([&feedback], [&tx]);
 
-    let mut rx_guard = feedback.lock().await;
-    let feedback = &mut *rx_guard;
-
-    let mut tx_guard = tx.lock().await;
-    let tx = &mut *tx_guard;
+    let mut feedback = feedback.lock().await;
+    let mut tx = tx.lock().await;
 
     //let args = context.args::<Args>(); //or you can turbo fish here to get your args
 
@@ -66,9 +63,9 @@ pub async fn run(context: SteadyContext
     while monitor.is_running(&mut || tx.mark_closed() ) {
 
          //single pass of work, do not loop in here
-        iterate_once(&mut monitor, &mut state, tx, MULTIPLIER).await;
+        iterate_once(&mut monitor, &mut state, &mut tx, MULTIPLIER).await;
 
-        if let Some(feedback) = monitor.try_take(feedback) {
+        if let Some(feedback) = monitor.try_take(&mut feedback) {
               trace!("data_generator feedback: {:?}", feedback);
         }
 
@@ -92,14 +89,11 @@ pub async fn run(context: SteadyContext
 
     let mut monitor = context.into_monitor([&rx], [&tx]);
 
-    let mut rx_guard = rx.lock().await;
-    let _rx = &mut *rx_guard;
-
-    let mut tx_guard = tx.lock().await;
-    let tx = &mut *tx_guard;
+    let mut _rx = rx.lock().await;
+    let mut tx = tx.lock().await;
 
     loop {
-         relay_test(& mut monitor, tx).await;
+         relay_test(& mut monitor, &mut tx).await;
          monitor.relay_stats_smartly().await;
    }
 }

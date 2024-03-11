@@ -550,8 +550,6 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) telemetry_state:      Option<SteadyTelemetryActorSend>,
     pub(crate) last_telemetry_send:  Instant,
     pub(crate) runtime_state:        Arc<RwLock<GraphLiveliness>>,
-    pub(crate) redundancy:           usize,
-
 
     #[cfg(test)]
     pub(crate) test_count: HashMap<&'static str, usize>,
@@ -576,14 +574,6 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// A static string slice (`&'static str`) representing the monitor's name.
     pub fn name(&self) -> & 'static str {
         self.ident.name
-    }
-
-    /// Indicates the level of redundancy applied to the monitoring process.
-    ///
-    /// # Returns
-    /// A `usize` value representing the redundancy level.
-    pub fn redundancy(&self) -> usize {
-        self.redundancy
     }
 
     /// Initiates a stop signal for the LocalMonitor, halting its monitoring activities.
@@ -715,7 +705,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 .boxed() // Box the future to make them the same type
         });
 
-        let mut futures: Vec<_> = futures.collect();
+        let futures: Vec<_> = futures.collect();
 
         let mut count_down = ready_channels.min(GIRTH);
         let mut futures = futures;
@@ -745,13 +735,13 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let futures = this.iter().map(|tx| {
             let tx = tx.clone();
             async move {
-                let mut guard = tx.lock().await;
-                guard.shared_wait_vacant_units(avail_count).await;
+                let tx = tx.lock().await;
+                tx.shared_wait_vacant_units(avail_count).await;
             }
                 .boxed() // Box the future to make them the same type
         });
 
-        let mut futures: Vec<_> = futures.collect();
+        let futures: Vec<_> = futures.collect();
 
         let mut count_down = ready_channels.min(GIRTH);
         let mut futures = futures;

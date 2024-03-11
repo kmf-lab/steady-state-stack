@@ -1,0 +1,151 @@
+
+#[allow(unused_imports)]
+use log::*;
+use steady_state::*;
+use steady_state::monitor::LocalMonitor;
+use crate::Args;
+use std::error::Error;
+{% for u in message_types_to_use -%}
+{{u}};
+{% endfor %}
+
+{% for st in message_types_to_define -%}
+{{st}} {
+   //{{note_for_the_user}}: add your fields here
+}
+{% endfor %}
+
+
+
+//if no internal state is required (recommended) feel free to remove this.
+#[derive(Default)]
+struct {{ display_name|capitalize }}InternalState {
+     {% for channel in rx_channels -%}
+        {% if channel[0].should_build_read_buffer() %}
+            {{channel[0].name}}_buffer: [{{channel[0].message_type}}; {{channel[0].batch_read}}],
+        {% endif -%}
+     {%- endfor %}
+     {% for channel in tx_channels -%}
+         {% if channel[0].should_build_write_buffer() %}
+            {{channel[0].name}}_buffer: [{{channel[0].message_type}}; {{channel[0].batch_write}}],
+         {% endif %}
+     {% endfor %}
+}
+impl {{ display_name|capitalize }}InternalState {
+    fn new(cli_args: &Args) -> Self {
+        Self {
+           //{{note_for_the_user}}: add custom arg based init here
+           ..Default::default()
+        }
+    }
+}
+
+
+
+#[cfg(not(test))]
+pub async fn run{%- if has_bundles -%}<{% endif -%}
+    {%- for channel in rx_channels -%}
+        {%- if channel[0].part_of_bundle %}const {{channel[0].name|uppercase}}_GURTH:usize,{% endif -%}
+    {%- endfor -%}
+    {%- for channel in tx_channels -%}
+        {%- if channel[0].part_of_bundle %}const {{channel[0].name|uppercase}}_GURTH:usize,{% endif -%}
+    {%- endfor -%}
+  {%- if has_bundles -%}>{% endif -%}
+
+  (context: SteadyContext
+    {%- for channel in rx_channels %}
+        ,{{channel[0].name}}_rx: {% if channel[0].part_of_bundle %}SteadyRxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_GURTH>
+                                  {%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
+    {%- for channel in tx_channels %}
+        ,{{channel[0].name}}_tx: {% if channel[0].part_of_bundle %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_GURTH>
+                                  {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
+    ) -> Result<(),Box<dyn Error>> {
+
+    let cli_args = context.args::<Args>();
+    let mut state = if let Some(args) = cli_args {
+        {{ display_name|capitalize }}InternalState::new(args)
+    } else {
+        {{ display_name|capitalize }}InternalState::default()
+    };
+
+    let mut monitor =  context.into_monitor([{% for channel in rx_channels %}
+                        &{{channel[0].name}}_rx{%- if loop.last %}{% else -%}
+                           ,{%- endif %}{% endfor %}], [{% for channel in tx_channels %}
+                        &{{channel[0].name}}_tx{%- if loop.last %}{% else -%}
+                           ,{%- endif %}{% endfor %}]);
+
+
+ {% for channel in rx_channels -%}
+    let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;
+ {% endfor %}
+ {% for channel in tx_channels %}
+    let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.lock().await;
+ {%- endfor %}
+
+    while monitor.is_running(&mut ||
+ {%- for channel in rx_channels %}
+    {{channel[0].name}}_rx.is_empty() && {{channel[0].name}}_rx.is_closed()
+    {%- if loop.last %}{% else %} && {% endif -%}
+ {% endfor %}
+ {%- for channel in tx_channels %}
+    {%- if loop.first && !rx_channels.is_empty() %} && {% else %}{% endif -%}
+    {{channel[0].name}}_tx.mark_closed()
+    {%- if loop.last %}{% else %} && {% endif -%}
+ {% endfor %}
+    ) {
+
+     //these are cancel safe checks based on our desired driving rules
+
+     //join all the rx and tx events so we can watch for them
+
+     //if perioic is used we either
+     //   wait for join fallowed my remaining periodic time
+     //   selct! on peroic and joined events
+     //works for both Bundles and non bundles
+
+
+
+
+         process_once(&mut monitor, &mut state
+          {%- for channel in rx_channels %}
+             , &mut {{channel[0].name}}_rx{%- endfor -%}
+          {%- for channel in tx_channels %}
+             , &mut {{channel[0].name}}_tx{%- endfor -%}
+         ).await;
+
+
+    }
+    Ok(())
+}
+
+
+async fn process_once<const R: usize, const T: usize>(monitor: & mut LocalMonitor<R,T>
+                          , state: &mut {{ display_name|capitalize }}InternalState
+                          {%- for channel in rx_channels %}
+                             , {{channel[0].name}}_rx: &mut Rx<{{channel[0].message_type}}>{% endfor %}
+                          {%- for channel in tx_channels %}
+                             , {{channel[0].name}}_tx: &mut Tx<{{channel[0].message_type}}>{% endfor %}) {
+
+
+
+   //peek slice, take slice or take single all done here but not nested since it must be written
+   //  use the non asyc versions since we already waited.
+
+ //for bundles we must use the locks here?
+
+ //{{note_for_the_user}}: put your implementation here
+
+}
+
+#[cfg(test)]
+pub async fn run(context: SteadyContext
+                {%- for channel in rx_channels %}
+                    ,{{channel[0].name}}_rx: SteadyRx<{{channel[0].message_type}}>
+                {%- endfor -%}
+                {%- for channel in tx_channels %}
+                    ,{{channel[0].name}}_tx: SteadyTx<{{channel[0].message_type}}>
+                {%- endfor -%}) -> Result<(),Box<dyn Error>> {
+
+
+
+}

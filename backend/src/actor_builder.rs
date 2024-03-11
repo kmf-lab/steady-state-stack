@@ -35,7 +35,6 @@ pub struct ActorBuilder {
     telemetry_tx: Arc<RwLock<Vec<CollectorDetail>>>,
     channel_count: Arc<AtomicUsize>,
     runtime_state: Arc<RwLock<GraphLiveliness>>,
-    redundancy: usize,
     monitor_count: Arc<AtomicUsize>,
 
     refresh_rate_in_bits: u8,
@@ -121,7 +120,6 @@ impl ActorBuilder {
             suffix: None,
             monitor_count: graph.monitor_count.clone(),
             args : graph.args.clone(),
-            redundancy: 1,
             telemetry_tx: graph.all_telemetry_rx.clone(),
             channel_count: graph.channel_count.clone(),
             runtime_state: graph.runtime_state.clone(),
@@ -321,21 +319,6 @@ impl ActorBuilder {
         result
     }
 
-    /// Configures the number of redundant actor instances to be created, enhancing fault tolerance and system resilience.
-    ///
-    /// # Arguments
-    ///
-    /// * `count` - The number of redundant instances.
-    ///
-    /// # Returns
-    ///
-    /// A new `ActorBuilder` instance with the specified redundancy.
-    pub fn with_redundancy(&self, count:usize) -> ActorBuilder {
-        let mut result = self.clone();
-        result.redundancy = count.max(1);
-        result
-    }
-
 
     /// Sets the floor for compute window size, ensuring performance metrics are based on a sufficiently large sample.
     ///
@@ -397,7 +380,6 @@ impl ActorBuilder {
         let channel_count = self.channel_count;
         let runtime_state = self.runtime_state;
         let args          = self.args;
-        let redundancy    = self.redundancy;
         let name          = self.name;
         let actor_metadata = Arc::new(
             ActorMetaData {
@@ -422,8 +404,8 @@ impl ActorBuilder {
             let watch_node_callback = build_node_monitor_callback(&count_restarts);
             let count_restarts = count_restarts.clone();
 
-            let children = children.with_redundancy(redundancy)
-                .with_name(name)//.with_resizer()  TODO: add later.
+            let children = children
+                .with_name(name)
                 .with_callbacks(watch_node_callback);
 
             #[cfg(debug_assertions)]
@@ -439,7 +421,6 @@ impl ActorBuilder {
                                     channel_count: channel_count.clone(),
                                     ident: ActorIdentity{id,name},
                                     ctx: Some(Arc::new(ctx)),
-                                    redundancy,
                                     args: args.clone(),
                                     all_telemetry_rx: telemetry_tx.clone(),
                                     count_restarts: count_restarts.clone(),
@@ -580,3 +561,11 @@ impl Percentile {
         self.0
     }
 }
+
+//Note: redundancy and auto-scale features of bastion are not supported for the following reasons:
+// 1. channel usage requires lock and parallel actors would not work well and cause deadlocks
+// 2. we want clear telemetry on every actor instance, never shared
+// 3. there was no way to support this and the code generator without marking the methods unsafe.
+// 4. we might use this as an internal feature as it is difficult to get right.
+
+

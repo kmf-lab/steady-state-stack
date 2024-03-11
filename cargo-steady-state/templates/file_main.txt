@@ -10,11 +10,9 @@ use steady_state::Percentile;
 {{test_only}}
 
 
-
-
 mod actor {
-    {% for actor in actors %}
-        pub mod {{actor.mod_name}};
+    {% for mod in actor_mods %}
+        pub mod {{mod}};
     {% endfor %}
 }
 
@@ -57,22 +55,20 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     //build channels
     {% for channel in channels %}
-    let ({{channel.name}}_tx, {{channel.name}}_rx) = base_channel_builder.clone()
-        .with_capacity({{channel.capacity}})
-        .build();
+    let ({{channel[0].name}}_tx, {{channel[0].name}}_rx) = base_channel_builder.clone()
+        .with_capacity({{channel[0].capacity}}){% if channel.len()>1 %}
+        .build_as_bundle::<_,{{channel.len()}}>();{% else %}
+        .build();{% endif %}
     {% endfor %}
 
     //build actors
     {% for actor in actors %}
      base_actor_builder.with_name("{{actor.display_name}}")
-                 {% if actor.redundancy_count > 1 -%}
-                 .with_redundancy({{actor.redundancy_count}})
-                 {% endif -%}
                  .build_with_exec( move |context| actor::{{actor.mod_name}}::run(context
                                           {%- for channel in actor.rx_channels %}
-                                            , {{channel.name}}_rx.clone(){% endfor -%}
+                                            , {{channel[0].name}}_rx.clone(){% endfor -%}
                                           {%- for channel in actor.tx_channels %}
-                                            , {{channel.name}}_tx.clone(){% endfor -%}
+                                            , {{channel[0].name}}_tx.clone(){% endfor -%}
                                          )
                  );
     {%- endfor %}

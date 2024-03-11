@@ -75,18 +75,8 @@ fn extract_capacity_from_edge_label(label_text: &str, default: usize) -> usize {
 }
 
 
-fn extract_gurth_from_edge_label(label_text: &str) -> usize {
-    if let Some(start) = label_text.find('*') {
-        let remaining = &label_text[start + 1..];
-
-        if let Some(end) = remaining.find(|c: char| !c.is_ascii_digit()) {
-            remaining[..end].parse::<usize>().unwrap_or(1)
-        } else {
-            remaining.parse::<usize>().unwrap_or(1)
-        }
-    } else {
-        1 // Default gurth when not specified
-    }
+fn extract_gurth_from_edge_label(label_text: &str) -> bool {
+    label_text.contains("*B")
 }
 
 fn extract_redundancy_count(label_text: &str) -> usize {
@@ -243,7 +233,6 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
         let actor = Actor {
             display_name: id.to_string(),  // Assuming the display_name is the node id
             mod_name,
-            redundancy_count,
             rx_channels: Vec::new(),  // Populated later based on edges
             tx_channels: Vec::new(),  // Populated later based on edges
             driver: extract_actor_driver_from_label(label_text),
@@ -259,26 +248,25 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
 
         let type_name = extract_type_name_from_edge_label(label_text, e.from, e.to);
         let capacity = extract_capacity_from_edge_label(label_text, 8);  // Assuming 8 as default if not specified
-        let gurth = extract_gurth_from_edge_label(label_text);
+
+        let is_part_of_bundle = extract_gurth_from_edge_label(label_text);
+
         let name = extract_channel_name(label_text, e.from, e.to);
         let consume_pattern = extract_consume_pattern_from_label(label_text);
 
-        //lookup batch slices from actor and store them in the channel for easy use later.
-        //TODO: finsih
-
-
         if let Some(mod_name) = pm.actors.iter().filter(|f| f.display_name == e.from).map(|a| a.mod_name.clone()).next() {
+
             // Create a Channel instance based on extracted details
             let mut channel = Channel {
-                name,  // Constructing a name based on from and to nodes
+                name,
                 from_mod: mod_name,
-                batch_read: 1,
-                batch_write: 1,
+                batch_read: 1,  //default replaced later if set
+                batch_write: 1,  //default replaced later if set
                 message_type: type_name,
                 peek: consume_pattern == ConsumePattern::PeekCopy,
                 copy: consume_pattern != ConsumePattern::Take,
                 capacity,
-                gurth,
+                part_of_bundle: is_part_of_bundle,
             };
 
             // Find the actor with the same id as the from node and add the channel to its tx_channels
@@ -290,11 +278,10 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
                         if let ActorDriver::CapacityDriven(pairs) = f {
                             pairs.iter()
                                 .filter(|(n, _)| n.eq(&channel.name))
-                                .for_each(|(_, b)| channel.batch_write=*b );
+                                .for_each(|(_, b)| channel.batch_write = *b );
                         };
                   });
-                  a.tx_channels.push(channel.clone());
-
+                  roll_up_bundle(&mut a.tx_channels, channel.clone());
             }
             if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name == e.to) {
                   //we found the actor which is the source of this channel
@@ -304,13 +291,12 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
                         if let ActorDriver::EventDriven(pairs) = f {
                             pairs.iter()
                                 .filter(|(n, _)| n.eq(&channel.name))
-                                .for_each(|(_, b)| channel.batch_read=*b );
+                                .for_each(|(_, b)| channel.batch_read = *b );
                         };
                   });
-                  a.rx_channels.push(channel.clone());
+                roll_up_bundle(&mut a.rx_channels, channel.clone());
             }
-
-            pm.channels.push(channel);
+            roll_up_bundle(&mut pm.channels, channel);
         } else {
             error!("Failed to find actor with id: {}", e.from);
         }
@@ -318,7 +304,37 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
 
     }
 
+
+
+
     Ok(pm)
+}
+
+
+/// This function is used to roll up channels into bundles and is important for the code generation
+/// Some Channels are grouped into vecs because they are all the same and either originate
+/// or terminate at the same actor. This simplifies code to allow for indexing of channels.
+fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, insert_me: Channel) {
+
+    if insert_me.part_of_bundle {
+        if let Some(x) = collection.iter_mut().find(|f|
+                 f[0].part_of_bundle
+                 && f[0].name.eq(&insert_me.name) // we all agree on the name
+                 && f[0].capacity.eq(&insert_me.capacity) // we all agree on the capacity
+                 && f[0].from_mod.eq(&insert_me.from_mod) // we all agree where our type is defined
+                 && f[0].message_type.eq(&insert_me.message_type) // we all agree on the type
+                 && f[0].copy.eq(&insert_me.copy) // we all agree on the copy semantics
+        ) { //this is clearly part of the same bundle
+            x.push(insert_me);
+        } else {
+            collection.push(vec![insert_me]);
+        }
+    } else {
+        collection.push(vec![insert_me]);
+    }
+
+
+
 }
 ////////
 ///////
@@ -326,6 +342,7 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
     use crate::extract_details;
     use crate::extract_details::*;
 
@@ -363,12 +380,13 @@ mod tests {
 
     #[test]
     fn test_extract_gurth_from_edge_label() {
-        let label = "Gurth *3";
-        assert_eq!(extract_gurth_from_edge_label(label), 3);
+        let label = "Gurth *B";
+        assert_eq!(extract_gurth_from_edge_label(label),true);
 
         // Test default gurth
         let label_missing_gurth = "No gurth specified";
-        assert_eq!(extract_gurth_from_edge_label(label_missing_gurth), 1);
+        assert_eq!(extract_gurth_from_edge_label(label_missing_gurth),false);
+
     }
 
     #[test]

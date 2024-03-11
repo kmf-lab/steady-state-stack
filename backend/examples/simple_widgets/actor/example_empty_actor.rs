@@ -21,17 +21,15 @@ pub async fn run(monitor: SteadyContext
     let mut monitor = monitor.into_monitor([&rx], [&tx]);
     let mut state = SomeLocalState{};
 
-    let mut rx_guard = rx.lock().await;
-    let mut tx_guard = tx.lock().await;
-    let rx = &mut *rx_guard;
-    let tx = &mut *tx_guard;
+    let mut rx = rx.lock().await;
+    let mut tx = tx.lock().await;
 
     loop {
         //single pass of work, do not loop in here
         if iterate_once( &mut monitor
                         , &mut state
-                        , tx
-                        , rx).await {
+                        , &mut tx
+                        , &mut rx).await {
             break Ok(());
         }
         //this is an example of an telemetry running periodically
@@ -50,10 +48,8 @@ pub async fn run(monitor: SteadyContext
 
     let mut monitor = monitor.into_monitor([&rx], [&tx]);
 
-    let mut rx_guard = rx.lock().await;
-    let mut tx_guard = tx.lock().await;
-    let rx = &mut *rx_guard;
-    let tx = &mut *tx_guard;
+    let mut rx = rx.lock().await;
+    let mut tx = tx.lock().await;
 
     let mut state = SomeLocalState{};
 
@@ -61,8 +57,8 @@ pub async fn run(monitor: SteadyContext
         //single pass of work, do not loop in here
         if iterate_once( &mut monitor
                         , &mut state
-                      , tx
-                      , rx).await {
+                      , &mut tx
+                      , &mut rx).await {
             break Ok(());
         }
         //when the outgoing pipe is full or the input is empty we do not want to spin

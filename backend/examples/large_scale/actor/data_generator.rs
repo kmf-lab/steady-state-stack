@@ -1,6 +1,10 @@
 use std::error::Error;
 use std::mem;
+use std::sync::Arc;
 use bytes::Bytes;
+use futures::future::{join_all, try_join_all};
+use futures::lock::{Mutex, MutexGuard, MutexLockFuture};
+use futures::stream::FuturesOrdered;
 #[allow(unused_imports)]
 use log::*;
 use rand::{Rng, thread_rng};
@@ -18,8 +22,8 @@ pub struct Packet {
 
 #[cfg(not(test))]
 #[allow(unreachable_code)]
-pub async fn run<const GURTH:usize>(context: SteadyContext
-                                  , tx: SteadyTxBundle<Packet,GURTH>) -> Result<(),Box<dyn Error>> {
+pub async fn run<const GIRTH:usize>(context: SteadyContext
+                                    , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
 
      let gen_rate_micros = if let Some(a) = context.args::<Args>() {
@@ -28,16 +32,19 @@ pub async fn run<const GURTH:usize>(context: SteadyContext
         10_000 //default
     };
 
-    let mut monitor = context.into_monitor([], SteadyBundle::tx_def_slice(&tx));
+    let mut monitor = context.into_monitor([], tx.def_slice());
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
 
-    let mut buffers:[Vec<Packet>;GURTH] = [ARRAY_REPEAT_VALUE;GURTH];
-    let capacity = tx[0].lock().await.capacity();
+    let mut buffers:[Vec<Packet>; GIRTH] = [ARRAY_REPEAT_VALUE; GIRTH];
+
+    let mut tx:TxBundle<Packet> = tx.lock().await;
+
+    let capacity = tx[0].capacity();
     let limit:usize = capacity/4;
 
     while monitor.is_running(
-        &mut || SteadyBundle::mark_closed(&tx) ) {
+        &mut || tx.mark_closed()) {
 
         loop {
             let route = thread_rng().gen::<u16>();
@@ -53,13 +60,10 @@ pub async fn run<const GURTH:usize>(context: SteadyContext
         }
 
         //repeat
-        for i in 0..GURTH {
+        for i in 0..GIRTH {
             let iter = mem::replace(&mut buffers[i], Vec::new()).into_iter();
-
-            let mut lock = tx[i].lock().await;
-            let tx = &mut *lock;
-            monitor.wait_vacant_units(tx, buffers[i].len()).await;
-            monitor.send_iter_until_full(tx,iter);
+            monitor.wait_vacant_units(&mut tx[i], buffers[i].len()).await;
+            monitor.send_iter_until_full(&mut tx[i],iter);
         }
         monitor.relay_stats_smartly().await;
         //monitor.relay_stats_periodic(Duration::from_micros(gen_rate_micros)).await;
@@ -79,12 +83,15 @@ pub async fn run<const GURTH:usize>(context: SteadyContext
     let mut monitor = context.into_monitor([], SteadyBundle::tx_def_slice(&tx));
 
 
-    let mut tx_guard = tx[0].lock().await;
-    let tx = &mut *tx_guard;
+    let tx = try_join_all(tx.iter().map(|m| m.lock())).await.expect("Internal lock failure");
+
 
 
     loop {
-         relay_test(& mut monitor, tx).await;
+         tx[0].wait_vacant_units(1).await;
+
+
+  //       relay_test(& mut monitor, &mut tx).await;
          monitor.relay_stats_smartly().await;
    }
 }

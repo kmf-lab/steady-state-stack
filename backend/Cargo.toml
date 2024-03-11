@@ -50,6 +50,9 @@ no-default-features = true
 # Ensure 'telemetry_server' is not listed here since docs.rs does not support it
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
+#[patch.crates-io]
+#atty = { git = "https://yourforkurl/atty.git", branch = "your-fix-branch" }
+#crossbeam-utils = { git = "https://yourforkurl/crossbeam-utils.git", branch = "your-fix-branch" }
 
 
 [dependencies]
@@ -76,7 +79,8 @@ const_panic      = "0.2.8" # for const panic!()
 hdrhistogram     = "7.5.4"  # for latency histograms
 rand             = "0.8.5" # for random number generation
 bytes            = { version = "1.5.0", features = [] }
-time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] } # for time formatting and supports no-std
+time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] }
+futures-util = "0.3.30" # for time formatting and supports no-std
 #stun-rs          = "0.1.5"  # for stun server
   #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
@@ -132,6 +136,3 @@ rand_distr       = "0.4.2" # for random number generation
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"
 
-[[bin]]
-name = "new_project"
-path = "bin/generate.rs"

@@ -21,7 +21,7 @@ use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 #[allow(unused_imports)]
 use log::*;
 use ringbuf::storage::Heap;
-use crate::{AlertColor, config, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyBundle, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger, Tx};
+use crate::{AlertColor, config, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger, Tx};
 use crate::actor_builder::Percentile;
 use crate::monitor::ChannelMetaData;
 
@@ -124,8 +124,10 @@ impl ChannelBuilder {
             rx_vec.push(r);
         });
 
-        (SteadyBundle::tx_new_bundle::<T, GIRTH>(tx_vec), SteadyBundle::rx_new_bundle::<T, GIRTH>(rx_vec))
+        ( Arc::new(tx_vec.try_into().expect("Incorrect length"))
+        , Arc::new(rx_vec.try_into().expect("Incorrect length"))    )
     }
+
 
     /// Sets the capacity for the channel being built.
     ///
