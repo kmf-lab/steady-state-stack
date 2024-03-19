@@ -42,7 +42,9 @@ pub async fn run(context: SteadyContext
     Ok(())
 }
 
-fn single_iteration(monitor: &mut LocalMonitor<1, 1>, mut rx: &mut MutexGuard<Rx<Packet>>, mut tx: &mut MutexGuard<Tx<Packet>>, count: usize) {
+fn single_iteration(monitor: &mut LocalMonitor<1, 1>
+                    , mut rx: &mut Rx<Packet>
+                    , mut tx: &mut MutexGuard<Tx<Packet>>, count: usize) {
     for _ in 0..count {
         if let Some(packet) = monitor.try_take(&mut rx) {
             if let Err(e) = monitor.try_send(&mut tx, packet) {

@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::mem;
 use bytes::Bytes;
+use futures_util::future::try_join_all;
 
 #[allow(unused_imports)]
 use log::*;
@@ -71,9 +72,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
     let mut monitor = context.into_monitor([], tx.def_slice());
 
-    let tx = try_join_all(tx.iter().map(|m| m.lock())).await.expect("Internal lock failure");
-
-
+    let mut tx:TxBundle<Packet> = tx.lock().await;
 
     loop {
          tx[0].wait_vacant_units(1).await;

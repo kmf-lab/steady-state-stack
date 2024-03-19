@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::error::Error;
 use std::ops::{ Deref, DerefMut};
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
-use futures::lock::Mutex;
 
 #[allow(unused_imports)]
 use log::*; //allow unused import
@@ -11,6 +11,7 @@ use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
 use crate::{config, RxDef, SteadyContext, SteadyTx, Tx, util};
 
 use futures::future::*;
+use futures_util::lock::{MutexGuard, MutexLockFuture};
 
 use crate::graph_liveliness::ActorIdentity;
 use crate::telemetry::{metrics_collector, metrics_server};
@@ -46,6 +47,17 @@ struct RawDiagramState {
     future_send: Vec<i128>, //these are for the next frame if we ended up with too many items.
 }
 
+
+fn lock_if_some<'a, T: Send + 'a + Sync>(opt_lock: &'a Option<SteadyTx<T>>)
+    -> Pin<Box<dyn Future<Output = Option<MutexGuard<'a, Tx<T>>>> + Send + 'a>> {
+    Box::pin(async move {
+        match opt_lock {
+            Some(lock) => Some(lock.lock().await),
+            None => None,
+        }
+    })
+}
+
 //TODO: the collector is starting up after the others, this is not good. We need to start it first
 //      the init should be done at graph construction.
 //      the start should be after we build teh graph.
@@ -57,31 +69,46 @@ pub(crate) async fn run(context: SteadyContext
 ) -> Result<(),Box<dyn Error>> {
 
     let ident = context.identity();
-    let mut monitor:Option<_> = None;
-    if let Some(c) = &optional_server {
 
-        monitor =
-        if config::SHOW_TELEMETRY_ON_TELEMETRY {
-            //NOTE: this line makes this node monitored on the telemetry only when the server is monitored.
-            let  result = context.into_monitor([], [c]);
+    //todo: rather than options we may want to use a three way enum for this?
+    let mut optional_monitor:Option<_> = None;
+    let mut optional_context:Option<_> = None;
 
-            //TODO: add monitoring of the gathering channels. We have support for replaced
-            //    actors which rebuild the monitor channels on the fly matching the tx,rx count.
-            //    Something similar needs to be done here. The channels can be rebuilt each time
-            //    we discover the dynamic_senders_vec length has changed. This is a bit tricky
-            Some(result)
+    if config::SHOW_TELEMETRY_ON_TELEMETRY {
+        optional_monitor = if let Some(c) = &optional_server {
+            optional_context = None;
+            Some(context.into_monitor([], [c]))
         } else {
+            optional_context = Some(context);
             None
         };
-    }
+    } else {
+        optional_monitor = None;
+        optional_context = Some(context);
+    };
 
     let mut state = RawDiagramState::default();
 
     let mut scan: Option<Vec<Box<dyn RxDef>>> = None;
 
-    loop {
-        if let Some(ref mut monitor) = monitor {
-            monitor.relay_stats_smartly().await; //TODO: if this is not done must detect and give helpful warning.
+
+let mut svr = lock_if_some(&optional_server).await;
+
+loop {
+    //we do this here instead at the while because monitor is optional
+        if let Some(ref mut monitor) = optional_monitor {
+            monitor.relay_stats_smartly().await;
+            //TODO: keep running if dynamic_senders_vec are no empty and still open
+            //      this requires us to add the closed logic on the other end.
+            if !monitor.is_running(&mut || svr.iter_mut().all(|mut s| s.mark_closed()) ) {
+                break;
+            }
+        } else {
+            if let Some(ref mut context) = optional_context {
+                if !context.is_running(&mut || svr.iter_mut().all(|mut s| s.mark_closed()) ) {
+                    break;
+                }
+            }
         }
 
         //we wait here without holding the large lock
@@ -99,7 +126,6 @@ pub(crate) async fn run(context: SteadyContext
         }
 
         let (nodes, to_pop) = {
-
             //we want to drop this as soon as we can
             //collect all the new data out of it release the guard then send the data
             //warn!("blocking on read");
@@ -159,12 +185,13 @@ pub(crate) async fn run(context: SteadyContext
             }
         }
         if let Some(nodes) = nodes {//only happens when we have new nodes
-             send_structure_details(ident, &optional_server, nodes).await;
+             send_structure_details(ident, &mut svr, nodes).await;
         }
-        send_data_details(ident, &optional_server, &state).await;
+        send_data_details(ident, &mut svr, &state).await;
 
-        state.sequence += 1; //increment next frame
+    state.sequence += 1; //increment next frame
     }
+    Ok(())
 }
 
 fn collect_futures_for_one_frame(scan: &[Box<dyn RxDef>]) -> Vec<BoxFuture<()>> {
@@ -311,14 +338,11 @@ fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &[Collector
     Some(nodes)
 }
 
-async fn send_structure_details(ident: ActorIdentity, consumer: &Option<Arc<Mutex<Tx<DiagramData>>>>
+async fn send_structure_details(ident: ActorIdentity, consumer: &mut Option<MutexGuard<'_, Tx<DiagramData>>>
                                 , nodes: Vec<DiagramData>
                            ) {
 
-    if let Some(c) = consumer {
-            let mut c_guard = c.lock().await;
-            let c = c_guard.deref_mut();
-
+    if let Some(ref mut c) = consumer {
            // info!("sending count of {} ", nodes.len());
             let mut to_send = nodes.into_iter();
             let _count = c.send_iter_until_full(&mut to_send);
@@ -330,13 +354,10 @@ async fn send_structure_details(ident: ActorIdentity, consumer: &Option<Arc<Mute
     }
 }
 
-async fn send_data_details(ident: ActorIdentity, consumer: &Option<Arc<Mutex<Tx<DiagramData>>>>, state: &RawDiagramState) {
+async fn send_data_details(ident: ActorIdentity, consumer: &mut Option<MutexGuard<'_, Tx<DiagramData>>>, state: &RawDiagramState) {
     //info!("compute send_edge_details {:?} {:?}",state.running_total_sent,state.running_total_take);
 
-    if let Some(consumer) = consumer {
-
-        let mut c_guard = consumer.lock().await;
-        let consumer = c_guard.deref_mut();
+    if let Some(ref mut consumer) = consumer {
 
         //TODO: should be false for debug and true for release.
         let _ = consumer.send_async(ident, DiagramData::NodeProcessData(state.sequence

@@ -54,7 +54,7 @@ fn main() {
     }
 
 
-    graph.block_until_stopped(Duration::from_secs(3));
+    graph.block_until_stopped(Duration::from_secs(7));
 
 }
 

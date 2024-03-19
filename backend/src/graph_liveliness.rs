@@ -1,7 +1,6 @@
 use crate::util;
 use std::ops::DerefMut;
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicUsize};
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
 use std::process::exit;
@@ -9,6 +8,7 @@ use log::{error, warn};
 use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::AtomicUsize;
 use std::task::{Context, Poll};
 use futures::channel::oneshot;
 use futures_timer::Delay;

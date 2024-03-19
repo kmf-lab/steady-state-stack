@@ -46,13 +46,23 @@ async fn single_iteration<const GIRTH:usize>(monitor: &mut LocalMonitor<1, GIRTH
                                              , block_size: u16
                                              , mut rx: &mut MutexGuard<'_, Rx<Packet>>
                                              , tx: &mut Vec<MutexGuard<'_, Tx<Packet>>>) {
-    while let Some(packet) = monitor.try_peek(&mut rx) {
-        let index = ((packet.route / block_size) as usize) % tx.len();
+    while let Some(peek_packet_ref) = monitor.try_peek(&mut rx) {
+        let index = ((peek_packet_ref.route / block_size) as usize) % tx.len();
 
-        let to_send = packet.clone();
-        let _ = monitor.send_async(&mut tx[index], to_send, true).await;
-        let consumed = monitor.try_take(&mut rx);
-        assert!(consumed.is_some());
+        if true {
+            if let Some(t) = monitor.try_take(&mut rx) {
+                let _ = monitor.send_async(&mut tx[index], t, true).await;
+            }
+        } else {
+            //this unused block shows how you can peek and do processing then send
+            //so you can ensure no packet is ever lost even upon panic.
+            //NOTE: this adds cost due to the required clone()
+            let new_copy = peek_packet_ref.clone();
+            let _ = monitor.send_async(&mut tx[index], new_copy, true).await;
+            let consumed = monitor.try_take(&mut rx);
+            assert!(consumed.is_some());
+        }
+
         monitor.relay_stats_smartly().await;
     }
 }

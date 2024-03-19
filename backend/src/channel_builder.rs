@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic};
 use futures::lock::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 
 pub(crate) type ChannelBacking<T> = Heap<T>;

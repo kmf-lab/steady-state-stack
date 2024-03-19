@@ -2,12 +2,12 @@ use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::process::exit;
 use std::sync::{Arc};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU16, AtomicU64};
 use std::time::{Duration, Instant};
 use log::*;
 use num_traits::Zero;
 use ringbuf::traits::Observer;
-use crate::{config, Graph, MONITOR_NOT, MONITOR_UNKNOWN, SteadyContext, telemetry};
+use crate::{config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SteadyContext, telemetry};
 use crate::channel_builder::ChannelBuilder;
 use crate::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
 use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
@@ -87,7 +87,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         }
     }
 
-        let calls:[AtomicU64;6] = [AtomicU64::new(0),AtomicU64::new(0),AtomicU64::new(0),AtomicU64::new(0),AtomicU64::new(0),AtomicU64::new(0)];
+    let calls:[AtomicU16;6] = [AtomicU16::new(0),AtomicU16::new(0),AtomicU16::new(0),AtomicU16::new(0),AtomicU16::new(0),AtomicU16::new(0)];
     let telemetry_actor =
         Some(SteadyTelemetryActorSend {
             tx: act_tuple.0,
@@ -98,7 +98,6 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
             calls,
             count_restarts: that.count_restarts.clone(),
             bool_stop: false,
-            base_instant_nanos: Instant::now().elapsed().as_nanos(),
         });
 
     let telemetry_send_rx = rx_tuple.0;
@@ -205,12 +204,20 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                             let scale = calculate_exponential_channel_backoff(capacity, vacant_units);
                             if last_elapsed.as_micros() < scale as u128 * config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u128 {
 
-                                //data is backing up why is the consumer not..
-                                if scale>30 {
-                                    error!("{:?} EXIT hard delay on actor status: {} empty{} of{}",this.ident,scale,vacant_units,capacity);
-                                    exit(-1);
+                                if let Ok(guard) = this.runtime_state.read() {
+                                    let state = guard.deref();
+                                    //if we are not shutting down we may need to report this error
+                                    if !state.is_in_state(&[GraphLivelinessState::StopRequested
+                                                                  ,GraphLivelinessState::Stopped
+                                                                  ,GraphLivelinessState::StoppedUncleanly]) {
+                                        if scale>30 {
+                                            //TODO: this hard exit to be removed when we release version 1
+                                            error!("{:?} EXIT hard delay on actor status: {} empty{} of{}",this.ident,scale,vacant_units,capacity);
+                                            error!("assume metrics_collector has died and is not consuming messages");
+                                            exit(-1);
+                                        }
+                                    }
                                 }
-
                                 //we have discovered that the consumer is not keeping up
                                 //so we will make use of the exponential backoff.
                                 return;
@@ -246,13 +253,21 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                                 let now = Instant::now();
                                 let dif = now.duration_since(actor_status.last_telemetry_error);
                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
-                                    //Check metrics_consumer for slowness
-                                    warn!("full telemetry state channel detected from {:?} value:{:?} full:{:?} capacity: {:?} "
+
+                                    if let Ok(guard) = this.runtime_state.read() {
+                                        let state = guard.deref();
+                                        //if we are not shutting down we may need to report this error
+                                        if !state.is_in_state(&[GraphLivelinessState::StopRequested
+                                            , GraphLivelinessState::Stopped
+                                            , GraphLivelinessState::StoppedUncleanly]) {
+                                            //Check metrics_consumer for slowness
+                                            warn!("full telemetry state channel detected from {:?} value:{:?} full:{:?} capacity: {:?} "
                                              , this.ident, a, tx.is_full(), tx.tx.capacity());
+                                            //store time to do this again later.
+                                            actor_status.last_telemetry_error = now;
+                                        }
+                                    }
 
-
-                                    //store time to do this again later.
-                                    actor_status.last_telemetry_error = now;
 
                                 }
                                 false

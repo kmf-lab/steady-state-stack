@@ -15,14 +15,30 @@ use futures::io::SeekFrom;
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 #[allow(unused_imports)]
 use std::fs::{create_dir_all, File, OpenOptions};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use std::task::Context;
 use futures::future::pending;
 use futures::FutureExt;
+use futures_util::lock::{Mutex, MutexGuard};
 
 pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), std::io::Error> {
     Handle::<File>::new(file)?.write_all(data).await?;
     Result::<(), std::io::Error>::Ok(())
 }
+
+/*
+fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>>>)
+                                               -> Pin<Box<dyn Future<Output = Option<MutexGuard<'a, T>>> + Send + 'a>> {
+    Box::pin(async move {
+        match opt_lock {
+            Some(lock) => Some(lock.lock().await),
+            None => None,
+        }
+    })
+}
+*/
 
 
     /// Initializes logging for the application using the provided log level.

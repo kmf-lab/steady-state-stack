@@ -101,7 +101,7 @@ mod tests {
 
         util::logger::initialize();
 
-        let mut graph = Graph::new("");
+        let graph = Graph::new("");
 
 
 

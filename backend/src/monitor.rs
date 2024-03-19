@@ -7,7 +7,6 @@ use std::ops::*;
 use std::time::{Duration, Instant};
 
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*; //allowed for all modules
@@ -16,6 +15,7 @@ use futures::future::{pending, select_all};
 use std::task::Context;
 use futures_timer::Delay;
 use std::future::Future;
+use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, Ordering};
 
 use futures::FutureExt;
 use crate::{AlertColor, config, MONITOR_NOT, MONITOR_UNKNOWN, Rx, RxBundle, RxDef, StdDev, SteadyRx, SteadyTx, telemetry, Trigger, Tx, TxBundle};
@@ -65,12 +65,16 @@ pub struct SteadyTelemetryActorSend {
     //move these 3 into a cell so we can do running counts with requiring mut
     pub(crate) await_ns_unit:      AtomicU64,
     pub(crate) hot_profile:        AtomicU64,
-    pub(crate) calls:             [AtomicU64; 6],
-    pub(crate) base_instant_nanos: u128,
+    pub(crate) calls:             [AtomicU16; 6],
 
 }
 
 impl SteadyTelemetryActorSend {
+
+
+    fn local_now_nanos(&self) -> u64 {
+        Instant::now().elapsed().as_nanos() as u64
+    }
 
     pub(crate) fn status_reset(&mut self) {
 
@@ -675,7 +679,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     fn start_hot_profile(&self, x: usize) {
         if let Some(ref st) = self.telemetry_state {
             let _ = st.calls[x].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-            st.hot_profile.store((Instant::now().elapsed().as_nanos().saturating_sub(st.base_instant_nanos)) as u64, Ordering::Relaxed);
+            st.hot_profile.store(st.local_now_nanos(), Ordering::Relaxed);
         };
     }
 
@@ -683,11 +687,10 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     fn rollup_hot_profile(&self) {
         if let Some(ref st) = self.telemetry_state {
             let prev = st.hot_profile.load(Ordering::Relaxed);
-            let now = (Instant::now().elapsed().as_nanos().saturating_sub(st.base_instant_nanos)) as u64;
-            let _ = st.await_ns_unit.fetch_update(Ordering::Relaxed,Ordering::Relaxed,|f| Some((f+now).saturating_sub(prev)));
-
+            let _ = st.await_ns_unit.fetch_update(Ordering::Relaxed,Ordering::Relaxed,|f| Some((f+st.local_now_nanos()).saturating_sub(prev)));
         }
     }
+
 
 
     pub async fn wait_avail_units_bundle<T>(& mut self

@@ -42,14 +42,17 @@ pub(crate) async fn run(context: SteadyContext
 
     let liveliness = context.liveliness();
 
-    let mut monitor:Option<_> =
+    let mut optional_monitor:Option<_> = None;
+    let mut optional_context:Option<_> = None;
+
     if config::SHOW_TELEMETRY_ON_TELEMETRY {
-        //NOTE: this line makes this node monitored on the telemetry
-        let result = context.into_monitor([&rx], []);
-        Some(result)
+        optional_context = None;
+        optional_monitor = Some(context.into_monitor([&rx], []));
     } else {
-        None
+        optional_monitor = None;
+        optional_context = Some(context);
     };
+
 
 
     let mut rx_guard = rx.lock().await;
@@ -106,15 +109,18 @@ pub(crate) async fn run(context: SteadyContext
 
     loop {
 
-       //
-       // //TODO: not sure how I want to support monitoring of the monitors yet
-       //  let c: bool = monitor.map_or_else(
-       //      || rx.is_empty(), // This lambda is executed if monitor is None
-       //      |mut monitor| monitor.is_empty(rx), // This lambda is executed if monitor is Some
-       //  );
-
-
-
+        if let Some(ref mut monitor) = optional_monitor {
+            monitor.relay_stats_smartly().await;
+            if !monitor.is_running(&mut || rx.is_empty() && rx.is_closed() ){
+                break;
+            }
+        } else {
+            if let Some(ref mut context) = optional_context {
+                if !context.is_running(&mut || rx.is_empty() && rx.is_closed() ) {
+                    break;
+                }
+            }
+        }
 
         select! {
             _ = server_handle.as_mut().fuse() => {
@@ -122,10 +128,13 @@ pub(crate) async fn run(context: SteadyContext
                 break;
             },
             mut msg = rx.take_async().fuse() => {
+
+                 //stay and process as much as we can
                  loop {
-                        if let Some(ref mut monitor) = monitor {
+                        if let Some(ref mut monitor) = optional_monitor {
                             monitor.relay_stats_smartly().await; //TODO: if this is not done must detect and give helpful warning.
                         }
+
                       match msg {
                              Some(DiagramData::NodeDef(seq, defs)) => {
                                 // these are all immutable constants for the life of the node
