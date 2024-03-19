@@ -55,8 +55,7 @@ impl Node {
 
         let (label, color, pen_width) = self.stats_computer.compute(mcpu, work
                                         , actor_status.total_count_restarts
-                                        , actor_status.bool_stop
-                                        , actor_status.redundancy);
+                                        , actor_status.bool_stop);
         self.display_label = label;
         self.color = color;
         self.pen_width = pen_width;

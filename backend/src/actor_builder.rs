@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicU32, AtomicUsize};
 use std::time::Duration;
 use bastion::*;
 use bastion::supervisor::*;
+use futures::channel::oneshot;
+use futures_util::lock::Mutex;
 use log::*;
 use crate::{AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
@@ -50,6 +52,7 @@ pub struct ActorBuilder {
     avg_mcpu: bool,
     avg_work: bool,
     supervisor: SupervisorRef,
+    oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
 }
 
 /// Defines the strategies for supervising groups of child actors or processes within a system.
@@ -126,7 +129,7 @@ impl ActorBuilder {
             supervisor: default_super,
             refresh_rate_in_bits: 6, // 1<<6 == 64
             window_bucket_in_bits: 5, // 1<<5 == 32
-
+            oneshot_shutdown_vec: graph.oneshot_shutdown_vec.clone(),
             percentiles_mcpu: Vec::new(),
             percentiles_work: Vec::new(),
             std_dev_mcpu: Vec::new(),
@@ -398,6 +401,7 @@ impl ActorBuilder {
             }
         );
 
+
         let _ = self.supervisor.children(|children| {
 
             let count_restarts = Arc::new(AtomicU32::new(0));
@@ -425,6 +429,7 @@ impl ActorBuilder {
                                     all_telemetry_rx: telemetry_tx.clone(),
                                     count_restarts: count_restarts.clone(),
                                     actor_metadata: actor_metadata.clone(),
+                                    oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
                 };
                 let future = exec(monitor);
 

@@ -15,7 +15,7 @@ use askama::Template;
 ///
 /// Actor Notation:
 /// - Define actors with a name.
-/// - Document the actor's module, consume pattern, driver patterns, and redundancy using a label.
+/// - Document the actor's module, consume pattern, and driver patterns using a label.
 ///   - Module: Use `mod::ModuleName` to specify the Rust module name.
 ///   - Driver Patterns: Specify activation triggers using AtLeastEvery, OnEvent etc and combine conditions with `&&`
 ///      - AtLeastEvery: Denote a minimum time interval between actor activations.
@@ -54,8 +54,8 @@ use askama::Template;
 pub(crate) enum ActorDriver {
     AtLeastEvery(Duration),
     AtMostEvery(Duration),
-    EventDriven(Vec<(String,usize)>), //source_node, available batch required
-    CapacityDriven(Vec<(String,usize)>), //target_node, vacant batch required
+    EventDriven(Vec<Vec<String>>), //source_node, available batch required
+    CapacityDriven(Vec<Vec<String>>), //target_node, vacant batch required
     Other(Vec<String>),
 }
 
@@ -134,6 +134,9 @@ pub(crate) struct ActorTemplate {
     pub(crate) has_bundles: bool,
     pub(crate) rx_channels: Vec<Vec<Channel>>,
     pub(crate) tx_channels: Vec<Vec<Channel>>,
+    pub(crate) rx_monitor_defs: Vec<String>,
+    pub(crate) tx_monitor_defs: Vec<String>,
+    pub(crate) full_driver_block: String,
     pub(crate) message_types_to_use: Vec<String>, //full namespace
     pub(crate) message_types_to_define: Vec<String>, //struct name, with copy trate?
 

@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::time::Duration;
 
 #[allow(unused_imports)]
 use log::*;
@@ -43,6 +42,9 @@ pub async fn run(context: SteadyContext
 
     //predicate which affirms or denies the shutdown request
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed()) {
+
+        monitor.wait_avail_units(&mut rx,1).await;
+
         //single pass of work, in this high volume example we stay in iterate_once as long
         //as the input channel as more work to process.
         if iterate_once(&mut monitor, &mut state, &mut rx).await {
@@ -67,7 +69,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonito
     while !rx.is_empty() {
             let count = monitor.take_slice(rx, &mut state.buffer);
             for x in 0..count {
-               process_msg(state, Ok(state.buffer[x].to_owned()));
+               process_msg(state, Some(state.buffer[x].to_owned()));
             }
 
             //based on the channel capacity this will send batched updates so most calls do nothing.
@@ -81,13 +83,13 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonito
 }
 
 #[inline]
-fn process_msg(state: &mut InternalState, msg: Result<ApprovedWidgets, String>) {
+fn process_msg(state: &mut InternalState, msg: Option<ApprovedWidgets>) {
     match msg {
-        Ok(m) => {
+        Some(m) => {
             state.last_approval = Some(m);
             //trace!("received: {:?}", m.to_owned());
         },
-        Err(_msg) => {
+        None => {
             state.last_approval = None;
             //error!("Unexpected error recv_async: {}",_msg);
         }
@@ -100,16 +102,14 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
     let mut monitor = context.into_monitor([&rx], []);
 
-    //guards for the channels, NOTE: we could share one channel across actors.
-    let mut rx_guard = rx.lock().await;
-    let rx = &mut *rx_guard;
+    let mut rx = rx.lock().await;
 
+    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed()) {
 
-    loop {
-        relay_test(&mut monitor, rx).await;
-        if false {
-            break;
-        }
+        monitor.wait_avail_units(&mut rx,1).await;
+
+        relay_test(&mut monitor, &mut rx).await;
+
     }
     Ok(())
 }

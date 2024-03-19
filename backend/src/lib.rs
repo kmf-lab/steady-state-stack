@@ -42,7 +42,7 @@ use std::collections::HashMap;
 
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize};
 use futures::lock::{Mutex, MutexLockFuture};
 use std::ops::{Deref, DerefMut};
 use std::future::ready;
@@ -67,19 +67,21 @@ use futures::*; // Provides the .fuse() method
 
 // Re-exporting Bastion blocking for use in actors
 pub use bastion::blocking;
+use bastion::run;
+use futures::channel::oneshot;
 use futures::future::{BoxFuture, join_all, JoinAll, select_all};
 
 
 use futures::select;
-use futures::stream::FuturesOrdered;
+use futures_util::future::FusedFuture;
 use futures_util::lock::MutexGuard;
 use crate::graph_testing::EdgeSimulator;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
 
-pub type SteadyTxBundle<T,const GURTH:usize> = Arc<[Arc<Mutex<Tx<T>>>;GURTH]>;
-pub type SteadyRxBundle<T,const GURTH:usize> = Arc<[Arc<Mutex<Rx<T>>>;GURTH]>;
+pub type SteadyTxBundle<T,const GIRTH:usize> = Arc<[Arc<Mutex<Tx<T>>>;GIRTH]>;
+pub type SteadyRxBundle<T,const GIRTH:usize> = Arc<[Arc<Mutex<Rx<T>>>;GIRTH]>;
 
 
 pub type TxBundle<'a, T> = Vec<MutexGuard<'a, Tx<T>>>;
@@ -107,6 +109,7 @@ pub struct SteadyContext {
     pub(crate) count_restarts: Arc<AtomicU32>,
     pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
     pub(crate) actor_metadata: Arc<ActorMetaData>,
+    pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
 }
 
 impl SteadyContext {
@@ -220,7 +223,6 @@ impl SteadyContext {
             ident: self.ident,
             ctx: self.ctx,
             runtime_state: self.runtime_state,
-
             #[cfg(test)]
             test_count: HashMap::new(),
         }
@@ -237,6 +239,7 @@ pub struct Graph  {
     //used by collector but could grow if we get new actors at runtime
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
+    pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
 }
 
 impl Graph {
@@ -261,6 +264,7 @@ impl Graph {
             all_telemetry_rx,
             runtime_state: self.runtime_state.clone(),
             count_restarts,
+            oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
         }
     }
 }
@@ -298,14 +302,16 @@ pub struct Tx<T> {
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
     pub(crate) local_index: usize,
     pub(crate) last_error_send: Instant,
-    pub(crate) is_closed: Arc<AtomicBool>, //only on shutdown
+    pub(crate) make_closed: Option<oneshot::Sender<()>>,
+    pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
 }
 
 pub struct Rx<T> {
     pub(crate) rx: InternalReceiver<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
     pub(crate) local_index: usize,
-    pub(crate) is_closed: Arc<AtomicBool>, //only on shutdown
+    pub(crate) is_closed: oneshot::Receiver<()>,
+    pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
 }
 
 ////////////////////////////////////////////////////////////////
@@ -314,8 +320,11 @@ impl<T> Tx<T> {
     ///the Rx should not expect any more messages than those already found
     ///on the channel. This is a signal that this actor has probably stopped
     pub fn mark_closed(&mut self) -> bool {
-        self.is_closed.store(true, Ordering::SeqCst);
-        true  //successful mark as closed
+        if let Some(c) = self.make_closed.take() {
+            c.send(()).is_ok()
+        } else {
+            false
+        }
     }
 
 
@@ -447,7 +456,7 @@ impl<T> Tx<T> {
     ///
     /// # Example Usage
     /// Use this method to delay message sending until there's sufficient space, suitable for scenarios where message delivery must be paced or regulated.
-    pub async fn wait_vacant_units(&self, count: usize) {
+    pub async fn wait_vacant_units(&mut self, count: usize) -> bool {
         self.shared_wait_vacant_units(count).await
     }
 
@@ -456,7 +465,7 @@ impl<T> Tx<T> {
     ///
     /// # Example Usage
     /// Ideal for scenarios where a clean state is required before proceeding, such as before shutting down a system or transitioning to a new state.
-    pub async fn wait_empty(&self) {
+    pub async fn wait_empty(&mut self) -> bool {
         self.shared_wait_empty().await
     }
 
@@ -505,17 +514,25 @@ impl<T> Tx<T> {
         self.tx.vacant_len()
     }
     #[inline]
-    async fn shared_wait_vacant_units(&self, count: usize) {
-        self.tx.wait_vacant(count).await
+    async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
+        let mut one_down = &mut self.oneshot_shutdown;
+        let mut operation = &mut self.tx.wait_vacant(count);
+        select! { _ = one_down => false, _ = operation => true, }
     }
 
     #[inline]
-    async fn shared_wait_empty(&self) {
-        self.tx.wait_vacant(usize::from(self.tx.capacity())).await
+    async fn shared_wait_empty(&mut self) -> bool {
+        let mut one_down = &mut self.oneshot_shutdown;
+        let mut operation = &mut self.tx.wait_vacant(usize::from(self.tx.capacity()));
+        select! { _ = one_down => false, _ = operation => true, }
     }
 
     #[inline]
     async fn shared_send_async(& mut self, msg: T, ident: ActorIdentity, saturation_ok: bool) -> Result<(), T> {
+
+        //by design, we ignore the runtime state because even if we are shutting down we
+        //still want to wait for room for our very last message
+
         match self.tx.try_push(msg) {
             Ok(_) => {Ok(())},
             Err(msg) => {
@@ -535,21 +552,13 @@ impl<T> Tx<T> {
                     }
                     // here we will wait until there is room in the channel
                 }
-                //TODO: a timeout here may be a good idea also abandon on shutdown
-
-                select! {
-                    _ = self.tx.wait_vacant(1).fuse() => {
-                        match self.tx.push(msg).await {
-                            Ok(_) => {Ok(())}
-                            Err(_) => { //should not happen, internal error
+                match self.tx.push(msg).await {
+                    Ok(_) => {Ok(())}
+                    Err(_) => { //should not happen, internal error
                                 error!("channel is closed");
                                 Ok(())
-                            }
-                        }
-
                     }
                 }
-
             }
         }
     }
@@ -612,9 +621,12 @@ impl<T> Rx<T> {
         }
     }
 
+    pub fn wait_closed(&mut self) -> bool {
+        run!(&mut self.is_closed).is_ok()
+    }
 
     pub fn is_closed(&self) -> bool {
-        self.is_closed.load(Ordering::SeqCst)
+        self.is_closed.is_terminated()
     }
 
     /// Returns the total capacity of the channel.
@@ -722,7 +734,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Suitable for async processing where messages are consumed one at a time as they become available.
-    pub async fn take_async(& mut self) -> Result<T,String> {
+    pub async fn take_async(& mut self) -> Option<T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_take_async().await
@@ -815,10 +827,11 @@ impl<T> Rx<T> {
     /// # Example Usage
     /// Suitable for scenarios requiring batch processing where a certain number of messages are needed before processing begins.
     #[inline]
-    pub async fn wait_avail_units(& mut self, count: usize) {
+    pub async fn wait_avail_units(& mut self, count: usize) -> bool {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
-        self.shared_wait_avail_units(count).await
+        self.shared_wait_avail_units(count).await;
+        false
     }
     //////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////
@@ -844,7 +857,7 @@ impl<T> Rx<T> {
     fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
         where T: Copy {
 
-        // TODO: rewrite
+        // TODO: rewrite when the new version is out
 
         let mut last_index = 0;
         for (i, e) in self.rx.iter().enumerate() {
@@ -862,7 +875,9 @@ impl<T> Rx<T> {
     #[inline]
     async fn shared_peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
         where T: Copy {
-        self.rx.wait_occupied(wait_for_count).await;
+        let mut one_down = &mut self.oneshot_shutdown;
+        let mut operation = &mut self.rx.wait_occupied(wait_for_count);
+        select! { _ = one_down => {}, _ = operation => {}, };
         self.shared_try_peek_slice(elems)
     }
 
@@ -874,16 +889,10 @@ impl<T> Rx<T> {
 
 
     #[inline]
-    async fn shared_take_async(& mut self) -> Result<T,String> {
-        // implementation favors a full channel
-        if let Some(m) = self.rx.try_pop() {
-            Ok(m)
-        } else {
-            match self.rx.pop().await {
-                Some(a) => { Ok(a) }
-                None => { Err("Producer is dropped".to_string()) }
-            }
-        }
+    async fn shared_take_async(& mut self) -> Option<T> {
+        let mut one_down = &mut self.oneshot_shutdown;
+        let mut operation = &mut self.rx.pop();
+        select! { _ = one_down => self.rx.try_pop(), p = operation => p, }
     }
 
     #[inline]
@@ -893,13 +902,17 @@ impl<T> Rx<T> {
 
     #[inline]
     async fn shared_peek_async(& mut self) -> Option<&T> {
-        self.rx.wait_occupied(1).await;
+        let mut one_down = &mut self.oneshot_shutdown;
+        let mut operation = &mut self.rx.wait_occupied(1);
+        select! { _ = one_down => {}, _ = operation => {}, };
         self.rx.first()
     }
 
     #[inline]
     async fn shared_peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
-        self.rx.wait_occupied(wait_for_count).await;
+        let mut one_down = &mut self.oneshot_shutdown;
+        let mut operation = &mut self.rx.wait_occupied(wait_for_count);
+        select! { _ = one_down => {}, _ = operation => {}, };
         self.rx.iter()
     }
 
@@ -913,9 +926,10 @@ impl<T> Rx<T> {
     }
 
     #[inline]
-    async fn shared_wait_avail_units(& mut self, count: usize) {
-        //TODO: we need a timeout here as well for better control
-        self.rx.wait_occupied(count).await
+    async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
+        let mut one_down = &mut self.oneshot_shutdown;
+        let mut operation = &mut self.rx.wait_occupied(count);
+        select! { _ = one_down => false, _ = operation => true}
     }
 
     #[inline]
@@ -974,10 +988,14 @@ impl <T: Send + Sync > RxDef for SteadyRx<T>  {
 pub trait SteadyTxBundleTrait<T,const GIRTH:usize> {
     fn lock(&self) -> JoinAll<MutexLockFuture<'_, Tx<T>>>;
     fn def_slice(&self) -> [& dyn TxDef; GIRTH];
-    async fn wait_vacant_units(&self
-                                                      , avail_count: usize
-                                                      , ready_channels: usize);
+    fn wait_vacant_units(&self
+                                  , avail_count: usize
+                                  , ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
 }
+
+
+
+
 impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyTxBundle<T, GIRTH> {
     fn lock(&self) -> JoinAll<MutexLockFuture<'_, Tx<T>>> {
         join_all(self.iter().map(|m| m.lock()))
@@ -991,6 +1009,7 @@ impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyT
             .expect("Internal Error")
     }
 
+
     async fn wait_vacant_units(&self
                                                           , avail_count: usize
                                                           , ready_channels: usize)
@@ -998,7 +1017,7 @@ impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyT
         let futures = self.iter().map(|tx| {
             let tx = tx.clone();
             async move {
-                let tx = tx.lock().await;
+                let mut tx = tx.lock().await;
                 tx.wait_vacant_units(avail_count).await;
             }.boxed() // Box the future to make them the same type
         });
@@ -1022,9 +1041,9 @@ impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyT
 pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     fn lock(&self) -> JoinAll<MutexLockFuture<'_, Rx<T>>>;
     fn def_slice(&self) -> [& dyn RxDef; GIRTH];
-    async fn wait_avail_units(&self
-                                                     , avail_count: usize
-                                                     , ready_channels: usize);
+    fn wait_avail_units(&self
+                                 , avail_count: usize
+                                 , ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
 }
 impl<T: std::marker::Send + std::marker::Sync, const GIRTH: usize> crate::SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> {
     fn lock(&self) -> JoinAll<MutexLockFuture<'_, Rx<T>>> {
@@ -1080,7 +1099,7 @@ pub trait RxBundleTrait {
 }
 impl<T> crate::RxBundleTrait for RxBundle<'_, T> {
     fn is_closed(&mut self) -> bool {
-        self.iter().all(|mut f| f.is_closed() )
+        self.iter().all(|f| f.is_closed() )
     }
 }
 
@@ -1090,7 +1109,7 @@ pub trait TxBundleTrait {
 }
 impl<T> crate::TxBundleTrait for TxBundle<'_, T> {
     fn mark_closed(&mut self) -> bool {
-        self.iter_mut().all(|mut f| f.mark_closed() )
+        self.iter_mut().all(|f| f.mark_closed() )
     }
 }
 

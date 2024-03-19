@@ -77,11 +77,11 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
     //continue to process until we have no more work or there is no more room to send
     while (!rx.is_empty()) && !tx.is_full() {
         match monitor.take_async(rx).await {
-            Ok(m) => {
+            Some(m) => {
                 let _ = monitor.send_async(tx, m,false).await;
             },
-            Err(msg) => {
-                error!("Unexpected error recv_async {}", msg);
+            None => {
+                error!("Unexpected error recv_async, probably during shutdown");
             }
         }
         monitor.relay_stats_smartly().await;

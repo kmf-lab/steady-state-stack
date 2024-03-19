@@ -1,7 +1,7 @@
 use dot_parser::canonical::Graph;
 use std::error::Error;
 use std::time::Duration;
-use log::error;
+use log::{error, warn};
 use crate::ProjectModel;
 use crate::templates::{Actor, ActorDriver, Channel, ConsumePattern};
 
@@ -75,22 +75,10 @@ fn extract_capacity_from_edge_label(label_text: &str, default: usize) -> usize {
 }
 
 
-fn extract_gurth_from_edge_label(label_text: &str) -> bool {
+fn extract_girth_from_edge_label(label_text: &str) -> bool {
     label_text.contains("*B")
 }
 
-fn extract_redundancy_count(label_text: &str) -> usize {
-    if let Some(start) = label_text.find('*') {
-        let remaining = &label_text[start + 1..];
-        if let Some(end) = remaining.find(|c: char| !c.is_ascii_digit()) {
-            remaining[..end].parse::<usize>().unwrap_or(1)
-        } else {
-            remaining.parse::<usize>().unwrap_or(1)
-        }
-    } else {
-        1 // Default redundancy when not specified
-    }
-}
 
 fn extract_module_name(node_id: &str, label_text: &str) -> String {
     let module_prefix = "mod::";
@@ -163,9 +151,23 @@ fn extract_actor_driver_from_label(label: &str) -> Vec<ActorDriver> {
                     .map(Duration::from_millis)
                     .map(ActorDriver::AtLeastEvery)
         } else if part.starts_with("OnEvent") {
-            Some(ActorDriver::EventDriven(parse_pairs(part, "OnEvent")))
+            if let Some(parts) = parse_parts(part, "OnEvent") {
+                Some(ActorDriver::EventDriven(parts))
+            } else {
+                warn!("Failed to parse OnEvent driver: {}", part);
+                let _ = parse_parts(part, "OnEvent");
+
+                None
+            }
         } else if part.starts_with("OnCapacity") {
-            Some(ActorDriver::CapacityDriven(parse_pairs(part, "OnCapacity")))
+            if let Some(parts) = parse_parts(part, "OnCapacity") {
+                Some(ActorDriver::CapacityDriven(parts))
+            } else {
+                warn!("Failed to parse OnCapacity driver: {}", part);
+                None
+            }
+
+
         } else if part.starts_with("Other") {
             part.strip_prefix("Other(")
                 .and_then(|s| s.strip_suffix(')'))
@@ -182,18 +184,27 @@ fn extract_actor_driver_from_label(label: &str) -> Vec<ActorDriver> {
     result
 }
 
-fn parse_pairs(part: &str, prefix: &str) -> Vec<(String, usize)> {
+/// will parse out strings like Event(xx:1||y:1) and Capacity(xx:1||y:1)
+/// where prefix is "Event" or "Capacity"
+
+fn parse_parts(part: &str, prefix: &str) -> Option<Vec<Vec<String>>> {
     part.strip_prefix(prefix)
         .and_then(|s| s.split_once('('))
-        .map(|(_, rest)| rest.trim().strip_suffix(')').unwrap_or(rest))
-        .unwrap_or("")
-        .split("||")
-        .filter_map(|pair| {
-            let (node, batch) = pair.split_once("//")?;
-            Some((node.trim().to_string(), batch.trim().parse::<usize>().ok()?))
-        })
-        .collect()
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(content,_)| {
+                let v: Vec<Vec<String>> = content.split("||").filter_map(|text| {
+                    if text.is_empty() {
+                        None
+                    } else {
+                        let parts: Vec<_> = text.split(':').map(|s| s.to_string()).collect();
+                        Some(parts)
+                    }
+                }).collect();
+                v
+            }
+        ).filter(|v| !v.is_empty())
 }
+
 
 fn extract_channel_name(label_text: &str, from_node: &str, to_node: &str) -> String {
     let module_prefix = "name::";
@@ -227,7 +238,6 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
 
         let mod_name = extract_module_name(id, label_text);
 
-        let redundancy_count = extract_redundancy_count(label_text);
 
         // Create an Actor instance based on extracted details
         let actor = Actor {
@@ -249,7 +259,7 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
         let type_name = extract_type_name_from_edge_label(label_text, e.from, e.to);
         let capacity = extract_capacity_from_edge_label(label_text, 8);  // Assuming 8 as default if not specified
 
-        let is_part_of_bundle = extract_gurth_from_edge_label(label_text);
+        let is_part_of_bundle = extract_girth_from_edge_label(label_text);
 
         let name = extract_channel_name(label_text, e.from, e.to);
         let consume_pattern = extract_consume_pattern_from_label(label_text);
@@ -277,8 +287,8 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
                   a.driver.iter().for_each(|f| {
                         if let ActorDriver::CapacityDriven(pairs) = f {
                             pairs.iter()
-                                .filter(|(n, _)| n.eq(&channel.name))
-                                .for_each(|(_, b)| channel.batch_write = *b );
+                                .filter(|v| v[0].eq(&channel.name))
+                                .for_each(|v| channel.batch_write = v[1].parse().expect("expected int") );
                         };
                   });
                   roll_up_bundle(&mut a.tx_channels, channel.clone());
@@ -290,8 +300,8 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
                   a.driver.iter().for_each(|f| {
                         if let ActorDriver::EventDriven(pairs) = f {
                             pairs.iter()
-                                .filter(|(n, _)| n.eq(&channel.name))
-                                .for_each(|(_, b)| channel.batch_read = *b );
+                                .filter(|v| v[0].eq(&channel.name))
+                                .for_each(|v| channel.batch_read = v[1].parse().expect("expected int")  );
                         };
                   });
                 roll_up_bundle(&mut a.rx_channels, channel.clone());
@@ -342,7 +352,6 @@ fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, insert_me: Channel) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering;
     use crate::extract_details;
     use crate::extract_details::*;
 
@@ -379,24 +388,14 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_gurth_from_edge_label() {
-        let label = "Gurth *B";
-        assert_eq!(extract_gurth_from_edge_label(label),true);
+    fn test_extract_girth_from_edge_label() {
+        let label = "Girth *B";
+        assert_eq!(extract_girth_from_edge_label(label), true);
 
-        // Test default gurth
-        let label_missing_gurth = "No gurth specified";
-        assert_eq!(extract_gurth_from_edge_label(label_missing_gurth),false);
+        // Test default girth
+        let label_missing_girth = "No girth specified";
+        assert_eq!(extract_girth_from_edge_label(label_missing_girth), false);
 
-    }
-
-    #[test]
-    fn test_extract_redundancy_count() {
-        let label = "Redundancy *4";
-        assert_eq!(extract_redundancy_count(label), 4);
-
-        // Test default redundancy
-        let label_missing_redundancy = "No redundancy mentioned";
-        assert_eq!(extract_redundancy_count(label_missing_redundancy), 1);
     }
 
     #[test]
@@ -432,6 +431,65 @@ mod tests {
         assert!(drivers.iter().any(|d| matches!(d, ActorDriver::EventDriven(_))));
         assert!(drivers.iter().any(|d| matches!(d, ActorDriver::CapacityDriven(_))));
     }
+
+
+
+    #[test]
+    fn test_correct_format() {
+        let input = "Event(xx:1||y:1)";
+        let expected = Some(vec![vec!["xx".to_string(), "1".to_string()], vec!["y".to_string(), "1".to_string()]]);
+        assert_eq!(parse_parts(input, "Event"), expected);
+    }
+
+    #[test]
+    fn test_multiple_parts() {
+        let input = "Capacity(a:1:b:2||c:3:d:4)";
+        let expected = Some(vec![vec!["a".to_string(), "1".to_string(), "b".to_string(), "2".to_string()], vec!["c".to_string(), "3".to_string(), "d".to_string(), "4".to_string()]]);
+        assert_eq!(parse_parts(input, "Capacity"), expected);
+    }
+
+    #[test]
+    fn test_incorrect_prefix() {
+        let input = "Event(xx:1||y:1)";
+        assert_eq!(parse_parts(input, "Capacity"), None);
+    }
+
+    #[test]
+    fn test_missing_closing_parenthesis() {
+        let input = "Event(xx:1||y:1";
+        assert_eq!(parse_parts(input, "Event"), None);
+    }
+
+    #[test]
+    fn test_empty_content() {
+        let input = "Event()";
+        assert_eq!(parse_parts(input, "Event"), None);
+    }
+
+    #[test]
+    fn test_no_delimiters() {
+        let input = "Event(xxy1)";
+        let expected = Some(vec![vec!["xxy1".to_string()]]);
+        assert_eq!(parse_parts(input, "Event"), expected);
+    }
+
+    #[test]
+    fn test_example_1() {
+        let input = "OnEvent(client_request:1||feedback:1)";
+        let expected = Some(vec![
+            vec!["client_request".to_string(),"1".to_string()],
+            vec!["feedback".to_string(),"1".to_string()]
+        ]);
+        assert_eq!(parse_parts(input, "OnEvent"), expected);
+    }
+
+    #[test]
+    fn test_example_2() {
+        let input = "OnEvent(pbft_message:1)";
+        let expected = Some(vec![vec!["pbft_message".to_string(),"1".to_string()]]);
+        assert_eq!(parse_parts(input, "OnEvent"), expected);
+    }
+
 }
 
 

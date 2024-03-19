@@ -81,11 +81,17 @@ rand             = "0.8.5" # for random number generation
 bytes            = { version = "1.5.0", features = [] }
 time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] }
 futures-util = "0.3.30" # for time formatting and supports no-std
-#stun-rs          = "0.1.5"  # for stun server
+
+
+# still in progess, this is for distributed instances across nodes
+rustdds          = "0.9.0"
+stun-rs          = "0.1.8"  # for stun server
   #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
 
-#crossbeam-utils = "0.8.3" # for crossbeam::channel
+
+
+
 
 #rstest = "0.5.2"       # for unit testing
 # TODO: will support systemd, SQRL and rapid prootyping
@@ -120,7 +126,7 @@ futures-util = "0.3.30" # for time formatting and supports no-std
 
 [build-dependencies]
 tempfile         = "3.10.1"
-color-eyre       = "0.6.2"   # for better error messages
+color-eyre       = "0.6.3"   # for better error messages
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -131,7 +137,7 @@ nuclei           = { version = "0.4.4", features = ["async-exec","iouring","attr
 
 [dev-dependencies]
 async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
-rand_distr       = "0.4.2" # for random number generation
+rand_distr       = "0.4.3" # for random number generation
 
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"

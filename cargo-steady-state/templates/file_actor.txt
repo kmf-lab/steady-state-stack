@@ -11,7 +11,7 @@ use std::error::Error;
 
 {% for st in message_types_to_define -%}
 {{st}} {
-   //{{note_for_the_user}}: add your fields here
+   {{note_for_the_user}}: add your fields here
 }
 {% endfor %}
 
@@ -45,19 +45,19 @@ impl {{ display_name|capitalize }}InternalState {
 #[cfg(not(test))]
 pub async fn run{%- if has_bundles -%}<{% endif -%}
     {%- for channel in rx_channels -%}
-        {%- if channel[0].part_of_bundle %}const {{channel[0].name|uppercase}}_GURTH:usize,{% endif -%}
+        {%- if channel[0].part_of_bundle %}const {{channel[0].name|uppercase}}_GIRTH:usize,{% endif -%}
     {%- endfor -%}
     {%- for channel in tx_channels -%}
-        {%- if channel[0].part_of_bundle %}const {{channel[0].name|uppercase}}_GURTH:usize,{% endif -%}
+        {%- if channel[0].part_of_bundle %}const {{channel[0].name|uppercase}}_GIRTH:usize,{% endif -%}
     {%- endfor -%}
   {%- if has_bundles -%}>{% endif -%}
 
   (context: SteadyContext
     {%- for channel in rx_channels %}
-        ,{{channel[0].name}}_rx: {% if channel[0].part_of_bundle %}SteadyRxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_GURTH>
+        ,{{channel[0].name}}_rx: {% if channel[0].part_of_bundle %}SteadyRxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_GIRTH>
                                   {%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
     {%- for channel in tx_channels %}
-        ,{{channel[0].name}}_tx: {% if channel[0].part_of_bundle %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_GURTH>
+        ,{{channel[0].name}}_tx: {% if channel[0].part_of_bundle %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_GIRTH>
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
     ) -> Result<(),Box<dyn Error>> {
 
@@ -68,10 +68,11 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
         {{ display_name|capitalize }}InternalState::default()
     };
 
-    let mut monitor =  context.into_monitor([{% for channel in rx_channels %}
-                        &{{channel[0].name}}_rx{%- if loop.last %}{% else -%}
-                           ,{%- endif %}{% endfor %}], [{% for channel in tx_channels %}
-                        &{{channel[0].name}}_tx{%- if loop.last %}{% else -%}
+
+    let mut monitor =  context.into_monitor([{% for def in rx_monitor_defs %}
+                        &{{def}}{%- if loop.last %}{% else -%}
+                           ,{%- endif %}{% endfor %}], [{% for def in tx_monitor_defs %}
+                        &{{def}}{%- if loop.last %}{% else -%}
                            ,{%- endif %}{% endfor %}]);
 
 
@@ -94,17 +95,16 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
  {% endfor %}
     ) {
 
+
      //these are cancel safe checks based on our desired driving rules
-
      //join all the rx and tx events so we can watch for them
-
      //if perioic is used we either
      //   wait for join fallowed my remaining periodic time
      //   selct! on peroic and joined events
      //works for both Bundles and non bundles
 
 
-
+    {{full_driver_block }} {
 
          process_once(&mut monitor, &mut state
           {%- for channel in rx_channels %}
@@ -113,6 +113,7 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
              , &mut {{channel[0].name}}_tx{%- endfor -%}
          ).await;
 
+     }
 
     }
     Ok(())

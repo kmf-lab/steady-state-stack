@@ -3,7 +3,6 @@ mod args;
 use std::thread::sleep;
 use structopt::*;
 use log::*;
-use futures_timer::Delay;
 use args::Args;
 use std::time::Duration;
 
@@ -24,7 +23,7 @@ mod actor {
 use crate::actor::*;
 
 use steady_state::*;
-use steady_state::channel_builder::{ChannelBuilder, Filled};
+use steady_state::channel_builder::Filled;
 
 
 // This is a good template for your future main function. It should me minimal and just

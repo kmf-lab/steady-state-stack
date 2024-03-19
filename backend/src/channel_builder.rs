@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures::lock::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 
@@ -18,6 +18,8 @@ pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>
 
 use ringbuf::traits::Split;
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
+use bastion::run;
+use futures::channel::oneshot;
 #[allow(unused_imports)]
 use log::*;
 use ringbuf::storage::Heap;
@@ -51,6 +53,7 @@ pub struct ChannelBuilder {
     avg_filled: bool,
     avg_latency: bool,
     connects_sidecar: bool,
+    oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
 }
 //some ideas to target
 // Primary Label - Latency Estimate (80th Percentile): This gives a quick, representative view of the channel's performance under load.
@@ -63,14 +66,16 @@ const DEFAULT_CAPACITY: usize = 64;
 impl ChannelBuilder {
 
 
-    pub(crate) fn new(channel_count: Arc<AtomicUsize>) -> ChannelBuilder {
+    pub(crate) fn new(channel_count: Arc<AtomicUsize>,
+                      oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>
+     ) -> ChannelBuilder {
 
         ChannelBuilder {
             channel_count,
             capacity: DEFAULT_CAPACITY,
             labels: &[],
             display_labels: false,
-
+            oneshot_shutdown_vec,
             refresh_rate_in_bits: 6, // 1<<6 == 64
             window_bucket_in_bits: 5, // 1<<5 == 32
 
@@ -454,10 +459,20 @@ impl ChannelBuilder {
     /// Finalizes the channel configuration and creates the channel with the specified settings.
     /// This method ties together all the configured options, applying them to the newly created channel.
 
-    pub fn build<T>(& self) -> (SteadyTx<T>, SteadyRx<T>) {
+    pub fn build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
 
         let rb = AsyncRb::<ChannelBacking<T>>::new(self.capacity);
         let (tx, rx) = rb.split();
+
+        let (sender_tx, receiver_tx) = oneshot::channel();
+        let (sender_rx, receiver_rx) = oneshot::channel();
+        {
+            let mut oneshots = run!(self.oneshot_shutdown_vec.lock());
+            oneshots.push(sender_tx);
+            oneshots.push(sender_rx);
+        }
+
+        //TODO: one shot must be created here
 
         //trace!("channel_builder::build: type_name: {}", std::any::type_name::<T>());
 
@@ -465,20 +480,23 @@ impl ChannelBuilder {
         let type_byte_count = std::mem::size_of::<T>(); //TODO: new feature to add
         let type_string_name = std::any::type_name::<T>();
         let channel_meta_data = Arc::new(self.to_meta_data(type_string_name,type_byte_count));
-        let is_closed = Arc::new(AtomicBool::new(false));
+
+        let (sender_is_closed, receiver_is_closed) = oneshot::channel();
 
         (  Arc::new(Mutex::new(Tx {
             tx
             , channel_meta_data: channel_meta_data.clone()
             , local_index: MONITOR_UNKNOWN
-            , is_closed: is_closed.clone()
+            , make_closed: Some(sender_is_closed)
             , last_error_send: Instant::now() //TODO: roll back a few seconds..
+            , oneshot_shutdown: receiver_tx
         }))
            , Arc::new(Mutex::new(Rx {
             rx
             , channel_meta_data
             , local_index: MONITOR_UNKNOWN
-            , is_closed
+            , is_closed: receiver_is_closed
+            , oneshot_shutdown: receiver_rx
         }))
         )
 

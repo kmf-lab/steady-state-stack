@@ -1,4 +1,7 @@
 use std::error::Error;
+use std::time::Duration;
+//use async_std::prelude::FutureExt;
+use futures_util::lock::MutexGuard;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
@@ -16,30 +19,41 @@ pub async fn run(context: SteadyContext
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    loop {
-       let count = 3* (rx.capacity()/4);
-       monitor.wait_avail_units(&mut rx, count).await;
+    let count = 3* (rx.capacity()/4);
 
-           let mut max_now = tx.vacant_units();
-           if max_now>0 {
-               while max_now>0 {
-                   if let Some(packet) = monitor.try_take(&mut rx) {
-                       if let Err(e) = monitor.try_send(&mut tx,packet) {
-                           error!("Error sending packet: {:?}",e);
-                           break;
-                       }
-                       max_now -= 1;
-                   } else {
-                       break;
-                   }
-               }
-               monitor.relay_stats_smartly().await;
-           }
+
+    while monitor.is_running(&mut || rx.is_closed() && tx.mark_closed()){
+
+    let timeout_duration = Duration::from_secs(5); // Example: 5 seconds timeout.
+
+         match async_std::future::timeout(timeout_duration, monitor.wait_avail_units(&mut rx, count)).await {
+                Ok(_) => {},
+                Err(_) => {
+                    monitor.relay_stats_smartly().await;
+                    continue;
+                }
+         }
+
+         monitor.wait_vacant_units(&mut tx, count).await;
+         single_iteration(&mut monitor, &mut rx, &mut tx, count);
+         monitor.relay_stats_smartly().await;
 
     }
     Ok(())
 }
 
+fn single_iteration(monitor: &mut LocalMonitor<1, 1>, mut rx: &mut MutexGuard<Rx<Packet>>, mut tx: &mut MutexGuard<Tx<Packet>>, count: usize) {
+    for _ in 0..count {
+        if let Some(packet) = monitor.try_take(&mut rx) {
+            if let Err(e) = monitor.try_send(&mut tx, packet) {
+                error!("Error sending packet: {:?}",e);
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+}
 
 
 #[cfg(test)]

@@ -127,7 +127,7 @@ pub(crate) async fn run(context: SteadyContext
                             monitor.relay_stats_smartly().await; //TODO: if this is not done must detect and give helpful warning.
                         }
                       match msg {
-                             Ok(DiagramData::NodeDef(seq, defs)) => {
+                             Some(DiagramData::NodeDef(seq, defs)) => {
                                 // these are all immutable constants for the life of the node
 
                                     let (actor, channels_in, channels_out) = *defs;
@@ -150,7 +150,7 @@ pub(crate) async fn run(context: SteadyContext
                                       }
 
                              },
-                             Ok(DiagramData::NodeProcessData(_,actor_status)) => {
+                             Some(DiagramData::NodeProcessData(_,actor_status)) => {
 
                                 //sum up all actor work so we can find the percentage of each
                                 let total_work_ns:u128 = actor_status.iter()
@@ -174,7 +174,7 @@ pub(crate) async fn run(context: SteadyContext
                                     dot_state.nodes[i].compute_and_refresh(*status, total_work_ns);
                                 });
                              },
-                             Ok(DiagramData::ChannelVolumeData(seq
+                             Some(DiagramData::ChannelVolumeData(seq
                                      , total_take_send)) => {
 
                                   // trace!("new data {:?} ",total_take_send);
@@ -240,11 +240,11 @@ pub(crate) async fn run(context: SteadyContext
 
                              },
 
-                            Err(msg) => {error!("Unexpected error on incoming message: {}",msg)}
+                            None => {error!("Unexpected error")}
                       }
                       //if we an consume the rest without async or blocking do so
                       if let Some(new_msg) = rx.try_take() {
-                        msg = Ok(new_msg);
+                        msg = Some(new_msg);
                         continue;
                       } else {
                          break;

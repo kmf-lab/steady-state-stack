@@ -51,8 +51,7 @@ impl ActorStatsComputer {
                           , mcpu: u64
                           , work: u64
                           , total_count_restarts: u32
-                          , bool_stop: bool
-                          , redundancy: u16) -> (String, &'static str, &'static str) {
+                          , bool_stop: bool) -> (String, &'static str, &'static str) {
 
         self.accumulate_data_frame(mcpu, work);
         let mut display_label = String::new();
@@ -75,11 +74,7 @@ impl ActorStatsComputer {
             display_label.push_str(itoa::Buffer::new().format(total_count_restarts));
             display_label.push('\n');
         }
-        if redundancy>1 {
-            display_label.push_str("redundancy: ");
-            display_label.push_str(itoa::Buffer::new().format(redundancy));
-            display_label.push('\n');
-        }
+
         if bool_stop {
             display_label.push_str("stopped");
             display_label.push('\n');

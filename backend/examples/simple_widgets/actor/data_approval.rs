@@ -1,5 +1,6 @@
 use std::error::Error;
 use crate::actor::data_generator::WidgetInventory;
+#[warn(unused_imports)]
 use log::*;
 use steady_state::{Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
 use steady_state::monitor::LocalMonitor;
@@ -28,21 +29,22 @@ pub async fn run(context: SteadyContext
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
-    loop {
-        //in this example iterate once blocks/await until it has work to do
-        //this example is a very responsive telemetry for medium load levels
-        //single pass of work, do not loop in here
-        if iterate_once(&mut monitor
+    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()) {
+
+        monitor.wait_avail_units(&mut rx, 1).await;
+        monitor.wait_vacant_units(&mut tx, 1).await;
+        monitor.wait_vacant_units(&mut feedback, 1).await;
+
+        iterate_once(&mut monitor
                         , &mut rx
                         , &mut tx
                         , &mut feedback
                         , &mut buffer
-        ).await {
-            break Ok(());
-        }
-        //we relay all our telemetry and return to the top to block for more work.
+        );
+
         monitor.relay_stats_smartly().await;
     }
+    Ok(())
 }
 
 
@@ -55,42 +57,39 @@ pub async fn run(context: SteadyContext
 
       let mut monitor = context.into_monitor([&rx], [&tx,&feedback]);
 
-      let mut rx_guard = rx.lock().await;
-      let mut tx_guard = tx.lock().await;
-      let mut feedback_guard = feedback.lock().await;
-
-      let rx = &mut *rx_guard;
-      let tx = &mut *tx_guard;
-      let feedback = &mut *feedback_guard;
+    let mut tx = tx.lock().await;
+    let mut rx = rx.lock().await;
+    let mut feedback = feedback.lock().await;
 
       let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
     //short circuit logic only closes outgoing if the incoming is empty and closed
-    while monitor.is_running(&mut ||
-        rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()
+    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()
     ) {
-       if iterate_once( &mut monitor
-                         , rx
-                         , tx
-                         , feedback
+
+        monitor.wait_avail_units(&mut rx, 1).await;
+        monitor.wait_vacant_units(&mut tx, 1).await;
+        monitor.wait_vacant_units(&mut feedback, 1).await;
+
+       iterate_once( &mut monitor
+                         , &mut rx
+                         , &mut tx
+                         , &mut feedback
                          , &mut buffer
-                         ).await {
-            break;
-        }
+                         );
+
         monitor.relay_stats_smartly().await;
     }
     Ok(())
 }
 
 // important function break out to ensure we have a point to test on
-async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor<R, T>
-                                                      , rx: & mut Rx<WidgetInventory>
-                                                      , tx: & mut Tx<ApprovedWidgets>
-                                                      , feedback: & mut Tx<FailureFeedback>
-                                                      , buf: &mut [WidgetInventory; BATCH_SIZE]) -> bool {
+fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor<R, T>
+                                              , rx: & mut Rx<WidgetInventory>
+                                              , tx: & mut Tx<ApprovedWidgets>
+                                              , feedback: & mut Tx<FailureFeedback>
+                                              , buf: &mut [WidgetInventory; BATCH_SIZE]) {
 
-
-    if !rx.is_empty() {
         let count = monitor.take_slice(rx, buf);
         let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
         for b in buf.iter().take(count) {
@@ -98,12 +97,11 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
                 original_count: b.count,
                 approved_count: b.count / 2,
             });
-
             if b.count % 20000 == 0 {
-                let _ = monitor.send_async(feedback, FailureFeedback {
+                let _ = monitor.try_send(feedback, FailureFeedback {
                     count: b.count,
                     message: "count is a multiple of 20000".to_string(),
-                },false).await;
+                });
             }
         }
 
@@ -111,26 +109,9 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
         //iterator of sent until the end
         let send = approvals.into_iter().skip(sent);
         for send_me in send {
-            let _ = monitor.send_async(tx, send_me,false).await;
+            let _ = monitor.try_send(tx, send_me);
         }
-    } else {
 
-        //by design we wait here for new work
-        match monitor.take_async(rx).await {
-            Ok(m) => {
-                let _ = monitor.send_async(tx, ApprovedWidgets {
-                    original_count: m.count,
-                    approved_count: m.count / 2,
-
-                },false).await;
-            },
-            Err(msg) => {
-                error!("Unexpected error recv_async: {}",msg);
-            }
-        }
-    }
-
-    false
 }
 
 
@@ -172,8 +153,7 @@ mod tests {
         },false).await;
         let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
-        let exit= iterate_once(&mut mock_monitor, rx_in, tx_out, tx_feedback, &mut buffer ).await;
-        assert_eq!(exit, false);
+        iterate_once(&mut mock_monitor, rx_in, tx_out, tx_feedback, &mut buffer );
 
         let result = mock_monitor.take_async(rx_out).await.unwrap();
         assert_eq!(result.original_count, 5);

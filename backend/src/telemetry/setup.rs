@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::process::exit;
 use std::sync::{Arc};
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 use log::*;
 use num_traits::Zero;
@@ -21,7 +22,8 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
 //NOTE: if this child telemetry is monitored so we will create the appropriate channels
     let start_now = Instant::now().sub(Duration::from_secs(1 + MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
 
-    let channel_builder = ChannelBuilder::new(that.channel_count.clone())
+    let channel_builder = ChannelBuilder::new(that.channel_count.clone()
+                                              ,that.oneshot_shutdown_vec.clone())
         .with_labels(&["steady_state-telemetry"], false)
         .with_compute_refresh_window_bucket_bits(0, 0)
         .with_capacity(config::REAL_CHANNEL_LENGTH_TO_COLLECTOR);
@@ -85,18 +87,18 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         }
     }
 
+        let calls:[AtomicU64;6] = [AtomicU64::new(0),AtomicU64::new(0),AtomicU64::new(0),AtomicU64::new(0),AtomicU64::new(0),AtomicU64::new(0)];
     let telemetry_actor =
-
         Some(SteadyTelemetryActorSend {
             tx: act_tuple.0,
             last_telemetry_error: start_now,
-            await_ns_unit: 0,
             instant_start: Instant::now(),
-            hot_profile: None,
-            redundancy: 1,
-            calls: [0; 6],
+            await_ns_unit: AtomicU64::new(0),
+            hot_profile: AtomicU64::new(0),
+            calls,
             count_restarts: that.count_restarts.clone(),
             bool_stop: false,
+            base_instant_nanos: Instant::now().elapsed().as_nanos(),
         });
 
     let telemetry_send_rx = rx_tuple.0;

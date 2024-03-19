@@ -24,11 +24,10 @@ pub async fn run(context: SteadyContext
     let mut tx = tx.lock().await;
     let mut rx = rx.lock().await;
 
+    //TODO: how is this represented for async read?, zero take?
+    //TODO: how do we deal with async blocks while is_running is on the way?
 
-
-    while monitor.is_running(
-        &mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()
-      ) {
+    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()  ) {
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
@@ -50,18 +49,15 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
                  , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
 
-      let mut monitor = context.into_monitor([&rx], [&tx]);
+    let mut monitor = context.into_monitor([&rx], [&tx]);
+    let mut tx = tx.lock().await;
+    let mut rx = rx.lock().await;
 
-      let mut rx_guard = rx.lock().await;
-      let mut tx_guard = tx.lock().await;
-      let rx = &mut *rx_guard;
-      let tx = &mut *tx_guard;
-
-    loop {
+    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()  ) {
 
         if iterate_once( &mut monitor
-                         , rx
-                         , tx
+                         , &mut rx
+                         , &mut tx
                          ).await {
             break;
         }
@@ -78,7 +74,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
                                                       , tx: & mut Tx<ChangeRequest>
 ) -> bool {
 
-    if let Ok(msg) = monitor.take_async(rx).await {
+    if let Some(msg) = monitor.take_async(rx).await {
         //we have a message to process
         //we do not care about the message we just need to send a change request
         let _ = monitor.send_async(tx,ChangeRequest {msg},false).await;

@@ -7,7 +7,12 @@ use futures::lock::Mutex;
 use std::process::exit;
 use log::{error, warn};
 use std::any::Any;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use futures::channel::oneshot;
 use futures_timer::Delay;
+
 use crate::actor_builder::ActorBuilder;
 use crate::{EdgeSimulationDirector, Graph, telemetry};
 use crate::channel_builder::ChannelBuilder;
@@ -32,7 +37,44 @@ pub struct GraphLiveliness {
     pub(crate) voters: Arc<AtomicUsize>,
     pub(crate) state: GraphLivelinessState,
     pub(crate) votes: Arc<Vec<Mutex<ShutdownVote>>>,
+
+    pub(crate) one_shot_shutdown: Arc<Option<Vec<oneshot::Sender<()>>>>,
+    //NOTE: if actor calls await after shutdown is started then
+    //      it may be an unclean shutdown based on timeout.
+    //      the await block should be skipped if we are shutting down.??
+
+
 }
+
+
+
+pub(crate) struct WaitWhileRunningFuture {
+    shared_state: Arc<RwLock<GraphLiveliness>>,
+}
+impl WaitWhileRunningFuture {
+    pub(crate) fn new(shared_state: Arc<RwLock<GraphLiveliness>>) -> Self {
+        Self { shared_state }
+    }
+}
+impl Future for WaitWhileRunningFuture {
+    type Output = Result<(), ()>;
+
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let self_mut = self.get_mut();
+
+        match self_mut.shared_state.read() {
+            Ok(read_guard) => {
+                if read_guard.is_in_state(&[GraphLivelinessState::Running]) {
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Ok(()))
+                }
+            }
+            Err(_) => Poll::Pending,
+        }
+    }
+}
+
 
 impl GraphLiveliness {
     // this is inside a RWLock and
@@ -43,9 +85,9 @@ impl GraphLiveliness {
             voters: actors_count,
             state: GraphLivelinessState::Building,
             votes: Arc::new(Vec::new()),
+            one_shot_shutdown: Arc::new(Some(Vec::new())),
         }
     }
-
 
    pub fn request_shutdown(&mut self) {
        if self.state.eq(&GraphLivelinessState::Running) {
@@ -56,13 +98,22 @@ impl GraphLiveliness {
                              .map(|_| Mutex::new(ShutdownVote::default()) )
                              .collect();
            self.votes = Arc::new(votes);
+//TODO: common asncy mthods. on context znd monitor
 
-           //after clearning the votes, this triggers all actors to vote now.
+           //trigger all actors to vote now.
            self.state = GraphLivelinessState::StopRequested;
+
+           if let Some(option) = Arc::get_mut(&mut self.one_shot_shutdown) {
+               if let Some(mut shots) = option.take() {
+                   while !shots.is_empty() {
+                       shots.pop().map(|f| f.send(()));
+                   }
+               }
+           }
        }
    }
 
-    pub fn block_until_shutdown(&self, now:Instant, timeout:Duration) -> Option<GraphLivelinessState> {
+    pub fn check_is_stopped(&self, now:Instant, timeout:Duration) -> Option<GraphLivelinessState> {
         assert_eq!(self.state, GraphLivelinessState::StopRequested);
         let is_unanimous = self.votes.iter().all(|f| {
             bastion::run!(
@@ -71,6 +122,7 @@ impl GraphLiveliness {
                             }
                         )
         });
+
         if is_unanimous {
             Some(GraphLivelinessState::Stopped)
         } else {
@@ -82,6 +134,7 @@ impl GraphLiveliness {
             }
         }
     }
+
 
     pub fn is_in_state(&self, matches: &[GraphLivelinessState]) -> bool {
         matches.iter().any(|f| f.eq(&self.state))
@@ -194,16 +247,16 @@ impl Graph {
             //all the running actors need to vote
             bastion::run!(util::async_yield_now());
             //now check the lock
-            let shutdown = match self.runtime_state.read() {
-                Ok(state) => {
-                    state.block_until_shutdown(now, timeout)
-                }
-                Err(e) => {
-                    error!("failed to read liveliness of graph: {:?}", e);
-                    None
-                }
-            };
-            if let Some(shutdown) = shutdown {
+            let is_stopped = match self.runtime_state.read() {
+                                Ok(state) => {
+                                    state.check_is_stopped(now, timeout)
+                                }
+                                Err(e) => {
+                                    error!("failed to read liveliness of graph: {:?}", e);
+                                    None
+                                }
+                            };
+            if let Some(shutdown) = is_stopped {
                 match self.runtime_state.write() {
                     Ok(mut state) => {
                         state.state = shutdown;
@@ -237,6 +290,7 @@ impl Graph {
             monitor_count: Arc::new(AtomicUsize::new(0)), //this is the count of all monitors
             all_telemetry_rx: Arc::new(RwLock::new(Vec::new())), //this is all telemetry receivers
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(channel_count))),
+            oneshot_shutdown_vec: Arc::new(Mutex::new(Vec::new())),
         };
         //this is based on features in the config
         telemetry::setup::build_optional_telemetry_graph(&mut result);
@@ -244,7 +298,7 @@ impl Graph {
     }
 
     pub fn channel_builder(&mut self) -> ChannelBuilder {
-        ChannelBuilder::new(self.channel_count.clone())
+        ChannelBuilder::new(self.channel_count.clone(),self.oneshot_shutdown_vec.clone())
     }
 
 }

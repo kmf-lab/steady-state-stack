@@ -5,6 +5,7 @@ mod templates;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 use askama::Template;
 use dot_parser::{ast, canonical};
 #[allow(unused_imports)]
@@ -141,7 +142,6 @@ fn write_project_files(pm: ProjectModel
         actors: &pm.actors,
    }.render()?)?;
 
-    warn!("write actors: {:?}",pm.actors.len());
    for actor in pm.actors {
        let actor_rs = folder_actor.join(actor.mod_name + ".rs");
 
@@ -160,18 +160,160 @@ fn write_project_files(pm: ProjectModel
        my_struct_def.sort();
        my_struct_def.dedup();
 
+       let mut top_block = String::new();
+       let mut mid_block = String::new();
+       let mut end_block = String::new();
+
+       actor.driver.iter().for_each(|f| {
+          match f {
+              ActorDriver::AtLeastEvery(d) => {
+                  let d: Duration = *d;
+                  //wrap in select! with periodic
+                  top_block.push_str("select!{\n");
+                  top_block.push_str(&format!(" _ = monitor.relay_stats_periodic(Duration::from_millis({:?})).await  => {{}},  \n",d.as_millis()));
+                  //note: the mid_block goes here
+                  end_block.push_str("}\n");
+              }
+              ActorDriver::AtMostEvery(d) => {
+                  let d: Duration = *d;
+                  //prepend with perodic
+                  top_block.push_str(&format!(" _ = monitor.relay_stats_periodic(Duration::from_millis({:?})).await  => {{}},  \n",d.as_millis()));
+                  //note: the mid_block goes here
+              }
+              ActorDriver::EventDriven(t) => {
+                  let each:Vec<String> =t.iter().map(|v| {
+                      if v.len()==2 {
+
+                          format!("  {}_rx.wait_avail_units({}).await", v[0], v[1])
+                      } else {
+                          let girth = actor.rx_channels
+                              .iter()
+                              .find(|f| f[0].name==v[0])
+                              .map(|f| f.len());
+                          let channels_count = if let Some(g) = girth {
+                              if let Some(p) = extract_percent(v[2].clone()) {
+                                  (g as f32 * p) as usize
+                              } else {
+                                  g //if we can not get pct or not provided so assume 100%
+                              }
+                          } else {
+                              warn!("Failed to find one or more channels in the bundle named: {}", v[0]);
+                              1 //if we got no girth assume 1 by default
+                          };
+                          format!("  {}_rx.wait_avail_units({},{}).await", v[0], v[1], channels_count)
+                      }
+                  }).collect();
+                  mid_block.push_str(&each.join(",\n"));
+              }
+              ActorDriver::CapacityDriven(t) => {
+                  let each:Vec<String> = t.iter().map(|v| {
+                      if v.len()==2 {
+                          format!("  {}_tx.wait_vacant_units({}).await", v[0], v[1])
+                      } else {
+                          let girth = actor.tx_channels
+                                           .iter()
+                                           .find(|f| f[0].name==v[0])
+                                           .map(|f| f.len());
+                          let channels_count = if let Some(g) = girth {
+                              if let Some(p) = extract_percent(v[2].clone()) {
+                                  (g as f32 * p) as usize
+                              } else {
+                                  g //if we can not get pct or not provided so assume 100%
+                              }
+                          } else {
+                              warn!("Failed to find more than one channel in the bundle: {}", v[0]);
+                              1 //if we got no girth assume 1 by default
+                          };
+                          format!("  {}_tx.wait_vacant_units({},{}).await", v[0], v[1], channels_count)
+                      }
+                  }).collect();
+                  mid_block.push_str(&each.join(",\n"));
+              }
+              ActorDriver::Other(t) => {
+                  let v: &Vec<String> = t;
+                  let each:Vec<String> = v.iter().map(|name| {
+                      format!("//  {}().await",name)
+                  }).collect();
+                  mid_block.push_str(&each.join(",\n"));
+              }
+          }
+       });
+
+       let mut full_driver_block = String::new();
+       full_driver_block.push_str(&top_block);
+       full_driver_block.push_str(&mid_block);
+       full_driver_block.push_str(&end_block);
+
+       //build monitor lists
+       let rx_monitor_defs = monitor_defs("rx",&actor.rx_channels);
+       let tx_monitor_defs = monitor_defs("tx",&actor.tx_channels);
 
        fs::write(actor_rs, templates::ActorTemplate {
-               note_for_the_user: "TODO", //do not change, this is not for you
+               note_for_the_user: "//TODO: ", //do not change, this is not for you
                display_name: actor.display_name,
                has_bundles: actor.rx_channels.iter().any(|f| f.len()>1) || actor.tx_channels.iter().any(|f| f.len()>1),
                rx_channels: actor.rx_channels,
                tx_channels: actor.tx_channels,
+               rx_monitor_defs,
+               tx_monitor_defs,
+               full_driver_block,
                message_types_to_use: my_struct_use,
                message_types_to_define: my_struct_def,
        }.render()?)?;
    }
    Ok(())
+}
+
+fn extract_percent(text: String) -> Option<f32> {
+    //if text ends with % we then pars the leading int and divide by 100
+    if text.ends_with('%') {
+        let text = text.trim_end_matches('%');
+        if let Ok(pct) = text.parse::<f32>() {
+            Some(pct/100.0)
+        } else {
+            warn!("Failed to parse percent: {}", text);
+            None
+        }
+    } else {
+        // if the text is a decimal less than or equal to 1.0 we return it
+        if let Ok(pct) = text.parse::<f32>() {
+            if pct <= 1.0 {
+                Some(pct)
+            } else {
+                warn!("Failed to parse percent: {}", text);
+                None
+            }
+        } else {
+            warn!("Failed to parse percent: {}", text);
+            None
+        }
+    }
+
+
+}
+
+fn monitor_defs(direction: &str, channels: &[Vec<Channel>]) -> Vec<String> {
+  let mut result = Vec::new();
+  let is_alone = channels.len()==1;
+  channels.iter().for_each(|c| {
+
+      if c[0].part_of_bundle {
+         //  am I alone if so just write else we must do each one.
+         if is_alone {//  tx.def_slice()
+             result.push(format!("{}_{}.def_slice()",c[0].name,direction).to_string());
+         } else {
+             //NOTE: once we have simple expressions of generic constants to sum arrays this
+             //     code can be removed
+             c.iter().for_each(|f| {
+                 result.push(format!("{}_{}",f.name,direction).to_string());
+             });
+         }
+      } else {
+          result.push(format!("{}_{}",c[0].name,direction).to_string());
+      }
+  });
+
+  result
 }
 
 fn derive_block(copy: bool) -> &'static str {
@@ -289,12 +431,12 @@ mod tests {
         let g = r#"
 digraph PBFTDemo {
      Client [label="Initiates requests\nmod::client AtLeastEvery(5sec)"];
-     Primary [label="Orders requests and initiates consensus\nmod::primary OnEvent(clientRequest:1)"];
+     Primary [label="Orders requests and initiates consensus\nmod::primary OnEvent(client_request:1||feedback:1)"];
 
-     Client -> Primary [label="name:clientRequest <TransactionRequest> >>PeekCopy #20"];
-     Replica1 [label="Participates in consensus\nmod::replica OnEvent(pbftMessage:1) *1"];
-     Replica2 [label="Participates in consensus\nmod::replica OnEvent(pbftMessage:1) *1"];
-     Replica3 [label="Participates in consensus\nmod::replica OnEvent(pbftMessage:1) *1"];
+     Client -> Primary [label="name::client_request <TransactionRequest> >>PeekCopy #20"];
+     Replica1 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
+     Replica2 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
+     Replica3 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
 
      // Simplified PBFT message exchange using a single channel type
      Primary -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #20 *B"];

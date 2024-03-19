@@ -1,10 +1,8 @@
 use std::error::Error;
-use std::time::Duration;
 
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::monitor::LocalMonitor;
 use crate::actor::data_generator::Packet;
 
 #[cfg(not(test))]
@@ -15,14 +13,18 @@ pub async fn run(context: SteadyContext
 
     let mut rx = rx.lock().await;
 
-    loop {
-        if let Ok(packet) = monitor.take_async(&mut rx).await {
+    while monitor.is_running(&mut || rx.is_closed()) {
+        monitor.wait_avail_units(&mut rx, 1).await;
+
+        if let Some(packet) = monitor.try_take(&mut rx) {
             assert_eq!(packet.data.len(),128);
             //info!("data_router: {:?}", packet);
         }
+
         monitor.relay_stats_smartly().await;
 
     }
+    Ok(())
 }
 
 
