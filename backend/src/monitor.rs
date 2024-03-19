@@ -437,17 +437,13 @@ pub(crate) mod monitor_tests {
         let monitor = graph.new_test_monitor("test");
         let mut monitor = monitor.into_monitor([&rx_string], [&tx_string]);
 
-        let mut rx_string_guard = rx_string.lock().await;
-        let mut tx_string_guard = tx_string.lock().await;
-
-        let rxd: &mut Rx<String> = rx_string_guard.deref_mut();
-        let txd: &mut Tx<String> = tx_string_guard.deref_mut();
-
+        let mut rxd = rx_string.lock().await;
+        let mut txd = tx_string.lock().await;
 
         let threshold = 5;
         let mut count = 0;
         while count < threshold {
-            let _ = monitor.send_async(txd, "test".to_string(),false).await;
+            let _ = monitor.send_async(&mut txd, "test".to_string(),false).await;
             count += 1;
         }
 
@@ -462,8 +458,8 @@ pub(crate) mod monitor_tests {
         }
 
         while count > 0 {
-            let x = monitor.take_async(rxd).await;
-            assert_eq!(x, Ok("test".to_string()));
+            let x = monitor.take_async(&mut rxd).await;
+            assert_eq!(x, Some("test".to_string()));
             count -= 1;
         }
 
@@ -513,7 +509,7 @@ pub(crate) mod monitor_tests {
 
         while count > 0 {
             let x = monitor.take_async(rxd).await;
-            assert_eq!(x, Ok("test".to_string()));
+            assert_eq!(x, Some("test".to_string()));
             count -= 1;
         }
         if let Some(ref mut rx) = monitor.telemetry_send_rx {

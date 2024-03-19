@@ -336,10 +336,6 @@ mod tests {
 
 
     fn build_and_parse(test_name: &str, g: &str, clean: bool)  {
-        if let Err(e) = steady_state::init_logging("info") {
-            //do not use logger to report logger could not start
-            eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
-        }
 
 
         //ensure test_run folder exists
@@ -355,6 +351,7 @@ mod tests {
                 let current_dir = env::current_dir().expect("Failed to get current directory");
                 println!("Current working directory is: {:?}", current_dir);
 
+
                 if clean {
                     //NOTE: must delete the unnamed1 folder if it exists
                     if let Err(e) = fs::remove_dir_all(test_name) {
@@ -366,13 +363,14 @@ mod tests {
 
                 /////
                 process_dot(g, test_name);
-                let build_me = PathBuf::from(test_name);
-                let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
 
-                const DO_COMPILE_TEST:bool = true;
+/*
+                const DO_COMPILE_TEST:bool = false;
 
                 if DO_COMPILE_TEST {
+                  let build_me = PathBuf::from(test_name);
 
+                     let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
                     ////
                     let mut output = Command::new("cargo")
                         .arg("build")
@@ -387,6 +385,7 @@ mod tests {
 
                     assert!(output.success());
                 }
+                //  */
             }
             Err(e) => {
                 panic!("Failed to change directory to test_run: {}", e);

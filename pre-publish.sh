@@ -41,7 +41,7 @@ else
 fi
 
 # new pre-publish script to be run
-
+cargo test
 cargo test --workspace --examples
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
