@@ -429,9 +429,13 @@ mod tests {
             builder.default(s); // Set the default level
             let log_spec = builder.build();
 
-            Logger::with(log_spec)
-                .format(flexi_logger::colored_with_thread)
-                .start().expect("Logger did not start");
+            //turn on for debug
+            if false {
+                Logger::with(log_spec)
+                    .format(flexi_logger::colored_with_thread)
+                    .start().expect("Logger did not start");
+            }
+
         } else {
             eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &level);
         }
