@@ -44,15 +44,6 @@ InLabelName: Specified as name::NAME in snake case ,concise and meaningful for c
 
 InLabelCapacity: Denoted by #COUNT, indicating channel length.
 
-InLabelBundle: Denoted by *B, this notation is used to indicate that multiple channels between actors should be considered as part of a grouped or bundled communication strategy. This is particularly useful in scenarios where:
-
-An actor sends or receives messages to/from multiple other actors using channels that follow a similar pattern or serve a similar function.
-There is a need to simplify the visual representation of the diagram by reducing the number of individual lines to represent repeated or parallel communication paths.
-It hints to the code generator that these connections share common characteristics, potentially allowing for optimization in code generation or runtime behavior.
-The *B notation should be applied to the label of communication channels where:
-The same type of message is sent from one actor to multiple actors, rotating or broadcast.
-Multiple actors send the same type of message to a single actor, aggregating information or requests.
-
 InLabelMessageType: Defined within <>, specifying the message structure in CamelCase.
 
 For improved clarity, nodes which have identifiers starting with __ and visually represented as boxes can be used for documentation.

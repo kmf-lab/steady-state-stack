@@ -80,15 +80,20 @@ use crate::graph_testing::EdgeSimulator;
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
 
-pub type SteadyTxBundle<T,const GIRTH:usize> = Arc<[Arc<Mutex<Tx<T>>>;GIRTH]>;
-pub type SteadyRxBundle<T,const GIRTH:usize> = Arc<[Arc<Mutex<Rx<T>>>;GIRTH]>;
-
+pub type SteadyTxBundle<T,const GIRTH:usize> = Arc<[SteadyTx<T>;GIRTH]>;
+pub type SteadyRxBundle<T,const GIRTH:usize> = Arc<[SteadyRx<T>;GIRTH]>;
 
 pub type TxBundle<'a, T> = Vec<MutexGuard<'a, Tx<T>>>;
 
 pub type RxBundle<'a, T> = Vec<MutexGuard<'a, Rx<T>>>;
 
 
+pub fn steady_tx_bundle<T,const GIRTH:usize>(internal_array: [SteadyTx<T>;GIRTH]) -> SteadyTxBundle<T, GIRTH> {
+    Arc::new(internal_array)
+}
+pub fn steady_rx_bundle<T,const GIRTH:usize>(internal_array: [SteadyRx<T>;GIRTH]) -> SteadyRxBundle<T, GIRTH> {
+    Arc::new(internal_array)
+}
 
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
@@ -143,7 +148,7 @@ impl SteadyContext {
                 liveliness.is_running(self.ident, accept_fn)
             }
             Err(e) => {
-                trace!("internal error,unable to get liveliness read lock {}",e);
+                error!("internal error,unable to get liveliness read lock {}",e);
                 true
             }
         }
@@ -601,6 +606,7 @@ fn write_warning_to_console(stack: Backtrace) {
     }
 
 }
+
 
 
 impl<T> Rx<T> {

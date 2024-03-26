@@ -60,9 +60,12 @@ pub async fn run(context: SteadyContext
     let mut state = InternalState {
         count: 0,
     };
-    while monitor.is_running(&mut || tx.mark_closed() ) {
+    while monitor.is_running(&mut || {
+        let result = tx.mark_closed();
+        error!("data_generator shutdown detected: approved: {}",result);
+        result
+    } ) {
 
-         //single pass of work, do not loop in here
         iterate_once(&mut monitor, &mut state, &mut tx, MULTIPLIER).await;
 
         if let Some(feedback) = monitor.try_take(&mut feedback) {

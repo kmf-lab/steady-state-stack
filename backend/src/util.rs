@@ -1,4 +1,4 @@
-
+use std::error::Error;
 use std::str::FromStr;
 use flexi_logger::{DeferredNow, Logger, LogSpecBuilder};
 use flexi_logger::filter::{LogLineFilter, LogLineWriter};
@@ -23,9 +23,9 @@ use futures::future::pending;
 use futures::FutureExt;
 use futures_util::lock::{Mutex, MutexGuard};
 
-pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), std::io::Error> {
+pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), Box<dyn Error>> {
     Handle::<File>::new(file)?.write_all(data).await?;
-    Result::<(), std::io::Error>::Ok(())
+    Ok(())
 }
 
 /*

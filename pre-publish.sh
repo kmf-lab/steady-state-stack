@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cargo update
+
 # Check if the output contains 'tokio'
 if echo "$(cargo tree -i tokio 2>&1)" | grep -q "did not match any packages"; then
     echo "Success: No 'tokio' crate found in the Cargo project."

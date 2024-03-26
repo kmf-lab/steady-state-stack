@@ -1,5 +1,7 @@
 [workspace]
+edition = "2021"
 members = [
     "backend",
     "cargo-steady-state",
 ]
+resolver = "2"

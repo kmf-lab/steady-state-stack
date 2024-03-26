@@ -42,15 +42,17 @@ pub async fn run(context: SteadyContext
     });
 
     //predicate which affirms or denies the shutdown request
-    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed()) {
+    while monitor.is_running(&mut || {
+        error!("data_consumer shutdown detected");
+
+        rx.is_empty() && rx.is_closed()
+    }) {
 
         monitor.wait_avail_units(&mut rx,1).await;
 
         //single pass of work, in this high volume example we stay in iterate_once as long
         //as the input channel as more work to process.
-        if iterate_once(&mut monitor, &mut state, &mut rx).await {
-            return Ok(());
-        }
+        iterate_once(&mut monitor, &mut state, &mut rx).await;
     }
     Ok(())
 }

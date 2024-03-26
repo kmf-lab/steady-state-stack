@@ -29,7 +29,13 @@ pub async fn run(context: SteadyContext
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
-    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()) {
+    while monitor.is_running(&mut ||
+        {
+            error!("data_approval shutdown detected");
+
+            rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()
+        }
+    ) {
 
         monitor.wait_avail_units(&mut rx, 1).await;
         monitor.wait_vacant_units(&mut tx, 1).await;
@@ -77,6 +83,7 @@ pub async fn run(context: SteadyContext
                          , &mut feedback
                          , &mut buffer
                          );
+
 
         monitor.relay_stats_smartly().await;
     }
@@ -134,28 +141,23 @@ mod tests {
         let mock_monitor = graph.new_test_monitor("approval_monitor");
         let mut mock_monitor = mock_monitor.into_monitor([], []);
 
-        let mut tx_in_guard = tx_in.lock().await;
-        let mut rx_in_guard = rx_in.lock().await;
+        let mut tx_in = tx_in.lock().await;
+        let mut rx_in = rx_in.lock().await;
 
-        let mut tx_out_guard = tx_out.lock().await;
-        let mut rx_out_guard = rx_out.lock().await;
-        let mut tx_feedback_guard = tx_feedback.lock().await;
+        let mut tx_out = tx_out.lock().await;
+        let mut rx_out = rx_out.lock().await;
+        let mut tx_feedback = tx_feedback.lock().await;
 
-        let tx_in = &mut *tx_in_guard;
-        let rx_in = &mut *rx_in_guard;
-        let tx_out = &mut *tx_out_guard;
-        let rx_out = &mut *rx_out_guard;
-        let tx_feedback = &mut *tx_feedback_guard;
 
-        let _ = mock_monitor.send_async(tx_in, WidgetInventory {
+        let _ = mock_monitor.send_async(&mut tx_in, WidgetInventory {
             count: 5
             , _payload: 42
         },false).await;
         let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
-        iterate_once(&mut mock_monitor, rx_in, tx_out, tx_feedback, &mut buffer );
+        iterate_once(&mut mock_monitor, &mut rx_in, &mut tx_out, &mut tx_feedback, &mut buffer );
 
-        let result = mock_monitor.take_async(rx_out).await.unwrap();
+        let result = mock_monitor.take_async(&mut rx_out).await.unwrap();
         assert_eq!(result.original_count, 5);
         assert_eq!(result.approved_count, 2);
     }

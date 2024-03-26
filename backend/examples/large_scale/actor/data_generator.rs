@@ -43,7 +43,8 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     Ok(())
 }
 
-async fn single_iteration<const GIRTH: usize>(monitor: &mut LocalMonitor<0, GIRTH>, buffers: &mut [Vec<Packet>; GIRTH], tx: &mut TxBundle<'_, Packet>, limit: usize) {
+async fn single_iteration<const GIRTH: usize>(monitor: &mut LocalMonitor<0, GIRTH>, buffers: &mut [Vec<Packet>; GIRTH]
+                                              , tx: &mut TxBundle<'_, Packet>, limit: usize) {
     loop {
         let route = thread_rng().gen::<u16>();
         let packet = Packet {

@@ -1,4 +1,4 @@
-
+use std::cell::RefCell;
 use std::time::Duration;
 use askama::Template;
 
@@ -71,17 +71,80 @@ pub(crate) enum ConsumePattern {
 pub(crate) struct Channel {
     pub(crate) name: String,
     pub(crate) from_mod: String, //this is where the struct message_type is defined
+    pub(crate) to_mod: String,
     pub(crate) message_type: String,
     pub(crate) peek: bool,
     pub(crate) copy: bool,
     pub(crate) batch_read: usize,
 
+    pub(crate) to_node: String,
+    pub(crate) from_node: String,
+    pub(crate) is_unbundled: bool,
     pub(crate) batch_write: usize,
     pub(crate) capacity: usize,
-    pub(crate) part_of_bundle: bool,
+    pub(crate) bundle_index: isize,
+    pub(crate) rebundle_index: isize,
+    pub(crate) bundle_on_from: RefCell<bool>,
 }
 
 impl Channel {
+
+    pub fn needs_tx_single_clone(&self) -> bool {
+                if self.is_unbundled {
+                    false
+                } else {
+                     true
+                }
+
+    }
+    pub fn needs_rx_single_clone(&self) -> bool {
+                if self.is_unbundled {
+                    false
+                } else {
+                    true
+                }
+    }
+
+
+    pub fn has_bundle_index(&self) -> bool { self.bundle_index>=0 }
+    pub fn bundle_index(&self) -> isize { self.bundle_index }
+
+    // if we fan out we use the mod name so the [index] is clear
+    pub fn tx_prefix_name(&self, channels:& Vec<Channel>) -> String {
+        if *self.bundle_on_from.borrow()==true || channels.len()<=1 {
+            self.from_node.to_lowercase()
+        } else {
+            self.tx_prefix_distributed_name()
+        }
+    }
+
+    /// Used for building the synthetic bundles
+    pub fn tx_prefix_distributed_name(&self) -> String {
+            format!("{}X_to_{}", self.from_mod.to_lowercase(), self.to_node.to_lowercase())
+
+    }
+
+    // if we fan out we use the mod name so the [index] is clear
+    pub fn rx_prefix_name(&self, channels:& Vec<Channel>) -> String {
+        if *self.bundle_on_from.borrow()==false || channels.len()<=1 {
+            self.to_node.to_lowercase()
+        } else {
+            self.rx_prefix_distributed_name()
+        }
+    }
+    pub fn rx_prefix_distributed_name(&self) -> String {
+        format!("{}_to_{}",self.from_node.to_lowercase(), self.to_mod.to_lowercase())
+    }
+
+    pub fn restructured_bundle_rx(&self, _channels:&Vec<Channel>) -> bool {
+        //special case where we do not want this def because we already have it
+        *self.bundle_on_from.borrow() &&
+            -1==self.bundle_index && self.rebundle_index>=0
+    }
+
+    pub fn restructured_bundle(&self) -> bool { -1==self.bundle_index && self.rebundle_index>=0 }
+    pub fn rebundle_index(&self) -> isize { self.rebundle_index }
+
 
     pub fn should_build_read_buffer(&self) -> bool {
         self.batch_read > 1 && self.copy
@@ -137,7 +200,8 @@ pub(crate) struct ActorTemplate {
     pub(crate) rx_monitor_defs: Vec<String>,
     pub(crate) tx_monitor_defs: Vec<String>,
     pub(crate) full_driver_block: String,
-    pub(crate) message_types_to_use: Vec<String>, //full namespace
-    pub(crate) message_types_to_define: Vec<String>, //struct name, with copy trate?
+    pub(crate) full_process_example_block: String,
+    pub(crate) message_types_to_use: Vec<String>,
+    pub(crate) message_types_to_define: Vec<String>,
 
 }

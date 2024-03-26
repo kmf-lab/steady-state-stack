@@ -1,8 +1,8 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.10"
-documentation = "https://docs.rs/steady_state/0.0.10/steady_state/"
-               #"https://docs.rs/crate/steady_state/0.0.10"  #debugging
+version = "0.0.11"
+documentation = "https://docs.rs/steady_state/0.0.11/steady_state/"
+               #"https://docs.rs/crate/steady_state/0.0.11"  #debugging
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -56,7 +56,7 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 
 [dependencies]
-# Common, the goal here is to be WASM compatible eventually
+# Common, the goal here is to have broad compatible eventually
 bastion          = "0.4.5"   # The telemetry framwork with supervisors to recover from panics
 ringbuf          = "0.4.0-rc.4"
 async-ringbuf    = "0.2.0-rc.5"
@@ -67,8 +67,6 @@ flexi_logger     = "0.27.4"  # default flexable logging implementation
 futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
 futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
 itertools        = "0.12.1"  # helpful smart iter methods
-async-recursion  = "1.0.5"   # simplify the writing of async recursive functions
-structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
 uuid             = { version = "1.7.0", features = ["v4"] }
 num-traits       = "0.2.18" # for num::Zero and other generic math traits
 backtrace        = "0.3.69"
@@ -80,11 +78,13 @@ hdrhistogram     = "7.5.4"  # for latency histograms
 rand             = "0.8.5" # for random number generation
 bytes            = { version = "1.5.0", features = [] }
 time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] }
-futures-util = "0.3.30" # for time formatting and supports no-std
+futures-util     = "0.3.30" # for time formatting and supports no-std
 
+isahc            = "1.7.2" # for http client
 
 # still in progess, this is for distributed instances across nodes
-rustdds          = "0.9.0"
+#rustdds          = "0.9.0" # 0.9.0 is broken use to use of io-extras v0.18.1
+
 stun-rs          = "0.1.8"  # for stun server
   #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
@@ -130,8 +130,9 @@ color-eyre       = "0.6.3"   # for better error messages
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tide             = "0.17.0-beta.1"
+tide             = "0.17.0-beta.1" # for http server
 structopt        = "0.3.26"  # CLI parse for type safe arguments
+structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
 nuclei           = { version = "0.4.4", features = ["async-exec","iouring","attributes"] } # for proactor based IO also part of bastion
 
 

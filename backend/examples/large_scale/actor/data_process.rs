@@ -1,7 +1,9 @@
 use std::error::Error;
 use std::time::Duration;
-//use async_std::prelude::FutureExt;
+use futures_timer::Delay;
+use futures_util::FutureExt;
 use futures_util::lock::MutexGuard;
+use futures_util::select;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
@@ -24,19 +26,15 @@ pub async fn run(context: SteadyContext
 
     while monitor.is_running(&mut || rx.is_closed() && tx.mark_closed()){
 
-    let timeout_duration = Duration::from_secs(5); // Example: 5 seconds timeout.
+        let delay_future = Delay::new(Duration::from_millis(3));
+        select! {
+            _ = delay_future.fuse() => {},
+            _ = monitor.wait_avail_units(&mut rx,count).fuse() => {},
+        }
 
-         match async_std::future::timeout(timeout_duration, monitor.wait_avail_units(&mut rx, count)).await {
-                Ok(_) => {},
-                Err(_) => {
-                    monitor.relay_stats_smartly().await;
-                    continue;
-                }
-         }
-
-         monitor.wait_vacant_units(&mut tx, count).await;
-         single_iteration(&mut monitor, &mut rx, &mut tx, count);
-         monitor.relay_stats_smartly().await;
+        monitor.wait_vacant_units(&mut tx, count).await;
+        single_iteration(&mut monitor, &mut rx, &mut tx, count);
+        monitor.relay_stats_smartly().await;
 
     }
     Ok(())

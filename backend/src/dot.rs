@@ -25,6 +25,7 @@ use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::channel_stats::ChannelStatsComputer;
+use crate::util;
 
 #[derive(Default)]
 pub struct DotState {
@@ -409,6 +410,17 @@ impl FrameHistory {
             new_blocks > old_blocks
     }
 
+    pub(crate) async fn write_file(path: PathBuf, data: BytesMut) -> Result<(), std::io::Error> {
+
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&path)?;
+
+        let h = Handle::<File>::new(file)?;
+        nuclei::spawn(Self::all_to_file_async(h, data)).await
+
+    }
 
     async fn append_to_file(path: PathBuf, data: BytesMut) -> Result<(), std::io::Error> {
 

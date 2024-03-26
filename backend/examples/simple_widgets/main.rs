@@ -22,6 +22,7 @@ use crate::actor::*;
 use steady_state::*;
 use steady_state::actor_builder::{MCPU, Percentile};
 use steady_state::channel_builder::Filled;
+use steady_state::serviced::SystemdServiceManager;
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -42,12 +43,37 @@ fn main() {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
+    let service_executable_name = "simple_widgets";
+    let service_user = "simple_widgets_user";
+
+    //we do uninstall first in case we are doing both so we uninstall the old one first.
+    if opt.systemd_uninstall {
+        if let Err(e) = SystemdServiceManager::new(service_executable_name.into(), service_user.into())
+                                .uninstall() {
+            eprintln!("Failed to uninstall systemd service: {:?}",e);
+        }
+    }
+    if opt.systemd_install {
+        let command = Args::to_cli_string(&opt,service_executable_name); //exec name?? hwo match?
+
+        if let Err(e) = SystemdServiceManager::new(service_executable_name.into(), service_user.into())
+                                .install(true,command) {
+             eprintln!("Failed to install systemd service: {:?}",e);
+        }
+    }
+    if opt.systemd_uninstall || opt.systemd_install{
+        return;
+    }
+
+
     let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
 
     graph.start();
     {  //remove this block to run forever.
-       sleep(Duration::from_secs(opt.duration));
-       graph.stop();
+       if opt.duration > 0 {
+           sleep(Duration::from_secs(opt.duration));
+           graph.stop();
+       }
     }
     graph.block_until_stopped(Duration::from_secs(2));
 }
@@ -141,6 +167,8 @@ mod tests {
             duration: 21,
             loglevel: "debug".to_string(),
             gen_rate_micros: 0,
+            systemd_install: false,
+            systemd_uninstall: false,
         };
         let mut graph = build_graph(&test_ops);
         graph.start();

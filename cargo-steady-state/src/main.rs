@@ -4,10 +4,11 @@ mod templates;
 
 use std::error::Error;
 use std::fs;
-use std::path::PathBuf;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use askama::Template;
 use dot_parser::{ast, canonical};
+use flexi_logger::{Logger, LogSpecBuilder};
 #[allow(unused_imports)]
 use log::*;
 use structopt::StructOpt;
@@ -23,9 +24,18 @@ struct ProjectModel {
 
 fn main() {
     let opt = Args::from_args();
-    if let Err(e) = steady_state::init_logging(&opt.loglevel) {
-        //do not use logger to report logger could not start
-        eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
+
+
+    if let Ok(s) = LevelFilter::from_str(&opt.loglevel) {
+        let mut builder = LogSpecBuilder::new();
+        builder.default(s); // Set the default level
+        let log_spec = builder.build();
+
+        Logger::with(log_spec)
+            .format(flexi_logger::colored_with_thread)
+            .start().expect("Logger did not start");
+    } else {
+        eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &opt.loglevel);
     }
 
     if let Ok(g) = fs::read_to_string(&opt.dotfile) {
@@ -143,7 +153,7 @@ fn write_project_files(pm: ProjectModel
    }.render()?)?;
 
    for actor in pm.actors {
-       let actor_rs = folder_actor.join(actor.mod_name + ".rs");
+       let actor_file_rs = folder_actor.join(Path::new(&actor.mod_name)).with_extension("rs");
 
        //need list of unique message types, do we dedup here??
        let mut my_struct_use:Vec<String> = actor.rx_channels
@@ -153,102 +163,28 @@ fn write_project_files(pm: ProjectModel
        my_struct_use.sort();
        my_struct_use.dedup();
 
+       //NOTE: if we use a struct of the same name we assume it is the same and
+       //      do not define it again.
        let mut my_struct_def:Vec<String> = actor.tx_channels
            .iter()
+           .filter(|f| actor.rx_channels.iter().all(|g| !g[0].message_type.eq(&f[0].message_type)))
            .map(|f| format!("{}pub(crate) struct {}", derive_block(f[0].copy), f[0].message_type))
            .collect();
        my_struct_def.sort();
        my_struct_def.dedup();
 
-       let mut top_block = String::new();
-       let mut mid_block = String::new();
-       let mut end_block = String::new();
 
-       actor.driver.iter().for_each(|f| {
-          match f {
-              ActorDriver::AtLeastEvery(d) => {
-                  let d: Duration = *d;
-                  //wrap in select! with periodic
-                  top_block.push_str("select!{\n");
-                  top_block.push_str(&format!(" _ = monitor.relay_stats_periodic(Duration::from_millis({:?})).await  => {{}},  \n",d.as_millis()));
-                  //note: the mid_block goes here
-                  end_block.push_str("}\n");
-              }
-              ActorDriver::AtMostEvery(d) => {
-                  let d: Duration = *d;
-                  //prepend with perodic
-                  top_block.push_str(&format!(" _ = monitor.relay_stats_periodic(Duration::from_millis({:?})).await  => {{}},  \n",d.as_millis()));
-                  //note: the mid_block goes here
-              }
-              ActorDriver::EventDriven(t) => {
-                  let each:Vec<String> =t.iter().map(|v| {
-                      if v.len()==2 {
 
-                          format!("  {}_rx.wait_avail_units({}).await", v[0], v[1])
-                      } else {
-                          let girth = actor.rx_channels
-                              .iter()
-                              .find(|f| f[0].name==v[0])
-                              .map(|f| f.len());
-                          let channels_count = if let Some(g) = girth {
-                              if let Some(p) = extract_percent(v[2].clone()) {
-                                  (g as f32 * p) as usize
-                              } else {
-                                  g //if we can not get pct or not provided so assume 100%
-                              }
-                          } else {
-                              warn!("Failed to find one or more channels in the bundle named: {}", v[0]);
-                              1 //if we got no girth assume 1 by default
-                          };
-                          format!("  {}_rx.wait_avail_units({},{}).await", v[0], v[1], channels_count)
-                      }
-                  }).collect();
-                  mid_block.push_str(&each.join(",\n"));
-              }
-              ActorDriver::CapacityDriven(t) => {
-                  let each:Vec<String> = t.iter().map(|v| {
-                      if v.len()==2 {
-                          format!("  {}_tx.wait_vacant_units({}).await", v[0], v[1])
-                      } else {
-                          let girth = actor.tx_channels
-                                           .iter()
-                                           .find(|f| f[0].name==v[0])
-                                           .map(|f| f.len());
-                          let channels_count = if let Some(g) = girth {
-                              if let Some(p) = extract_percent(v[2].clone()) {
-                                  (g as f32 * p) as usize
-                              } else {
-                                  g //if we can not get pct or not provided so assume 100%
-                              }
-                          } else {
-                              warn!("Failed to find more than one channel in the bundle: {}", v[0]);
-                              1 //if we got no girth assume 1 by default
-                          };
-                          format!("  {}_tx.wait_vacant_units({},{}).await", v[0], v[1], channels_count)
-                      }
-                  }).collect();
-                  mid_block.push_str(&each.join(",\n"));
-              }
-              ActorDriver::Other(t) => {
-                  let v: &Vec<String> = t;
-                  let each:Vec<String> = v.iter().map(|name| {
-                      format!("//  {}().await",name)
-                  }).collect();
-                  mid_block.push_str(&each.join(",\n"));
-              }
-          }
-       });
 
-       let mut full_driver_block = String::new();
-       full_driver_block.push_str(&top_block);
-       full_driver_block.push_str(&mid_block);
-       full_driver_block.push_str(&end_block);
+
+       let full_driver_block = build_driver_block(&actor);
+       let full_process_example_block = build_process_block(&actor);
 
        //build monitor lists
        let rx_monitor_defs = monitor_defs("rx",&actor.rx_channels);
        let tx_monitor_defs = monitor_defs("tx",&actor.tx_channels);
 
-       fs::write(actor_rs, templates::ActorTemplate {
+       fs::write(actor_file_rs, templates::ActorTemplate {
                note_for_the_user: "//TODO: ", //do not change, this is not for you
                display_name: actor.display_name,
                has_bundles: actor.rx_channels.iter().any(|f| f.len()>1) || actor.tx_channels.iter().any(|f| f.len()>1),
@@ -257,11 +193,153 @@ fn write_project_files(pm: ProjectModel
                rx_monitor_defs,
                tx_monitor_defs,
                full_driver_block,
+               full_process_example_block,
                message_types_to_use: my_struct_use,
                message_types_to_define: my_struct_def,
        }.render()?)?;
    }
    Ok(())
+}
+
+fn build_process_block(_actor: &Actor) -> String {
+    let full_process_example_block = String::new();
+    // TODO: some examples for each field how to read and write.
+    full_process_example_block
+}
+
+fn build_driver_block(actor: &Actor) -> String {
+
+    let mut at_least_every: Option<String> = None;
+    let mut at_most_every: Option<String> = None;
+
+    let mut avail_units: Vec<String> = Vec::new();
+    let mut vacant_units: Vec<String> = Vec::new();
+    let mut other_units: Vec<String> = Vec::new();
+
+    actor.driver.iter().for_each(|f| {
+        match f {
+            ActorDriver::AtLeastEvery(d) => {
+                at_least_every = Some(format!("monitor.relay_stats_periodic(Duration::from_millis({:?})).await",d.as_millis()));
+            }
+            ActorDriver::AtMostEvery(d) => {
+                at_most_every = Some(format!("monitor.relay_stats_periodic(Duration::from_millis({:?})).await",d.as_millis()));
+            }
+            ActorDriver::EventDriven(t) => {
+                let mut each: Vec<String> = t.iter().map(|v| {
+
+                    let girth = if let Some(g) = actor.rx_channels.iter()
+                            .find(|f| f[0].name == v[0])
+                            .map(|f| f.len()) { g } else { 1 };
+
+                    //validate the name
+                    if actor.rx_channels.iter().all(|f| f[0].name != v[0]) {
+                        warn!("Failed to find channel: {}, please fix dot file node label for actor: {}", v[0], actor.display_name);
+                    }
+
+                    //2 may want the default channels_count or this may be a single
+                    //  we ensure girth is 1 to confirm this choice.
+                    if v.len()==2 && 1==girth {
+                        format!("monitor.wait_avail_units(&mut {}_rx,{}).await", v[0], v[1])
+                    } else {
+                        let channels_count = if girth>1 && v.len()>2 {
+                            if let Some(p) = extract_percent(v[2].clone()) {
+                                (girth as f32 * p) as usize
+                            } else {
+                                girth //default
+                            }
+                        } else {
+                            1 //if we got no girth assume 1 by default
+                        };
+                        format!("monitor.wait_avail_units_bundle(&mut {}_rx,{},{}).await", v[0], v[1], channels_count)
+                    }
+                }).collect();
+                avail_units.append(&mut each);
+            }
+            ActorDriver::CapacityDriven(t) => {
+                let mut each: Vec<String> = t.iter().map(|v| {
+
+                    //validate the name
+                    if actor.tx_channels.iter().all(|f| f[0].name != v[0]) {
+                        warn!("Failed to find channel: {}, please fix dot file node label for actor: {}", v[0], actor.display_name);
+                    }
+
+
+                    if v.len() == 2 {
+                        format!("monitor.wait_vacant_units(&mut {}_tx,{}).await", v[0], v[1])
+                    } else {
+                        let girth = actor.tx_channels
+                            .iter()
+                            .find(|f| f[0].name == v[0])
+                            .map(|f| f.len());
+                        let channels_count = if let Some(g) = girth {
+                            if let Some(p) = extract_percent(v[2].clone()) {
+                                (g as f32 * p) as usize
+                            } else {
+                                g //if we can not get pct or not provided so assume 100%
+                            }
+                        } else {
+                            warn!("Failed to find more than one channel in the bundle: {}", v[0]);
+                            1 //if we got no girth assume 1 by default
+                        };
+                        format!("monitor.wait_vacant_units_bundle(&mut {}_tx,{},{}).await", v[0], v[1], channels_count)
+                    }
+                }).collect();
+                vacant_units.append(&mut each);
+            }
+            ActorDriver::Other(t) => {
+                let mut each: Vec<String> = t.iter().map(|name| {
+                    format!("//monitor.shutdown_wrapper({}()).await", name)
+                }).collect();
+                other_units.append(&mut each);
+            }
+        }
+    });
+
+    let mut full_driver_block = String::new();
+
+    if let Some(t) = at_least_every {
+        //this block must be a wrapping select around the others
+
+        //let delay_future = Delay::new(Duration::from_millis(3));
+        //select! {
+         //   _ = delay_future.fuse() => {},
+         //   _ = monitor.wait_avail_units(&mut rx,count).fuse() => {},
+        //}
+
+        full_driver_block.push_str(&t);
+        full_driver_block.push(';');
+        full_driver_block.push('\n');
+    }
+
+
+    if let Some(t) = at_most_every {
+        full_driver_block.push_str(&t);
+        full_driver_block.push(';');
+        full_driver_block.push('\n');
+    }
+
+
+    //TODO: these all need to be put into an array when we need the at_least_every
+
+    avail_units.iter().for_each(|t| {
+        full_driver_block.push_str(&t);
+        full_driver_block.push(';');
+        full_driver_block.push('\n');
+    });
+
+    vacant_units.iter().for_each(|t| {
+        full_driver_block.push_str(&t);
+        full_driver_block.push(';');
+        full_driver_block.push('\n');
+    });
+
+    other_units.iter().for_each(|t| {
+        full_driver_block.push_str(&t);
+        full_driver_block.push(';');
+        full_driver_block.push('\n');
+    });
+
+    full_driver_block
 }
 
 fn extract_percent(text: String) -> Option<f32> {
@@ -292,20 +370,26 @@ fn extract_percent(text: String) -> Option<f32> {
 
 }
 
+const DISABLE:bool = false;
+
 fn monitor_defs(direction: &str, channels: &[Vec<Channel>]) -> Vec<String> {
   let mut result = Vec::new();
-  let is_alone = channels.len()==1;
+  let is_alone = channels.len()==1 && DISABLE;
   channels.iter().for_each(|c| {
 
-      if c[0].part_of_bundle {
+      if c.len()>1 {
          //  am I alone if so just write else we must do each one.
-         if is_alone {//  tx.def_slice()
-             result.push(format!("{}_{}.def_slice()",c[0].name,direction).to_string());
+         //NOTE: this feature disabled until we get better support for use of
+          // generic constants to sum two together to build a new constant array.
+         if is_alone {//  tx.def_slice(), does not require & or surrounding []
+             result.push(format!("{}_{}.def_slice()",c[0].name,direction).into());
          } else {
              //NOTE: once we have simple expressions of generic constants to sum arrays this
              //     code can be removed
-             c.iter().for_each(|f| {
-                 result.push(format!("{}_{}",f.name,direction).to_string());
+             c.iter()
+                 .enumerate()
+                 .for_each(|(i,f)| { //NOTE: each requies an index
+                 result.push(format!("{}_{}[{}]",f.name,direction,i).into());
              });
          }
       } else {
@@ -318,7 +402,7 @@ fn monitor_defs(direction: &str, channels: &[Vec<Channel>]) -> Vec<String> {
 
 fn derive_block(copy: bool) -> &'static str {
     match copy {
-        true =>  "#[derive(Default,Copy)]\n",
+        true =>  "#[derive(Default,Clone,Copy)]\n",
         false => "#[derive(Default)]\n",
     }
 }
@@ -329,7 +413,9 @@ mod tests {
     use std::{env, fs};
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
-    use log::{error, info};
+    use std::str::FromStr;
+    use flexi_logger::{Logger, LogSpecBuilder};
+    use log::{error, info, LevelFilter};
     use crate::{process_dot};
 
 
@@ -337,6 +423,18 @@ mod tests {
 
     fn build_and_parse(test_name: &str, g: &str, clean: bool)  {
 
+        let level = "warn";
+        if let Ok(s) = LevelFilter::from_str(&level) {
+            let mut builder = LogSpecBuilder::new();
+            builder.default(s); // Set the default level
+            let log_spec = builder.build();
+
+            Logger::with(log_spec)
+                .format(flexi_logger::colored_with_thread)
+                .start().expect("Logger did not start");
+        } else {
+            eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &level);
+        }
 
         //ensure test_run folder exists
         let working_path = PathBuf::from("test_run");
@@ -364,7 +462,7 @@ mod tests {
                 /////
                 process_dot(g, test_name);
 
-/*
+
                 const DO_COMPILE_TEST:bool = false;
 
                 if DO_COMPILE_TEST {
@@ -385,7 +483,7 @@ mod tests {
 
                     assert!(output.success());
                 }
-                //  */
+
             }
             Err(e) => {
                 panic!("Failed to change directory to test_run: {}", e);
@@ -430,30 +528,33 @@ mod tests {
         let g = r#"
 digraph PBFTDemo {
      Client [label="Initiates requests\nmod::client AtLeastEvery(5sec)"];
-     Primary [label="Orders requests and initiates consensus\nmod::primary OnEvent(client_request:1||feedback:1)"];
+     Primary [label="Orders requests and initiates consensus\nmod::primary OnEvent(original_request:1||feedback:1)"];
 
-     Client -> Primary [label="name::client_request <TransactionRequest> >>PeekCopy #20"];
+     Client -> Primary [label="name::original_request <TransactionRequest> >>PeekCopy #20"];
      Replica1 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
      Replica2 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
      Replica3 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
 
      // Simplified PBFT message exchange using a single channel type
-     Primary -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #20 *B"];
-     Primary -> Replica2 [label="name::pbft_message <PbftMessage> >>PeekCopy #20 *B"];
-     Primary -> Replica3 [label="name::pbft_message <PbftMessage> >>PeekCopy #20 *B"];
+     Primary -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
+     Primary -> Replica2 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
+     Primary -> Replica3 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
 
      // Feedback channels from Replicas back to the Primary
-     Replica1 -> Primary [label="name::feedback <PbftFeedback> >>PeekCopy #10 *B"];
-     Replica2 -> Primary [label="name::feedback <PbftFeedback> >>PeekCopy #10 *B"];
-     Replica3 -> Primary [label="name::feedback <PbftFeedback> >>PeekCopy #10 *B"];
+     Replica1 -> Primary [label="name::feedback <PbftFeedback> >>PeekCopy #10"];
+     Replica2 -> Primary [label="name::feedback <PbftFeedback> >>PeekCopy #10"];
+     Replica3 -> Primary [label="name::feedback <PbftFeedback> >>PeekCopy #10"];
 
      // Replica to Replica communication for prepare and commit phases
-     Replica1 -> Replica2 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
-     Replica1 -> Replica3 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
-     Replica2 -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
-     Replica2 -> Replica3 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
-     Replica3 -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
-     Replica3 -> Replica2 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+     Replica1 -> Replica2 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
+     Replica1 -> Replica3 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
+
+     Replica2 -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
+     Replica2 -> Replica3 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
+
+     Replica3 -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
+     Replica3 -> Replica2 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
+
 }
 
         "#;

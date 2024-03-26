@@ -1,4 +1,5 @@
 use std::{env, fs};
+use std::error::Error;
 use std::process::Command;
 use log::*;
 #[allow(unused_imports)]
@@ -12,9 +13,13 @@ use nuclei::{drive, Handle};
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 #[allow(unused_imports)]
 use std::fs::{create_dir_all, File, OpenOptions};
-use crate::util;
+use bastion::run;
+use bytes::BytesMut;
+use nuclei::Task;
+use crate::{dot, util};
+use crate::dot::FrameHistory;
 
-pub struct SystemdManager {
+pub struct SystemdServiceManager {
     pub service_name: String,
     pub service_user: String, // NEVER share this user with other services
     pub service_file_name: String,
@@ -24,32 +29,49 @@ pub struct SystemdManager {
     pub after: String,
     pub restart: String,
     pub wanted_by: String,
+    pub description: String,
 }
 
-impl SystemdManager {
+//TODO: this needs to be the builder pattern soon,
 
-    pub fn add_secret(&mut self, name: String, absolute_file: String
-                         ) {
-        //absolute_file probably should start with /etc/secrets/
-        self.secrets.push(format!("{}:/{}", name, absolute_file));
-    }
+struct SystemdServiceManagerBuilder {
+    service_name: String,
+    service_user: String,
+    service_file_name: String,
+    service_executable: String,
+    on_boot: bool,
+    secrets: Vec<String>,
+    after: String,
+    restart: String,
+    wanted_by: String,
+    description: String,
+}
 
+impl SystemdServiceManager {
 
-    pub fn new(service_name: String, service_user: String) -> Self {
-        SystemdManager {
+    pub fn new(service_executable_name: String, service_user: String) -> Self {
+        SystemdServiceManager {
             //TODO: add support for other folders based on use case
-            service_file_name: format!("/etc/systemd/system/{}.service", service_name),
+            service_file_name: format!("/etc/systemd/system/{}.service", service_executable_name),
             //TODO: add support for diffent binary locations
-            service_executable: format!("/usr/local/bin/{}",service_name),
+            service_executable: format!("/usr/local/bin/{}",service_executable_name),
             on_boot: true,
             secrets: Vec::new(),
             after: "network.target".to_string(),
             restart: "always".to_string(),
             wanted_by: "multi-user.target".to_string(),
-            service_name,
+            service_name: service_executable_name.clone(),
             service_user,
+            description: format!("steady_state:{}",service_executable_name).into(),
         }
     }
+
+    pub fn add_secret(&mut self, name: String, absolute_file: String
+    ) {
+        //absolute_file probably should start with /etc/secrets/
+        self.secrets.push(format!("{}:/{}", name, absolute_file));
+    }
+
 
     fn check_platform_setup(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Check for systemd via systemctl
@@ -163,7 +185,7 @@ impl SystemdManager {
     }
 
 
-    fn create_service_file(&self, start_string: String) -> Result<(), Box<dyn std::error::Error>> {
+    fn create_service_file(&self, start_string: String) -> Result<(), String> {
 
          let mut load_creds = String::new();
          if !self.secrets.is_empty() {
@@ -174,7 +196,7 @@ impl SystemdManager {
          }
 
         let service_content = format!(r#"[Unit]
-Description=SOME DESCRIPTION
+Description={}
 After={}
 
 [Service]
@@ -186,19 +208,16 @@ Restart={}
 [Install]
 WantedBy={}
 "#
- , self.after
- , load_creds, start_string, self.service_user
-          , self.restart, self.wanted_by   );
+ ,self.description, self.after, load_creds, start_string, self.service_user
+ ,self.restart, self.wanted_by  );
 
-        let file = OpenOptions::new()
-            .create(true)
-            .open(&self.service_file_name)?;
-            let _ =drive(util::all_to_file_async(file, service_content.as_bytes()));
-        info!("Created the systemd service file: {}",self.service_file_name);
+        info!("write service content to file: {}",service_content);
 
-        Ok(())
+        match run!(FrameHistory::write_file((&self.service_file_name).into(), service_content.as_bytes().into())) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string())
+        }
     }
-
 
 }
 

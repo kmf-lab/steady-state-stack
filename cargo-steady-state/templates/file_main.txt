@@ -4,7 +4,7 @@ use structopt::StructOpt;
 use log::*;
 use crate::args::Args;
 use std::time::Duration;
-use steady_state::Percentile;
+use steady_state::*;
 
 
 {{test_only}}
@@ -46,32 +46,49 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
         .with_type()
         .with_line_expansion();
-
     //this common root of the actor builder allows for common config of all actors
     let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor
         .with_mcpu_percentile(Percentile::p80())
         .with_work_percentile(Percentile::p80())
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
-
     //build channels
     {% for channel in channels %}
-    let ({{channel[0].name}}_tx, {{channel[0].name}}_rx) = base_channel_builder.clone()
+    let ({{channel[0].tx_prefix_name(channel)}}_{{channel[0].name}}_tx, {{channel[0].rx_prefix_name(channel)}}_{{channel[0].name}}_rx) = base_channel_builder
         .with_capacity({{channel[0].capacity}}){% if channel.len()>1 %}
         .build_as_bundle::<_,{{channel.len()}}>();{% else %}
         .build();{% endif %}
     {% endfor %}
-
     //build actors
     {% for actor in actors %}
-     base_actor_builder.with_name("{{actor.display_name}}")
+    {
+    {%- for channel in actor.rx_channels %}{% if channel[0].has_bundle_index() -%}
+      {% if channel[0].needs_rx_single_clone() %}
+       let {{channel[0].rx_prefix_name(channel)}}_{{channel[0].name}}_rx = {{channel[0].rx_prefix_distributed_name()}}_{{channel[0].name}}_rx[{{channel[0].bundle_index()}}].clone();
+      {% endif %}
+    {%- else -%}{% if channel[0].restructured_bundle_rx(channel) %}
+       let {{actor.display_name|lowercase}}_{{channel[0].name}}_rx = steady_rx_bundle([{%- for ch in channel -%}{{ch.rx_prefix_distributed_name()}}_{{ch.name}}_rx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}]{% endif -%}
+                                                                                       {%- if loop.last %}{% else %},{% endif -%}{%- endfor -%}]);
+       {% endif -%}
+    {%- endif %}{% endfor -%}
+
+    {%- for channel in actor.tx_channels %}{% if channel[0].has_bundle_index() %}
+      {% if channel[0].needs_tx_single_clone() %}
+       let {{channel[0].tx_prefix_name(channel)}}_{{channel[0].name}}_tx = {{channel[0].tx_prefix_distributed_name()}}_{{channel[0].name}}_tx[{{channel[0].bundle_index()}}].clone();
+      {% endif %}
+    {% else -%}{%- if channel[0].restructured_bundle() %}
+       let {{actor.display_name|lowercase}}_{{channel[0].name}}_tx = steady_tx_bundle([{%- for ch in channel -%}{{ch.tx_prefix_distributed_name()}}_{{ch.name}}_tx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}]{% endif -%}
+                                                                                       {%- if loop.last %}{% else %},{% endif -%}{%- endfor -%}]);
+       {% endif -%}
+    {%- endif %}{% endfor %}
+       base_actor_builder.with_name("{{actor.display_name}}")
                  .build_with_exec( move |context| actor::{{actor.mod_name}}::run(context
                                           {%- for channel in actor.rx_channels %}
-                                            , {{channel[0].name}}_rx.clone(){% endfor -%}
+                                            , {% if channel[0].restructured_bundle() %}{{actor.display_name|lowercase}}{% else %}{{channel[0].rx_prefix_name(channel)}}{% endif %}_{{channel[0].name}}_rx.clone(){% endfor -%}
                                           {%- for channel in actor.tx_channels %}
-                                            , {{channel[0].name}}_tx.clone(){% endfor -%}
+                                            , {% if channel[0].restructured_bundle() %}{{actor.display_name|lowercase}}{% else %}{{channel[0].tx_prefix_name(channel)}}{% endif %}_{{channel[0].name}}_tx.clone(){% endfor -%}
                                          )
                  );
-    {%- endfor %}
+    }{% endfor %}
     graph
 }
 

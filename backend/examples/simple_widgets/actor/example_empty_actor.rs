@@ -24,19 +24,18 @@ pub async fn run(monitor: SteadyContext
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    loop {
+    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()) {
+
         //single pass of work, do not loop in here
-        if iterate_once( &mut monitor
+        iterate_once( &mut monitor
                         , &mut state
                         , &mut tx
-                        , &mut rx).await {
-            break Ok(());
-        }
+                        , &mut rx).await;
         //this is an example of an telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
         monitor.relay_stats_periodic(Duration::from_millis(40)).await;
     }
-
+    Ok(())
 }
 
 //example code is not called so we let the compiler know

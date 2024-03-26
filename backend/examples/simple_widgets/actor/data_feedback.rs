@@ -31,12 +31,10 @@ pub async fn run(context: SteadyContext
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
-        if iterate_once(&mut monitor
+        iterate_once(&mut monitor
                         , &mut rx
                         , &mut tx
-        ).await {
-            return Ok(());
-        }
+        ).await;
         //we relay all our telemetry and return to the top to block for more work.
         monitor.relay_stats_smartly().await;
     }
@@ -55,15 +53,13 @@ pub async fn run(context: SteadyContext
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()  ) {
 
-        if iterate_once( &mut monitor
+        iterate_once( &mut monitor
                          , &mut rx
                          , &mut tx
-                         ).await {
-            break;
-        }
+                         ).await;
 
 
-            monitor.relay_stats_smartly().await;
+         monitor.relay_stats_smartly().await;
     }
     Ok(())
 }

@@ -10,8 +10,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::task::{Context, Poll};
+use bastion::run;
 use futures::channel::oneshot;
+use futures::channel::oneshot::Sender;
 use futures_timer::Delay;
+use futures_util::lock::MutexGuard;
+use futures_util::SinkExt;
 
 use crate::actor_builder::ActorBuilder;
 use crate::{EdgeSimulationDirector, Graph, telemetry};
@@ -36,14 +40,8 @@ pub struct ShutdownVote {
 pub struct GraphLiveliness {
     pub(crate) voters: Arc<AtomicUsize>,
     pub(crate) state: GraphLivelinessState,
-    pub(crate) votes: Arc<Vec<Mutex<ShutdownVote>>>,
-
-    pub(crate) one_shot_shutdown: Arc<Option<Vec<oneshot::Sender<()>>>>,
-    //NOTE: if actor calls await after shutdown is started then
-    //      it may be an unclean shutdown based on timeout.
-    //      the await block should be skipped if we are shutting down.??
-
-
+    pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>,
+    pub(crate) one_shot_shutdown: Arc<Mutex<Vec<Sender<()>>>>,
 }
 
 
@@ -80,12 +78,12 @@ impl GraphLiveliness {
     // this is inside a RWLock and
     // returned from LocalMonitor and SteadyContext
 
-    pub(crate) fn new(actors_count: Arc<AtomicUsize>) -> Self {
+    pub(crate) fn new(actors_count: Arc<AtomicUsize>, one_shot_shutdown: Arc<Mutex<Vec<Sender<()>>>>) -> Self {
         GraphLiveliness {
             voters: actors_count,
             state: GraphLivelinessState::Building,
-            votes: Arc::new(Vec::new()),
-            one_shot_shutdown: Arc::new(Some(Vec::new())),
+            votes: Arc::new(Box::new([])),
+            one_shot_shutdown
         }
     }
 
@@ -93,23 +91,22 @@ impl GraphLiveliness {
        if self.state.eq(&GraphLivelinessState::Running) {
            let voters = self.voters.load(std::sync::atomic::Ordering::SeqCst);
 
+           error!("count of total voters: {}",voters);
+
            //print new ballots for this new election
            let votes:Vec<Mutex<ShutdownVote>> = (0..voters)
                              .map(|_| Mutex::new(ShutdownVote::default()) )
                              .collect();
-           self.votes = Arc::new(votes);
-//TODO: common asncy mthods. on context znd monitor
+           self.votes = Arc::new(votes.into_boxed_slice());
 
            //trigger all actors to vote now.
            self.state = GraphLivelinessState::StopRequested;
 
-           if let Some(option) = Arc::get_mut(&mut self.one_shot_shutdown) {
-               if let Some(mut shots) = option.take() {
-                   while !shots.is_empty() {
-                       shots.pop().map(|f| f.send(()));
-                   }
-               }
+           let mut one_shots:MutexGuard<Vec<Sender<_>>> = run!(self.one_shot_shutdown.lock());
+           while let Some(f) = one_shots.pop() {
+               f.send(()).expect("oops");
            }
+
        }
    }
 
@@ -145,8 +142,7 @@ impl GraphLiveliness {
             GraphLivelinessState::Running => { true }
             GraphLivelinessState::StopRequested => {
                  bastion::run! {
-                    let mut guard =self.votes[ident.id].lock().await;
-                    let vote = guard.deref_mut();
+                    let mut vote =self.votes[ident.id].lock().await;
                     vote.ident = ident; //signature it is me
                     vote.in_favor = accept_fn();
                     !vote.in_favor //return the opposite to keep running when we vote no
@@ -261,6 +257,20 @@ impl Graph {
                     Ok(mut state) => {
                         state.state = shutdown;
 
+                        warn!("voter log: (approved votes at the top, total:{})",state.votes.len());
+                        state.votes.iter().for_each(|f| {
+                           let voter = run!(f.lock());
+                           if voter.in_favor {
+                               warn!("Voted: {:?} Ident: {:?}", voter.in_favor, voter.ident);
+                           }
+                        });
+                        state.votes.iter().for_each(|f| {
+                            let voter = run!(f.lock());
+                            if !voter.in_favor {
+                                warn!("Voted: {:?} Ident: {:?}", voter.in_favor, voter.ident);
+                            }
+                        });
+
                         if state.state.eq(&GraphLivelinessState::StoppedUncleanly) {
                             warn!("graph stopped uncleanly");
                         }
@@ -284,13 +294,15 @@ impl Graph {
     /// create a new graph for the application typically done in main
     pub fn new<A: Any+Send+Sync>(args: A) -> Graph {
         let channel_count = Arc::new(AtomicUsize::new(0));
+        let monitor_count = Arc::new(AtomicUsize::new(0));
+        let shutdown_vec = Arc::new(Mutex::new(Vec::new()));
         let mut result = Graph {
             args: Arc::new(Box::new(args)),
             channel_count: channel_count.clone(),
-            monitor_count: Arc::new(AtomicUsize::new(0)), //this is the count of all monitors
+            monitor_count: monitor_count.clone(), //this is the count of all monitors
             all_telemetry_rx: Arc::new(RwLock::new(Vec::new())), //this is all telemetry receivers
-            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(channel_count))),
-            oneshot_shutdown_vec: Arc::new(Mutex::new(Vec::new())),
+            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(monitor_count,shutdown_vec.clone()))),
+            oneshot_shutdown_vec: shutdown_vec,
         };
         //this is based on features in the config
         telemetry::setup::build_optional_telemetry_graph(&mut result);

@@ -15,6 +15,7 @@ use futures::future::{pending, select_all};
 use std::task::Context;
 use futures_timer::Delay;
 use std::future::Future;
+use std::process::exit;
 use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, Ordering};
 
 use futures::FutureExt;
@@ -595,7 +596,8 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 liveliness.is_running(self.ident, accept_fn )
             }
             Err(e) => {
-                trace!("internal error,unable to get liveliness read lock {}",e);
+                error!("internal error,unable to get liveliness read lock {}",e);
+                exit(-1);
                 true //keep running as the default under error conditions
             }
         }
