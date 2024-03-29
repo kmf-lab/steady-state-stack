@@ -21,6 +21,8 @@ pub mod actor_builder;
 mod actor_stats;
 mod graph_testing;
 mod graph_liveliness;
+mod loop_driver;
+mod yield_now;
 
 pub use graph_testing::GraphTestResult;
 pub use actor_builder::SupervisionStrategy;
@@ -32,8 +34,10 @@ pub use actor_builder::MCPU;
 pub use actor_builder::Work;
 pub use actor_builder::Percentile;
 pub use graph_liveliness::*;
+pub use loop_driver::*;
 
 use std::any::{Any, type_name};
+use std::cell::RefCell;
 
 use std::time::{Duration, Instant};
 
@@ -42,7 +46,7 @@ use std::collections::HashMap;
 
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicU32, AtomicUsize};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex, MutexLockFuture};
 use std::ops::{Deref, DerefMut};
 use std::future::ready;
@@ -59,7 +63,7 @@ use backtrace::Backtrace;
 
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use actor_builder::ActorBuilder;
-use crate::monitor::{ActorMetaData, ChannelMetaData};
+use crate::monitor::{ActorMetaData, CALL_WAIT, ChannelMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
@@ -69,13 +73,14 @@ use futures::*; // Provides the .fuse() method
 pub use bastion::blocking;
 use bastion::run;
 use futures::channel::oneshot;
-use futures::future::{BoxFuture, join_all, JoinAll, select_all};
 
 
 use futures::select;
-use futures_util::future::FusedFuture;
+use futures_timer::Delay;
+use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use futures_util::lock::MutexGuard;
 use crate::graph_testing::EdgeSimulator;
+use crate::yield_now::yield_now;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
@@ -115,9 +120,75 @@ pub struct SteadyContext {
     pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
     pub(crate) actor_metadata: Arc<ActorMetaData>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
+    pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
+    pub(crate) last_perodic_wait: AtomicU64,
+    pub(crate) actor_start_time: Instant,
 }
 
 impl SteadyContext {
+
+    pub(crate) fn is_liveliness_in(&self, target: &[GraphLivelinessState], upon_posion: bool) -> bool {
+        match self.runtime_state.read() {
+            Ok(liveliness) => {
+                liveliness.is_in_state(target)
+            }
+            Err(e) => {
+                trace!("internal error,unable to get liveliness read lock {}",e);
+                upon_posion
+            }
+        }
+    }
+
+    /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
+    ///
+    /// This method helps maintain a consistent period between consecutive calls, even if the
+    /// execution time of the work performed in between calls fluctuates. It calculates the
+    /// remaining time until the next desired periodic interval and waits for that duration.
+    ///
+    /// If a shutdown signal is detected during the waiting period, the method returns early
+    /// with a value of `false`. Otherwise, it waits for the full duration and returns `true`.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration_rate` - The desired duration between periodic calls.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the full waiting duration was completed without interruption.
+    /// * `false` if a shutdown signal was detected during the waiting period.
+    ///
+    pub async fn wait_periodic(&self, duration_rate: Duration) -> bool {
+        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+
+        let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
+        let run_duration = now_nanos - self.last_perodic_wait.load(Ordering::Relaxed);
+        let remaining_duration = duration_rate.saturating_sub( Duration::from_nanos(run_duration) );
+
+        let mut operation = &mut Delay::new(remaining_duration).fuse();
+        let result = select! {
+                _= &mut one_down.deref_mut() => false,
+                _= operation => true
+        };
+        self.last_perodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
+        result
+    }
+
+    /// Asynchronously waits for a specified duration.
+    ///
+    /// # Parameters
+    /// - `duration`: The duration to wait.
+    ///
+    /// # Asynchronous
+    pub async fn wait(&self, duration: Duration) {
+        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+        select! { _ = one_down.deref_mut() => {}, _ =Delay::new(duration).fuse() => {} }
+    }
+
+    /// yield so other actors may be able to make use of this thread. Returns
+    /// immediately if there is nothing scheduled to check.
+    async fn yield_now(&self) {
+        yield_now().await;
+    }
 
     /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
     ///
@@ -168,11 +239,6 @@ impl SteadyContext {
         }
     }
 
-    #[inline]
-    pub fn liveliness(&self) -> Arc<RwLock<GraphLiveliness>> {
-        self.runtime_state.clone()
-    }
-
     pub fn args<A: Any>(&self) -> Option<&A> {
         self.args.downcast_ref::<A>()
     }
@@ -181,6 +247,15 @@ impl SteadyContext {
         self.ident
     }
 
+
+    //add methods from monitor
+
+
+
+
+
+    //TODO: build a new macro calling .meta_data() on each
+    //     we can leave this as we desire.
 
     pub fn into_monitor<const RX_LEN: usize, const TX_LEN: usize>(self
                                                       , rx_mons: [& dyn RxDef; RX_LEN]
@@ -219,6 +294,7 @@ impl SteadyContext {
             (None, None, None)
         };
 
+
         // this is my fixed size version for this specific thread
         LocalMonitor::<RX_LEN, TX_LEN> {
             telemetry_send_rx,
@@ -228,13 +304,15 @@ impl SteadyContext {
             ident: self.ident,
             ctx: self.ctx,
             runtime_state: self.runtime_state,
+            oneshot_shutdown: self.oneshot_shutdown,
+            last_perodic_wait: Default::default(),
+            actor_start_time: self.actor_start_time,
+
             #[cfg(test)]
             test_count: HashMap::new(),
+
         }
     }
-
-
-
 }
 
 pub struct Graph  {
@@ -259,6 +337,15 @@ impl Graph {
         let channel_count    = self.channel_count.clone();
         let all_telemetry_rx = self.all_telemetry_rx.clone();
 
+        let oneshot_shutdown = {
+            let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
+            let mut one_shots = run!(self.oneshot_shutdown_vec.lock());
+            one_shots.push(send_shutdown_notice_to_periodic_wait);
+            oneshot_shutdown
+        };
+        let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown));
+        let now = Instant::now();
+
         let count_restarts   = Arc::new(AtomicU32::new(0));
         SteadyContext {
             channel_count,
@@ -270,6 +357,9 @@ impl Graph {
             runtime_state: self.runtime_state.clone(),
             count_restarts,
             oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
+            oneshot_shutdown: oneshot_shutdown,
+            last_perodic_wait: Default::default(),
+            actor_start_time: now,
         }
     }
 }
@@ -360,7 +450,13 @@ impl<T> Tx<T> {
     /// Use this method for non-blocking send operations where immediate feedback on send success is required.
     /// Not suitable for scenarios where ensuring message delivery is critical without additional handling for failed sends.
     pub fn try_send(& mut self, msg: T) -> Result<(), T> {
-        self.shared_try_send(msg)
+        //TODO: should this be assert or a check?? do elsewhere after deciding
+        if let Some(_) = self.make_closed {
+            self.shared_try_send(msg)
+        } else {
+            warn!("attempt to send after marking channel closed");
+            Err(msg)
+        }
     }
 
     /// Sends messages from an iterator to the channel until the channel is full.
@@ -992,7 +1088,7 @@ impl <T: Send + Sync > RxDef for SteadyRx<T>  {
 //TODO: better design with full lock feature for simple in place use!!!!!
 
 pub trait SteadyTxBundleTrait<T,const GIRTH:usize> {
-    fn lock(&self) -> JoinAll<MutexLockFuture<'_, Tx<T>>>;
+    fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>>;
     fn def_slice(&self) -> [& dyn TxDef; GIRTH];
     fn wait_vacant_units(&self
                                   , avail_count: usize
@@ -1003,8 +1099,9 @@ pub trait SteadyTxBundleTrait<T,const GIRTH:usize> {
 
 
 impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyTxBundle<T, GIRTH> {
-    fn lock(&self) -> JoinAll<MutexLockFuture<'_, Tx<T>>> {
-        join_all(self.iter().map(|m| m.lock()))
+    fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>> {
+        //by design we always get the locks in the same order
+        futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
     fn def_slice(&self) -> [& dyn TxDef; GIRTH] {
@@ -1045,15 +1142,16 @@ impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyT
 }
 
 pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
-    fn lock(&self) -> JoinAll<MutexLockFuture<'_, Rx<T>>>;
+    fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>>;
     fn def_slice(&self) -> [& dyn RxDef; GIRTH];
     fn wait_avail_units(&self
                                  , avail_count: usize
                                  , ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
 }
 impl<T: std::marker::Send + std::marker::Sync, const GIRTH: usize> crate::SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> {
-    fn lock(&self) -> JoinAll<MutexLockFuture<'_, Rx<T>>> {
-        join_all(self.iter().map(|m| m.lock()))
+    fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>> {
+        //by design we always get the locks in the same order
+        futures::future::join_all(self.iter().map(|m| m.lock()))
     }
     fn def_slice(&self) -> [& dyn RxDef; GIRTH]
     {

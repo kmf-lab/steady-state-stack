@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::cell::RefCell;
 use std::error::Error;
 use std::future::Future;
 
@@ -10,6 +11,7 @@ use bastion::supervisor::*;
 use futures::channel::oneshot;
 use futures_util::lock::Mutex;
 use log::*;
+use time::Instant;
 use crate::{AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::monitor::ActorMetaData;
@@ -372,7 +374,7 @@ impl ActorBuilder {
     /// # Arguments
     ///
     /// * `exec` - The execution logic for the actor.
-    pub fn build_with_exec<F,I>(self, exec: I)
+    pub fn build_with_exec<F,I>(self, build_actor_exec: I)
         where
             I: Fn(SteadyContext) -> F + Send + Sync + 'static,
             F: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
@@ -408,6 +410,16 @@ impl ActorBuilder {
             let watch_node_callback = build_node_monitor_callback(&count_restarts);
             let count_restarts = count_restarts.clone();
 
+            //this single one shot is kept no matter how many times actor is restarted
+            let oneshot_shutdown = {
+                let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
+                let mut one_shots = run!(self.oneshot_shutdown_vec.lock());
+                one_shots.push(send_shutdown_notice_to_periodic_wait);
+                oneshot_shutdown
+            };
+            let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown));
+            let actor_start_time = std::time::Instant::now();
+
             let children = children
                 .with_name(name)
                 .with_callbacks(watch_node_callback);
@@ -420,7 +432,7 @@ impl ActorBuilder {
 
             children.with_exec(move |ctx| {
 
-                let monitor = SteadyContext {
+                let context = SteadyContext {
                                     runtime_state: runtime_state.clone(),
                                     channel_count: channel_count.clone(),
                                     ident: ActorIdentity{id,name},
@@ -430,11 +442,14 @@ impl ActorBuilder {
                                     count_restarts: count_restarts.clone(),
                                     actor_metadata: actor_metadata.clone(),
                                     oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
+                                    oneshot_shutdown: oneshot_shutdown.clone(),
+                                    last_perodic_wait: Default::default(),
+                                    actor_start_time
                 };
-                let future = exec(monitor);
+                let future = build_actor_exec(context);
 
                 async move {
-                    match future.await {
+                    match future.await { //run actor
                         Ok(_) => {
                             trace!("Actor {:?} finished ", name);
                         },

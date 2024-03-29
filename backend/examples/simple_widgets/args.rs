@@ -45,7 +45,7 @@ fn validate_logging_level(level: String) -> Result<(), String> {
 
 impl Args {
     //TODO: will be used for the systemd installer code, it would be cool if this could be generated
-    pub fn to_cli_string(&self, app: &str) -> String {
+    pub(crate) fn to_cli_string(&self, app: &str) -> String {
         format!("{} --duration={} --loglevel={} --gen-rate={}"
                 , app
                 , self.duration

@@ -1,8 +1,8 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.11"
-documentation = "https://docs.rs/steady_state/0.0.11/steady_state/"
-               #"https://docs.rs/crate/steady_state/0.0.11"  #debugging
+version = "0.0.12"
+documentation = "https://docs.rs/steady_state/0.0.12/steady_state/"
+               #"https://docs.rs/crate/steady_state/0.0.12"  #debugging
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -79,6 +79,8 @@ rand             = "0.8.5" # for random number generation
 bytes            = { version = "1.5.0", features = [] }
 time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] }
 futures-util     = "0.3.30" # for time formatting and supports no-std
+
+agnostik         = "0.2.3" #for new rewite goal to allow different async runtimes
 
 isahc            = "1.7.2" # for http client
 

@@ -40,8 +40,6 @@ struct State {
 pub(crate) async fn run(context: SteadyContext
                         , rx: SteadyRx<DiagramData>) -> std::result::Result<(),Box<dyn Error>> {
 
-    let liveliness = context.liveliness();
-
     let mut optional_monitor:Option<_> = None;
     let mut optional_context:Option<_> = None;
 
@@ -214,14 +212,13 @@ pub(crate) async fn run(context: SteadyContext
                                   //TODO: we can not stop early we need to know that the other
                                   //      actors have not raised objections to the shutdown.
                                     let flush_all:bool =
-                                        if let Ok(lock) = liveliness.try_read() {
-                                            lock.state == GraphLivelinessState::StopRequested
-                                            || lock.state == GraphLivelinessState::Stopped
-                                        } else {
-                                            //unable to lock so be safe and flush
-                                            true
-                                        };
-
+                                    if let Some(ref mut monitor) = optional_monitor {
+                                        monitor.is_liveliness_in(&[GraphLivelinessState::StopRequested,GraphLivelinessState::Stopped],true)
+                                    } else if let Some(ref mut context) = optional_context {
+                                        context.is_liveliness_in(&[GraphLivelinessState::StopRequested,GraphLivelinessState::Stopped],true)
+                                    } else {
+                                        true
+                                    };
 
                                       history.update(dot_state.seq,flush_all).await;
 

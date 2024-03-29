@@ -210,19 +210,15 @@ fn build_process_block(_actor: &Actor) -> String {
 fn build_driver_block(actor: &Actor) -> String {
 
     let mut at_least_every: Option<String> = None;
-    let mut at_most_every: Option<String> = None;
-
-    let mut avail_units: Vec<String> = Vec::new();
-    let mut vacant_units: Vec<String> = Vec::new();
-    let mut other_units: Vec<String> = Vec::new();
+    let mut andy_drivers: Vec<String> = Vec::new();
 
     actor.driver.iter().for_each(|f| {
         match f {
             ActorDriver::AtLeastEvery(d) => {
-                at_least_every = Some(format!("monitor.relay_stats_periodic(Duration::from_millis({:?})).await",d.as_millis()));
+                at_least_every = Some(format!("monitor.relay_stats_periodic(Duration::from_millis({:?}))",d.as_millis()));
             }
             ActorDriver::AtMostEvery(d) => {
-                at_most_every = Some(format!("monitor.relay_stats_periodic(Duration::from_millis({:?})).await",d.as_millis()));
+                andy_drivers.push(format!("monitor.relay_stats_periodic(Duration::from_millis({:?}))",d.as_millis()));
             }
             ActorDriver::EventDriven(t) => {
                 let mut each: Vec<String> = t.iter().map(|v| {
@@ -239,7 +235,7 @@ fn build_driver_block(actor: &Actor) -> String {
                     //2 may want the default channels_count or this may be a single
                     //  we ensure girth is 1 to confirm this choice.
                     if v.len()==2 && 1==girth {
-                        format!("monitor.wait_avail_units(&mut {}_rx,{}).await", v[0], v[1])
+                        format!("monitor.wait_avail_units(&mut {}_rx,{})", v[0], v[1])
                     } else {
                         let channels_count = if girth>1 && v.len()>2 {
                             if let Some(p) = extract_percent(v[2].clone()) {
@@ -250,10 +246,10 @@ fn build_driver_block(actor: &Actor) -> String {
                         } else {
                             1 //if we got no girth assume 1 by default
                         };
-                        format!("monitor.wait_avail_units_bundle(&mut {}_rx,{},{}).await", v[0], v[1], channels_count)
+                        format!("monitor.wait_avail_units_bundle(&mut {}_rx,{},{})", v[0], v[1], channels_count)
                     }
                 }).collect();
-                avail_units.append(&mut each);
+                andy_drivers.append(&mut each);
             }
             ActorDriver::CapacityDriven(t) => {
                 let mut each: Vec<String> = t.iter().map(|v| {
@@ -265,7 +261,7 @@ fn build_driver_block(actor: &Actor) -> String {
 
 
                     if v.len() == 2 {
-                        format!("monitor.wait_vacant_units(&mut {}_tx,{}).await", v[0], v[1])
+                        format!("monitor.wait_vacant_units(&mut {}_tx,{})", v[0], v[1])
                     } else {
                         let girth = actor.tx_channels
                             .iter()
@@ -281,16 +277,16 @@ fn build_driver_block(actor: &Actor) -> String {
                             warn!("Failed to find more than one channel in the bundle: {}", v[0]);
                             1 //if we got no girth assume 1 by default
                         };
-                        format!("monitor.wait_vacant_units_bundle(&mut {}_tx,{},{}).await", v[0], v[1], channels_count)
+                        format!("monitor.wait_vacant_units_bundle(&mut {}_tx,{},{})", v[0], v[1], channels_count)
                     }
                 }).collect();
-                vacant_units.append(&mut each);
+                andy_drivers.append(&mut each);
             }
             ActorDriver::Other(t) => {
                 let mut each: Vec<String> = t.iter().map(|name| {
-                    format!("//monitor.shutdown_wrapper({}()).await", name)
+                    format!("//monitor.call_async({}())", name) //TODO: method is missing..
                 }).collect();
-                other_units.append(&mut each);
+                andy_drivers.append(&mut each);
             }
         }
     });
@@ -300,44 +296,38 @@ fn build_driver_block(actor: &Actor) -> String {
     if let Some(t) = at_least_every {
         //this block must be a wrapping select around the others
 
-        //let delay_future = Delay::new(Duration::from_millis(3));
-        //select! {
-         //   _ = delay_future.fuse() => {},
-         //   _ = monitor.wait_avail_units(&mut rx,count).fuse() => {},
-        //}
+        if andy_drivers.is_empty() {
+            full_driver_block.push_str("    ");
+            full_driver_block.push_str(&t);
+            full_driver_block.push_str(".await;\n");
+        } else {
 
-        full_driver_block.push_str(&t);
-        full_driver_block.push(';');
-        full_driver_block.push('\n');
+            full_driver_block.push_str("select! {\n");
+
+            full_driver_block.push_str("_ = ");
+            full_driver_block.push_str(&t);
+            full_driver_block.push_str(" => {},\n");
+
+            full_driver_block.push_str("_ = join!(\n");
+            //setup for the join
+            andy_drivers.iter().for_each(|t| {
+                full_driver_block.push_str("    ");
+                full_driver_block.push_str(&t);
+                full_driver_block.push_str(".fuse(),\n");
+            });
+
+            full_driver_block.push_str("        ) => {},\n");
+
+            full_driver_block.push_str("}\n");
+        }
+
+    } else {
+        andy_drivers.iter().for_each(|t| {
+            full_driver_block.push_str("    ");
+            full_driver_block.push_str(&t);
+            full_driver_block.push_str(".await;\n");
+        });
     }
-
-
-    if let Some(t) = at_most_every {
-        full_driver_block.push_str(&t);
-        full_driver_block.push(';');
-        full_driver_block.push('\n');
-    }
-
-
-    //TODO: these all need to be put into an array when we need the at_least_every
-
-    avail_units.iter().for_each(|t| {
-        full_driver_block.push_str(&t);
-        full_driver_block.push(';');
-        full_driver_block.push('\n');
-    });
-
-    vacant_units.iter().for_each(|t| {
-        full_driver_block.push_str(&t);
-        full_driver_block.push(';');
-        full_driver_block.push('\n');
-    });
-
-    other_units.iter().for_each(|t| {
-        full_driver_block.push_str(&t);
-        full_driver_block.push(';');
-        full_driver_block.push('\n');
-    });
 
     full_driver_block
 }
@@ -421,7 +411,7 @@ mod tests {
 
 
 
-    fn build_and_parse(test_name: &str, g: &str, clean: bool)  {
+    fn build_and_parse(test_name: &str, g: &str, clean: bool, show_logs: bool)  {
 
         let level = "warn";
         if let Ok(s) = LevelFilter::from_str(&level) {
@@ -430,7 +420,7 @@ mod tests {
             let log_spec = builder.build();
 
             //turn on for debug
-            if false {
+            if show_logs {
                 Logger::with(log_spec)
                     .format(flexi_logger::colored_with_thread)
                     .start().expect("Logger did not start");
@@ -467,7 +457,7 @@ mod tests {
                 process_dot(g, test_name);
 
 
-                const DO_COMPILE_TEST:bool = false;
+                const DO_COMPILE_TEST:bool = true;
 
                 if DO_COMPILE_TEST {
                   let build_me = PathBuf::from(test_name);
@@ -524,7 +514,7 @@ mod tests {
 }
         "#;
 
-        build_and_parse("unnamed1", g, true);
+        build_and_parse("unnamed1", g, false, false);
     }
 
     #[test]
@@ -532,12 +522,12 @@ mod tests {
         let g = r#"
 digraph PBFTDemo {
      Client [label="Initiates requests\nmod::client AtLeastEvery(5sec)"];
-     Primary [label="Orders requests and initiates consensus\nmod::primary OnEvent(original_request:1||feedback:1)"];
+     Primary [label="Orders requests and initiates consensus\nmod::primary AtLeastEvery(2ms)&&OnEvent(original_request:1||feedback:1)"];
 
      Client -> Primary [label="name::original_request <TransactionRequest> >>PeekCopy #20"];
-     Replica1 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
-     Replica2 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
-     Replica3 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
+     Replica1 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)&&AtMostEvery(1ms)"];
+     Replica2 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)&&AtMostEvery(1ms)"];
+     Replica3 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)&&AtMostEvery(1ms)"];
 
      // Simplified PBFT message exchange using a single channel type
      Primary -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #30"];
@@ -562,7 +552,7 @@ digraph PBFTDemo {
 }
 
         "#;
-        build_and_parse("pbft_demo", g, false);
+        build_and_parse("pbft_demo", g, false, true);
     }
 }
 

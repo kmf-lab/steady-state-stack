@@ -3079,8 +3079,9 @@ checksum = "213701ba3370744dcd1a12960caa4843b3d68b4d1c0a5d575e0d65b2ee9d16c0"
 
 [[package]]
 name = "steady_state"
-version = "0.0.11"
+version = "0.0.12"
 dependencies = [
+ "agnostik",
  "async-ringbuf",
  "async-std",
  "backtrace",

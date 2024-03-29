@@ -43,6 +43,7 @@ fn main() {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
+    //TODO: figure out how to use the new builder and then add that to the code generator.
     let service_executable_name = "simple_widgets";
     let service_user = "simple_widgets_user";
 

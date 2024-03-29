@@ -51,6 +51,8 @@ The label in those should be less than 400 characters and should describe the sy
 These nodes are not used for code generation and are not part of the system but the text body may end up in the generated code as comments.
 If it helps with clarity these nodes may have dotted edges which would point to the subject of the description.
 
+To minimize the number of edges in the diagram and improve readability, use union types to combine messages that travel the same paths between actors. If multiple message types are always exchanged between the same set of actors, consider creating a union type to represent these messages. This way, you can use a single channel with the union type instead of multiple channels for each message type. Remember to include a documentation node (starting with __) to describe the union type and its variants, and use dotted edges to connect the documentation node to the relevant actors.
+
 All diagrams should have at least one documentation node to capture the over all context, goal and focus of the product.
 This will be helpful in continuing the LLM interactions later as needed if we start from this dot file.
 

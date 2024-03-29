@@ -66,8 +66,8 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
        let {{channel[0].rx_prefix_name(channel)}}_{{channel[0].name}}_rx = {{channel[0].rx_prefix_distributed_name()}}_{{channel[0].name}}_rx[{{channel[0].bundle_index()}}].clone();
       {% endif %}
     {%- else -%}{% if channel[0].restructured_bundle_rx(channel) %}
-       let {{actor.display_name|lowercase}}_{{channel[0].name}}_rx = steady_rx_bundle([{%- for ch in channel -%}{{ch.rx_prefix_distributed_name()}}_{{ch.name}}_rx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}]{% endif -%}
-                                                                                       {%- if loop.last %}{% else %},{% endif -%}{%- endfor -%}]);
+       let {{actor.display_name|lowercase}}_{{channel[0].name}}_rx = steady_rx_bundle([{%- for ch in channel -%}{{ch.rx_prefix_distributed_name()}}_{{ch.name}}_rx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}].clone(){% endif -%}
+                                                                                       {%- if loop.last -%}{%- else -%},{%- endif -%}{%- endfor -%}]);
        {% endif -%}
     {%- endif %}{% endfor -%}
 
@@ -76,9 +76,10 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
        let {{channel[0].tx_prefix_name(channel)}}_{{channel[0].name}}_tx = {{channel[0].tx_prefix_distributed_name()}}_{{channel[0].name}}_tx[{{channel[0].bundle_index()}}].clone();
       {% endif %}
     {% else -%}{%- if channel[0].restructured_bundle() %}
-       let {{actor.display_name|lowercase}}_{{channel[0].name}}_tx = steady_tx_bundle([{%- for ch in channel -%}{{ch.tx_prefix_distributed_name()}}_{{ch.name}}_tx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}]{% endif -%}
-                                                                                       {%- if loop.last %}{% else %},{% endif -%}{%- endfor -%}]);
+       let {{actor.display_name|lowercase}}_{{channel[0].name}}_tx = steady_tx_bundle([{%- for ch in channel -%}{{ch.tx_prefix_distributed_name()}}_{{ch.name}}_tx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}].clone(){% endif -%}
+                                                                                       {%- if loop.last -%}{%- else -%},{%- endif -%}{%- endfor -%}]);
        {% endif -%}
+
     {%- endif %}{% endfor %}
        base_actor_builder.with_name("{{actor.display_name}}")
                  .build_with_exec( move |context| actor::{{actor.mod_name}}::run(context

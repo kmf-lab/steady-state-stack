@@ -90,24 +90,18 @@ pub(crate) struct Channel {
 impl Channel {
 
     pub fn needs_tx_single_clone(&self) -> bool {
-                if self.is_unbundled {
-                    false
-                } else {
-                     true
-                }
-
+                !self.is_unbundled
     }
     pub fn needs_rx_single_clone(&self) -> bool {
-                if self.is_unbundled {
-                    false
-                } else {
-                    true
-                }
+                !self.is_unbundled
     }
 
-
-    pub fn has_bundle_index(&self) -> bool { self.bundle_index>=0 }
-    pub fn bundle_index(&self) -> isize { self.bundle_index }
+    pub fn has_bundle_index(&self) -> bool {
+                 self.bundle_index>=0
+    }
+    pub fn bundle_index(&self) -> isize {
+                 self.bundle_index
+    }
 
     // if we fan out we use the mod name so the [index] is clear
     pub fn tx_prefix_name(&self, channels:& Vec<Channel>) -> String {
@@ -120,7 +114,7 @@ impl Channel {
 
     /// Used for building the synthetic bundles
     pub fn tx_prefix_distributed_name(&self) -> String {
-            format!("{}X_to_{}", self.from_mod.to_lowercase(), self.to_node.to_lowercase())
+            format!("{}n_to_{}", self.from_mod.to_lowercase(), self.to_node.to_lowercase())
 
     }
 

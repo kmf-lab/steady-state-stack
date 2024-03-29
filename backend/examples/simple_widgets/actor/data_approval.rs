@@ -1,8 +1,12 @@
 use std::error::Error;
+use std::time::Duration;
+use futures_timer::Delay;
+use futures_util::select;
 use crate::actor::data_generator::WidgetInventory;
 #[warn(unused_imports)]
 use log::*;
-use steady_state::{Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
+
+use steady_state::*;
 use steady_state::monitor::LocalMonitor;
 use crate::actor::data_feedback::FailureFeedback;
 
@@ -21,6 +25,7 @@ pub async fn run(context: SteadyContext
                  , feedback: SteadyTx<FailureFeedback>
                 ) -> Result<(),Box<dyn Error>> {
 
+    //TODO: as ref??
     let mut monitor = context.into_monitor([&rx], [&tx,&feedback]);
 
     let mut tx = tx.lock().await;
@@ -29,6 +34,9 @@ pub async fn run(context: SteadyContext
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
+
+
+
     while monitor.is_running(&mut ||
         {
             error!("data_approval shutdown detected");
@@ -36,10 +44,33 @@ pub async fn run(context: SteadyContext
             rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()
         }
     ) {
+          /*                               //  context.single_pass_driver()
+    let _clean = SinglePassDriver::new() //  monitor.single_pass_driver()
+        .wait_avail_units(&mut rx, 1)
+        .wait_vacant_units(&mut tx, 1)
+        .wait_vacant_units(&mut feedback, 1)
+        .wait_or_proceed_upon(&mut monitor, Duration::from_secs(1))
+        .await;
+        */
 
-        monitor.wait_avail_units(&mut rx, 1).await;
-        monitor.wait_vacant_units(&mut tx, 1).await;
-        monitor.wait_vacant_units(&mut feedback, 1).await;
+//might work without any heap allocation.
+     //wait_or_proceed_upon!(&mut monitor, Duration::from_secs(1)
+     //                  , monitor.wait_avail_units(rx, 1)
+     //                  , monitor.wait_avail_units(tx, 1)
+   // )
+
+
+
+        //lowest overhead? but timers are wrong.
+        wait_for_all!(
+            monitor.wait_avail_units(&mut rx, 1)
+          , monitor.wait_vacant_units(&mut tx, 1)
+          , monitor.wait_vacant_units(&mut feedback, 1)
+          , monitor.wait_periodic(Duration::from_secs(1))
+        );
+
+      //  monitor.wait_vacant_units(&mut tx, 1).await;
+
 
         iterate_once(&mut monitor
                         , &mut rx

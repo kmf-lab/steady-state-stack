@@ -11,6 +11,21 @@ pub struct Args {
                 , case_insensitive = true)]
     pub(crate) loglevel: String,
 
+    #[structopt(short = "i", long = "install")]
+    pub(crate) systemd_install: bool,
+
+    #[structopt(short = "u", long = "uninstall")]
+    pub(crate) systemd_uninstall: bool,
+
+}
+
+impl Args {
+    pub(crate) fn to_cli_string(&self, app: &str) -> String {
+        format!("{} --loglevel={}" //NOTE: add other args here as needed
+                , app
+                , self.loglevel
+               )
+    }
 }
 
 fn log_variants() -> &'static [&'static str] {
