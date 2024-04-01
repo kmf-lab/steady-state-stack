@@ -104,8 +104,8 @@ impl Channel {
     }
 
     // if we fan out we use the mod name so the [index] is clear
-    pub fn tx_prefix_name(&self, channels:& Vec<Channel>) -> String {
-        if *self.bundle_on_from.borrow()==true || channels.len()<=1 {
+    pub fn tx_prefix_name(&self, channels:&[Channel]) -> String {
+        if *self.bundle_on_from.borrow() || channels.len()<=1 {
             self.from_node.to_lowercase()
         } else {
             self.tx_prefix_distributed_name()
@@ -119,8 +119,8 @@ impl Channel {
     }
 
     // if we fan out we use the mod name so the [index] is clear
-    pub fn rx_prefix_name(&self, channels:& Vec<Channel>) -> String {
-        if *self.bundle_on_from.borrow()==false || channels.len()<=1 {
+    pub fn rx_prefix_name(&self, channels:&[Channel]) -> String {
+        if !*self.bundle_on_from.borrow() || channels.len()<=1 {
             self.to_node.to_lowercase()
         } else {
             self.rx_prefix_distributed_name()
@@ -130,7 +130,7 @@ impl Channel {
         format!("{}_to_{}",self.from_node.to_lowercase(), self.to_mod.to_lowercase())
     }
 
-    pub fn restructured_bundle_rx(&self, _channels:&Vec<Channel>) -> bool {
+    pub fn restructured_bundle_rx(&self, _channels:&[Channel]) -> bool {
         //special case where we do not want this def because we already have it
         *self.bundle_on_from.borrow() &&
             -1==self.bundle_index && self.rebundle_index>=0

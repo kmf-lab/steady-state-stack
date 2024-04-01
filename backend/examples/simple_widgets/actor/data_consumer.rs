@@ -23,7 +23,7 @@ pub async fn run(context: SteadyContext
     //let args = context.args::<Args>(); //or you can turbo fish here to get your args
 
 
-    let mut monitor =  context.into_monitor([&rx], []);
+    let mut monitor = into_monitor!(context,[rx],[]);
 
     let mut rx = rx.lock().await;
 
@@ -48,7 +48,7 @@ pub async fn run(context: SteadyContext
         rx.is_empty() && rx.is_closed()
     }) {
 
-        monitor.wait_avail_units(&mut rx,1).await;
+        wait_for_all!(monitor.wait_avail_units(&mut rx,1));
 
         //single pass of work, in this high volume example we stay in iterate_once as long
         //as the input channel as more work to process.
@@ -103,13 +103,13 @@ fn process_msg(state: &mut InternalState, msg: Option<ApprovedWidgets>) {
 #[cfg(test)]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
-    let mut monitor = context.into_monitor([&rx], []);
+    let mut monitor = into_monitor!(context,[rx],[]);
 
     let mut rx = rx.lock().await;
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed()) {
 
-        monitor.wait_avail_units(&mut rx,1).await;
+        wait_for_all!(monitor.wait_avail_units(&mut rx,1));
 
         relay_test(&mut monitor, &mut rx).await;
 

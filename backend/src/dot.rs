@@ -25,7 +25,6 @@ use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::channel_stats::ChannelStatsComputer;
-use crate::util;
 
 #[derive(Default)]
 pub struct DotState {
@@ -378,7 +377,7 @@ impl FrameHistory {
             //if we are starting a new file reset our counter to zero
             if !self.last_file_to_append_onto.eq(&file_to_append_onto) {
                 self.file_bytes_written = 0;
-                self.last_file_to_append_onto=file_to_append_onto.clone();
+                self.last_file_to_append_onto.clone_from(&file_to_append_onto);
             }
             //trace!("attempt to write history");
             let to_be_written = std::mem::replace(&mut self.history_buffer, continued_buffer);
@@ -410,11 +409,12 @@ impl FrameHistory {
             new_blocks > old_blocks
     }
 
-    pub(crate) async fn write_file(path: PathBuf, data: BytesMut) -> Result<(), std::io::Error> {
+    pub(crate) async fn truncate_file(path: PathBuf, data: BytesMut) -> Result<(), std::io::Error> {
 
         let file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&path)?;
 
         let h = Handle::<File>::new(file)?;

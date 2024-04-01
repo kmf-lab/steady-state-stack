@@ -44,7 +44,7 @@ pub async fn run(context: SteadyContext
         10_000 //default
     };
 
-    let mut monitor = context.into_monitor([&feedback], [&tx]);
+    let mut monitor = into_monitor!(context, [feedback], [tx]);
 
     let mut feedback = feedback.lock().await;
     let mut tx = tx.lock().await;

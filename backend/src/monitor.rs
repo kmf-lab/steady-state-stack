@@ -1,5 +1,4 @@
 use std::any::type_name;
-use std::cell::RefCell;
 
 #[cfg(test)]
 use std::collections::HashMap;
@@ -11,16 +10,17 @@ use std::sync::{Arc, RwLock};
 use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*; //allowed for all modules
-use num_traits::Zero;
-use futures::future::{pending, select_all};
-use std::task::Context;
+use num_traits::{One, Zero};
+use futures::future::select_all;
+
 use futures_timer::Delay;
 use std::future::Future;
 use std::process::exit;
-use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use futures::channel::oneshot;
 
 use futures::FutureExt;
+use futures_util::future::FusedFuture;
 use futures_util::select;
 use crate::{AlertColor, config, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, Rx, RxBundle, RxDef, StdDev, SteadyRx, SteadyTx, telemetry, Trigger, Tx, TxBundle};
 use crate::actor_builder::{MCPU, Percentile, Work};
@@ -68,18 +68,16 @@ pub struct SteadyTelemetryActorSend {
     pub(crate) bool_stop: bool,
 
     //move these 3 into a cell so we can do running counts with requiring mut
-    pub(crate) await_ns_unit:      AtomicU64,
-    pub(crate) hot_profile:        AtomicU64,
+    pub(crate) await_ns_unit:          AtomicU64,
+
+    pub(crate) hot_profile:            AtomicU64,
+    pub(crate) hot_profile_concurrent: AtomicU16,
+
     pub(crate) calls:             [AtomicU16; 6],
 
 }
 
 impl SteadyTelemetryActorSend {
-
-
-    pub(crate) fn local_now_nanos(&self) -> u64 {
-        Instant::now().elapsed().as_nanos() as u64
-    }
 
     pub(crate) fn status_reset(&mut self) {
 
@@ -100,7 +98,7 @@ impl SteadyTelemetryActorSend {
 
             assert!(total_ns>=self.await_ns_unit.load(Ordering::Relaxed),"should be: {} >= {}",total_ns,self.await_ns_unit.load(Ordering::Relaxed));
 
-            let calls:Vec<u16> = self.calls.iter().map(|f|f.load(Ordering::Relaxed) as u16).collect();
+            let calls:Vec<u16> = self.calls.iter().map(|f|f.load(Ordering::Relaxed) ).collect();
             let calls:[u16;6] = calls.try_into().unwrap_or([0u16;6]);
 
             ActorStatus {
@@ -382,7 +380,6 @@ pub struct ChannelMetaData {
     pub(crate) trigger_filled: Vec<(Trigger<Filled>,AlertColor)>, //if used base is green
     pub(crate) trigger_latency: Vec<(Trigger<Duration>,AlertColor)>, //if used base is green
 
-
     pub(crate) avg_filled: bool,
     pub(crate) avg_rate: bool,
     pub(crate) avg_latency: bool,
@@ -391,6 +388,11 @@ pub struct ChannelMetaData {
     pub(crate) type_byte_count: usize,
     pub(crate) expects_to_be_monitored: bool,
 }
+
+#[derive(Debug)]
+pub struct TxMetaData(pub(crate) Arc<ChannelMetaData>);
+#[derive(Debug)]
+pub struct RxMetaData(pub(crate) Arc<ChannelMetaData>);
 
 
 
@@ -553,7 +555,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) telemetry_send_tx:    Option<SteadyTelemetrySend<TX_LEN>>,
     pub(crate) telemetry_send_rx:    Option<SteadyTelemetrySend<RX_LEN>>,
     pub(crate) telemetry_state:      Option<SteadyTelemetryActorSend>,
-    pub(crate) last_telemetry_send:  Instant, //TODO: change to AtomicU64..
+    pub(crate) last_telemetry_send:  Instant, //NOTE: we use mutable for counts so no need for Atomic here
     pub(crate) last_perodic_wait:    AtomicU64,
     pub(crate) runtime_state:        Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown:     Arc<Mutex<oneshot::Receiver<()>>>,
@@ -604,7 +606,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             }
             Err(e) => {
                 error!("internal error,unable to get liveliness read lock {}",e);
-                exit(-1);
+                exit(-1);   //TODO: remove this after we get clean shutdown.
                 true //keep running as the default under error conditions
             }
         }
@@ -673,14 +675,14 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Asynchronous
     pub async fn wait(&self, duration: Duration) {
         self.start_hot_profile(CALL_WAIT);
-        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+        let one_down = &mut self.oneshot_shutdown.lock().await;
         select! { _ = one_down.deref_mut() => {}, _ =Delay::new(duration).fuse() => {} }
         self.rollup_hot_profile();
     }
 
     /// yield so other actors may be able to make use of this thread. Returns
     /// immediately if there is nothing scheduled to check.
-    async fn yield_now(&self) {
+    pub async fn yield_now(&self) {
         self.start_hot_profile(CALL_WAIT); //start timer to measure duration
         yield_now().await;
         self.rollup_hot_profile(); //rollup the duration into the totals
@@ -717,19 +719,22 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// * `false` if a shutdown signal was detected during the waiting period.
     ///
     pub async fn wait_periodic(&self, duration_rate: Duration) -> bool {
-        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+
+        let one_down = &mut self.oneshot_shutdown.lock().await;
 
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
         let run_duration = now_nanos - self.last_perodic_wait.load(Ordering::Relaxed);
         let remaining_duration = duration_rate.saturating_sub( Duration::from_nanos(run_duration) );
 
         let mut operation = &mut Delay::new(remaining_duration).fuse();
+
         let result = select! {
                 _= &mut one_down.deref_mut() => false,
                 _= operation => true
         };
         self.last_perodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
         result
+
     }
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
@@ -739,15 +744,23 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub(crate) fn start_hot_profile(&self, x: usize) {
         if let Some(ref st) = self.telemetry_state {
             let _ = st.calls[x].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-            st.hot_profile.store(st.local_now_nanos(), Ordering::Relaxed);
+            //if you are the first then store otherwise we leave it as the oldest start
+            if st.hot_profile_concurrent.fetch_add(1,Ordering::Relaxed).is_zero() {
+                st.hot_profile.store(self.actor_start_time.elapsed().as_nanos() as u64
+                                     , Ordering::Relaxed);
+            }
         };
     }
 
     /// Finalizes the current hot profile period, aggregating the collected telemetry data.
     pub(crate) fn rollup_hot_profile(&self) {
         if let Some(ref st) = self.telemetry_state {
-            let prev = st.hot_profile.load(Ordering::Relaxed);
-            let _ = st.await_ns_unit.fetch_update(Ordering::Relaxed,Ordering::Relaxed,|f| Some((f+st.local_now_nanos()).saturating_sub(prev)));
+            if st.hot_profile_concurrent.fetch_sub(1,Ordering::Relaxed).is_one() {
+                let prev = st.hot_profile.load(Ordering::Relaxed);
+                let _ = st.await_ns_unit.fetch_update(Ordering::Relaxed,Ordering::Relaxed
+                                  ,|f|
+                                      Some((f+self.actor_start_time.elapsed().as_nanos() as u64).saturating_sub(prev)));
+            }
         }
     }
 
@@ -789,15 +802,20 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn wait_vacant_units_bundle<T>(& self
                                              , this: &mut TxBundle<'_, T>
                                              , avail_count: usize
-                                             , ready_channels: usize)
+                                             , ready_channels: usize) -> bool
         where T: Send + Sync {
 
         self.start_hot_profile(CALL_OTHER);
         let mut count_down = ready_channels.min(this.len());
 
+        let result = Arc::new(AtomicBool::new(true));
         let futures = this.iter_mut().map(|tx| {
+            let local_r = result.clone();
             async move {
-                tx.shared_wait_vacant_units(avail_count).await;
+                let bool_result = tx.shared_wait_vacant_units(avail_count).await;
+                if !bool_result {
+                    local_r.store(false,Ordering::Relaxed);
+                }
             }
                 .boxed() // Box the future to make them the same type
         });
@@ -814,7 +832,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
 
         self.rollup_hot_profile();
-
+        result.load(Ordering::Relaxed)
     }
 
     /// Attempts to peek at a slice of messages without removing them from the channel.
@@ -977,7 +995,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn call_async<F>(&self, operation: F) -> Option<F::Output>
       where F: Future {
         self.start_hot_profile(CALL_OTHER);
-        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+        let one_down = &mut self.oneshot_shutdown.lock().await;
         let result = select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), };
         self.rollup_hot_profile();
         result
@@ -995,6 +1013,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let ok = this.shared_wait_avail_units(count).await;
         self.rollup_hot_profile();
         ok
+
     }
 
     /// Asynchronously peeks at the next available message in the channel without removing it.
@@ -1161,9 +1180,9 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Asynchronous
     pub async fn wait_vacant_units<T>(&self, this: & mut Tx<T>, count:usize) -> bool {
         self.start_hot_profile(CALL_WAIT);
-        let result = this.shared_wait_vacant_units(count).await;
+        let ok = this.shared_wait_vacant_units(count).await;
         self.rollup_hot_profile();
-        result
+        ok
     }
 
 

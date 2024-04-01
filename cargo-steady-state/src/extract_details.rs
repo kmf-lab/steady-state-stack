@@ -273,9 +273,9 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
 
             // Create a Channel instance based on extracted details
             let mut channel = Channel {
-                name: name.into(),
-                from_mod: mod_name.into(),
-                to_mod: to_mod.into(),
+                name,
+                from_mod: mod_name,
+                to_mod,
                 batch_read: 1,  //default replaced later if set
                 batch_write: 1,  //default replaced later if set
                 message_type: type_name,
@@ -364,8 +364,7 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
         if c.len()>1 {
             //keep existing bundles based on from
             new_channels.push(c);
-        } else {
-                if let Some(local) = c.pop() {
+        } else if let Some(local) = c.pop() {
                     //take each single and see if we can roll them up based on to_node
                     roll_up_bundle(&mut new_channels, local, |t,v| {
                         let result = v.iter().all(|g| g.to_node.eq(&t.to_node));
@@ -376,7 +375,6 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
                         result
                     });
                 }
-        }
     });
     pm.channels = new_channels;
 
@@ -389,7 +387,7 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
             //find the channel in the tx_channels and mark it as a bundle
             if let Some(x) = a.tx_channels.iter_mut().find(|f| f[0].name.eq(&c[0].name)) {
                 x.iter_mut().for_each(|f| {
-                     f.bundle_on_from=c[0].bundle_on_from.clone();
+                     f.bundle_on_from.clone_from(&c[0].bundle_on_from);
                      f.is_unbundled = c.len()==1;
                 } );
             }
@@ -399,7 +397,7 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
             //find the channel in the rx_channels and mark it as a bundle
             if let Some(x) = a.rx_channels.iter_mut().find(|f| f[0].name.eq(&c[0].name)) {
                 x.iter_mut().for_each(|f| {
-                    f.bundle_on_from=c[0].bundle_on_from.clone();
+                    f.bundle_on_from.clone_from(&c[0].bundle_on_from);
                     f.is_unbundled = c.len()==1;
                 } );
             }
@@ -442,7 +440,7 @@ fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, gr
             }
             //update all others to match the first from_mod used
             if !insert_me.from_mod.eq(&x[0].from_mod) {
-                insert_me.from_mod = x[0].from_mod.clone();
+                insert_me.from_mod.clone_from(&x[0].from_mod);
             }
             //update all to match the copy boolean in the bundle
             if insert_me.copy != x[0].copy {

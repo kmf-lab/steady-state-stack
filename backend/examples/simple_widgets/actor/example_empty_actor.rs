@@ -14,11 +14,11 @@ struct SomeLocalState {
 //example code is not called so we let the compiler know
 #[allow(dead_code)]
 #[cfg(not(test))]
-pub async fn run(monitor: SteadyContext
+pub async fn run(context: SteadyContext
                  , tx: SteadyTx<SomeExampleRecord>
                  , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
 
-    let mut monitor = monitor.into_monitor([&rx], [&tx]);
+    let mut monitor = into_monitor!(context, [rx], [tx]);
     let mut state = SomeLocalState{};
 
     let mut rx = rx.lock().await;
@@ -41,11 +41,11 @@ pub async fn run(monitor: SteadyContext
 //example code is not called so we let the compiler know
 #[allow(dead_code)]
 #[cfg(test)]
-pub async fn run(monitor: SteadyContext
+pub async fn run(context: SteadyContext
                  , tx: SteadyTx<SomeExampleRecord>
                  , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
 
-    let mut monitor = monitor.into_monitor([&rx], [&tx]);
+    let mut monitor = into_monitor!(context,[rx],[tx]);
 
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;

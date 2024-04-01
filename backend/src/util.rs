@@ -1,10 +1,9 @@
-use std::error::Error;
+
 use std::str::FromStr;
 use flexi_logger::{DeferredNow, Logger, LogSpecBuilder};
 use flexi_logger::filter::{LogLineFilter, LogLineWriter};
 
 use log::*;
-use nuclei::Handle;
 
 // new Proactive IO
 #[allow(unused_imports)]
@@ -15,18 +14,11 @@ use futures::io::SeekFrom;
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 #[allow(unused_imports)]
 use std::fs::{create_dir_all, File, OpenOptions};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
 use std::task::Context;
 use futures::future::pending;
 use futures::FutureExt;
 use futures_util::lock::{Mutex, MutexGuard};
 
-pub(crate) async fn all_to_file_async(file:File, data: &[u8]) -> Result<(), Box<dyn Error>> {
-    Handle::<File>::new(file)?.write_all(data).await?;
-    Ok(())
-}
 
 /*
 fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>>>)

@@ -1,9 +1,6 @@
 use std::error::Error;
-use std::ops::{Deref, DerefMut};
 use std::process::{exit};
-use std::sync::Arc;
-use futures::lock::Mutex;
-use futures::FutureExt; // Provides the .fuse() method
+
 use futures::pin_mut; // Add pin_mut
 
 use bytes::BytesMut;
@@ -40,15 +37,10 @@ struct State {
 pub(crate) async fn run(context: SteadyContext
                         , rx: SteadyRx<DiagramData>) -> std::result::Result<(),Box<dyn Error>> {
 
-    let mut optional_monitor:Option<_> = None;
-    let mut optional_context:Option<_> = None;
-
-    if config::SHOW_TELEMETRY_ON_TELEMETRY {
-        optional_context = None;
-        optional_monitor = Some(context.into_monitor([&rx], []));
+    let (mut optional_context, mut optional_monitor ) = if config::SHOW_TELEMETRY_ON_TELEMETRY {
+        (None, Some(context.into_monitor([&rx], [])))
     } else {
-        optional_monitor = None;
-        optional_context = Some(context);
+        (Some(context), None)
     };
 
 
@@ -112,13 +104,12 @@ pub(crate) async fn run(context: SteadyContext
             if !monitor.is_running(&mut || rx.is_empty() && rx.is_closed() ){
                 break;
             }
-        } else {
-            if let Some(ref mut context) = optional_context {
+        } else if let Some(ref mut context) = optional_context {
                 if !context.is_running(&mut || rx.is_empty() && rx.is_closed() ) {
                     break;
                 }
-            }
         }
+
 
         select! {
             _ = server_handle.as_mut().fuse() => {

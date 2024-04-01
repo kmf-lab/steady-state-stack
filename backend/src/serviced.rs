@@ -1,5 +1,4 @@
 use std::{env, fs};
-use std::error::Error;
 use std::process::Command;
 use log::*;
 #[allow(unused_imports)]
@@ -14,9 +13,6 @@ use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 #[allow(unused_imports)]
 use std::fs::{create_dir_all, File, OpenOptions};
 use bastion::run;
-use bytes::BytesMut;
-use nuclei::Task;
-use crate::{dot, util};
 use crate::dot::FrameHistory;
 
 pub struct SystemdServiceManager {
@@ -62,7 +58,7 @@ impl SystemdServiceManager {
             wanted_by: "multi-user.target".to_string(),
             service_name: service_executable_name.clone(),
             service_user,
-            description: format!("steady_state:{}",service_executable_name).into(),
+            description: format!("steady_state:{}",service_executable_name),
         }
     }
 
@@ -213,7 +209,7 @@ WantedBy={}
 
         info!("write service content to file: {}",service_content);
 
-        match run!(FrameHistory::write_file((&self.service_file_name).into(), service_content.as_bytes().into())) {
+        match run!(FrameHistory::truncate_file((&self.service_file_name).into(), service_content.as_bytes().into())) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.to_string())
         }

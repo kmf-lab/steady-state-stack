@@ -1,7 +1,7 @@
 use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
-use steady_state::{Rx, SteadyContext, SteadyRx, SteadyTx, Tx};
+use steady_state::*;
 use steady_state::monitor::LocalMonitor;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -19,7 +19,7 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
                  , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = context.into_monitor([&rx], [&tx]);
+    let mut monitor = into_monitor!(context, [rx], [tx]);
 
     let mut tx = tx.lock().await;
     let mut rx = rx.lock().await;
@@ -47,7 +47,7 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
                  , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = context.into_monitor([&rx], [&tx]);
+    let mut monitor = into_monitor!(context, [rx], [tx]);
     let mut tx = tx.lock().await;
     let mut rx = rx.lock().await;
 

@@ -11,7 +11,7 @@ use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
 use crate::{config, RxDef, SteadyContext, SteadyTx, Tx, util};
 
 use futures::future::*;
-use futures_util::lock::{MutexGuard, MutexLockFuture};
+use futures_util::lock::MutexGuard;
 
 use crate::graph_liveliness::ActorIdentity;
 use crate::telemetry::{metrics_collector, metrics_server};
@@ -71,21 +71,18 @@ pub(crate) async fn run(context: SteadyContext
     let ident = context.identity();
 
     //todo: rather than options we may want to use a three way enum for this?
-    let mut optional_monitor:Option<_> = None;
-    let mut optional_context:Option<_> = None;
 
-    if config::SHOW_TELEMETRY_ON_TELEMETRY {
-        optional_monitor = if let Some(c) = &optional_server {
-            optional_context = None;
-            Some(context.into_monitor([], [c]))
+
+    let (mut optional_context, mut optional_monitor) =
+        if config::SHOW_TELEMETRY_ON_TELEMETRY {
+            if let Some(c) = &optional_server {
+                ( None, Some(context.into_monitor([], [c])))
+            } else {
+                ( Some(context), None)
+            }
         } else {
-            optional_context = Some(context);
-            None
+            ( Some(context), None)
         };
-    } else {
-        optional_monitor = None;
-        optional_context = Some(context);
-    };
 
     let mut state = RawDiagramState::default();
 
@@ -100,16 +97,15 @@ loop {
             monitor.relay_stats_smartly().await;
             //TODO: keep running if dynamic_senders_vec are no empty and still open
             //      this requires us to add the closed logic on the other end.
-            if !monitor.is_running(&mut || svr.iter_mut().all(|mut s| s.mark_closed()) ) {
+            if !monitor.is_running(&mut || svr.iter_mut().all(|s| s.mark_closed()) ) {
                 break;
             }
-        } else {
-            if let Some(ref mut context) = optional_context {
-                if !context.is_running(&mut || svr.iter_mut().all(|mut s| s.mark_closed()) ) {
+        } else if let Some(ref mut context) = optional_context {
+                if !context.is_running(&mut || svr.iter_mut().all(|s| s.mark_closed()) ) {
                     break;
                 }
             }
-        }
+
 
         //we wait here without holding the large lock
         if let Some(ref scan) = scan {

@@ -37,7 +37,7 @@ pub use graph_liveliness::*;
 pub use loop_driver::*;
 
 use std::any::{Any, type_name};
-use std::cell::RefCell;
+
 
 use std::time::{Duration, Instant};
 
@@ -63,7 +63,7 @@ use backtrace::Backtrace;
 
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use actor_builder::ActorBuilder;
-use crate::monitor::{ActorMetaData, CALL_WAIT, ChannelMetaData};
+use crate::monitor::{ActorMetaData, ChannelMetaData, RxMetaData, TxMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
@@ -125,6 +125,7 @@ pub struct SteadyContext {
     pub(crate) actor_start_time: Instant,
 }
 
+
 impl SteadyContext {
 
     pub(crate) fn is_liveliness_in(&self, target: &[GraphLivelinessState], upon_posion: bool) -> bool {
@@ -158,7 +159,7 @@ impl SteadyContext {
     /// * `false` if a shutdown signal was detected during the waiting period.
     ///
     pub async fn wait_periodic(&self, duration_rate: Duration) -> bool {
-        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+        let one_down = &mut self.oneshot_shutdown.lock().await;
 
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
         let run_duration = now_nanos - self.last_perodic_wait.load(Ordering::Relaxed);
@@ -180,13 +181,13 @@ impl SteadyContext {
     ///
     /// # Asynchronous
     pub async fn wait(&self, duration: Duration) {
-        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+        let one_down = &mut self.oneshot_shutdown.lock().await;
         select! { _ = one_down.deref_mut() => {}, _ =Delay::new(duration).fuse() => {} }
     }
 
     /// yield so other actors may be able to make use of this thread. Returns
     /// immediately if there is nothing scheduled to check.
-    async fn yield_now(&self) {
+    pub async fn yield_now(&self) {
         yield_now().await;
     }
 
@@ -252,14 +253,31 @@ impl SteadyContext {
 
 
 
+   pub fn into_monitor<const RX_LEN: usize, const TX_LEN: usize>(self
+                              , rx_mons: [& dyn RxDef; RX_LEN]
+                              , tx_mons: [& dyn TxDef; TX_LEN]
+   ) -> LocalMonitor<RX_LEN,TX_LEN> {
 
+       let rx_meta = rx_mons
+           .iter()
+           .map(|rx| rx.meta_data())
+           .collect::<Vec<_>>()
+           .try_into()
+           .expect("Length mismatch should never occur");
 
-    //TODO: build a new macro calling .meta_data() on each
-    //     we can leave this as we desire.
+       let tx_meta = tx_mons
+           .iter()
+           .map(|tx| tx.meta_data())
+           .collect::<Vec<_>>()
+           .try_into()
+           .expect("Length mismatch should never occur");
 
-    pub fn into_monitor<const RX_LEN: usize, const TX_LEN: usize>(self
-                                                      , rx_mons: [& dyn RxDef; RX_LEN]
-                                                      , tx_mons: [& dyn TxDef; TX_LEN]
+      self.into_monitor_internal(rx_meta, tx_meta)
+   }
+
+    pub fn into_monitor_internal<const RX_LEN: usize, const TX_LEN: usize>(self
+                                            , rx_mons: [RxMetaData; RX_LEN]
+                                            , tx_mons: [TxMetaData; TX_LEN]
     ) -> LocalMonitor<RX_LEN,TX_LEN> {
 
         //only build telemetry channels if this feature is enabled
@@ -268,23 +286,21 @@ impl SteadyContext {
             let mut rx_meta_data = Vec::new();
             let mut rx_inverse_local_idx = [0; RX_LEN];
             rx_mons.iter()
-                .map(|rx| rx.meta_data())
                 .enumerate()
                 .for_each(|(c, md)| {
-                    assert!(md.id < usize::MAX);
-                    rx_inverse_local_idx[c]=md.id;
-                    rx_meta_data.push(md);
+                    assert!(md.0.id < usize::MAX);
+                    rx_inverse_local_idx[c]=md.0.id;
+                    rx_meta_data.push(md.0.clone());
                 });
 
             let mut tx_meta_data = Vec::new();
             let mut tx_inverse_local_idx = [0; TX_LEN];
             tx_mons.iter()
-                .map(|tx| tx.meta_data())
                 .enumerate()
                 .for_each(|(c, md)| {
-                    assert!(md.id < usize::MAX);
-                    tx_inverse_local_idx[c]=md.id;
-                    tx_meta_data.push(md);
+                    assert!(md.0.id < usize::MAX);
+                    tx_inverse_local_idx[c]=md.0.id;
+                    tx_meta_data.push(md.0.clone());
                 });
 
             setup::construct_telemetry_channels(&self
@@ -314,6 +330,141 @@ impl SteadyContext {
         }
     }
 }
+
+/*
+macro_rules! concat_tuples {
+    (($($left:expr),*), ($($right:expr),*)) => {
+        ($($left,)* $($right,)*)
+    };
+}
+
+macro_rules! concat_arrays {
+    ([$($left:expr),*], [$($right:expr),*]) => {
+        [$($left,)* $($right,)*]
+    };
+}*/
+
+#[macro_export]
+macro_rules! into_monitor {
+    ($self:expr, [$($rx:expr),*], [$($tx:expr),*]) => {{
+        //this allows for 'arrays' of non homogneous types and avoids dyn
+        let rx_meta = [$($rx.meta_data(),)*];
+        let tx_meta = [$($tx.meta_data(),)*];
+
+        $self.into_monitor_internal(rx_meta, tx_meta)
+    }};
+    ($self:expr, [$($rx:expr),*], $tx_bundle:expr) => {{
+        //this allows for 'arrays' of non homogneous types and avoids dyn
+        let rx_meta = [$($rx.meta_data(),)*];
+        $self.into_monitor_internal(rx_meta, $tx_bundle.meta_data())
+    }};
+     ($self:expr, $rx_bundle:expr, [$($tx:expr),*] ) => {{
+        //this allows for 'arrays' of non homogneous types and avoids dyn
+        let tx_meta = [$($tx.meta_data(),)*];
+        $self.into_monitor_internal($rx_bundle.meta_data(), tx_meta)
+    }};
+    ($self:expr, $rx_bundle:expr, $tx_bundle:expr) => {{
+        $self.into_monitor_internal($rx_bundle.meta_data(), $tx_bundle.meta_data())
+    }};
+    ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*], $($rx_bundle:expr),* ), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
+        let mut rx_count = [$( { $rx; 1 } ),*].len();
+        $(
+            rx_count += $rx_bundle.meta_data().len();
+        )*
+        assert_eq!(rx_count, $rx_channels_to_monitor, "Mismatch in RX channel count");
+
+        let mut tx_count = [$( { $tx; 1 } ),*].len();
+        $(
+            tx_count += $tx_bundle.meta_data().len();
+        )*
+        assert_eq!(tx_count, $tx_channels_to_monitor, "Mismatch in TX channel count");
+
+        let mut rx_mon = [RxMetaData::default(); $rx_channels_to_monitor];
+        let mut rx_index = 0;
+        $(
+            rx_mon[rx_index] = $rx.meta_data();
+            rx_index += 1;
+        )*
+        $(
+            for meta in $rx_bundle.meta_data() {
+                rx_mon[rx_index] = meta;
+                rx_index += 1;
+            }
+        )*
+
+        let mut tx_mon = [TxMetaData::default(); $tx_channels_to_monitor];
+        let mut tx_index = 0;
+        $(
+            tx_mon[tx_index] = $tx.meta_data();
+            tx_index += 1;
+        )*
+        $(
+            for meta in $tx_bundle.meta_data() {
+                tx_mon[tx_index] = meta;
+                tx_index += 1;
+            }
+        )*
+
+        $self.into_monitor_internal(rx_mon, tx_mon)
+    }};
+   ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*]), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
+        let mut rx_count = [$( { $rx; 1 } ),*].len();
+        assert_eq!(rx_count, $rx_channels_to_monitor, "Mismatch in RX channel count");
+
+        let mut tx_count = [$( { $tx; 1 } ),*].len();
+        $(
+            tx_count += $tx_bundle.meta_data().len();
+        )*
+        assert_eq!(tx_count, $tx_channels_to_monitor, "Mismatch in TX channel count");
+
+        let mut rx_mon = [RxMetaData::default(); $rx_channels_to_monitor];
+        let mut rx_index = 0;
+        $(
+            rx_mon[rx_index] = $rx.meta_data();
+            rx_index += 1;
+        )*
+
+        let mut tx_mon = [TxMetaData::default(); $tx_channels_to_monitor];
+        let mut tx_index = 0;
+        $(
+            tx_mon[tx_index] = $tx.meta_data();
+            tx_index += 1;
+        )*
+        $(
+            for meta in $tx_bundle.meta_data() {
+                tx_mon[tx_index] = meta;
+                tx_index += 1;
+            }
+        )*
+
+        $self.into_monitor_internal(rx_mon, tx_mon)
+    }};
+}
+
+/*
+macro_rules! my_macro {
+    ($a:expr) => { /* Handle single expression */ };
+    ($a:expr, $b:expr) => { /* Handle two expressions */ };
+}
+
+macro_rules! into_monitor_macro2 {
+    ($self:expr, $rx_mons:expr, $tx_mons:expr) => {{
+        let rx_meta = $rx_mons
+            .iter()
+            .map(|rx| rx.meta_data())
+            .collect::<Vec<_>>();
+        let rx_meta: [_; $rx_mons.len()] = rx_meta.try_into().expect("Length mismatch should never occur");
+
+        let tx_meta = $tx_mons
+            .iter()
+            .map(|tx| tx.meta_data())
+            .collect::<Vec<_>>();
+        let tx_meta: [_; $tx_mons.len()] = tx_meta.try_into().expect("Length mismatch should never occur");
+
+        $self.into_monitor_internal(rx_meta, tx_meta)
+    }};
+}
+*/
 
 pub struct Graph  {
     pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
@@ -357,7 +508,7 @@ impl Graph {
             runtime_state: self.runtime_state.clone(),
             count_restarts,
             oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
-            oneshot_shutdown: oneshot_shutdown,
+            oneshot_shutdown,
             last_perodic_wait: Default::default(),
             actor_start_time: now,
         }
@@ -450,13 +601,7 @@ impl<T> Tx<T> {
     /// Use this method for non-blocking send operations where immediate feedback on send success is required.
     /// Not suitable for scenarios where ensuring message delivery is critical without additional handling for failed sends.
     pub fn try_send(& mut self, msg: T) -> Result<(), T> {
-        //TODO: should this be assert or a check?? do elsewhere after deciding
-        if let Some(_) = self.make_closed {
-            self.shared_try_send(msg)
-        } else {
-            warn!("attempt to send after marking channel closed");
-            Err(msg)
-        }
+         self.shared_try_send(msg)
     }
 
     /// Sends messages from an iterator to the channel until the channel is full.
@@ -472,7 +617,7 @@ impl<T> Tx<T> {
     /// Ideal for batch sending operations where partial success is acceptable.
     /// Less suitable when all messages must be sent without loss, as this method does not guarantee all messages are sent.
     pub fn send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
-        self.shared_send_iter_until_full(iter)
+         self.shared_send_iter_until_full(iter)
     }
 
     /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
@@ -570,8 +715,6 @@ impl<T> Tx<T> {
         self.shared_wait_empty().await
     }
 
-
-
     //////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////
 
@@ -592,6 +735,9 @@ impl<T> Tx<T> {
 
     #[inline]
     fn shared_try_send(& mut self, msg: T) -> Result<(), T> {
+        if self.make_closed.is_none() {
+            warn!("Send called after channel marked closed");
+        }
         match self.tx.try_push(msg) {
             Ok(_) => {Ok(())}
             Err(m) => {Err(m)}
@@ -599,11 +745,17 @@ impl<T> Tx<T> {
     }
     #[inline]
     fn shared_send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
+        if self.make_closed.is_none() {
+            warn!("Send called after channel marked closed");
+        }
         self.tx.push_iter(iter)
     }
     #[inline]
     fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
         where T: Copy {
+        if self.make_closed.is_none() {
+            warn!("Send called after channel marked closed");
+        }
         self.tx.push_slice(slice)
     }
     #[inline]
@@ -630,7 +782,9 @@ impl<T> Tx<T> {
 
     #[inline]
     async fn shared_send_async(& mut self, msg: T, ident: ActorIdentity, saturation_ok: bool) -> Result<(), T> {
-
+        if self.make_closed.is_none() {
+            warn!("Send called after channel marked closed");
+        }
         //by design, we ignore the runtime state because even if we are shutting down we
         //still want to wait for room for our very last message
 
@@ -1048,10 +1202,10 @@ impl<T> Rx<T> {
 
 
 pub trait TxDef: Debug {
-    fn meta_data(&self) -> Arc<ChannelMetaData>;
+    fn meta_data(&self) -> TxMetaData;
 }
 pub trait RxDef: Debug + Send {
-    fn meta_data(&self) -> Arc<ChannelMetaData>;
+    fn meta_data(&self) -> RxMetaData;
     fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, ()>;
 
     }
@@ -1059,18 +1213,18 @@ pub trait RxDef: Debug + Send {
 //BoxFuture
 
 impl <T> TxDef for SteadyTx<T> {
-    fn meta_data(&self) -> Arc<ChannelMetaData> {
+    fn meta_data(&self) -> TxMetaData {
         let guard = bastion::run!(self.lock());
         let this = guard.deref();
-        this.channel_meta_data.clone()
+        TxMetaData(this.channel_meta_data.clone())
     }
 }
 
 impl <T: Send + Sync > RxDef for SteadyRx<T>  {
-    fn meta_data(&self) -> Arc<ChannelMetaData> {
+    fn meta_data(&self) -> RxMetaData {
         let guard = bastion::run!(self.lock());
         let this = guard.deref();
-        this.channel_meta_data.clone()
+        RxMetaData(this.channel_meta_data.clone())
     }
 
     #[inline]
@@ -1090,6 +1244,7 @@ impl <T: Send + Sync > RxDef for SteadyRx<T>  {
 pub trait SteadyTxBundleTrait<T,const GIRTH:usize> {
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>>;
     fn def_slice(&self) -> [& dyn TxDef; GIRTH];
+    fn meta_data(&self) -> [TxMetaData; GIRTH];
     fn wait_vacant_units(&self
                                   , avail_count: usize
                                   , ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
@@ -1111,6 +1266,15 @@ impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyT
             .try_into()
             .expect("Internal Error")
     }
+
+    fn meta_data(&self) -> [TxMetaData; GIRTH] {
+        self.iter()
+            .map(|x| x.meta_data())
+            .collect::<Vec<TxMetaData>>()
+            .try_into()
+            .expect("Internal Error")
+    }
+
 
 
     async fn wait_vacant_units(&self
@@ -1144,6 +1308,8 @@ impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyT
 pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>>;
     fn def_slice(&self) -> [& dyn RxDef; GIRTH];
+    fn meta_data(&self) -> [RxMetaData; GIRTH];
+
     fn wait_avail_units(&self
                                  , avail_count: usize
                                  , ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
@@ -1162,6 +1328,13 @@ impl<T: std::marker::Send + std::marker::Sync, const GIRTH: usize> crate::Steady
             .expect("Internal Error")
     }
 
+    fn meta_data(&self) -> [RxMetaData; GIRTH] {
+        self.iter()
+            .map(|x| x.meta_data())
+            .collect::<Vec<RxMetaData>>()
+            .try_into()
+            .expect("Internal Error")
+    }
     async fn wait_avail_units(&self
                                                          , avail_count: usize
                                                          , ready_channels: usize)

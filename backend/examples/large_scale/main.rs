@@ -98,7 +98,8 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                 .build_with_exec(
                        move |context| actor::data_generator::run(context
                                                   , btx.clone()
-                       ));
+                       )
+                );
 
         for x in 0..LEVEL_1 {
             let local_rx = brx[x].clone();
@@ -124,7 +125,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                                                             , LEVEL_1*LEVEL_2
                                                                             , local_rx.clone()
                                                                             , btx.clone()
-                    )
+                                     )
                     );
 
                 for z in 0..LEVEL_3 {
@@ -137,7 +138,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                                                                     , LEVEL_1*LEVEL_2*LEVEL_3
                                                                                     , local_rx.clone()
                                                                                     , btx.clone()
-                            )
+                                          )
                             );
 
 
@@ -148,7 +149,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                 .with_name_suffix(z)
                                 .build_with_exec(move |context| actor::data_user::run(context
                                                                                       , local_rx.clone()
-                                )
+                                             )
                                 );
 
 
@@ -163,7 +164,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                     .build_with_exec(move |context| actor::data_process::run(context
                                                                                              , local_rx.clone()
                                                                                              , filter_tx.clone()
-                                    )
+                                                  )
                                     );
 
                             let (logging_tx, logging_rx) = base_channel_builder.build();
@@ -174,7 +175,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                     .build_with_exec(move |context| actor::data_process::run(context
                                                                                              , filter_rx.clone()
                                                                                              , logging_tx.clone()
-                                    )
+                                                  )
                                     );
 
 
@@ -186,7 +187,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                     .build_with_exec(move |context| actor::data_process::run(context
                                                                                              , logging_rx.clone()
                                                                                              , decrypt_tx.clone()
-                                    )
+                                                  )
                                     );
 
                                 base_actor_builder
@@ -194,7 +195,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                                     .with_name_suffix(z)
                                     .build_with_exec(move |context| actor::data_user::run(context
                                                                                           , decrypt_rx.clone()
-                                         )
+                                                    )
                                     );
                         }
                     }

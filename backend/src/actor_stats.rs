@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
+
 use hdrhistogram::{Counter, Histogram};
 
 #[allow(unused_imports)]
@@ -7,7 +7,6 @@ use log::*;
 use std::cmp;
 
 use crate::*;
-use crate::actor_builder::{MCPU, Work};
 use crate::channel_stats::{compute_labels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW, PLACES_TENS};
 use crate::monitor::ActorMetaData;
 
@@ -135,8 +134,8 @@ impl ActorStatsComputer {
 
         //TODO: we could pre-filter these by color here since they will not change again
         //      this might be needed for faster updates..
-        self.mcpu_trigger = meta.trigger_mcpu.clone();
-        self.work_trigger = meta.trigger_work.clone();
+        self.mcpu_trigger.clone_from(&meta.trigger_mcpu);
+        self.work_trigger.clone_from(&meta.trigger_work);
 
         self.frame_rate_ms = config::TELEMETRY_PRODUCTION_RATE_MS as u128;
         self.refresh_rate_in_bits = meta.refresh_rate_in_bits;
@@ -145,10 +144,10 @@ impl ActorStatsComputer {
 
         self.show_avg_mcpu = meta.avg_mcpu;
         self.show_avg_work = meta.avg_work;
-        self.percentiles_mcpu = meta.percentiles_mcpu.clone();
-        self.percentiles_work = meta.percentiles_work.clone();
-        self.std_dev_mcpu = meta.std_dev_mcpu.clone();
-        self.std_dev_work  = meta.std_dev_work.clone();
+        self.percentiles_mcpu.clone_from(&meta.percentiles_mcpu);
+        self.percentiles_work.clone_from(&meta.percentiles_work);
+        self.std_dev_mcpu.clone_from(&meta.std_dev_mcpu);
+        self.std_dev_work.clone_from(&meta.std_dev_work);
         self.usage_review = meta.usage_review;
 
         let trigger_uses_histogram = self.mcpu_trigger.iter().any(|t|

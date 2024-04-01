@@ -1,17 +1,16 @@
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::process::exit;
-use std::sync::Arc;
-use std::time::Duration;
+
+
 #[allow(unused_imports)]
 use log::*;
 use num_traits::Zero;
 use crate::*;
-use crate::monitor::ChannelMetaData;
 use hdrhistogram::{Counter, Histogram};
-use crate::actor_stats;
+
 use crate::actor_stats::ChannelBlock;
-use crate::channel_builder::{Filled, Rate};
+
 
 pub(crate) const DOT_GREEN: &str = "green";
 pub(crate) const DOT_YELLOW: &str = "yellow";
@@ -96,19 +95,17 @@ impl ChannelStatsComputer {
         self.show_avg_rate = meta.avg_rate;
         self.show_avg_latency = meta.avg_latency;
 
-        self.percentiles_filled = meta.percentiles_filled.clone();
-        self.percentiles_rate = meta.percentiles_rate.clone();
-        self.percentiles_latency = meta.percentiles_latency.clone();
+        self.percentiles_filled.clone_from(&meta.percentiles_filled);
+        self.percentiles_rate.clone_from(&meta.percentiles_rate);
+        self.percentiles_latency.clone_from(&meta.percentiles_latency);
 
-        self.std_dev_filled = meta.std_dev_inflight.clone();
-        self.std_dev_rate = meta.std_dev_consumed.clone();
-        self.std_dev_latency  = meta.std_dev_latency.clone();
+        self.std_dev_filled.clone_from(&meta.std_dev_inflight);
+        self.std_dev_rate.clone_from(&meta.std_dev_consumed);
+        self.std_dev_latency.clone_from(&meta.std_dev_latency);
 
-        self.rate_trigger = meta.trigger_rate.clone();
-        self.filled_trigger = meta.trigger_filled.clone();
-        self.latency_trigger = meta.trigger_latency.clone();
-
-
+        self.rate_trigger.clone_from(&meta.trigger_rate);
+        self.filled_trigger.clone_from(&meta.trigger_filled);
+        self.latency_trigger.clone_from(&meta.trigger_latency);
 
         //we set the build * histograms last after we bring in all the triggers
 

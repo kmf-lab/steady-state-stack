@@ -22,7 +22,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                                     , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
 
-    let mut monitor = context.into_monitor([], tx.def_slice());
+    let mut monitor =into_monitor!(context,[],tx);
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
 
@@ -34,7 +34,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
     while monitor.is_running(&mut || tx.mark_closed()) {
 
-        monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH).await;
+        let _clean = wait_for_all!(monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH));
         single_iteration(&mut monitor, &mut buffers, &mut tx, limit).await;
         monitor.relay_stats_smartly().await;
 

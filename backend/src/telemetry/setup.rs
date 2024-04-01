@@ -95,6 +95,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
             instant_start: Instant::now(),
             await_ns_unit: AtomicU64::new(0),
             hot_profile: AtomicU64::new(0),
+            hot_profile_concurrent: Default::default(),
             calls,
             count_restarts: that.count_restarts.clone(),
             bool_stop: false,

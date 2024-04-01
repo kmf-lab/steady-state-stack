@@ -10,13 +10,13 @@ use crate::actor::data_generator::Packet;
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor =  context.into_monitor([&rx], []);
+    let mut monitor = into_monitor!(context,[rx], []);
 
     let mut rx = rx.lock().await;
 
     while monitor.is_running(&mut || rx.is_closed()) {
 
-        monitor.wait_avail_units(&mut rx, 1).await;
+        wait_for_all!(monitor.wait_avail_units(&mut rx, 1));
 
         if let Some(packet) = monitor.try_take(&mut rx) {
             assert_eq!(packet.data.len(),128);

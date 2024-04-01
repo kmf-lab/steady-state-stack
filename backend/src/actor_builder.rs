@@ -11,7 +11,7 @@ use bastion::supervisor::*;
 use futures::channel::oneshot;
 use futures_util::lock::Mutex;
 use log::*;
-use time::Instant;
+
 use crate::{AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::monitor::ActorMetaData;

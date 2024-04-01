@@ -18,7 +18,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , tx: SteadyTxBundle<Packet,GIRTH>
                 ) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = context.into_monitor([&rx], tx.def_slice());
+    let mut monitor = into_monitor!(context,[rx],tx);
 
     let block_size = u16::MAX / one_of as u16;
 
@@ -29,15 +29,12 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()   ) {
 
-        monitor.wait_vacant_units_bundle(&mut tx,1,1).await;
+        wait_for_all_or_proceed_upon!(
+            monitor.wait_periodic(Duration::from_millis(2)),
+            monitor.wait_avail_units(&mut rx,count),
+            monitor.wait_vacant_units_bundle(&mut tx,1,1)
+        );
 
-
-        //we run atLeast once every 2 ms
-        let delay_future = Delay::new(Duration::from_millis(2));
-        select! {
-            _ = delay_future.fuse() => {},
-            _ = monitor.wait_avail_units(&mut rx,count).fuse() => {},
-        }
         single_iteration(&mut monitor, block_size, &mut rx, &mut tx).await;
         monitor.relay_stats_smartly().await;
 

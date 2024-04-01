@@ -312,7 +312,7 @@ fn build_driver_block(actor: &Actor) -> String {
             //setup for the join
             andy_drivers.iter().for_each(|t| {
                 full_driver_block.push_str("    ");
-                full_driver_block.push_str(&t);
+                full_driver_block.push_str(t);
                 full_driver_block.push_str(".fuse(),\n");
             });
 
@@ -324,7 +324,7 @@ fn build_driver_block(actor: &Actor) -> String {
     } else {
         andy_drivers.iter().for_each(|t| {
             full_driver_block.push_str("    ");
-            full_driver_block.push_str(&t);
+            full_driver_block.push_str(t);
             full_driver_block.push_str(".await;\n");
         });
     }
@@ -372,14 +372,14 @@ fn monitor_defs(direction: &str, channels: &[Vec<Channel>]) -> Vec<String> {
          //NOTE: this feature disabled until we get better support for use of
           // generic constants to sum two together to build a new constant array.
          if is_alone {//  tx.def_slice(), does not require & or surrounding []
-             result.push(format!("{}_{}.def_slice()",c[0].name,direction).into());
+             result.push(format!("{}_{}.def_slice()",c[0].name,direction));
          } else {
              //NOTE: once we have simple expressions of generic constants to sum arrays this
              //     code can be removed
              c.iter()
                  .enumerate()
                  .for_each(|(i,f)| { //NOTE: each requies an index
-                 result.push(format!("{}_{}[{}]",f.name,direction,i).into());
+                 result.push(format!("{}_{}[{}]",f.name,direction,i));
              });
          }
       } else {

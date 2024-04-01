@@ -15,7 +15,6 @@ use futures::channel::oneshot;
 use futures::channel::oneshot::Sender;
 use futures_timer::Delay;
 use futures_util::lock::MutexGuard;
-use futures_util::SinkExt;
 
 use crate::actor_builder::ActorBuilder;
 use crate::{EdgeSimulationDirector, Graph, telemetry};
