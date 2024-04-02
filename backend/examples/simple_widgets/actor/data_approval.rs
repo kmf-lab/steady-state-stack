@@ -109,6 +109,7 @@ fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor<R, T>
                 approved_count: b.count / 2,
             });
             if b.count % 20000 == 0 {
+
                 let _ = monitor.try_send(feedback, FailureFeedback {
                     count: b.count,
                     message: "count is a multiple of 20000".to_string(),

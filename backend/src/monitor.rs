@@ -20,7 +20,6 @@ use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use futures::channel::oneshot;
 
 use futures::FutureExt;
-use futures_util::future::FusedFuture;
 use futures_util::select;
 use crate::{AlertColor, config, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, Rx, RxBundle, RxDef, StdDev, SteadyRx, SteadyTx, telemetry, Trigger, Tx, TxBundle};
 use crate::actor_builder::{MCPU, Percentile, Work};
@@ -769,15 +768,20 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn wait_avail_units_bundle<T>(& self
                                             , this: &mut RxBundle<'_, T>
                                             , avail_count: usize
-                                            , ready_channels: usize)
+                                            , ready_channels: usize) -> bool
         where T: Send + Sync {
 
         self.start_hot_profile(CALL_OTHER);
 
         let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
         let futures = this.iter_mut().map(|rx| {
+            let local_r = result.clone();
             async move {
-                rx.shared_wait_avail_units(avail_count).await;
+                let bool_result = rx.shared_wait_avail_units(avail_count).await;
+                if !bool_result {
+                    local_r.store(false,Ordering::Relaxed);
+                }
             }.boxed() // Box the future to make them the same type
         });
 
@@ -796,6 +800,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
 
         self.rollup_hot_profile();
+        result.load(Ordering::Relaxed)
 
     }
 

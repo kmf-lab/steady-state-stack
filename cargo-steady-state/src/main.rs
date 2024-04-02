@@ -14,6 +14,7 @@ use log::*;
 use structopt::StructOpt;
 use crate::args::Args;
 use crate::templates::*;
+use num_traits::identities::One;
 
 #[derive(Default)]
 struct ProjectModel {
@@ -173,10 +174,6 @@ fn write_project_files(pm: ProjectModel
        my_struct_def.sort();
        my_struct_def.dedup();
 
-
-
-
-
        let full_driver_block = build_driver_block(&actor);
        let full_process_example_block = build_process_block(&actor);
 
@@ -201,9 +198,129 @@ fn write_project_files(pm: ProjectModel
    Ok(())
 }
 
-fn build_process_block(_actor: &Actor) -> String {
-    let full_process_example_block = String::new();
+fn build_process_block(actor: &Actor) -> String {
+    let mut full_process_example_block = String::new();
+
+    actor.rx_channels.iter().for_each(|f| {
+        if f.len().is_one() {
+            //single
+            if f[0].copy {
+                if f[0].peek {
+                     //single copy peek
+                    full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.try_peek_slice(buffer,{}_rx);\n",f[0].name));
+                    full_process_example_block
+                        .push_str(&format!("//         also note you must take value after processing\n"));
+                } else {
+                     //single copy
+                    full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.take_slice(buffer, {}_rx);\n",f[0].name));
+
+                }
+            } else {
+                if f[0].peek {
+                     //single owner peek
+                    full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.try_peek({}_rx);\n",f[0].name));
+                    full_process_example_block
+                        .push_str(&format!("//         also note you must take value after processing\n"));
+                } else {
+                     //single owner
+                    full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.try_take({}_rx);\n",f[0].name));
+                }
+            }
+        } else {
+            //bundle
+            if f[0].copy {
+                if f[0].peek {
+                    //multi copy peek
+                    full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.try_peek_slice(buffer,{}_rx);\n",f[0].name));
+                    full_process_example_block
+                        .push_str(&format!("//         also note you must take value after processing\n"));
+                } else {
+                    //multi copy
+                    full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.take_slice({}_rx);\n",f[0].name));
+
+                }
+            } else {
+                if f[0].peek {
+                     //multi owner peek
+                    full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.try_peek_iter({}_rx);\n",f[0].name));
+                    full_process_example_block
+                        .push_str(&format!("//         also note you must take value after processing\n"));
+
+                } else {
+                         full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.try_take({}_rx);\n",f[0].name));
+
+                     //multi
+                     // monitor.take_iter() //missing method.
+//                    full_process_example_block
+  //                      .push_str(&format!("//trythis:  monitor.take_iter({}_rx);\n",f[0].name));
+                }
+            }
+        }
+
+    });
+
+
+
+
+    actor.tx_channels.iter().for_each(|f| {
+        if f.len().is_one() {
+            //single
+            if f[0].copy {
+                 // monitor.try_send()
+ full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.try_send({}_rx);\n",f[0].name));
+
+
+            } else {
+                if f[0].peek {
+                    // write one peek
+
+
+                } else {
+                    // monitor.try_send()
+
+
+                }
+            }
+        } else {
+            //bundle
+            if f[0].copy {
+                if f[0].peek {
+                    //write multi copy peek
+
+                } else {
+                    // monitor.send_slice_until_full()
+
+
+                }
+            } else {
+                if f[0].peek {
+                    //write multi peek
+
+
+                } else {
+                    // monitor.send_iter_until_full()
+
+
+                }
+            }
+        }
+
+    });
+
+
+
     // TODO: some examples for each field how to read and write.
+
+
     full_process_example_block
 }
 
@@ -215,10 +332,10 @@ fn build_driver_block(actor: &Actor) -> String {
     actor.driver.iter().for_each(|f| {
         match f {
             ActorDriver::AtLeastEvery(d) => {
-                at_least_every = Some(format!("monitor.relay_stats_periodic(Duration::from_millis({:?}))",d.as_millis()));
+                at_least_every = Some(format!("monitor.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
             }
             ActorDriver::AtMostEvery(d) => {
-                andy_drivers.push(format!("monitor.relay_stats_periodic(Duration::from_millis({:?}))",d.as_millis()));
+                andy_drivers.push(format!("monitor.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
             }
             ActorDriver::EventDriven(t) => {
                 let mut each: Vec<String> = t.iter().map(|v| {
@@ -297,36 +414,32 @@ fn build_driver_block(actor: &Actor) -> String {
         //this block must be a wrapping select around the others
 
         if andy_drivers.is_empty() {
-            full_driver_block.push_str("    ");
+            full_driver_block.push_str("    let _clean = wait_for_all!(");
             full_driver_block.push_str(&t);
-            full_driver_block.push_str(".await;\n");
+            full_driver_block.push_str(");\n");
         } else {
+            full_driver_block.push_str("    let _clean = wait_for_all_or_proceed_upon!(");
 
-            full_driver_block.push_str("select! {\n");
-
-            full_driver_block.push_str("_ = ");
             full_driver_block.push_str(&t);
-            full_driver_block.push_str(" => {},\n");
+            full_driver_block.push_str("\n");
 
-            full_driver_block.push_str("_ = join!(\n");
             //setup for the join
             andy_drivers.iter().for_each(|t| {
-                full_driver_block.push_str("    ");
+                full_driver_block.push(',');
                 full_driver_block.push_str(t);
-                full_driver_block.push_str(".fuse(),\n");
+                full_driver_block.push_str("\n");
             });
-
-            full_driver_block.push_str("        ) => {},\n");
-
-            full_driver_block.push_str("}\n");
+            full_driver_block.push_str("    );\n");
         }
-
     } else {
-        andy_drivers.iter().for_each(|t| {
-            full_driver_block.push_str("    ");
+        full_driver_block.push_str("    let _clean = wait_for_all!(");
+        andy_drivers.iter().enumerate().for_each(|(i,t)| {
+            if i>0 {
+                full_driver_block.push_str(",\n");
+            }
             full_driver_block.push_str(t);
-            full_driver_block.push_str(".await;\n");
         });
+        full_driver_block.push_str("    );\n");
     }
 
     full_driver_block
@@ -437,55 +550,57 @@ mod tests {
             return;
         }
 
+        let current_dir = env::current_dir().expect("Failed to get current directory");
+
         //move to our test_run folder to ensure we do not generate test code on top of our self
-        match env::set_current_dir("test_run") {
+        let ok = current_dir.ends_with("test_run")
+                 || match env::set_current_dir("test_run") {
             Ok(_) => {
-                let current_dir = env::current_dir().expect("Failed to get current directory");
-                println!("Current working directory is: {:?}", current_dir);
-
-
-                if clean {
-                    //NOTE: must delete the unnamed1 folder if it exists
-                    if let Err(e) = fs::remove_dir_all(test_name) {
-                        error!("Failed to remove test_run/{} directory: {}",test_name, e);
-                    } else {
-                        info!("Removed test_run/{} directory",test_name);
-                    }
-                }
-
-                /////
-                process_dot(g, test_name);
-
-
-                const DO_COMPILE_TEST:bool = true;
-
-                if DO_COMPILE_TEST {
-                  let build_me = PathBuf::from(test_name);
-
-                     let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
-                    ////
-                    let mut output = Command::new("cargo")
-                        .arg("build")
-                        .arg("--manifest-path")
-                        .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
-                        .current_dir(build_me_absolute.clone())
-                        .stdout(Stdio::inherit()) // This line ensures that stdout from the command is printed directly to the terminal
-                        .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal
-                        .spawn()
-                        .expect("failed to execute process");
-                    let output = output.wait().expect("failed to wait on child");
-
-                    assert!(output.success());
-                }
-
+                true
             }
             Err(e) => {
                 panic!("Failed to change directory to test_run: {}", e);
             }
+        };
+
+        if ok {
+            let current_dir = env::current_dir().expect("Failed to get current directory");
+            println!("Current working directory is: {:?}", current_dir);
+            if clean {
+                //NOTE: must delete the unnamed1 folder if it exists
+                if let Err(e) = fs::remove_dir_all(test_name) {
+                    error!("Failed to remove test_run/{} directory: {}",test_name, e);
+                } else {
+                    info!("Removed test_run/{} directory",test_name);
+                }
+            }
+            /////
+            process_dot(g, test_name);
+            const DO_COMPILE_TEST:bool = true;
+            if DO_COMPILE_TEST {
+                do_compile_test(test_name);
+            }
         }
+
     }
 
+    fn do_compile_test(test_name: &str) {
+        let build_me = PathBuf::from(test_name);
+        let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
+        ////
+        let mut output = Command::new("cargo")
+            .arg("build")
+            .arg("--manifest-path")
+            .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
+            .current_dir(build_me_absolute.clone())
+            .stdout(Stdio::inherit()) // This line ensures that stdout from the command is printed directly to the terminal
+            .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal
+            .spawn()
+            .expect("failed to execute process");
+        let output = output.wait().expect("failed to wait on child");
 
+        assert!(output.success());
+    }
 
 
     #[test]

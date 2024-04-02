@@ -73,10 +73,10 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
         {{ display_name|capitalize }}InternalState::default()
     };
 
-    let mut monitor =  context.into_monitor([{% for def in rx_monitor_defs %}
-                        &{{def}}{%- if loop.last %}{% else -%}
+    let mut monitor =  into_monitor!(context, [{% for def in rx_monitor_defs %}
+                        {{def}}{%- if loop.last %}{% else -%}
                            ,{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs %}
-                        &{{def}}{%- if loop.last %}{% else -%}
+                        {{def}}{%- if loop.last %}{% else -%}
                            ,{%- endif %}{% endfor %}]
                            );
 
@@ -95,7 +95,7 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
     {%- if loop.last %}{% else %} && {% endif -%}
  {% endfor %}) {
 
-{{full_driver_block}}
+     {{full_driver_block}}
 
      process_once(&mut monitor, &mut state
       {%- for channel in rx_channels %}
@@ -104,6 +104,7 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
          , &mut {{channel[0].name}}_tx{%- endfor -%}
      ).await;
 
+     monitor.relay_stats_smartly().await;
 
     }
     Ok(())

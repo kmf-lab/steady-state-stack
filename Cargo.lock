@@ -727,6 +727,7 @@ dependencies = [
  "dot-parser",
  "flexi_logger",
  "log",
+ "num-traits",
  "structopt",
  "structopt-derive",
 ]

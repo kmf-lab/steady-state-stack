@@ -11,7 +11,6 @@ use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::task::{Context, Poll};
 use bastion::run;
-use futures::channel::oneshot;
 use futures::channel::oneshot::Sender;
 use futures_timer::Delay;
 use futures_util::lock::MutexGuard;

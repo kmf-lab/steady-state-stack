@@ -19,7 +19,6 @@ pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>
 use ringbuf::traits::Split;
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 use bastion::run;
-use flexi_logger::AdaptiveFormat::Default;
 use futures::channel::oneshot;
 #[allow(unused_imports)]
 use log::*;

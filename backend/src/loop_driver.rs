@@ -1,5 +1,4 @@
 use futures::FutureExt;
-use futures_util::future::FusedFuture;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

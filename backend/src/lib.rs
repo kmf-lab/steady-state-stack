@@ -1143,6 +1143,20 @@ impl<T> Rx<T> {
         self.rx.pop_slice(elems)
     }
 
+    /*
+    #[inline]
+    fn shared_take_into_iter(&mut self) -> impl Iterator<Item = & T>
+        where T: Copy {
+        //TODO: may need to wait until next release.
+
+        let len = self.rx.occupied_len()
+
+        //(0..len)
+        //let item: Option<T> = self.rx.try_pop();
+
+
+    } */
+
 
     #[inline]
     async fn shared_take_async(& mut self) -> Option<T> {

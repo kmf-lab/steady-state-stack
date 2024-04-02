@@ -8,7 +8,6 @@ use std::cmp;
 
 use crate::*;
 use crate::channel_stats::{compute_labels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW, PLACES_TENS};
-use crate::monitor::ActorMetaData;
 
 #[derive(Default)]
 pub struct ActorStatsComputer {
