@@ -8,7 +8,7 @@ cargo install cargo-steady-state
 ## Usage
 
 ```bash
-cargo steady-state -d graph.dot -n project_name
+cargo-steady-state -d graph.dot -n project_name
 ```
 
 
