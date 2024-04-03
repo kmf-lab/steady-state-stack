@@ -1062,7 +1062,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 Some(result)
             },
             None => {
-                error!("Unexpected error take_async: {} ", self.ident.name);
+                //this case is expected if a shutdown signal was detected.
                 None
             }
         }
