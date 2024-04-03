@@ -89,8 +89,6 @@ impl GraphLiveliness {
        if self.state.eq(&GraphLivelinessState::Running) {
            let voters = self.voters.load(std::sync::atomic::Ordering::SeqCst);
 
-           error!("count of total voters: {}",voters);
-
            //print new ballots for this new election
            let votes:Vec<Mutex<ShutdownVote>> = (0..voters)
                              .map(|_| Mutex::new(ShutdownVote::default()) )
@@ -255,21 +253,19 @@ impl Graph {
                     Ok(mut state) => {
                         state.state = shutdown;
 
-                        warn!("voter log: (approved votes at the top, total:{})",state.votes.len());
-                        state.votes.iter().for_each(|f| {
-                           let voter = run!(f.lock());
-                           if voter.in_favor {
-                               warn!("Voted: {:?} Ident: {:?}", voter.in_favor, voter.ident);
-                           }
-                        });
-                        state.votes.iter().for_each(|f| {
-                            let voter = run!(f.lock());
-                            if !voter.in_favor {
-                                warn!("Voted: {:?} Ident: {:?}", voter.in_favor, voter.ident);
-                            }
-                        });
-
                         if state.state.eq(&GraphLivelinessState::StoppedUncleanly) {
+                            warn!("voter log: (approved votes at the top, total:{})",state.votes.len());
+                            let mut voters = state.votes.iter()
+                                .map(|f| run!(f.lock()))
+                                .collect::<Vec<_>>();
+
+                            // You can sort or prioritize the votes as needed here
+                            voters.sort_by_key(|voter| !voter.in_favor); // This will put `true` (in favor) votes first
+
+                            // Now iterate over the sorted voters and log the results
+                            voters.iter().for_each(|voter| {
+                                warn!("Voted: {:?} Ident: {:?}", voter.in_favor, voter.ident);
+                            });
                             warn!("graph stopped uncleanly");
                         }
                     }

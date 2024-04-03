@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::process::exit;
 use std::time::Duration;
 use crate::actor::data_generator::WidgetInventory;
 #[warn(unused_imports)]
@@ -31,14 +32,8 @@ pub async fn run(context: SteadyContext
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
-
-
-    while monitor.is_running(&mut ||
-        {
-            error!("data_approval shutdown detected");
-            rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()
-        }
-    ) {
+    let mut c = 0;
+    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed() ) {
 
         wait_for_all!( monitor.wait_avail_units(&mut rx, 1)
                   , monitor.wait_vacant_units(&mut tx, 1)

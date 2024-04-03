@@ -18,14 +18,6 @@ Steady State leverages Rust's efficiency and the actor model to offer high throu
 
 With built-in telemetry features, Steady State provides real-time insights into your services' performance. This embedded observability enables quick identification and resolution of bottlenecks, facilitating continuous optimization and improvement of service quality.
 
-## Vision for the Future
-
-The journey of Steady State is just beginning. Our vision extends beyond the current capabilities to include:
-
-- **Integration with Cloud Services**: Making it easier to connect with and leverage the power of popular cloud platforms.
-- **Automated Development Tools**: Speeding up the development process with automatic code generation for actor and channel scaffolds.
-- **Cross-Machine Telemetry**: Expanding observability to cover distributed system deployments, providing a holistic view of your service's performance across different environments.
-
 ## Commitment to the Community
 
 Steady State is not just a framework; it's a commitment to the future of resilient service development. We're building a community of developers, contributors, and users who share a passion for creating reliable, high-performance services with Rust. Join us on this exciting journey to shape the future of service development.

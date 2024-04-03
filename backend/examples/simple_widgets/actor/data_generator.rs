@@ -45,26 +45,15 @@ pub async fn run(context: SteadyContext
     };
 
     let mut monitor = into_monitor!(context, [feedback], [tx]);
-
     let mut feedback = feedback.lock().await;
     let mut tx = tx.lock().await;
 
-    //let args = context.args::<Args>(); //or you can turbo fish here to get your args
-
-
     const MULTIPLIER:usize = 256;   //500_000 per second at 500 micros
-
-
-    //keep long running state in here while you run
 
     let mut state = InternalState {
         count: 0,
     };
-    while monitor.is_running(&mut || {
-        let result = tx.mark_closed();
-        error!("data_generator shutdown detected: approved: {}",result);
-        result
-    } ) {
+    while monitor.is_running(&mut || tx.mark_closed() ) {
 
         iterate_once(&mut monitor, &mut state, &mut tx, MULTIPLIER).await;
 
@@ -80,7 +69,8 @@ pub async fn run(context: SteadyContext
 
         //this is an example of a telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
-        monitor.relay_stats_periodic(Duration::from_micros(gen_rate_micros)).await;
+        let _clean = monitor.relay_stats_periodic(Duration::from_micros(gen_rate_micros)).await;
+
     }
     Ok(())
 }

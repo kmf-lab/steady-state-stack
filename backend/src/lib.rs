@@ -50,6 +50,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex, MutexLockFuture};
 use std::ops::{Deref, DerefMut};
 use std::future::ready;
+use std::task::Poll;
 
 use std::thread::sleep;
 use log::*;
@@ -567,9 +568,12 @@ impl<T> Tx<T> {
     ///on the channel. This is a signal that this actor has probably stopped
     pub fn mark_closed(&mut self) -> bool {
         if let Some(c) = self.make_closed.take() {
-            c.send(()).is_ok()
+            match c.send(()) {
+                Ok(_) => {true},
+                Err(x) => {false}
+            }
         } else {
-            false
+            true //already closed
         }
     }
 
@@ -877,13 +881,21 @@ impl<T> Rx<T> {
         }
     }
 
-    pub fn wait_closed(&mut self) -> bool {
-        run!(&mut self.is_closed).is_ok()
+    pub fn is_closed(&mut self) -> bool {
+        if self.is_closed.is_terminated() {
+            true
+        } else {
+            // Temporarily create a context to poll the receiver
+            let waker = task::noop_waker();
+            let mut context = task::Context::from_waker(&waker);
+            // Non-blocking check if the receiver can resolve
+            match self.is_closed.poll_unpin(&mut context) {
+                Poll::Ready(_) => true,  // The channel is closed or the message is received
+                Poll::Pending => false, // The channel is not yet closed, need to check again later
+            }
+        }
     }
 
-    pub fn is_closed(&self) -> bool {
-        self.is_closed.is_terminated()
-    }
 
     /// Returns the total capacity of the channel.
     /// This method retrieves the maximum number of messages the channel can hold.
@@ -1390,7 +1402,7 @@ pub trait RxBundleTrait {
 }
 impl<T> crate::RxBundleTrait for RxBundle<'_, T> {
     fn is_closed(&mut self) -> bool {
-        self.iter().all(|f| f.is_closed() )
+        self.iter_mut().all(|f| f.is_closed() )
     }
 }
 
