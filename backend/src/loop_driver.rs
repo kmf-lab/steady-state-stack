@@ -6,45 +6,44 @@ use std::sync::Arc;
 #[macro_export]
 macro_rules! wait_for_all {
     // This pattern matches against any number of arguments
-    ($($t:expr),*) => {{
-            use std::sync::Arc;
-            use std::sync::atomic::{AtomicBool, Ordering};
-
-            let flag = Arc::new(AtomicBool::new(true));
-            futures::join!($( OutcomeTracker::wrap_future(flag.clone(),$t) ),*);
-            flag.load(Ordering::Relaxed)
-
-    }};
+    ($($t:expr),*) => {
+        async {
+            let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+            let _ = futures::join!($( OutcomeTracker::wrap_future(flag.clone(),$t) ),*);
+            flag.load(std::sync::atomic::Ordering::Relaxed)
+        }
+    };
 }
 
 #[macro_export]
 macro_rules! wait_for_all_or_proceed_upon {
-    ($first_future:expr, $($rest_futures:expr),* $(,)?) => {{
-        use futures::future::FutureExt;
-        use futures::pin_mut;
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicBool, Ordering};
+    ($first_future:expr, $($rest_futures:expr),* $(,)?) => {
+        async {
+            use futures::future::FutureExt;
+            use futures::pin_mut;
+            use std::sync::Arc;
+            use std::sync::atomic::{AtomicBool, Ordering};
 
-        let flag = Arc::new(AtomicBool::new(true));
+            let flag = Arc::new(AtomicBool::new(true));
 
-        // Fuse the first future and pin it
-        let first = OutcomeTracker::wrap_future(flag.clone(),$first_future).fuse();
-        pin_mut!(first);
+            // Fuse the first future and pin it
+            let first = OutcomeTracker::wrap_future(flag.clone(),$first_future).fuse();
+            pin_mut!(first);
 
-        // Create the combined future for the rest and pin it
-        let rest = async {
-            futures::join!($(OutcomeTracker::wrap_future(flag.clone(),$rest_futures)),*)
-        }.fuse();
-        pin_mut!(rest);
+            // Create the combined future for the rest and pin it
+            let rest = async {
+                futures::join!($(OutcomeTracker::wrap_future(flag.clone(),$rest_futures)),*)
+            }.fuse();
+            pin_mut!(rest);
 
-        futures::select! {
-            _ = first => {},
-            _ = rest => {},
-        };
+            futures::select! {
+                _ = first => {},
+                _ = rest => {},
+            };
 
-        flag.load(Ordering::Relaxed)
-
-    }};
+            flag.load(Ordering::Relaxed)
+        }
+    };
 }
 
 pub struct OutcomeTracker;

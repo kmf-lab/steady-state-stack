@@ -4,13 +4,9 @@ use log::*;
 use steady_state::*;
 use crate::actor::data_generator::Packet;
 
-use futures::future::FutureExt;
-
+//use futures::future::FutureExt;
 use std::time::Duration;
-use futures_timer::Delay;
 use futures_util::lock::MutexGuard;
-use futures_util::select;
-
 
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , one_of: usize
@@ -33,7 +29,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
             monitor.wait_periodic(Duration::from_millis(2)),
             monitor.wait_avail_units(&mut rx,count),
             monitor.wait_vacant_units_bundle(&mut tx,1,1)
-        );
+        ).await;
 
         single_iteration(&mut monitor, block_size, &mut rx, &mut tx).await;
         monitor.relay_stats_smartly().await;
@@ -51,14 +47,14 @@ async fn single_iteration<const GIRTH:usize>(monitor: &mut LocalMonitor<1, GIRTH
 
         if true {
             if let Some(t) = monitor.try_take(&mut rx) {
-                let _ = monitor.send_async(&mut tx[index], t, true).await;
+                let _ = monitor.send_async(&mut tx[index], t, SendSaturation::IgnoreAndWait).await;
             }
         } else {
             //this unused block shows how you can peek and do processing then send
             //so you can ensure no packet is ever lost even upon panic.
             //NOTE: this adds cost due to the required clone()
             let new_copy = peek_packet_ref.clone();
-            let _ = monitor.send_async(&mut tx[index], new_copy, true).await;
+            let _ = monitor.send_async(&mut tx[index], new_copy, SendSaturation::IgnoreAndWait).await;
             let consumed = monitor.try_take(&mut rx);
             assert!(consumed.is_some());
         }
@@ -70,19 +66,19 @@ async fn single_iteration<const GIRTH:usize>(monitor: &mut LocalMonitor<1, GIRTH
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use async_std::test;
-    use steady_state::{Graph, util};
 
-/*
+    use async_std::test;
+    use steady_state::Graph;
+
+
     #[test]
     async fn test_process() {
-        util::logger::initialize();
-        let mut graph = Graph::new("");
+       // util::logger::initialize();
+        let _graph = Graph::new("");
 
 
     }
-    //    */
+
 
 
 }

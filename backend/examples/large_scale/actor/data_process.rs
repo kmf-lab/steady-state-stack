@@ -25,7 +25,7 @@ pub async fn run(context: SteadyContext
              monitor.wait_periodic(Duration::from_millis(3))
             ,monitor.wait_avail_units(&mut rx,count)
             ,monitor.wait_vacant_units(&mut tx,1)
-        );
+        ).await;
 
         monitor.wait_vacant_units(&mut tx, count).await;
         single_iteration(&mut monitor, &mut rx, &mut tx, count);
@@ -53,19 +53,18 @@ fn single_iteration(monitor: &mut LocalMonitor<1, 1>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use async_std::test;
     use steady_state::Graph;
 
-    /*
     #[test]
     async fn test_iterate_once() {
 
-        util::logger::initialize();
+        //util::logger::initialize();
 
-        let mut graph = Graph::new("");
+        let _graph = Graph::new("");
 
 
     }
-//    */
+
 }

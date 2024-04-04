@@ -5,6 +5,7 @@ use structopt::*;
 use log::*;
 use args::Args;
 use std::time::Duration;
+use steady_state::*;
 
 
 // here are the actors that will be used in the graph.
@@ -20,9 +21,9 @@ mod actor {
 
 }
 #[cfg(test)]
-use crate::actor::*;
 
-use steady_state::*;
+
+//use steady_state::*;
 use steady_state::channel_builder::Filled;
 
 

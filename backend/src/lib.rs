@@ -16,7 +16,11 @@ pub mod monitor;
 
 pub mod channel_builder;
 pub mod util;
-pub mod serviced;
+pub mod install {
+    pub mod serviced;
+    pub mod local_cli;
+    pub mod container;
+}
 pub mod actor_builder;
 mod actor_stats;
 mod graph_testing;
@@ -35,6 +39,7 @@ pub use actor_builder::Work;
 pub use actor_builder::Percentile;
 pub use graph_liveliness::*;
 pub use loop_driver::*;
+pub use install::serviced::*;
 
 use std::any::{Any, type_name};
 
@@ -50,7 +55,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex, MutexLockFuture};
 use std::ops::{Deref, DerefMut};
 use std::future::ready;
-use std::task::Poll;
+
 
 use std::thread::sleep;
 use log::*;
@@ -203,10 +208,10 @@ impl SteadyContext {
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T,saturation_ok:bool) -> Result<(), T> {
+    pub async fn send_async<T>(& mut self, this: & mut Tx<T>, a: T,saturation:SendSaturation ) -> Result<(), T> {
         #[cfg(debug_assertions)]
         this.direct_use_check_and_warn();
-        this.shared_send_async(a, self.ident,saturation_ok).await
+        this.shared_send_async(a, self.ident,saturation).await
     }
 
     pub fn edge_simulator(&self) -> Option<EdgeSimulator> {
@@ -570,7 +575,7 @@ impl<T> Tx<T> {
         if let Some(c) = self.make_closed.take() {
             match c.send(()) {
                 Ok(_) => {true},
-                Err(x) => {false}
+                Err(_) => {false}
             }
         } else {
             true //already closed
@@ -636,10 +641,10 @@ impl<T> Tx<T> {
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    pub async fn send_async(&mut self, ident:ActorIdentity, a: T, saturation_ok:bool) -> Result<(), T> {
+    pub async fn send_async(&mut self, ident:ActorIdentity, a: T, saturation:SendSaturation) -> Result<(), T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
-        self.shared_send_async(a, ident, saturation_ok).await
+        self.shared_send_async(a, ident, saturation).await
     }
 
     /// Sends messages from a slice to the channel until the channel is full.
@@ -785,7 +790,7 @@ impl<T> Tx<T> {
     }
 
     #[inline]
-    async fn shared_send_async(& mut self, msg: T, ident: ActorIdentity, saturation_ok: bool) -> Result<(), T> {
+    async fn shared_send_async(& mut self, msg: T, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), T> {
         if self.make_closed.is_none() {
             warn!("Send called after channel marked closed");
         }
@@ -796,21 +801,29 @@ impl<T> Tx<T> {
             Ok(_) => {Ok(())},
             Err(msg) => {
                 //caller can decide this is ok and not a warning
-                if !saturation_ok {
-                    //NOTE: we slow the rate of errors reported
-                    // TODO: this "slow" rate should be a happy little macro done everywhere
-                    if self.last_error_send.elapsed().as_secs() > 10 {
-                        let type_name = type_name::<T>().split("::").last();
-                        warn!("{:?} tx full channel #{} {:?} cap:{:?} type:{:?} "
-                                   , ident
-                                   , self.channel_meta_data.id
-                                   , self.channel_meta_data.labels
-                                   , self.tx.capacity()
-                                   , type_name);
-                        self.last_error_send = Instant::now();
+                match saturation {
+                    SendSaturation::IgnoreAndWait => {
+                       //never warn just await
+                       //nothing to do
                     }
-                    // here we will wait until there is room in the channel
+                    SendSaturation::IgnoreAndErr => {
+                       //return error to try again
+                       return Err(msg);
+                    }
+                    SendSaturation::Warn => {
+                        //always warn
+                        self.report_tx_full_warning(ident);
+                    }
+                    SendSaturation::IgnoreInRelease => {
+                        //check release status and if not then warn
+                        #[cfg(debug_assertions)]
+                        {
+                            self.report_tx_full_warning(ident);
+                        }
+                    }
                 }
+
+                //push when space becomes available
                 match self.tx.push(msg).await {
                     Ok(_) => {Ok(())}
                     Err(_) => { //should not happen, internal error
@@ -822,8 +835,19 @@ impl<T> Tx<T> {
         }
     }
 
-
+    fn report_tx_full_warning(&mut self, ident: ActorIdentity) {
+        if self.last_error_send.elapsed().as_secs() > 10 {
+            let type_name = type_name::<T>().split("::").last();
+            warn!("{:?} tx full channel #{} {:?} cap:{:?} type:{:?} "
+                                   , ident
+                                   , self.channel_meta_data.id
+                                   , self.channel_meta_data.labels
+                                   , self.tx.capacity(), type_name);
+            self.last_error_send = Instant::now();
+        }
+    }
 }
+
 
 fn write_warning_to_console(stack: Backtrace) {
     warn!("you called this without the monitor but monitoring for this channel is enabled. see the monitor version of this method");
@@ -862,6 +886,17 @@ fn write_warning_to_console(stack: Backtrace) {
 }
 
 
+pub enum SendSaturation {
+    IgnoreAndWait,
+    IgnoreAndErr,
+    Warn,
+    IgnoreInRelease
+}
+impl Default for SendSaturation {
+    fn default() -> Self {
+        SendSaturation::Warn
+    }
+}
 
 impl<T> Rx<T> {
 
@@ -889,10 +924,7 @@ impl<T> Rx<T> {
             let waker = task::noop_waker();
             let mut context = task::Context::from_waker(&waker);
             // Non-blocking check if the receiver can resolve
-            match self.is_closed.poll_unpin(&mut context) {
-                Poll::Ready(_) => true,  // The channel is closed or the message is received
-                Poll::Pending => false, // The channel is not yet closed, need to check again later
-            }
+            self.is_closed.poll_unpin(&mut context).is_ready()
         }
     }
 

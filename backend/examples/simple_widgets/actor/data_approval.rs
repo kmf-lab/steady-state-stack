@@ -1,6 +1,5 @@
 use std::error::Error;
-use std::process::exit;
-use std::time::Duration;
+
 use crate::actor::data_generator::WidgetInventory;
 #[warn(unused_imports)]
 use log::*;
@@ -32,13 +31,12 @@ pub async fn run(context: SteadyContext
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
-    let mut c = 0;
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed() ) {
 
         wait_for_all!( monitor.wait_avail_units(&mut rx, 1)
                   , monitor.wait_vacant_units(&mut tx, 1)
                   , monitor.wait_vacant_units(&mut feedback, 1)
-        );
+        ).await;
 
         iterate_once(&mut monitor
                         , &mut rx
@@ -152,7 +150,7 @@ mod tests {
         let _ = mock_monitor.send_async(&mut tx_in, WidgetInventory {
             count: 5
             , _payload: 42
-        },false).await;
+        },SendSaturation::Warn).await;
         let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
         iterate_once(&mut mock_monitor, &mut rx_in, &mut tx_out, &mut tx_feedback, &mut buffer );

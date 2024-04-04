@@ -77,7 +77,7 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
     while (!rx.is_empty()) && !tx.is_full() {
         match monitor.take_async(rx).await {
             Some(m) => {
-                let _ = monitor.send_async(tx, m,false).await;
+                let _ = monitor.send_async(tx, m,SendSaturation::default()).await;
             },
             None => {
                 error!("Unexpected error recv_async, probably during shutdown");
@@ -90,9 +90,9 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
 
 #[cfg(test)]
 mod tests {
-    use std::ops::DerefMut;
+
     use steady_state::*;
-    use crate::actor::example_empty_actor::{iterate_once, SomeExampleRecord, SomeLocalState};
+
 
 
     #[async_std::test]
@@ -100,7 +100,7 @@ mod tests {
 
         util::logger::initialize();
 
-        let graph = Graph::new("");
+        let _graph = Graph::new("");
 
 
 

@@ -73,7 +73,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
     if let Some(msg) = monitor.take_async(rx).await {
         //we have a message to process
         //we do not care about the message we just need to send a change request
-        let _ = monitor.send_async(tx,ChangeRequest {msg},false).await;
+        let _ = monitor.send_async(tx,ChangeRequest {msg},SendSaturation::Warn).await;
     }
 
     false
@@ -82,7 +82,7 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
 
 #[cfg(test)]
 mod tests {
-    use async_std::test;
+    //use async_std::test;
 
 
 /*

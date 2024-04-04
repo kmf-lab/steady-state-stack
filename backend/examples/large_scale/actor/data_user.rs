@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::time::Duration;
 
 #[allow(unused_imports)]
 use log::*;
@@ -16,7 +15,7 @@ pub async fn run(context: SteadyContext
 
     while monitor.is_running(&mut || rx.is_closed()) {
 
-        wait_for_all!(monitor.wait_avail_units(&mut rx, 1));
+        wait_for_all!(monitor.wait_avail_units(&mut rx, 1)).await;
 
         if let Some(packet) = monitor.try_take(&mut rx) {
             assert_eq!(packet.data.len(),128);
@@ -57,7 +56,7 @@ async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< Packet>) {
     if let Some(simulator) = monitor.edge_simulator() {
         simulator.respond_to_request(|expected: Packet| {
 
-            rx.block_until_not_empty(Duration::from_secs(20));
+            rx.block_until_not_empty(std::time::Duration::from_secs(20));
             match monitor.try_take(rx) {
                 Some(measured) => {
                     if expected.eq(&measured) {
@@ -82,15 +81,15 @@ async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< Packet>) {
 #[cfg(test)]
 mod tests {
     use async_std::test;
-    /*
+    use steady_state::Graph;
+
     #[test]
     async fn test_iterate_once() {
 
-        util::logger::initialize();
 
-        let mut graph = Graph::new("");
+        let _graph = Graph::new("");
 
 
     }
-//    */
+
 }

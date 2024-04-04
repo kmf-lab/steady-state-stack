@@ -69,8 +69,8 @@ impl EdgeSimulationDirector {
         }
     }
 
-    pub async fn send_request<T: 'static, K, E>(&self, msg: T) -> Option<GraphTestResult<K, E>>
-      where T: Any + Send + Sync + Debug + Clone,
+    pub async fn send_request<T, K, E>(&self, msg: T) -> Option<GraphTestResult<K, E>>
+      where T: Any + Send + Sync + Debug + Clone + 'static,
             K: Any + Send + Sync + Debug,
             E: Any + Send + Sync + Debug
     {

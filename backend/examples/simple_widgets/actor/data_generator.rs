@@ -1,14 +1,10 @@
 use std::error::Error;
 
-
-use std::time::Duration;
-
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
 use steady_state::monitor::LocalMonitor;
 use crate::actor::data_feedback::ChangeRequest;
-use crate::args::Args;
 
 #[derive(Clone, Debug, Copy)]
 pub struct WidgetInventory {
@@ -38,7 +34,7 @@ pub async fn run(context: SteadyContext
                  , feedback: SteadyRx<ChangeRequest>
                  , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
 
-    let gen_rate_micros = if let Some(a) = context.args::<Args>() {
+    let gen_rate_micros = if let Some(a) = context.args::<crate::Args>() {
         a.gen_rate_micros
     } else {
         10_000 //default
@@ -69,7 +65,7 @@ pub async fn run(context: SteadyContext
 
         //this is an example of a telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
-        let _clean = monitor.relay_stats_periodic(Duration::from_micros(gen_rate_micros)).await;
+        let _clean = monitor.relay_stats_periodic(std::time::Duration::from_micros(gen_rate_micros)).await;
 
     }
     Ok(())
@@ -139,7 +135,7 @@ async fn iterate_once<const R: usize,const T: usize>(monitor: & mut LocalMonitor
     //iterator of sent until the end
     let consume = wids.into_iter().skip(sent);
     for send_me in consume {
-        let _ = monitor.send_async(tx_widget, send_me, false).await;
+        let _ = monitor.send_async(tx_widget, send_me, SendSaturation::Warn).await;
     }
 
     false

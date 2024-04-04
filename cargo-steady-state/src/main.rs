@@ -210,48 +210,44 @@ fn build_process_block(actor: &Actor) -> String {
                     full_process_example_block
                         .push_str(&format!("//trythis:  monitor.try_peek_slice(buffer,{}_rx);\n",f[0].name));
                     full_process_example_block
-                        .push_str(&format!("//         also note you must take value after processing\n"));
+                        .push_str("//         also note you must take value after processing\n");
                 } else {
                      //single copy
                     full_process_example_block
                         .push_str(&format!("//trythis:  monitor.take_slice(buffer, {}_rx);\n",f[0].name));
 
                 }
-            } else {
-                if f[0].peek {
+            } else if f[0].peek {
                      //single owner peek
                     full_process_example_block
                         .push_str(&format!("//trythis:  monitor.try_peek({}_rx);\n",f[0].name));
                     full_process_example_block
-                        .push_str(&format!("//         also note you must take value after processing\n"));
+                        .push_str("//         also note you must take value after processing\n");
                 } else {
                      //single owner
                     full_process_example_block
                         .push_str(&format!("//trythis:  monitor.try_take({}_rx);\n",f[0].name));
                 }
-            }
-        } else {
-            //bundle
-            if f[0].copy {
+
+        } else if f[0].copy {
                 if f[0].peek {
                     //multi copy peek
                     full_process_example_block
                         .push_str(&format!("//trythis:  monitor.try_peek_slice(buffer,{}_rx);\n",f[0].name));
                     full_process_example_block
-                        .push_str(&format!("//         also note you must take value after processing\n"));
+                        .push_str("//         also note you must take value after processing\n");
                 } else {
                     //multi copy
                     full_process_example_block
                         .push_str(&format!("//trythis:  monitor.take_slice({}_rx);\n",f[0].name));
 
                 }
-            } else {
-                if f[0].peek {
+            } else if f[0].peek {
                      //multi owner peek
                     full_process_example_block
                         .push_str(&format!("//trythis:  monitor.try_peek_iter({}_rx);\n",f[0].name));
                     full_process_example_block
-                        .push_str(&format!("//         also note you must take value after processing\n"));
+                        .push_str("//         also note you must take value after processing\n");
 
                 } else {
                          full_process_example_block
@@ -262,12 +258,7 @@ fn build_process_block(actor: &Actor) -> String {
 //                    full_process_example_block
   //                      .push_str(&format!("//trythis:  monitor.take_iter({}_rx);\n",f[0].name));
                 }
-            }
-        }
-
     });
-
-
 
 
     actor.tx_channels.iter().for_each(|f| {
@@ -275,44 +266,30 @@ fn build_process_block(actor: &Actor) -> String {
             //single
             if f[0].copy {
                  // monitor.try_send()
- full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.try_send({}_rx);\n",f[0].name));
-
+                 full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.try_send({}_tx, copy );\n",f[0].name));
 
             } else {
-                if f[0].peek {
-                    // write one peek
+                 // monitor.try_send()
+                full_process_example_block
+                        .push_str(&format!("//trythis:  monitor.try_send({}_tx, send owner);\n",f[0].name));
 
-
-                } else {
-                    // monitor.try_send()
-
-
-                }
             }
-        } else {
-            //bundle
-            if f[0].copy {
+        } else if f[0].copy {
                 if f[0].peek {
                     //write multi copy peek
 
                 } else {
                     // monitor.send_slice_until_full()
 
-
                 }
-            } else {
-                if f[0].peek {
+            } else if f[0].peek {
                     //write multi peek
-
 
                 } else {
                     // monitor.send_iter_until_full()
 
-
                 }
-            }
-        }
 
     });
 
@@ -416,20 +393,20 @@ fn build_driver_block(actor: &Actor) -> String {
         if andy_drivers.is_empty() {
             full_driver_block.push_str("    let _clean = wait_for_all!(");
             full_driver_block.push_str(&t);
-            full_driver_block.push_str(");\n");
+            full_driver_block.push_str(").await;\n");
         } else {
             full_driver_block.push_str("    let _clean = wait_for_all_or_proceed_upon!(");
 
             full_driver_block.push_str(&t);
-            full_driver_block.push_str("\n");
+            full_driver_block.push('\n');
 
             //setup for the join
             andy_drivers.iter().for_each(|t| {
                 full_driver_block.push(',');
                 full_driver_block.push_str(t);
-                full_driver_block.push_str("\n");
+                full_driver_block.push('\n');
             });
-            full_driver_block.push_str("    );\n");
+            full_driver_block.push_str("    ).await;\n");
         }
     } else {
         full_driver_block.push_str("    let _clean = wait_for_all!(");
@@ -439,7 +416,7 @@ fn build_driver_block(actor: &Actor) -> String {
             }
             full_driver_block.push_str(t);
         });
-        full_driver_block.push_str("    );\n");
+        full_driver_block.push_str("    ).await;\n");
     }
 
     full_driver_block

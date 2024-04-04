@@ -8,7 +8,7 @@ use std::sync::{Arc, RwLock};
 use log::*; //allow unused import
 
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-use crate::{config, RxDef, SteadyContext, SteadyTx, Tx, util};
+use crate::{config, RxDef, SendSaturation, SteadyContext, SteadyTx, Tx, util};
 
 use futures::future::*;
 use futures_util::lock::MutexGuard;
@@ -47,7 +47,7 @@ struct RawDiagramState {
     future_send: Vec<i128>, //these are for the next frame if we ended up with too many items.
 }
 
-
+#[allow(clippy::type_complexity)]
 fn lock_if_some<'a, T: Send + 'a + Sync>(opt_lock: &'a Option<SteadyTx<T>>)
     -> Pin<Box<dyn Future<Output = Option<MutexGuard<'a, Tx<T>>>> + Send + 'a>> {
     Box::pin(async move {
@@ -57,6 +57,7 @@ fn lock_if_some<'a, T: Send + 'a + Sync>(opt_lock: &'a Option<SteadyTx<T>>)
         }
     })
 }
+
 
 //TODO: the collector is starting up after the others, this is not good. We need to start it first
 //      the init should be done at graph construction.
@@ -344,8 +345,7 @@ async fn send_structure_details(ident: ActorIdentity, consumer: &mut Option<Mute
             let _count = c.send_iter_until_full(&mut to_send);
           //  info!("bulk count {} remaining {} ", _count, to_send.len());
             for send_me in to_send {
-                //TODO: should be true for release code
-                let _ = c.send_async(ident, send_me, false).await;
+                let _ = c.send_async(ident, send_me, SendSaturation::IgnoreInRelease).await;
             }
     }
 }
@@ -354,17 +354,15 @@ async fn send_data_details(ident: ActorIdentity, consumer: &mut Option<MutexGuar
     //info!("compute send_edge_details {:?} {:?}",state.running_total_sent,state.running_total_take);
 
     if let Some(ref mut consumer) = consumer {
-
-        //TODO: should be false for debug and true for release.
         let _ = consumer.send_async(ident, DiagramData::NodeProcessData(state.sequence
                                                                  , state.actor_status.clone().into_boxed_slice()
-                ),false).await;
+                ),SendSaturation::IgnoreInRelease).await;
 
 
         let _ = consumer.send_async(ident, DiagramData::ChannelVolumeData(state.sequence
                                                                  ,  state.total_take_send.clone().into_boxed_slice()
 
-                ),false).await;
+                ),SendSaturation::IgnoreInRelease).await;
 
     }
 }

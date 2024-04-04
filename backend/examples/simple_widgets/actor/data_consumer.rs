@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::time::Duration;
+
 
 #[allow(unused_imports)]
 use log::*;
@@ -44,7 +44,7 @@ pub async fn run(context: SteadyContext
     //predicate which affirms or denies the shutdown request
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() ) {
 
-        wait_for_all!(monitor.wait_avail_units(&mut rx,1));
+        wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
 
         //single pass of work, in this high volume example we stay in iterate_once as long
         //as the input channel as more work to process.
@@ -105,7 +105,7 @@ pub async fn run(context: SteadyContext
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed()) {
 
-        wait_for_all!(monitor.wait_avail_units(&mut rx,1));
+        wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
 
         relay_test(&mut monitor, &mut rx).await;
 
@@ -120,7 +120,7 @@ async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< ApprovedWidge
     if let Some(simulator) = monitor.edge_simulator() {
         simulator.respond_to_request(|expected: ApprovedWidgets| {
 
-            rx.block_until_not_empty(Duration::from_secs(20));
+            rx.block_until_not_empty(std::time::Duration::from_secs(20));
             match monitor.try_take(rx) {
                 Some(measured) => {
                     let result = expected.cmp(&measured);
@@ -177,7 +177,7 @@ mod tests {
             approved_count: 2,
 
 
-        },false).await;
+        },SendSaturation::Warn).await;
 
 
         let exit= iterate_once(&mut mock_monitor, &mut state, steady_rx).await;

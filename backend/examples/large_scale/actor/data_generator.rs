@@ -34,7 +34,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
     while monitor.is_running(&mut || tx.mark_closed()) {
 
-        let _clean = wait_for_all!(monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH));
+        let _clean = wait_for_all!(monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH)).await;
         single_iteration(&mut monitor, &mut buffers, &mut tx, limit).await;
         monitor.relay_stats_smartly().await;
 
@@ -83,8 +83,8 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
    }
 }
 #[cfg(test)]
-async fn relay_test<const R:usize, const T:usize>(monitor: &mut LocalMonitor<R,T>
-                    , tx: &Tx<Packet>) {
+async fn relay_test<const R:usize, const T:usize>(_monitor: &mut LocalMonitor<R,T>
+                    , _tx: &Tx<Packet>) {
 
     /*
     if let Some(ctx) = monitor.ctx() {

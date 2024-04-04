@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use log::*;
 use num_traits::Zero;
 use ringbuf::traits::Observer;
-use crate::{config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SteadyContext, telemetry};
+use crate::{config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, SteadyContext, telemetry};
 use crate::channel_builder::ChannelBuilder;
 use crate::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
 use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
@@ -110,13 +110,12 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
 pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 {
 
-
         if config::TELEMETRY_SERVER {
 
             let base = if config::SHOW_TELEMETRY_ON_TELEMETRY {
                 graph.channel_builder()
                     .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
-                    .with_type() //TODO: not sure why total is not changing here.
+                    .with_type()
 
             } else {
                 graph.channel_builder()
@@ -162,9 +161,9 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 
                 bldr.build_with_exec(move |context| {
                     let all_rx = all_tel_rx.clone();
-                    telemetry::metrics_collector::run(context
-                                                      , all_rx
-                                                      , outgoing.clone()
+                    metrics_collector::run(context
+                                              , all_rx
+                                              , outgoing.clone()
                     )
                 });
             }
@@ -210,13 +209,12 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                                     //if we are not shutting down we may need to report this error
                                     if !state.is_in_state(&[GraphLivelinessState::StopRequested
                                                                   ,GraphLivelinessState::Stopped
-                                                                  ,GraphLivelinessState::StoppedUncleanly]) {
-                                        if scale>30 {
+                                                                  ,GraphLivelinessState::StoppedUncleanly]) && scale>30 {
                                             //TODO: this hard exit to be removed when we release version 1
                                             error!("{:?} EXIT hard delay on actor status: {} empty{} of{}",this.ident,scale,vacant_units,capacity);
                                             error!("assume metrics_collector has died and is not consuming messages");
                                             exit(-1);
-                                        }
+
                                     }
                                 }
                                 //we have discovered that the consumer is not keeping up
@@ -389,10 +387,8 @@ pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX
             if let Some(ref mut actor_status) = this.telemetry_state {
                 let msg = actor_status.status_message();
                     {
-                        let mut lock_guard = actor_status.tx.lock().await;
-                        let tx = lock_guard.deref_mut();
-                        //TODO: prod/dev bool
-                        let _ = tx.send_async(this.ident, msg,false).await;
+                        let mut tx = actor_status.tx.lock().await;
+                        let _ = tx.send_async(this.ident, msg,SendSaturation::IgnoreInRelease).await;
                     }
                     actor_status.status_reset();
 
@@ -401,16 +397,14 @@ pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX
                 if send_tx.count.iter().any(|x| !x.is_zero()) {
                     let mut lock_guard = send_tx.tx.lock().await;
                     let tx = lock_guard.deref_mut();
-                    //TODO: prod/dev bool
-                    let _ = tx.send_async(this.ident,send_tx.count,false).await;
+                    let _ = tx.send_async(this.ident,send_tx.count,SendSaturation::IgnoreInRelease).await;
                 }
             }
             if let Some(ref mut send_rx) = this.telemetry_send_rx {
                 if send_rx.count.iter().any(|x| !x.is_zero()) {
                     let mut lock_guard = send_rx.tx.lock().await;
                     let rx = lock_guard.deref_mut();
-                    //TODO: prod/dev bool
-                    let _ = rx.send_async(this.ident, send_rx.count,false).await;
+                    let _ = rx.send_async(this.ident, send_rx.count,SendSaturation::IgnoreInRelease).await;
                 }
             }
 

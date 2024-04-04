@@ -15,6 +15,114 @@ use std::fs::{create_dir_all, File, OpenOptions};
 use bastion::run;
 use crate::dot::FrameHistory;
 
+#[derive(Clone)]
+pub struct SystemdBuilder {
+    service_name: String,
+    service_user: String,
+    service_file_default_folder : String,
+    service_executable_folder: String,
+
+    on_boot: bool,
+    secrets: Vec<String>,
+    after: String,
+    restart: String,
+    wanted_by: String,
+    description: String,
+}
+
+impl SystemdBuilder {
+    pub fn new(service_executable_name: String, service_user: String) -> Self {
+        SystemdBuilder {
+            service_executable_folder: "/usr/local/bin".to_string(),
+            service_file_default_folder : "/etc/systemd/system".to_string(),
+            service_name: service_executable_name.clone(),
+            secrets: Vec::new(),
+            on_boot: true,
+            description: format!("steady_state:{}",service_executable_name),
+            after: "network.target".to_string(),
+            wanted_by: "multi-user.target".to_string(),
+            restart: "always".to_string(),
+            service_user,
+        }
+    }
+
+    pub fn with_secret(&self, name: String, absolute_file: String) -> Self {
+        let mut result = self.clone();
+        //absolute_file probably should start with /etc/secrets/
+        result.secrets.push(format!("{}:/{}", name, absolute_file));
+        result
+    }
+
+    pub fn with_on_boot(&self, on_boot: bool) -> Self {
+        let mut result = self.clone();
+        result.on_boot = on_boot;
+        result
+    }
+
+    pub fn with_description(&self, description: String) -> Self {
+        let mut result = self.clone();
+        result.description = description;
+        result
+    }
+
+    pub fn with_after(&self, after: String) -> Self {
+        let mut result = self.clone();
+        result.after = after;
+        result
+    }
+
+    pub fn with_wanted_by(&self, wanted_by: String) -> Self {
+        let mut result = self.clone();
+        result.wanted_by = wanted_by;
+        result
+    }
+
+    pub fn with_restart(&self, restart: String) -> Self {
+        let mut result = self.clone();
+        result.restart = restart;
+        result
+    }
+
+    pub fn with_service_user(&self, service_user: String) -> Self {
+        let mut result = self.clone();
+        result.service_user = service_user;
+        result
+    }
+
+    pub fn with_service_name(&self, service_name: String) -> Self {
+        let mut result = self.clone();
+        result.service_name = service_name;
+        result
+    }
+
+    pub fn with_service_file_default_folder(&self, service_file_default_folder: String) -> Self {
+        let mut result = self.clone();
+        result.service_file_default_folder = service_file_default_folder;
+        result
+    }
+
+    pub fn with_service_executable_folder(&self, service_executable_folder: String) -> Self {
+        let mut result = self.clone();
+        result.service_executable_folder = service_executable_folder;
+        result
+    }
+
+    pub fn build(self) -> SystemdServiceManager {
+        SystemdServiceManager {
+            service_file_name: format!("{}{}.service",&self.service_file_default_folder, &self.service_name),
+            service_executable: format!("{}{}",&self.service_executable_folder, &self.service_name),
+            service_name: self.service_name,
+            service_user: self.service_user,
+            on_boot: self.on_boot,
+            secrets: self.secrets,
+            after: self.after,
+            restart: self.restart,
+            wanted_by: self.wanted_by,
+            description: self.description,
+        }
+    }
+}
+
 pub struct SystemdServiceManager {
     pub service_name: String,
     pub service_user: String, // NEVER share this user with other services
@@ -28,46 +136,7 @@ pub struct SystemdServiceManager {
     pub description: String,
 }
 
-//TODO: this needs to be the builder pattern soon,
-
-struct SystemdServiceManagerBuilder {
-    service_name: String,
-    service_user: String,
-    service_file_name: String,
-    service_executable: String,
-    on_boot: bool,
-    secrets: Vec<String>,
-    after: String,
-    restart: String,
-    wanted_by: String,
-    description: String,
-}
-
 impl SystemdServiceManager {
-
-    pub fn new(service_executable_name: String, service_user: String) -> Self {
-        SystemdServiceManager {
-            //TODO: add support for other folders based on use case
-            service_file_name: format!("/etc/systemd/system/{}.service", service_executable_name),
-            //TODO: add support for diffent binary locations
-            service_executable: format!("/usr/local/bin/{}",service_executable_name),
-            on_boot: true,
-            secrets: Vec::new(),
-            after: "network.target".to_string(),
-            restart: "always".to_string(),
-            wanted_by: "multi-user.target".to_string(),
-            service_name: service_executable_name.clone(),
-            service_user,
-            description: format!("steady_state:{}",service_executable_name),
-        }
-    }
-
-    pub fn add_secret(&mut self, name: String, absolute_file: String
-    ) {
-        //absolute_file probably should start with /etc/secrets/
-        self.secrets.push(format!("{}:/{}", name, absolute_file));
-    }
-
 
     fn check_platform_setup(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Check for systemd via systemctl

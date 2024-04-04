@@ -17,6 +17,9 @@ askama = "0.12.1"
 structopt-derive = "0.4.18"
 num-traits = "0.2.18"
 
+[dev-dependencies]
+steady_state = "0.0.12"
+
 
 
 

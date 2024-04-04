@@ -456,35 +456,16 @@ impl ChannelStatsComputer {
         || self.latency_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_latency(&f.0))
     }
 
-
-
-
-    fn triggered_latency(&self, rule: &Trigger<Duration>) -> bool
-        {
+    fn triggered_latency(&self, rule: &Trigger<Duration>) -> bool {
         match rule {
-
-            Trigger::AvgAbove(duration) => {
-                self.avg_latency(duration).is_gt()
-            }
-            Trigger::AvgBelow(duration) => {
-                self.avg_latency(duration).is_lt()
-            }
-            Trigger::StdDevsAbove(std_devs, duration) => {
-                self.stddev_latency(std_devs, duration).is_gt()
-            }
-            Trigger::StdDevsBelow(std_devs, duration) => {
-                self.stddev_latency(std_devs, duration).is_lt()
-            }
-            Trigger::PercentileAbove(percentile, duration) => {
-                self.percentile_latency(percentile, duration).is_gt()
-            }
-            Trigger::PercentileBelow(percentile, duration) => {
-                self.percentile_latency(percentile, duration).is_lt()
-            }
-
+            Trigger::AvgAbove(duration) => self.avg_latency(duration).is_gt(),
+            Trigger::AvgBelow(duration) => self.avg_latency(duration).is_lt(),
+            Trigger::StdDevsAbove(std_devs, duration) => self.stddev_latency(std_devs, duration).is_gt(),
+            Trigger::StdDevsBelow(std_devs, duration) => self.stddev_latency(std_devs, duration).is_lt(),
+            Trigger::PercentileAbove(percentile, duration) => self.percentile_latency(percentile, duration).is_gt(),
+            Trigger::PercentileBelow(percentile, duration) => self.percentile_latency(percentile, duration).is_lt(),
         }
     }
-
 
     fn triggered_rate(&self, rule: &Trigger<Rate>) -> bool
     {
@@ -498,74 +479,44 @@ impl ChannelStatsComputer {
                 actor_stats::avg_rational(window_in_ms, &self.current_rate, rate.rational_ms()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, expected_rate) => {
-                let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                actor_stats::stddev_rational(self.rate_std_dev(), window_bits, std_devs
+                actor_stats::stddev_rational(self.rate_std_dev(), self.window_bucket_in_bits + self.refresh_rate_in_bits, std_devs
                                              , &self.current_rate, expected_rate.rational_ms()).is_lt()
-            }
+            },
             Trigger::StdDevsAbove(std_devs, expected_rate) => {
-                let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                actor_stats::stddev_rational(self.rate_std_dev(), window_bits, std_devs
+                actor_stats::stddev_rational(self.rate_std_dev(), self.window_bucket_in_bits + self.refresh_rate_in_bits, std_devs
                                              , &self.current_rate, expected_rate.rational_ms()).is_gt()
-            }
-            Trigger::PercentileAbove(percentile, rate) => {
-                actor_stats::percentile_rational(percentile, &self.current_rate, rate.rational_ms()).is_gt()
-            }
-            Trigger::PercentileBelow(percentile, rate) => {
-                actor_stats::percentile_rational(percentile, &self.current_rate, rate.rational_ms()).is_lt()
-            }
-
-        }
+            },
+            Trigger::PercentileAbove(percentile, rate) => actor_stats::percentile_rational(percentile, &self.current_rate, rate.rational_ms()).is_gt(),
+            Trigger::PercentileBelow(percentile, rate) => actor_stats::percentile_rational(percentile, &self.current_rate, rate.rational_ms()).is_lt(),
+           }
     }
 
     fn triggered_filled(&self, rule: &Trigger<Filled>) -> bool
     {
         match rule {
-            Trigger::AvgAbove(Filled::Percentage(percent_full_num, percent_full_den)) => {
-                self.avg_filled_percentage(percent_full_num, percent_full_den).is_gt()
-            }
-            Trigger::AvgBelow(Filled::Percentage(percent_full_num, percent_full_den)) => {
-                self.avg_filled_percentage(percent_full_num, percent_full_den).is_lt()
-            }
-            Trigger::AvgAbove(Filled::Exact(exact_full)) => {
-                self.avg_filled_exact(exact_full).is_gt()
-            }
-            Trigger::AvgBelow(Filled::Exact(exact_full)) => {
-                self.avg_filled_exact(exact_full).is_lt()
-            }
+            Trigger::AvgAbove(Filled::Percentage(percent_full_num, percent_full_den)) => self.avg_filled_percentage(percent_full_num, percent_full_den).is_gt(),
+            Trigger::AvgBelow(Filled::Percentage(percent_full_num, percent_full_den)) => self.avg_filled_percentage(percent_full_num, percent_full_den).is_lt(),
+            Trigger::AvgAbove(Filled::Exact(exact_full)) => self.avg_filled_exact(exact_full).is_gt(),
+            Trigger::AvgBelow(Filled::Exact(exact_full)) => self.avg_filled_exact(exact_full).is_lt(),
             Trigger::StdDevsAbove(std_devs, Filled::Percentage(percent_full_num, percent_full_den)) => {
                 self.stddev_filled_percentage(std_devs, percent_full_num, percent_full_den).is_gt()
             }
             Trigger::StdDevsBelow(std_devs, Filled::Percentage(percent_full_num, percent_full_den)) => {
                 self.stddev_filled_percentage(std_devs, percent_full_num, percent_full_den).is_lt()
             }
-            Trigger::StdDevsAbove(std_devs, Filled::Exact(exact_full)) => {
-                self.stddev_filled_exact(std_devs, exact_full).is_gt()
-            }
-            Trigger::StdDevsBelow(std_devs, Filled::Exact(exact_full)) => {
-                self.stddev_filled_exact(std_devs, exact_full).is_lt()
-            }
+            Trigger::StdDevsAbove(std_devs, Filled::Exact(exact_full)) => self.stddev_filled_exact(std_devs, exact_full).is_gt(),
+            Trigger::StdDevsBelow(std_devs, Filled::Exact(exact_full)) => self.stddev_filled_exact(std_devs, exact_full).is_lt(),
+
             Trigger::PercentileAbove(percentile, Filled::Percentage(percent_full_num, percent_full_den)) => {
                 self.percentile_filled_percentage(percentile, percent_full_num, percent_full_den).is_gt()
             }
             Trigger::PercentileBelow(percentile, Filled::Percentage(percent_full_num, percent_full_den)) => {
                 self.percentile_filled_percentage(percentile, percent_full_num, percent_full_den).is_lt()
             }
-            Trigger::PercentileAbove(percentile, Filled::Exact(exact_full)) => {
-                self.percentile_filled_exact(percentile, exact_full).is_gt()
-            }
-            Trigger::PercentileBelow(percentile, Filled::Exact(exact_full)) => {
-                self.percentile_filled_exact(percentile, exact_full).is_lt()
-            }
+            Trigger::PercentileAbove(percentile, Filled::Exact(exact_full)) => self.percentile_filled_exact(percentile, exact_full).is_gt(),
+            Trigger::PercentileBelow(percentile, Filled::Exact(exact_full)) => self.percentile_filled_exact(percentile, exact_full).is_lt(),
         }
     }
-
-
-
-
-
-
-
-
 
     fn avg_filled_percentage(&self, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
@@ -598,8 +549,6 @@ impl ChannelStatsComputer {
             Ordering::Equal //unknown
         }
     }
-
-
 
     fn stddev_filled_exact(&self, std_devs: &StdDev, exact_full: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
@@ -674,9 +623,6 @@ impl ChannelStatsComputer {
             Ordering::Equal //unknown
         }
     }
-
-
-
 }
 
 //#TODO: we need a new test to show the recovery from a panic
@@ -715,25 +661,9 @@ mod stats_tests {
             );
         }
 
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
+        let display_label = compute_display_label(&mut computer);
 
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        }
         assert_eq!(display_label, "Avg filled: 80 %\n");
-
         assert!(computer.triggered_filled(&Trigger::AvgAbove(Filled::p80())), "Trigger should fire when the average filled is above");
         assert!(!computer.triggered_filled(&Trigger::AvgAbove(Filled::p90())), "Trigger should not fire when the average filled is above");
         assert!(!computer.triggered_filled(&Trigger::AvgBelow(Filled::p80())), "Trigger should not fire when the average filled is below");
@@ -761,23 +691,8 @@ mod stats_tests {
             computer.accumulate_data_frame(filled, consumed);
         }
 
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
+        let display_label = compute_display_label(&mut computer);
 
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        }
         assert_eq!(display_label, "Avg filled: 80 %\n");
 
         assert!(computer.triggered_filled(&Trigger::AvgAbove(Filled::Exact(16))), "Trigger should fire when the average filled is above");
@@ -814,44 +729,14 @@ mod stats_tests {
         }
 
         computer.std_dev_filled.push(StdDev::two_and_a_half());
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
+        let display_label = compute_display_label(&mut computer);
 
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        } //note this is "near" expected std
         assert_eq!(display_label, "Avg filled: 80 %\nfilled 2.5StdDev: 30.455 per frame (3ms duration)\n");
 
         computer.std_dev_filled.clear();
         computer.std_dev_filled.push(StdDev::one());
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
+        let display_label = compute_display_label(&mut computer);
 
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        } //note this is "near" expected std
         assert_eq!(display_label, "Avg filled: 80 %\nfilled StdDev: 12.182 per frame (3ms duration)\n");
 
         // Define a trigger with a standard deviation condition
@@ -896,28 +781,8 @@ mod stats_tests {
             computer.accumulate_data_frame(value, 100, );
         }
 
+        let display_label = compute_display_label(&mut computer);
 
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
-
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            assert!(computer.build_filled_histogram);
-            assert!(!computer.percentiles_filled.is_empty());
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        } else {
-            assert!(!computer.build_filled_histogram);
-            assert!(false); //we should not be here
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        } //note this is "near" expected std
         assert_eq!(display_label, "filled 25%ile 12 %\nfilled 50%ile 12 %\nfilled 75%ile 25 %\nfilled 90%ile 25 %\n");
 
 
@@ -930,10 +795,6 @@ mod stats_tests {
         assert!(computer.triggered_filled(&Trigger::PercentileBelow(Percentile::p50(), Filled::p100())), "Trigger should fire when standard deviation from the average filled is below the threshold");
 
     }
-
-
-
-
 
     ////////////////////////////////////////////////////////
     #[test]
@@ -959,25 +820,8 @@ mod stats_tests {
             ); //frame rate is 1ms so 1000 per second
         }
 
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
-
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        }
+        let display_label = compute_display_label(&mut computer);
         assert_eq!(display_label, "Avg rate: 33333 per/sec\n");
-        //TODO: we may want to go with per/frame and add the 3ms on another line
 
         //NOTE: our triggers are in fixed units so they do not need to change if we modify
         //      the frame rate, refresh rate or window rate.
@@ -1015,46 +859,15 @@ mod stats_tests {
         }
 
         computer.std_dev_rate.push(StdDev::two_and_a_half());
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
+        let display_label = compute_display_label(&mut computer);
 
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        } //note this is "near" expected std
         assert_eq!(display_label, "Avg rate: 68395 per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
 
         computer.std_dev_rate.clear();
         computer.std_dev_rate.push(StdDev::one());
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
+        let display_label = compute_display_label(&mut computer);
 
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        } //note this is "near" expected std
         assert_eq!(display_label, "Avg rate: 68395 per/sec\nrate StdDev: 12.182 per frame (3ms duration)\n");
-
 
         // Define a trigger with a standard deviation condition
         assert!(computer.triggered_rate(&Trigger::StdDevsAbove(StdDev::one(), Rate::per_millis(80))), "Trigger should fire when standard deviation from the average filled is above the threshold");
@@ -1093,24 +906,8 @@ mod stats_tests {
             computer.accumulate_data_frame(100, value, );
         }
 
+        let display_label = compute_display_label(&mut computer);
 
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
-
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        } //note this is "near" expected std
         assert_eq!(display_label, "rate 25%ile 625 per/sec\nrate 50%ile 700 per/sec\nrate 75%ile 950 per/sec\nrate 90%ile 1225 per/sec\n");
 
         // Define a trigger with a standard deviation condition
@@ -1119,6 +916,20 @@ mod stats_tests {
         assert!(!computer.triggered_rate(&Trigger::PercentileBelow(Percentile::p90(), Rate::per_millis(47))), "Trigger should fire when standard deviation from the average filled is above the threshold");
         assert!(computer.triggered_rate(&Trigger::PercentileBelow(Percentile::p90(), Rate::per_millis(52))), "Trigger should not fire when standard deviation from the average filled is above the threshold");
 
+    }
+
+    fn compute_display_label(computer: &mut ChannelStatsComputer) -> String {
+        let mut display_label = String::new();
+        if let Some(ref current_rate) = computer.current_rate {
+            compute_rate_labels(&computer, &mut display_label, &current_rate);
+        }
+        if let Some(ref current_filled) = computer.current_filled {
+            compute_filled_labels(&computer, &mut display_label, &current_filled);
+        }
+        if let Some(ref current_latency) = computer.current_latency {
+            compute_latency_labels(&computer, &mut display_label, &current_latency);
+        }
+        display_label
     }
 
 /////////////////////////
@@ -1149,20 +960,8 @@ fn latency_avg_trigger() {
         computer.accumulate_data_frame(inflight_value, 33, );
     }
 
-    let mut display_label = String::new();
-    if let Some(ref current_rate) = computer.current_rate {
-        compute_rate_labels(&computer, &mut display_label, &current_rate);
-    }
+    let display_label = compute_display_label(&mut computer);
 
-    if let Some(ref current_filled) = computer.current_filled {
-        //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-        compute_filled_labels(&computer, &mut display_label, &current_filled);
-    }
-
-    if let Some(ref current_latency) = computer.current_latency {
-        //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-        compute_latency_labels(&computer, &mut display_label, &current_latency);
-    }
     assert_eq!(display_label, "Avg latency: 18 ms\n");
 
     assert!(computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(5))), "Trigger should fire when the average is above");
@@ -1236,23 +1035,8 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, mut display_label: &mut 
         }
 
         computer.std_dev_latency.push(StdDev::two_and_a_half());
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
+        let display_label = compute_display_label(&mut computer);
 
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        }
         assert_eq!(display_label, "Avg latency: 95 ms\nlatency 2.5StdDev: 79.329 per frame (3ms duration)\n");
 
         // Define a trigger for rate deviation above a threshold
@@ -1285,29 +1069,9 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, mut display_label: &mut 
             computer.accumulate_data_frame((computer.capacity-1) as u64, (5.0 * 1.2) as u64, ); // Simulating rate being consistently above a certain value
         }
 
+        let display_label = compute_display_label(&mut computer);
 
-        let mut display_label = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &current_rate);
-
-        }
-
-        if let Some(ref current_filled) = computer.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_filled_labels(&computer, &mut display_label, &current_filled);
-
-        }
-
-        if let Some(ref current_latency) = computer.current_latency {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_latency_labels(&computer, &mut display_label, &current_latency);
-
-        } else {
-            assert!(!computer.build_latency_histogram);
-
-        }//note this is "near" expected std
         assert_eq!(display_label, "latency 25%ile 1703 ms\nlatency 50%ile 1703 ms\nlatency 75%ile 1703 ms\nlatency 90%ile 1703 ms\n");
-
 
         // Define a trigger for average rate above a threshold
         assert!(computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(100) )), "Trigger should fire when the average rate is above");
@@ -1316,11 +1080,7 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, mut display_label: &mut 
         assert!(computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(2000) )), "Trigger should fire when the average rate is below");
 
 
-
     }
-
-
-
 
 }
 

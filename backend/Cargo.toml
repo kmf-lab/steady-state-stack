@@ -1,8 +1,8 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.12"
-documentation = "https://docs.rs/steady_state/0.0.12/steady_state/"
-               #"https://docs.rs/crate/steady_state/0.0.12"  #debugging
+version = "0.0.13"
+documentation = "https://docs.rs/steady_state/0.0.13/steady_state/"
+               #"https://docs.rs/crate/steady_state/0.0.13"  #debugging
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -72,7 +72,6 @@ num-traits       = "0.2.18" # for num::Zero and other generic math traits
 backtrace        = "0.3.69"
 itoa             = "1.0.10"
 lazy_static      = "1.4"
-config           = "0.14.0" # for lazy statics in unit tests
 const_panic      = "0.2.8" # for const panic!()
 hdrhistogram     = "7.5.4"  # for latency histograms
 rand             = "0.8.5" # for random number generation
@@ -82,7 +81,6 @@ futures-util     = "0.3.30" # for time formatting and supports no-std
 
 agnostik         = "0.2.3" #for new rewite goal to allow different async runtimes
 
-isahc            = "1.7.2" # for http client
 
 # still in progess, this is for distributed instances across nodes
 #rustdds          = "0.9.0" # 0.9.0 is broken use to use of io-extras v0.18.1
@@ -113,14 +111,17 @@ stun-rs          = "0.1.8"  # for stun server
 #dashmap          = "5.5.3"
 #signal-hook      = "0.3.17"
 
-# for future consideration
-#kube-core = "0.88.1"
-#kube-derive = "0.88.1"
-#k8s-metrics = "0.15.0"
-#k8s-openapi = "0.21.0" #remove due to mabe_async ?
-#serde ="0.3.0" # for serialization and deserialization
+############################################
+# put this into a new project? theses probably do not belong here
+#isahc        = "1.7.2" # for http client using libcurl
+#k8s-openapi  = { version = "0.21.1", features = ["latest"] }
+#kube-core    = "0.89.0"
+#kube-derive  = "0.89.0"
+#k8s-metrics  = "0.15.0"
+#serde        ="1.0.197" # for serialization and deserialization
 #serde_derive = "1.0.64" # for serialization and deserialization
-#serde_json = "1.0.64" # for serialization and deserialization
+#serde_json   = "1.0.64" # for serialization and deserialization
+###################################################
 
 # for future consideration
 # turbine = { git = "https://github.com/polyfractal/Turbine", branch = "main" }
@@ -141,6 +142,7 @@ nuclei           = { version = "0.4.4", features = ["async-exec","iouring","attr
 [dev-dependencies]
 async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
 rand_distr       = "0.4.3" # for random number generation
+testcontainers   = "0.15.0" # for integration testing
 
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"

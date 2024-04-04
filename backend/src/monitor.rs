@@ -15,13 +15,13 @@ use futures::future::select_all;
 
 use futures_timer::Delay;
 use std::future::Future;
-use std::process::exit;
+
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use futures::channel::oneshot;
 
 use futures::FutureExt;
 use futures_util::select;
-use crate::{AlertColor, config, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, Rx, RxBundle, RxDef, StdDev, SteadyRx, SteadyTx, telemetry, Trigger, Tx, TxBundle};
+use crate::{AlertColor, config, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, Rx, RxBundle, RxDef, SendSaturation, StdDev, SteadyRx, SteadyTx, telemetry, Trigger, Tx, TxBundle};
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
@@ -424,7 +424,7 @@ pub(crate) mod monitor_tests {
     use std::sync::Once;
     use std::time::Duration;
     use futures_timer::Delay;
-    use crate::{config, Graph, Rx, Tx, util};
+    use crate::{config, Graph, Rx, SendSaturation, Tx, util};
 
     lazy_static! {
             static ref INIT: Once = Once::new();
@@ -449,7 +449,7 @@ pub(crate) mod monitor_tests {
         let threshold = 5;
         let mut count = 0;
         while count < threshold {
-            let _ = monitor.send_async(&mut txd, "test".to_string(),false).await;
+            let _ = monitor.send_async(&mut txd, "test".to_string(),SendSaturation::Warn).await;
             count += 1;
         }
 
@@ -501,7 +501,7 @@ pub(crate) mod monitor_tests {
         let threshold = 5;
         let mut count = 0;
         while count < threshold {
-            let _ = monitor.send_async(txd, "test".to_string(),false).await;
+            let _ = monitor.send_async(txd, "test".to_string(),SendSaturation::Warn).await;
             count += 1;
             if let Some(ref mut tx) = monitor.telemetry_send_tx {
                 assert_eq!(tx.count[txd.local_index], count);
@@ -605,7 +605,6 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             }
             Err(e) => {
                 error!("internal error,unable to get liveliness read lock {}",e);
-                exit(-1);   //TODO: remove this after we get clean shutdown.
                 true //keep running as the default under error conditions
             }
         }
@@ -1214,11 +1213,11 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
     ///
     /// # Asynchronous
-    pub async fn send_async<T>(&mut self, this: & mut Tx<T>, a: T, saturation_ok: bool) -> Result<(), T> {
+    pub async fn send_async<T>(&mut self, this: & mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
        // TODO: instead of boolean we should have more descriptive enum.
         //      IgnoreAndWait, IgnoreAndErr, Warn (default), IgnoreInRelease
         self.start_hot_profile(CALL_SINGLE_WRITE);
-       let result = this.shared_send_async(a, self.ident, saturation_ok).await;
+       let result = this.shared_send_async(a, self.ident, saturation).await;
        self.rollup_hot_profile();
        match result  {
            Ok(_) => {

@@ -22,7 +22,6 @@ use crate::actor::*;
 use steady_state::*;
 use steady_state::actor_builder::{MCPU, Percentile};
 use steady_state::channel_builder::Filled;
-use steady_state::serviced::SystemdServiceManager;
 
 
 // This is a good template for your future main function. It should me minimal and just
@@ -49,16 +48,19 @@ fn main() {
 
     //we do uninstall first in case we are doing both so we uninstall the old one first.
     if opt.systemd_uninstall {
-        if let Err(e) = SystemdServiceManager::new(service_executable_name.into(), service_user.into())
-                                .uninstall() {
+        let temp = SystemdBuilder::new(service_executable_name.into(), service_user.into())
+                       .build();
+        if let Err(e) = temp.uninstall() {
             eprintln!("Failed to uninstall systemd service: {:?}",e);
         }
     }
     if opt.systemd_install {
         let command = Args::to_cli_string(&opt,service_executable_name); //exec name?? hwo match?
+        let temp = SystemdBuilder::new(service_executable_name.into(), service_user.into())
+                        .with_on_boot(true)
+                        .build();
 
-        if let Err(e) = SystemdServiceManager::new(service_executable_name.into(), service_user.into())
-                                .install(true,command) {
+        if let Err(e) = temp.install(true,command) {
              eprintln!("Failed to install systemd service: {:?}",e);
         }
     }
@@ -181,7 +183,7 @@ mod tests {
         };
         let response:Option<GraphTestResult<String,WidgetInventory>>
                              = simulator.send_request(to_send).await;
-        if let Some(GraphTestResult::Ok(g)) = response {
+        if let Some(GraphTestResult::Ok(_)) = response {
             let expected_message = ApprovedWidgets {
                 original_count: 42,
                 approved_count: 21,
@@ -189,7 +191,7 @@ mod tests {
             let simulator = graph.edge_simulator("testing-consumer");
             let response:Option<GraphTestResult<(),String>>
                                  = simulator.send_request(expected_message).await;
-            if let Some(GraphTestResult::Ok(c)) = response {
+            if let Some(GraphTestResult::Ok(_)) = response {
                 trace!("happy");
             } else {
                 panic!("bad response from consumer: {:?}", response);
