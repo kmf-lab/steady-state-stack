@@ -295,7 +295,7 @@ impl Graph {
 
         //only used for testing but this backplane is here to support
         //dynamic type message sending to and from all nodes for coordination of testing
-        let backplane = None;
+        let backplane: Option<SideChannelHub> = None;
         #[cfg(test)]
         let backplane = Some(SideChannelHub::new());
 

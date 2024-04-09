@@ -78,6 +78,7 @@ rand             = "0.8.5" # for random number generation
 bytes            = { version = "1.5.0", features = [] }
 time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] }
 futures-util     = "0.3.30" # for time formatting and supports no-std
+dirs             = "5.0.1"
 
 agnostik         = "0.2.3" #for new rewite goal to allow different async runtimes
 
@@ -85,7 +86,7 @@ agnostik         = "0.2.3" #for new rewite goal to allow different async runtime
 # still in progess, this is for distributed instances across nodes
 #rustdds          = "0.9.0" # 0.9.0 is broken use to use of io-extras v0.18.1
 
-stun-rs          = "0.1.8"  # for stun server
+stun-rs          = "0.1.8"
   #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
 

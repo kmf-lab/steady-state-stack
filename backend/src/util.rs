@@ -57,15 +57,6 @@ fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>
     /// Be cautious to never log any personally identifiable information (PII) or credentials. It is
     /// the responsibility of the developer to ensure that sensitive data is not exposed in the logs.
     ///
-    /// # Examples
-    /// ```
-    /// use steady_state::init_logging;
-    /// let log_level = "info"; // Typically obtained from command line arguments or env vars
-    /// if let Err(e) = init_logging(log_level) {
-    ///     eprintln!("Logger initialization failed: {:?}", e);
-    ///     // Handle error appropriately (e.g., exit the program or fallback to a default configuration)
-    /// }
-    /// ```
     pub fn steady_logging_init(level: &str) -> Result<(), Box<dyn std::error::Error>> {
 
         let mut builder = LogSpecBuilder::new();
