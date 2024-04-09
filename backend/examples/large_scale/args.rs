@@ -39,13 +39,29 @@ fn validate_logging_level(level: String) -> Result<(), String> {
 
 impl Args {
     //TODO: will be used for the systemd installer code, it would be cool if this could be generated
-    pub fn _to_cli_string(&self, app: &str) -> String {
+    pub fn to_cli_string(&self, app: &str) -> String {
         format!("{} --duration={} --loglevel={} --gen-rate={}"
                 , app
                 , self.duration
                 , self.loglevel
                 , self.gen_rate_micros)
     }
+
+    /*
+    pub fn to_cli_string(&self, app: &str) -> Result<String, serde_json::Error> {
+        let map = serde_json::to_value(self)?;
+        let mut parts = vec![app.to_string()];
+
+        for (key, value) in map.as_object().unwrap() {
+            // Convert the field name to a command-line flag
+            let flag = format!("--{}", key.replace('_', "-"));
+            // Append the flag and its value to the command string
+            parts.push(format!("{flag}={value}"));
+        }
+
+        Ok(parts.join(" "))
+    }*/
+
 }
 
 
@@ -65,7 +81,7 @@ mod tests {
             gen_rate_micros: 3000000,
             duration: 7
         };
-        let to_test = orig_args._to_cli_string("myapp");
+        let to_test = orig_args.to_cli_string("myapp");
         trace!("to_test: {}", to_test);
         let cli_args = Args::from_iter(to_test.split_whitespace());
         assert_eq!(cli_args, *orig_args);

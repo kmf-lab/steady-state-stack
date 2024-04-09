@@ -87,7 +87,8 @@ agnostik         = "0.2.3" #for new rewite goal to allow different async runtime
 #rustdds          = "0.9.0" # 0.9.0 is broken use to use of io-extras v0.18.1
 
 stun-rs          = "0.1.8"
-  #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
+
+#Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
 
 #rstest = "0.5.2"       # for unit testing
