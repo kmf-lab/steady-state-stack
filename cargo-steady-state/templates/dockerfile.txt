@@ -24,4 +24,4 @@ FROM debian:buster-slim
 COPY --from=builder /usr/local/cargo/bin/{{ name }} /usr/local/bin/{{ name }}
 
 # Set the default command for the container
-CMD ["myapp"]
+CMD ["{{ name }}"]

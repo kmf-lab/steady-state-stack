@@ -130,6 +130,9 @@ fn write_project_files(pm: ProjectModel
    let cargo = folder_base.join("Cargo.toml");
    fs::write(cargo, templates::CargoTemplate { name: &pm.name }.render()?)?;
 
+    let docker = folder_base.join("Dockerfile");
+    fs::write(docker, templates::DockerFileTemplate { name: &pm.name }.render()?)?;
+
    let gitignore = folder_base.join(".gitignore");
    fs::write(gitignore, templates::GitIgnoreTemplate {}.render()?)?;
 

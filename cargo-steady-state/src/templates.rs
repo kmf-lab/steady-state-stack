@@ -162,6 +162,11 @@ pub(crate) struct CargoTemplate<'a> {
     pub(crate) name: &'a str,
 }
 #[derive(Template)]
+#[template(path = "dockerfile.txt")]
+pub(crate) struct DockerFileTemplate<'a> {
+    pub(crate) name: &'a str,
+}
+#[derive(Template)]
 #[template(path = "file_gitignore.txt")]
 pub(crate) struct GitIgnoreTemplate {
 }
