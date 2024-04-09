@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::error::Error;
 use std::ops::{ Deref, DerefMut};
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LockResult, RwLock, RwLockReadGuard};
 
 #[allow(unused_imports)]
 use log::*; //allow unused import
@@ -58,12 +58,6 @@ fn lock_if_some<'a, T: Send + 'a + Sync>(opt_lock: &'a Option<SteadyTx<T>>)
     })
 }
 
-
-//TODO: the collector is starting up after the others, this is not good. We need to start it first
-//      the init should be done at graph construction.
-//      the start should be after we build teh graph.
-//     shutdown needs to be finished.
-
 pub(crate) async fn run(context: SteadyContext
        , dynamic_senders_vec: Arc<RwLock<Vec< CollectorDetail >>>
        , optional_server: Option<SteadyTx<DiagramData>>
@@ -96,13 +90,15 @@ loop {
     //we do this here instead at the while because monitor is optional
         if let Some(ref mut monitor) = optional_monitor {
             monitor.relay_stats_smartly().await;
-            //TODO: keep running if dynamic_senders_vec are no empty and still open
-            //      this requires us to add the closed logic on the other end.
-            if !monitor.is_running(&mut || svr.iter_mut().all(|s| s.mark_closed()) ) {
+            if !monitor.is_running(&mut ||
+                is_all_empty_and_closed(dynamic_senders_vec.read()) &&
+                svr.iter_mut().all(|s| s.mark_closed()) ) {
                 break;
             }
         } else if let Some(ref mut context) = optional_context {
-                if !context.is_running(&mut || svr.iter_mut().all(|s| s.mark_closed()) ) {
+                if !context.is_running(&mut ||
+                    is_all_empty_and_closed(dynamic_senders_vec.read()) &&
+                    svr.iter_mut().all(|s| s.mark_closed()) ) {
                     break;
                 }
             }
@@ -189,6 +185,15 @@ loop {
     state.sequence += 1; //increment next frame
     }
     Ok(())
+}
+
+fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<Vec<CollectorDetail>>>) -> bool {
+   match m_channels {
+         Ok(channels) => {
+              channels.iter().all(|f| f.telemetry_take.iter().all(|c| c.is_empty_and_closed() ))
+         },
+         Err(_) => false
+   }
 }
 
 fn collect_futures_for_one_frame(scan: &[Box<dyn RxDef>]) -> Vec<BoxFuture<()>> {
@@ -301,20 +306,12 @@ fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &[Collector
       });
   });
 
-
   if !matches.iter().all(|x| *x==3 || *x==0) {
-
-          // this happens by design on startup at times.
-      // TODO: if it happens long term we should report to the user
-      //  because they have one side and not the other of a channel
-          matches.iter().filter(|x| !*x==3 && !*x==0).for_each(|x| {
-                trace!("can not get structure due to some bad value: {:?}",x);
-          });
-
+        // this happens by design on startup at times.
         return None;
   }
-  //error!("all looks good");
-  let max_channels_len = matches.len();
+
+    let max_channels_len = matches.len();
 
 
     //grow our vecs as needed for the max ids found

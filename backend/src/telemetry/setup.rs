@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
-use std::process::exit;
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicU16, AtomicU64};
 use std::time::{Duration, Instant};
+use futures_util::join;
 use log::*;
 use num_traits::Zero;
 use ringbuf::traits::Observer;
@@ -210,10 +210,9 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                                     if !state.is_in_state(&[GraphLivelinessState::StopRequested
                                                                   ,GraphLivelinessState::Stopped
                                                                   ,GraphLivelinessState::StoppedUncleanly]) && scale>30 {
-                                            //TODO: this hard exit to be removed when we release version 1
+
                                             error!("{:?} EXIT hard delay on actor status: {} empty{} of{}",this.ident,scale,vacant_units,capacity);
                                             error!("assume metrics_collector has died and is not consuming messages");
-                                            exit(-1);
 
                                     }
                                 }
@@ -384,49 +383,35 @@ pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX
         trace!("start last send of all local telemetry");
 
         if this.is_in_graph() {
-            if let Some(ref mut actor_status) = this.telemetry_state {
-                let msg = actor_status.status_message();
-                    {
-                        let mut tx = actor_status.tx.lock().await;
-                        let _ = tx.send_async(this.ident, msg,SendSaturation::IgnoreInRelease).await;
-                    }
-                    actor_status.status_reset();
-
-            }
-            if let Some(ref mut send_tx) = this.telemetry_send_tx {
-                if send_tx.count.iter().any(|x| !x.is_zero()) {
-                    let mut lock_guard = send_tx.tx.lock().await;
-                    let tx = lock_guard.deref_mut();
-                    let _ = tx.send_async(this.ident,send_tx.count,SendSaturation::IgnoreInRelease).await;
-                }
-            }
-            if let Some(ref mut send_rx) = this.telemetry_send_rx {
-                if send_rx.count.iter().any(|x| !x.is_zero()) {
-                    let mut lock_guard = send_rx.tx.lock().await;
-                    let rx = lock_guard.deref_mut();
-                    let _ = rx.send_async(this.ident, send_rx.count,SendSaturation::IgnoreInRelease).await;
-                }
-            }
-
-            if let Some(ref mut actor_status) = this.telemetry_state {
-                    let mut lock_guard = actor_status.tx.lock().await;
-                    let tx = lock_guard.deref_mut();
-                    tx.wait_empty().await;
-            }
-            if let Some(ref send_tx) = this.telemetry_send_tx {
-                if send_tx.count.iter().any(|x| !x.is_zero()) {
-                    let mut lock_guard = send_tx.tx.lock().await;
-                    let tx = lock_guard.deref_mut();
-                    tx.wait_empty().await;
-                }
-            }
-            if let Some(ref send_rx) = this.telemetry_send_rx {
-                if send_rx.count.iter().any(|x| !x.is_zero()) {
-                    let mut lock_guard = send_rx.tx.lock().await;
-                    let rx = lock_guard.deref_mut();
-                    rx.wait_empty().await;
-                }
-            }
+            //mark all 3 closed and wait for them to empty
+            join!(
+                    async {if let Some(ref mut actor_status) = this.telemetry_state {
+                            {
+                                actor_status.bool_stop = true;
+                                let mut tx = actor_status.tx.lock().await;
+                                let _ = tx.send_async(this.ident, actor_status.status_message(), SendSaturation::IgnoreInRelease).await;
+                                tx.mark_closed(); //signal that what you may see is all there will be
+                                tx.wait_empty().await;
+                            }
+                            actor_status.status_reset();
+                    }},
+                    async {if let Some(ref send_tx) = this.telemetry_send_tx {
+                        let mut tx = send_tx.tx.lock().await;
+                        if send_tx.count.iter().any(|x| !x.is_zero()) {
+                           let _ = tx.send_async(this.ident,send_tx.count,SendSaturation::IgnoreInRelease).await;
+                        }
+                        tx.mark_closed(); //signal that what you may see is all there will be
+                        tx.wait_empty().await;
+                    }},
+                    async {if let Some(ref send_rx) = this.telemetry_send_rx {
+                        let mut rx = send_rx.tx.lock().await;
+                        if send_rx.count.iter().any(|x| !x.is_zero()) {
+                           let _ = rx.send_async(this.ident, send_rx.count,SendSaturation::IgnoreInRelease).await;
+                        }
+                        rx.mark_closed(); //signal that what you may see is all there will be
+                        rx.wait_empty().await;
+                    }}
+                );
 
         }
     #[cfg(debug_assertions)]

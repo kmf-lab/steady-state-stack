@@ -24,8 +24,6 @@ pub async fn run(context: SteadyContext
     let mut tx = tx.lock().await;
     let mut rx = rx.lock().await;
 
-    //TODO: how is this represented for async read?, zero take?
-    //TODO: how do we deal with async blocks while is_running is on the way?
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()  ) {
         //in this example iterate once blocks/await until it has work to do

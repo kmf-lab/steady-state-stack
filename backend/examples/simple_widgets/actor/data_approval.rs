@@ -63,8 +63,7 @@ pub async fn run(context: SteadyContext
     let mut tx = tx.lock().await;
     let mut rx = rx.lock().await;
     let mut feedback = feedback.lock().await;
-
-      let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
+    let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
     //short circuit logic only closes outgoing if the incoming is empty and closed
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()

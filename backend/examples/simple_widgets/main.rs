@@ -86,7 +86,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     debug!("args: {:?}",&cli_arg);
 
     //create the mutable graph object
-    let mut graph = steady_state::Graph::new(cli_arg.clone());
+    let mut graph = Graph::new(cli_arg.clone());
 
 
     //here are the parts of the channel they both have in common, this could be done
@@ -118,8 +118,8 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                         .build();
 
     let (change_tx, change_rx) = base_channel_builder
-        // .with_fillled_max()  //TODO: new feature to add
-        // .with_fillled_min() //TODO: new feature to add
+        // .with_fillled_max()  //TODO: new feature to add, easy
+        // .with_fillled_min() //TODO: new feature to add, easy
                         .with_filled_percentile(Percentile::p25())
                         .with_capacity(200)
                         .build();
@@ -160,8 +160,10 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
 #[cfg(test)]
 mod tests {
-
+    use std::any::Any;
+    use std::ops::{DerefMut};
     use super::*;
+
 
     #[async_std::test]
     async fn test_graph_one() {
@@ -175,29 +177,29 @@ mod tests {
         };
         let mut graph = build_graph(&test_ops);
         graph.start();
-
-        let simulator = graph.edge_simulator("testing-generator");
-        let to_send = WidgetInventory {
-            count: 42,
-            _payload: 0
-        };
-        let response:Option<GraphTestResult<String,WidgetInventory>>
-                             = simulator.send_request(to_send).await;
-        if let Some(GraphTestResult::Ok(_)) = response {
-            let expected_message = ApprovedWidgets {
-                original_count: 42,
-                approved_count: 21,
-            };
-            let simulator = graph.edge_simulator("testing-consumer");
-            let response:Option<GraphTestResult<(),String>>
-                                 = simulator.send_request(expected_message).await;
-            if let Some(GraphTestResult::Ok(_)) = response {
-                trace!("happy");
-            } else {
-                panic!("bad response from consumer: {:?}", response);
+        {
+            let mut guard = graph.sidechannel_director().await;
+            if let Some(plane) = guard.deref_mut() {
+                let to_send = WidgetInventory {
+                    count: 42,
+                    _payload: 0
+                };
+                let response: Option<Box<dyn Any + Send + Sync>> = plane.node_call(Box::new(to_send), "generator").await;
+                if let Some(_) = response {
+                    let expected_message = ApprovedWidgets {
+                        original_count: 42,
+                        approved_count: 21,
+                    };
+                    let response: Option<Box<dyn Any + Send + Sync>> = plane.node_call(Box::new(expected_message), "consumer").await;
+                    if let Some(_) = response {
+                        trace!("happy");
+                    } else {
+                        panic!("bad response from consumer: {:?}", response);
+                    }
+                } else {
+                    panic!("bad response from generator: {:?}", response);
+                }
             }
-        } else {
-            panic!("bad response from generator: {:?}", response);
         }
 
         graph.stop();

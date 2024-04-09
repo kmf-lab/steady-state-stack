@@ -20,15 +20,6 @@ struct InternalState {
 
 }
 
-//TODO: can we put this on SteadyTX?
-/*async fn lock_and_deref(&self) -> (impl DerefMut<Target = T> + '_, &mut T) {
-    let mut guard = self.feedback.lock().await;
-    let deref = guard.deref_mut();
-    (guard, deref)
-}
-
-*/
-
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , feedback: SteadyRx<ChangeRequest>
@@ -94,13 +85,15 @@ async fn relay_test<const R:usize, const T:usize>(
                      monitor: &mut LocalMonitor<R,T>
                     , tx: &mut Tx<WidgetInventory>) {
 
-    if let Some(simulator) = monitor.edge_simulator() {
+    if let Some(responder) = monitor.sidechannel_responder() {
 
-        simulator.respond_to_request(|message| {
+        responder.respond_with(|message| {
             info!("relay_test: {:?}", message);
-            match monitor.try_send(tx, message) {
-                Ok(()) => GraphTestResult::Ok("ok".to_string()),
-                Err(m) => GraphTestResult::Err(m),
+
+            let msg: &WidgetInventory = message.downcast_ref::<WidgetInventory>().expect("error casting");
+            match monitor.try_send(tx, msg.clone()) {
+                Ok(()) => Box::new("ok".to_string()),
+                Err(m) => Box::new(m),
             }
         }).await;
 

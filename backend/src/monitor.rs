@@ -1,4 +1,4 @@
-use std::any::type_name;
+use std::any::{type_name};
 
 #[cfg(test)]
 use std::collections::HashMap;
@@ -25,7 +25,7 @@ use crate::{AlertColor, config, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNO
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
-use crate::graph_testing::EdgeSimulator;
+use crate::graph_testing::{SideChannel, SideChannelResponder};
 use crate::yield_now::yield_now;
 
 
@@ -122,8 +122,17 @@ pub struct SteadyTelemetrySend<const LENGTH: usize> {
 
 impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
+    fn is_empty_and_closed(&self) -> bool {
+        if let Some(ref take) = &self.take {
+            let mut rx = bastion::run!(take.rx.lock());
+            rx.is_empty() && rx.is_closed()
+        } else {
+            false
+        }
+    }
+    
     fn actor_metadata(&self) -> Arc<ActorMetaData> {
-            self.actor_metadata.clone()
+        self.actor_metadata.clone()
     }
 
     #[inline]
@@ -412,8 +421,10 @@ pub trait RxTel : Send + Sync {
     fn consume_send_into(&self, take_send_source: &mut Vec<(i128,i128)>
                               , future_send: &mut Vec<i128>) -> bool;
 
-
     fn actor_rx(&self) -> Option<Box<dyn RxDef>>;
+
+    fn is_empty_and_closed(&self)  -> bool;
+
 }
 
 #[cfg(test)]
@@ -545,7 +556,6 @@ impl <const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
     fn drop(&mut self) {
         bastion::run!(telemetry::setup::send_all_local_telemetry_async(self));
     }
-
 }
 
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
@@ -559,6 +569,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) runtime_state:        Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown:     Arc<Mutex<oneshot::Receiver<()>>>,
     pub(crate) actor_start_time:     Instant, //never changed from context
+    pub(crate) node_tx_rx:           Option<Arc<Mutex<SideChannel>>>,
 
     #[cfg(test)]
     pub(crate) test_count: HashMap<&'static str, usize>,
@@ -585,17 +596,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         self.ident.name
     }
 
-    /// Initiates a stop signal for the LocalMonitor, halting its monitoring activities.
-    ///
-    /// # Returns
-    /// A `Result` indicating successful cessation of monitoring activities.
-    pub async fn stop(&mut self) -> Result<(),()>  {
-        if let Some(ref mut st) = self.telemetry_state {
-            st.bool_stop = true;
-            //TODO: probably rewrite to use the closed boolean on the channel.
-        }// upon drop we will flush telemetry
-        Ok(())
-    }
+
 
     #[inline]
     pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
@@ -650,8 +651,9 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 
 
-    pub fn edge_simulator(&self) -> Option<EdgeSimulator> {
-        self.ctx.as_ref().map(|ctx| EdgeSimulator::new(ctx.clone()))
+    pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
+        //if we have no back channel plane then we can not simulate the edges
+        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone() ))
     }
 
 
@@ -1214,9 +1216,8 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Asynchronous
     pub async fn send_async<T>(&mut self, this: & mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
-       // TODO: instead of boolean we should have more descriptive enum.
-        //      IgnoreAndWait, IgnoreAndErr, Warn (default), IgnoreInRelease
-        self.start_hot_profile(CALL_SINGLE_WRITE);
+
+       self.start_hot_profile(CALL_SINGLE_WRITE);
        let result = this.shared_send_async(a, self.ident, saturation).await;
        self.rollup_hot_profile();
        match result  {

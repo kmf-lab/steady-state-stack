@@ -13,12 +13,13 @@ use std::task::{Context, Poll};
 use bastion::run;
 use futures::channel::oneshot::Sender;
 use futures_timer::Delay;
-use futures_util::lock::MutexGuard;
+use futures_util::lock::{MutexGuard, MutexLockFuture};
 
 use crate::actor_builder::ActorBuilder;
-use crate::{EdgeSimulationDirector, Graph, telemetry};
+use crate::{Graph, telemetry};
 use crate::channel_builder::ChannelBuilder;
 use crate::config::TELEMETRY_PRODUCTION_RATE_MS;
+use crate::graph_testing::SideChannelHub;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum GraphLivelinessState {
@@ -182,9 +183,10 @@ impl Graph {
     }
 
 
-    pub fn edge_simulator(&self, name: & 'static str) -> EdgeSimulationDirector {
-        EdgeSimulationDirector::new(self, name)
+    pub fn sidechannel_director(&self) -> MutexLockFuture<'_, Option<SideChannelHub>> {
+        self.backplane.lock()
     }
+
 
     /// start the graph, this should be done after building the graph
     pub fn start(&mut self) {
@@ -290,6 +292,13 @@ impl Graph {
         let channel_count = Arc::new(AtomicUsize::new(0));
         let monitor_count = Arc::new(AtomicUsize::new(0));
         let shutdown_vec = Arc::new(Mutex::new(Vec::new()));
+
+        //only used for testing but this backplane is here to support
+        //dynamic type message sending to and from all nodes for coordination of testing
+        let backplane = None;
+        #[cfg(test)]
+        let backplane = Some(SideChannelHub::new());
+
         let mut result = Graph {
             args: Arc::new(Box::new(args)),
             channel_count: channel_count.clone(),
@@ -297,6 +306,7 @@ impl Graph {
             all_telemetry_rx: Arc::new(RwLock::new(Vec::new())), //this is all telemetry receivers
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(monitor_count,shutdown_vec.clone()))),
             oneshot_shutdown_vec: shutdown_vec,
+            backplane : Arc::new(Mutex::new(backplane)),
         };
         //this is based on features in the config
         telemetry::setup::build_optional_telemetry_graph(&mut result);

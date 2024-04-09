@@ -1,3 +1,4 @@
+use std::ops::Sub;
 use std::sync::Arc;
 use futures::lock::Mutex;
 use std::time::{Duration, Instant};
@@ -472,10 +473,6 @@ impl ChannelBuilder {
             oneshots.push(sender_rx);
         }
 
-        //TODO: one shot must be created here
-
-        //trace!("channel_builder::build: type_name: {}", std::any::type_name::<T>());
-
         //the number of bytes consumed by T
         let type_byte_count = std::mem::size_of::<T>(); //TODO: new feature to add
         let type_string_name = std::any::type_name::<T>();
@@ -488,7 +485,7 @@ impl ChannelBuilder {
             , channel_meta_data: channel_meta_data.clone()
             , local_index: MONITOR_UNKNOWN
             , make_closed: Some(sender_is_closed)
-            , last_error_send: Instant::now() //TODO: roll back a few seconds..
+            , last_error_send: Instant::now().sub(Duration::from_secs(60))
             , oneshot_shutdown: receiver_tx
         }))
            , Arc::new(Mutex::new(Rx {

@@ -30,7 +30,6 @@ mod yield_now;
 
 pub use graph_testing::GraphTestResult;
 pub use actor_builder::SupervisionStrategy;
-pub use graph_testing::EdgeSimulationDirector;
 pub use monitor::LocalMonitor;
 pub use channel_builder::Rate;
 pub use channel_builder::Filled;
@@ -40,6 +39,7 @@ pub use actor_builder::Percentile;
 pub use graph_liveliness::*;
 pub use loop_driver::*;
 pub use install::serviced::*;
+
 
 use std::any::{Any, type_name};
 
@@ -77,7 +77,9 @@ use futures::*; // Provides the .fuse() method
 
 // Re-exporting Bastion blocking for use in actors
 pub use bastion::blocking;
-use bastion::run;
+pub use bastion::run;
+
+
 use futures::channel::oneshot;
 
 
@@ -85,7 +87,7 @@ use futures::select;
 use futures_timer::Delay;
 use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use futures_util::lock::MutexGuard;
-use crate::graph_testing::EdgeSimulator;
+use crate::graph_testing::{SideChannel, SideChannelHub, SideChannelResponder};
 use crate::yield_now::yield_now;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
@@ -129,6 +131,7 @@ pub struct SteadyContext {
     pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
     pub(crate) last_perodic_wait: AtomicU64,
     pub(crate) actor_start_time: Instant,
+    pub(crate) node_tx_rx: Option<Arc<Mutex<SideChannel>>>,
 }
 
 
@@ -214,8 +217,9 @@ impl SteadyContext {
         this.shared_send_async(a, self.ident,saturation).await
     }
 
-    pub fn edge_simulator(&self) -> Option<EdgeSimulator> {
-        self.ctx.as_ref().map(|ctx| EdgeSimulator::new(ctx.clone()))
+    pub fn edge_simulator(&self) -> Option<SideChannelResponder> {
+        //if we have no back channel plane then we can not simulate edges
+        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone() ))
     }
 
 
@@ -329,6 +333,7 @@ impl SteadyContext {
             oneshot_shutdown: self.oneshot_shutdown,
             last_perodic_wait: Default::default(),
             actor_start_time: self.actor_start_time,
+            node_tx_rx: self.node_tx_rx.clone(),
 
             #[cfg(test)]
             test_count: HashMap::new(),
@@ -480,6 +485,7 @@ pub struct Graph  {
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
+    pub(crate) backplane: Arc<Mutex<Option<SideChannelHub>>>, //only used in testing
 }
 
 impl Graph {
@@ -517,6 +523,7 @@ impl Graph {
             oneshot_shutdown,
             last_perodic_wait: Default::default(),
             actor_start_time: now,
+            node_tx_rx: None,
         }
     }
 }
@@ -885,17 +892,13 @@ fn write_warning_to_console(stack: Backtrace) {
 
 }
 
-
+#[derive(Default)]
 pub enum SendSaturation {
     IgnoreAndWait,
     IgnoreAndErr,
+    #[default]
     Warn,
     IgnoreInRelease
-}
-impl Default for SendSaturation {
-    fn default() -> Self {
-        SendSaturation::Warn
-    }
 }
 
 impl<T> Rx<T> {
@@ -1293,11 +1296,7 @@ impl <T: Send + Sync > RxDef for SteadyRx<T>  {
         }.boxed() // Use the `.boxed()` method to convert the future into a BoxFuture
     }
 
-
 }
-
-
-//TODO: better design with full lock feature for simple in place use!!!!!
 
 pub trait SteadyTxBundleTrait<T,const GIRTH:usize> {
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>>;

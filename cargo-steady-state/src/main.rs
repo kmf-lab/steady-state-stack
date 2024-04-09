@@ -182,7 +182,7 @@ fn write_project_files(pm: ProjectModel
        let tx_monitor_defs = monitor_defs("tx",&actor.tx_channels);
 
        fs::write(actor_file_rs, templates::ActorTemplate {
-               note_for_the_user: "//TODO: ", //do not change, this is not for you
+               note_for_the_user: format!("//TO{}: ","DO"), //do not change, this is not for you
                display_name: actor.display_name,
                has_bundles: actor.rx_channels.iter().any(|f| f.len()>1) || actor.tx_channels.iter().any(|f| f.len()>1),
                rx_channels: actor.rx_channels,
@@ -261,6 +261,8 @@ fn build_process_block(actor: &Actor) -> String {
     });
 
 
+    // TODO: some examples for each field how to read and write.
+
     actor.tx_channels.iter().for_each(|f| {
         if f.len().is_one() {
             //single
@@ -292,10 +294,6 @@ fn build_process_block(actor: &Actor) -> String {
                 }
 
     });
-
-
-
-    // TODO: some examples for each field how to read and write.
 
 
     full_process_example_block

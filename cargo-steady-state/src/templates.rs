@@ -3,8 +3,6 @@ use std::time::Duration;
 use askama::Template;
 
 //TODO: add custom actor templates which can be adjusted later?
-//TODO: need to add a way to specify the actor/channel behavior on dot
-//      set default behavior for now
 //TODO: if files exist confirm and backup the files?
 
 
@@ -186,7 +184,7 @@ pub(crate) struct MainTemplate<'a> {
 #[derive(Template)]
 #[template(path = "file_actor.txt")]
 pub(crate) struct ActorTemplate {
-    pub(crate) note_for_the_user: &'static str,
+    pub(crate) note_for_the_user: String,
     pub(crate) display_name: String,
     pub(crate) has_bundles: bool,
     pub(crate) rx_channels: Vec<Vec<Channel>>,

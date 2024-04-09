@@ -89,18 +89,15 @@ stun-rs          = "0.1.8"  # for stun server
   #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
 
-
-
-
-
 #rstest = "0.5.2"       # for unit testing
-# TODO: will support systemd, SQRL and rapid prootyping
 
-## for SQRL will integrate later and use tide
+#############################################
+## for SQRL will integrate later and use tide # should be in a new project
 #ring   = "0.16.20" # for sha
 #qrcode = "0.13.0"  # for qr code generation
 #rustls = "0.20.0" # for https
 #diesel = { version = "1.4.7", features = ["postgres"] }
+###############################################
 
 #askama         = "0.12.1"
 #minimal-lexical = "0.5.0" # for fast number parsing

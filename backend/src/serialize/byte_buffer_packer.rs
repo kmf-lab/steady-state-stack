@@ -14,6 +14,15 @@ pub(crate) struct PackedVecWriter<T> {
 }
 
 impl<T> PackedVecWriter<T> {
+
+    pub fn new() -> Self {
+        PackedVecWriter {
+            previous: Vec::new(),
+            delta_write_count: 0,
+            sync_required: true,
+        }
+    }
+
     pub fn sync_data(&mut self) {
         self.sync_required = true;
     }

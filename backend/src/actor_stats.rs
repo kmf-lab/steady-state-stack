@@ -78,14 +78,12 @@ impl ActorStatsComputer {
             display_label.push('\n');
         }
 
-
-
         if let Some(ref current_work) = &self.current_work {
             compute_labels(self.frame_rate_ms
                            , self.window_bucket_in_bits+self.refresh_rate_in_bits
                            , &mut display_label, current_work
-                           , "work"
-                           , "%"
+                           , "work", "%"
+                           , 100
                            , (1,1)
                            , self.show_avg_work
                            , & self.std_dev_work
@@ -95,8 +93,8 @@ impl ActorStatsComputer {
             compute_labels(self.frame_rate_ms
                            , self.window_bucket_in_bits+self.refresh_rate_in_bits
                            , &mut display_label, current_mcpu
-                           , "mCPU"
-                           , ""
+                           , "mCPU", ""
+                           , 1024
                            , (1,1)
                            , self.show_avg_mcpu
                            , & self.std_dev_mcpu
@@ -200,6 +198,8 @@ impl ActorStatsComputer {
     }
 
     pub(crate) fn accumulate_data_frame(&mut self, mcpu: u64, work: u64) {
+
+        assert!(mcpu<=1024,"mcpu out of range {}",mcpu);
 
         self.history_mcpu.iter_mut().for_each(|f| {
             if let Some(ref mut h) = &mut f.histogram {

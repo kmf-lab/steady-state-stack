@@ -1,3 +1,4 @@
+
 use std::error::Error;
 
 
@@ -20,7 +21,7 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
 
     //let args:Option<&Args> = context.args(); //you can make the type explicit
-    //let args = context.args::<Args>(); //or you can turbo fish here to get your args
+    let args = context.args::<Args>(); //or you can turbo fish here to get your args
 
 
     let mut monitor = into_monitor!(context,[rx],[]);
@@ -113,27 +114,39 @@ pub async fn run(context: SteadyContext
     Ok(())
 }
 
+// fn downcast_trait_object<T: 'static>(obj: &(dyn BackPlaneMessage + 'static)) -> Option<&T> {
+//     obj.as_any().downcast_ref::<T>()
+// }
+
+/*
+fn cast_to_aw(obj: &dyn BackPlaneMessage) -> Option<&ApprovedWidgets> {
+    BackPlaneMessage::downcast_ref::<ApprovedWidgets>(obj)
+   // obj.downcast_ref::<ApprovedWidgets>()
+}*/
 
 #[cfg(test)]
 async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< ApprovedWidgets>) {
 
-    if let Some(simulator) = monitor.edge_simulator() {
-        simulator.respond_to_request(|expected: ApprovedWidgets| {
+    if let Some(simulator) = monitor.sidechannel_responder() {
+        simulator.respond_with(|expected| {
 
             rx.block_until_not_empty(std::time::Duration::from_secs(20));
             match monitor.try_take(rx) {
                 Some(measured) => {
-                    let result = expected.cmp(&measured);
-                    if result.is_eq() {
-                        GraphTestResult::Ok(())
-                    } else {
-                        GraphTestResult::Err(format!("no match {:?} {:?} {:?}"
-                                             ,expected
-                                             ,result
-                                             ,measured))
-                    }
+                    let expected: &ApprovedWidgets = expected.downcast_ref::<ApprovedWidgets>().expect("error casting");
+
+                        let result = expected.cmp(&measured);
+                        if result.is_eq() {
+                            Box::new("".to_string())
+                        } else {
+                            Box::new(format!("no match {:?} {:?} {:?}"
+                                             , expected
+                                             , result
+                                             , measured).to_string())
+                        }
+
                 },
-                None => GraphTestResult::Err("no data".to_string()),
+                None => Box::new("no data".to_string()),
             }
 
         }).await;

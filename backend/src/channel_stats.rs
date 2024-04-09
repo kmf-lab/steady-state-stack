@@ -8,6 +8,7 @@ use log::*;
 use num_traits::Zero;
 use crate::*;
 use hdrhistogram::{Counter, Histogram};
+use itoa::Buffer;
 
 use crate::actor_stats::ChannelBlock;
 
@@ -386,8 +387,8 @@ impl ChannelStatsComputer {
             compute_labels(self.frame_rate_ms
                            , self.window_bucket_in_bits+self.refresh_rate_in_bits
                            , &mut display_label, current_rate
-                                , "rate"
-                                , "per/sec"
+                                , "rate", "per/sec"
+                                , u64::MAX
                                 , (1000, self.frame_rate_ms as usize)
                                 , self.show_avg_rate
                                 , & self.std_dev_rate
@@ -399,8 +400,8 @@ impl ChannelStatsComputer {
             compute_labels(self.frame_rate_ms
                                 , self.window_bucket_in_bits+self.refresh_rate_in_bits
                                 , &mut display_label, current_filled
-                                , "filled"
-                                , "%"
+                                , "filled", "%"
+                                , u64::MAX
                                 , (100, self.capacity)
                                 , self.show_avg_filled
                                 , & self.std_dev_filled
@@ -412,8 +413,8 @@ impl ChannelStatsComputer {
             compute_labels(self.frame_rate_ms
                                 , self.window_bucket_in_bits+self.refresh_rate_in_bits
                                 , &mut display_label, current_latency
-                                , "latency"
-                                , "ms"
+                                , "latency", "ms"
+                                , u64::MAX
                                 , (1,1)
                                 , self.show_avg_latency
                                 , & self.std_dev_latency
@@ -783,7 +784,7 @@ mod stats_tests {
 
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "filled 25%ile 12 %\nfilled 50%ile 12 %\nfilled 75%ile 25 %\nfilled 90%ile 25 %\n");
+        assert_eq!(display_label, "filled 25%ile 12 %\nfilled 50%ile 12 %\nfilled 75%ile 24 %\nfilled 90%ile 24 %\n");
 
 
         // Define a trigger with a standard deviation condition
@@ -976,8 +977,8 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, mut display_label: &mut 
     compute_labels(computer.frame_rate_ms
                    , computer.window_bucket_in_bits + computer.refresh_rate_in_bits
                    , &mut display_label, &current_rate
-                   , &"rate"
-                   , &"per/sec"
+                   , &"rate", &"per/sec"
+                   , u64::MAX
                    , (1000, computer.frame_rate_ms as usize)
                    , computer.show_avg_rate
                    , &computer.std_dev_rate
@@ -988,8 +989,8 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, mut display_label: &mut 
     compute_labels(computer.frame_rate_ms
                    , computer.window_bucket_in_bits + computer.refresh_rate_in_bits
                    , &mut display_label, &current_filled
-                   , &"filled"
-                   , &"%"
+                   , &"filled", &"%"
+                   , u64::MAX
                    , (100, computer.capacity)
                    , computer.show_avg_filled
                    , &computer.std_dev_filled
@@ -1000,8 +1001,8 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, mut display_label: &mut 
     compute_labels(computer.frame_rate_ms
                    , computer.window_bucket_in_bits + computer.refresh_rate_in_bits
                    , &mut display_label, &current_latency
-                   , &"latency"
-                   , &"ms"
+                   , &"latency", &"ms"
+                   , u64::MAX
                    , (1, 1)
                    , computer.show_avg_latency
                    , &computer.std_dev_latency
@@ -1092,6 +1093,7 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
                   , target: &mut String
                   , current: &ChannelBlock<T>
                   , label: &str, unit: &str
+                  , max_value: u64
                   , rational_adjust: (usize,usize)
                   , show_avg: bool
                   , std_dev: &[StdDev]
@@ -1133,10 +1135,8 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
                 target.push_str(": ");
                 target.push_str(itoa::Buffer::new().format(value));
             }
-
-
         } else {
-            target.push_str(&format!(": {:.3}", avg_per_sec_numer as f32 / denominator as f32)); //TODO: future job, replace with itoa
+            target.push_str(&format!(": {:.3}", avg_per_sec_numer as f32 / denominator as f32));
         }
         target.push(' ');
         target.push_str(unit);
@@ -1157,15 +1157,14 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
         target.push_str(label);
         target.push(' ');
         if *f != StdDev::one() {
-            target.push_str(
-                &format!("{:.1}", f.value()));
+            target.push_str(&format!("{:.1}", f.value()) );
         }
         target.push_str("StdDev: "); //this is per frame.
         target.push_str(
             &format!("{:.3}", (f.value() * std) / PLACES_TENS as f32));
 
         target.push_str(" per frame (");
-        target.push_str(&format!("{:?}", frame_rate_ms));
+        target.push_str(Buffer::new().format(frame_rate_ms));
         target.push_str("ms duration)\n");
     });
 
@@ -1173,19 +1172,16 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
         target.push_str(label);
         target.push(' ');
 
-        target.push_str(
-            &format!("{:?}"
-                     , (p.percentile()) as usize
-            ));
-
+        target.push_str(Buffer::new().format(p.percentile() as usize));
         target.push_str("%ile ");
 
         if let Some(h) = &current.histogram {
-            target.push_str(
-                &format!("{:.0}"
-                         , (rational_adjust.0 as f32 * h.value_at_percentile(p.percentile()) as f32)
-                             / rational_adjust.1 as f32
-                ));
+
+             let value = ((rational_adjust.0 as f32 * h.value_at_percentile(p.percentile()).min(max_value)  as f32)
+                          / rational_adjust.1 as f32) as usize;
+
+            target.push_str(Buffer::new().format(value));
+
         } else {
             target.push_str("InternalError"); //not expected to happen
             error!("InternalError: no histogram for required percentile {:?}",p);

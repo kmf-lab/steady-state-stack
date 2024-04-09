@@ -157,22 +157,14 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
                             .as_bytes());
                         dot_graph.put_slice(b"\"}");
                     }
-
                 });
-
     dot_graph.put_slice(b"}\n");
 }
-
-
 
 pub struct DotGraphFrames {
     pub(crate) active_graph: BytesMut,
     pub(crate) last_graph: Instant,
-
 }
-
-
-
 
 
 pub fn refresh_structure(local_state: &mut DotState
@@ -202,7 +194,6 @@ pub fn refresh_structure(local_state: &mut DotState
     //we need to record both monitors in this edge as to and from
     define_unified_edges(local_state, id, channels_in, true);
     define_unified_edges(local_state, id, channels_out, false);
-
 }
 
 fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: &[Arc<ChannelMetaData>], set_to: bool) {
@@ -272,16 +263,8 @@ impl FrameHistory {
 
     pub fn new() -> FrameHistory {
         let result = FrameHistory {
-            packed_sent_writer: PackedVecWriter { //TODO: use a constructor
-                previous: Vec::new(),
-                sync_required: true, //first must be full
-                delta_write_count: 0
-            },
-            packed_take_writer: PackedVecWriter {//TODO: use a constructor
-                previous: Vec::new(),
-                sync_required: true, //first must be full
-                delta_write_count: 0
-            },
+            packed_sent_writer: PackedVecWriter::new(),
+            packed_take_writer: PackedVecWriter::new(),
             history_buffer: BytesMut::new(),
             //immutable details
             guid: Uuid::new_v4().to_string(), // Unique GUID for the run instance

@@ -171,7 +171,7 @@ impl SystemdServiceManager {
             .status()?;
 
         if !status.success() {
-            //TODO: This can be replaced with a more dynamic approach based on the distribution
+            //NOTE: Could be replaced with a more dynamic or builder approach based on distribution
             let useradd_command = "useradd";
             let useradd_args = ["-r", "-s", "/usr/sbin/nologin", &self.service_user];
 

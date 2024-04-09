@@ -21,8 +21,7 @@ use crate::telemetry::metrics_collector::*;
 // cargo install websocat
 // websocat ws://127.0.0.1:8080/ws
 
-//TODO:
-//       stream send/take data on websocket
+//TODO:     stream send/take data on websocket
 //       poll for history file (gap?) (send notice of flush)
 
 

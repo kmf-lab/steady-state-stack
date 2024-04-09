@@ -53,21 +53,22 @@ pub async fn run(context: SteadyContext
 #[cfg(test)]
 async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< Packet>) {
 
-    if let Some(simulator) = monitor.edge_simulator() {
-        simulator.respond_to_request(|expected: Packet| {
+    if let Some(simulator) = monitor.sidechannel_responder() {
+        simulator.respond_with(|expected| {
 
             rx.block_until_not_empty(std::time::Duration::from_secs(20));
             match monitor.try_take(rx) {
                 Some(measured) => {
+                    let expected: &Packet = expected.downcast_ref::<Packet>().expect("error casting");
                     if expected.eq(&measured) {
-                        GraphTestResult::Ok(())
+                        Box::new("".to_string())
                     } else {
-                        GraphTestResult::Err(format!("no match {:?} {:?}"
+                        Box::new(format!("no match {:?} {:?}"
                                              ,expected
-                                             ,measured))
+                                             ,measured).to_string())
                     }
                 },
-                None => GraphTestResult::Err("no data".to_string()),
+                None => Box::new("no data".to_string()),
             }
 
         }).await;

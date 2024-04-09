@@ -1,12 +1,16 @@
 use std::any::Any;
+use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ops::DerefMut;
 use std::sync::Arc;
-use bastion::context::BastionContext;
-use bastion::message::MessageHandler;
+use async_ringbuf::AsyncRb;
+use async_ringbuf::consumer::AsyncConsumer;
+use async_ringbuf::producer::AsyncProducer;
 
 use log::error;
-use futures::channel::oneshot::Receiver;
-use crate::Graph;
+use futures_util::lock::{Mutex};
+use ringbuf::traits::Split;
+use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 
 #[derive(Debug)]
 pub enum GraphTestResult<K,E>
@@ -17,80 +21,90 @@ pub enum GraphTestResult<K,E>
     Err(E),
 }
 
-pub struct EdgeSimulator {
-    pub(crate) ctx: Arc<BastionContext>,
+
+
+pub(crate) type SideChannel = (InternalSender<Box<dyn Any+Send+Sync>>, InternalReceiver<Box<dyn Any+Send+Sync>>);
+type NodeName = String;
+
+pub struct SideChannelHub {
+    //each node holds its own lock on read and write to the backplane
+    node: HashMap<NodeName, Arc<Mutex<SideChannel>>  >,
+    //the backplane can only be held by one user at a time and functions as a central message hub
+    pub(crate) backplane: HashMap<NodeName, SideChannel >,
 }
 
-impl EdgeSimulator {
-    pub fn new(ctx: Arc<BastionContext>) -> Self {
-        EdgeSimulator {
-            ctx,
+
+impl SideChannelHub {
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
+        SideChannelHub {
+            node: Default::default(),
+            backplane: HashMap::new(),
         }
     }
 
-    pub async fn respond_to_request<F, T: 'static, K, E>(&self, mut f: F)
-        where
-            F: FnMut(T) -> GraphTestResult<K, E>,
-            K: Any+Send+Sync+Debug,
-            E: Any+Send+Sync+Debug,
-    {
-        match self.ctx.recv().await {
-            Ok(m) => {
-                MessageHandler::new(m)
-                    .on_question(move |message: T, answer_sender| {
-                        // Using async block to capture the future returned by x and then executing it.
-                        let result:GraphTestResult<K, E> = f(message);
-                        // Send the result back using answer_sender.
-                        match answer_sender.reply(result) {
-                            Ok(_) => {},
-                            Err(e) => {
-                                error!("Error sending test implementation response: {:?}", e);
-                            }
-                        };
-                    });
-            }
-            Err(e) => {
-                error!("Error receiving test message: {:?}", e);
-            }
-        }
-
+    pub fn node_tx_rx(&self, name: &str) -> Option<Arc<Mutex<SideChannel>>> {
+        self.node.get(name).cloned()
     }
 
-}
+    pub async fn register_node(&mut self, name: &str, capacity: usize){
+        //message to the node
+        let rb = AsyncRb::<ChannelBacking<Box<dyn Any+Send+Sync>>>::new(capacity);
+        let (sender_tx, receiver_tx) = rb.split();
 
-pub struct EdgeSimulationDirector {
-    distributor: bastion::distributor::Distributor,
-}
+        //response from the node
+        let rb = AsyncRb::<ChannelBacking<Box<dyn Any+Send+Sync>>>::new(capacity);
+        let (sender_rx, receiver_rx) = rb.split();
 
-impl EdgeSimulationDirector {
-    pub fn new(_graph: &Graph, name: & 'static str) -> EdgeSimulationDirector {
-        EdgeSimulationDirector {
-            distributor: bastion::distributor::Distributor::named(name)
-        }
+        self.node.insert(name.into(), Arc::new(Mutex::new((sender_rx, receiver_tx))));
+        self.backplane.insert(name.into(), (sender_tx, receiver_rx));
     }
 
-    pub async fn send_request<T, K, E>(&self, msg: T) -> Option<GraphTestResult<K, E>>
-      where T: Any + Send + Sync + Debug + Clone + 'static,
-            K: Any + Send + Sync + Debug,
-            E: Any + Send + Sync + Debug
-    {
-        let answer_consumer:Receiver<Result<GraphTestResult<K,E>,bastion::errors::SendError>> = self.distributor.request(msg);
-        match answer_consumer.await {
-            Ok(ac) => {
-                match ac {
-                    Ok(response) => {
-                        return Some(response);
-                    },
-                    Err(e) => {
-                        error!("failed to send request: {:?}", e);
-                    }
+
+    pub async fn node_call(&mut self, msg: Box<dyn Any+Send+Sync>, name: &str) -> Option<Box<dyn Any+Send+Sync>> {
+        if let Some((tx, rx)) = self.backplane.get_mut(name) {
+            match tx.push(msg).await {
+                Ok(_) => {
+                    return rx.pop().await;
+                },
+                Err(e) => {
+                    error!("Error sending test implementation request: {:?}", e);
                 }
             }
-            Err(e) => {
-                error!("failed to send request: {:?}", e);
-            }
         }
-       None
+        None
+    }
+}
+
+
+
+pub struct SideChannelResponder {
+    pub(crate) arc: Arc<Mutex<SideChannel>>
+}
+
+impl SideChannelResponder {
+    pub fn new(
+               arc: Arc<Mutex<SideChannel>>
+    ) -> Self {
+        SideChannelResponder {
+            arc
+        }
+    }
+
+    pub async fn respond_with<F>(&self, mut f: F)
+        where
+            F: FnMut(Box<dyn Any+Send+Sync>) -> Box<dyn Any+Send+Sync>,
+    {
+        let mut guard = self.arc.lock().await;
+        let (ref mut tx, ref mut rx) = guard.deref_mut();
+        if let Some(msg) =rx.pop().await {
+                match tx.push(f(msg)).await {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("Error sending test implementation response: {:?}", e);
+                    }
+                };
+        }
     }
 
 }

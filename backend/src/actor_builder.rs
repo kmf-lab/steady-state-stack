@@ -5,18 +5,20 @@ use std::future::Future;
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, AtomicUsize};
 use std::time::Duration;
-use bastion::*;
-use bastion::supervisor::*;
+use bastion::{Bastion, Callbacks, run};
+use bastion::supervisor::SupervisorRef;
+
 use futures::channel::oneshot;
 use futures_util::lock::Mutex;
 use log::*;
 
 use crate::{AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
+use crate::graph_testing::{SideChannel, SideChannelHub};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 
-fn build_node_monitor_callback( count_restarts: &Arc<AtomicU32>
+fn build_node_restart_counter(count_restarts: &Arc<AtomicU32>
 
 ) -> Callbacks {
     let callback_count_restarts = count_restarts.clone();
@@ -54,6 +56,7 @@ pub struct ActorBuilder {
     avg_work: bool,
     supervisor: SupervisorRef,
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
+    backplane: Arc<Mutex<Option<SideChannelHub>>>,
 }
 
 /// Defines the strategies for supervising groups of child actors or processes within a system.
@@ -119,7 +122,9 @@ impl ActorBuilder {
 
         let default_super = Bastion::supervisor(|supervisor| supervisor.with_strategy(bastion::supervisor::SupervisionStrategy::OneForOne))
                             .expect("Internal error, Check if OneForOne is no longer supported?");
+
         ActorBuilder {
+            backplane: graph.backplane.clone(),
             name: "",
             suffix: None,
             monitor_count: graph.monitor_count.clone(),
@@ -385,6 +390,21 @@ impl ActorBuilder {
         let runtime_state = self.runtime_state;
         let args          = self.args;
         let name          = self.name;
+
+        let node_tx_rx:Option<Arc<Mutex<SideChannel>>> = run!(
+            async {
+                    let mut backplane = self.backplane.lock().await;
+                    //IF the backplane is enabled then register every node for use
+                    if let Some(pb) = &mut *backplane {
+                                                let max_channel_capacity = 8;
+                                                pb.register_node(name,max_channel_capacity).await;
+                                                pb.node_tx_rx(name)
+                                         } else {
+                                                None
+                                         }
+            }
+        );
+
         let actor_metadata = Arc::new(
             ActorMetaData {
                 id, name,
@@ -406,7 +426,7 @@ impl ActorBuilder {
         let _ = self.supervisor.children(|children| {
 
             let count_restarts = Arc::new(AtomicU32::new(0));
-            let watch_node_callback = build_node_monitor_callback(&count_restarts);
+            let watch_node_callback = build_node_restart_counter(&count_restarts);
             let count_restarts = count_restarts.clone();
 
             //this single one shot is kept no matter how many times actor is restarted
@@ -423,11 +443,6 @@ impl ActorBuilder {
                 .with_name(name)
                 .with_callbacks(watch_node_callback);
 
-            #[cfg(debug_assertions)]
-            let children = {
-                use bastion::distributor::Distributor;
-                children.with_distributor(Distributor::named(format!("testing-{name}")))
-            };
 
             children.with_exec(move |ctx| {
 
@@ -443,6 +458,7 @@ impl ActorBuilder {
                                     oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
                                     oneshot_shutdown: oneshot_shutdown.clone(),
                                     last_perodic_wait: Default::default(),
+                                    node_tx_rx: node_tx_rx.clone(),
                                     actor_start_time
                 };
                 let future = build_actor_exec(context);
