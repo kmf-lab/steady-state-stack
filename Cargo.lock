@@ -734,7 +734,7 @@ dependencies = [
  "flexi_logger",
  "log",
  "num-traits",
- "steady_state 0.0.13",
+ "steady_state 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "structopt",
  "structopt-derive",
 ]
@@ -2888,42 +2888,6 @@ checksum = "213701ba3370744dcd1a12960caa4843b3d68b4d1c0a5d575e0d65b2ee9d16c0"
 
 [[package]]
 name = "steady_state"
-version = "0.0.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bae77fb4be34f9855fcad19f32b012048f2b2f1c1100319585833db657c668a4"
-dependencies = [
- "agnostik",
- "async-ringbuf",
- "backtrace",
- "bastion",
- "bytes",
- "color-eyre",
- "const_panic",
- "dirs",
- "flexi_logger",
- "futures",
- "futures-timer",
- "futures-util",
- "hdrhistogram",
- "itertools 0.12.1",
- "itoa",
- "lazy_static",
- "log",
- "nuclei 0.4.4",
- "num-traits",
- "rand 0.8.5",
- "ringbuf",
- "structopt",
- "structopt-derive",
- "stun-rs",
- "tempfile",
- "tide",
- "time 0.3.36",
- "uuid 1.8.0",
-]
-
-[[package]]
-name = "steady_state"
 version = "0.0.14"
 dependencies = [
  "async-ringbuf",
@@ -2953,6 +2917,41 @@ dependencies = [
  "stun-rs",
  "tempfile",
  "testcontainers",
+ "tide",
+ "time 0.3.36",
+ "uuid 1.8.0",
+]
+
+[[package]]
+name = "steady_state"
+version = "0.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84f20fd544bc2c10308d095fb637c2fa2c504f2ecbd063964ad2b98d3ed3ac71"
+dependencies = [
+ "async-ringbuf",
+ "backtrace",
+ "bastion",
+ "bytes",
+ "color-eyre",
+ "const_panic",
+ "dirs",
+ "flexi_logger",
+ "futures",
+ "futures-timer",
+ "futures-util",
+ "hdrhistogram",
+ "itertools 0.12.1",
+ "itoa",
+ "lazy_static",
+ "log",
+ "nuclei 0.4.4",
+ "num-traits",
+ "rand 0.8.5",
+ "ringbuf",
+ "structopt",
+ "structopt-derive",
+ "stun-rs",
+ "tempfile",
  "tide",
  "time 0.3.36",
  "uuid 1.8.0",
