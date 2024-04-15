@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::time::Duration;
 
 use crate::actor::data_generator::WidgetInventory;
 #[warn(unused_imports)]
@@ -16,7 +17,7 @@ pub struct ApprovedWidgets {
     pub approved_count: u64,
 }
 
-#[cfg(not(test))]
+
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<WidgetInventory>
                  , tx: SteadyTx<ApprovedWidgets>
@@ -33,10 +34,14 @@ pub async fn run(context: SteadyContext
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed() ) {
 
-        wait_for_all!( monitor.wait_avail_units(&mut rx, 1)
-                  , monitor.wait_vacant_units(&mut tx, 1)
-                  , monitor.wait_vacant_units(&mut feedback, 1)
+        let _clean = wait_for_all_or_proceed_upon!( monitor.wait_periodic(Duration::from_millis(300))
+                            , monitor.wait_avail_units(&mut rx, BATCH_SIZE)
+                            ,monitor.wait_vacant_units(&mut tx, BATCH_SIZE)
+                            ,monitor.wait_vacant_units(&mut feedback, 1)
         ).await;
+
+
+        //error!("avail units {} ", monitor.avail_units(&mut rx));
 
         iterate_once(&mut monitor
                         , &mut rx
@@ -50,41 +55,6 @@ pub async fn run(context: SteadyContext
     Ok(())
 }
 
-
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<WidgetInventory>
-                 , tx: SteadyTx<ApprovedWidgets>
-                 , feedback: SteadyTx<FailureFeedback>
-) -> Result<(),Box<dyn Error>> {
-
-      let mut monitor = context.into_monitor([&rx], [&tx,&feedback]);
-
-    let mut tx = tx.lock().await;
-    let mut rx = rx.lock().await;
-    let mut feedback = feedback.lock().await;
-    let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
-
-    //short circuit logic only closes outgoing if the incoming is empty and closed
-    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed() && feedback.mark_closed()
-    ) {
-
-        monitor.wait_avail_units(&mut rx, 1).await;
-        monitor.wait_vacant_units(&mut tx, 1).await;
-        monitor.wait_vacant_units(&mut feedback, 1).await;
-
-       iterate_once( &mut monitor
-                         , &mut rx
-                         , &mut tx
-                         , &mut feedback
-                         , &mut buffer
-                         );
-
-
-        monitor.relay_stats_smartly().await;
-    }
-    Ok(())
-}
 
 // important function break out to ensure we have a point to test on
 fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor<R, T>

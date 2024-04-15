@@ -1,10 +1,12 @@
 use std::error::Error;
 use std::mem;
+use std::time::Duration;
 use bytes::Bytes;
 
 #[allow(unused_imports)]
 use log::*;
 use rand::{Rng, thread_rng};
+use tide::Middleware;
 use steady_state::*;
 
 
@@ -17,10 +19,10 @@ pub struct Packet {
 
 
 #[cfg(not(test))]
-#[allow(unreachable_code)]
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                                     , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
+    //info!("running {:?} {:?}",context.id(),context.name());
 
     let mut monitor =into_monitor!(context,[],tx);
 
@@ -34,15 +36,18 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
     while monitor.is_running(&mut || tx.mark_closed()) {
 
-        let _clean = wait_for_all!(monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH)).await;
-        single_iteration(&mut monitor, &mut buffers, &mut tx, limit).await;
+        let _clean = wait_for_all!(
+            monitor.wait_periodic(Duration::from_millis(5)),
+            monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH)).await;
+
+        single_iteration(&mut monitor, &mut buffers, &mut tx, limit);
         monitor.relay_stats_smartly().await;
 
     }
     Ok(())
 }
 
-async fn single_iteration<const GIRTH: usize>(monitor: &mut LocalMonitor<0, GIRTH>, buffers: &mut [Vec<Packet>; GIRTH]
+fn single_iteration<const GIRTH: usize>(monitor: &mut LocalMonitor<0, GIRTH>, buffers: &mut [Vec<Packet>; GIRTH]
                                               , tx: &mut TxBundle<'_, Packet>, limit: usize) {
     loop {
         let route = thread_rng().gen::<u16>();
@@ -70,7 +75,7 @@ async fn single_iteration<const GIRTH: usize>(monitor: &mut LocalMonitor<0, GIRT
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , tx: SteadyTxBundle<Packet,GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = context.into_monitor([], tx.def_slice());
+    let mut monitor = into_monitor!(context,[], tx);
 
     let mut tx:TxBundle<Packet> = tx.lock().await;
 

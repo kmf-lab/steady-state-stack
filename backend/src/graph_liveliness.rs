@@ -1,4 +1,4 @@
-use crate::util;
+use crate::{config, util};
 use std::ops::DerefMut;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -10,7 +10,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::task::{Context, Poll};
-use bastion::run;
+use std::thread;
+use bastion::{Bastion, Config, run};
 use futures::channel::oneshot::Sender;
 use futures_timer::Delay;
 use futures_util::lock::{MutexGuard, MutexLockFuture};
@@ -20,6 +21,7 @@ use crate::{Graph, telemetry};
 use crate::channel_builder::ChannelBuilder;
 use crate::config::TELEMETRY_PRODUCTION_RATE_MS;
 use crate::graph_testing::SideChannelHub;
+use crate::yield_now::yield_now;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum GraphLivelinessState {
@@ -32,7 +34,7 @@ pub enum GraphLivelinessState {
 
 #[derive(Default)]
 pub struct ShutdownVote {
-    pub(crate) ident: ActorIdentity,
+    pub(crate) ident: Option<ActorIdentity>,
     pub(crate) in_favor: bool
 }
 
@@ -86,6 +88,15 @@ impl GraphLiveliness {
         }
     }
 
+    pub(crate) fn building_to_running(&mut self) {
+        if self.state.eq(&GraphLivelinessState::Building) {
+            self.state = GraphLivelinessState::Running;
+            //trace!("now running");
+        } else {
+            error!("unexpected state {:?}",self.state);
+        }
+    }
+
    pub fn request_shutdown(&mut self) {
        if self.state.eq(&GraphLivelinessState::Running) {
            let voters = self.voters.load(std::sync::atomic::Ordering::SeqCst);
@@ -136,16 +147,25 @@ impl GraphLiveliness {
 
     pub fn is_running(&self, ident: ActorIdentity, accept_fn: &mut dyn FnMut() -> bool) -> bool {
         match self.state {
+            GraphLivelinessState::Building => {
+                //allow run to start but also let the other startup if needed.
+                thread::yield_now();
+                true
+            }
             GraphLivelinessState::Running => { true }
             GraphLivelinessState::StopRequested => {
-                 bastion::run! {
-                    let mut vote =self.votes[ident.id].lock().await;
-                    vote.ident = ident; //signature it is me
-                    vote.in_favor = accept_fn();
-                    !vote.in_favor //return the opposite to keep running when we vote no
+                let in_favor = accept_fn();
+                let my_ballot = &self.votes[ident.id];
+                if let Some(mut vote) = my_ballot.try_lock() {
+                    vote.ident = Some(ident); //signature it is me
+                    vote.in_favor = in_favor;
+                    drop(vote);
+                    !in_favor //return the opposite to keep running when we vote no
+                } else {
+                    error!("voting integrity error, someone else has my ballot {:?} in_favor of shutdown: {:?}",ident,in_favor);
+                    true //if we can't vote we oppose the shutdown by continuing to run
                 }
             }
-            GraphLivelinessState::Building =>  { true }
             GraphLivelinessState::Stopped =>  { false }
             GraphLivelinessState::StoppedUncleanly =>  { false }
         }
@@ -198,10 +218,13 @@ impl Graph {
             self.enable_fail_fast();
         }
 
+        //trace!("start was called");
+        //schedule all the actors to start running, each will run and wait at is_running
         bastion::Bastion::start(); //start the graph
+        //everything has been scheduled and running so change the state
         match self.runtime_state.write() {
             Ok(mut state) => {
-                state.state = GraphLivelinessState::Running;
+                state.building_to_running();
             }
             Err(e) => {
                 error!("failed to start graph: {:?}", e);
@@ -239,7 +262,7 @@ impl Graph {
         loop {
             //yield to other threads as we are trying to stop
             //all the running actors need to vote
-            bastion::run!(util::async_yield_now());
+            run!(yield_now());
             //now check the lock
             let is_stopped = match self.runtime_state.read() {
                                 Ok(state) => {
@@ -298,6 +321,8 @@ impl Graph {
         let backplane: Option<SideChannelHub> = None;
         #[cfg(test)]
         let backplane = Some(SideChannelHub::new());
+
+       // Bastion::init_with(Config::default());
 
         let mut result = Graph {
             args: Arc::new(Box::new(args)),

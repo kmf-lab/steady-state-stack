@@ -10,19 +10,16 @@ use tide::{Body, Request, Response, Server};
 use tide::http::headers::CONTENT_ENCODING;
 use tide::http::mime;
 use crate::*;
-use crate::dot::{build_dot, DotGraphFrames, DotState, FrameHistory, refresh_structure};
+use crate::dot::{build_dot, DotGraphFrames, DotState, FrameHistory, apply_node_def};
 use crate::telemetry::metrics_collector::*;
-
-
-
 
 
 // websocat is a command line tool for connecting to WebSockets servers
 // cargo install websocat
 // websocat ws://127.0.0.1:8080/ws
 
-//TODO:     stream send/take data on websocket
-//       poll for history file (gap?) (send notice of flush)
+//TODO: 2025 history display stream send/take data on websocket
+//          poll for history file (gap?) (send notice of flush)
 
 
 
@@ -36,11 +33,14 @@ struct State {
 pub(crate) async fn run(context: SteadyContext
                         , rx: SteadyRx<DiagramData>) -> std::result::Result<(),Box<dyn Error>> {
 
-    let (mut optional_context, mut optional_monitor ) = if config::SHOW_TELEMETRY_ON_TELEMETRY {
-        (None, Some(context.into_monitor([&rx], [])))
-    } else {
-        (Some(context), None)
-    };
+   // warn!("running {:?} {:?}",context.id(),context.name());
+
+    let (mut optional_context, mut optional_monitor ) =
+        if config::SHOW_TELEMETRY_ON_TELEMETRY {
+            (None, Some(into_monitor!(context, [rx], [])))
+        } else {
+            (Some(context), None)
+        };
 
 
 
@@ -65,8 +65,6 @@ pub(crate) async fn run(context: SteadyContext
     let mut app = tide::with_state(state.clone());
 
     add_all_telemetry_paths(&mut app);
-
-
 
     // TODO: pick up our history file, add the current buffer and send
     //       we may want to zip it first for faster transfer
@@ -96,102 +94,113 @@ pub(crate) async fn run(context: SteadyContext
 
     pin_mut!(server_handle);
 
+  //  trace!("server is up and running");
     loop {
 
         if let Some(ref mut monitor) = optional_monitor {
             monitor.relay_stats_smartly().await;
-            if !monitor.is_running(&mut || rx.is_empty() && rx.is_closed() ){
+            if !monitor.is_running(&mut || {
+                 rx.is_empty() && rx.is_closed()
+                } ){
                 break;
             }
         } else if let Some(ref mut context) = optional_context {
-                if !context.is_running(&mut || rx.is_empty() && rx.is_closed() ) {
+                if !context.is_running(&mut || {
+                       rx.is_empty() && rx.is_closed()
+                     }) {
                     break;
                 }
         }
 
+        let a = server_handle.as_mut();
+        let b = rx.wait_avail_units(2); //node data and edge data
 
+       /// let b = rx.take_async();
         select! {
-            _ = server_handle.as_mut().fuse() => {
+            _ = a.fuse() => {
                 warn!("Web server exited.");
                 break;
             },
-            mut msg = rx.take_async().fuse() => {
+            _ = b.fuse() => {
+                //we may have more than 2 so take them all if we can while we are here
+               while let Some(msg) = rx.try_take()
 
-                 //stay and process as much as we can
-                 loop {
-                        if let Some(ref mut monitor) = optional_monitor {
-                            monitor.relay_stats_smartly().await; //TODO: if this is not done must detect and give helpful warning.
-                        }
+                   {
 
                       match msg {
-                             Some(DiagramData::NodeDef(seq, defs)) => {
-                                // these are all immutable constants for the life of the node
-
+                             //define node in the graph
+                             DiagramData::NodeDef(seq, defs) => {
                                     let (actor, channels_in, channels_out) = *defs;
+
+                                    //confirm the data we get from the collector
+                                    //warn!("new node {:?} {:?} in {:?} out {:?}",actor.id,actor.name,channels_in.len(),channels_out.len());
+                                    //channels_in.iter().for_each(|x| warn!("          channel in {:?} to {:?}",x.id,actor.id));
+                                    //channels_out.iter().for_each(|x| warn!("         channel out {:?} from {:?}",x.id,actor.id));
+
 
                                     let name = actor.name;
                                     let id = actor.id;
-                                    refresh_structure(&mut dot_state
+                                    apply_node_def(&mut dot_state
                                                        , name
                                                        , id
                                                        , actor
                                                        , &channels_in
                                                        , &channels_out
-                                      );
+                                    );
 
-                                      dot_state.seq = seq;
-                                      if config::TELEMETRY_HISTORY  {
+                                    dot_state.seq = seq;
+                                    if config::TELEMETRY_HISTORY  {
                                           history.apply_node(name, id
                                                           , &channels_in
                                                           , &channels_out);
-                                      }
-
+                                    }
                              },
-                             Some(DiagramData::NodeProcessData(_,actor_status)) => {
+                             //Node cpu usage
+                             DiagramData::NodeProcessData(_,actor_status) => {
 
-                                //sum up all actor work so we can find the percentage of each
-                                let total_work_ns:u128 = actor_status.iter()
-                                            .map(|status| {
-                                                assert!(status.unit_total_ns>=status.await_total_ns, "unit_total_ns:{} await_total_ns:{}",status.unit_total_ns,status.await_total_ns);
-                                                (status.unit_total_ns-status.await_total_ns) as u128
-                                            })
-                                            .sum();
+                                    //sum up all actor work so we can find the percentage of each
+                                    let total_work_ns:u128 = actor_status
+                                                .iter()
+                                                .map(|status| {
+                                                    assert!(status.unit_total_ns>=status.await_total_ns, "unit_total_ns:{} await_total_ns:{}",status.unit_total_ns,status.await_total_ns);
+                                                    (status.unit_total_ns-status.await_total_ns) as u128
+                                                })
+                                                .sum();
 
 
-                                //process each actor status
-                                actor_status.iter()
-                                            .enumerate()
-                                            .for_each(|(i, status)| {
+                                    //process each actor status
+                                    actor_status.iter()
+                                                .enumerate()
+                                                .for_each(|(i, status)| {
 
-                                     // we are in a bad state just exit and give up
-                                    #[cfg(debug_assertions)]
-                                    if dot_state.nodes.is_empty() { exit(-1); }
-                                    assert!(!dot_state.nodes.is_empty());
+                                         // we are in a bad state just exit and give up
+                                     #[cfg(debug_assertions)]
+                                     if dot_state.nodes.is_empty() { exit(-1); }
 
-                                    dot_state.nodes[i].compute_and_refresh(*status, total_work_ns);
+                                     assert!(!dot_state.nodes.is_empty());
+
+                                     dot_state.nodes[i].compute_and_refresh(*status, total_work_ns);
                                 });
                              },
-                             Some(DiagramData::ChannelVolumeData(seq
-                                     , total_take_send)) => {
-
-                                  // trace!("new data {:?} ",total_take_send);
+                             //Channel usage
+                             DiagramData::ChannelVolumeData(seq
+                                     , total_take_send) => {
 
                                   total_take_send.iter()
                                             .enumerate()
                                             .for_each(|(i,(t,s))| {
-
                                             // we are in a bad state just exit and give up
                                             #[cfg(debug_assertions)]
                                             if dot_state.edges.is_empty() { exit(-1); }
-                                            assert!(!dot_state.edges.is_empty());
 
-                                        dot_state.edges[i].compute_and_refresh(*s,*t);
+                                            assert!(!dot_state.edges.is_empty());
+                                            dot_state.edges[i].compute_and_refresh(*s,*t);
                                      });
                                   dot_state.seq = seq;
 
                               //if history is on we may never skip it since it is our log
                                 if config::TELEMETRY_HISTORY  {
-
+                                    //  info!("write hitory file");
                                       //NOTE we do not expect to get any more messages for this seq
                                       //    and we have 32ms or so to record the history log file
                                       history.apply_edge(&total_take_send);
@@ -199,55 +208,44 @@ pub(crate) async fn run(context: SteadyContext
                                       //since we got the edge data we know we have a full frame
                                       //and we can update the history
 
-                                  //TODO: we can not stop early we need to know that the other
-                                  //      actors have not raised objections to the shutdown.
-                                    let flush_all:bool =
-                                    if let Some(ref mut monitor) = optional_monitor {
-                                        monitor.is_liveliness_in(&[GraphLivelinessState::StopRequested,GraphLivelinessState::Stopped],true)
-                                    } else if let Some(ref mut context) = optional_context {
-                                        context.is_liveliness_in(&[GraphLivelinessState::StopRequested,GraphLivelinessState::Stopped],true)
-                                    } else {
-                                        true
-                                    };
+                                      let flush_all:bool =
+                                            if let Some(ref mut monitor) = optional_monitor {
+                                                monitor.is_liveliness_in(&[GraphLivelinessState::StopRequested,GraphLivelinessState::Stopped],true)
+                                            } else if let Some(ref mut context) = optional_context {
+                                                context.is_liveliness_in(&[GraphLivelinessState::StopRequested,GraphLivelinessState::Stopped],true)
+                                            } else {
+                                                true
+                                            };
 
                                       history.update(dot_state.seq,flush_all).await;
 
                                       //must mark this for next time
                                       history.mark_position();
+                                   //  info!("done write hitory file");
+
                                 }
 
-                               //visual graph is after history to give more time
-                               //for more frames to arrive
+                              if let Some(ref mut monitor) = optional_monitor {
+                                    monitor.relay_stats_smartly().await;
+                              }
+
 
                               if rx.is_empty()
                                 || frames.last_graph.elapsed().as_millis() > 2*config::TELEMETRY_PRODUCTION_RATE_MS as u128
                                  {
-                                      //NOTE: generate the new graph, this is costly so we
-                                      //      skip it if we have more data to process
-                                      frames.active_graph.clear(); // Clear the buffer for reuse
-                                      build_dot(&dot_state, rankdir, &mut frames.active_graph);
+                                  //only build dot if we have valid data at this time
+                                  if build_dot(&dot_state, rankdir, &mut frames.active_graph) {
                                       let vec = frames.active_graph.to_vec();
                                       { //block to ensure we drop the guard quickly
-                                            let mut state_guard = state.lock().await;
-                                            state_guard.deref_mut().doc = vec;
+                                            state.lock().await.deref_mut().doc = vec;
                                       }
                                       frames.last_graph = Instant::now();
+                                 }
                                 }
-
                              },
 
-                            None => {error!("Unexpected error")}
                       }
-                      //if we an consume the rest without async or blocking do so
-                      if let Some(new_msg) = rx.try_take() {
-                        msg = Some(new_msg);
-                        continue;
-                      } else {
-                         break;
-                      }
-
-                  }
-
+                }
             }
         }
     }

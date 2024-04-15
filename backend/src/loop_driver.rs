@@ -9,7 +9,7 @@ macro_rules! wait_for_all {
     ($($t:expr),*) => {
         async {
             let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-            let _ = futures::join!($( OutcomeTracker::wrap_future(flag.clone(),$t) ),*);
+             let _ = futures::join!($( wrap_bool_future(flag.clone(),$t) ),*);
             flag.load(std::sync::atomic::Ordering::Relaxed)
         }
     };
@@ -27,12 +27,12 @@ macro_rules! wait_for_all_or_proceed_upon {
             let flag = Arc::new(AtomicBool::new(true));
 
             // Fuse the first future and pin it
-            let first = OutcomeTracker::wrap_future(flag.clone(),$first_future).fuse();
+            let first = wrap_bool_future(flag.clone(),$first_future).fuse();
             pin_mut!(first);
 
             // Create the combined future for the rest and pin it
             let rest = async {
-                futures::join!($(OutcomeTracker::wrap_future(flag.clone(),$rest_futures)),*)
+                futures::join!($(wrap_bool_future(flag.clone(),$rest_futures)),*)
             }.fuse();
             pin_mut!(rest);
 
@@ -46,21 +46,18 @@ macro_rules! wait_for_all_or_proceed_upon {
     };
 }
 
-pub struct OutcomeTracker;
-
-impl OutcomeTracker {
-    pub async fn wrap_future<F>(flag: Arc<AtomicBool>, fut: F) -> impl Future<Output = ()>
-    where
-        F: Future<Output = bool>,
-    {
-        let flag = flag.clone();
-        async move {
-            match fut.await {
-                true => {}
-                false => {
-                    flag.store(false, Ordering::Relaxed);
-                }
-            };
-        }
+pub fn wrap_bool_future<F>(flag: Arc<AtomicBool>, fut: F) -> impl Future<Output = ()>
+where
+    F: Future<Output = bool>,
+{
+    let flag = flag.clone();
+    async move {
+        match fut.await {
+            true => {}
+            false => {
+                flag.store(false, Ordering::Relaxed);
+            }
+        };
     }
 }
+

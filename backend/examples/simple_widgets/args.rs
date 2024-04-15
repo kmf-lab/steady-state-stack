@@ -16,7 +16,7 @@ pub struct Args {
     pub(crate) gen_rate_micros: u64,
 
     #[structopt(short = "d", long = "duration", validator = run_duration_validator
-    , default_value = "90")] //use zero for run forever
+    , default_value = "15")] //use zero for run forever
     pub(crate) duration: u64,
 
     #[structopt(short = "i", long = "install")]
@@ -44,7 +44,6 @@ fn validate_logging_level(level: String) -> Result<(), String> {
 }
 
 impl Args {
-    //TODO: will be used for the systemd installer code, it would be cool if this could be generated
     pub(crate) fn to_cli_string(&self, app: &str) -> String {
         format!("{} --duration={} --loglevel={} --gen-rate={}"
                 , app
@@ -53,7 +52,6 @@ impl Args {
                 , self.gen_rate_micros)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -41,10 +41,9 @@ fn main() {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::from_args();
 
-    if let Err(e) = steady_state::init_logging(&opt.loglevel) {
+    if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
-
 
     let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
     graph.start();
@@ -55,7 +54,7 @@ fn main() {
     }
 
 
-    graph.block_until_stopped(Duration::from_secs(7));
+    graph.block_until_stopped(Duration::from_secs(80));
 
 }
 
@@ -69,7 +68,6 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     //create the mutable graph object
     let mut graph = steady_state::Graph::new(cli_arg.clone());
-    graph.start();
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_channel_builder = graph.channel_builder()
@@ -106,7 +104,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
             let local_rx = brx[x].clone();
             let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_2>();
                 base_actor_builder
-                    .with_name("router")
+                    .with_name("routerA")
                     .with_name_suffix(x)
                     .build_with_exec(
                            move |context| actor::data_router::run(context
@@ -116,11 +114,12 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                            )
                     );
 
+
             for y in 0..LEVEL_2 {
                 let local_rx = brx[y].clone();
                 let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_3>();
                 base_actor_builder
-                    .with_name("router")
+                    .with_name("routerB")
                     .with_name_suffix(y)
                     .build_with_exec(move |context| actor::data_router::run(context
                                                                             , LEVEL_1*LEVEL_2
@@ -133,7 +132,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                     let local_rx = brx[z].clone();
                     let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_4>();
                         base_actor_builder
-                            .with_name("router")
+                            .with_name("routerC")
                             .with_name_suffix(z)
                             .build_with_exec(move |context| actor::data_router::run(context
                                                                                     , LEVEL_1*LEVEL_2*LEVEL_3

@@ -2,13 +2,14 @@ use std::error::Error;
 use std::time::Duration;
 #[allow(unused_imports)]
 use log::*;
+use tide::Middleware;
 use steady_state::*;
 use crate::actor::data_generator::Packet;
 
-#[allow(unreachable_code)]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>
                  , tx: SteadyTx<Packet>) -> Result<(),Box<dyn Error>> {
+    //info!("running {:?} {:?}",context.id(),context.name());
 
     let mut monitor = into_monitor!(context, [rx], [tx]);
 
@@ -16,20 +17,24 @@ pub async fn run(context: SteadyContext
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    let count = 3* (rx.capacity()/4);
+    let count = 3* (rx.capacity().min(tx.capacity()) /4);
 
 
-    while monitor.is_running(&mut || rx.is_closed() && tx.mark_closed()){
 
-        let _clean = wait_for_all_or_proceed_upon!(
-             monitor.wait_periodic(Duration::from_millis(3))
+    while monitor.is_running(&mut || rx.is_closed() && rx.is_empty() && tx.mark_closed()){
+
+        let clean = wait_for_all_or_proceed_upon!(
+             monitor.wait_periodic(Duration::from_millis(40))
             ,monitor.wait_avail_units(&mut rx,count)
-            ,monitor.wait_vacant_units(&mut tx,1)
+            ,monitor.wait_vacant_units(&mut tx,count)
         ).await;
 
-        monitor.wait_vacant_units(&mut tx, count).await;
-        single_iteration(&mut monitor, &mut rx, &mut tx, count);
-        monitor.relay_stats_smartly().await;
+        let count = monitor.avail_units(&mut rx).min(monitor.vacant_units(&mut tx));
+        if count>0 {
+            single_iteration(&mut monitor, &mut rx, &mut tx, count);
+            monitor.relay_stats_smartly().await;
+        }
+
 
     }
     Ok(())

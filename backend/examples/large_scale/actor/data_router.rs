@@ -7,6 +7,7 @@ use crate::actor::data_generator::Packet;
 //use futures::future::FutureExt;
 use std::time::Duration;
 use futures_util::lock::MutexGuard;
+use tide::Middleware;
 
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , one_of: usize
@@ -14,6 +15,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , tx: SteadyTxBundle<Packet,GIRTH>
                 ) -> Result<(),Box<dyn Error>> {
 
+   //info!("running {:?} {:?}",context.id(),context.name());
     let mut monitor = into_monitor!(context,[rx],tx);
 
     let block_size = u16::MAX / one_of as u16;
@@ -26,7 +28,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()   ) {
 
         wait_for_all_or_proceed_upon!(
-            monitor.wait_periodic(Duration::from_millis(2)),
+            monitor.wait_periodic(Duration::from_millis(40)),
             monitor.wait_avail_units(&mut rx,count),
             monitor.wait_vacant_units_bundle(&mut tx,1,1)
         ).await;

@@ -29,7 +29,6 @@ mod loop_driver;
 mod yield_now;
 
 pub use graph_testing::GraphTestResult;
-pub use actor_builder::SupervisionStrategy;
 pub use monitor::LocalMonitor;
 pub use channel_builder::Rate;
 pub use channel_builder::Filled;
@@ -39,6 +38,7 @@ pub use actor_builder::Percentile;
 pub use graph_liveliness::*;
 pub use loop_driver::*;
 pub use install::serviced::*;
+pub use loop_driver::wrap_bool_future;
 
 
 use std::any::{Any, type_name};
@@ -55,7 +55,6 @@ use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex, MutexLockFuture};
 use std::ops::{Deref, DerefMut};
 use std::future::ready;
-
 
 use std::thread::sleep;
 use log::*;
@@ -88,6 +87,7 @@ use futures_timer::Delay;
 use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use futures_util::lock::MutexGuard;
 use crate::graph_testing::{SideChannel, SideChannelHub, SideChannelResponder};
+use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
@@ -112,30 +112,38 @@ pub fn steady_rx_bundle<T,const GIRTH:usize>(internal_array: [SteadyRx<T>;GIRTH]
 /// This is a convenience function that should be called at the beginning of main.
 pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
 
-    //TODO: should probably be its own init function.
-    init_nuclei();  //TODO: add some configs and a boolean to control this?
+    //TODO: should probably be its own init function, add some configs and a boolean to control this?
+    init_nuclei();
 
     steady_logging_init(loglevel)
 }
 
 pub struct SteadyContext {
     pub(crate) ident: ActorIdentity,
+    pub(crate) instance_id: u32,
     pub(crate) ctx: Option<Arc<bastion::context::BastionContext>>,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
-    pub(crate) count_restarts: Arc<AtomicU32>,
     pub(crate) args: Arc<Box<dyn Any+Send+Sync>>,
     pub(crate) actor_metadata: Arc<ActorMetaData>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
-    pub(crate) last_perodic_wait: AtomicU64,
+    pub(crate) last_periodic_wait: AtomicU64,
     pub(crate) actor_start_time: Instant,
     pub(crate) node_tx_rx: Option<Arc<Mutex<SideChannel>>>,
 }
 
 
 impl SteadyContext {
+
+    pub fn id(&self) -> usize {
+        self.ident.id
+    }
+    pub fn name(&self) -> &str {
+        self.ident.name
+    }
+
 
     pub(crate) fn is_liveliness_in(&self, target: &[GraphLivelinessState], upon_posion: bool) -> bool {
         match self.runtime_state.read() {
@@ -147,6 +155,25 @@ impl SteadyContext {
                 upon_posion
             }
         }
+    }
+
+    /// only needed if the channel consumer needs to know that a sender was restarted
+    pub fn update_tx_instance<T>(&self, target: &mut Tx<T>) {
+        target.tx_version.store(self.instance_id, Ordering::SeqCst);
+    }
+    /// only needed if the channel consumer needs to know that a sender was restarted
+    pub fn update_tx_instance_bundle<T>(&self, target: &mut TxBundle<T>) {
+        target.iter_mut().for_each(|mut tx| tx.tx_version.store(self.instance_id, Ordering::SeqCst));
+    }
+
+
+    /// only needed if the channel consumer needs to know that a receiver was restarted
+    pub fn update_rx_instance<T>(&self, target: &mut Rx<T>) {
+        target.rx_version.store(self.instance_id, Ordering::SeqCst);
+    }
+    /// only needed if the channel consumer needs to know that a receiver was restarted
+    pub fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
+        target.iter_mut().for_each(|mut rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
     }
 
     /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
@@ -169,18 +196,21 @@ impl SteadyContext {
     ///
     pub async fn wait_periodic(&self, duration_rate: Duration) -> bool {
         let one_down = &mut self.oneshot_shutdown.lock().await;
+        if !one_down.is_terminated() {
+            let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
+            let run_duration = now_nanos - self.last_periodic_wait.load(Ordering::Relaxed);
+            let remaining_duration = duration_rate.saturating_sub(Duration::from_nanos(run_duration));
 
-        let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
-        let run_duration = now_nanos - self.last_perodic_wait.load(Ordering::Relaxed);
-        let remaining_duration = duration_rate.saturating_sub( Duration::from_nanos(run_duration) );
-
-        let mut operation = &mut Delay::new(remaining_duration).fuse();
-        let result = select! {
+            let mut operation = &mut Delay::new(remaining_duration).fuse();
+            let result = select! {
                 _= &mut one_down.deref_mut() => false,
                 _= operation => true
-        };
-        self.last_perodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
-        result
+             };
+            self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
+            result
+        } else {
+            false
+        }
     }
 
     /// Asynchronously waits for a specified duration.
@@ -191,7 +221,9 @@ impl SteadyContext {
     /// # Asynchronous
     pub async fn wait(&self, duration: Duration) {
         let one_down = &mut self.oneshot_shutdown.lock().await;
-        select! { _ = one_down.deref_mut() => {}, _ =Delay::new(duration).fuse() => {} }
+        if !one_down.is_terminated() {
+            select! { _ = one_down.deref_mut() => {}, _ =Delay::new(duration).fuse() => {} }
+        }
     }
 
     /// yield so other actors may be able to make use of this thread. Returns
@@ -225,7 +257,7 @@ impl SteadyContext {
 
     #[inline]
     pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
-        match self.runtime_state.read() {
+       match self.runtime_state.read() {
             Ok(liveliness) => {
                 liveliness.is_running(self.ident, accept_fn)
             }
@@ -290,6 +322,7 @@ impl SteadyContext {
                                             , tx_mons: [TxMetaData; TX_LEN]
     ) -> LocalMonitor<RX_LEN,TX_LEN> {
 
+         //trace!("into monitor {:?}",self.ident);
         //only build telemetry channels if this feature is enabled
         let (telemetry_send_rx, telemetry_send_tx, telemetry_state) = if config::TELEMETRY_HISTORY || config::TELEMETRY_SERVER {
 
@@ -321,6 +354,8 @@ impl SteadyContext {
         };
 
 
+      //  error!("return monitor {:?}",self.ident);
+
         // this is my fixed size version for this specific thread
         LocalMonitor::<RX_LEN, TX_LEN> {
             telemetry_send_rx,
@@ -328,6 +363,7 @@ impl SteadyContext {
             telemetry_state,
             last_telemetry_send: Instant::now(),
             ident: self.ident,
+            instance_id: self.instance_id,
             ctx: self.ctx,
             runtime_state: self.runtime_state,
             oneshot_shutdown: self.oneshot_shutdown,
@@ -509,7 +545,6 @@ impl Graph {
         let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown));
         let now = Instant::now();
 
-        let count_restarts   = Arc::new(AtomicU32::new(0));
         SteadyContext {
             channel_count,
             ident: ActorIdentity{name, id: self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst)},
@@ -518,10 +553,10 @@ impl Graph {
             actor_metadata: Arc::new(ActorMetaData::default()),
             all_telemetry_rx,
             runtime_state: self.runtime_state.clone(),
-            count_restarts,
+            instance_id: 0,
             oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
             oneshot_shutdown,
-            last_perodic_wait: Default::default(),
+            last_periodic_wait: Default::default(),
             actor_start_time: now,
             node_tx_rx: None,
         }
@@ -559,22 +594,50 @@ const MONITOR_NOT: usize = MONITOR_UNKNOWN-1; //any value below this is a valid 
 pub struct Tx<T> {
     pub(crate) tx: InternalSender<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
-    pub(crate) local_index: usize,
+    pub(crate) local_index: usize, //set on first usage
     pub(crate) last_error_send: Instant,
     pub(crate) make_closed: Option<oneshot::Sender<()>>,
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
+    pub(crate) last_checked_rx_instance: u32,
+    pub(crate) tx_version: Arc<AtomicU32>,
+    pub(crate) rx_version: Arc<AtomicU32>,
+
 }
 
 pub struct Rx<T> {
     pub(crate) rx: InternalReceiver<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
-    pub(crate) local_index: usize,
+    pub(crate) local_index: usize, //set on first usage
     pub(crate) is_closed: oneshot::Receiver<()>,
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
+    pub(crate) last_checked_tx_instance: u32,
+    pub(crate) tx_version: Arc<AtomicU32>,
+    pub(crate) rx_version: Arc<AtomicU32>,
 }
 
 ////////////////////////////////////////////////////////////////
 impl<T> Tx<T> {
+
+    pub fn id(&self) -> usize {
+        self.channel_meta_data.id
+    }
+
+    pub fn rx_instance_changed(&mut self) -> bool {
+        let id = self.rx_version.load(Ordering::SeqCst);
+        if id == self.last_checked_rx_instance {
+            false
+        } else {
+            //after restart
+            //you only get one chance to act on this once detected
+            self.last_checked_rx_instance = id;
+            true
+        }
+    }
+    pub fn rx_instance_reset(&mut self) {
+        let id = self.rx_version.load(Ordering::SeqCst);
+        self.last_checked_rx_instance = id;
+    }
+
 
     ///the Rx should not expect any more messages than those already found
     ///on the channel. This is a signal that this actor has probably stopped
@@ -785,15 +848,26 @@ impl<T> Tx<T> {
     #[inline]
     async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
         let mut one_down = &mut self.oneshot_shutdown;
-        let mut operation = &mut self.tx.wait_vacant(count);
-        select! { _ = one_down => false, _ = operation => true, }
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.tx.wait_vacant(count);
+            select! { _ = one_down => false, _ = operation => true, }
+        } else {
+            //we are already shutting down but we need to confirm that we have some room
+            let mut operation = &mut self.tx.wait_vacant(1);
+            operation.await;
+            false
+        }
     }
 
     #[inline]
     async fn shared_wait_empty(&mut self) -> bool {
         let mut one_down = &mut self.oneshot_shutdown;
-        let mut operation = &mut self.tx.wait_vacant(usize::from(self.tx.capacity()));
-        select! { _ = one_down => false, _ = operation => true, }
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.tx.wait_vacant(usize::from(self.tx.capacity()));
+            select! { _ = one_down => false, _ = operation => true, }
+        } else {
+            false
+        }
     }
 
     #[inline]
@@ -843,15 +917,19 @@ impl<T> Tx<T> {
     }
 
     fn report_tx_full_warning(&mut self, ident: ActorIdentity) {
-        if self.last_error_send.elapsed().as_secs() > 10 {
-            let type_name = type_name::<T>().split("::").last();
-            warn!("{:?} tx full channel #{} {:?} cap:{:?} type:{:?} "
+             // to debug where enable this.
+            // println!("{:?}",Backtrace::new());
+
+            if self.last_error_send.elapsed().as_secs() > 10 {
+                let type_name = type_name::<T>().split("::").last();
+                warn!("{:?} tx full channel #{} {:?} cap:{:?} type:{:?} "
                                    , ident
                                    , self.channel_meta_data.id
                                    , self.channel_meta_data.labels
                                    , self.tx.capacity(), type_name);
-            self.last_error_send = Instant::now();
-        }
+                self.last_error_send = Instant::now();
+            }
+
     }
 }
 
@@ -902,6 +980,27 @@ pub enum SendSaturation {
 }
 
 impl<T> Rx<T> {
+
+    pub fn id(&self) -> usize {
+        self.channel_meta_data.id
+    }
+
+    pub fn tx_instance_changed(&mut self) -> bool {
+        let id = self.tx_version.load(Ordering::SeqCst);
+        if id == self.last_checked_tx_instance {
+            false
+        } else {
+            //after restart
+            //you only get one chance to act on this once detected
+            self.last_checked_tx_instance = id;
+            true
+        }
+    }
+    pub fn tx_instance_reset(&mut self) {
+        let id = self.tx_version.load(Ordering::SeqCst);
+        self.last_checked_tx_instance = id;
+    }
+
 
     /// only for use in unit tests
     pub fn block_until_not_empty(&self, duration: Duration) {
@@ -1179,8 +1278,10 @@ impl<T> Rx<T> {
     async fn shared_peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
         where T: Copy {
         let mut one_down = &mut self.oneshot_shutdown;
-        let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-        select! { _ = one_down => {}, _ = operation => {}, };
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
+            select! { _ = one_down => {}, _ = operation => {}, };
+        };
         self.shared_try_peek_slice(elems)
     }
 
@@ -1190,26 +1291,28 @@ impl<T> Rx<T> {
         self.rx.pop_slice(elems)
     }
 
+
     /*
     #[inline]
     fn shared_take_into_iter(&mut self) -> impl Iterator<Item = & T>
         where T: Copy {
-        //TODO: may need to wait until next release.
+ //TODO: 2025, add feature after new version of channel avail.
 
-        let len = self.rx.occupied_len()
-
-        //(0..len)
-        //let item: Option<T> = self.rx.try_pop();
+        let len = self.rx.occupied_len();
 
 
-    } */
+    }*/
 
 
     #[inline]
     async fn shared_take_async(& mut self) -> Option<T> {
         let mut one_down = &mut self.oneshot_shutdown;
-        let mut operation = &mut self.rx.pop();
-        select! { _ = one_down => self.rx.try_pop(), p = operation => p, }
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.pop();
+            select! { _ = one_down => self.rx.try_pop(), p = operation => p, }
+        } else {
+            self.rx.try_pop()
+        }
     }
 
     #[inline]
@@ -1220,16 +1323,20 @@ impl<T> Rx<T> {
     #[inline]
     async fn shared_peek_async(& mut self) -> Option<&T> {
         let mut one_down = &mut self.oneshot_shutdown;
-        let mut operation = &mut self.rx.wait_occupied(1);
-        select! { _ = one_down => {}, _ = operation => {}, };
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(1);
+            select! { _ = one_down => {}, _ = operation => {}, };
+        };
         self.rx.first()
     }
 
     #[inline]
     async fn shared_peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
         let mut one_down = &mut self.oneshot_shutdown;
-        let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-        select! { _ = one_down => {}, _ = operation => {}, };
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
+            select! { _ = one_down => {}, _ = operation => {}, };
+        };
         self.rx.iter()
     }
 
@@ -1244,9 +1351,26 @@ impl<T> Rx<T> {
 
     #[inline]
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
-        let mut one_down = &mut self.oneshot_shutdown;
-        let mut operation = &mut self.rx.wait_occupied(count);
-        select! { _ = one_down => false, _ = operation => true}
+        if self.rx.occupied_len() >= count {
+            true //no need to wait
+        } else {
+            let mut one_down = &mut self.oneshot_shutdown;
+            if !one_down.is_terminated() {
+                let mut operation = &mut self.rx.wait_occupied(count);
+                select! { _ = one_down => false, _ = operation => true }
+            } else {
+                if self.is_closed() {
+                    //shutdown in progress and we are closed
+                    false
+                } else {
+                    //upstream did not mark this closed yet
+                    let mut closing = &mut self.is_closed;
+                    let mut operation = &mut self.rx.wait_occupied(1);
+                    select! { _ = closing => false, _ = operation => true }
+                }
+            }
+
+        }
     }
 
     #[inline]
@@ -1267,7 +1391,7 @@ pub trait TxDef: Debug {
 }
 pub trait RxDef: Debug + Send {
     fn meta_data(&self) -> RxMetaData;
-    fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, ()>;
+    fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, (bool,Option<usize>)>;
 
     }
 
@@ -1275,24 +1399,50 @@ pub trait RxDef: Debug + Send {
 
 impl <T> TxDef for SteadyTx<T> {
     fn meta_data(&self) -> TxMetaData {
-        let guard = bastion::run!(self.lock());
-        let this = guard.deref();
-        TxMetaData(this.channel_meta_data.clone())
+        //used on startup where we want to avoid holding the lock or using another thread
+        loop {
+            if let Some(mut guard) = self.try_lock() {
+                return TxMetaData(guard.deref().channel_meta_data.clone());
+            }
+            std::thread::yield_now();
+            error!("got stuck");
+        }
     }
 }
 
 impl <T: Send + Sync > RxDef for SteadyRx<T>  {
     fn meta_data(&self) -> RxMetaData {
-        let guard = bastion::run!(self.lock());
-        let this = guard.deref();
-        RxMetaData(this.channel_meta_data.clone())
+        //used on startup where we want to avoid holding the lock or using another thread
+        loop {
+            if let Some(mut guard) = self.try_lock() {
+                return RxMetaData(guard.deref().channel_meta_data.clone());
+            }
+            std::thread::yield_now();
+            error!("got stuck");
+
+        }
     }
 
+    ///wait for the correct units and return the true if we got that many
+    /// also returns the id of the channel we are working on.
     #[inline]
-    fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, ()> {
+    fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, (bool,Option<usize>)> {
         async move {
-            let mut guard = self.lock().await;
-            guard.deref_mut().shared_wait_avail_units(count).await;
+            if let Some(mut guard) = self.try_lock() {
+                let is_closed = guard.deref_mut().is_closed();
+                if !is_closed {
+                    let result = guard.deref_mut().shared_wait_avail_units(count).await;
+                    if result {
+                        (true, Some(guard.deref().id()))
+                    } else {
+                        (false, Some(guard.deref().id())) //we are shutting down so return false
+                    }
+                } else {
+                    (false, None)//do not return id this channel is closed, id is not valid
+                }
+            } else {
+                (false, None)//do not return id, we have no lock.
+            }
         }.boxed() // Use the `.boxed()` method to convert the future into a BoxFuture
     }
 
@@ -1430,20 +1580,53 @@ impl<T: std::marker::Send + std::marker::Sync, const GIRTH: usize> crate::Steady
 
 pub trait RxBundleTrait {
     fn is_closed(&mut self) -> bool;
+
+    fn tx_instance_changed(&mut self) -> bool;
+    fn tx_instance_reset(&mut self);
+
 }
 impl<T> crate::RxBundleTrait for RxBundle<'_, T> {
     fn is_closed(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed() )
+    }
+
+    //TODO: we need docs and examples on how to restart downstream actors.
+    fn tx_instance_changed(&mut self) -> bool {
+        if self.iter_mut().any(|f| f.tx_instance_changed() ) {
+            self.iter_mut().for_each(|f| f.tx_instance_reset() );
+            true
+        } else {
+            false
+        }
+    }
+    fn tx_instance_reset(&mut self) {
+        self.iter_mut().for_each(|f| f.tx_instance_reset() );
     }
 }
 
 
 pub trait TxBundleTrait {
     fn mark_closed(&mut self) -> bool;
+    fn rx_instance_changed(&mut self) -> bool;
+    fn rx_instance_reset(&mut self);
+
 }
 impl<T> crate::TxBundleTrait for TxBundle<'_, T> {
     fn mark_closed(&mut self) -> bool {
         self.iter_mut().all(|f| f.mark_closed() )
+    }
+
+    //TODO: we need docs and examples on how to restart downstream actors.
+    fn rx_instance_changed(&mut self) -> bool {
+        if self.iter_mut().any(|f| f.rx_instance_changed() ) {
+            self.iter_mut().for_each(|f| f.rx_instance_reset() );
+            true
+        } else {
+            false
+        }
+    }
+    fn rx_instance_reset(&mut self) {
+        self.iter_mut().for_each(|f| f.rx_instance_reset() );
     }
 }
 

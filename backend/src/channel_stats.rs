@@ -23,7 +23,7 @@ pub(crate) const DOT_GREY: &str = "grey";
 static DOT_PEN_WIDTH: [&str; 16]
 = ["1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"]; // (u128::MAX as f64).sqrt() as u128;
 
-#[derive(Default)]
+#[derive(Default,Debug)]
 pub struct ChannelStatsComputer {
     pub(crate) display_labels: Option<Vec<& 'static str>>,
     pub(crate) line_expansion: bool,
@@ -42,6 +42,8 @@ pub struct ChannelStatsComputer {
     pub(crate) show_avg_filled:bool,
     pub(crate) show_avg_rate:bool,
     pub(crate) show_avg_latency:bool,
+    pub(crate) show_max_filled:bool,  //TODO: show max filled
+    pub(crate) show_min_filled:bool,  //TODO: show min filled
 
     pub(crate) rate_trigger: Vec<(Trigger<Rate>, AlertColor)>, //if used base is green
     pub(crate) filled_trigger: Vec<(Trigger<Filled>, AlertColor)>, //if used base is green
@@ -95,6 +97,8 @@ impl ChannelStatsComputer {
         self.show_avg_filled = meta.avg_filled;
         self.show_avg_rate = meta.avg_rate;
         self.show_avg_latency = meta.avg_latency;
+        self.show_max_filled = meta.max_filled;
+        self.show_min_filled = meta.min_filled;
 
         self.percentiles_filled.clone_from(&meta.percentiles_filled);
         self.percentiles_rate.clone_from(&meta.percentiles_rate);

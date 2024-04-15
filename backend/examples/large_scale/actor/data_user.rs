@@ -2,18 +2,20 @@ use std::error::Error;
 
 #[allow(unused_imports)]
 use log::*;
+use tide::Middleware;
 use steady_state::*;
 use crate::actor::data_generator::Packet;
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
+    //info!("running {:?} {:?}",context.id(),context.name());
 
     let mut monitor = into_monitor!(context,[rx], []);
 
     let mut rx = rx.lock().await;
 
-    while monitor.is_running(&mut || rx.is_closed()) {
+    while monitor.is_running(&mut || rx.is_closed() && rx.is_closed()) {
 
         wait_for_all!(monitor.wait_avail_units(&mut rx, 1)).await;
 

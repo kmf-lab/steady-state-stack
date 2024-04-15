@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures::lock::Mutex;
 use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 
 pub(crate) type ChannelBacking<T> = Heap<T>;
@@ -12,7 +12,7 @@ pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>
 
 
 
-//TODO: we should use static for all telemetry work. (next step)
+//TODO: 2025, we should use static for all telemetry work.
 //      this might lead to a general solution for static in other places
 //let mut rb = AsyncRb::<Static<T, 12>>::default().split_ref()
 //   AsyncRb::<ChannelBacking<T>>::new(cap).split_ref()
@@ -54,6 +54,8 @@ pub struct ChannelBuilder {
     avg_filled: bool,
     avg_latency: bool,
     connects_sidecar: bool,
+    max_filled: bool,
+    min_filled: bool,
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
 }
 //some ideas to target
@@ -94,6 +96,8 @@ impl ChannelBuilder {
             avg_filled: false,
             avg_rate: false,
             avg_latency: false,
+            max_filled: false,
+            min_filled: false,
             connects_sidecar: false,
         }
     }
@@ -189,6 +193,20 @@ impl ChannelBuilder {
         result.avg_filled = true;
         result
     }
+
+
+    pub fn with_filled_max(&self) -> Self {
+        let mut result = self.clone();
+        result.max_filled=true;
+        result
+    }
+
+    pub fn with_filled_min(&self) -> Self {
+        let mut result = self.clone();
+        result.min_filled=true;
+        result
+    }
+
 
     /// Enables average rate calculation.
     ///
@@ -432,7 +450,8 @@ impl ChannelBuilder {
             trigger_latency: self.trigger_latency.clone(),
 
 
-
+            min_filled: self.min_filled,
+            max_filled: self.max_filled,
             capacity: self.capacity,
             avg_filled: self.avg_filled,
             avg_rate: self.avg_rate,
@@ -442,23 +461,25 @@ impl ChannelBuilder {
             //TODO: deeper review here.
             expects_to_be_monitored: self.window_bucket_in_bits>0
                                       && ( self.display_labels
-                                   || self.line_expansion
-                                   || show_type.is_some()
-                                   || !self.percentiles_filled.is_empty()
-                                   || !self.percentiles_latency.is_empty()
-                                   || !self.percentiles_rate.is_empty()
-                                    || self.avg_filled
-                                    || self.avg_latency
-                                    || self.avg_rate
-                                    || !self.std_dev_filled.is_empty()
-                                    || !self.std_dev_latency.is_empty()
-                                    || !self.std_dev_rate.is_empty())
+                                           || self.line_expansion
+                                           || show_type.is_some()
+                                           || !self.percentiles_filled.is_empty()
+                                           || !self.percentiles_latency.is_empty()
+                                           || !self.percentiles_rate.is_empty()
+                                            || self.avg_filled
+                                            || self.avg_latency
+                                            || self.avg_rate
+                                            || !self.std_dev_filled.is_empty()
+                                            || !self.std_dev_latency.is_empty()
+                                            || !self.std_dev_rate.is_empty()
+                                          )
 
         }
     }
 
     /// Finalizes the channel configuration and creates the channel with the specified settings.
     /// This method ties together all the configured options, applying them to the newly created channel.
+    pub const UNSET: u32 = u32::MAX;
 
     pub fn build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
 
@@ -479,6 +500,8 @@ impl ChannelBuilder {
         let channel_meta_data = Arc::new(self.to_meta_data(type_string_name,type_byte_count));
 
         let (sender_is_closed, receiver_is_closed) = oneshot::channel();
+        let tx_version = Arc::new(AtomicU32::new(Self::UNSET)); //Const indicating not yet set
+        let rx_version = Arc::new(AtomicU32::new(Self::UNSET)); //Const indicating not yet set
 
         (  Arc::new(Mutex::new(Tx {
             tx
@@ -487,6 +510,9 @@ impl ChannelBuilder {
             , make_closed: Some(sender_is_closed)
             , last_error_send: Instant::now().sub(Duration::from_secs(60))
             , oneshot_shutdown: receiver_tx
+            , rx_version: rx_version.clone()
+            , tx_version: tx_version.clone()
+            , last_checked_rx_instance: rx_version.load(Ordering::SeqCst)
         }))
            , Arc::new(Mutex::new(Rx {
             rx
@@ -494,6 +520,9 @@ impl ChannelBuilder {
             , local_index: MONITOR_UNKNOWN
             , is_closed: receiver_is_closed
             , oneshot_shutdown: receiver_rx
+            , rx_version: rx_version.clone()
+            , tx_version: tx_version.clone()
+            , last_checked_tx_instance: tx_version.load(Ordering::SeqCst)
         }))
         )
 

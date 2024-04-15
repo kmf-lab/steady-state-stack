@@ -4,11 +4,12 @@ use std::future::Future;
 
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, AtomicUsize};
-use std::time::Duration;
-use bastion::{Bastion, Callbacks, run};
-use bastion::supervisor::SupervisorRef;
+use std::time::{Duration, Instant};
+use bastion::{Bastion, run};
+use bastion::prelude::SupervisorRef;
 
 use futures::channel::oneshot;
+use futures::channel::oneshot::Receiver;
 use futures_util::lock::Mutex;
 use log::*;
 
@@ -18,19 +19,9 @@ use crate::graph_testing::{SideChannel, SideChannelHub};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 
-fn build_node_restart_counter(count_restarts: &Arc<AtomicU32>
 
-) -> Callbacks {
-    let callback_count_restarts = count_restarts.clone();
 
-    Callbacks::new()
-        .with_after_restart(move || {
-            if callback_count_restarts.load(std::sync::atomic::Ordering::Relaxed).lt(&u32::MAX) {
-                callback_count_restarts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            }
-        })
 
-}
 
 #[derive(Clone)]
 pub struct ActorBuilder {
@@ -59,53 +50,7 @@ pub struct ActorBuilder {
     backplane: Arc<Mutex<Option<SideChannelHub>>>,
 }
 
-/// Defines the strategies for supervising groups of child actors or processes within a system.
-/// These strategies determine the system's response to failures encountered by child groups,
-/// such as panics, errors, or explicit termination requests. The choice of strategy influences
-/// the resilience and recovery behavior of the system, addressing various degrees of dependency
-/// and coupling between child groups.
-pub enum SupervisionStrategy {
-    /// Applies a targeted recovery approach upon failure of a child group.
-    ///
-    /// Only the directly affected child group is restarted, isolating the failure impact
-    /// and recovery effort. This strategy is most suitable for systems where child groups
-    /// operate independently, ensuring minimal disruption by confining restarts to the
-    /// components directly impacted by the failure.
-    ///
-    /// **Use Case Example**: In a microservices architecture, where each child group
-    /// represents a distinct microservice, this strategy ensures that a failure in one
-    /// service leads to its isolated restart, without affecting the continuity of others.
-    OneForOne,
 
-    /// Adopts a comprehensive recovery approach, restarting all child groups under
-    /// supervision upon any single failure.
-    ///
-    /// This includes restarting even those groups that were previously stopped, in the
-    /// same order they were initially added to the supervisor. This strategy is fitting
-    /// for systems with tightly coupled child groups, where a failure in one could imply
-    /// systemic issues, requiring a full system reset to ensure consistency and integrity
-    /// across all components.
-    ///
-    /// **Use Case Example**: In a data processing pipeline with interdependent stages,
-    /// a failure in one stage might corrupt the process, necessitating a complete restart
-    /// of the pipeline to ensure data integrity across all stages.
-    OneForAll,
-
-    /// Offers a balanced recovery approach, targeting the failed child group and any
-    /// subsequent groups added after it to the supervisor.
-    ///
-    /// Upon a failure, the affected group and all later groups are restarted, including
-    /// those previously stopped, while maintaining their initial addition order. This
-    /// strategy is effective in scenarios where child groups have sequential or partial
-    /// dependencies, ensuring that all dependent groups operate on a consistent and valid
-    /// state following a failure.
-    ///
-    /// **Use Case Example**: In a sequential processing system where certain processes
-    /// prepare data for subsequent ones, a failure in a mid-sequence process necessitates
-    /// restarting it along with all dependent processes to maintain the sequence’s integrity
-    /// and correctness.
-    RestForOne,
-}
 
 impl ActorBuilder {
 
@@ -119,6 +64,7 @@ impl ActorBuilder {
     ///
     /// A new instance of `ActorBuilder`.
     pub fn new( graph: &mut Graph) -> ActorBuilder {
+
 
         let default_super = Bastion::supervisor(|supervisor| supervisor.with_strategy(bastion::supervisor::SupervisionStrategy::OneForOne))
                             .expect("Internal error, Check if OneForOne is no longer supported?");
@@ -203,29 +149,6 @@ impl ActorBuilder {
     pub fn with_name(&self, name: &'static str) -> Self {
         let mut result = self.clone();
         result.name = name;
-        result
-    }
-
-
-    /// Sets the supervision strategy for the actor, dictating how the system responds to actor failures.
-    ///
-    /// # Arguments
-    ///
-    /// * `strategy` - The `SupervisionStrategy` to be applied.
-    ///
-    /// # Returns
-    ///
-    /// A new `ActorBuilder` instance with the specified supervision strategy.
-    pub fn with_supervisor(&self, strategy: self::SupervisionStrategy) -> Self {
-        let mut result = self.clone();
-        let strat = match strategy {
-            SupervisionStrategy::OneForOne => bastion::supervisor::SupervisionStrategy::OneForOne,
-            SupervisionStrategy::OneForAll => bastion::supervisor::SupervisionStrategy::OneForAll,
-            SupervisionStrategy::RestForOne => bastion::supervisor::SupervisionStrategy::RestForOne,
-        };
-
-        result.supervisor = Bastion::supervisor(|supervisor| supervisor.with_strategy(strat))
-            .expect("Internal error, Check if {strategy} is no longer supported?");
         result
     }
 
@@ -383,18 +306,20 @@ impl ActorBuilder {
             I: Fn(SteadyContext) -> F + Send + Sync + 'static,
             F: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
     {
-
-        let id            = self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let id                 = self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let name               = self.name;
+        let immutable_identity = ActorIdentity { id, name };
+        let immutable_actor_metadata = self.build_actor_metadata(id, self.name);
         let telemetry_tx  = self.telemetry_tx;
         let channel_count = self.channel_count;
         let runtime_state = self.runtime_state;
         let args          = self.args;
-        let name          = self.name;
 
-        let node_tx_rx:Option<Arc<Mutex<SideChannel>>> = run!(
+        //error!("starting {:?} ",immutable_identity);
+        let immutable_node_tx_rx:Option<Arc<Mutex<SideChannel>>> = run!(
             async {
                     let mut backplane = self.backplane.lock().await;
-                    //IF the backplane is enabled then register every node for use
+                    //If the backplane is enabled then register every node for use
                     if let Some(pb) = &mut *backplane {
                                                 let max_channel_capacity = 8;
                                                 pb.register_node(name,max_channel_capacity).await;
@@ -405,9 +330,70 @@ impl ActorBuilder {
             }
         );
 
-        let actor_metadata = Arc::new(
+        //this single one shot is kept no matter how many times actor is restarted
+        let immutable_oneshot_shutdown = {
+                let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
+                let mut one_shots = run!(self.oneshot_shutdown_vec.lock());
+                one_shots.push(send_shutdown_notice_to_periodic_wait);
+                Arc::new(Mutex::new(oneshot_shutdown))
+            };
+
+
+        let restart_counter = Arc::new(AtomicU32::new(0));
+
+        let _ = self.supervisor.children(|children| {
+
+            let actor_start_time = Instant::now();
+
+            children
+                .with_name(name)
+                .with_exec(move |ctx| {
+                        //inc our restart count here, first value seen is zero
+                        let instance_id = restart_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+
+                        let instance_context = SteadyContext {
+                            runtime_state: runtime_state.clone(),
+                            channel_count: channel_count.clone(),
+                            ident: immutable_identity,
+                            instance_id,
+                            ctx: Some(Arc::new(ctx)),
+                            args: args.clone(),
+                            all_telemetry_rx: telemetry_tx.clone(),
+                            actor_metadata: immutable_actor_metadata.clone(),
+                            oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
+                            oneshot_shutdown: immutable_oneshot_shutdown.clone(),
+                            last_periodic_wait: Default::default(),
+                            node_tx_rx: immutable_node_tx_rx.clone(),
+                            actor_start_time
+                        };
+                        let future = build_actor_exec(instance_context);
+
+                        //trace!("built future for {:?} ",immutable_identity);
+                        async move {
+
+                            match future.await { //run actor
+                                Ok(_) => {
+                                    trace!("Actor {:?} finished ", name);
+                                },
+                                Err(e) => {
+                                    //NOTE: upon error return we restart the actor
+                                    error!("{:?}", e); //we log the error here
+                                    return Err(()); //bastion can not accept error details
+                                }
+                            }
+                            Ok(())
+                        }
+                })
+        });
+
+    }
+
+    fn build_actor_metadata(&self, id: usize, name: &'static str) -> Arc<ActorMetaData> {
+        Arc::new(
             ActorMetaData {
-                id, name,
+                id,
+                name,
                 avg_mcpu: self.avg_mcpu,
                 avg_work: self.avg_work,
                 percentiles_mcpu: self.percentiles_mcpu.clone(),
@@ -420,64 +406,7 @@ impl ActorBuilder {
                 refresh_rate_in_bits: self.refresh_rate_in_bits,
                 window_bucket_in_bits: self.window_bucket_in_bits,
             }
-        );
-
-
-        let _ = self.supervisor.children(|children| {
-
-            let count_restarts = Arc::new(AtomicU32::new(0));
-            let watch_node_callback = build_node_restart_counter(&count_restarts);
-            let count_restarts = count_restarts.clone();
-
-            //this single one shot is kept no matter how many times actor is restarted
-            let oneshot_shutdown = {
-                let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
-                let mut one_shots = run!(self.oneshot_shutdown_vec.lock());
-                one_shots.push(send_shutdown_notice_to_periodic_wait);
-                oneshot_shutdown
-            };
-            let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown));
-            let actor_start_time = std::time::Instant::now();
-
-            let children = children
-                .with_name(name)
-                .with_callbacks(watch_node_callback);
-
-
-            children.with_exec(move |ctx| {
-
-                let context = SteadyContext {
-                                    runtime_state: runtime_state.clone(),
-                                    channel_count: channel_count.clone(),
-                                    ident: ActorIdentity{id,name},
-                                    ctx: Some(Arc::new(ctx)),
-                                    args: args.clone(),
-                                    all_telemetry_rx: telemetry_tx.clone(),
-                                    count_restarts: count_restarts.clone(),
-                                    actor_metadata: actor_metadata.clone(),
-                                    oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
-                                    oneshot_shutdown: oneshot_shutdown.clone(),
-                                    last_perodic_wait: Default::default(),
-                                    node_tx_rx: node_tx_rx.clone(),
-                                    actor_start_time
-                };
-                let future = build_actor_exec(context);
-
-                async move {
-                    match future.await { //run actor
-                        Ok(_) => {
-                            trace!("Actor {:?} finished ", name);
-                        },
-                        Err(e) => {
-                            error!("{:?}", e); //we log the error here
-                            return Err(()); //bastion can not accept error details
-                        }
-                    }
-                    Ok(())
-                }
-            })
-        });
-
+        )
     }
 }
 

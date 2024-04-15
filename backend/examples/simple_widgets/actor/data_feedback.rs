@@ -18,6 +18,7 @@ pub struct FailureFeedback {
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
                  , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
+    //trace!("running {:?} {:?}",context.id(),context.name());
 
     let mut monitor = into_monitor!(context, [rx], [tx]);
 
@@ -80,25 +81,25 @@ async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor
 
 #[cfg(test)]
 mod tests {
-    //use async_std::test;
+    use async_std::test;
+    use steady_state::*;
 
 
-/*
     #[test]
     async fn test_process() {
         util::logger::initialize();
+        let mut graph = Graph::new(());
+        let mock_monitor = graph.new_test_monitor("test_monitor");
 
-        let mut graph = Graph::new();
+    /*
+
         let (tx_in, rx_in) = graph.channel_builder().with_capacity(8).build();
         let (tx_out, rx_out) = graph.channel_builder().with_capacity(8).build();
-
-        let mock_monitor = graph.new_test_monitor("approval_monitor");
 
         let mut mock_monitor = mock_monitor.into_monitor(&mut[], &mut[]);
 
         let mut tx_in_guard = tx_in.lock().await;
         let mut rx_in_guard = rx_in.lock().await;
-
         let mut tx_out_guard = tx_out.lock().await;
         let mut rx_out_guard = rx_out.lock().await;
 
@@ -119,7 +120,9 @@ mod tests {
         let result = mock_monitor.take_async(rx_out).await.unwrap();
         assert_eq!(result.original_count, 5);
         assert_eq!(result.approved_count, 2);
-    }
     */
+    }
+
+
 
 }

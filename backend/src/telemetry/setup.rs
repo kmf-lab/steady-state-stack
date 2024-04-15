@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::{Arc};
-use std::sync::atomic::{AtomicU16, AtomicU64};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::thread;
 use std::time::{Duration, Instant};
 use futures_util::join;
 use log::*;
@@ -21,6 +22,8 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
                                                                                      , tx_inverse_local_idx: [usize; TX_LEN]) -> (Option<SteadyTelemetrySend<{ RX_LEN }>>, Option<SteadyTelemetrySend<{ TX_LEN }>>, Option<SteadyTelemetryActorSend>) {
 //NOTE: if this child telemetry is monitored so we will create the appropriate channels
     let start_now = Instant::now().sub(Duration::from_secs(1 + MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
+
+    //trace!("attempt collectordetail to the shared vec for {:?} ",that.ident);
 
     let channel_builder = ChannelBuilder::new(that.channel_count.clone()
                                               ,that.oneshot_shutdown_vec.clone())
@@ -80,6 +83,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
                 shared_vec.push(CollectorDetail {
                     ident: that.ident, telemetry_take
                 }); //add new telemetry channels
+                //trace!("addded collectordetail to the shared vec for {:?} new len {:?} ",that.ident,shared_vec.len());
             }
         }
         Err(_) => {
@@ -97,7 +101,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
             hot_profile: AtomicU64::new(0),
             hot_profile_concurrent: Default::default(),
             calls,
-            count_restarts: that.count_restarts.clone(),
+            instance_id: that.instance_id,
             bool_stop: false,
         });
 
@@ -129,53 +133,59 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 
             let outgoing = Some(tx);
 
-            let bldr = graph.actor_builder()
-                .with_name(metrics_server::NAME);
 
             let bldr = if config::SHOW_TELEMETRY_ON_TELEMETRY {
-                bldr.with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
+                graph.actor_builder().with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
                     .with_avg_mcpu()
                     .with_avg_work()
             } else {
-                bldr
+                graph.actor_builder()
             };
 
-            bldr.build_with_exec(move |context|
+            bldr.with_name(metrics_server::NAME)
+                .build_with_exec(move |context|
                 telemetry::metrics_server::run(context
                                                , rx.clone()
                 ));
 
-            if config::TELEMETRY_SERVER  {
-                let all_tel_rx = graph.all_telemetry_rx.clone(); //using Arc here
 
-                let bldr = graph.actor_builder()
-                    .with_name(metrics_collector::NAME);
+            let all_tel_rx = graph.all_telemetry_rx.clone(); //using Arc here
 
-                let bldr = if config::SHOW_TELEMETRY_ON_TELEMETRY {
-                    bldr.with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
-                        .with_avg_mcpu()
-                        .with_avg_work()
-                } else {
-                    bldr
-                };
+            let bldr = if config::SHOW_TELEMETRY_ON_TELEMETRY {
+                graph.actor_builder().with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
+                    .with_avg_mcpu()
+                    .with_avg_work()
+            } else {
+                graph.actor_builder()
+            };
 
-                bldr.build_with_exec(move |context| {
-                    let all_rx = all_tel_rx.clone();
-                    metrics_collector::run(context
-                                              , all_rx
-                                              , outgoing.clone()
-                    )
-                });
-            }
+            bldr.with_name(metrics_collector::NAME)
+                .build_with_exec(move |context| {
+                let all_rx = all_tel_rx.clone();
+                metrics_collector::run(context
+                                          , all_rx
+                                          , outgoing.clone()
+                )
+            });
+
         }
 }
 
 #[inline]
 pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(this: &mut LocalMonitor<RX_LEN, TX_LEN>) {
+
     //do not relay faster than this to ensure we do not overload the channel
     //we will continue to roll up data if we do not send it
     let last_elapsed = this.last_telemetry_send.elapsed();
     if last_elapsed.as_micros() >= config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u128 {
+
+         let est = (500+(last_elapsed.as_micros() * config::CONSUMED_MESSAGES_BY_COLLECTOR as u128))/1000;
+         if est < config::TELEMETRY_PRODUCTION_RATE_MS as u128 {
+             error!("ms {} vs {} vs {}", est
+                                 , config::TELEMETRY_PRODUCTION_RATE_MS
+                                , (config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u128 * config::CONSUMED_MESSAGES_BY_COLLECTOR as u128)/1000
+               );
+         }
 
         let is_in_graph: bool = this.is_in_graph();
 
@@ -188,32 +198,43 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                 //      channel take/send data can skip tx if it is all zeros but that
                 //      can never be done here since this is critical for the collector
 
-
-
                 if is_in_graph {
                     let clear_status = {
                         let mut lock_guard = actor_status.tx.lock().await;
                         let tx = lock_guard.deref_mut();
 
+                        let rx_version = tx.rx_version.load(Ordering::SeqCst);
+                        if ChannelBuilder::UNSET == rx_version {
+                            let now = Instant::now();
+                            let dif = now.duration_since(actor_status.last_telemetry_error);
+                            if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+                                //trace!("reader not ready pooling stats up {} for id {} actor: {:?} ",rx_version, tx.id(),this.ident);
+                                actor_status.last_telemetry_error = now;
+                            }
+                            return; //  do not send stats NOW since reader is not ready
+                        }
+
                         let capacity = tx.capacity();
                         let vacant_units = tx.vacant_units();
-
                         if vacant_units >= (capacity>>1) {
                             //ok we are not in danger of filling up
                         } else {
                             let scale = calculate_exponential_channel_backoff(capacity, vacant_units);
                             if last_elapsed.as_micros() < scale as u128 * config::MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS as u128 {
 
-                                if let Ok(guard) = this.runtime_state.read() {
-                                    let state = guard.deref();
-                                    //if we are not shutting down we may need to report this error
-                                    if !state.is_in_state(&[GraphLivelinessState::StopRequested
-                                                                  ,GraphLivelinessState::Stopped
-                                                                  ,GraphLivelinessState::StoppedUncleanly]) && scale>30 {
-
-                                            error!("{:?} EXIT hard delay on actor status: {} empty{} of{}",this.ident,scale,vacant_units,capacity);
+                                //if it is bad then confirm we are not shutting down and report an error
+                                if scale >= 128 {
+                                    if let Ok(guard) = this.runtime_state.read() {
+                                        let state = guard.deref();
+                                        //if we are not shutting down we may need to report this error
+                                        if !state.is_in_state(&[GraphLivelinessState::StopRequested
+                                            , GraphLivelinessState::Stopped
+                                            , GraphLivelinessState::StoppedUncleanly])
+                                        {
+                                            error!("{:?} EXIT hard delay on actor status: scale {} empty {} of {}", this.ident, scale, vacant_units, capacity);
                                             error!("assume metrics_collector has died and is not consuming messages");
-
+                                            std::process::exit(-1); // TODO:debug
+                                        }
                                     }
                                 }
                                 //we have discovered that the consumer is not keeping up
@@ -376,7 +397,7 @@ pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_unit
 }
 
 
-pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: usize>(this: &mut LocalMonitor<RX_LEN, TX_LEN>) {
+pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: usize>(this: & LocalMonitor<RX_LEN, TX_LEN>) {
         // send the last data before this struct is dropped.
 
         #[cfg(debug_assertions)]
@@ -385,31 +406,37 @@ pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX
         if this.is_in_graph() {
             //mark all 3 closed and wait for them to empty
             join!(
-                    async {if let Some(ref mut actor_status) = this.telemetry_state {
+                    async {if let Some(ref actor_status) = this.telemetry_state {
                             {
-                                actor_status.bool_stop = true;
                                 let mut tx = actor_status.tx.lock().await;
-                                let _ = tx.send_async(this.ident, actor_status.status_message(), SendSaturation::IgnoreInRelease).await;
-                                tx.mark_closed(); //signal that what you may see is all there will be
-                                tx.wait_empty().await;
+                                if !tx.make_closed.is_some() {
+                                    let mut status = actor_status.status_message().clone();
+                                    status.bool_stop = true;
+                                    let _ = tx.send_async(this.ident, status, SendSaturation::IgnoreInRelease).await;
+                                    tx.mark_closed(); //signal that what you may see is all there will be
+                                    tx.wait_empty().await;
+                                }
                             }
-                            actor_status.status_reset();
                     }},
                     async {if let Some(ref send_tx) = this.telemetry_send_tx {
-                        let mut tx = send_tx.tx.lock().await;
-                        if send_tx.count.iter().any(|x| !x.is_zero()) {
-                           let _ = tx.send_async(this.ident,send_tx.count,SendSaturation::IgnoreInRelease).await;
+                         let mut tx = send_tx.tx.lock().await;
+                         if !tx.make_closed.is_some() {
+                            if send_tx.count.iter().any(|x| !x.is_zero()) {
+                               let _ = tx.send_async(this.ident,send_tx.count,SendSaturation::IgnoreInRelease).await;
+                            }
+                            tx.mark_closed(); //signal that what you may see is all there will be
+                            tx.wait_empty().await;
                         }
-                        tx.mark_closed(); //signal that what you may see is all there will be
-                        tx.wait_empty().await;
                     }},
                     async {if let Some(ref send_rx) = this.telemetry_send_rx {
                         let mut rx = send_rx.tx.lock().await;
-                        if send_rx.count.iter().any(|x| !x.is_zero()) {
-                           let _ = rx.send_async(this.ident, send_rx.count,SendSaturation::IgnoreInRelease).await;
+                        if !rx.make_closed.is_some() {
+                            if send_rx.count.iter().any(|x| !x.is_zero()) {
+                               let _ = rx.send_async(this.ident, send_rx.count,SendSaturation::IgnoreInRelease).await;
+                            }
+                            rx.mark_closed(); //signal that what you may see is all there will be
+                            rx.wait_empty().await;
                         }
-                        rx.mark_closed(); //signal that what you may see is all there will be
-                        rx.wait_empty().await;
                     }}
                 );
 

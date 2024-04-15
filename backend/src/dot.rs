@@ -53,6 +53,8 @@ impl Node {
         let work = (100u64 *(actor_status.unit_total_ns-actor_status.await_total_ns) )
                               / total_work_ns as u64;
 
+        // info!("TODO: thread work: {:?}",actor_status.thread_id);
+
         let (label, color, pen_width) = self.stats_computer.compute(mcpu, work
                                         , actor_status.total_count_restarts
                                         , actor_status.bool_stop);
@@ -62,6 +64,7 @@ impl Node {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Edge {
     pub(crate) id: usize, //position matches the channel id
     pub(crate) from: usize, //monitor actor id of the sender
@@ -71,7 +74,7 @@ pub(crate) struct Edge {
     pub(crate) pen_width: & 'static str, //results from computer
     pub(crate) display_label: String, //results from computer
     pub(crate) ctl_labels: Vec<&'static str>, //visibility tags for render
-    stats_computer: ChannelStatsComputer
+    pub(crate) stats_computer: ChannelStatsComputer
 }
 impl Edge {
     pub(crate) fn compute_and_refresh(&mut self, send: i128, take: i128) {
@@ -86,7 +89,16 @@ impl Edge {
 }
 
 
-pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
+pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) -> bool {
+    //only generate the graph if we have a fully valid graph.
+    //if we find any half edges then do not build and wait for later.
+    // if state.edges.iter()
+    //     .any(|e| (e.from == usize::MAX) ^ (e.to == usize::MAX)) {
+    //     return false;
+    // };
+
+    dot_graph.clear(); // Clear the buffer for reuse
+
     dot_graph.put_slice(b"digraph G {\nrankdir=");
     dot_graph.put_slice(rankdir.as_bytes());
     dot_graph.put_slice(b";\n");
@@ -117,16 +129,16 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
         dot_graph.put_slice(b"];\n");
     });
 
+
+
+
     state.edges.iter()
-                .filter(|e| {
-                       //only fully defined edges some
-                       //may be in the process of being defined
-                       e.from != usize::MAX && e.to != usize::MAX
+                .filter(|e| e.from != usize::MAX && e.to != usize::MAX)
                        //filter on visibility labels
                     // TODO: new feature must also drop nodes if no edges are visible
                     // let show = e.ctl_labels.iter().any(|f| config::is_visible(f));
                     // let hide = e.ctl_labels.iter().any(|f| config::is_hidden(f));
-                })
+
                 .for_each(|edge| {
                     dot_graph.put_slice(b"\"");
                     dot_graph.put_slice(itoa::Buffer::new()
@@ -159,6 +171,7 @@ pub fn build_dot(state: &DotState, rankdir: &str, dot_graph: &mut BytesMut) {
                     }
                 });
     dot_graph.put_slice(b"}\n");
+    true
 }
 
 pub struct DotGraphFrames {
@@ -167,12 +180,12 @@ pub struct DotGraphFrames {
 }
 
 
-pub fn refresh_structure(local_state: &mut DotState
-                         , name: &'static str
-                         , id: usize
-                         , actor:           Arc<ActorMetaData>
-                         , channels_in: &[Arc<ChannelMetaData>]
-                         , channels_out: &[Arc<ChannelMetaData>]
+pub fn apply_node_def(local_state: &mut DotState
+                      , name: &'static str
+                      , id: usize
+                      , actor:           Arc<ActorMetaData>
+                      , channels_in: &[Arc<ChannelMetaData>]
+                      , channels_out: &[Arc<ChannelMetaData>]
 ) {
 //rare but needed to ensure vector length
     if id.ge(&local_state.nodes.len()) {
@@ -186,6 +199,7 @@ pub fn refresh_structure(local_state: &mut DotState
             }
         });
     }
+    assert!(usize::MAX == local_state.nodes[id].id || id == local_state.nodes[id].id, "id: {} name: {}",id, name);
     local_state.nodes[id].id = id;
     local_state.nodes[id].display_label = name.to_string(); //temp will be replaced when data arrives.
     local_state.nodes[id].stats_computer.init(actor, id, name);
@@ -197,6 +211,7 @@ pub fn refresh_structure(local_state: &mut DotState
 }
 
 fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: &[Arc<ChannelMetaData>], set_to: bool) {
+    assert_ne!(usize::MAX,node_id);
     mdvec.iter()
         .for_each(|meta| {
             let idx = meta.id;
@@ -210,31 +225,39 @@ fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: &[Arc
                         sidecar: false,
                         stats_computer: ChannelStatsComputer::default(),
                         ctl_labels: Vec::new(), //for visibility control
-
                         color: "grey",
                         pen_width: "3",
                         display_label: "".to_string(),//defined when the content arrives
                     }
                 });
             }
-            assert!(local_state.edges[idx].id == idx || local_state.edges[idx].id == usize::MAX);
-            local_state.edges[idx].id = idx;
+            let edge = &mut local_state.edges[idx];
+            assert!(edge.id == idx || edge.id == usize::MAX);
+            edge.id = idx;
             if set_to {
-                local_state.edges[idx].to = node_id;
+                if usize::MAX == edge.to {
+                    edge.to = node_id;
+                } else {
+                    warn!("internal error");
+                }
             } else {
-                local_state.edges[idx].from = node_id;
+                if usize::MAX == edge.from {
+                    edge.from = node_id;
+                } else {
+                    warn!("internal error");
+                }
             }
-            local_state.edges[idx].stats_computer.init(meta);
-            local_state.edges[idx].sidecar = meta.connects_sidecar;
+            edge.stats_computer.init(meta);
+            edge.sidecar = meta.connects_sidecar;
             // Collect the labels that need to be added
             // This is redundant but provides safety if two dif label lists are in play
             let labels_to_add: Vec<_> = meta.labels.iter()
-                .filter(|f| !local_state.edges[idx].ctl_labels.contains(f))
+                .filter(|f| !edge.ctl_labels.contains(f))
                 .cloned()  // Clone the items to be added
                 .collect();
             // Now, append them to `ctl_labels`
             for label in labels_to_add {
-                local_state.edges[idx].ctl_labels.push(label);
+                edge.ctl_labels.push(label);
             }
         });
 }

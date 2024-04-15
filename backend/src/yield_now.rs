@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// A simple future that yields once before completing, using a tuple struct for simplicity.
-struct YieldNow(bool);
+pub(crate) struct YieldNow(bool);
 
 impl YieldNow {
     fn new() -> Self {

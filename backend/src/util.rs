@@ -125,12 +125,7 @@ impl LogLineFilter for TideHide {
         Ok(())
     }
 }
-////////////////////////////////////////////
-////////////////////////////////////////////
-pub async fn async_yield_now() {
-    let _= pending::<()>().poll_unpin(&mut Context::from_waker(futures::task::noop_waker_ref()));
-    // Immediately after polling, we return control, effectively yielding.
-}
+
 ////////////////////////////////////////////
 ////////////////////////////////////////////
 pub mod logger {

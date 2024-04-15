@@ -24,6 +24,7 @@ struct InternalState {
 pub async fn run(context: SteadyContext
                  , feedback: SteadyRx<ChangeRequest>
                  , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
+    //trace!("running {:?} {:?}",context.id(),context.name());
 
     let gen_rate_micros = if let Some(a) = context.args::<crate::Args>() {
         a.gen_rate_micros

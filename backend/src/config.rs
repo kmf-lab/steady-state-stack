@@ -42,7 +42,7 @@ use std::env;
     // ALSO: the first half of the channel will fill at the expected 1/VAL rate
     // where VAL is this REAL length/2.  The latter half will fill more slowly as an
     // exponential backoff.
-    pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR:usize = 128;
+    pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR:usize = 256;
     pub const CONSUMED_MESSAGES_BY_COLLECTOR:usize = REAL_CHANNEL_LENGTH_TO_COLLECTOR>>1; //larger values take up memory but allow faster capture rates
 
     // TELEMETRY_PRODUCTION_RATE_MS defines the rate at which telemetry data is produced, measured in milliseconds.
@@ -57,8 +57,7 @@ use std::env;
     pub const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 60;
 
 
-   //TODO: not fully implemented yet, monitor actors still need
-   //      to send monitor data about themself to them self
+   //TODO: 2025, collector collection can not be monitored yet
     pub const SHOW_TELEMETRY_ON_TELEMETRY:bool = false;
 
 

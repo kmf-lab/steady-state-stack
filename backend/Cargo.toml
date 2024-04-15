@@ -1,8 +1,8 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.13"
-documentation = "https://docs.rs/steady_state/0.0.13/steady_state/"
-               #"https://docs.rs/crate/steady_state/0.0.13"  #debugging
+version = "0.0.14"
+documentation = "https://docs.rs/steady_state/0.0.14/steady_state/"
+               #"https://docs.rs/crate/steady_state/0.0.14"  #debugging
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -80,8 +80,8 @@ time             = { version = "0.3.34", features = ["macros","formatting", "par
 futures-util     = "0.3.30" # for time formatting and supports no-std
 dirs             = "5.0.1"
 
-agnostik         = "0.2.3" #for new rewite goal to allow different async runtimes
-
+#agnostik         = "0.2.3" #for new rewite goal to allow different async runtimes
+#lightproc        = "0.3.5" # for async task scheduling
 
 # still in progess, this is for distributed instances across nodes
 #rustdds          = "0.9.0" # 0.9.0 is broken use to use of io-extras v0.18.1

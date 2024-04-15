@@ -38,33 +38,29 @@ fn main() {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::from_args();
 
-    if let Err(e) = steady_state::init_logging(&opt.loglevel) {
+    if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
-    //TODO: figure out how to use the new builder and then add that to the code generator.
+    //TODO: 2025 add this as a feature to the code generator
     let service_executable_name = "simple_widgets";
     let service_user = "simple_widgets_user";
 
-    //we do uninstall first in case we are doing both so we uninstall the old one first.
-    if opt.systemd_uninstall {
-        let temp = SystemdBuilder::new(service_executable_name.into(), service_user.into())
-                       .build();
-        if let Err(e) = temp.uninstall() {
-            eprintln!("Failed to uninstall systemd service: {:?}",e);
-        }
-    }
-    if opt.systemd_install {
-        let command = Args::to_cli_string(&opt,service_executable_name); //exec name?? hwo match?
-        let temp = SystemdBuilder::new(service_executable_name.into(), service_user.into())
+    if opt.systemd_uninstall || opt.systemd_install{
+        let systemd = SystemdBuilder::new(service_executable_name.into(), service_user.into())
                         .with_on_boot(true)
                         .build();
-
-        if let Err(e) = temp.install(true,command) {
-             eprintln!("Failed to install systemd service: {:?}",e);
+        //we do uninstall first in case we are doing both so we uninstall the old one first.
+        if opt.systemd_uninstall {
+            if let Err(e) = systemd.uninstall() {
+                eprintln!("Failed to uninstall systemd service: {:?}",e);
+            }
         }
-    }
-    if opt.systemd_uninstall || opt.systemd_install{
+        if opt.systemd_install {
+            if let Err(e) = systemd.install(true, Args::to_cli_string(&opt,service_executable_name)) {
+                 eprintln!("Failed to install systemd service: {:?}",e);
+            }
+        }
         return;
     }
 
@@ -118,11 +114,11 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                         .build();
 
     let (change_tx, change_rx) = base_channel_builder
-        // .with_fillled_max()  //TODO: new feature to add, easy
-        // .with_fillled_min() //TODO: new feature to add, easy
-                        .with_filled_percentile(Percentile::p25())
-                        .with_capacity(200)
-                        .build();
+                         .with_filled_max()
+                         .with_filled_min()
+                         .with_filled_percentile(Percentile::p25())
+                         .with_capacity(200)
+                         .build();
 
     let base_actor_builder = graph.actor_builder()//with default OneForOne supervisor....
         .with_mcpu_percentile(Percentile::p80())
@@ -177,30 +173,30 @@ mod tests {
         };
         let mut graph = build_graph(&test_ops);
         graph.start();
-        {
-            let mut guard = graph.sidechannel_director().await;
-            if let Some(plane) = guard.deref_mut() {
-                let to_send = WidgetInventory {
-                    count: 42,
-                    _payload: 0
+
+        let mut guard = graph.sidechannel_director().await;
+        if let Some(plane) = guard.deref_mut() {
+            let to_send = WidgetInventory {
+                count: 42,
+                _payload: 0
+            };
+            let response = plane.node_call(Box::new(to_send), "generator").await;
+            if let Some(_) = response {
+                let expected_message = ApprovedWidgets {
+                    original_count: 42,
+                    approved_count: 21,
                 };
-                let response: Option<Box<dyn Any + Send + Sync>> = plane.node_call(Box::new(to_send), "generator").await;
+                let response = plane.node_call(Box::new(expected_message), "consumer").await;
                 if let Some(_) = response {
-                    let expected_message = ApprovedWidgets {
-                        original_count: 42,
-                        approved_count: 21,
-                    };
-                    let response: Option<Box<dyn Any + Send + Sync>> = plane.node_call(Box::new(expected_message), "consumer").await;
-                    if let Some(_) = response {
-                        trace!("happy");
-                    } else {
-                        panic!("bad response from consumer: {:?}", response);
-                    }
+                    trace!("happy");
                 } else {
-                    panic!("bad response from generator: {:?}", response);
+                    panic!("bad response from consumer: {:?}", response);
                 }
+            } else {
+                panic!("bad response from generator: {:?}", response);
             }
         }
+        drop(guard);
 
         graph.stop();
         graph.block_until_stopped(Duration::from_secs(3));

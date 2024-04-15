@@ -129,7 +129,7 @@ impl ActorStatsComputer {
         self.id = id;
         self.name = name;
 
-        //TODO: we could pre-filter these by color here since they will not change again
+        //TODO: Perf, we could pre-filter these by color here since they will not change again
         //      this might be needed for faster updates..
         self.mcpu_trigger.clone_from(&meta.trigger_mcpu);
         self.work_trigger.clone_from(&meta.trigger_work);
@@ -445,7 +445,7 @@ pub(crate) fn compute_std_dev(bits: u8, window: usize, runner: u128, sum_sqr: u1
         let r2 = (runner*runner)>>bits;
         //trace!("{} {} {} {} -> {} ",bits,window,runner,sum_sqr,r2);
         if sum_sqr > r2 {
-            (((sum_sqr - r2) >> bits) as f32).sqrt() //TODO: someday we may need to implement sqrt for u128
+            (((sum_sqr - r2) >> bits) as f32).sqrt() //TODO: 2025 someday we may need to implement sqrt for u128
         } else {
             ((sum_sqr as f32 / window as f32) - (runner as f32 / window as f32).powi(2)).sqrt()
         }
@@ -458,7 +458,7 @@ pub(crate) fn compute_std_dev(bits: u8, window: usize, runner: u128, sum_sqr: u1
 pub(crate) const SQUARE_LIMIT: u128 = (1 << 64)-1;
 
 
-#[derive(Default)]
+#[derive(Default,Debug)]
 pub(crate) struct ChannelBlock<T> where T: Counter {
     pub(crate) histogram:      Option<Histogram<T>>,
     pub(crate) runner:         u128,

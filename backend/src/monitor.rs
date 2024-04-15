@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::ops::*;
 use std::time::{Duration, Instant};
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, PoisonError, RwLock};
 use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*; //allowed for all modules
@@ -15,8 +15,12 @@ use futures::future::select_all;
 
 use futures_timer::Delay;
 use std::future::Future;
+use std::process::exit;
 
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
+use std::thread;
+use std::thread::ThreadId;
+use bastion::run;
 use futures::channel::oneshot;
 
 use futures::FutureExt;
@@ -26,6 +30,7 @@ use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, SideChannelResponder};
+use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
 
 
@@ -40,14 +45,14 @@ pub struct SteadyTelemetryTake<const LENGTH: usize> {
     pub(crate) details: Vec<Arc<ChannelMetaData>>,
 }
 
-#[derive(Clone,Copy,Debug,Default,Eq,PartialEq)]
+#[derive(Clone,Copy,Default,Debug,Eq,PartialEq)]
 pub struct ActorStatus {
     pub(crate) total_count_restarts: u32, //always max so just pick the latest
     pub(crate) bool_stop:            bool, //always max so just pick the latest
 
     pub(crate) await_total_ns:       u64,  //sum records together
     pub(crate) unit_total_ns:        u64,  //sum records together
-
+    pub(crate) thread_id:            Option<ThreadId>,
     pub(crate) calls: [u16; 6],
 }
 
@@ -58,12 +63,13 @@ pub(crate) const CALL_BATCH_WRITE: usize=3;
 pub(crate) const CALL_OTHER: usize=4;
 pub(crate) const CALL_WAIT: usize=5;
 
+
 pub struct SteadyTelemetryActorSend {
     pub(crate) tx: SteadyTx<ActorStatus>,
     pub(crate) last_telemetry_error: Instant,
 
     pub(crate) instant_start: Instant,
-    pub(crate) count_restarts: Arc<AtomicU32>,
+    pub(crate) instance_id: u32,
     pub(crate) bool_stop: bool,
 
     //move these 3 into a cell so we can do running counts with requiring mut
@@ -100,11 +106,14 @@ impl SteadyTelemetryActorSend {
             let calls:Vec<u16> = self.calls.iter().map(|f|f.load(Ordering::Relaxed) ).collect();
             let calls:[u16;6] = calls.try_into().unwrap_or([0u16;6]);
 
+            let current_thread = thread::current();
+
             ActorStatus {
-                total_count_restarts: self.count_restarts.load(Ordering::Relaxed),
+                total_count_restarts: self.instance_id,
                 bool_stop: self.bool_stop,
                 await_total_ns: self.await_ns_unit.load(Ordering::Relaxed),
                 unit_total_ns: total_ns,
+                thread_id: Some(current_thread.id()),
                 calls,
             }
 
@@ -123,12 +132,32 @@ pub struct SteadyTelemetrySend<const LENGTH: usize> {
 impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
     fn is_empty_and_closed(&self) -> bool {
-        if let Some(ref take) = &self.take {
-            let mut rx = bastion::run!(take.rx.lock());
-            rx.is_empty() && rx.is_closed()
-        } else {
-            false
-        }
+
+        run!(async move {
+
+            let s = if let Some(ref send) = &self.send {
+                let mut rx = send.rx.lock().await;
+                rx.is_empty() && rx.is_closed()
+            } else {
+                true
+            };
+
+            let a = if let Some(ref actor) = &self.actor {
+                let mut rx = actor.lock().await;
+                rx.is_empty() && rx.is_closed()
+            } else {
+                true
+            };
+
+            let t = if let Some(ref take) = &self.take {
+                let mut rx = take.rx.lock().await;
+                rx.is_empty() && rx.is_closed()
+            } else {
+                true
+            };
+
+            s&a&t
+        })
     }
     
     fn actor_metadata(&self) -> Arc<ActorMetaData> {
@@ -152,8 +181,15 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
         }
     }
 
-    fn actor_rx(&self) -> Option<Box<dyn RxDef>> {
+    fn actor_rx(&self, version: u32) -> Option<Box<dyn RxDef>> {
         if let Some(ref act) = &self.actor {
+            if let Some(mut act) = act.try_lock() {
+                   // error!("store {} version for id {} actor {:?} {:?}",version,act.id(),&self.actor_metadata.name,&self.actor_metadata.id);
+                    act.deref_mut().rx_version.store(version, Ordering::SeqCst);
+            } else {
+                   error!("warning I should have been able to get this lock.");
+                   exit(-1);
+            }
             Some(Box::new(act.clone()))
         } else {
             None
@@ -185,11 +221,14 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
                 }
             }
             if count>0 {
+                let current_thread = thread::current();
+
                 Some(ActorStatus {
                     total_count_restarts:  buffer[count - 1].total_count_restarts,
                     bool_stop: buffer[count - 1].bool_stop,
                     await_total_ns,
                     unit_total_ns,
+                    thread_id: Some(current_thread.id()),
                     calls,
                 })
             } else {
@@ -391,6 +430,8 @@ pub struct ChannelMetaData {
     pub(crate) avg_filled: bool,
     pub(crate) avg_rate: bool,
     pub(crate) avg_latency: bool,
+    pub(crate) min_filled: bool,
+    pub(crate) max_filled: bool,
 
     pub(crate) connects_sidecar: bool,
     pub(crate) type_byte_count: usize,
@@ -421,9 +462,9 @@ pub trait RxTel : Send + Sync {
     fn consume_send_into(&self, take_send_source: &mut Vec<(i128,i128)>
                               , future_send: &mut Vec<i128>) -> bool;
 
-    fn actor_rx(&self) -> Option<Box<dyn RxDef>>;
+    fn actor_rx(&self, version: u32) -> Option<Box<dyn RxDef>>;
 
-    fn is_empty_and_closed(&self)  -> bool;
+    fn is_empty_and_closed(&self) -> bool;
 
 }
 
@@ -435,7 +476,7 @@ pub(crate) mod monitor_tests {
     use std::sync::Once;
     use std::time::Duration;
     use futures_timer::Delay;
-    use crate::{config, Graph, Rx, SendSaturation, Tx, util};
+    use crate::{config, Graph, into_monitor, Rx, SendSaturation, Tx, util};
 
     lazy_static! {
             static ref INIT: Once = Once::new();
@@ -452,7 +493,7 @@ pub(crate) mod monitor_tests {
             .build();
 
         let monitor = graph.new_test_monitor("test");
-        let mut monitor = monitor.into_monitor([&rx_string], [&tx_string]);
+        let mut monitor = into_monitor!(monitor,[rx_string], [tx_string]);
 
         let mut rxd = rx_string.lock().await;
         let mut txd = tx_string.lock().await;
@@ -554,12 +595,13 @@ pub(crate) fn find_my_index<const LEN:usize>(telemetry: &SteadyTelemetrySend<LEN
 impl <const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
     //if possible we never want to loose telemetry data so we try to flush it out
     fn drop(&mut self) {
-        bastion::run!(telemetry::setup::send_all_local_telemetry_async(self));
+        run!(telemetry::setup::send_all_local_telemetry_async(self));
     }
 }
 
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) ident:                ActorIdentity,
+    pub(crate) instance_id:          u32,
     pub(crate) ctx:                  Option<Arc<bastion::context::BastionContext>>,
     pub(crate) telemetry_send_tx:    Option<SteadyTelemetrySend<TX_LEN>>,
     pub(crate) telemetry_send_rx:    Option<SteadyTelemetrySend<RX_LEN>>,
@@ -600,15 +642,22 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     #[inline]
     pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
-        match self.runtime_state.read() {
+        let result = match self.runtime_state.read() {
             Ok(liveliness) => {
                 liveliness.is_running(self.ident, accept_fn )
             }
             Err(e) => {
-                error!("internal error,unable to get liveliness read lock {}",e);
-                true //keep running as the default under error conditions
+                 error!("Internal error on poisoned state: {}", e);
+                 true // Keep running as the default under error conditions
             }
+        };
+        if !result {
+            //we just stopped the loop so mark the telemetry as closed
+            //this is to speed up our closing of the collector
+            //ALSO we do this after releasing the read lock
+            run!(send_all_local_telemetry_async(self));
         }
+        result
     }
 
     #[inline]
@@ -638,6 +687,24 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
 
+    /// only needed if the channel consumer needs to know that a sender was restarted
+    pub fn update_tx_instance<T>(&self, target: &mut Tx<T>) {
+        target.tx_version.store(self.instance_id, Ordering::SeqCst);
+    }
+    /// only needed if the channel consumer needs to know that a sender was restarted
+    pub fn update_tx_instance_bundle<T>(&self, target: &mut TxBundle<T>) {
+        target.iter_mut().for_each(|mut tx| tx.tx_version.store(self.instance_id, Ordering::SeqCst));
+    }
+
+
+    /// only needed if the channel consumer needs to know that a receiver was restarted
+    pub fn update_rx_instance<T>(&self, target: &mut Rx<T>) {
+        target.rx_version.store(self.instance_id, Ordering::SeqCst);
+    }
+    /// only needed if the channel consumer needs to know that a receiver was restarted
+    pub fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
+        target.iter_mut().for_each(|mut rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
+    }
 
     pub fn wait_while_running(&self) -> impl Future<Output = Result<(), ()>> {
         crate::graph_liveliness::WaitWhileRunningFuture::new(self.runtime_state.clone())
@@ -663,6 +730,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Asynchronous
     pub async fn relay_stats_smartly(&mut self) {
+
         //NOTE: not time ing this one as it is mine and internal
         telemetry::setup::try_send_all_local_telemetry(self).await;
     }
@@ -722,17 +790,20 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
         let one_down = &mut self.oneshot_shutdown.lock().await;
 
-        let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
-        let run_duration = now_nanos - self.last_perodic_wait.load(Ordering::Relaxed);
-        let remaining_duration = duration_rate.saturating_sub( Duration::from_nanos(run_duration) );
+            let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
+            let last = self.last_perodic_wait.load(Ordering::SeqCst);
+            let remaining_duration = if last <= now_nanos { //happens at shutdown
+                duration_rate.saturating_sub( Duration::from_nanos(now_nanos - last ))
+            } else {
+                duration_rate
+            };
 
-        let mut operation = &mut Delay::new(remaining_duration).fuse();
-
+        let mut op = Delay::new(remaining_duration);
         let result = select! {
                 _= &mut one_down.deref_mut() => false,
-                _= operation => true
+                _= op.fuse() => true
         };
-        self.last_perodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
+        self.last_perodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
         result
 
     }

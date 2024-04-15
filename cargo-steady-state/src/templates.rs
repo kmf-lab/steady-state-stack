@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::time::Duration;
 use askama::Template;
 
-//TODO: add custom actor templates which can be adjusted later?
-//TODO: if files exist confirm and backup the files?
+//TODO: 2025 add pre-built actors with custom templates which can be adjusted later
+//TODO: 2025 if generated project files already exist confirm and backup the files
 
 
 /// DOT File Notation Guide for Rust Project Actor and Channel Configurations

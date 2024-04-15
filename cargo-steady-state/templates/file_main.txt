@@ -94,8 +94,32 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 }
 
 #[cfg(test)]
-mod tests {
+mod graph_tests {
+    use async_std::test;
+    use steady_state::*;
 
-    use super::*;
-     //TODO: add example test once we have all the actors working
+    #[test]
+    async fn test_graph_one() {
+
+            let test_ops = Args {
+                loglevel: "debug".to_string(),
+                systemd_install: false,
+                systemd_uninstall: false,
+            };
+            let mut graph = build_graph(&test_ops);
+            graph.start();
+            let mut guard = graph.sidechannel_director().await;
+            if let Some(plane) = guard.deref_mut() {
+
+              //  write your test here, send messages to edge nodes and get responses
+              //  let response = plane.node_call(Box::new(SOME_STRUCT), "SOME_NODE_NAME").await;
+              //  if let Some(msg) = response {
+              //  }
+
+            }
+            drop(guard);
+            graph.stop();
+            graph.block_until_stopped(Duration::from_secs(3));
+
+    }
 }

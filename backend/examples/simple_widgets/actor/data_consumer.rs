@@ -22,7 +22,8 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
 
     //let args:Option<&Args> = context.args(); //you can make the type explicit
-    let args = context.args::<Args>(); //or you can turbo fish here to get your args
+    let _args = context.args::<Args>(); //or you can turbo fish here to get your args
+    //trace!("running {:?} {:?}",context.id(),context.name());
 
 
     let mut monitor = into_monitor!(context,[rx],[]);
@@ -46,11 +47,11 @@ pub async fn run(context: SteadyContext
     //predicate which affirms or denies the shutdown request
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() ) {
 
-        wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
+        let _clean = wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
+           //single pass of work, in this high volume example we stay in iterate_once as long
+            //as the input channel as more work to process.
+            iterate_once(&mut monitor, &mut state, &mut rx).await;
 
-        //single pass of work, in this high volume example we stay in iterate_once as long
-        //as the input channel as more work to process.
-        iterate_once(&mut monitor, &mut state, &mut rx).await;
     }
     Ok(())
 }
@@ -168,33 +169,27 @@ mod tests {
 
         util::logger::initialize();
 
-        let mut graph = Graph::new("");
+        let mut graph = Graph::new(());
         let (tx, rx) = graph.channel_builder().with_capacity(8).build();
-        let mock_monitor = graph.new_test_monitor("consumer_monitor");
+        let mock_context = graph.new_test_monitor("mock");
 
-        let mut steady_tx_guard = tx.lock().await;
-        let mut steady_rx_guard = rx.lock().await;
+        let mut mock_monitor = into_monitor!(mock_context, [rx], [tx]);
 
-        let steady_tx = &mut *steady_tx_guard;
-        let steady_rx = &mut *steady_rx_guard;
+        let mut tx = tx.lock().await;
+        let mut rx = rx.lock().await;
 
-
-        let mut mock_monitor = mock_monitor.into_monitor([], []);
         let mut state = InternalState {
             last_approval: None,
             buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
-
         };
 
-        let _ = mock_monitor.send_async(steady_tx, ApprovedWidgets {
+        let _ = mock_monitor.send_async(&mut *tx, ApprovedWidgets {
             original_count: 1,
             approved_count: 2,
-
-
         },SendSaturation::Warn).await;
 
 
-        let exit= iterate_once(&mut mock_monitor, &mut state, steady_rx).await;
+        let exit= iterate_once(&mut mock_monitor, &mut state, &mut *rx).await;
 
         assert_eq!(exit, false);
         let widgets = state.last_approval.unwrap();

@@ -143,6 +143,50 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
     ) -> Result<(),Box<dyn Error>> {
 
+}
+
+#[cfg(test)]
+mod tests {
+    use async_std::test;
+    use steady_state::*;
 
 
+    #[test]
+    async fn test_process() {
+        util::logger::initialize();
+        let mut graph = Graph::new(());
+
+        //build your channels as needed for testing
+        let (tx, rx) = graph.channel_builder().with_capacity(8).build();
+
+         {%- for channel in rx_channels %}
+         let ({{channel[0].name}}_tx_extern, {{channel[0].name}}_rx) = graph.channel_builder().with_capacity(8).build();
+         {% endfor -%}
+         {%- for channel in tx_channels %}
+         let ({{channel[0].name}}_tx,{{channel[0].name}}_rx_extern) = graph.channel_builder().with_capacity(8).build();
+         {% endfor -%}
+
+         let mock_context = graph.new_test_monitor("mock");
+         let mut mock_monitor = into_monitor!(mock_context, [], []);
+
+         {%- for channel in rx_channels %}
+         let mut {{channel[0].name}}_tx_extern = {{channel[0].name}}_tx_extern.lock().await;
+         let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;
+         {% endfor -%}
+         {%- for channel in tx_channels %}
+         let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.lock().await;
+         let mut {{channel[0].name}}_rx_extern = {{channel[0].name}}_rx_extern.lock().await;
+         {% endfor -%}
+
+         //{{note_for_the_user}}: add assignments
+
+        process_once(&mut monitor, &mut state
+              {%- for channel in rx_channels %}
+                 , &mut {{channel[0].name}}_rx{%- endfor -%}
+              {%- for channel in tx_channels %}
+                 , &mut {{channel[0].name}}_tx{%- endfor -%}
+             ).await;
+
+
+    }
 }
