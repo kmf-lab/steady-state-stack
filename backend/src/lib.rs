@@ -173,7 +173,7 @@ impl SteadyContext {
     }
     /// only needed if the channel consumer needs to know that a receiver was restarted
     pub fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
-        target.iter_mut().for_each(|mut rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
+        target.iter_mut().for_each(|rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
     }
 
     /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
@@ -394,6 +394,8 @@ macro_rules! concat_arrays {
 #[macro_export]
 macro_rules! into_monitor {
     ($self:expr, [$($rx:expr),*], [$($tx:expr),*]) => {{
+        use crate::RxDef;
+        use crate::TxDef;
         //this allows for 'arrays' of non homogneous types and avoids dyn
         let rx_meta = [$($rx.meta_data(),)*];
         let tx_meta = [$($tx.meta_data(),)*];
@@ -401,11 +403,15 @@ macro_rules! into_monitor {
         $self.into_monitor_internal(rx_meta, tx_meta)
     }};
     ($self:expr, [$($rx:expr),*], $tx_bundle:expr) => {{
+        use crate::RxDef;
+        use crate::TxDef;
         //this allows for 'arrays' of non homogneous types and avoids dyn
         let rx_meta = [$($rx.meta_data(),)*];
         $self.into_monitor_internal(rx_meta, $tx_bundle.meta_data())
     }};
      ($self:expr, $rx_bundle:expr, [$($tx:expr),*] ) => {{
+         use crate::RxDef;
+         use crate::TxDef;
         //this allows for 'arrays' of non homogneous types and avoids dyn
         let tx_meta = [$($tx.meta_data(),)*];
         $self.into_monitor_internal($rx_bundle.meta_data(), tx_meta)
@@ -414,6 +420,8 @@ macro_rules! into_monitor {
         $self.into_monitor_internal($rx_bundle.meta_data(), $tx_bundle.meta_data())
     }};
     ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*], $($rx_bundle:expr),* ), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
+        use crate::RxDef;
+        use crate::TxDef;
         let mut rx_count = [$( { $rx; 1 } ),*].len();
         $(
             rx_count += $rx_bundle.meta_data().len();
@@ -455,6 +463,8 @@ macro_rules! into_monitor {
         $self.into_monitor_internal(rx_mon, tx_mon)
     }};
    ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*]), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
+        use crate::RxDef;
+        use crate::TxDef;
         let mut rx_count = [$( { $rx; 1 } ),*].len();
         assert_eq!(rx_count, $rx_channels_to_monitor, "Mismatch in RX channel count");
 
@@ -1401,7 +1411,7 @@ impl <T> TxDef for SteadyTx<T> {
     fn meta_data(&self) -> TxMetaData {
         //used on startup where we want to avoid holding the lock or using another thread
         loop {
-            if let Some(mut guard) = self.try_lock() {
+            if let Some(guard) = self.try_lock() {
                 return TxMetaData(guard.deref().channel_meta_data.clone());
             }
             std::thread::yield_now();
