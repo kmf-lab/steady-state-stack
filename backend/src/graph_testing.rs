@@ -47,7 +47,7 @@ impl SideChannelHub {
         self.node.get(name).cloned()
     }
 
-    pub async fn register_node(&mut self, name: &str, capacity: usize){
+    pub fn register_node(&mut self, name: &str, capacity: usize){
         //message to the node
         let rb = AsyncRb::<ChannelBacking<Box<dyn Any+Send+Sync>>>::new(capacity);
         let (sender_tx, receiver_tx) = rb.split();

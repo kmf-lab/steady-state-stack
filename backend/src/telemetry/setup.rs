@@ -3,30 +3,33 @@ use std::ops::{Deref, DerefMut, Sub};
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::thread;
+use std::thread::sleep;
 use std::time::{Duration, Instant};
 use futures_util::join;
 use log::*;
 use num_traits::Zero;
 use ringbuf::traits::Observer;
-use crate::{config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, SteadyContext, telemetry};
+use crate::{abstract_executor, ActorIdentity, config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, SteadyContext, telemetry};
 use crate::channel_builder::ChannelBuilder;
 use crate::config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
 use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
+use futures_util::task::{LocalSpawn, Spawn};
+use rand::distributions::uniform::SampleBorrow;
 
 pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(that: &SteadyContext
                                                                                      , rx_meta_data: Vec<Arc<ChannelMetaData>>
                                                                                      , rx_inverse_local_idx: [usize; RX_LEN]
                                                                                      , tx_meta_data: Vec<Arc<ChannelMetaData>>
                                                                                      , tx_inverse_local_idx: [usize; TX_LEN]) -> (Option<SteadyTelemetrySend<{ RX_LEN }>>, Option<SteadyTelemetrySend<{ TX_LEN }>>, Option<SteadyTelemetryActorSend>) {
-//NOTE: if this child telemetry is monitored so we will create the appropriate channels
+//NOTE: if this child telemetry is monitored so we will create the appropriate channels TODO: get from that and the graph.
     let start_now = Instant::now().sub(Duration::from_secs(1 + MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
 
     //trace!("attempt collectordetail to the shared vec for {:?} ",that.ident);
 
     let channel_builder = ChannelBuilder::new(that.channel_count.clone()
-                                              ,that.oneshot_shutdown_vec.clone())
+                                              ,that.oneshot_shutdown_vec.clone(), start_now)
         .with_labels(&["steady_state-telemetry"], false)
         .with_compute_refresh_window_bucket_bits(0, 0)
         .with_capacity(config::REAL_CHANNEL_LENGTH_TO_COLLECTOR);
@@ -143,10 +146,14 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
             };
 
             bldr.with_name(metrics_server::NAME)
-                .build_with_exec(move |context|
-                telemetry::metrics_server::run(context
-                                               , rx.clone()
-                ));
+                .with_io_driver() //metrics_server writes our history and telemetry
+                .build_spawn(move |context|
+
+                                         telemetry::metrics_server::run(context
+                                                                        , rx.clone()
+                                                                      )
+
+                );
 
 
             let all_tel_rx = graph.all_telemetry_rx.clone(); //using Arc here
@@ -160,7 +167,7 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
             };
 
             bldr.with_name(metrics_collector::NAME)
-                .build_with_exec(move |context| {
+                .build_spawn(move |context| {
                 let all_rx = all_tel_rx.clone();
                 metrics_collector::run(context
                                           , all_rx
@@ -189,7 +196,8 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
 
         let is_in_graph: bool = this.is_in_graph();
 
-        if let Some(ref mut actor_status) = this.telemetry_state {
+
+        if let Some(ref mut actor_status) = this.telemetry.state {
             {
                 let msg = actor_status.status_message();
                 //NOTE: actor status MUST be sent every MIN_TELEMETRY_CAPTURE_RATE_MICRO_SECS
@@ -244,7 +252,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
                         }
                         match tx.try_send(msg) {
                             Ok(_) => {
-                                if let Some(ref mut send_tx) = this.telemetry_send_tx {
+                                if let Some(ref mut send_tx) = this.telemetry.send_tx {
                                     if tx.local_index.lt(&MONITOR_NOT) {
                                         //only record those turned on (init)
                                         //this happy path where we already have our index
@@ -302,7 +310,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
             }
         }
 
-        if let Some(ref mut send_tx) = this.telemetry_send_tx {
+        if let Some(ref mut send_tx) = this.telemetry.send_tx {
             // switch to a new vector and send the old one
             // we always clear the count so we can confirm this in testing
 
@@ -342,7 +350,7 @@ pub(crate) async fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_L
             }
         }
 
-        if let Some(ref mut send_rx) = this.telemetry_send_rx {
+        if let Some(ref mut send_rx) = this.telemetry.send_rx {
             if send_rx.count.iter().any(|x| !x.is_zero()) {
 
                 //we only send the result if we have a context, ie a graph we are monitoring
@@ -397,50 +405,58 @@ pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_unit
 }
 
 
-pub(crate) async fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: usize>(this: & LocalMonitor<RX_LEN, TX_LEN>) {
+pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: usize>(
+    ident: ActorIdentity,
+     telemetry_state: Option<SteadyTelemetryActorSend>,
+     telemetry_send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
+     telemetry_send_rx: Option<SteadyTelemetrySend<RX_LEN>>
+              ) {
+
         // send the last data before this struct is dropped.
 
         #[cfg(debug_assertions)]
         trace!("start last send of all local telemetry");
+        abstract_executor::block_on(
+            async move {
+            if let Some(mut actor_status) = telemetry_state {
+                let mut status = actor_status.status_message();
+                if let Some(mut tx) = actor_status.tx.try_lock() {
+                    let needs_to_be_closed = tx.make_closed.is_some();
+                    if needs_to_be_closed {
+                        status.bool_stop = true;
+                        let _ = tx.send_async(ident, status, SendSaturation::IgnoreInRelease).await;
+                        tx.mark_closed(); //signal that what you may see is all there will be
+                        tx.wait_empty().await;
+                    };
+                } else {
+                    error!("unable to get lock");//should not happen
+                };
+            }
 
-        if this.is_in_graph() {
-            //mark all 3 closed and wait for them to empty
-            join!(
-                    async {if let Some(ref actor_status) = this.telemetry_state {
-                            {
-                                let mut tx = actor_status.tx.lock().await;
-                                if !tx.make_closed.is_some() {
-                                    let mut status = actor_status.status_message().clone();
-                                    status.bool_stop = true;
-                                    let _ = tx.send_async(this.ident, status, SendSaturation::IgnoreInRelease).await;
-                                    tx.mark_closed(); //signal that what you may see is all there will be
-                                    tx.wait_empty().await;
-                                }
-                            }
-                    }},
-                    async {if let Some(ref send_tx) = this.telemetry_send_tx {
-                         let mut tx = send_tx.tx.lock().await;
-                         if !tx.make_closed.is_some() {
-                            if send_tx.count.iter().any(|x| !x.is_zero()) {
-                               let _ = tx.send_async(this.ident,send_tx.count,SendSaturation::IgnoreInRelease).await;
-                            }
-                            tx.mark_closed(); //signal that what you may see is all there will be
-                            tx.wait_empty().await;
-                        }
-                    }},
-                    async {if let Some(ref send_rx) = this.telemetry_send_rx {
-                        let mut rx = send_rx.tx.lock().await;
-                        if !rx.make_closed.is_some() {
-                            if send_rx.count.iter().any(|x| !x.is_zero()) {
-                               let _ = rx.send_async(this.ident, send_rx.count,SendSaturation::IgnoreInRelease).await;
-                            }
-                            rx.mark_closed(); //signal that what you may see is all there will be
-                            rx.wait_empty().await;
-                        }
-                    }}
-                );
+            if let Some(ref send_tx) = telemetry_send_tx {
+                let mut tx = send_tx.tx.lock().await;
+                if !tx.make_closed.is_some() {
+                    if send_tx.count.iter().any(|x| !x.is_zero()) {
+                        let _ = tx.send_async(ident, send_tx.count, SendSaturation::IgnoreInRelease).await;
+                    }
+                    tx.mark_closed(); //signal that what you may see is all there will be
+                    tx.wait_empty().await;
+                }
+            }
 
-        }
+            if let Some(ref send_rx) = telemetry_send_rx {
+                let mut rx = send_rx.tx.lock().await;
+                if !rx.make_closed.is_some() {
+                    if send_rx.count.iter().any(|x| !x.is_zero()) {
+                        let _ = rx.send_async(ident, send_rx.count, SendSaturation::IgnoreInRelease).await;
+                    }
+                    rx.mark_closed(); //signal that what you may see is all there will be
+                    rx.wait_empty().await;
+                }
+            }
+        });
+
+
     #[cfg(debug_assertions)]
     trace!("send of all local telemetry complete");
 

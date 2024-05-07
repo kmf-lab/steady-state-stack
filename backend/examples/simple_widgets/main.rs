@@ -127,27 +127,27 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
 
         base_actor_builder.with_name("generator")
-             .build_with_exec( move |context| actor::data_generator::run(context
+             .build_spawn( move |context| actor::data_generator::run(context
                                                                      , change_rx.clone()
                                                                      , generator_tx.clone())
         );
 
         base_actor_builder.with_name("approval")
-             .build_with_exec( move |context| actor::data_approval::run(context
-                                                              , generator_rx.clone()
-                                                              , consumer_tx.clone()
-                                                              , failure_tx.clone()   )
+             .build_spawn( move |context| actor::data_approval::run(context
+                                                                    , generator_rx.clone()
+                                                                    , consumer_tx.clone()
+                                                                    , failure_tx.clone()   )
         );
 
         base_actor_builder.with_name("feedback")
-             .build_with_exec( move |context| actor::data_feedback::run(context
-                                                              , failure_rx.clone()
-                                                              , change_tx.clone() )
+             .build_spawn( move |context| actor::data_feedback::run(context
+                                                                    , failure_rx.clone()
+                                                                    , change_tx.clone() )
             );
 
        base_actor_builder.with_name("consumer")
-            .build_with_exec( move |context| actor::data_consumer::run(context
-                                                        , consumer_rx.clone() )
+            .build_spawn( move |context| actor::data_consumer::run(context
+                                                                   , consumer_rx.clone() )
             );
     graph
 }

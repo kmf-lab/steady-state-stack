@@ -23,12 +23,12 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    let count = rx.capacity().clone()/3;
+    let count = rx.capacity().clone()/4;
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()   ) {
 
         wait_for_all_or_proceed_upon!(
-            monitor.wait_periodic(Duration::from_millis(40)),
+            monitor.wait_periodic(Duration::from_millis(20)),
             monitor.wait_avail_units(&mut rx,count),
             monitor.wait_vacant_units_bundle(&mut tx,1,1)
         ).await;
@@ -44,14 +44,16 @@ async fn single_iteration<const GIRTH:usize>(monitor: &mut LocalMonitor<1, GIRTH
                                              , block_size: u16
                                              , mut rx: &mut MutexGuard<'_, Rx<Packet>>
                                              , tx: &mut Vec<MutexGuard<'_, Tx<Packet>>>) {
-    while let Some(peek_packet_ref) = monitor.try_peek(&mut rx) {
-        let index = ((peek_packet_ref.route / block_size) as usize) % tx.len();
 
-        if true {
-            if let Some(t) = monitor.try_take(&mut rx) {
-                let _ = monitor.send_async(&mut tx[index], t, SendSaturation::IgnoreAndWait).await;
-            }
-        } else {
+    if true {
+        while let Some(t) = monitor.try_take(&mut rx) {
+            let index = ((t.route / block_size) as usize) % tx.len();
+            let _ = monitor.send_async(&mut tx[index], t, SendSaturation::IgnoreAndWait).await;
+
+        }
+    } else {
+        while let Some(peek_packet_ref) = monitor.try_peek(&mut rx) {
+            let index = ((peek_packet_ref.route / block_size) as usize) % tx.len();
             //this unused block shows how you can peek and do processing then send
             //so you can ensure no packet is ever lost even upon panic.
             //NOTE: this adds cost due to the required clone()
@@ -60,9 +62,9 @@ async fn single_iteration<const GIRTH:usize>(monitor: &mut LocalMonitor<1, GIRTH
             let consumed = monitor.try_take(&mut rx);
             assert!(consumed.is_some());
         }
-
-        monitor.relay_stats_smartly().await;
     }
+    monitor.relay_stats_smartly().await;
+
 }
 
 

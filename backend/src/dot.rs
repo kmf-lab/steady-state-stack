@@ -424,7 +424,9 @@ impl FrameHistory {
             .open(&path)?;
 
         let h = Handle::<File>::new(file)?;
-        nuclei::spawn(Self::all_to_file_async(h, data)).await
+        Self::all_to_file_async(h, data).await
+
+        //nuclei::spawn(Self::all_to_file_async(h, data)).await
 
     }
 
@@ -436,12 +438,14 @@ impl FrameHistory {
                             .open(&path)?;
 
                     let h = Handle::<File>::new(file)?;
-                    nuclei::spawn(Self::all_to_file_async(h, data)).await
+                    Self::all_to_file_async(h, data).await
+
+        //nuclei::spawn(Self::all_to_file_async(h, data)).await
 
     }
     pub(crate) async fn all_to_file_async(mut h: Handle<File>, data: BytesMut) -> Result<(), std::io::Error> {
-        h.write_all(data.as_ref()).await?;
-        Handle::<File>::flush(&mut h).await?;
+        h.write_all(data.as_ref()).await?; //TODO: do we need to wait on this? only for shutodwn!
+        Handle::<File>::flush(&mut h).await?; //TODO: review if this is needed.
         Ok(())
     }
 

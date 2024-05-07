@@ -37,7 +37,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     while monitor.is_running(&mut || tx.mark_closed()) {
 
         let _clean = wait_for_all!(
-            monitor.wait_periodic(Duration::from_millis(5)),
+            monitor.wait_periodic(Duration::from_micros(2500)),
             monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH)).await;
 
         single_iteration(&mut monitor, &mut buffers, &mut tx, limit);

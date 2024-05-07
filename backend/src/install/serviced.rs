@@ -12,7 +12,7 @@ use nuclei::{drive, Handle};
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 #[allow(unused_imports)]
 use std::fs::{create_dir_all, File, OpenOptions};
-use bastion::run;
+use crate::abstract_executor;
 use crate::dot::FrameHistory;
 
 #[derive(Clone)]
@@ -278,10 +278,15 @@ WantedBy={}
 
         info!("write service content to file: {}",service_content);
 
-        match run!(FrameHistory::truncate_file((&self.service_file_name).into(), service_content.as_bytes().into())) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e.to_string())
-        }
+        let filename = (&self.service_file_name).into();
+        abstract_executor::block_on(
+            async move {
+                match FrameHistory::truncate_file(filename, service_content.as_bytes().into()).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(e.to_string())
+                }
+            }
+        )
     }
 
 }

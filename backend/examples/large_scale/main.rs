@@ -4,8 +4,9 @@ use std::thread::sleep;
 use structopt::*;
 use log::*;
 use args::Args;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use steady_state::*;
+use steady_state::actor_builder::ActorGroup;
 
 
 // here are the actors that will be used in the graph.
@@ -44,9 +45,13 @@ fn main() {
     if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
-
+   // let start = Instant::now();
     let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
+    //println!("graph built in {:?}", start.elapsed());
+
     graph.start();
+   // println!("graph started in {:?}", start.elapsed());
+
 
     {   //remove this block to run forever.
         sleep(Duration::from_secs(opt.duration));
@@ -79,8 +84,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p20()),AlertColor::Yellow)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p30()),AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p40()),AlertColor::Red)
-
-                            .with_capacity(800);
+                            .with_capacity(2400);
 
     let base_actor_builder = graph
                             .actor_builder()
@@ -94,19 +98,20 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
             base_actor_builder
                 .with_name("generator")
-                .build_with_exec(
+                .build_spawn(
                        move |context| actor::data_generator::run(context
                                                   , btx.clone()
                        )
                 );
 
+
         for x in 0..LEVEL_1 {
+
             let local_rx = brx[x].clone();
             let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_2>();
                 base_actor_builder
-                    .with_name("routerA")
-                    .with_name_suffix(x)
-                    .build_with_exec(
+                    .with_name_and_suffix("routerA",x)
+                    .build_spawn(
                            move |context| actor::data_router::run(context
                                                   , LEVEL_1
                                                   , local_rx.clone()
@@ -116,28 +121,28 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
 
             for y in 0..LEVEL_2 {
+
                 let local_rx = brx[y].clone();
                 let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_3>();
                 base_actor_builder
-                    .with_name("routerB")
-                    .with_name_suffix(y)
-                    .build_with_exec(move |context| actor::data_router::run(context
-                                                                            , LEVEL_1*LEVEL_2
-                                                                            , local_rx.clone()
-                                                                            , btx.clone()
+                    .with_name_and_suffix("routerB",y)
+                    .build_spawn(move |context| actor::data_router::run(context
+                                                                        , LEVEL_1*LEVEL_2
+                                                                        , local_rx.clone()
+                                                                        , btx.clone()
                                      )
                     );
 
                 for z in 0..LEVEL_3 {
+
                     let local_rx = brx[z].clone();
                     let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_4>();
                         base_actor_builder
-                            .with_name("routerC")
-                            .with_name_suffix(z)
-                            .build_with_exec(move |context| actor::data_router::run(context
-                                                                                    , LEVEL_1*LEVEL_2*LEVEL_3
-                                                                                    , local_rx.clone()
-                                                                                    , btx.clone()
+                            .with_name_and_suffix("routerC",z)
+                            .build_spawn(move |context| actor::data_router::run(context
+                                                                                , LEVEL_1*LEVEL_2*LEVEL_3
+                                                                                , local_rx.clone()
+                                                                                , btx.clone()
                                           )
                             );
 
@@ -145,59 +150,62 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                     if 1 == LEVEL_4 {
                         let local_rx = brx[0].clone();
                             base_actor_builder
-                                .with_name("user")
-                                .with_name_suffix(z)
-                                .build_with_exec(move |context| actor::data_user::run(context
-                                                                                      , local_rx.clone()
+                                .with_name_and_suffix("user",z)
+                                .build_spawn(move |context| actor::data_user::run(context
+                                                                                  , local_rx.clone()
                                              )
                                 );
 
 
                     } else {
+                        let mut group = ActorGroup::default();
                         for f in 0..LEVEL_4 {
+
                             let local_rx = brx[f].clone();
 
                             let (filter_tx, filter_rx) = base_channel_builder.build();
                                 base_actor_builder
-                                    .with_name("filter")
-                                    .with_name_suffix(z)
-                                    .build_with_exec(move |context| actor::data_process::run(context
-                                                                                             , local_rx.clone()
-                                                                                             , filter_tx.clone()
-                                                  )
+                                    .with_name_and_suffix("filter",z)
+                                    .build_join(move |context| actor::data_process::run(context
+                                                                                        , local_rx.clone()
+                                                                                        , filter_tx.clone()
+                                                  ), & mut group
                                     );
 
                             let (logging_tx, logging_rx) = base_channel_builder.build();
 
                                 base_actor_builder
-                                    .with_name("logger")
-                                    .with_name_suffix(z)
-                                    .build_with_exec(move |context| actor::data_process::run(context
-                                                                                             , filter_rx.clone()
-                                                                                             , logging_tx.clone()
-                                                  )
+                                    .with_name_and_suffix("logger",z)
+                                    .build_join(move |context| actor::data_process::run(context
+                                                                                        , filter_rx.clone()
+                                                                                        , logging_tx.clone()
+                                                  ), & mut group
                                     );
 
 
                             let (decrypt_tx, decrypt_rx) = base_channel_builder.build();
 
-                                base_actor_builder
-                                    .with_name("decrypt")
-                                    .with_name_suffix(z)
-                                    .build_with_exec(move |context| actor::data_process::run(context
-                                                                                             , logging_rx.clone()
-                                                                                             , decrypt_tx.clone()
-                                                  )
+
+
+                            base_actor_builder
+                                    .with_name_and_suffix("XXdecrypt",z)
+                                    .build_join(move |context| actor::data_process::run(context
+                                                                                        , logging_rx.clone()
+                                                                                        , decrypt_tx.clone()
+                                                    ), & mut group
                                     );
 
                                 base_actor_builder
-                                    .with_name("user")
-                                    .with_name_suffix(z)
-                                    .build_with_exec(move |context| actor::data_user::run(context
-                                                                                          , decrypt_rx.clone()
-                                                    )
+                                    .with_name_and_suffix("XXuser",z)
+                                    .build_join(move |context| actor::data_user::run(context
+                                                                                     , decrypt_rx.clone()
+                                                    ), & mut group
                                     );
+
+
+
                         }
+                              group.spawn();
                     }
                 }
             }

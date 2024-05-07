@@ -35,14 +35,7 @@ pub async fn run(context: SteadyContext
         buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
     };
 
-    //do avoid blocking code but if you must...
-    blocking!({
-        trace!("this is an example of blocking code");
-        //you could do some short blocking work as needed but
-        //while here the telemetry will not be sent and
-        //the actor will not check for shutdown
-        //NOTE: stay tuned for a better feature on the way.
-    });
+
 
     //predicate which affirms or denies the shutdown request
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() ) {

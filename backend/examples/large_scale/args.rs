@@ -12,19 +12,19 @@ pub struct Args {
     pub(crate) loglevel: String,
 
     #[structopt(short = "g", long = "gen-rate"
-    , default_value = "2000")] //1000 is one millisecond
+    , default_value = "1000")] //1000 is one millisecond
     pub(crate) gen_rate_micros: u64,
 
     #[structopt(short = "d", long = "duration", validator = run_duration_validator
-    , default_value = "60")]
+    , default_value = "300")]
     pub(crate) duration: u64,
 
 }
 
 fn run_duration_validator(val: String) -> Result<(), String> {
     match val.parse::<u64>() {
-        Ok(i) if i <= 240 => Ok(()),
-        _ => Err(String::from("run must be 120 or less.")),
+        Ok(i) if i <= 300 => Ok(()),
+        _ => Err(String::from("run must be 300 or less.")),
     }
 }
 fn log_variants() -> &'static [&'static str] {

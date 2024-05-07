@@ -1,8 +1,8 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.14"
-documentation = "https://docs.rs/steady_state/0.0.14/steady_state/"
-               #"https://docs.rs/crate/steady_state/0.0.14"  #debugging
+version = "0.0.15"
+documentation = "https://docs.rs/steady_state/0.0.15/steady_state/"
+               #"https://docs.rs/crate/steady_state/0.0.15"  #debugging
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -39,14 +39,18 @@ unwrap_used = "deny" # forbid use of unwrap
 #  cargo build --target thumbv6m-none-eabi
 #
 [features]
+#default = ["use_agnostic_lite"]
+
 "telemetry_server" = []
 "telemetry_history" = []
 
+# Define feature flags to control which runtime is used
+#use_agnostic_lite = ["agnostic-lite"]
+#use_nuclei = ["nuclei"]
 
 [package.metadata.docs.rs]
 features = []
 no-default-features = true
-
 # Ensure 'telemetry_server' is not listed here since docs.rs does not support it
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
@@ -57,7 +61,6 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
 # Common, the goal here is to have broad compatible eventually
-bastion          = "0.4.5"   # The telemetry framwork with supervisors to recover from panics
 ringbuf          = "0.4.0-rc.4"
 async-ringbuf    = "0.2.0-rc.5"
 log              = "0.4.21"  # common logging traits
@@ -79,14 +82,17 @@ bytes            = { version = "1.5.0", features = [] }
 time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] }
 futures-util     = "0.3.30" # for time formatting and supports no-std
 dirs             = "5.0.1"
+parking_lot      = "0.12.2"
+nuclei           = { version = "0.4.4",  features = ["async-global-executor","async-exec","iouring","attributes"] } # for proactor based IO also part of bastion
 
-#agnostik         = "0.2.3" #for new rewite goal to allow different async runtimes
-#lightproc        = "0.3.5" # for async task scheduling
+
+
 
 # still in progess, this is for distributed instances across nodes
 #rustdds          = "0.9.0" # 0.9.0 is broken use to use of io-extras v0.18.1
 
 stun-rs          = "0.1.8"
+#rayon = "1.10.0"
 
 #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
@@ -135,11 +141,10 @@ color-eyre       = "0.6.3"   # for better error messages
 tide             = "0.17.0-beta.1" # for http server
 structopt        = "0.3.26"  # CLI parse for type safe arguments
 structopt-derive = "0.4.18"   # simplify the writing of async recursive functions
-nuclei           = { version = "0.4.4", features = ["async-exec","iouring","attributes"] } # for proactor based IO also part of bastion
 
 
 [dev-dependencies]
-async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
+#async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
 rand_distr       = "0.4.3" # for random number generation
 testcontainers   = "0.15.0" # for integration testing
 

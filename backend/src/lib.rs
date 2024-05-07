@@ -27,6 +27,7 @@ mod graph_testing;
 mod graph_liveliness;
 mod loop_driver;
 mod yield_now;
+mod abstract_executor;
 
 pub use graph_testing::GraphTestResult;
 pub use monitor::LocalMonitor;
@@ -42,6 +43,7 @@ pub use loop_driver::wrap_bool_future;
 
 
 use std::any::{Any, type_name};
+use std::cell::RefCell;
 
 
 use std::time::{Duration, Instant};
@@ -50,10 +52,11 @@ use std::time::{Duration, Instant};
 use std::collections::HashMap;
 
 use std::fmt::Debug;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex, MutexLockFuture};
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Sub};
 use std::future::ready;
 
 use std::thread::sleep;
@@ -68,16 +71,14 @@ use backtrace::Backtrace;
 
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use actor_builder::ActorBuilder;
-use crate::monitor::{ActorMetaData, ChannelMetaData, RxMetaData, TxMetaData};
+use crate::monitor::{ActorMetaData, ChannelMetaData, RxMetaData, SteadyTelemetry, TxMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
 use crate::util::steady_logging_init;// re-publish in public
 use futures::*; // Provides the .fuse() method
 
-// Re-exporting Bastion blocking for use in actors
-pub use bastion::blocking;
-pub use bastion::run;
-
+//TODO: we must export a macro for blocking calls as needed.
+//TODO: get big example to run.
 
 use futures::channel::oneshot;
 
@@ -86,6 +87,7 @@ use futures::select;
 use futures_timer::Delay;
 use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use futures_util::lock::MutexGuard;
+use nuclei::GlobalExecutorConfig;
 use crate::graph_testing::{SideChannel, SideChannelHub, SideChannelResponder};
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
@@ -112,8 +114,7 @@ pub fn steady_rx_bundle<T,const GIRTH:usize>(internal_array: [SteadyRx<T>;GIRTH]
 /// This is a convenience function that should be called at the beginning of main.
 pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
 
-    //TODO: should probably be its own init function, add some configs and a boolean to control this?
-    init_nuclei();
+
 
     steady_logging_init(loglevel)
 }
@@ -121,7 +122,7 @@ pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
 pub struct SteadyContext {
     pub(crate) ident: ActorIdentity,
     pub(crate) instance_id: u32,
-    pub(crate) ctx: Option<Arc<bastion::context::BastionContext>>,
+    pub(crate) is_in_graph: bool,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
@@ -324,7 +325,7 @@ impl SteadyContext {
 
          //trace!("into monitor {:?}",self.ident);
         //only build telemetry channels if this feature is enabled
-        let (telemetry_send_rx, telemetry_send_tx, telemetry_state) = if config::TELEMETRY_HISTORY || config::TELEMETRY_SERVER {
+        let (send_rx, send_tx, state) = if config::TELEMETRY_HISTORY || config::TELEMETRY_SERVER {
 
             let mut rx_meta_data = Vec::new();
             let mut rx_inverse_local_idx = [0; RX_LEN];
@@ -358,13 +359,13 @@ impl SteadyContext {
 
         // this is my fixed size version for this specific thread
         LocalMonitor::<RX_LEN, TX_LEN> {
-            telemetry_send_rx,
-            telemetry_send_tx,
-            telemetry_state,
+            telemetry: SteadyTelemetry {
+                send_rx, send_tx, state,
+            },
             last_telemetry_send: Instant::now(),
             ident: self.ident,
             instance_id: self.instance_id,
-            ctx: self.ctx,
+            is_in_graph: self.is_in_graph,
             runtime_state: self.runtime_state,
             oneshot_shutdown: self.oneshot_shutdown,
             last_perodic_wait: Default::default(),
@@ -531,15 +532,19 @@ pub struct Graph  {
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
+    pub(crate) oneshot_startup_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     pub(crate) backplane: Arc<Mutex<Option<SideChannelHub>>>, //only used in testing
+    pub(crate) noise_threshold: Instant,
+
 }
 
 impl Graph {
 
     /// needed for testing only, this monitor assumes we are running without a full graph
     /// and will not be used in production
-    pub fn new_test_monitor(&mut self, name: & 'static str ) -> SteadyContext
+    pub fn new_test_monitor(&self, name: & 'static str ) -> SteadyContext
     {
+
         // assert that we are NOT in release mode
         assert!(cfg!(debug_assertions), "This function is only for testing");
 
@@ -548,8 +553,12 @@ impl Graph {
 
         let oneshot_shutdown = {
             let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
-            let mut one_shots = run!(self.oneshot_shutdown_vec.lock());
-            one_shots.push(send_shutdown_notice_to_periodic_wait);
+            let local_vec = self.oneshot_shutdown_vec.clone();
+            abstract_executor::block_on(
+                  async move {
+                      local_vec.lock().await.push(send_shutdown_notice_to_periodic_wait);
+                  }
+              );
             oneshot_shutdown
         };
         let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown));
@@ -559,7 +568,7 @@ impl Graph {
             channel_count,
             ident: ActorIdentity{name, id: self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst)},
             args: self.args.clone(),
-            ctx: None, //this is key, we are not running in a graph by design
+            is_in_graph: false, //this is key, we are not running in a graph by design
             actor_metadata: Arc::new(ActorMetaData::default()),
             all_telemetry_rx,
             runtime_state: self.runtime_state.clone(),
@@ -574,29 +583,6 @@ impl Graph {
 }
 
 
-fn init_nuclei() {
-    let nuclei_config = NucleiConfig {
-        iouring: IoUringConfiguration::interrupt_driven(1 << 6),
-        //iouring: IoUringConfiguration::kernel_poll_only(1 << 6),
-        //iouring: IoUringConfiguration::low_latency_driven(1 << 6),
-        //iouring: IoUringConfiguration::io_poll(1 << 6),
-    };
-    let _ = nuclei::Proactor::with_config(nuclei_config);
-
-    if cfg!(target_arch = "wasm32") {
-        //we can not write log files when in wasm
-    } else {
-        nuclei::spawn_blocking(|| {
-            nuclei::drive(async {
-                loop {
-                    sleep(Duration::from_secs(10));
-                    ready(()).await;
-                };
-            });
-        }).detach();
-    }
-
-}
 
 const MONITOR_UNKNOWN: usize = usize::MAX;
 const MONITOR_NOT: usize = MONITOR_UNKNOWN-1; //any value below this is a valid monitor index

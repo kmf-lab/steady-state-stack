@@ -1,26 +1,34 @@
 use std::any::Any;
 use std::error::Error;
 use std::future::Future;
+use std::pin::{pin, Pin};
 
-use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicU32, AtomicUsize};
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::thread::sleep;
 use std::time::{Duration, Instant};
-use bastion::{Bastion, run};
-use bastion::prelude::SupervisorRef;
+use core::default::Default;
+use std::task;
 
 use futures::channel::oneshot;
-use futures::channel::oneshot::Receiver;
+use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::lock::Mutex;
 use log::*;
+use futures_util::future::{BoxFuture, FusedFuture, select_all};
+use futures_util::stream::FuturesUnordered;
+use futures_util::StreamExt;
+use futures_util::task::{LocalSpawn, Spawn};
 
-use crate::{AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
+
+use crate::{abstract_executor, actor_builder, AlertColor, Graph, GraphLivelinessState, Metric, StdDev, SteadyContext, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, SideChannelHub};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
+use crate::telemetry::metrics_server;
 
-
-
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 
 #[derive(Clone)]
@@ -45,12 +53,135 @@ pub struct ActorBuilder {
     trigger_work: Vec<(Trigger<Work>,AlertColor)>,
     avg_mcpu: bool,
     avg_work: bool,
-    supervisor: SupervisorRef,
+    io_driver: bool,
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
+    oneshot_startup_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     backplane: Arc<Mutex<Option<SideChannelHub>>>,
 }
 
+#[derive(Default)]
+pub struct ActorGroup {
+    future_builder: Vec<Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>,bool) + Send >>,
+}
 
+impl ActorGroup {
+    pub(crate) fn add_actor<F, I>(&mut self, mut actor_startup_receiver: Option<Receiver<()>>, context_archetype: SteadyContextArchetype<I>)
+        where F: 'static + Future<Output=Result<(), Box<dyn Error>>> + Send
+            , I: 'static + Fn(SteadyContext) -> F + Send + Sync {
+
+        self.future_builder.push({
+            let context_archetype = context_archetype.clone();
+            Box::new(move || {
+                let boxed_future: BoxFuture<'static, Result<(), Box<dyn Error>>>  = Box::pin(build_actor_future( &mut actor_startup_receiver
+                                                                                                                , context_archetype.clone()));
+                (boxed_future, context_archetype.drive_io)
+            }) as Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>,bool) + Send>
+        });
+
+    }
+
+
+    pub fn spawn(mut self) {
+
+        let super_task = {
+            async move {
+                let mut actor_future_vec = Vec::with_capacity(self.future_builder.len());
+                let mut total_drive_io = false;
+
+                for f in &mut self.future_builder {
+                    let (future, drive_io) = f();
+                    total_drive_io |= drive_io;
+                    actor_future_vec.push(future);
+                }
+
+                loop {
+                    //this result is for panics.
+                    //panic will cause all the grouped actors under this thread to be restarted together.
+                    let result = catch_unwind(AssertUnwindSafe(|| {
+                        let (result, index, _remaining_futures) = if total_drive_io {
+                            nuclei::drive(select_all(&mut actor_future_vec))
+                        } else {
+                            nuclei::block_on(select_all(&mut actor_future_vec))
+                        };
+                        if let Err(e) = result {
+                            error!("Actor {:?} error {:?}", index, e); //TODO: need ident for index.
+                            //rebuild the single actor which failed
+                            actor_future_vec[index] = self.future_builder[index]().0;
+                            true
+                        } else {
+                            //this actor was finished so remove it from the list
+                            actor_future_vec.remove(index);
+                            !actor_future_vec.is_empty()  // true we keep running
+                        }
+                    }));
+                    match result {
+                        Ok(true) => {
+                            //keep running the loop
+                        },
+                        Ok(false) => {
+                            //trace!("Actor {:?} finished ", name);
+                            break; //exit the loop we are all done
+                        },
+                        Err(e) => {
+                            //Actor Panic
+                            error!("Actor panic {:?}",  e);
+                            actor_future_vec.clear();
+                            //we must rebuild all actors since we do not know what happened to the thread
+                            //EVEN those finished will be restarted.
+                            for f in &mut self.future_builder {
+                                let (future, drive_io) = f();
+                                total_drive_io |= drive_io;
+                                actor_future_vec.push(future);
+                            }
+                            //continue running
+                        }
+                    }
+
+                }
+            }
+        };
+        abstract_executor::spawn_detached(super_task);
+
+    }
+
+
+}
+
+struct SteadyContextArchetype<I> {
+
+    build_actor_exec: Arc<I>,
+    runtime_state: Arc<RwLock<GraphLiveliness>>,
+    channel_count: Arc<AtomicUsize>,
+    ident: ActorIdentity,
+    args: Arc<Box<dyn Any + Send + Sync>>,
+    all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
+    actor_metadata: Arc<ActorMetaData>,
+    oneshot_shutdown_vec: Arc<Mutex<Vec<Sender<()>>>>,
+    oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
+    node_tx_rx: Option<Arc<Mutex<SideChannel>>>,
+    instance_id: Arc<AtomicU32>,
+    drive_io: bool,
+}
+
+impl<I> Clone for SteadyContextArchetype<I>
+{
+    fn clone(&self) -> Self {
+        SteadyContextArchetype {
+            build_actor_exec: self.build_actor_exec.clone(),
+            runtime_state: self.runtime_state.clone(),
+            channel_count: self.channel_count.clone(),
+            ident: self.ident.clone(),
+            args: self.args.clone(),
+            all_telemetry_rx: self.all_telemetry_rx.clone(),
+            actor_metadata: self.actor_metadata.clone(),
+            oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
+            oneshot_shutdown: self.oneshot_shutdown.clone(),
+            node_tx_rx: self.node_tx_rx.clone(),
+            instance_id: self.instance_id.clone(),
+            drive_io: self.drive_io
+        }
+    }
+}
 
 impl ActorBuilder {
 
@@ -66,9 +197,6 @@ impl ActorBuilder {
     pub fn new( graph: &mut Graph) -> ActorBuilder {
 
 
-        let default_super = Bastion::supervisor(|supervisor| supervisor.with_strategy(bastion::supervisor::SupervisionStrategy::OneForOne))
-                            .expect("Internal error, Check if OneForOne is no longer supported?");
-
         ActorBuilder {
             backplane: graph.backplane.clone(),
             name: "",
@@ -78,18 +206,19 @@ impl ActorBuilder {
             telemetry_tx: graph.all_telemetry_rx.clone(),
             channel_count: graph.channel_count.clone(),
             runtime_state: graph.runtime_state.clone(),
-            supervisor: default_super,
             refresh_rate_in_bits: 6, // 1<<6 == 64
             window_bucket_in_bits: 5, // 1<<5 == 32
             oneshot_shutdown_vec: graph.oneshot_shutdown_vec.clone(),
-            percentiles_mcpu: Vec::new(),
-            percentiles_work: Vec::new(),
-            std_dev_mcpu: Vec::new(),
-            std_dev_work: Vec::new(),
-            trigger_mcpu: Vec::new(),
-            trigger_work: Vec::new(),
+            oneshot_startup_vec: graph.oneshot_startup_vec.clone(),
+            percentiles_mcpu: Vec::with_capacity(0),
+            percentiles_work: Vec::with_capacity(0),
+            std_dev_mcpu: Vec::with_capacity(0),
+            std_dev_work: Vec::with_capacity(0),
+            trigger_mcpu: Vec::with_capacity(0),
+            trigger_work: Vec::with_capacity(0),
             avg_mcpu: false,
             avg_work: false,
+            io_driver: false,
             usage_review: false,
 
         }
@@ -167,6 +296,13 @@ impl ActorBuilder {
         result
     }
 
+    pub fn with_name_and_suffix(&self, name: &'static str, suffix: usize) -> Self {
+        let mut result = self.clone();
+        result.name = name;
+        result.suffix = Some(suffix);
+        result
+    }
+
     /// Configures the actor to monitor a specific CPU usage percentile for performance analysis.
     ///
     /// # Arguments
@@ -216,6 +352,12 @@ impl ActorBuilder {
     pub fn with_avg_work(&self) -> Self {
         let mut result = self.clone();
         result.avg_work = true;
+        result
+    }
+
+    pub fn with_io_driver(&self) -> Self {
+        let mut result = self.clone();
+        result.io_driver = true;
         result
     }
 
@@ -301,113 +443,191 @@ impl ActorBuilder {
     /// # Arguments
     ///
     /// * `exec` - The execution logic for the actor.
-    pub fn build_with_exec<F,I>(self, build_actor_exec: I)
+    pub fn build_spawn<F,I>(self, build_actor_exec: I)
         where
-            I: Fn(SteadyContext) -> F + Send + Sync + 'static,
+            I: Fn(SteadyContext) -> F + 'static + Sync + Send ,
             F: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
     {
-        let id                 = self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let name               = self.name;
-        let immutable_identity = ActorIdentity { id, name };
-        let immutable_actor_metadata = self.build_actor_metadata(id, self.name);
-        let telemetry_tx  = self.telemetry_tx;
-        let channel_count = self.channel_count;
-        let runtime_state = self.runtime_state;
-        let args          = self.args;
+        let mut actor_startup_receiver  = Some(Self::build_startup_oneshot(self.oneshot_startup_vec.clone()));
+        let context_archetype = self.single_actor_exec_archetype(build_actor_exec);
 
-        //error!("starting {:?} ",immutable_identity);
-        let immutable_node_tx_rx:Option<Arc<Mutex<SideChannel>>> = run!(
-            async {
-                    let mut backplane = self.backplane.lock().await;
-                    //If the backplane is enabled then register every node for use
-                    if let Some(pb) = &mut *backplane {
-                                                let max_channel_capacity = 8;
-                                                pb.register_node(name,max_channel_capacity).await;
-                                                pb.node_tx_rx(name)
-                                         } else {
-                                                None
-                                         }
-            }
+        abstract_executor::spawn_detached(
+            Box::pin( async move {
+                loop {
+                    let future = build_actor_future(  &mut actor_startup_receiver
+                                                      , context_archetype.clone());
+
+                    let result = catch_unwind(AssertUnwindSafe(|| {
+                        if context_archetype.drive_io {
+                            nuclei::drive(future)
+                        } else {
+                            nuclei::block_on(future)
+                        }
+                    }));
+
+                    match result {
+                        Ok(_) => {
+                            //trace!("Actor {:?} finished ", name);
+                            break; //exit the loop we are all done
+                        },
+                        Err(e) => {
+                            //Panic or an actor Error, log and continue in the loop
+                            error!("{:?} {:?}", context_archetype.ident, e);
+                        }
+                    }
+                }
+            })
         );
+    }
 
+
+    pub fn build_join<F,I>(self, build_actor_exec: I, target: &mut ActorGroup)
+        where
+            I: Fn(SteadyContext) -> F + 'static + Sync + Send ,
+            F: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
+    {
+        let actor_startup_receiver  = Some(Self::build_startup_oneshot(self.oneshot_startup_vec.clone()));
+        target.add_actor(actor_startup_receiver, self.single_actor_exec_archetype(build_actor_exec));
+    }
+
+
+
+    fn single_actor_exec_archetype<F,I>(self, build_actor_exec: I) -> SteadyContextArchetype<I>
+        where
+            I: Fn(SteadyContext) -> F + 'static + Sync + Send ,
+            F: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
+    {
+
+        let name                     = self.name;
+        let telemetry_tx             = self.telemetry_tx.clone();
+        let channel_count            = self.channel_count.clone();
+        let runtime_state            = self.runtime_state.clone();
+        let args                     = self.args.clone();
+        let oneshot_shutdown_vec     = self.oneshot_shutdown_vec.clone();
+        let backplane                = self.backplane.clone();
+        let drive_io                 = self.io_driver;
+
+        let id                       = self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let immutable_identity       = ActorIdentity { id, name };
+        //info!(" Actor {:?} defined ", immutable_identity);
+        let immutable_actor_metadata = self.build_actor_metadata(id, name).clone();
+
+
+        /////////////////////////////////////////////
+        // this is used only when run under testing
+        ////////////////////////////////////////////
+        let immutable_node_tx_rx = abstract_executor::block_on( async move {
+            let mut backplane = backplane.lock().await;
+            //If the backplane is enabled then register every node name for use
+            if let Some(pb) = &mut *backplane {
+                let max_channel_capacity = 8;
+                //TODO: name may not be good enough here and may need prefix as well.
+                pb.register_node(name, max_channel_capacity);
+                pb.node_tx_rx(name)
+            } else {
+                None
+            }
+        });
+        /////////////////////////////////////////////
+
+        ////////////////////////////////////////////
+        // before starting the actor setup our shutdown oneshot
+        ////////////////////////////////////////////
         //this single one shot is kept no matter how many times actor is restarted
         let immutable_oneshot_shutdown = {
-                let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
-                let mut one_shots = run!(self.oneshot_shutdown_vec.lock());
-                one_shots.push(send_shutdown_notice_to_periodic_wait);
-                Arc::new(Mutex::new(oneshot_shutdown))
-            };
-
-
+            let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
+            let oneshot_shutdown_vec = oneshot_shutdown_vec.clone();
+            abstract_executor::block_on( async move {
+                let mut v = oneshot_shutdown_vec.lock().await;
+                v.push(send_shutdown_notice_to_periodic_wait);
+            });
+            Arc::new(Mutex::new(oneshot_shutdown))
+        };
+        ////////////////////////////////////////////
         let restart_counter = Arc::new(AtomicU32::new(0));
 
-        let _ = self.supervisor.children(|children| {
-
-            let actor_start_time = Instant::now();
-
-            children
-                .with_name(name)
-                .with_exec(move |ctx| {
-                        //inc our restart count here, first value seen is zero
-                        let instance_id = restart_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-
-                        let instance_context = SteadyContext {
-                            runtime_state: runtime_state.clone(),
-                            channel_count: channel_count.clone(),
-                            ident: immutable_identity,
-                            instance_id,
-                            ctx: Some(Arc::new(ctx)),
-                            args: args.clone(),
-                            all_telemetry_rx: telemetry_tx.clone(),
-                            actor_metadata: immutable_actor_metadata.clone(),
-                            oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
-                            oneshot_shutdown: immutable_oneshot_shutdown.clone(),
-                            last_periodic_wait: Default::default(),
-                            node_tx_rx: immutable_node_tx_rx.clone(),
-                            actor_start_time
-                        };
-                        let future = build_actor_exec(instance_context);
-
-                        //trace!("built future for {:?} ",immutable_identity);
-                        async move {
-
-                            match future.await { //run actor
-                                Ok(_) => {
-                                    trace!("Actor {:?} finished ", name);
-                                },
-                                Err(e) => {
-                                    //NOTE: upon error return we restart the actor
-                                    error!("{:?}", e); //we log the error here
-                                    return Err(()); //bastion can not accept error details
-                                }
-                            }
-                            Ok(())
-                        }
-                })
-        });
+        SteadyContextArchetype {
+            runtime_state: runtime_state.clone(),
+            channel_count: channel_count.clone(),
+            ident: immutable_identity.clone(),
+            args: args.clone(),
+            all_telemetry_rx: telemetry_tx.clone(),
+            actor_metadata: immutable_actor_metadata.clone(),
+            oneshot_shutdown_vec: oneshot_shutdown_vec.clone(),
+            oneshot_shutdown: immutable_oneshot_shutdown.clone(),
+            node_tx_rx: immutable_node_tx_rx.clone(),
+            build_actor_exec: Arc::new(build_actor_exec),
+            instance_id: restart_counter,
+            drive_io: drive_io
+        }
 
     }
+
+
+
+
+    fn build_startup_oneshot(oneshot_startup_vec: Arc<Mutex<Vec<Sender<()>>>>) -> Receiver<()> {
+        let (actor_startup_sender, actor_startup_receiver) = oneshot::channel();
+        //we do not normally expect this to not get the lock
+        if let Some(mut v) = oneshot_startup_vec.clone().try_lock() { //fast path
+            v.push(actor_startup_sender);
+        } else {
+            abstract_executor::block_on(async move {
+                oneshot_startup_vec.clone().lock().await.push(actor_startup_sender);
+            });
+        }
+        actor_startup_receiver
+    }
+
 
     fn build_actor_metadata(&self, id: usize, name: &'static str) -> Arc<ActorMetaData> {
         Arc::new(
             ActorMetaData {
                 id,
                 name,
-                avg_mcpu: self.avg_mcpu,
-                avg_work: self.avg_work,
+                avg_mcpu: self.avg_mcpu.clone(),
+                avg_work: self.avg_work.clone(),
                 percentiles_mcpu: self.percentiles_mcpu.clone(),
                 percentiles_work: self.percentiles_work.clone(),
                 std_dev_mcpu: self.std_dev_mcpu.clone(),
                 std_dev_work: self.std_dev_work.clone(),
                 trigger_mcpu: self.trigger_mcpu.clone(),
                 trigger_work: self.trigger_work.clone(),
-                usage_review: self.usage_review,
-                refresh_rate_in_bits: self.refresh_rate_in_bits,
-                window_bucket_in_bits: self.window_bucket_in_bits,
+                usage_review: self.usage_review.clone(),
+                refresh_rate_in_bits: self.refresh_rate_in_bits.clone(),
+                window_bucket_in_bits: self.window_bucket_in_bits.clone(),
             }
         )
     }
+}
+
+
+pub(crate) fn build_actor_future<'a, F, I>(
+    actor_startup_receiver: &mut Option<Receiver<()>>
+    , builder_source: SteadyContextArchetype<I>) -> F
+    where I: Fn(SteadyContext) -> F + 'static + Sync + Send,
+          F: Future<Output=Result<(), Box<dyn Error>>> + Send + 'static {
+
+    if let Some(actor_startup_receiver_internal) = actor_startup_receiver.take() {
+        //no start signal yet so we block until we get it
+        let _ = abstract_executor::block_on(actor_startup_receiver_internal);
+    }
+    (builder_source.build_actor_exec)(SteadyContext {
+        runtime_state: builder_source.runtime_state,
+        channel_count: builder_source.channel_count,
+        ident: builder_source.ident,
+        args: builder_source.args,
+        all_telemetry_rx: builder_source.all_telemetry_rx,
+        actor_metadata: builder_source.actor_metadata,
+        oneshot_shutdown_vec: builder_source.oneshot_shutdown_vec,
+        oneshot_shutdown: builder_source.oneshot_shutdown,
+        node_tx_rx: builder_source.node_tx_rx,
+        instance_id: builder_source.instance_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        last_periodic_wait: Default::default(),
+        is_in_graph: true,
+        actor_start_time: Instant::now()
+    })
+
 }
 
 impl Metric for Work {}

@@ -19,18 +19,18 @@ pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>
 
 use ringbuf::traits::Split;
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
-use bastion::run;
+
 use futures::channel::oneshot;
 #[allow(unused_imports)]
 use log::*;
 use ringbuf::storage::Heap;
-use crate::{AlertColor, config, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger, Tx};
+use crate::{abstract_executor, AlertColor, config, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger, Tx};
 use crate::actor_builder::Percentile;
 use crate::monitor::ChannelMetaData;
 
-
 #[derive(Clone)]
 pub struct ChannelBuilder {
+    noise_threshold: Instant,
     channel_count: Arc<AtomicUsize>,
     capacity: usize,
     labels: &'static [& 'static str],
@@ -70,10 +70,12 @@ impl ChannelBuilder {
 
 
     pub(crate) fn new(channel_count: Arc<AtomicUsize>,
-                      oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>
+                      oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
+                      noise_threshold: Instant
      ) -> ChannelBuilder {
 
         ChannelBuilder {
+            noise_threshold,
             channel_count,
             capacity: DEFAULT_CAPACITY,
             labels: &[],
@@ -84,15 +86,15 @@ impl ChannelBuilder {
 
             line_expansion: false,
             show_type: false,
-            percentiles_filled: Vec::new(),
-            percentiles_rate: Vec::new(),
-            percentiles_latency: Vec::new(),
-            std_dev_filled: Vec::new(),
-            std_dev_rate: Vec::new(),
-            std_dev_latency: Vec::new(),
-            trigger_rate: Vec::new(),
-            trigger_filled: Vec::new(),
-            trigger_latency: Vec::new(),
+            percentiles_filled: Vec::with_capacity(0),
+            percentiles_rate: Vec::with_capacity(0),
+            percentiles_latency: Vec::with_capacity(0),
+            std_dev_filled: Vec::with_capacity(0),
+            std_dev_rate: Vec::with_capacity(0),
+            std_dev_latency: Vec::with_capacity(0),
+            trigger_rate: Vec::with_capacity(0),
+            trigger_filled: Vec::with_capacity(0),
+            trigger_latency: Vec::with_capacity(0),
             avg_filled: false,
             avg_rate: false,
             avg_latency: false,
@@ -486,29 +488,42 @@ impl ChannelBuilder {
         let rb = AsyncRb::<ChannelBacking<T>>::new(self.capacity);
         let (tx, rx) = rb.split();
 
-        let (sender_tx, receiver_tx) = oneshot::channel();
-        let (sender_rx, receiver_rx) = oneshot::channel();
-        {
-            let mut oneshots = run!(self.oneshot_shutdown_vec.lock());
-            oneshots.push(sender_tx);
-            oneshots.push(sender_rx);
-        }
-
         //the number of bytes consumed by T
         let type_byte_count = std::mem::size_of::<T>(); //TODO: new feature to add
         let type_string_name = std::any::type_name::<T>();
         let channel_meta_data = Arc::new(self.to_meta_data(type_string_name,type_byte_count));
 
+        let (sender_tx, receiver_tx) = oneshot::channel();
+        let (sender_rx, receiver_rx) = oneshot::channel();
+        {
+              // this is Arc<Mutex<Vec<oneshot::Sender<()>>>>
+            if let Some(mut osv) = self.oneshot_shutdown_vec.try_lock() { //fast path
+                osv.push(sender_tx);
+                osv.push(sender_rx);
+            } else {
+                //this slow path is primarily for spin up of telemetry channels after start
+                //error!("slow path {} {}", type_string_name, channel_meta_data.id);
+                let osv_arc = self.oneshot_shutdown_vec.clone();
+                let oneshots_future = async move { //busy path
+                    let mut oneshots = osv_arc.lock().await;
+                    oneshots.push(sender_tx);
+                    oneshots.push(sender_rx);
+                };
+                abstract_executor::block_on(oneshots_future);
+            };
+        }
+
         let (sender_is_closed, receiver_is_closed) = oneshot::channel();
         let tx_version = Arc::new(AtomicU32::new(Self::UNSET)); //Const indicating not yet set
         let rx_version = Arc::new(AtomicU32::new(Self::UNSET)); //Const indicating not yet set
+        let noise_threshold = self.noise_threshold;
 
         (  Arc::new(Mutex::new(Tx {
             tx
             , channel_meta_data: channel_meta_data.clone()
             , local_index: MONITOR_UNKNOWN
             , make_closed: Some(sender_is_closed)
-            , last_error_send: Instant::now().sub(Duration::from_secs(60))
+            , last_error_send: noise_threshold
             , oneshot_shutdown: receiver_tx
             , rx_version: rx_version.clone()
             , tx_version: tx_version.clone()

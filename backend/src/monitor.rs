@@ -1,12 +1,13 @@
 use std::any::{type_name};
+use std::cell::RefCell;
 
 #[cfg(test)]
 use std::collections::HashMap;
 
 use std::ops::*;
 use std::time::{Duration, Instant};
-
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, PoisonError};
+use std::sync::RwLock;
 use futures::lock::Mutex;
 #[allow(unused_imports)]
 use log::*; //allowed for all modules
@@ -20,7 +21,7 @@ use std::process::exit;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use std::thread;
 use std::thread::ThreadId;
-use bastion::run;
+
 use futures::channel::oneshot;
 
 use futures::FutureExt;
@@ -62,7 +63,6 @@ pub(crate) const CALL_SINGLE_WRITE: usize=2;
 pub(crate) const CALL_BATCH_WRITE: usize=3;
 pub(crate) const CALL_OTHER: usize=4;
 pub(crate) const CALL_WAIT: usize=5;
-
 
 pub struct SteadyTelemetryActorSend {
     pub(crate) tx: SteadyTx<ActorStatus>,
@@ -133,31 +133,38 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
     fn is_empty_and_closed(&self) -> bool {
 
-        run!(async move {
-
             let s = if let Some(ref send) = &self.send {
-                let mut rx = send.rx.lock().await;
-                rx.is_empty() && rx.is_closed()
+                if let Some(mut rx) = send.rx.try_lock() {
+                    rx.is_empty() && rx.is_closed()
+                } else {
+                    false
+                }
             } else {
                 true
             };
 
             let a = if let Some(ref actor) = &self.actor {
-                let mut rx = actor.lock().await;
-                rx.is_empty() && rx.is_closed()
+                if let Some(mut rx) = actor.try_lock() {
+                    rx.is_empty() && rx.is_closed()
+                } else {
+                    false
+                }
             } else {
                 true
             };
 
             let t = if let Some(ref take) = &self.take {
-                let mut rx = take.rx.lock().await;
-                rx.is_empty() && rx.is_closed()
+                if let Some(mut rx) = take.rx.try_lock() {
+                    rx.is_empty() && rx.is_closed()
+                } else {
+                        false
+                }
             } else {
                 true
             };
 
             s&a&t
-        })
+
     }
     
     fn actor_metadata(&self) -> Arc<ActorMetaData> {
@@ -201,9 +208,12 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
 
             let mut buffer = [ActorStatus::default();config::CONSUMED_MESSAGES_BY_COLLECTOR +1];
             let count = {
-                let mut guard = bastion::run!(act.lock());
-                let act = guard.deref_mut();
-                act.take_slice( & mut buffer)
+                if let Some(mut guard) = act.try_lock() {
+                    let act = guard.deref_mut();
+                    act.take_slice( & mut buffer)
+                } else {
+                    0
+                }
             };
 
             let mut await_total_ns:       u64 = 0;
@@ -249,9 +259,12 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             let mut buffer = [[0usize;RXL];config::CONSUMED_MESSAGES_BY_COLLECTOR +1];
 
             let count = {
-                let mut rx_guard = bastion::run!(take.rx.lock());
-                let rx = rx_guard.deref_mut();
-                rx.take_slice( & mut buffer)
+                if let Some(mut rx_guard) = take.rx.try_lock() {
+                    let rx = rx_guard.deref_mut();
+                    rx.take_slice( & mut buffer)
+                } else {
+                    0
+                }
             };
             let populated_slice = &buffer[0..count];
 
@@ -322,9 +335,12 @@ impl <const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL,TXL> {
             let mut buffer = [[0usize;TXL];config::CONSUMED_MESSAGES_BY_COLLECTOR +1];
 
             let count = {
-                let mut tx_guard = bastion::run!(send.rx.lock());
-                let tx = tx_guard.deref_mut();
-                tx.take_slice( & mut buffer)
+                if let Some(mut tx_guard) = send.rx.try_lock() {
+                    let tx = tx_guard.deref_mut();
+                    tx.take_slice(&mut buffer)
+                } else {
+                    0
+                }
             };
             let populated_slice = &buffer[0..count];
 
@@ -592,20 +608,34 @@ pub(crate) fn find_my_index<const LEN:usize>(telemetry: &SteadyTelemetrySend<LEN
     idx
 }
 
+
 impl <const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
-    //if possible we never want to loose telemetry data so we try to flush it out
     fn drop(&mut self) {
-        run!(telemetry::setup::send_all_local_telemetry_async(self));
+        if self.is_in_graph {
+            //finish sending the last telemetry if we are in a graph & have monitoring
+            let mut tel = &mut self.telemetry;
+            send_all_local_telemetry_async(self.ident,
+                                           tel.state.take(),
+                                           tel.send_tx.take(),
+                                           tel.send_rx.take());
+        }
     }
+}
+
+
+pub(crate) struct SteadyTelemetry<const RX_LEN: usize, const TX_LEN: usize> {
+    pub(crate) send_tx:    Option<SteadyTelemetrySend<TX_LEN>>,
+    pub(crate) send_rx:    Option<SteadyTelemetrySend<RX_LEN>>,
+    pub(crate) state:      Option<SteadyTelemetryActorSend>,
 }
 
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) ident:                ActorIdentity,
     pub(crate) instance_id:          u32,
-    pub(crate) ctx:                  Option<Arc<bastion::context::BastionContext>>,
-    pub(crate) telemetry_send_tx:    Option<SteadyTelemetrySend<TX_LEN>>,
-    pub(crate) telemetry_send_rx:    Option<SteadyTelemetrySend<RX_LEN>>,
-    pub(crate) telemetry_state:      Option<SteadyTelemetryActorSend>,
+    pub(crate) is_in_graph:          bool,
+
+    pub(crate) telemetry:    SteadyTelemetry<RX_LEN, TX_LEN>,
+
     pub(crate) last_telemetry_send:  Instant, //NOTE: we use mutable for counts so no need for Atomic here
     pub(crate) last_perodic_wait:    AtomicU64,
     pub(crate) runtime_state:        Arc<RwLock<GraphLiveliness>>,
@@ -620,6 +650,8 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 
 ///////////////////
 impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
+
+
 
 
     /// Returns the unique identifier of the LocalMonitor instance.
@@ -642,7 +674,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     #[inline]
     pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
-        let result = match self.runtime_state.read() {
+        match self.runtime_state.read() {
             Ok(liveliness) => {
                 liveliness.is_running(self.ident, accept_fn )
             }
@@ -650,14 +682,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                  error!("Internal error on poisoned state: {}", e);
                  true // Keep running as the default under error conditions
             }
-        };
-        if !result {
-            //we just stopped the loop so mark the telemetry as closed
-            //this is to speed up our closing of the collector
-            //ALSO we do this after releasing the read lock
-            run!(send_all_local_telemetry_async(self));
         }
-        result
     }
 
     #[inline]
@@ -712,7 +737,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 
     pub fn is_in_graph(&self) -> bool {
-        self.ctx.is_some()
+        self.is_in_graph
     }
 
 
@@ -813,7 +838,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Parameters
     /// - `x`: The index representing the type of call being monitored.
     pub(crate) fn start_hot_profile(&self, x: usize) {
-        if let Some(ref st) = self.telemetry_state {
+        if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[x].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
             //if you are the first then store otherwise we leave it as the oldest start
             if st.hot_profile_concurrent.fetch_add(1,Ordering::Relaxed).is_zero() {
@@ -825,7 +850,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     /// Finalizes the current hot profile period, aggregating the collected telemetry data.
     pub(crate) fn rollup_hot_profile(&self) {
-        if let Some(ref st) = self.telemetry_state {
+        if let Some(ref st) = self.telemetry.state {
             if st.hot_profile_concurrent.fetch_sub(1,Ordering::Relaxed).is_one() {
                 let prev = st.hot_profile.load(Ordering::Relaxed);
                 let _ = st.await_ns_unit.fetch_update(Ordering::Relaxed,Ordering::Relaxed
@@ -960,11 +985,11 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Copy`.
     pub fn take_slice<T>(&mut self, this: & mut Rx<T>, slice: &mut [T]) -> usize
     where T: Copy {
-        if let Some(ref st) = self.telemetry_state {
+        if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
         let done = this.shared_take_slice(slice);
-        this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
+        this.local_index = if let Some(ref mut tel)= self.telemetry.send_rx {
             tel.process_event(this.local_index, this.channel_meta_data.id, done)
         } else {
             MONITOR_NOT
@@ -980,12 +1005,12 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Returns
     /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
     pub fn try_take<T>(&mut self, this: & mut Rx<T>) -> Option<T> {
-        if let Some(ref st) = self.telemetry_state {
+        if let Some(ref st) = self.telemetry.state {
             let _= st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
         match this.shared_try_take() {
             Some(msg) => {
-                this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
+                this.local_index = if let Some(ref mut tel)= self.telemetry.send_rx {
                     tel.process_event(this.local_index, this.channel_meta_data.id, 1)
                 } else {
                     MONITOR_NOT
@@ -1124,7 +1149,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         self.rollup_hot_profile();
         match result {
             Some(result) => {
-                this.local_index = if let Some(ref mut tel)= self.telemetry_send_rx {
+                this.local_index = if let Some(ref mut tel)= self.telemetry.send_rx {
                     tel.process_event(this.local_index, this.channel_meta_data.id, 1)
                 } else {
                     MONITOR_NOT
@@ -1154,13 +1179,13 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub fn send_slice_until_full<T>(&mut self, this: & mut Tx<T>, slice: &[T]) -> usize
         where T: Copy {
 
-        if let Some(ref mut st) = self.telemetry_state {
+        if let Some(ref mut st) = self.telemetry.state {
             let _= st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
 
         let done = this.send_slice_until_full(slice);
 
-        this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+        this.local_index = if let Some(ref mut tel)= self.telemetry.send_tx {
             tel.process_event(this.local_index, this.channel_meta_data.id, done)
         } else {
             MONITOR_NOT
@@ -1179,13 +1204,13 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// The number of messages successfully sent before the channel became full.
     pub fn send_iter_until_full<T,I: Iterator<Item = T>>(&mut self, this: & mut Tx<T>, iter: I) -> usize {
 
-        if let Some(ref mut st) = self.telemetry_state {
+        if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
 
         let done = this.send_iter_until_full(iter);
 
-        this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+        this.local_index = if let Some(ref mut tel)= self.telemetry.send_tx {
             tel.process_event(this.local_index, this.channel_meta_data.id, done)
         } else {
             MONITOR_NOT
@@ -1204,14 +1229,14 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
     pub fn try_send<T>(&mut self, this: & mut Tx<T>, msg: T) -> Result<(), T> {
 
-        if let Some(ref mut st) = self.telemetry_state {
+        if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
 
         match this.try_send(msg) {
             Ok(_) => {
 
-                this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+                this.local_index = if let Some(ref mut tel)= self.telemetry.send_tx {
                     tel.process_event(this.local_index, this.channel_meta_data.id, 1)
                 } else {
                     MONITOR_NOT
@@ -1293,7 +1318,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
        self.rollup_hot_profile();
        match result  {
            Ok(_) => {
-               this.local_index = if let Some(ref mut tel)= self.telemetry_send_tx {
+               this.local_index = if let Some(ref mut tel)= self.telemetry.send_tx {
                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
                } else {
                    MONITOR_NOT
