@@ -22,7 +22,7 @@ pub struct ContainerBuilder {
 }
 
 impl ContainerBuilder {
-    pub fn new(project_path: String) -> Self {
+    pub fn new(_project_path: String) -> Self {
         ContainerBuilder {
             base_image: "rust:latest".to_string(),
             runtime_image: "debian:stable-slim".to_string(),

@@ -53,8 +53,6 @@ impl Node {
         let work = (100u64 *(actor_status.unit_total_ns-actor_status.await_total_ns) )
                               / total_work_ns as u64;
 
-        // info!("TODO: thread work: {:?}",actor_status.thread_id);
-
         let (label, color, pen_width) = self.stats_computer.compute(mcpu, work
                                         , actor_status.total_count_restarts
                                         , actor_status.bool_stop);
@@ -240,13 +238,12 @@ fn define_unified_edges(local_state: &mut DotState, node_id: usize, mdvec: &[Arc
                 } else {
                     warn!("internal error");
                 }
-            } else {
-                if usize::MAX == edge.from {
+            } else if usize::MAX == edge.from {
                     edge.from = node_id;
-                } else {
+            } else {
                     warn!("internal error");
-                }
             }
+
             edge.stats_computer.init(meta);
             edge.sidecar = meta.connects_sidecar;
             // Collect the labels that need to be added

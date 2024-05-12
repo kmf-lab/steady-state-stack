@@ -75,7 +75,7 @@ pub async fn run(context: SteadyContext
 
     loop {
          relay_test(& mut monitor, &mut tx).await;
-         monitor.relay_stats_smartly().await;
+         monitor.relay_stats_smartly();
    }
 }
 #[cfg(test)]

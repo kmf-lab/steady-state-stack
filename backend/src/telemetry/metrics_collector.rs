@@ -4,24 +4,23 @@ use std::ops::{ Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::{Arc, LockResult};
 use std::sync::{RwLock, RwLockReadGuard};
-use std::thread;
 use std::time::Duration;
 
-use crate::TxDef;
 #[allow(unused_imports)]
 use log::*; //allow unused import
 
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-use crate::{config, GraphLivelinessState, into_monitor, RxDef, SendSaturation, SteadyContext, SteadyTx, Tx, util, yield_now};
+use crate::{TxDef, RxDef, config, into_monitor, SendSaturation, SteadyContext, SteadyTx, Tx, yield_now};
+
 
 use futures::future::*;
 use futures_timer::Delay;
-use futures_util::{join, select, StreamExt};
+use futures_util::{ select, StreamExt};
 use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
 
 use crate::graph_liveliness::ActorIdentity;
-use crate::telemetry::{metrics_collector, metrics_server};
+use crate::telemetry::{metrics_collector};
 
 pub const NAME: &str = "metrics_collector";
 
@@ -95,7 +94,7 @@ loop {
 
     //we do this here instead at the while because monitor is optional
         let instance_id = if let Some(ref mut monitor) = optional_monitor {
-            monitor.relay_stats_smartly().await;
+            monitor.relay_stats_smartly();
             if !monitor.is_running(&mut ||
                 {
                     is_shutting_down = true;
@@ -135,13 +134,12 @@ loop {
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered).await {
                     if full_frame_of_data {
                         break;
-                    } else {
-                        if id.is_none() {
+                    } else if id.is_none() {
                             //no data and no id, some actor probably restarted or we are having lock issues for both cases we must
                             //rebuild our scan list for the next iteration
                             rebuild_scan_requested = true;
-                        }
                     }
+
                 };
             } else {
 
@@ -409,13 +407,13 @@ async fn send_structure_details(ident: ActorIdentity, consumer: &mut Option<Mute
                            ) {
     if let Some(ref mut c) = consumer {
            //trace!("sending count of {} ", nodes.len());
-            let mut to_send = nodes.clone().into_iter();
+            let to_send = nodes.clone().into_iter();
             //let count = c.send_iter_until_full(&mut to_send);
             //trace!("bulk count {} remaining {} ", count, to_send.len());
             for send_me in to_send {
 
-               if let Some(DiagramData::NodeDef(seq, defs)) = Some(send_me.clone()) {
-                   let (actor, channels_in, channels_out) = *defs;
+               if let Some(DiagramData::NodeDef(_seq, defs)) = Some(send_me.clone()) {
+                   let (_actor, _channels_in, _channels_out) = *defs;
 
                    //confirm the data we get from the collector
                    //info!("new node {:?} {:?} in {:?} out {:?}",actor.id,actor.name,channels_in.len(),channels_out.len());
@@ -446,11 +444,10 @@ async fn send_data_details(ident: ActorIdentity, consumer: &mut Option<MutexGuar
                                              , state.total_take_send.clone().into_boxed_slice()
             ), SendSaturation::IgnoreInRelease).await;
 
-        } else {
-            if warn { //do not warn when shutting down
+        } else if warn { //do not warn when shutting down
                 warn!("{:?} is accumulating frames since consumer is not keeping up, perhaps capacity of {:?} may need to be increased.",ident, consumer.capacity());
-            }
         }
+
     }
 }
 

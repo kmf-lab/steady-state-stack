@@ -37,14 +37,11 @@ pub use actor_builder::MCPU;
 pub use actor_builder::Work;
 pub use actor_builder::Percentile;
 pub use graph_liveliness::*;
-pub use loop_driver::*;
 pub use install::serviced::*;
 pub use loop_driver::wrap_bool_future;
 
 
 use std::any::{Any, type_name};
-use std::cell::RefCell;
-
 
 use std::time::{Duration, Instant};
 
@@ -56,10 +53,8 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex, MutexLockFuture};
-use std::ops::{Deref, DerefMut, Sub};
-use std::future::ready;
+use std::ops::{Deref, DerefMut};
 
-use std::thread::sleep;
 use log::*;
 use channel_builder::{InternalReceiver, InternalSender};
 use ringbuf::producer::Producer;
@@ -69,7 +64,6 @@ use ringbuf::consumer::Consumer;
 use async_ringbuf::consumer::AsyncConsumer;
 use backtrace::Backtrace;
 
-use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use actor_builder::ActorBuilder;
 use crate::monitor::{ActorMetaData, ChannelMetaData, RxMetaData, SteadyTelemetry, TxMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -87,9 +81,7 @@ use futures::select;
 use futures_timer::Delay;
 use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use futures_util::lock::MutexGuard;
-use nuclei::GlobalExecutorConfig;
 use crate::graph_testing::{SideChannel, SideChannelHub, SideChannelResponder};
-use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
@@ -164,7 +156,7 @@ impl SteadyContext {
     }
     /// only needed if the channel consumer needs to know that a sender was restarted
     pub fn update_tx_instance_bundle<T>(&self, target: &mut TxBundle<T>) {
-        target.iter_mut().for_each(|mut tx| tx.tx_version.store(self.instance_id, Ordering::SeqCst));
+        target.iter_mut().for_each(|tx| tx.tx_version.store(self.instance_id, Ordering::SeqCst));
     }
 
 
@@ -395,8 +387,10 @@ macro_rules! concat_arrays {
 #[macro_export]
 macro_rules! into_monitor {
     ($self:expr, [$($rx:expr),*], [$($tx:expr),*]) => {{
-        use crate::RxDef;
-        use crate::TxDef;
+        #[allow(unused_imports)]
+        use RxDef;
+        #[allow(unused_imports)]
+        use TxDef;
         //this allows for 'arrays' of non homogneous types and avoids dyn
         let rx_meta = [$($rx.meta_data(),)*];
         let tx_meta = [$($tx.meta_data(),)*];
@@ -404,15 +398,19 @@ macro_rules! into_monitor {
         $self.into_monitor_internal(rx_meta, tx_meta)
     }};
     ($self:expr, [$($rx:expr),*], $tx_bundle:expr) => {{
-        use crate::RxDef;
-        use crate::TxDef;
+        #[allow(unused_imports)]
+        use RxDef;
+        #[allow(unused_imports)]
+        use TxDef;
         //this allows for 'arrays' of non homogneous types and avoids dyn
         let rx_meta = [$($rx.meta_data(),)*];
         $self.into_monitor_internal(rx_meta, $tx_bundle.meta_data())
     }};
      ($self:expr, $rx_bundle:expr, [$($tx:expr),*] ) => {{
-         use crate::RxDef;
-         use crate::TxDef;
+        #[allow(unused_imports)]
+        use RxDef;
+        #[allow(unused_imports)]
+        use TxDef;
         //this allows for 'arrays' of non homogneous types and avoids dyn
         let tx_meta = [$($tx.meta_data(),)*];
         $self.into_monitor_internal($rx_bundle.meta_data(), tx_meta)
@@ -421,8 +419,10 @@ macro_rules! into_monitor {
         $self.into_monitor_internal($rx_bundle.meta_data(), $tx_bundle.meta_data())
     }};
     ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*], $($rx_bundle:expr),* ), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
-        use crate::RxDef;
-        use crate::TxDef;
+        #[allow(unused_imports)]
+        use RxDef;
+        #[allow(unused_imports)]
+        use TxDef;
         let mut rx_count = [$( { $rx; 1 } ),*].len();
         $(
             rx_count += $rx_bundle.meta_data().len();
@@ -464,8 +464,10 @@ macro_rules! into_monitor {
         $self.into_monitor_internal(rx_mon, tx_mon)
     }};
    ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*]), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
-        use crate::RxDef;
-        use crate::TxDef;
+        #[allow(unused_imports)]
+        use RxDef;
+        #[allow(unused_imports)]
+        use TxDef;
         let mut rx_count = [$( { $rx; 1 } ),*].len();
         assert_eq!(rx_count, $rx_channels_to_monitor, "Mismatch in RX channel count");
 
@@ -535,6 +537,7 @@ pub struct Graph  {
     pub(crate) oneshot_startup_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     pub(crate) backplane: Arc<Mutex<Option<SideChannelHub>>>, //only used in testing
     pub(crate) noise_threshold: Instant,
+    pub(crate) block_fail_fast: bool
 
 }
 
@@ -849,7 +852,7 @@ impl<T> Tx<T> {
             select! { _ = one_down => false, _ = operation => true, }
         } else {
             //we are already shutting down but we need to confirm that we have some room
-            let mut operation = &mut self.tx.wait_vacant(1);
+            let operation = &mut self.tx.wait_vacant(1);
             operation.await;
             false
         }
@@ -1354,17 +1357,16 @@ impl<T> Rx<T> {
             if !one_down.is_terminated() {
                 let mut operation = &mut self.rx.wait_occupied(count);
                 select! { _ = one_down => false, _ = operation => true }
-            } else {
-                if self.is_closed() {
+            } else if self.is_closed() {
                     //shutdown in progress and we are closed
                     false
-                } else {
+            } else {
                     //upstream did not mark this closed yet
                     let mut closing = &mut self.is_closed;
                     let mut operation = &mut self.rx.wait_occupied(1);
                     select! { _ = closing => false, _ = operation => true }
-                }
             }
+
 
         }
     }
@@ -1410,7 +1412,7 @@ impl <T: Send + Sync > RxDef for SteadyRx<T>  {
     fn meta_data(&self) -> RxMetaData {
         //used on startup where we want to avoid holding the lock or using another thread
         loop {
-            if let Some(mut guard) = self.try_lock() {
+            if let Some(guard) = self.try_lock() {
                 return RxMetaData(guard.deref().channel_meta_data.clone());
             }
             std::thread::yield_now();

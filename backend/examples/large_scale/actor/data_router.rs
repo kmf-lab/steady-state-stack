@@ -7,6 +7,7 @@ use crate::actor::data_generator::Packet;
 //use futures::future::FutureExt;
 use std::time::Duration;
 use futures_util::lock::MutexGuard;
+use num_traits::Zero;
 use tide::Middleware;
 
 pub async fn run<const GIRTH:usize>(context: SteadyContext
@@ -23,48 +24,49 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    let count = rx.capacity().clone()/4;
+    let count = rx.capacity().clone()/3;
+    let bsize = tx.len();
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()   ) {
 
         wait_for_all_or_proceed_upon!(
-            monitor.wait_periodic(Duration::from_millis(20)),
+            monitor.wait_periodic(Duration::from_millis(40)),
             monitor.wait_avail_units(&mut rx,count),
-            monitor.wait_vacant_units_bundle(&mut tx,1,1)
+            monitor.wait_vacant_units_bundle(&mut tx,count/2,bsize)
         ).await;
 
-        single_iteration(&mut monitor, block_size, &mut rx, &mut tx).await;
-        monitor.relay_stats_smartly().await;
+        while let Some(t) = monitor.try_take(&mut rx) {
+            let index = ((t.route / block_size) as usize) % tx.len();
+            if let Err(e) =  monitor.try_send(&mut tx[index], t) {
+                let _ = monitor.send_async(&mut tx[index], e, SendSaturation::IgnoreAndWait).await;
+                break;
+            }
+
+        }
+        monitor.relay_stats_smartly();
 
     }
     Ok(())
 }
 
+
+//this unused block shows how you can peek and do processing then send
+//so you can ensure no packet is ever lost even upon panic.
+//NOTE: this adds cost due to the required clone()
 async fn single_iteration<const GIRTH:usize>(monitor: &mut LocalMonitor<1, GIRTH>
                                              , block_size: u16
                                              , mut rx: &mut MutexGuard<'_, Rx<Packet>>
                                              , tx: &mut Vec<MutexGuard<'_, Tx<Packet>>>) {
 
-    if true {
-        while let Some(t) = monitor.try_take(&mut rx) {
-            let index = ((t.route / block_size) as usize) % tx.len();
-            let _ = monitor.send_async(&mut tx[index], t, SendSaturation::IgnoreAndWait).await;
-
-        }
-    } else {
         while let Some(peek_packet_ref) = monitor.try_peek(&mut rx) {
             let index = ((peek_packet_ref.route / block_size) as usize) % tx.len();
-            //this unused block shows how you can peek and do processing then send
-            //so you can ensure no packet is ever lost even upon panic.
-            //NOTE: this adds cost due to the required clone()
+
             let new_copy = peek_packet_ref.clone();
             let _ = monitor.send_async(&mut tx[index], new_copy, SendSaturation::IgnoreAndWait).await;
             let consumed = monitor.try_take(&mut rx);
             assert!(consumed.is_some());
         }
-    }
-    monitor.relay_stats_smartly().await;
-
+    monitor.relay_stats_smartly();
 }
 
 

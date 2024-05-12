@@ -1,5 +1,5 @@
-use crate::{abstract_executor, config, util};
-use std::ops::{DerefMut, Sub};
+use crate::{abstract_executor};
+use std::ops::{ Sub};
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -9,18 +9,16 @@ use log::{error, warn};
 use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::{ AtomicUsize};
 use std::task::{Context, Poll};
 use std::thread;
 use futures::channel::oneshot::Sender;
-use futures_timer::Delay;
 use futures_util::lock::{MutexGuard, MutexLockFuture};
 use crate::actor_builder::ActorBuilder;
 use crate::{Graph, telemetry};
 use crate::channel_builder::ChannelBuilder;
 use crate::config::TELEMETRY_PRODUCTION_RATE_MS;
 use crate::graph_testing::SideChannelHub;
-use crate::yield_now::yield_now;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum GraphLivelinessState {
@@ -196,13 +194,17 @@ impl Graph {
 
 
     fn enable_fail_fast(&self) {
-        std::panic::set_hook(Box::new(|panic_info| {
-            let backtrace = std::backtrace::Backtrace::capture();
-            // You can log the panic information here if needed
-            eprintln!("Application panicked: {}", panic_info);
-            eprintln!("Backtrace:\n{:?}", backtrace);
-            exit(-1);
-        }));
+        //runtime disable of fail fast so we can unit test the recovery of panics
+        //where normally in a test condition we would want to fail fast
+        if !self.block_fail_fast {
+            std::panic::set_hook(Box::new(|panic_info| {
+                let backtrace = std::backtrace::Backtrace::capture();
+                // You can log the panic information here if needed
+                eprintln!("Application panicked: {}", panic_info);
+                eprintln!("Backtrace:\n{:?}", backtrace);
+                exit(-1);
+            }));
+        }
     }
 
 
@@ -233,16 +235,12 @@ impl Graph {
                 let v = self.oneshot_startup_vec.clone();
                 abstract_executor::block_on( async move {
 
-                    let mut c  = 0;
                     let mut one_shots:MutexGuard<Vec<Sender<_>>> = v.lock().await;
                     while let Some(sender) = one_shots.pop() {
                         if let Err(e) =  sender.send(()) {
                                 error!("failed to send startup signal: {:?}",e);
-                        } else {
-                           c += 1;
-                        };
+                        }
                     }
-                   // error!("sent {} startup signals",c);
 
                 });
 
@@ -330,6 +328,12 @@ impl Graph {
 
     /// create a new graph for the application typically done in main
     pub fn new<A: Any+Send+Sync>(args: A) -> Graph {
+        let block_fail_fast = false;
+        Self::internal_new(args, block_fail_fast)
+    }
+
+    /// used for normal create and unit test create. unit tests must block the fail fast for panic testing
+    pub(crate) fn internal_new<A: Any + Send + Sync>(args: A, block_fail_fast: bool) -> Graph {
         let channel_count = Arc::new(AtomicUsize::new(0));
         let monitor_count = Arc::new(AtomicUsize::new(0));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
@@ -339,7 +343,7 @@ impl Graph {
         //dynamic type message sending to and from all nodes for coordination of testing
         let backplane: Option<SideChannelHub> = None;
         #[cfg(test)]
-        let backplane = Some(SideChannelHub::new());
+            let backplane = Some(SideChannelHub::new());
 
         abstract_executor::init();
 
@@ -348,11 +352,12 @@ impl Graph {
             channel_count: channel_count.clone(),
             monitor_count: monitor_count.clone(), //this is the count of all monitors
             all_telemetry_rx: Arc::new(RwLock::new(Vec::new())), //this is all telemetry receivers
-            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(monitor_count,oneshot_shutdown_vec.clone()))),
-            oneshot_shutdown_vec, oneshot_startup_vec,
-            backplane : Arc::new(Mutex::new(backplane)),
-            noise_threshold : Instant::now().sub(Duration::from_secs(60)),
-
+            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(monitor_count, oneshot_shutdown_vec.clone()))),
+            oneshot_shutdown_vec,
+            oneshot_startup_vec,
+            backplane: Arc::new(Mutex::new(backplane)),
+            noise_threshold: Instant::now().sub(Duration::from_secs(60)),
+            block_fail_fast
         };
         //this is based on features in the config
         telemetry::setup::build_optional_telemetry_graph(&mut result);

@@ -20,7 +20,7 @@ mod actor {
 #[cfg(test)]
 use crate::actor::*;
 use steady_state::*;
-use steady_state::actor_builder::{MCPU, Percentile};
+use steady_state::actor_builder::{ActorGroup, MCPU, Percentile};
 use steady_state::channel_builder::Filled;
 
 
@@ -84,6 +84,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     //create the mutable graph object
     let mut graph = Graph::new(cli_arg.clone());
 
+    let mut group = ActorGroup::new();
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
@@ -127,28 +128,30 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
 
         base_actor_builder.with_name("generator")
-             .build_spawn( move |context| actor::data_generator::run(context
+             .build_join( move |context| actor::data_generator::run(context
                                                                      , change_rx.clone()
-                                                                     , generator_tx.clone())
+                                                                     , generator_tx.clone()) ,&mut group
         );
 
         base_actor_builder.with_name("approval")
-             .build_spawn( move |context| actor::data_approval::run(context
+             .build_join( move |context| actor::data_approval::run(context
                                                                     , generator_rx.clone()
                                                                     , consumer_tx.clone()
-                                                                    , failure_tx.clone()   )
+                                                                    , failure_tx.clone()) ,&mut group
         );
 
         base_actor_builder.with_name("feedback")
-             .build_spawn( move |context| actor::data_feedback::run(context
+             .build_join( move |context| actor::data_feedback::run(context
                                                                     , failure_rx.clone()
-                                                                    , change_tx.clone() )
+                                                                    , change_tx.clone()),&mut group
             );
 
        base_actor_builder.with_name("consumer")
-            .build_spawn( move |context| actor::data_consumer::run(context
-                                                                   , consumer_rx.clone() )
+            .build_join( move |context| actor::data_consumer::run(context
+                                                                   , consumer_rx.clone()),&mut group
             );
+       group.spawn();
+
     graph
 }
 

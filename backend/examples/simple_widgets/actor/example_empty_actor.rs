@@ -83,7 +83,7 @@ async fn iterate_once(monitor: &mut LocalMonitor<1, 1>
                 error!("Unexpected error recv_async, probably during shutdown");
             }
         }
-        monitor.relay_stats_smartly().await;
+        monitor.relay_stats_smartly();
     }
     false
 }

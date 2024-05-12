@@ -14,10 +14,6 @@ use futures::io::SeekFrom;
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 #[allow(unused_imports)]
 use std::fs::{create_dir_all, File, OpenOptions};
-use std::task::Context;
-use futures::future::pending;
-use futures::FutureExt;
-
 
 /*
 fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>>>)
@@ -130,7 +126,7 @@ impl LogLineFilter for TideHide {
 ////////////////////////////////////////////
 pub mod logger {
     use lazy_static::lazy_static;
-    use std::sync::Once;
+    use parking_lot::Once;
     use crate::util;
     lazy_static! {
             static ref INIT: Once = Once::new();

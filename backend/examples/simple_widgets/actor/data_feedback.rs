@@ -35,7 +35,7 @@ pub async fn run(context: SteadyContext
                         , &mut tx
         ).await;
         //we relay all our telemetry and return to the top to block for more work.
-        monitor.relay_stats_smartly().await;
+        monitor.relay_stats_smartly();
     }
     Ok(())
 }
@@ -58,7 +58,7 @@ pub async fn run(context: SteadyContext
                          ).await;
 
 
-         monitor.relay_stats_smartly().await;
+         monitor.relay_stats_smartly();
     }
     Ok(())
 }
@@ -88,8 +88,8 @@ mod tests {
     #[test]
     async fn test_process() {
         util::logger::initialize();
-        let mut graph = Graph::new(());
-        let mock_monitor = graph.new_test_monitor("test_monitor");
+        let graph = Graph::new(());
+        let _mock_monitor = graph.new_test_monitor("test_monitor");
 
     /*
 

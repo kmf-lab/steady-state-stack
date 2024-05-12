@@ -50,7 +50,7 @@ pub async fn run(context: SteadyContext
                         , &mut buffer
         );
 
-        monitor.relay_stats_smartly().await;
+        monitor.relay_stats_smartly();
     }
     Ok(())
 }

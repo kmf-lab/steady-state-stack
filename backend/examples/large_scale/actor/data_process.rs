@@ -17,14 +17,13 @@ pub async fn run(context: SteadyContext
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    let count = 3* (rx.capacity().min(tx.capacity()) /4);
-
+    let count = rx.capacity().min(tx.capacity()) /2;
 
 
     while monitor.is_running(&mut || rx.is_closed() && rx.is_empty() && tx.mark_closed()){
 
         let clean = wait_for_all_or_proceed_upon!(
-             monitor.wait_periodic(Duration::from_millis(40))
+             monitor.wait_periodic(Duration::from_millis(20))
             ,monitor.wait_avail_units(&mut rx,count)
             ,monitor.wait_vacant_units(&mut tx,count)
         ).await;
@@ -32,7 +31,7 @@ pub async fn run(context: SteadyContext
         let count = monitor.avail_units(&mut rx).min(monitor.vacant_units(&mut tx));
         if count>0 {
             single_iteration(&mut monitor, &mut rx, &mut tx, count);
-            monitor.relay_stats_smartly().await;
+            monitor.relay_stats_smartly();
         }
 
 

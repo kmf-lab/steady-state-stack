@@ -61,42 +61,40 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
 # Common, the goal here is to have broad compatible eventually
-ringbuf          = "0.4.0-rc.4"
-async-ringbuf    = "0.2.0-rc.5"
+ringbuf          = "0.4.0"
+async-ringbuf    = "0.2.0"
 log              = "0.4.21"  # common logging traits
                   # great logger but I would like to see a new crate using
                   # nuclei with log to provide a more async friendly logger
-flexi_logger     = "0.27.4"  # default flexable logging implementation
+flexi_logger     = "0.28.0"  # default flexable logging implementation
 futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
 futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
 itertools        = "0.12.1"  # helpful smart iter methods
-uuid             = { version = "1.7.0", features = ["v4"] }
-num-traits       = "0.2.18" # for num::Zero and other generic math traits
-backtrace        = "0.3.69"
-itoa             = "1.0.10"
+uuid             = { version = "1.8.0", features = ["v4"] }
+num-traits       = "0.2.19" # for num::Zero and other generic math traits
+backtrace        = "0.3.71"
+itoa             = "1.0.11"
 lazy_static      = "1.4"
 const_panic      = "0.2.8" # for const panic!()
 hdrhistogram     = "7.5.4"  # for latency histograms
 rand             = "0.8.5" # for random number generation
-bytes            = { version = "1.5.0", features = [] }
-time             = { version = "0.3.34", features = ["macros","formatting", "parsing"] }
+bytes            = { version = "1.6.0", features = [] }
+time             = { version = "0.3.36", features = ["macros","formatting", "parsing"] }
 futures-util     = "0.3.30" # for time formatting and supports no-std
 dirs             = "5.0.1"
-parking_lot      = "0.12.2"
-nuclei           = { version = "0.4.4",  features = ["async-global-executor","async-exec","iouring","attributes"] } # for proactor based IO also part of bastion
+parking_lot      = "0.12.2"# TODO: review our lock usage and possible use of parking_lot
+nuclei           = { version = "0.4.4",  features = ["async-global-executor","async-exec","iouring","attributes"] }
 
 
 
 
 # still in progess, this is for distributed instances across nodes
-#rustdds          = "0.9.0" # 0.9.0 is broken use to use of io-extras v0.18.1
-
 stun-rs          = "0.1.8"
-#rayon = "1.10.0"
-
+#rustdds          = "0.9.0" # 0.9.0 is broken use to use of io-extras v0.18.1
 #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
   #        https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
 
+#rayon = "1.10.0"
 #rstest = "0.5.2"       # for unit testing
 
 #############################################
@@ -130,7 +128,7 @@ stun-rs          = "0.1.8"
 
 # for future consideration
 # turbine = { git = "https://github.com/polyfractal/Turbine", branch = "main" }
-# disruptor        = "0.2.0"   # does not integreate with bastion, but is a lock free ring buffer
+# disruptor        = "0.2.0"
 
 [build-dependencies]
 tempfile         = "3.10.1"
@@ -144,7 +142,7 @@ structopt-derive = "0.4.18"   # simplify the writing of async recursive function
 
 
 [dev-dependencies]
-#async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
+async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
 rand_distr       = "0.4.3" # for random number generation
 testcontainers   = "0.15.0" # for integration testing
 

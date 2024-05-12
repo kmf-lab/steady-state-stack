@@ -82,7 +82,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     {%- endif %}{% endfor %}
        base_actor_builder.with_name("{{actor.display_name}}")
-                 .build_with_exec( move |context| actor::{{actor.mod_name}}::run(context
+                 .build_spawn( move |context| actor::{{actor.mod_name}}::run(context
                                           {%- for channel in actor.rx_channels %}
                                             , {% if channel[0].restructured_bundle() %}{{actor.display_name|lowercase}}{% else %}{{channel[0].rx_prefix_name(channel)}}{% endif %}_{{channel[0].name}}_rx.clone(){% endfor -%}
                                           {%- for channel in actor.tx_channels %}

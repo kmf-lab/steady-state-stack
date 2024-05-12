@@ -98,7 +98,7 @@ pub(crate) async fn run(context: SteadyContext
     loop {
 
         if let Some(ref mut monitor) = optional_monitor {
-            monitor.relay_stats_smartly().await;
+            monitor.relay_stats_smartly();
             if !monitor.is_running(&mut || {
                  rx.is_empty() && rx.is_closed()
                 } ){
@@ -114,8 +114,8 @@ pub(crate) async fn run(context: SteadyContext
 
         let a = server_handle.as_mut();
         let b = rx.wait_avail_units(2); //node data and edge data
+        // let b = rx.take_async();
 
-       /// let b = rx.take_async();
         select! {
             _ = a.fuse() => {
                 warn!("Web server exited.");
@@ -226,7 +226,7 @@ pub(crate) async fn run(context: SteadyContext
                                 }
 
                               if let Some(ref mut monitor) = optional_monitor {
-                                    monitor.relay_stats_smartly().await;
+                                    monitor.relay_stats_smartly();
                               }
 
 

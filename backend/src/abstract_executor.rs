@@ -1,22 +1,32 @@
 use std::future::Future;
+use lazy_static::lazy_static;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
-use log::*; //allow unused import
+#[allow(unused_imports)]
+use log::*;
+use parking_lot::Once;
+
+
+lazy_static! {
+    static ref INIT: Once = Once::new();
+}
 
 pub(crate) fn init() {
-    //TODO: can I let users choose this and tokio as desired?
-    let nuclei_config = NucleiConfig {
-        //iouring: IoUringConfiguration::interrupt_driven(1 << 6),
-        iouring: IoUringConfiguration::kernel_poll_only(1 << 6),
-        //iouring: IoUringConfiguration::low_latency_driven(1 << 6),
-        //iouring: IoUringConfiguration::io_poll(1 << 6),
-    };
-    let _ = nuclei::Proactor::with_config(nuclei_config);
 
-    let config = nuclei::GlobalExecutorConfig::default()
-        .with_min_threads(4)
-        .with_max_threads(usize::MAX); //disabled this limit
-    nuclei::init_with_config(config);
+    INIT.call_once(|| {
+        //TODO: can I let users choose this and tokio as desired?
+        let nuclei_config = NucleiConfig {
+            //iouring: IoUringConfiguration::interrupt_driven(1 << 6),
+            iouring: IoUringConfiguration::kernel_poll_only(1 << 6),
+            //iouring: IoUringConfiguration::low_latency_driven(1 << 6),
+            //iouring: IoUringConfiguration::io_poll(1 << 6),
+        };
+        let _ = nuclei::Proactor::with_config(nuclei_config);
 
+        let config = nuclei::GlobalExecutorConfig::default()
+            .with_min_threads(4)
+            .with_max_threads(usize::MAX); //disabled this limit
+        nuclei::init_with_config(config);
+    });
 }
 
 

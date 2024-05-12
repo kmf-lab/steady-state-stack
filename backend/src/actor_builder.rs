@@ -1,32 +1,27 @@
 use std::any::Any;
 use std::error::Error;
 use std::future::Future;
-use std::pin::{pin, Pin};
 
 use std::sync::Arc;
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::thread::sleep;
+use std::sync::atomic::{AtomicU32, AtomicUsize };
 use std::time::{Duration, Instant};
 use core::default::Default;
-use std::task;
+use std::collections::VecDeque;
 
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
+
 use futures_util::lock::Mutex;
 use log::*;
-use futures_util::future::{BoxFuture, FusedFuture, select_all};
-use futures_util::stream::FuturesUnordered;
-use futures_util::StreamExt;
-use futures_util::task::{LocalSpawn, Spawn};
+use futures_util::future::{BoxFuture, select_all};
 
 
-use crate::{abstract_executor, actor_builder, AlertColor, Graph, GraphLivelinessState, Metric, StdDev, SteadyContext, Trigger};
+use crate::{abstract_executor, AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, SideChannelHub};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
-use crate::telemetry::metrics_server;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -61,15 +56,22 @@ pub struct ActorBuilder {
 
 #[derive(Default)]
 pub struct ActorGroup {
-    future_builder: Vec<Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>,bool) + Send >>,
+    future_builder: VecDeque<Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>,bool) + Send >>,
 }
 
 impl ActorGroup {
-    pub(crate) fn add_actor<F, I>(&mut self, mut actor_startup_receiver: Option<Receiver<()>>, context_archetype: SteadyContextArchetype<I>)
+
+    pub fn new() -> Self {
+        ActorGroup {
+            future_builder: VecDeque::new()
+        }
+    }
+
+    fn add_actor<F, I>(&mut self, mut actor_startup_receiver: Option<Receiver<()>>, context_archetype: SteadyContextArchetype<I>)
         where F: 'static + Future<Output=Result<(), Box<dyn Error>>> + Send
             , I: 'static + Fn(SteadyContext) -> F + Send + Sync {
 
-        self.future_builder.push({
+        self.future_builder.push_back({
             let context_archetype = context_archetype.clone();
             Box::new(move || {
                 let boxed_future: BoxFuture<'static, Result<(), Box<dyn Error>>>  = Box::pin(build_actor_future( &mut actor_startup_receiver
@@ -77,15 +79,36 @@ impl ActorGroup {
                 (boxed_future, context_archetype.drive_io)
             }) as Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>,bool) + Send>
         });
-
     }
 
+    pub fn transfer_front_to(&mut self, other: &mut Self) -> bool {
+        if let Some(f) = self.future_builder.pop_front() {
+            other.future_builder.push_back(f);
+            true
+        } else {
+            false
+        }
+    }
 
-    pub fn spawn(mut self) {
+    pub fn transfer_back_to(&mut self, other: &mut Self) -> bool {
+        if let Some(f) = self.future_builder.pop_back() {
+            other.future_builder.push_back(f);
+            true
+        } else {
+            false
+        }
+    }
 
+    pub fn spawn(mut self) -> usize {
+
+        if self.future_builder.is_empty() {
+            return 0; //nothing to span so return
+        }
+
+        let count = self.future_builder.len();
         let super_task = {
             async move {
-                let mut actor_future_vec = Vec::with_capacity(self.future_builder.len());
+                let mut actor_future_vec = Vec::with_capacity(count);
                 let mut total_drive_io = false;
 
                 for f in &mut self.future_builder {
@@ -141,7 +164,7 @@ impl ActorGroup {
             }
         };
         abstract_executor::spawn_detached(super_task);
-
+        count
     }
 
 
@@ -170,7 +193,7 @@ impl<I> Clone for SteadyContextArchetype<I>
             build_actor_exec: self.build_actor_exec.clone(),
             runtime_state: self.runtime_state.clone(),
             channel_count: self.channel_count.clone(),
-            ident: self.ident.clone(),
+            ident: self.ident,
             args: self.args.clone(),
             all_telemetry_rx: self.all_telemetry_rx.clone(),
             actor_metadata: self.actor_metadata.clone(),
@@ -549,7 +572,7 @@ impl ActorBuilder {
         SteadyContextArchetype {
             runtime_state: runtime_state.clone(),
             channel_count: channel_count.clone(),
-            ident: immutable_identity.clone(),
+            ident: immutable_identity,
             args: args.clone(),
             all_telemetry_rx: telemetry_tx.clone(),
             actor_metadata: immutable_actor_metadata.clone(),
@@ -558,7 +581,7 @@ impl ActorBuilder {
             node_tx_rx: immutable_node_tx_rx.clone(),
             build_actor_exec: Arc::new(build_actor_exec),
             instance_id: restart_counter,
-            drive_io: drive_io
+            drive_io
         }
 
     }
@@ -585,24 +608,24 @@ impl ActorBuilder {
             ActorMetaData {
                 id,
                 name,
-                avg_mcpu: self.avg_mcpu.clone(),
-                avg_work: self.avg_work.clone(),
+                avg_mcpu: self.avg_mcpu,
+                avg_work: self.avg_work,
                 percentiles_mcpu: self.percentiles_mcpu.clone(),
                 percentiles_work: self.percentiles_work.clone(),
                 std_dev_mcpu: self.std_dev_mcpu.clone(),
                 std_dev_work: self.std_dev_work.clone(),
                 trigger_mcpu: self.trigger_mcpu.clone(),
                 trigger_work: self.trigger_work.clone(),
-                usage_review: self.usage_review.clone(),
-                refresh_rate_in_bits: self.refresh_rate_in_bits.clone(),
-                window_bucket_in_bits: self.window_bucket_in_bits.clone(),
+                usage_review: self.usage_review,
+                refresh_rate_in_bits: self.refresh_rate_in_bits,
+                window_bucket_in_bits: self.window_bucket_in_bits,
             }
         )
     }
 }
 
 
-pub(crate) fn build_actor_future<'a, F, I>(
+pub(crate) fn build_actor_future<F, I>(
     actor_startup_receiver: &mut Option<Receiver<()>>
     , builder_source: SteadyContextArchetype<I>) -> F
     where I: Fn(SteadyContext) -> F + 'static + Sync + Send,
@@ -746,10 +769,5 @@ impl Percentile {
     }
 }
 
-//Note: redundancy and auto-scale features of bastion are not supported for the following reasons:
-// 1. channel usage requires lock and parallel actors would not work well and cause deadlocks
-// 2. we want clear telemetry on every actor instance, never shared
-// 3. there was no way to support this and the code generator without marking the methods unsafe.
-// 4. we might use this as an internal feature as it is difficult to get right.
 
 
