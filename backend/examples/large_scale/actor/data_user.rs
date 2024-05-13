@@ -21,7 +21,7 @@ pub async fn run(context: SteadyContext
         wait_for_all!(monitor.wait_avail_units(&mut rx, 1)).await;
 
         while let Some(packet) = monitor.try_take(&mut rx) {
-            assert_eq!(packet.data.len(),128);
+            assert_eq!(packet.data.len(),62);
             count += 1;
             //info!("data_router: {:?}", packet);
 

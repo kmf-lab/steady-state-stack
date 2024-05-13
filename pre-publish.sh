@@ -6,6 +6,7 @@ cargo update
 if echo "$(cargo tree -i tokio 2>&1)" | grep -q "did not match any packages"; then
     echo "Success: No 'tokio' crate found in the Cargo project."
 else
+    cargo tree -i tokio
     echo "Error: 'tokio' crate found in the Cargo project."
     exit 1
 fi

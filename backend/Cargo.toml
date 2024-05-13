@@ -144,7 +144,7 @@ structopt-derive = "0.4.18"   # simplify the writing of async recursive function
 [dev-dependencies]
 async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only
 rand_distr       = "0.4.3" # for random number generation
-testcontainers   = "0.15.0" # for integration testing
+testcontainers   = "0.15.0" # for integration testing, DO NOT upgrade to 0.16.0 since Tokio is not supported here
 
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"

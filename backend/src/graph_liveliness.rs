@@ -40,7 +40,7 @@ pub struct GraphLiveliness {
     pub(crate) state: GraphLivelinessState,
     pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>,
     pub(crate) vote_in_favor_total: AtomicUsize,
-    pub(crate) one_shot_shutdown: Arc<Mutex<Vec<Sender<()>>>>,
+    pub(crate) shutdown_one_shot_vec: Arc<Mutex<Vec<Sender<()>>>>,
 }
 
 
@@ -83,7 +83,7 @@ impl GraphLiveliness {
             state: GraphLivelinessState::Building,
             votes: Arc::new(Box::new([])),
             vote_in_favor_total: AtomicUsize::new(0),
-            one_shot_shutdown
+            shutdown_one_shot_vec: one_shot_shutdown
         }
     }
 
@@ -110,7 +110,7 @@ impl GraphLiveliness {
            //trigger all actors to vote now.
            self.state = GraphLivelinessState::StopRequested;
 
-           let local_oss = self.one_shot_shutdown.clone();
+           let local_oss = self.shutdown_one_shot_vec.clone();
            abstract_executor::block_on(async move {
                let mut one_shots:MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
                while let Some(f) = one_shots.pop() {
@@ -122,17 +122,20 @@ impl GraphLiveliness {
    }
 
     pub fn check_is_stopped(&self, now:Instant, timeout:Duration) -> Option<GraphLivelinessState> {
-        assert_eq!(self.state, GraphLivelinessState::StopRequested);
-        //if the count in favor is the same as the count of total votes then we have unanimous agreement
-        if self.vote_in_favor_total.load(std::sync::atomic::Ordering::SeqCst) == self.votes.len() {
-            Some(GraphLivelinessState::Stopped)
-        } else {
-            //not unanimous but we are in stop requested state
-            if now.elapsed() > timeout {
-                Some(GraphLivelinessState::StoppedUncleanly)
+        if self.is_in_state(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped, GraphLivelinessState::StoppedUncleanly]) {
+            //if the count in favor is the same as the count of total votes then we have unanimous agreement
+            if self.vote_in_favor_total.load(std::sync::atomic::Ordering::SeqCst) == self.votes.len() {
+                Some(GraphLivelinessState::Stopped)
             } else {
-                None
+                //not unanimous but we are in stop requested state
+                if now.elapsed() > timeout {
+                    Some(GraphLivelinessState::StoppedUncleanly)
+                } else {
+                    None
+                }
             }
+        } else {
+            None
         }
     }
 
@@ -267,6 +270,30 @@ impl Graph {
 
     pub fn block_until_stopped(self, clean_shutdown_timeout: Duration) {
 
+        if let Some(wait_on) = match self.runtime_state.write() {
+            Ok(mut state) => {
+
+                if state.is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
+                    let (tx, rx) = futures::channel::oneshot::channel();
+                    let v = state.shutdown_one_shot_vec.clone();
+                    abstract_executor::block_on( async move {
+                       v.lock().await.push(tx);
+                    });
+                    Some(rx)
+                } else {
+                    None
+                }
+            },
+            Err(e) => {
+                error!("failed to request stop of graph: {:?}", e);
+                None
+            }
+        } {
+            //if we are Running or Building then we block here until shutdown is started.
+            let _ = abstract_executor::block_on(wait_on);
+        }
+
+
         let now = Instant::now();
         //duration is not allowed to be less than 3 frames of telemetry
         //this ensures with safety that all actors had an opportunity to
@@ -279,15 +306,15 @@ impl Graph {
         //while try lock then yield and do until time has passed
         //if we are stopped we will return immediately
         loop {
-            let is_stopped = match self.runtime_state.read() {
-                                Ok(state) => {
-                                    state.check_is_stopped(now, timeout)
-                                }
-                                Err(e) => {
-                                    error!("failed to read liveliness of graph: {:?}", e);
-                                    None
-                                }
-                            };
+            let is_stopped = {match self.runtime_state.read() {
+                        Ok(state) => {
+                            state.check_is_stopped(now, timeout)
+                        }
+                        Err(e) => {
+                            error!("failed to read liveliness of graph: {:?}", e);
+                            None
+                        }
+                    }};
             if let Some(shutdown) = is_stopped {
                 match self.runtime_state.write() {
                     Ok(mut state) => {
@@ -343,9 +370,10 @@ impl Graph {
         //dynamic type message sending to and from all nodes for coordination of testing
         let backplane: Option<SideChannelHub> = None;
         #[cfg(test)]
-            let backplane = Some(SideChannelHub::new());
+        let backplane = Some(SideChannelHub::new());
 
         abstract_executor::init();
+
 
         let mut result = Graph {
             args: Arc::new(Box::new(args)),

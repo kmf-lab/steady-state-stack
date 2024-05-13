@@ -494,10 +494,19 @@ impl ActorBuilder {
                             break; //exit the loop we are all done
                         },
                         Err(e) => {
+                            if let Some(specific_error) = e.downcast_ref::<std::io::Error>() {
+                                warn!("IO Error encountered: {}", specific_error);
+                            } if let Some(specific_error) = e.downcast_ref::<String>() {
+                                warn!("String Error encountered: {}", specific_error);
+                            }
                             //Panic or an actor Error, log and continue in the loop
-                            error!("{:?} {:?}", context_archetype.ident, e);
+                            warn!("Restarting: {:?} ", context_archetype.ident);
                         }
                     }
+
+
+
+
                 }
             })
         );

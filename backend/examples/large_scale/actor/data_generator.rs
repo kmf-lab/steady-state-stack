@@ -53,7 +53,7 @@ fn single_iteration<const GIRTH: usize>(monitor: &mut LocalMonitor<0, GIRTH>, bu
         let route = thread_rng().gen::<u16>();
         let packet = Packet {
             route,
-            data: Bytes::from_static(&[0u8; 128]),
+            data: Bytes::from_static(&[0u8; 62]),
         };
         let index = (packet.route as usize) % tx.len();
         buffers[index].push(packet);

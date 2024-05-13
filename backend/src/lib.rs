@@ -28,6 +28,7 @@ mod graph_liveliness;
 mod loop_driver;
 mod yield_now;
 mod abstract_executor;
+mod test_panic_capture;
 
 pub use graph_testing::GraphTestResult;
 pub use monitor::LocalMonitor;
@@ -710,7 +711,7 @@ impl<T> Tx<T> {
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    pub async fn send_async(&mut self, ident:ActorIdentity, a: T, saturation:SendSaturation) -> Result<(), T> {
+    pub(crate) async fn send_async(&mut self, ident:ActorIdentity, a: T, saturation:SendSaturation) -> Result<(), T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_send_async(a, ident, saturation).await
