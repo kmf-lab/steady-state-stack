@@ -277,7 +277,7 @@ pub(crate) struct FrameHistory {
 const REC_NODE:u64 = 1;
 const REC_EDGE:u64 = 0;
 
-const HISTORY_WRITE_BLOCK_SIZE:usize = 1 << 12; //must be power of 2 and 4096 or larger
+const HISTORY_WRITE_BLOCK_SIZE:usize = 1 << (12 + 4); //must be power of 2 and 4096 or larger, 64k is good
 
 impl FrameHistory {
 
@@ -385,7 +385,7 @@ impl FrameHistory {
             //trace!("attempt to write history");
             let to_be_written = std::mem::replace(&mut self.history_buffer, continued_buffer);
             if let Err(e) = Self::append_to_file(self.output_log_path.join(&file_to_append_onto)
-                                                , to_be_written).await {
+                                                , to_be_written, flush_all).await {
                 error!("Error writing to file: {}", e);
                 error!("Due to the above error some history has been lost");
 
@@ -426,25 +426,29 @@ impl FrameHistory {
         //nuclei::spawn(Self::all_to_file_async(h, data)).await
 
     }
+    async fn all_to_file_async(mut h: Handle<File>, data: BytesMut) -> Result<(), std::io::Error> {
+        h.write_all(data.as_ref()).await?;
+        //  Handle::<File>::flush(&mut h).await?; //TODO: add this as shutdown?
+        Ok(())
+    }
 
-    async fn append_to_file(path: PathBuf, data: BytesMut) -> Result<(), std::io::Error> {
+
+    async fn append_to_file(path: PathBuf, data: BytesMut, flush: bool) -> Result<(), std::io::Error> {
+       //error!("write to {}",path.display());
 
                     let file = OpenOptions::new()
                             .append(true)
                             .create(true)
                             .open(&path)?;
 
-                    let h = Handle::<File>::new(file)?;
-                    Self::all_to_file_async(h, data).await
-
-        //nuclei::spawn(Self::all_to_file_async(h, data)).await
-
+                    let mut h = Handle::<File>::new(file)?;
+                    h.write_all(data.as_ref()).await?;
+                    if flush {
+                        Handle::<File>::flush(&mut h).await?;
+                    }
+                     Ok(())
     }
-    pub(crate) async fn all_to_file_async(mut h: Handle<File>, data: BytesMut) -> Result<(), std::io::Error> {
-        h.write_all(data.as_ref()).await?; //TODO: do we need to wait on this? only for shutodwn!
-        Handle::<File>::flush(&mut h).await?; //TODO: review if this is needed.
-        Ok(())
-    }
+
 
 }
 
