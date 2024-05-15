@@ -434,7 +434,6 @@ impl FrameHistory {
 
 
     async fn append_to_file(path: PathBuf, data: BytesMut, flush: bool) -> Result<(), std::io::Error> {
-       //error!("write to {}",path.display());
 
                     let file = OpenOptions::new()
                             .append(true)

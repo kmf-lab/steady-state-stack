@@ -56,7 +56,7 @@ pub struct ActorBuilder {
 
 #[derive(Default)]
 pub struct ActorGroup {
-    future_builder: VecDeque<Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>,bool) + Send >>,
+    future_builder: VecDeque<Box<dyn FnMut() -> (  BoxFuture<'static, Result<(), Box<dyn Error>>>  ,bool) + Send >>,
 }
 
 impl ActorGroup {
@@ -133,7 +133,7 @@ impl ActorGroup {
                             true
                         } else {
                             //this actor was finished so remove it from the list
-                            actor_future_vec.remove(index);
+                            let _ = actor_future_vec.remove(index);
                             !actor_future_vec.is_empty()  // true we keep running
                         }
                     }));
@@ -496,7 +496,7 @@ impl ActorBuilder {
                         Err(e) => {
                             if let Some(specific_error) = e.downcast_ref::<std::io::Error>() {
                                 warn!("IO Error encountered: {}", specific_error);
-                            } if let Some(specific_error) = e.downcast_ref::<String>() {
+                            } else if let Some(specific_error) = e.downcast_ref::<String>() {
                                 warn!("String Error encountered: {}", specific_error);
                             }
                             //Panic or an actor Error, log and continue in the loop
@@ -634,7 +634,7 @@ impl ActorBuilder {
 }
 
 
-pub(crate) fn build_actor_future<F, I>(
+fn build_actor_future<F, I>(
     actor_startup_receiver: &mut Option<Receiver<()>>
     , builder_source: SteadyContextArchetype<I>) -> F
     where I: Fn(SteadyContext) -> F + 'static + Sync + Send,

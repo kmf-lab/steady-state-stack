@@ -800,7 +800,6 @@ impl<T> Tx<T> {
     fn direct_use_check_and_warn(&self) {
         if self.channel_meta_data.expects_to_be_monitored {
             write_warning_to_console(backtrace::Backtrace::new());
-
         }
     }
     ////////////////////////////////////////////////////////////////
@@ -1241,7 +1240,6 @@ impl<T> Rx<T> {
     fn direct_use_check_and_warn(&self) {
         if self.channel_meta_data.expects_to_be_monitored {
             write_warning_to_console(backtrace::Backtrace::new());
-
         }
     }
 

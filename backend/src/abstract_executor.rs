@@ -26,6 +26,14 @@ pub(crate) fn init() {
             .with_min_threads(4)
             .with_max_threads(usize::MAX); //disabled this limit
         nuclei::init_with_config(config);
+
+
+        //nuclei::drive(async {
+
+
+       // }).spawn();
+
+
     });
 }
 
@@ -36,8 +44,6 @@ pub(crate) fn spawn_detached<F, T>(future: F)
         T: Send + 'static,
 { //only used for supervisors who will be blocked running the actor most of the time.
     nuclei::spawn(async move {
-        //TODO: we need to be able to config the stack size for these new threads.
-
         match nuclei::spawn_more_threads(1).await {
             Ok(_) => {}
             Err(_) => {} //log max thread issues?

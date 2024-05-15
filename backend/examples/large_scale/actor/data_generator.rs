@@ -38,6 +38,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
         let _clean = wait_for_all!(
             //monitor.wait_periodic(Duration::from_micros(2500)),
+            monitor.wait_periodic(Duration::from_secs(10)), //TODO: why is one thread saturated? also ttest with Tokio
             monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH)).await;
 
         single_iteration(&mut monitor, &mut buffers, &mut tx, limit);

@@ -92,27 +92,23 @@ pub(crate) async fn run(context: SteadyContext
     let mut is_shutting_down = false;
 loop {
 
+    let confirm_shutdown = &mut ||
+        {
+            is_shutting_down = true;
+            is_all_empty_and_closed(dynamic_senders_vec.read()) &&
+                locked_option_svr.iter_mut().all(|s| s.mark_closed())
+        };
+
     //we do this here instead at the while because monitor is optional
         let instance_id = if let Some(ref mut monitor) = optional_monitor {
             monitor.relay_stats_smartly();
-            if !monitor.is_running(&mut ||
-                {
-                    is_shutting_down = true;
-                    is_all_empty_and_closed(dynamic_senders_vec.read()) &&
-                    locked_option_svr.iter_mut().all(|s| s.mark_closed())
-                }
-            ) {
+
+            if !monitor.is_running(confirm_shutdown) {
                 break;
             }
             monitor.instance_id //collect instance id to set our channels
         } else if let Some(ref mut context) = optional_context {
-                if !context.is_running(&mut ||
-                    {
-                        is_shutting_down = true;
-                        is_all_empty_and_closed(dynamic_senders_vec.read())  &&
-                        locked_option_svr.iter_mut().all(|s| s.mark_closed())
-                    }
-                ) {
+                if !context.is_running(confirm_shutdown) {
                     break;
                 }
                context.instance_id //collect instance id to set our channels

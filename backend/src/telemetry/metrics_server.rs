@@ -156,7 +156,8 @@ pub(crate) async fn run(context: SteadyContext
                                     }
                              },
                              //Node cpu usage
-                             DiagramData::NodeProcessData(_,actor_status) => {
+                             DiagramData::NodeProcessData(seq, actor_status) => {
+                                    //assert_eq!(seq, dot_state.seq);
 
                                     //sum up all actor work so we can find the percentage of each
                                     let total_work_ns:u128 = actor_status

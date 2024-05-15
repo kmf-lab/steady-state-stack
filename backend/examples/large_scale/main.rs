@@ -63,9 +63,9 @@ fn main() {
 
 }
 
-pub(crate) const LEVEL_1: usize = 2; //3
+pub(crate) const LEVEL_1: usize = 2;
 const LEVEL_2: usize = 2; //3
-const LEVEL_3: usize = 2; //2
+const LEVEL_3: usize = 3; //2
 const LEVEL_4: usize = 2; //One will remove all the user filters and loggers
 
 fn build_graph(cli_arg: &Args) -> steady_state::Graph {

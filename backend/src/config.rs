@@ -58,6 +58,6 @@ use std::env;
 
 
    //TODO: 2025, collector collection can not be monitored yet
-    pub const SHOW_TELEMETRY_ON_TELEMETRY:bool = false;
+    pub const SHOW_TELEMETRY_ON_TELEMETRY:bool = true;//false;
 
 

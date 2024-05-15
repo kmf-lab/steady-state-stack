@@ -271,7 +271,7 @@ impl Graph {
     pub fn block_until_stopped(self, clean_shutdown_timeout: Duration) {
 
         if let Some(wait_on) = match self.runtime_state.write() {
-            Ok(mut state) => {
+            Ok(state) => {
 
                 if state.is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
                     let (tx, rx) = futures::channel::oneshot::channel();
@@ -323,10 +323,7 @@ impl Graph {
                         if state.state.eq(&GraphLivelinessState::StoppedUncleanly) {
                             warn!("voter log: (approved votes at the top, total:{})",state.votes.len());
                             let mut voters = state.votes.iter()
-                                .map(|f| match f.try_lock() {
-                                    Some(v) => Some(v.clone()),
-                                    None => None
-                                })
+                                .map(|f| f.try_lock().map(|v| v.clone()) )
                                 .collect::<Vec<_>>();
 
                             // You can sort or prioritize the votes as needed here
