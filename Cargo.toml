@@ -1,7 +1,14 @@
 [workspace]
 edition = "2021"
 members = [
-    "backend",
+    "core",
     "cargo-steady-state",
 ]
 resolver = "2"
+
+[profile.release]
+opt-level = 'z' # optimize for size
+lto = true # link time optimization
+codegen-units = 1 # only one codegen unit to reduce binary size
+panic = 'abort' # no unwinding
+strip = 'symbols' # strip symbols

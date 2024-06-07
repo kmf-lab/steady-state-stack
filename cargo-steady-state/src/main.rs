@@ -39,31 +39,43 @@ fn main() {
         eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &opt.loglevel);
     }
 
-    if let Ok(g) = fs::read_to_string(&opt.dotfile) {
-        process_dot(&g, &opt.name);
-    } else {
-        error!("Failed to read dot file: {}", &opt.dotfile);
-    }
+
+    process_dot_file(&opt.dotfile, &opt.name);
+
 
 }
 
-fn process_dot(dot: &str, name: &str) {
+fn process_dot_file(dotfile: &str, name: &str) {
     //before we parse the dot string we must remove all comments
     //we will remove all text starting with // up to the end of the line
-    let dot = dot.lines()
-        .map(|line| {
-            if let Some(pos) = line.find("//") {
-                &line[0..pos]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<&str>>()
-        .join("\n");
+    let temp_file = if let Ok(g) = fs::read_to_string(&dotfile) {
+          let dot = g.lines()
+              .map(|line| {
+                  if let Some(pos) = line.find("//") {
+                      &line[0..pos]
+                  } else {
+                      line
+                  }
+              })
+              .collect::<Vec<&str>>()
+              .join("\n");
+          //write new temp dot
+            let temp_dot = format!("{}.temp", dotfile);
+            fs::write(&temp_dot, dot).expect("Failed to write temp dot file");
+          temp_dot
+      } else {
+          error!("Failed to read dot file: {}", dotfile);
+          return;
+      };
 
-
+// let x = ast::Graph::from_file(&opt.dotfile);
+//
     //
-    match ast::Graph::read_dot(&dot) {
+   // match ast::Graph::read_dot(&dot) {
+
+  //  println!("filename {:?}", dotfile);
+
+    match ast::Graph::from_file(temp_file) {
         Ok(ast) => {
             //Dot is clean now try to build the folders
             ///////////
@@ -497,12 +509,10 @@ mod tests {
     use std::str::FromStr;
     use flexi_logger::{Logger, LogSpecBuilder};
     use log::{error, info, LevelFilter};
-    use crate::{process_dot};
+    use crate::process_dot_file;
 
 
-
-
-    fn build_and_parse(test_name: &str, g: &str, clean: bool, show_logs: bool)  {
+    fn build_and_parse(test_name: &str, graph_dot: &str, clean: bool, show_logs: bool)  {
 
         let level = "warn";
         if let Ok(s) = LevelFilter::from_str(&level) {
@@ -552,8 +562,12 @@ mod tests {
                     info!("Removed test_run/{} directory",test_name);
                 }
             }
-            /////
-            process_dot(g, test_name);
+            // write graph_dot into a temp file
+            let dot_file = format!("{}.dot", test_name);
+            fs::write(&dot_file, graph_dot).expect("Failed to write dot file");
+            process_dot_file(&dot_file, test_name);
+            fs::remove_file(&dot_file).expect("Failed to remove dot file");
+
             const DO_COMPILE_TEST:bool = true;
             if DO_COMPILE_TEST {
                 do_compile_test(test_name);

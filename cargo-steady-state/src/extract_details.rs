@@ -223,13 +223,14 @@ fn extract_channel_name(label_text: &str, from_node: &str, to_node: &str) -> Str
 
 /////////////////////////
 ////////////////////////
-pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a str)>) -> Result<ProjectModel, Box<dyn Error>> {
+pub(crate) fn extract_project_model<'a>(name: &str, graph: Graph<(String, String)>) -> Result<ProjectModel, Box<dyn Error>> {
     let mut pm = ProjectModel { name: name.to_string(), ..Default::default() };
 
+    let empty = "".to_string();
     // Iterate over nodes to populate actors
-    let mut nodes:Vec<(&str,&str)> = g.nodes.set.iter()
-                            .map(|n| (n.1.id, n.1.attr.elems.iter()
-                                              .find_map(|(key, value)| if "label".eq(*key) { Some(*value) } else { None }).unwrap_or_default()
+    let mut nodes:Vec<(&String,&String)> = graph.nodes.set.iter()
+                            .map(|node| (node.0, node.1.attr.elems.iter()
+                                              .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
                                      )
                                 )
                             .collect();
@@ -250,10 +251,10 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
     }
 
 
-    let mut edges:Vec<(&str,&str,&str)> = g.edges.set.iter()
-                            .map(|e| (e.from, e.to, e.attr.elems
+    let mut edges:Vec<(&String,&String,&String)> = graph.edges.set.iter()
+                            .map(|edge| (&edge.from, &edge.to, edge.attr.elems
                                                 .iter()
-                                                .find_map(|(key, value)| if "label".eq(*key) { Some(*value) } else { None }).unwrap_or_default()
+                                                .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
                             ))
                             .collect();
     edges.sort();//to ensure we get the same results on each run
@@ -267,9 +268,9 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
         let name = extract_channel_name(label_text, from, to);
         let consume_pattern = extract_consume_pattern_from_label(label_text);
 
-        if let Some(mod_name) = pm.actors.iter().filter(|f| f.display_name == from).map(|a| a.mod_name.clone()).next() {
+        if let Some(mod_name) = pm.actors.iter().filter(|f| f.display_name.eq(from)).map(|a| a.mod_name.clone()).next() {
 
-            let to_mod = pm.actors.iter().filter(|f| f.display_name == to).map(|a| a.mod_name.clone()).next().unwrap_or("unknown".into());
+            let to_mod = pm.actors.iter().filter(|f| f.display_name.eq(to)).map(|a| a.mod_name.clone()).next().unwrap_or("unknown".into());
 
             // Create a Channel instance based on extracted details
             let mut channel = Channel {
@@ -291,7 +292,7 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
             };
 
             // Find the actor with the same id as the from node and add the channel to its tx_channels
-            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name == from) {
+            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(from)) {
                   //we found the actor which is the source of this channel
 
                   //review this actor and see if it has some batched write size
@@ -320,7 +321,7 @@ pub(crate) fn extract_project_model<'a>(name: &str, g: Graph<'a, (&'a str, &'a s
 
                   roll_up_bundle(&mut a.tx_channels, tx_channel, |_t,_v| true);
             }
-            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name == to) {
+            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(to)) {
                   //we found the actor which is the source of this channel
 
                   //review this actor and see if it has some batched write size

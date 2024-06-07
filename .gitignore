@@ -18,10 +18,10 @@ cargo_audit.txt
 cargo_bloat.txt
 cargo_outdated.txt
 cargo_tokei.txt
-backend/cargo_audit.txt
-backend/cargo_bloat.txt
-backend/cargo_outdated.txt
-backend/cargo_tokei.txt
+core/cargo_audit.txt
+core/cargo_bloat.txt
+core/cargo_outdated.txt
+core/cargo_tokei.txt
 
 
 **/*.b64

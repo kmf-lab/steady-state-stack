@@ -43,8 +43,35 @@ else
     exit 1
 fi
 
-# new pre-publish script to be run
+# still considering if I want to ban protobuf usage
+# Check if the output contains 'protocol buffers'
+# cargo tree -i protobuf
+# cargo tree -i prost
+# cargo tree -i prost-build
+
+
+cargo build --workspace --examples
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo "Tests failed with exit code $exit_code"
+    exit $exit_code
+fi
+
+# micro release without builtin viz
+cargo build --release --workspace --examples --features "proactor_nuclei telemetry_server_cdn"
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo "Tests failed with exit code $exit_code"
+    exit $exit_code
+fi
+
 cargo test
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo "Tests failed with exit code $exit_code"
+    exit $exit_code
+fi
+
 cargo test --workspace --examples
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
@@ -53,11 +80,18 @@ if [ $exit_code -ne 0 ]; then
 fi
 
 
-# cargo bloat --release | tee cargo_bloat.txt
+echo "cargo outdated"
 cargo outdated | tee cargo_outdated.txt
+
+
+echo "cargo audit"
 cargo audit | tee cargo_audit.txt
+
+
+echo "cargo tree"
 tokei | tee cargo_tokei.txt
 
-echo "If this is confirmed by GitHub build YOU may now run:   cargo publish";
+echo "If this is confirmed by GitHub build YOU may now run:   cargo publish"
+
 
 

@@ -1,0 +1,34 @@
+digraph PBFTDemo {
+
+    rankdir=TD;
+
+
+    Client [label="Initiates requests\nmod::client AtLeastEvery(5sec)"];
+    Primary [label="Orders requests and initiates consensus\nmod::primary OnEvent(client_request:1||feedback:1)"];
+
+    Client -> Primary [label="name::client_request <TransactionRequest> >>PeekCopy #20"];
+    Replica1 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
+    Replica2 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
+    Replica3 [label="Participates in consensus\nmod::replica OnEvent(pbft_message:1)"];
+
+    // Simplified PBFT message exchange using a single channel type
+     Primary -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+    Primary -> Replica2 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+    Primary -> Replica3 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+
+    // Feedback channels from Replicas back to the Primary
+     Replica1 -> Primary [label="name::feedback <PbftFeedback> >>PeekCopy #10 *B"];
+    Replica2 -> Primary [label="name::feedback <PbftFeedback> >>PeekCopy #10 *B"];
+    Replica3 -> Primary [label="name::feedback <PbftFeedback> >>PeekCopy #10 *B"];
+
+    // Replica to Replica communication for prepare and commit phases
+     Replica1 -> Replica2 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+    Replica1 -> Replica3 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+
+    Replica2 -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+    Replica2 -> Replica3 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+
+    Replica3 -> Replica1 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+    Replica3 -> Replica2 [label="name::pbft_message <PbftMessage> >>PeekCopy #30 *B"];
+
+}
