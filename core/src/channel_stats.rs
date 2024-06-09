@@ -10,7 +10,7 @@ use crate::*;
 use hdrhistogram::{Counter, Histogram};
 use itoa::Buffer;
 
-use crate::actor_stats::ChannelBlock;
+use crate::actor_stats::{ActorStatsComputer, ChannelBlock};
 
 
 pub(crate) const DOT_GREEN: &str = "green";
@@ -88,8 +88,7 @@ impl ChannelStatsComputer {
         self.prometheus_labels.push_str("\", ");
         self.prometheus_labels.push_str("actor_to_id=\"");
         self.prometheus_labels.push_str(itoa::Buffer::new().format(to_actor));
-        self.prometheus_labels.push_str("\", ");
-
+        self.prometheus_labels.push_str("\"");
 
 
         //TODO: labels
@@ -368,7 +367,6 @@ impl ChannelStatsComputer {
                           -> (& 'static str, & 'static str) {
 
         display_label.clear();
-        metric_text.clear();
 
         if self.capacity==0 {
             return (DOT_GREY,"1");
@@ -389,6 +387,35 @@ impl ChannelStatsComputer {
         ////////////////////////////////////////////////
         //  build the labels
         ////////////////////////////////////////////////
+        #[cfg(any(feature = "prometheus_metrics") )]
+        {
+            metric_text.clear();
+
+            metric_text.push_str("inflight");
+            metric_text.push_str("{");
+            metric_text.push_str(&self.prometheus_labels);
+            metric_text.push_str("}");
+            metric_text.push_str(" ");
+            metric_text.push_str(itoa::Buffer::new().format(inflight));
+            metric_text.push_str("\n");
+
+            metric_text.push_str("send");
+            metric_text.push_str("{");
+            metric_text.push_str(&self.prometheus_labels);
+            metric_text.push_str("}");
+            metric_text.push_str(" ");
+            metric_text.push_str(itoa::Buffer::new().format(send));
+            metric_text.push_str("\n");
+
+            metric_text.push_str("take");
+            metric_text.push_str("{");
+            metric_text.push_str(&self.prometheus_labels);
+            metric_text.push_str("}");
+            metric_text.push_str(" ");
+            metric_text.push_str(itoa::Buffer::new().format(take));
+            metric_text.push_str("\n");
+        }
+
 
         self.show_type.iter().for_each(|f| {
             display_label.push_str(f);
@@ -411,41 +438,50 @@ impl ChannelStatsComputer {
 
         //does nothing if the value is None
         if let Some(ref current_rate) = self.current_rate {
-            compute_labels(self.frame_rate_ms
-                           , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                           , &mut display_label, current_rate
-                                , "rate", "per/sec"
-                                , u64::MAX
-                                , (1000, self.frame_rate_ms as usize)
-                                , self.show_avg_rate
-                                , & self.std_dev_rate
-                                , & self.percentiles_rate, &mut metric_text);
+            let config = ComputeLabelsConfig::channelConfig(self,(1000, self.frame_rate_ms as usize), u64::MAX, self.show_avg_rate);
+
+            let labels = ComputeLabelsLabels {
+                            label: "rate",
+                            unit: "per/sec",
+                            prometheus_labels: &self.prometheus_labels
+                 };
+
+            compute_labels(config
+                           , current_rate
+                           , labels
+                           , & self.std_dev_rate
+                           , & self.percentiles_rate, &mut metric_text, &mut display_label);
         }
 
         if let Some(ref current_filled) = self.current_filled {
-            //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(self.frame_rate_ms
-                                , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                                , &mut display_label, current_filled
-                                , "filled", "%"
-                                , u64::MAX
-                                , (100, self.capacity)
-                                , self.show_avg_filled
-                                , & self.std_dev_filled
-                                , & self.percentiles_filled, &mut metric_text);
+            let config = ComputeLabelsConfig::channelConfig(self,(100, self.capacity), u64::MAX, self.show_avg_filled);
+            let labels = ComputeLabelsLabels {
+                label: "filled",
+                unit: "%",
+                prometheus_labels: &self.prometheus_labels
+            };
+            // self.prometheus_labels
+            compute_labels(config
+                           , current_filled
+                           , labels
+                           , & self.std_dev_filled
+                           , & self.percentiles_filled
+                           , &mut metric_text, &mut display_label);
         }
 
         if let Some(ref current_latency) = self.current_latency {
+            let config = ComputeLabelsConfig::channelConfig(self,(1,1), u64::MAX, self.show_avg_latency);
+            let labels = ComputeLabelsLabels {
+                label: "latency",
+                unit: "ms",
+                prometheus_labels: &self.prometheus_labels
+            };
             //info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(self.frame_rate_ms
-                                , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                                , &mut display_label, current_latency
-                                , "latency", "ms"
-                                , u64::MAX
-                                , (1,1)
-                                , self.show_avg_latency
-                                , & self.std_dev_latency
-                                , & self.percentiles_latency, &mut metric_text);
+            compute_labels(config
+                           , current_latency
+                           , labels
+                           , & self.std_dev_latency
+                           , & self.percentiles_latency, &mut metric_text, &mut display_label);
         }
 
         display_label.push_str("Capacity: ");
@@ -1002,41 +1038,53 @@ fn latency_avg_trigger() {
 }
 
 fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: &mut String, target_metric: &mut String, current_rate: &&ChannelBlock<u64>) {
-    compute_labels(computer.frame_rate_ms
-                   , computer.window_bucket_in_bits + computer.refresh_rate_in_bits
-                   , target_telemetry_label, &current_rate
-                   , &"rate", &"per/sec"
-                   , u64::MAX
-                   , (1000, computer.frame_rate_ms as usize)
-                   , computer.show_avg_rate
+    let config = ComputeLabelsConfig::channelConfig(computer,(1000, computer.frame_rate_ms as usize),  u64::MAX, computer.show_avg_rate);
+    let labels = ComputeLabelsLabels {
+        label: "rate",
+        unit: "per/sec",
+        prometheus_labels: &computer.prometheus_labels
+    };
+    compute_labels(config
+                   , &current_rate
+                   , labels
                    , &computer.std_dev_rate
                    , &computer.percentiles_rate
+                   , target_telemetry_label
                    , target_metric);
 }
 
     fn compute_filled_labels(computer: &ChannelStatsComputer, display_label: &mut String, metric_target: &mut String, current_filled: &&ChannelBlock<u16>) {
-    compute_labels(computer.frame_rate_ms
-                   , computer.window_bucket_in_bits + computer.refresh_rate_in_bits
-                   , display_label, &current_filled
-                   , &"filled", &"%"
-                   , u64::MAX
-                   , (100, computer.capacity)
-                   , computer.show_avg_filled
+
+        let config = ComputeLabelsConfig::channelConfig(computer,(100, computer.capacity),  u64::MAX, computer.show_avg_filled);
+        let labels = ComputeLabelsLabels {
+            label: "filled",
+            unit: "%",
+            prometheus_labels: &computer.prometheus_labels
+        };
+        compute_labels(config
+                   , &current_filled
+                   , labels
                    , &computer.std_dev_filled
                    , &computer.percentiles_filled
+                   , display_label
                    , metric_target);
 }
 
     fn compute_latency_labels(computer: &ChannelStatsComputer, display_label: &mut String, metric_target: &mut String, current_latency: &&ChannelBlock<u64>) {
-    compute_labels(computer.frame_rate_ms
-                   , computer.window_bucket_in_bits + computer.refresh_rate_in_bits
-                   , display_label, &current_latency
-                   , &"latency", &"ms"
-                   , u64::MAX
-                   , (1, 1)
-                   , computer.show_avg_latency
+
+        let config = ComputeLabelsConfig::channelConfig(computer,(1, 1),  u64::MAX, computer.show_avg_latency);
+        let labels = ComputeLabelsLabels {
+            label: "latency",
+            unit: "ms",
+            prometheus_labels: &computer.prometheus_labels
+        };
+
+        compute_labels(config
+                   , &current_latency
+                   , labels
                    , &computer.std_dev_latency
                    , &computer.percentiles_latency
+                   , display_label
                    , metric_target);
 }
 
@@ -1118,18 +1166,56 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: 
 
 pub(crate) const PLACES_TENS:u64 = 1000u64;
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
-                                         , window_in_bits: u8
-                                         , label_target: &mut String
+//TODO: move this into the compute stats.
+
+#[derive(Copy,Clone)]
+pub(crate) struct ComputeLabelsConfig {
+      frame_rate_ms: u128
+    , rational_adjust: (usize,usize)
+    , max_value: u64
+    , window_in_bits: u8
+    , show_avg: bool
+}
+
+impl ComputeLabelsConfig {
+    //encourage inline
+    #[inline]
+    pub(crate) fn channelConfig(that: &ChannelStatsComputer, rational_adjust: (usize,usize), max_value: u64, show_avg: bool) -> Self {
+        Self {
+            frame_rate_ms: that.frame_rate_ms
+            , rational_adjust
+            , max_value
+            , window_in_bits: that.window_bucket_in_bits+that.refresh_rate_in_bits
+            , show_avg
+        }
+    }
+    #[inline]
+    pub(crate) fn actorConfig(that: &ActorStatsComputer, rational_adjust: (usize,usize), max_value: u64, show_avg: bool) -> Self {
+        Self {
+            frame_rate_ms: that.frame_rate_ms
+            , rational_adjust
+            , max_value
+            , window_in_bits: that.window_bucket_in_bits+that.refresh_rate_in_bits
+            , show_avg
+        }
+    }
+}
+
+#[derive(Copy,Clone)]
+pub(crate) struct ComputeLabelsLabels<'a> {
+      pub(crate) label: &'a str
+    , pub(crate) unit: &'a str
+    , pub(crate) prometheus_labels: &'a str
+}
+
+#[inline]
+pub(crate) fn compute_labels<T: Counter>(config: ComputeLabelsConfig
                                          , current: &ChannelBlock<T>
-                                         , label: &str, unit: &str
-                                         , max_value: u64
-                                         , rational_adjust: (usize,usize)
-                                         , show_avg: bool
+                                         , labels: ComputeLabelsLabels
                                          , std_dev: &[StdDev]
                                          , percentile: &[Percentile]
-                                         , metric_target: &mut String) {
+                                         , metric_target: &mut String, label_target: &mut String
+) {
 
     //we have frames, refresh rates and windows
     //  a frame is a single slice of time, viewable
@@ -1150,23 +1236,23 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
     //Average work: 25%          (custom unit)
 
 
-    if show_avg {
+    if config.show_avg {
         // info!("{} runner: {:?} shift: {:?}",label, current.runner, (self.refresh_rate_in_bits + self.window_bucket_in_bits));
         label_target.push_str("Avg ");
-        label_target.push_str(label);
+        label_target.push_str(labels.label);
 
-        metric_target.push_str("avg_");
-        metric_target.push_str(label);
-      //  metric_target.push_str("{nodeid=\""); //TODO: pass in nodeid???
-      //  label_target.push_str(itoa::Buffer::new().format(self.id));
-       // metric_target.push_str("\"} ");
-
-        let denominator = PLACES_TENS * rational_adjust.1 as u64;
-        let avg_per_sec_numer = (rational_adjust.0 as u128 *current.runner) >> window_in_bits;
+        #[cfg(any(feature = "prometheus_metrics") )]
+        {
+            metric_target.push_str("avg_");
+            metric_target.push_str(labels.label);
+            metric_target.push_str("{");
+            metric_target.push_str(labels.prometheus_labels);
+            metric_target.push_str("}");
+        }
+        let denominator = PLACES_TENS * config.rational_adjust.1 as u64;
+        let avg_per_sec_numer = (config.rational_adjust.0 as u128 *current.runner) >> config.window_in_bits;
         if avg_per_sec_numer >= (10 * denominator) as u128 {
             let value = avg_per_sec_numer / denominator as u128;
-
-            metric_target.push_str(itoa::Buffer::new().format(value));
 
             if value >= 500000 {
                 label_target.push_str(": ");
@@ -1176,47 +1262,75 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
                 label_target.push_str(": ");
                 label_target.push_str(itoa::Buffer::new().format(value));
             }
+            #[cfg(any(feature = "prometheus_metrics") )]
+            {
+                metric_target.push_str(" ");
+                metric_target.push_str(itoa::Buffer::new().format(value));
+                metric_target.push_str("\n");
+            }
         } else {
             let value = avg_per_sec_numer as f32 / denominator as f32;
-            metric_target.push_str(&format!(": {:.3}", value));
+            let value = &format!(" {:.3}", value);
 
-            label_target.push_str(&format!(": {:.3}", value));
+            #[cfg(any(feature = "prometheus_metrics") )]
+            {
+                metric_target.push_str(value);
+                metric_target.push_str("\n");
+            }
+
+            label_target.push_str(":");
+            label_target.push_str(value);
         }
-        metric_target.push_str("\n");
-
 
         label_target.push(' ');
-        label_target.push_str(unit);
+        label_target.push_str(labels.unit);
         label_target.push('\n');
     }
 
     let std = if !std_dev.is_empty() {
-        actor_stats::compute_std_dev(window_in_bits
-                                     , 1 << window_in_bits
-                                     , current.runner
-                                     , current.sum_of_squares)
+                    actor_stats::compute_std_dev(config.window_in_bits
+                                                 , 1 << config.window_in_bits
+                                                 , current.runner
+                                                 , current.sum_of_squares)
 
-    } else { 0f32 };
+                } else { 0f32 };
+
     std_dev.iter().for_each(|f| {
 
         // Inflight Operations 2.5 Standard Deviations Above Mean: 30455.1 events in 3 ms Frame
 
-        label_target.push_str(label);
+        label_target.push_str(labels.label);
         label_target.push(' ');
+
+        let n_units = format!("{:.1}", f.value());
         if *f != StdDev::one() {
-            label_target.push_str(&format!("{:.1}", f.value()) );
+            label_target.push_str(&n_units );
         }
         label_target.push_str("StdDev: "); //this is per frame.
-        label_target.push_str(
-            &format!("{:.3}", (f.value() * std) / PLACES_TENS as f32));
+        let value = &format!("{:.3}", (f.value() * std) / PLACES_TENS as f32);
+        label_target.push_str(value);
 
         label_target.push_str(" per frame (");
-        label_target.push_str(Buffer::new().format(frame_rate_ms));
+        label_target.push_str(Buffer::new().format(config.frame_rate_ms));
         label_target.push_str("ms duration)\n");
+
+        #[cfg(any(feature = "prometheus_metrics") )]
+        {
+            metric_target.push_str("std_");
+            metric_target.push_str(labels.label);
+            metric_target.push_str("{");
+            metric_target.push_str(labels.prometheus_labels);
+            metric_target.push_str(", n=");
+            metric_target.push_str(&n_units);
+            metric_target.push_str("}");
+            metric_target.push_str(" ");
+            metric_target.push_str(value);
+            metric_target.push_str("\n");
+        }
     });
 
     percentile.iter().for_each(|p| {
-        label_target.push_str(label);
+        label_target.push_str(labels.label);
         label_target.push(' ');
 
         label_target.push_str(Buffer::new().format(p.percentile() as usize));
@@ -1224,17 +1338,31 @@ pub(crate) fn compute_labels<T: Counter>(frame_rate_ms: u128
 
         if let Some(h) = &current.histogram {
 
-             let value = ((rational_adjust.0 as f32 * h.value_at_percentile(p.percentile()).min(max_value)  as f32)
-                          / rational_adjust.1 as f32) as usize;
+             let value = ((config.rational_adjust.0 as f32 * h.value_at_percentile(p.percentile()).min(config.max_value)  as f32)
+                          / config.rational_adjust.1 as f32) as usize;
 
-            label_target.push_str(Buffer::new().format(value));
+             label_target.push_str(itoa::Buffer::new().format(value));
 
+            #[cfg(any(feature = "prometheus_metrics") )]
+            {
+                metric_target.push_str("percentile_");
+                metric_target.push_str(labels.label);
+                metric_target.push_str("{");
+                metric_target.push_str(labels.prometheus_labels);
+                metric_target.push_str(", p=");
+                metric_target.push_str(itoa::Buffer::new().format((100.0f64 * p.percentile()) as usize ));
+                metric_target.push_str("}");
+                metric_target.push_str(" ");
+                metric_target.push_str(itoa::Buffer::new().format(value));
+                metric_target.push_str("\n");
+            }
         } else {
             label_target.push_str("InternalError"); //not expected to happen
             error!("InternalError: no histogram for required percentile {:?}",p);
         }
         label_target.push(' ');
-        label_target.push_str(unit);
+        label_target.push_str(labels.unit);
         label_target.push('\n');
+
     });
 }

@@ -20,7 +20,7 @@ use std::env;
 
 //////////////////////////////////////////////////////////
 
-    const DEFAULT_TELEMETRY_SERVER_PORT:&str = "8080"; // env: TELEMETRY_SERVER_PORT
+    const DEFAULT_TELEMETRY_SERVER_PORT:&str = "9100"; // env: TELEMETRY_SERVER_PORT
     pub(crate) fn telemetry_server_port() -> u16 {
         env::var("TELEMETRY_SERVER_PORT")
             .unwrap_or_else(|_| DEFAULT_TELEMETRY_SERVER_PORT.to_string())

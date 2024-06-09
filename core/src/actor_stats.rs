@@ -7,7 +7,7 @@ use log::*;
 use std::cmp;
 
 use crate::*;
-use crate::channel_stats::{compute_labels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW, PLACES_TENS};
+use crate::channel_stats::{compute_labels, ComputeLabelsConfig, ComputeLabelsLabels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW, PLACES_TENS};
 
 #[derive(Default)]
 pub struct ActorStatsComputer {
@@ -44,6 +44,11 @@ pub struct ActorStatsComputer {
 
 }
 
+// TODO: use the features for telemetry turn on and off the dot file contruction
+// TODO: add to the prometheus metrics the alert level
+// TODO :add to the prometheus the name of the actors and channels?
+// TODO: add labels as labels for promethous and labels for filer of the telemetry.
+
 impl ActorStatsComputer {
     const PLACES_TENS:u64 = 1000u64;
 
@@ -57,17 +62,16 @@ impl ActorStatsComputer {
 
         self.accumulate_data_frame(mcpu, work);
 
-        dot_label.clear();//for this node we cache the same allocation.
+
+        #[cfg(any(feature = "prometheus_metrics") )]
         metric_text.clear();
 
+        dot_label.clear();//for this node we cache the same allocation.
         dot_label.push('#');
         dot_label.push_str(itoa::Buffer::new().format(self.id));
         dot_label.push(' ');
         dot_label.push_str(self.name);
         dot_label.push('\n');
-
-        //TODO:what labels go into metric text?
-        //      input ids, output ids,  my id
 
 
         if  0 != self.window_bucket_in_bits {
@@ -82,13 +86,15 @@ impl ActorStatsComputer {
             dot_label.push_str(itoa::Buffer::new().format(total_count_restarts));
             dot_label.push('\n');
 
-            //prometheus
-            metric_text.push_str("graph_node_restarts{");
-            metric_text.push_str(&self.prometheus_labels);
-            metric_text.push_str("} ");
-
-            dot_label.push_str(itoa::Buffer::new().format(total_count_restarts));
-            metric_text.push('\n');
+            #[cfg(any(feature = "prometheus_metrics") )]
+            {
+                //prometheus
+                metric_text.push_str("graph_node_restarts{");
+                metric_text.push_str(&self.prometheus_labels);
+                metric_text.push_str("} ");
+                metric_text.push_str(itoa::Buffer::new().format(total_count_restarts));
+                metric_text.push('\n');
+            }
         }
 
         if bool_stop {
@@ -98,29 +104,34 @@ impl ActorStatsComputer {
 
 
         if let Some(ref current_work) = &self.current_work {
-            compute_labels(self.frame_rate_ms
-                           , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                           , dot_label, current_work
-                           , "work", "%"
-                           , 100
-                           , (1,1)
-                           , self.show_avg_work
+            let config = ComputeLabelsConfig::actorConfig(self,(1,1), 100, self.show_avg_work);
+            let labels = ComputeLabelsLabels {
+                label: "work",
+                unit: "%",
+                prometheus_labels: &self.prometheus_labels
+            };
+            compute_labels(config
+                           , current_work
+                           , labels
                            , & self.std_dev_work
                            , & self.percentiles_work
-                           , metric_text
+                           , metric_text, dot_label
             );
         }
         if let Some(ref current_mcpu) = &self.current_mcpu {
-            compute_labels(self.frame_rate_ms
-                           , self.window_bucket_in_bits+self.refresh_rate_in_bits
-                           , dot_label, current_mcpu
-                           , "mCPU", ""
-                           , 1024
-                           , (1,1)
-                           , self.show_avg_mcpu
+            let config = ComputeLabelsConfig::actorConfig(self,(1,1), 1024, self.show_avg_mcpu);
+            let labels = ComputeLabelsLabels {
+                label: "mCPU",
+                unit: "",
+                prometheus_labels: &self.prometheus_labels
+            };
+
+            compute_labels(config
+                           , current_mcpu
+                           , labels
                            , & self.std_dev_mcpu
                            , & self.percentiles_mcpu
-                           , metric_text
+                           , metric_text, dot_label
             );
         }
 
@@ -158,7 +169,7 @@ impl ActorStatsComputer {
         self.prometheus_labels.push_str("\", ");
         self.prometheus_labels.push_str("actor_name=\"");
         self.prometheus_labels.push_str(meta.name);
-        self.prometheus_labels.push_str("\", ");
+        self.prometheus_labels.push_str("\"");
 
         //TODO: Perf, we could pre-filter these by color here since they will not change again
         //      this might be needed for faster updates..

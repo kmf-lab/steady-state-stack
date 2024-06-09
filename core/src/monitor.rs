@@ -523,6 +523,7 @@ pub(crate) mod monitor_tests {
             assert_eq!(tx.count[txd.local_index], threshold);
         }
 
+        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
         monitor.relay_stats_smartly();
 
         if let Some(ref mut tx) = monitor.telemetry.send_tx {
@@ -573,8 +574,9 @@ pub(crate) mod monitor_tests {
             if let Some(ref mut tx) = monitor.telemetry.send_tx {
                 assert_eq!(tx.count[txd.local_index], count);
             }
-            monitor.relay_stats_smartly();
         }
+        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
+        monitor.relay_stats_smartly();
 
         if let Some(ref mut tx) = monitor.telemetry.send_tx {
             assert_eq!(tx.count[txd.local_index], 0);

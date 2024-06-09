@@ -75,6 +75,7 @@ pub(crate) async fn run(context: SteadyContext
     // TODO: build a small CLI app which plays it into a a server
     //       add some text commands to pause requind etc
 
+    #[cfg(any(feature = "prometheus_metrics") )]
     let _ = app.at("/metrics")
         .get(|req: Request<Arc<Mutex<State>>>| async move {
             let body = Body::from_bytes({
@@ -87,6 +88,7 @@ pub(crate) async fn run(context: SteadyContext
             Ok(res)
             });
 
+    #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn") )]
     let _ = app.at("/graph.dot")
         .get(|req: Request<Arc<Mutex<State>>>| async move {
             let body = Body::from_bytes({
@@ -110,6 +112,7 @@ pub(crate) async fn run(context: SteadyContext
 
     pin_mut!(server_handle);
 
+
   //  trace!("server is up and running");
     while ctrl.is_running(&mut || { rxg.is_empty() && rxg.is_closed()  } )  {
 
@@ -120,8 +123,8 @@ pub(crate) async fn run(context: SteadyContext
         let b = rx.wait_avail_units(2); //node data and edge data
 
         select! {
-            _ = a.fuse() => {
-                warn!("Web server exited.");
+            e = a.fuse() => {
+                warn!("Web server exited. {:?}",e);
                 break;
             },
             _ = b.fuse() => {
@@ -202,6 +205,7 @@ pub(crate) async fn run(context: SteadyContext
                                             metrics_state.edges[i].compute_and_refresh(*s,*t);
                                      });
                                   metrics_state.seq = seq;
+    //TODO: the history file also needs the RATE so we know the span it covers.
 
                               //if history is on we may never skip it since it is our log
                                 if config::TELEMETRY_HISTORY  {

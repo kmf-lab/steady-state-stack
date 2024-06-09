@@ -111,7 +111,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
 
 pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 {
-        #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn") )]
+        #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn", feature = "prometheus_metrics") )]
          {
 
              let base = graph.channel_builder().with_compute_refresh_window_bucket_bits(0, 0);
@@ -140,10 +140,7 @@ pub(crate) fn build_optional_telemetry_graph( graph: & mut Graph)
 
 
             bldr.with_name(metrics_server::NAME)
-                //TODO: moved elsewhere
-               // .with_io_driver() //metrics_server writes our history and telemetry
                 .build_spawn(move |context|
-
                                          telemetry::metrics_server::run(context  //metrics_server
                                                                         , rx.clone()
                                                                       )
