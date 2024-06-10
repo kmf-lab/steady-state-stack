@@ -263,9 +263,9 @@ pub(crate) async fn run(context: SteadyContext
 
 // when building docs we must not bring in the web resources since they will not be present
 // when building for cdn we do not load the viz-lite into the binary to keep it smaller
-#[cfg(any(docsrs, feature = "telemetry_server_cdn"))]
+#[cfg(any(docsrs, feature = "telemetry_server_cdn", not( feature = "telemetry_server_builtin" )))]
 const CONTENT_VIZ_LITE_B64: &str = "";
-#[cfg(not(any(docsrs, feature = "telemetry_server_cdn")))]
+#[cfg(all(not(any(docsrs, feature = "telemetry_server_cdn")), feature = "telemetry_server_builtin" )  )]
 const CONTENT_VIZ_LITE_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/viz-lite.js.gz.b64")} else {""};
 
 #[cfg(docsrs)]
