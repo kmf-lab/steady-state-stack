@@ -17,8 +17,8 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Clean
-      run: cargo clean
+      run: cargo clean --no-default-features --features "proactor_nuclei prometheus_metrics"
     - name: Build
-      run: cargo build --verbose --features "proactor_nuclei prometheus_metrics"
+      run: cargo build --verbose --no-default-features --features "proactor_nuclei prometheus_metrics"
     - name: Run tests
-      run: cargo test --verbose --features "proactor_nuclei prometheus_metrics"
+      run: cargo test --verbose --no-default-features --features "proactor_nuclei prometheus_metrics"
