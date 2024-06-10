@@ -268,65 +268,65 @@ const CONTENT_VIZ_LITE_B64: &str = "";
 #[cfg(all(not(any(docsrs, feature = "telemetry_server_cdn")), feature = "telemetry_server_builtin" )  )]
 const CONTENT_VIZ_LITE_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/viz-lite.js.gz.b64")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_INDEX_HTML_B64: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_INDEX_HTML_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/index.html.gz.b64")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_DOT_VIEWER_JS_B64: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_DOT_VIEWER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/dot-viewer.js.gz.b64")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_DOT_VIEWER_CSS_B64: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_DOT_VIEWER_CSS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/dot-viewer.css.gz.b64")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_WEBWORKER_JS_B64: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_WEBWORKER_JS_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/webworker.js.gz.b64")} else {""};
 
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_SPINNER_GIF_B64: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_SPINNER_GIF_B64: &str = if config::TELEMETRY_SERVER {include_str!("../../target/static/telemetry/images/spinner.gif.b64")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_PREVIEW_ICON_SVG: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_PREVIEW_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/preview-icon.svg")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_REFRESH_TIME_ICON_SVG: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_REFRESH_TIME_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/refresh-time-icon.svg")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_USER_ICON_SVG: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_USER_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/user-icon.svg")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_ZOOM_IN_ICON_SVG: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_ZOOM_IN_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/zoom-in-icon.svg")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/zoom-in-icon-disabled.svg")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_ZOOM_OUT_ICON_SVG: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_ZOOM_OUT_ICON_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/zoom-out-icon.svg")} else {""};
 
-#[cfg(docsrs)]
+#[cfg(any(docsrs, not ( any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin") )))]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = "";
-#[cfg(not(docsrs))]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))  )]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if config::TELEMETRY_SERVER {include_str!("../../static/telemetry/images/zoom-out-icon-disabled.svg")} else {""};
 
 
