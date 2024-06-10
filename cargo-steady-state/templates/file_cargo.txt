@@ -6,7 +6,8 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-steady_state     = { path = "../../../core"}
+steady_state     = { path = "../../../core", features = ["proactor_nuclei", "prometheus_metrics"], default-features = false }
+
 #steady_state     = "0.0.16"
 structopt        = "0.3.26"
 structopt-derive = "0.4.18"

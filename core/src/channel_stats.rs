@@ -1049,8 +1049,9 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: 
                    , labels
                    , &computer.std_dev_rate
                    , &computer.percentiles_rate
+                   , target_metric
                    , target_telemetry_label
-                   , target_metric);
+    );
 }
 
     fn compute_filled_labels(computer: &ChannelStatsComputer, display_label: &mut String, metric_target: &mut String, current_filled: &&ChannelBlock<u16>) {
@@ -1066,8 +1067,9 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: 
                    , labels
                    , &computer.std_dev_filled
                    , &computer.percentiles_filled
+                   , metric_target
                    , display_label
-                   , metric_target);
+        );
 }
 
     fn compute_latency_labels(computer: &ChannelStatsComputer, display_label: &mut String, metric_target: &mut String, current_latency: &&ChannelBlock<u64>) {
@@ -1084,8 +1086,9 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: 
                    , labels
                    , &computer.std_dev_latency
                    , &computer.percentiles_latency
+                   , metric_target
                    , display_label
-                   , metric_target);
+        );
 }
 
 
@@ -1214,7 +1217,8 @@ pub(crate) fn compute_labels<T: Counter>(config: ComputeLabelsConfig
                                          , labels: ComputeLabelsLabels
                                          , std_dev: &[StdDev]
                                          , percentile: &[Percentile]
-                                         , metric_target: &mut String, label_target: &mut String
+                                         , metric_target: &mut String
+                                         , label_target: &mut String
 ) {
 
     //we have frames, refresh rates and windows
