@@ -16,7 +16,7 @@ exclude = ["**/*.txt", "**/*.sh", "notes/", "temp/"]
 
 [lib]
 name = "steady_state"
-path = "src/lib.rs"
+#path = "src/lib.rs"
 
 
 # cargo build --release --features telemetry_history,telemetry_server_builtin
