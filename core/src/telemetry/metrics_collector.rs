@@ -151,8 +151,6 @@ loop {
             yield_now().await;
         }
 
-//TODO: graphanas as teh same source. open telemetry collector for graphana.
-
         let (nodes, to_pop) = {
             //we want to drop this as soon as we can
             //collect all the new data out of it release the guard then send the data
@@ -218,7 +216,8 @@ loop {
         if let Some(nodes) = nodes {//only happens when we have new nodes
             send_structure_details(ident, &mut locked_servers, nodes).await;
         }
-        send_data_details(ident, &mut locked_servers, &state, !is_shutting_down).await;
+        let warn = !is_shutting_down && config::TELEMETRY_SERVER;
+        send_data_details(ident, &mut locked_servers, &state, warn).await;
 
         state.sequence += 1; //increment next frame
     }
@@ -440,8 +439,8 @@ async fn send_data_details(ident: ActorIdentity, consumer_vec: &mut Vec<MutexGua
                 Err(_) => {}
             }
 
-        } else if warn { //do not warn when shutting down
-                warn!("{:?} is accumulating frames since consumer is not keeping up, perhaps capacity of {:?} may need to be increased.",ident, consumer.capacity());
+        } else if warn { //do not warn when shutting down or running tests.
+            warn!("{:?} is accumulating frames since consumer is not keeping up, perhaps capacity of {:?} may need to be increased.",ident, consumer.capacity());
         }
 
     }

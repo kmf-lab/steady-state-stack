@@ -1,8 +1,8 @@
 use std::env;
 
-    #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
+    #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin", feature= "prometheus_metrics"))]
     pub const TELEMETRY_SERVER: bool = true;
-    #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+    #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin", feature= "prometheus_metrics")))]
     pub const TELEMETRY_SERVER: bool = false;
 
     #[cfg(feature = "telemetry_history")]
