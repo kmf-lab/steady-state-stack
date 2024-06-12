@@ -18,6 +18,7 @@ kmf-lab.pub
 cargo_*.txt
 
 **/*.b64
+**/viz-lite.js
 
 /.idea
 
