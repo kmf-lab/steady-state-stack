@@ -25,6 +25,7 @@ core/cargo_tokei.txt
 
 
 **/*.b64
+**/viz-lite.js
 
 /.idea
 
