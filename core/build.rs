@@ -122,7 +122,7 @@ fn gzip_and_base64_encode_web_resource(target: &Path, file_path: &str, get_url: 
             }
         }
     }
-    gzip_and_base64_encode(&target, file_path);
+    gzip_and_base64_encode(&target, file_path,true);
 
 }
 fn gzip_and_base64_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
