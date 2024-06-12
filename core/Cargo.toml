@@ -11,8 +11,8 @@ build = "build.rs" # assumes we have gzip and base64 installed, the base64 crate
 
 repository = "https://github.com/kmf-lab/steady-state-stack"
 
-include = ["templates/**", "src/**", "Cargo.toml", "README.md"]
-# Exclude specific files and directories
+
+include = ["templates/**", "src/**", "Cargo.toml", "README.md", "build.rs"]
 exclude = ["**/*.txt", "**/*.sh", "notes/", "temp/", "target/**"]
 
 
