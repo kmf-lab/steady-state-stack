@@ -56,14 +56,16 @@ fn main() {
         if let Err(e) = fs::write(folder_base.join("index.html"), IndexTemplate { script_source: &source }.render().expect("unable to render")) {
             panic!("Error writing index.html {:?}", e);
         };
+        gzip_and_base64_encode(&base_target_path, "static/telemetry/index.html",false);
+
         if let Err(e) = fs::write(folder_base.join("webworker.js"), WebWorkerTemplate { script_source: &source }.render().expect("unable to render")) {
             panic!("Error writing webworker.js {:?}", e);
         };
+        gzip_and_base64_encode(&base_target_path, "static/telemetry/webworker.js",false);
 
         //simple encode and copy to the destination when telemetry is enabled
-        gzip_and_base64_encode(&base_target_path, "static/telemetry/viz-lite.js");
-        gzip_and_base64_encode(&base_target_path, "static/telemetry/dot-viewer.js");
-        gzip_and_base64_encode(&base_target_path, "static/telemetry/dot-viewer.css");
+        gzip_and_base64_encode(&base_target_path, "static/telemetry/dot-viewer.js",true);
+        gzip_and_base64_encode(&base_target_path, "static/telemetry/dot-viewer.css",true);
         base64_encode(&base_target_path, "static/telemetry/images/spinner.gif");
     }
 }
@@ -123,12 +125,12 @@ fn gzip_and_base64_encode_web_resource(target: &Path, file_path: &str, get_url: 
     gzip_and_base64_encode(&target, file_path);
 
 }
-fn gzip_and_base64_encode(target: &Path, file_path: &str) {
+fn gzip_and_base64_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
 
     let output_name = format!("{}.gz.b64", file_path);
     let target_file = target.join(output_name);
     // Check if the output file already exists
-    if Path::new(&target_file).exists() {
+    if skip_if_exists && Path::new(&target_file).exists() {
         println!("{:?} already exists, skipping", target_file);
         return;
     }
