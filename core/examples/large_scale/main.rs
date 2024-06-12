@@ -84,7 +84,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p20()),AlertColor::Yellow)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p30()),AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p40()),AlertColor::Red)
-                            .with_capacity(4096);
+                            .with_capacity(4000);
 
     let base_actor_builder = graph
                             .actor_builder()

@@ -952,7 +952,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
     pub fn try_peek_slice<T>(self, this: &mut Rx<T>, elems: &mut [T]) -> usize
-        where T: Copy {
+        where T: Copy+Hash {
         this.shared_try_peek_slice(elems)
     }
 
@@ -971,7 +971,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Asynchronous
     pub async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
-    where T: Copy {
+    where T: Copy+Hash {
         this.shared_peek_async_slice(wait_for_count,elems).await
     }
 
@@ -1047,7 +1047,8 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Returns
     /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
-    pub fn try_peek<'a,T>(&'a self, this: &'a mut Rx<T>) -> Option<&T> {
+    pub fn try_peek<'a,T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
+        where T: Hash {
         this.shared_try_peek()
     }
 
@@ -1142,7 +1143,8 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
     ///
     /// # Asynchronous
-    pub async fn peek_async<'a,T>(&'a self, this: &'a mut Rx<T>) -> Option<&T> {
+    pub async fn peek_async<'a,T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
+    where T: Hash {
         let _guard = self.start_profile(CALL_OTHER);
         this.shared_peek_async().await
     }
@@ -1307,11 +1309,24 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Asynchronous
     pub async fn wait_empty<T>(& self, this: & mut Tx<T>) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
-
         this.shared_wait_empty().await
     }
 
-    /// Sends a message to the Tx channel asynchronously, waiting if necessary until space is available.
+
+    pub async fn wait_future_void(& self, mut fut: Pin<Box<dyn FusedFuture<Output = ()>>>) -> bool {
+        let _guard = self.start_profile(CALL_OTHER);
+        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+        let mut one_fused = one_down.deref_mut().fuse();
+
+        if !one_fused.is_terminated() {
+            select! { _ = one_fused => false, _ = fut => true, }
+        } else {
+            false
+        }
+    }
+
+
+        /// Sends a message to the Tx channel asynchronously, waiting if necessary until space is available.
     ///
     /// # Parameters
     /// - `this`: A mutable reference to a `Tx<T>` instance.

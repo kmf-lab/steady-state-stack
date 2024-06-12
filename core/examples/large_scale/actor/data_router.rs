@@ -23,25 +23,24 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    let count = rx.capacity().clone()/4;
+    //let count = rx.capacity().clone()/4;
     let tx_girth = tx.len();
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()   ) {
 
         wait_for_all_or_proceed_upon!(
             monitor.wait_periodic(Duration::from_millis(40)),
-            monitor.wait_avail_units(&mut rx,count),
-            monitor.wait_vacant_units_bundle(&mut tx,count/2,tx_girth)
+            monitor.wait_avail_units(&mut rx,2),
+           // monitor.wait_vacant_units_bundle(&mut tx,count/2,tx_girth)
         ).await;
 
         let mut iter = monitor.take_into_iter(&mut rx);
-        while let Some(t) = iter.next() {  //monitor.try_take(&mut rx) {
+        while let Some(t) = iter.next() {
             let index = ((t.route / block_size) as usize) % tx.len();
             if let Err(e) =  monitor.try_send(&mut tx[index], t) {
                 let _ = monitor.send_async(&mut tx[index], e, SendSaturation::IgnoreAndWait).await;
-                break;
+             //   break;
             }
-
         }
         monitor.relay_stats_smartly();
 

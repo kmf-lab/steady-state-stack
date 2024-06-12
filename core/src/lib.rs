@@ -55,11 +55,14 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use std::fmt::Debug;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex, MutexLockFuture};
 use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
+use ahash::AHasher;
 
 use log::*;
 use channel_builder::{InternalReceiver, InternalSender};
@@ -89,6 +92,7 @@ use futures::select;
 use futures_timer::Delay;
 use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use futures_util::lock::MutexGuard;
+use num_traits::Zero;
 use crate::graph_testing::{SideChannel, SideChannelHub, SideChannelResponder};
 use crate::yield_now::yield_now;
 
@@ -232,6 +236,17 @@ impl SteadyContext {
         yield_now().await;
     }
 
+
+    pub async fn wait_future_void(&self, mut fut: Pin<Box<dyn FusedFuture<Output = ()>>>) -> bool {
+        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+        let mut one_fused = one_down.deref_mut().fuse();
+        if !one_fused.is_terminated() {
+                select! { _ = one_fused => false, _ = fut => true, }
+            } else {
+                false
+            }
+    }
+
     /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
     ///
     /// # Parameters
@@ -255,6 +270,10 @@ impl SteadyContext {
 
     pub async fn wait_avail_units<T>(& self, this: & mut Rx<T>, count:usize) -> bool {
         this.shared_wait_avail_units(count).await
+    }
+
+    pub async fn wait_vacant_units<T>(& self, this: & mut Tx<T>, count:usize) -> bool {
+        this.shared_wait_vacant_units(count).await
     }
 
     pub fn edge_simulator(&self) -> Option<SideChannelResponder> {
@@ -572,7 +591,9 @@ pub struct Rx<T> {
     pub(crate) last_checked_tx_instance: u32,
     pub(crate) tx_version: Arc<AtomicU32>,
     pub(crate) rx_version: Arc<AtomicU32>,
-    pub(crate) dedupeset: RefCell<HashSet<String>>
+    pub(crate) dedupeset: RefCell<HashSet<String>>,
+    pub(crate) peek_hash: AtomicU64, //for bad message detection
+    pub(crate) peek_hash_repeats: AtomicUsize,  //for bad message detection
 }
 
 ////////////////////////////////////////////////////////////////
@@ -760,6 +781,8 @@ impl<T> Tx<T> {
         self.shared_wait_empty().await
     }
 
+
+
     //////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////
 
@@ -834,6 +857,8 @@ impl<T> Tx<T> {
             false
         }
     }
+
+
 
     #[inline]
     async fn shared_send_async(& mut self, msg: T, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), T> {
@@ -955,7 +980,207 @@ pub enum SendSaturation {
     IgnoreInRelease
 }
 
+impl<T: Hash> Rx<T> {
+
+    /// check if we are peeking the same item multiple times so we know that it should be moved to dead letters
+    pub fn possible_bad_message(&self, threshold: usize) -> bool {
+        assert_ne!(threshold, 0); //never checked
+        assert_ne!(threshold, 1); //we have the first unique item
+
+        //if we have a lot of repeats then we have a problem
+        //this is only tracked for the use of 'peek' methods
+        self.peek_hash_repeats.load(Ordering::Relaxed) >= threshold
+    }
+
+    fn store_item_hash(&self, hasher: AHasher) {
+        let hash: u64 = hasher.finish();
+        let new_hash = if !hash.is_zero() { hash } else { 1 };
+        let old_hash = self.peek_hash.load(Ordering::Relaxed);
+        if new_hash != old_hash {
+            self.peek_hash.store(new_hash, Ordering::Relaxed);
+            self.peek_hash_repeats.store(1, Ordering::Relaxed);
+        } else {
+            //it already has this hash but we should count occurrences
+            self.peek_hash_repeats.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+
+    /// Attempts to peek at the next message in the channel without removing it.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
+    ///
+    /// # Example Usage
+    /// Can be used to inspect the next message without consuming it, useful in decision-making scenarios.
+    pub fn try_peek(&self) -> Option<&T> {
+        self.shared_try_peek()
+    }
+
+
+    /// Attempts to peek at a slice of messages from the channel without removing them.
+    /// This operation is non-blocking and allows multiple messages to be inspected simultaneously.
+    ///
+    /// Requires T: Copy but this is still up for debate as it is not clear if this is the best way to handle this
+    ///
+    /// # Parameters
+    /// - `elems`: A mutable slice to store the peeked messages. Its length determines the maximum number of messages to peek.
+    ///
+    /// # Returns
+    /// The number of messages actually peeked and stored in `elems`.
+    ///
+    /// # Example Usage
+    /// Ideal for scenarios where processing or decision making is based on a batch of incoming messages without consuming them.
+    pub fn try_peek_slice(&self, elems: &mut [T]) -> usize
+        where T: Copy {
+        self.shared_try_peek_slice(elems)
+    }
+
+
+    /// Asynchronously waits to peek at a slice of messages from the channel without removing them.
+    /// Waits until the specified number of messages is available or the channel is closed.
+    ///
+    /// Requires T: Copy but this is still up for debate as it is not clear if this is the best way to handle this
+    ///
+    /// # Parameters
+    /// - `wait_for_count`: The number of messages to wait for before peeking.
+    /// - `elems`: A mutable slice to store the peeked messages.
+    ///
+    /// # Returns
+    /// The number of messages actually peeked and stored in `elems`.
+    ///
+    /// # Example Usage
+    /// Suitable for use cases requiring a specific number of messages to be available for batch processing.
+    pub async fn peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
+        where T: Copy {
+        //may return less that desired if we are shutting down
+        self.shared_peek_async_slice(wait_for_count, elems).await
+    }
+
+
+    /// Asynchronously peeks at the next message in the channel without removing it.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
+    ///
+    /// # Example Usage
+    /// Useful for async scenarios where inspecting the next message without consuming it is required.
+    pub async fn peek_async(& mut self) -> Option<&T> {
+        self.shared_peek_async().await
+    }
+
+    /// Asynchronously returns an iterator over the messages in the channel, waiting for a specified number of messages to be available.
+    ///
+    /// # Parameters
+    /// - `wait_for_count`: The number of messages to wait for before returning the iterator.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
+    ///
+    /// # Example Usage
+    /// Ideal for async batch processing where a specific number of messages are needed for processing.
+    pub async fn peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
+        self.shared_peek_async_iter(wait_for_count).await
+
+    }
+    /// Returns an iterator over the messages currently in the channel without removing them.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
+    ///
+    /// # Example Usage
+    /// Enables iterating over messages for inspection or conditional processing without consuming them.
+    pub fn try_peek_iter(& self) -> impl Iterator<Item = & T>  {
+        self.shared_try_peek_iter()
+    }
+
+
+    #[inline]
+    async fn shared_peek_async(& mut self) -> Option<&T> {
+        let mut one_down = &mut self.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(1);
+            select! { _ = one_down => {}, _ = operation => {}, };
+        };
+        //we need to hash this in case of failure.
+        let result = self.rx.first();
+
+        if let Some(r) = result {
+            let mut hasher = AHasher::default();
+            r.hash(&mut hasher);
+            self.store_item_hash(hasher);
+        } else {
+            self.clear_item_hash();
+        }
+
+        result
+    }
+
+
+    #[inline]
+    fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
+        where T: Copy {
+
+        //self.rx.occupied_slices()
+        // TODO: rewrite when the new version is out
+
+        let mut last_index = 0;
+        for (i, e) in self.rx.iter().enumerate() {
+            if i < elems.len() {
+                elems[i] = *e; // Assuming e is a reference and needs dereferencing
+                last_index = i;
+            } else {
+                break;
+            }
+        }
+        // Return the count of elements written, adjusted for 0-based indexing
+        let count = last_index + 1;
+
+        if count>0 {
+            let mut hasher = AHasher::default();
+            elems[0].hash(&mut hasher);
+            self.store_item_hash(hasher);
+        } else {
+            self.clear_item_hash();
+        }
+
+        count
+    }
+
+    #[inline]
+    async fn shared_peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
+        where T: Copy {
+        let mut one_down = &mut self.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
+            select! { _ = one_down => {}, _ = operation => {}, };
+        };
+        self.shared_try_peek_slice(elems)
+    }
+
+    #[inline]
+    fn shared_try_peek(&self) -> Option<&T> {
+        let result = self.rx.first();
+
+        if let Some(r) = result {
+            let mut hasher = AHasher::default();
+            r.hash(&mut hasher);
+            self.store_item_hash(hasher);
+        } else {
+            self.clear_item_hash();
+        }
+
+        result
+    }
+
+}
+
+
 impl<T> Rx<T> {
+
+    fn clear_item_hash(&self) {
+        self.peek_hash.store(0, Ordering::Relaxed);
+    }
 
     pub fn id(&self) -> usize {
         self.channel_meta_data.id
@@ -1019,42 +1244,8 @@ impl<T> Rx<T> {
         self.shared_capacity()
     }
 
-    /// Attempts to peek at a slice of messages from the channel without removing them.
-    /// This operation is non-blocking and allows multiple messages to be inspected simultaneously.
-    ///
-    /// Requires T: Copy but this is still up for debate as it is not clear if this is the best way to handle this
-    ///
-    /// # Parameters
-    /// - `elems`: A mutable slice to store the peeked messages. Its length determines the maximum number of messages to peek.
-    ///
-    /// # Returns
-    /// The number of messages actually peeked and stored in `elems`.
-    ///
-    /// # Example Usage
-    /// Ideal for scenarios where processing or decision making is based on a batch of incoming messages without consuming them.
-    pub fn try_peek_slice(&self, elems: &mut [T]) -> usize
-           where T: Copy {
-           self.shared_try_peek_slice(elems)
-    }
 
-    /// Asynchronously waits to peek at a slice of messages from the channel without removing them.
-    /// Waits until the specified number of messages is available or the channel is closed.
-    ///
-    /// Requires T: Copy but this is still up for debate as it is not clear if this is the best way to handle this
-    ///
-    /// # Parameters
-    /// - `wait_for_count`: The number of messages to wait for before peeking.
-    /// - `elems`: A mutable slice to store the peeked messages.
-    ///
-    /// # Returns
-    /// The number of messages actually peeked and stored in `elems`.
-    ///
-    /// # Example Usage
-    /// Suitable for use cases requiring a specific number of messages to be available for batch processing.
-    pub async fn peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
-       where T: Copy {
-        self.shared_peek_async_slice(wait_for_count, elems).await
-    }
+
 
     /// Retrieves and removes a slice of messages from the channel.
     /// This operation is blocking and will remove the messages from the channel.
@@ -1124,52 +1315,6 @@ impl<T> Rx<T> {
         self.shared_take_async().await
     }
 
-    /// Attempts to peek at the next message in the channel without removing it.
-    ///
-    /// # Returns
-    /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
-    ///
-    /// # Example Usage
-    /// Can be used to inspect the next message without consuming it, useful in decision-making scenarios.
-    pub fn try_peek(&self) -> Option<&T> {
-         self.shared_try_peek()
-    }
-
-    /// Returns an iterator over the messages currently in the channel without removing them.
-    ///
-    /// # Returns
-    /// An iterator over the messages in the channel.
-    ///
-    /// # Example Usage
-    /// Enables iterating over messages for inspection or conditional processing without consuming them.
-    pub fn try_peek_iter(& self) -> impl Iterator<Item = & T>  {
-        self.shared_try_peek_iter()
-    }
-
-    /// Asynchronously peeks at the next message in the channel without removing it.
-    ///
-    /// # Returns
-    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
-    ///
-    /// # Example Usage
-    /// Useful for async scenarios where inspecting the next message without consuming it is required.
-    pub async fn peek_async(& mut self) -> Option<&T> {
-        self.shared_peek_async().await
-    }
-
-    /// Asynchronously returns an iterator over the messages in the channel, waiting for a specified number of messages to be available.
-    ///
-    /// # Parameters
-    /// - `wait_for_count`: The number of messages to wait for before returning the iterator.
-    ///
-    /// # Returns
-    /// An iterator over the messages in the channel.
-    ///
-    /// # Example Usage
-    /// Ideal for async batch processing where a specific number of messages are needed for processing.
-    pub async fn peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
-         self.shared_peek_async_iter(wait_for_count).await
-    }
 
     /// Checks if the channel is currently empty.
     ///
@@ -1226,50 +1371,25 @@ impl<T> Rx<T> {
         self.rx.capacity().get()
     }
 
-    #[inline]
-    fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
-        where T: Copy {
 
-        //self.rx.occupied_slices()
-        // TODO: rewrite when the new version is out
 
-        let mut last_index = 0;
-        for (i, e) in self.rx.iter().enumerate() {
-            if i < elems.len() {
-                elems[i] = *e; // Assuming e is a reference and needs dereferencing
-                last_index = i;
-            } else {
-                break;
-            }
-        }
-        // Return the count of elements written, adjusted for 0-based indexing
-        last_index + 1
-    }
-
-    #[inline]
-    async fn shared_peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
-        where T: Copy {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-            select! { _ = one_down => {}, _ = operation => {}, };
-        };
-        self.shared_try_peek_slice(elems)
-    }
 
     #[inline]
     fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
         where T: Copy {
+        self.clear_item_hash();
         self.rx.pop_slice(elems)
     }
 
     #[inline]
     fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_  {
+        self.clear_item_hash();
         self.rx.pop_iter()
     }
 
     #[inline]
     fn shared_try_take(& mut self) -> Option<T> {
+        self.clear_item_hash();
         self.rx.try_pop()
     }
 
@@ -1280,6 +1400,7 @@ impl<T> Rx<T> {
 
     #[inline]
     async fn shared_take_async(& mut self) -> Option<T> {
+        self.clear_item_hash();
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
             let mut operation = &mut self.rx.pop();
@@ -1289,15 +1410,6 @@ impl<T> Rx<T> {
         }
     }
 
-    #[inline]
-    async fn shared_peek_async(& mut self) -> Option<&T> {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.wait_occupied(1);
-            select! { _ = one_down => {}, _ = operation => {}, };
-        };
-        self.rx.first()
-    }
 
     #[inline]
     async fn shared_peek_async_iter(& mut self, wait_for_count: usize) -> impl Iterator<Item = & T> {
@@ -1341,12 +1453,47 @@ impl<T> Rx<T> {
         }
     }
 
-    #[inline]
-    fn shared_try_peek(&self) -> Option<&T> {
-        self.rx.first()
-    }
+
 
 }
+
+
+// TODO: bad message detection logic in progress.
+struct HashedIterator<I, T> {
+    inner: I,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<I, T> HashedIterator<I, T> {
+    fn new(inner: I) -> Self {
+        HashedIterator {
+            inner,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<I, T> Iterator for HashedIterator<I, T>
+    where
+        I: Iterator<Item = T>,
+        T: Hash,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(item) = self.inner.next() {
+            let mut hasher = DefaultHasher::new();
+            item.hash(&mut hasher);
+            let hash = hasher.finish();
+            // Store or handle the hash as needed
+            println!("Hash: {}", hash);
+            Some(item)
+        } else {
+            None
+        }
+    }
+}
+
 
 
 pub trait TxDef: Debug {

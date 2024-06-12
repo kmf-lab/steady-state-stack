@@ -82,8 +82,9 @@ itoa             = "1.0.11"
 time             = { version = "0.3.36", features = ["macros","formatting", "parsing"] }
 dirs             = "5.0.1"
 colored          = "2.1.0"
+ahash            = "0.8.11"  # for fast hashing
 
-#kanagawa         = "0.1.3"  # Future replacement for async http server
+#kanagawa         = "0.1.3"  # Future replacement for async http server?
 tide             = "0.17.0-beta.1" # for http server
 
 structopt        = "0.3.26"  # CLI parse for type safe arguments
