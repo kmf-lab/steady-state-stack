@@ -3,6 +3,7 @@ name = "steady_state"   # rename from sss
 version = "0.0.16"
 documentation = "https://docs.rs/steady_state/0.0.16/steady_state/"
                #"https://docs.rs/crate/steady_state/0.0.16"  #debugging
+authors = ["Nathan Tippy <nathan.tippy.name>"]
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -10,7 +11,7 @@ license = "MIT"
 
 repository = "https://github.com/kmf-lab/steady-state-stack"
 
-include = ["templates/**"]
+include = ["templates/**", "src/**", "Cargo.toml", "README.md"]
 # Exclude specific files and directories
 exclude = ["**/*.txt", "**/*.sh", "notes/", "temp/", "target/**"]
 
