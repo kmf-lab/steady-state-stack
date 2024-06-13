@@ -21,14 +21,14 @@ pub(crate) struct WebWorkerTemplate<'a> {
 const VIZ_VERSION:&str = "1.8.2";
 
 #[cfg(not(feature = "telemetry_server_builtin"))]
-const use_internal_viz:bool = false;
+const USE_INTERNAL_VIZ:bool = false;
 #[cfg(feature = "telemetry_server_builtin")]
 const USE_INTERNAL_VIZ:bool = true;
 
 #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
 const TELEMETRY_SERVICE: bool = true;
 #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const telemetry_service: bool = false;
+const TELEMETRY_SERVICE: bool = false;
 fn main() {
 
     let base_target_path: PathBuf = env::var("CARGO_TARGET_DIR").map_or_else(
