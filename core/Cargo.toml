@@ -1,7 +1,7 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.16"
-documentation = "https://docs.rs/steady_state/0.0.16/steady_state/"
+version = "0.0.17"
+documentation = "https://docs.rs/steady_state/0.0.17/steady_state/"
                #"https://docs.rs/crate/steady_state/0.0.16"  #debugging
 authors = ["Nathan Tippy <nathan.tippy.name>"]
 edition = "2021"
@@ -57,11 +57,14 @@ telemetry_history = []
 # no need to enable unless you want to see the performance of the telemetry server
 telemetry_on_telemetry = []
 
+# only set true if you want supervisors to restart actors while debug_assertions is on
+# no need to enable unless you want to see how supervisors work while testing
+restart_actors_when_debugging = []
 
 [package.metadata.docs.rs]
-features = []
+features = ["proactor_nuclei"]
 no-default-features = true
-# Ensure 'telemetry_server_cdn' or 'telemetry_server_builtin' is not listed here since docs.rs does not support it
+# Ensure 'telemetry_server_cdn' or 'telemetry_server_builtin' or 'prometheus_metrics' are not listed here since docs.rs does not support it
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 

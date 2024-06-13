@@ -1,11 +1,10 @@
 use std::process::{Command, Stdio};
 use std::{env, fs};
-use std::fs::{copy, File};
+use std::fs::{File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use askama::Template;
-use isahc::prelude::*;
-use isahc::{Body, Error, Response};
+
 
 #[derive(Template)]
 #[template(path = "index.html.txt")]
@@ -19,15 +18,15 @@ pub(crate) struct WebWorkerTemplate<'a> {
     pub(crate) script_source: &'a str,
 }
 
-const viz_version:&str = "1.8.2";
+const VIZ_VERSION:&str = "1.8.2";
 
 #[cfg(not(feature = "telemetry_server_builtin"))]
 const use_internal_viz:bool = false;
 #[cfg(feature = "telemetry_server_builtin")]
-const use_internal_viz:bool = true;
+const USE_INTERNAL_VIZ:bool = true;
 
 #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
-const telemetry_service: bool = true;
+const TELEMETRY_SERVICE: bool = true;
 #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const telemetry_service: bool = false;
 fn main() {
@@ -37,17 +36,17 @@ fn main() {
         PathBuf::from,
     );
 
-    if telemetry_service && use_internal_viz {
+    if TELEMETRY_SERVICE && USE_INTERNAL_VIZ {
         // To check on new versions go here:    https://github.com/mdaines/viz-js/releases
         gzip_and_base64_encode_web_resource(&base_target_path
                                             ,"static/telemetry/viz-lite.js"
-                                            ,&format!("https://unpkg.com/viz.js@{}/viz-lite.js",viz_version));
+                                            ,&format!("https://unpkg.com/viz.js@{}/viz-lite.js", VIZ_VERSION));
     }
 
-    if telemetry_service {
+    if TELEMETRY_SERVICE {
 
-        let cdn_source = format!("https://unpkg.com/viz.js@{}/viz-lite.js",viz_version);
-        let source = if use_internal_viz {
+        let cdn_source = format!("https://unpkg.com/viz.js@{}/viz-lite.js", VIZ_VERSION);
+        let source = if USE_INTERNAL_VIZ {
             "viz-lite.js" //only when we ship this inside the binary
         } else {
             &cdn_source // using cdn
@@ -106,10 +105,10 @@ fn gzip_and_base64_encode_web_resource(target: &Path, file_path: &str, get_url: 
     let output_name = format!("{}.gz.b64", file_path);
     let target_file = target.join(output_name);
     // Check if the output file already exists
-    if !Path::new(&target_file).exists() || !Path::new(&file_path).exists()  {
+    if !Path::new(&target_file).exists() {
         //download the file since our copy or the gziped version does not exist
         //and write it to the target file
-        let mut response = isahc::get(get_url);
+        let response = isahc::get(get_url);
         match response {
             Ok(mut response) => {
                 let mut content = Vec::new();
@@ -123,6 +122,8 @@ fn gzip_and_base64_encode_web_resource(target: &Path, file_path: &str, get_url: 
         }
     }
     gzip_and_base64_encode(&target, file_path,true);
+    //cleanup the downloaded file
+    fs::remove_file(file_path).expect("Failed to remove downloaded file");
 
 }
 fn gzip_and_base64_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
