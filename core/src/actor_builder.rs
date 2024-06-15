@@ -17,7 +17,7 @@ use futures::channel::oneshot::{Receiver, Sender};
 
 use futures_util::lock::Mutex;
 use log::*;
-use futures_util::future::{BoxFuture, select_all, SelectAll};
+use futures_util::future::{BoxFuture, select_all};
 
 
 use crate::{abstract_executor, AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
@@ -117,7 +117,7 @@ impl ActorTeam {
                 let mut actor_future_vec = Vec::with_capacity(count);
 
                 for f in &mut self.future_builder {
-                    let (future, drive_io) = f();
+                    let (future, _drive_io) = f();
                     actor_future_vec.push(future);
                 }
 
@@ -135,7 +135,7 @@ impl ActorTeam {
                             true
                         } else {
                             //this actor was finished so remove it from the list
-                            let _ = actor_future_vec.remove(index);
+                            drop(actor_future_vec.remove(index));
                             !actor_future_vec.is_empty()  // true we keep running
                         }
                     }));
@@ -154,7 +154,7 @@ impl ActorTeam {
                             //we must rebuild all actors since we do not know what happened to the thread
                             //EVEN those finished will be restarted.
                             for f in &mut self.future_builder {
-                                let (future, drive_io) = f();
+                                let (future, _drive_io) = f();
                                 actor_future_vec.push(future);
                             }
                             //continue running

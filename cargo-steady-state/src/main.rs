@@ -48,7 +48,7 @@ fn main() {
 fn process_dot_file(dotfile: &str, name: &str) {
     //before we parse the dot string we must remove all comments
     //we will remove all text starting with // up to the end of the line
-    let temp_file = if let Ok(g) = fs::read_to_string(&dotfile) {
+    let temp_file = if let Ok(g) = fs::read_to_string(dotfile) {
           let dot = g.lines()
               .map(|line| {
                   if let Some(pos) = line.find("//") {
@@ -594,7 +594,7 @@ mod tests {
         assert!(output.success());
     }
 
-
+    #[cfg(not(tarpaulin))]
     #[test]
     fn test_unnamed1_project() {
 
@@ -624,6 +624,8 @@ mod tests {
         build_and_parse("unnamed1", g, false, false);
     }
 
+    //need to skip running this when using tarpaulin coverage
+    #[cfg(not(tarpaulin))]
     #[test]
     fn test_pbft_project() {
         let g = r#"

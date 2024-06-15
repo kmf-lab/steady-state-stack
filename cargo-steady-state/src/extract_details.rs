@@ -223,7 +223,7 @@ fn extract_channel_name(label_text: &str, from_node: &str, to_node: &str) -> Str
 
 /////////////////////////
 ////////////////////////
-pub(crate) fn extract_project_model<'a>(name: &str, graph: Graph<(String, String)>) -> Result<ProjectModel, Box<dyn Error>> {
+pub(crate) fn extract_project_model(name: &str, graph: Graph<(String, String)>) -> Result<ProjectModel, Box<dyn Error>> {
     let mut pm = ProjectModel { name: name.to_string(), ..Default::default() };
 
     let empty = "".to_string();

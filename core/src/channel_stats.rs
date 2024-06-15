@@ -88,7 +88,7 @@ impl ChannelStatsComputer {
         self.prometheus_labels.push_str("\", ");
         self.prometheus_labels.push_str("actor_to_id=\"");
         self.prometheus_labels.push_str(itoa::Buffer::new().format(to_actor));
-        self.prometheus_labels.push_str("\"");
+        self.prometheus_labels.push('"');
 
 
         //TODO: labels
@@ -361,8 +361,8 @@ impl ChannelStatsComputer {
 
 
     pub(crate) fn compute(&mut self
-                          , mut display_label: &mut String
-                          , mut metric_text: &mut String
+                          , display_label: &mut String
+                          , metric_text: &mut String
                           , from_id: usize, send: i128, take: i128)
                           -> (& 'static str, & 'static str) {
 
@@ -387,33 +387,27 @@ impl ChannelStatsComputer {
         ////////////////////////////////////////////////
         //  build the labels
         ////////////////////////////////////////////////
-        #[cfg(any(feature = "prometheus_metrics") )]
+        #[cfg(feature = "prometheus_metrics" )]
         {
             metric_text.clear();
 
-            metric_text.push_str("inflight");
-            metric_text.push_str("{");
+            metric_text.push_str("inflight{");
             metric_text.push_str(&self.prometheus_labels);
-            metric_text.push_str("}");
-            metric_text.push_str(" ");
+            metric_text.push_str("} ");
             metric_text.push_str(itoa::Buffer::new().format(inflight));
-            metric_text.push_str("\n");
+            metric_text.push('\n');
 
-            metric_text.push_str("send");
-            metric_text.push_str("{");
+            metric_text.push_str("send{");
             metric_text.push_str(&self.prometheus_labels);
-            metric_text.push_str("}");
-            metric_text.push_str(" ");
+            metric_text.push_str("} ");
             metric_text.push_str(itoa::Buffer::new().format(send));
-            metric_text.push_str("\n");
+            metric_text.push('\n');
 
-            metric_text.push_str("take");
-            metric_text.push_str("{");
+            metric_text.push_str("take{");
             metric_text.push_str(&self.prometheus_labels);
-            metric_text.push_str("}");
-            metric_text.push_str(" ");
+            metric_text.push_str("} ");
             metric_text.push_str(itoa::Buffer::new().format(take));
-            metric_text.push_str("\n");
+            metric_text.push('\n');
         }
 
 
@@ -438,7 +432,7 @@ impl ChannelStatsComputer {
 
         //does nothing if the value is None
         if let Some(ref current_rate) = self.current_rate {
-            let config = ComputeLabelsConfig::channelConfig(self,(1000, self.frame_rate_ms as usize), u64::MAX, self.show_avg_rate);
+            let config = ComputeLabelsConfig::channel_config(self, (1000, self.frame_rate_ms as usize), u64::MAX, self.show_avg_rate);
 
             let labels = ComputeLabelsLabels {
                             label: "rate",
@@ -450,11 +444,13 @@ impl ChannelStatsComputer {
                            , current_rate
                            , labels
                            , & self.std_dev_rate
-                           , & self.percentiles_rate, &mut metric_text, &mut display_label);
+                           , & self.percentiles_rate
+                           , metric_text
+                           , display_label);
         }
 
         if let Some(ref current_filled) = self.current_filled {
-            let config = ComputeLabelsConfig::channelConfig(self,(100, self.capacity), u64::MAX, self.show_avg_filled);
+            let config = ComputeLabelsConfig::channel_config(self, (100, self.capacity), u64::MAX, self.show_avg_filled);
             let labels = ComputeLabelsLabels {
                 label: "filled",
                 unit: "%",
@@ -466,11 +462,12 @@ impl ChannelStatsComputer {
                            , labels
                            , & self.std_dev_filled
                            , & self.percentiles_filled
-                           , &mut metric_text, &mut display_label);
+                           , metric_text
+                           , display_label);
         }
 
         if let Some(ref current_latency) = self.current_latency {
-            let config = ComputeLabelsConfig::channelConfig(self,(1,1), u64::MAX, self.show_avg_latency);
+            let config = ComputeLabelsConfig::channel_config(self, (1, 1), u64::MAX, self.show_avg_latency);
             let labels = ComputeLabelsLabels {
                 label: "latency",
                 unit: "ms",
@@ -481,7 +478,9 @@ impl ChannelStatsComputer {
                            , current_latency
                            , labels
                            , & self.std_dev_latency
-                           , & self.percentiles_latency, &mut metric_text, &mut display_label);
+                           , & self.percentiles_latency
+                           , metric_text
+                           , display_label);
         }
 
         display_label.push_str("Capacity: ");
@@ -688,8 +687,6 @@ impl ChannelStatsComputer {
         }
     }
 }
-
-//#TODO: we need a new test to show the recovery from a panic
 
 #[cfg(test)]
 mod stats_tests {
@@ -1038,7 +1035,7 @@ fn latency_avg_trigger() {
 }
 
 fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: &mut String, target_metric: &mut String, current_rate: &&ChannelBlock<u64>) {
-    let config = ComputeLabelsConfig::channelConfig(computer,(1000, computer.frame_rate_ms as usize),  u64::MAX, computer.show_avg_rate);
+    let config = ComputeLabelsConfig::channel_config(computer, (1000, computer.frame_rate_ms as usize), u64::MAX, computer.show_avg_rate);
     let labels = ComputeLabelsLabels {
         label: "rate",
         unit: "per/sec",
@@ -1056,7 +1053,7 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: 
 
     fn compute_filled_labels(computer: &ChannelStatsComputer, display_label: &mut String, metric_target: &mut String, current_filled: &&ChannelBlock<u16>) {
 
-        let config = ComputeLabelsConfig::channelConfig(computer,(100, computer.capacity),  u64::MAX, computer.show_avg_filled);
+        let config = ComputeLabelsConfig::channel_config(computer, (100, computer.capacity), u64::MAX, computer.show_avg_filled);
         let labels = ComputeLabelsLabels {
             label: "filled",
             unit: "%",
@@ -1074,7 +1071,7 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: 
 
     fn compute_latency_labels(computer: &ChannelStatsComputer, display_label: &mut String, metric_target: &mut String, current_latency: &&ChannelBlock<u64>) {
 
-        let config = ComputeLabelsConfig::channelConfig(computer,(1, 1),  u64::MAX, computer.show_avg_latency);
+        let config = ComputeLabelsConfig::channel_config(computer, (1, 1), u64::MAX, computer.show_avg_latency);
         let labels = ComputeLabelsLabels {
             label: "latency",
             unit: "ms",
@@ -1169,8 +1166,6 @@ fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: 
 
 pub(crate) const PLACES_TENS:u64 = 1000u64;
 
-//TODO: move this into the compute stats.
-
 #[derive(Copy,Clone)]
 pub(crate) struct ComputeLabelsConfig {
       frame_rate_ms: u128
@@ -1183,7 +1178,7 @@ pub(crate) struct ComputeLabelsConfig {
 impl ComputeLabelsConfig {
     //encourage inline
     #[inline]
-    pub(crate) fn channelConfig(that: &ChannelStatsComputer, rational_adjust: (usize,usize), max_value: u64, show_avg: bool) -> Self {
+    pub(crate) fn channel_config(that: &ChannelStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool) -> Self {
         Self {
             frame_rate_ms: that.frame_rate_ms
             , rational_adjust
@@ -1193,7 +1188,7 @@ impl ComputeLabelsConfig {
         }
     }
     #[inline]
-    pub(crate) fn actorConfig(that: &ActorStatsComputer, rational_adjust: (usize,usize), max_value: u64, show_avg: bool) -> Self {
+    pub(crate) fn actor_config(that: &ActorStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool) -> Self {
         Self {
             frame_rate_ms: that.frame_rate_ms
             , rational_adjust
@@ -1245,13 +1240,13 @@ pub(crate) fn compute_labels<T: Counter>(config: ComputeLabelsConfig
         label_target.push_str("Avg ");
         label_target.push_str(labels.label);
 
-        #[cfg(any(feature = "prometheus_metrics") )]
+        #[cfg(feature = "prometheus_metrics" )]
         {
             metric_target.push_str("avg_");
             metric_target.push_str(labels.label);
-            metric_target.push_str("{");
+            metric_target.push('{');
             metric_target.push_str(labels.prometheus_labels);
-            metric_target.push_str("}");
+            metric_target.push('}');
         }
         let denominator = PLACES_TENS * config.rational_adjust.1 as u64;
         let avg_per_sec_numer = (config.rational_adjust.0 as u128 *current.runner) >> config.window_in_bits;
@@ -1266,23 +1261,23 @@ pub(crate) fn compute_labels<T: Counter>(config: ComputeLabelsConfig
                 label_target.push_str(": ");
                 label_target.push_str(itoa::Buffer::new().format(value));
             }
-            #[cfg(any(feature = "prometheus_metrics") )]
+            #[cfg(feature = "prometheus_metrics" )]
             {
-                metric_target.push_str(" ");
+                metric_target.push(' ');
                 metric_target.push_str(itoa::Buffer::new().format(value));
-                metric_target.push_str("\n");
+                metric_target.push('\n');
             }
         } else {
             let value = avg_per_sec_numer as f32 / denominator as f32;
             let value = &format!(" {:.3}", value);
 
-            #[cfg(any(feature = "prometheus_metrics") )]
+            #[cfg(feature = "prometheus_metrics" )]
             {
                 metric_target.push_str(value);
-                metric_target.push_str("\n");
+                metric_target.push('\n');
             }
 
-            label_target.push_str(":");
+            label_target.push(':');
             label_target.push_str(value);
         }
 
@@ -1318,18 +1313,17 @@ pub(crate) fn compute_labels<T: Counter>(config: ComputeLabelsConfig
         label_target.push_str(Buffer::new().format(config.frame_rate_ms));
         label_target.push_str("ms duration)\n");
 
-        #[cfg(any(feature = "prometheus_metrics") )]
+        #[cfg(feature = "prometheus_metrics" )]
         {
             metric_target.push_str("std_");
             metric_target.push_str(labels.label);
-            metric_target.push_str("{");
+            metric_target.push('{');
             metric_target.push_str(labels.prometheus_labels);
             metric_target.push_str(", n=");
             metric_target.push_str(&n_units);
-            metric_target.push_str("}");
-            metric_target.push_str(" ");
+            metric_target.push_str("} ");
             metric_target.push_str(value);
-            metric_target.push_str("\n");
+            metric_target.push('\n');
         }
     });
 
@@ -1347,18 +1341,17 @@ pub(crate) fn compute_labels<T: Counter>(config: ComputeLabelsConfig
 
              label_target.push_str(itoa::Buffer::new().format(value));
 
-            #[cfg(any(feature = "prometheus_metrics") )]
+            #[cfg(feature = "prometheus_metrics" )]
             {
                 metric_target.push_str("percentile_");
                 metric_target.push_str(labels.label);
-                metric_target.push_str("{");
+                metric_target.push('{');
                 metric_target.push_str(labels.prometheus_labels);
                 metric_target.push_str(", p=");
                 metric_target.push_str(itoa::Buffer::new().format((100.0f64 * p.percentile()) as usize ));
-                metric_target.push_str("}");
-                metric_target.push_str(" ");
+                metric_target.push_str("} ");
                 metric_target.push_str(itoa::Buffer::new().format(value));
-                metric_target.push_str("\n");
+                metric_target.push('\n');
             }
         } else {
             label_target.push_str("InternalError"); //not expected to happen

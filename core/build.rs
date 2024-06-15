@@ -52,12 +52,12 @@ fn main() {
             &cdn_source // using cdn
         };
         let folder_base = PathBuf::from("static/telemetry/");
-        if let Err(e) = fs::write(folder_base.join("index.html"), IndexTemplate { script_source: &source }.render().expect("unable to render")) {
+        if let Err(e) = fs::write(folder_base.join("index.html"), IndexTemplate { script_source: source }.render().expect("unable to render")) {
             panic!("Error writing index.html {:?}", e);
         };
         gzip_and_base64_encode(&base_target_path, "static/telemetry/index.html",false);
 
-        if let Err(e) = fs::write(folder_base.join("webworker.js"), WebWorkerTemplate { script_source: &source }.render().expect("unable to render")) {
+        if let Err(e) = fs::write(folder_base.join("webworker.js"), WebWorkerTemplate { script_source: source }.render().expect("unable to render")) {
             panic!("Error writing webworker.js {:?}", e);
         };
         gzip_and_base64_encode(&base_target_path, "static/telemetry/webworker.js",false);
@@ -113,7 +113,7 @@ fn gzip_and_base64_encode_web_resource(target: &Path, file_path: &str, get_url: 
             Ok(mut response) => {
                 let mut content = Vec::new();
                 response.body_mut().read_to_end(&mut content).expect("Failed to read response");
-                let mut file = File::create(&file_path).expect("Failed to create file");
+                let mut file = File::create(file_path).expect("Failed to create file");
                 file.write_all(&content).expect("Failed to write to file");
             }
             Err(e) => {
@@ -121,10 +121,12 @@ fn gzip_and_base64_encode_web_resource(target: &Path, file_path: &str, get_url: 
             }
         }
     }
-    gzip_and_base64_encode(&target, file_path,true);
+    gzip_and_base64_encode(target, file_path,true);
     //cleanup the downloaded file
-    fs::remove_file(file_path).expect("Failed to remove downloaded file");
-
+    //only remove the file if it exists
+    if Path::new(&file_path).exists() {
+        fs::remove_file(file_path).expect("Failed to remove downloaded file");
+    }
 }
 fn gzip_and_base64_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
 

@@ -1315,7 +1315,7 @@ impl <const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     pub async fn wait_future_void(& self, mut fut: Pin<Box<dyn FusedFuture<Output = ()>>>) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
-        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+        let one_down = &mut self.oneshot_shutdown.lock().await;
         let mut one_fused = one_down.deref_mut().fuse();
 
         if !one_fused.is_terminated() {

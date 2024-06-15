@@ -5,16 +5,15 @@ mod simple_graph_test {
 
 
     #[async_std::test]
-    async fn test_graph() {
+    async fn test_panic_graph() {
         if let Err(e) = init_logging("info") {
             eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
         }
         //smallest possible graph just to test the capture of throw.
         //it is not recommended to inline actors this way, but it is possible.
 
-
         //special test graph which does NOT fail fast but instead shows the prod behavior of restarting actors.
-        let mut graph = Graph::internal_new((),true);
+        let mut graph = Graph::internal_new((),true,false);
 
         let (tx,rx) = graph.channel_builder()
             .with_capacity(300)

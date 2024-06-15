@@ -1,20 +1,15 @@
-use std::future::{Future, ready};
-use std::{mem, thread};
-use std::mem::ManuallyDrop;
+use std::future::Future;
+use std::thread;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+use std::task::{Context, Poll};
 use std::thread::sleep;
 use std::time::Duration;
-use futures_timer::Delay;
 use lazy_static::lazy_static;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 #[allow(unused_imports)]
 use log::*;
-use nuclei::{Proactor, spawn_blocking};
-use parking_lot::{Mutex, Once};
-use crate::yield_now::yield_now;
+use parking_lot::Once;
 
 
 lazy_static! {
@@ -69,8 +64,12 @@ pub(crate) fn spawn_detached<F, T>(future: F)
 { //only used for supervisors who will be blocked running the actor most of the time.
     nuclei::spawn(async move {
         match nuclei::spawn_more_threads(1).await {
-            Ok(_) => {}
-            Err(_) => {} //log max thread issues?
+            Ok(_) => {
+
+            }
+            Err(_) => {
+
+            } //log max thread issues?
         };
         future.await;
     }).detach();  // Spawn an async task with nuclei

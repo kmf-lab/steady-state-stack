@@ -449,8 +449,7 @@ impl FrameHistory {
             self.file_bytes_written.store(0, Ordering::SeqCst);
             self.last_file_to_append_onto.clone_from(&file_to_append_onto);
         }
-        let path = self.output_log_path.join(&file_to_append_onto);
-        path
+        self.output_log_path.join(&file_to_append_onto)
     }
 
     fn will_span_into_next_block(&self) -> bool {
@@ -481,8 +480,7 @@ impl FrameHistory {
 
 
     async fn append_to_file(path: PathBuf, data: BytesMut, flush: bool) -> Result<(), std::io::Error> {
-        let len = data.len();
-        //warn!("begin append {}",len);
+
 
                     let file = OpenOptions::new()
                             .append(true)
@@ -495,7 +493,6 @@ impl FrameHistory {
                         Handle::<File>::flush(&mut h).await?;
                     }
 
-        //warn!("end append {}",len);
 
         Ok(())
     }

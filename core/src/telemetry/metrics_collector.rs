@@ -10,7 +10,7 @@ use std::time::Duration;
 use log::*; //allow unused import
 
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-use crate::{TxDef, RxDef, config, into_monitor, SendSaturation, SteadyContext, SteadyTx, Tx, yield_now, SteadyTxBundle, SteadyTxBundleTrait, TxBundleTrait};
+use crate::{RxDef, config, SendSaturation, SteadyContext, SteadyTx, Tx, yield_now, SteadyTxBundle, SteadyTxBundleTrait, TxBundleTrait};
 
 
 use futures::future::*;
@@ -230,7 +230,7 @@ async fn full_frame_or_timeout(futures_unordered: &mut FuturesUnordered<BoxFutur
             //we need to find just one with a full frame of data
             x
         },
-        _ = Delay::new(Duration::from_millis( (telemetry_rate_ms>>1) as u64 )).fuse() => {
+        _ = Delay::new(Duration::from_millis( telemetry_rate_ms>>1  )).fuse() => {
             None
         }
     }
@@ -387,7 +387,7 @@ fn gather_node_details(state: &mut RawDiagramState, dynamic_senders: &[Collector
     Some(nodes)
 }
 
-async fn send_structure_details(ident: ActorIdentity, consumer_vec: &mut Vec<MutexGuard<'_,Tx<DiagramData>>>
+async fn send_structure_details(ident: ActorIdentity, consumer_vec: &mut [MutexGuard<'_,Tx<DiagramData>>]
                                 , nodes: Vec<DiagramData>
                            ) {
 
@@ -416,7 +416,7 @@ async fn send_structure_details(ident: ActorIdentity, consumer_vec: &mut Vec<Mut
     }
 }
 
-async fn send_data_details(ident: ActorIdentity, consumer_vec: &mut Vec<MutexGuard<'_,Tx<DiagramData>>>, state: &RawDiagramState, warn:bool) {
+async fn send_data_details(ident: ActorIdentity, consumer_vec: &mut [MutexGuard<'_,Tx<DiagramData>>], state: &RawDiagramState, warn:bool) {
     for consumer in consumer_vec.iter_mut() {
         //NOTE: if our outgoing channel is full we will NOT send this frame. our Vec data is rolling
         //      forever so no data is lost instead we just lost the specifics of that frame. This is not

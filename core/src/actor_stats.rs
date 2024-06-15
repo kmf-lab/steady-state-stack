@@ -53,8 +53,8 @@ impl ActorStatsComputer {
     const PLACES_TENS:u64 = 1000u64;
 
     pub(crate) fn compute(&mut self
-                          , mut dot_label: &mut String
-                          , mut metric_text: &mut String
+                          , dot_label: &mut String
+                          , metric_text: &mut String
                           , mcpu: u64
                           , work: u64
                           , total_count_restarts: u32
@@ -63,7 +63,7 @@ impl ActorStatsComputer {
         self.accumulate_data_frame(mcpu, work);
 
 
-        #[cfg(any(feature = "prometheus_metrics") )]
+        #[cfg(feature = "prometheus_metrics" )]
         metric_text.clear();
 
         dot_label.clear();//for this node we cache the same allocation.
@@ -86,7 +86,7 @@ impl ActorStatsComputer {
             dot_label.push_str(itoa::Buffer::new().format(total_count_restarts));
             dot_label.push('\n');
 
-            #[cfg(any(feature = "prometheus_metrics") )]
+            #[cfg(feature = "prometheus_metrics" )]
             {
                 //prometheus
                 metric_text.push_str("graph_node_restarts{");
@@ -104,7 +104,7 @@ impl ActorStatsComputer {
 
 
         if let Some(ref current_work) = &self.current_work {
-            let config = ComputeLabelsConfig::actorConfig(self,(1,1), 100, self.show_avg_work);
+            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 100, self.show_avg_work);
             let labels = ComputeLabelsLabels {
                 label: "work",
                 unit: "%",
@@ -119,7 +119,7 @@ impl ActorStatsComputer {
             );
         }
         if let Some(ref current_mcpu) = &self.current_mcpu {
-            let config = ComputeLabelsConfig::actorConfig(self,(1,1), 1024, self.show_avg_mcpu);
+            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 1024, self.show_avg_mcpu);
             let labels = ComputeLabelsLabels {
                 label: "mCPU",
                 unit: "",
@@ -169,7 +169,7 @@ impl ActorStatsComputer {
         self.prometheus_labels.push_str("\", ");
         self.prometheus_labels.push_str("actor_name=\"");
         self.prometheus_labels.push_str(meta.name);
-        self.prometheus_labels.push_str("\"");
+        self.prometheus_labels.push('"');
 
         //TODO: Perf, we could pre-filter these by color here since they will not change again
         //      this might be needed for faster updates..

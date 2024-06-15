@@ -1,4 +1,4 @@
-use crate::{abstract_executor, config, SteadyContext, write_warning_to_console};
+use crate::{abstract_executor, config, SteadyContext};
 use std::ops::{ Sub};
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -21,7 +21,6 @@ use nuclei::config::IoUringConfiguration;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
-use crate::config::*;
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -446,7 +445,7 @@ impl Graph {
         //raise objections and delay the stop. we just take the max of both
         //durations and do not error or panic since we are shutting down
         let timeout = clean_shutdown_timeout.max(
-            Duration::from_millis(3 * self.telemetry_production_rate_ms as u64));
+            Duration::from_millis(3 * self.telemetry_production_rate_ms));
 
         //wait for either the timeout or the state to be Stopped
         //while try lock then yield and do until time has passed
@@ -499,12 +498,13 @@ impl Graph {
     /// create a new graph for the application typically done in main
     pub fn new<A: Any+Send+Sync>(args: A) -> Graph {
         let block_fail_fast = false;
-        Self::internal_new(args, block_fail_fast)
+        Self::internal_new(args, block_fail_fast, config::TELEMETRY_SERVER)
     }
 
     /// used for normal create and unit test create. unit tests must block the fail fast for panic testing
     pub(crate) fn internal_new<A: Any + Send + Sync>(args: A
                                , block_fail_fast: bool
+                               , enable_telemtry: bool
 
                                 ) -> Graph {
         let channel_count = Arc::new(AtomicUsize::new(0));
@@ -535,8 +535,9 @@ impl Graph {
             proactor_config: ProactorConfig::InterruptDriven,
             telemetry_production_rate_ms: 40, //TODO: set default somewhere.
         };
-        //this is based on features in the config
-        telemetry::setup::build_optional_telemetry_graph(&mut result);
+        if enable_telemtry {
+            telemetry::setup::build_optional_telemetry_graph(&mut result);
+        }
         result
     }
 

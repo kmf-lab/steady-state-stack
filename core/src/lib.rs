@@ -93,7 +93,7 @@ use futures_timer::Delay;
 use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use futures_util::lock::MutexGuard;
 use num_traits::Zero;
-use crate::graph_testing::{SideChannel, SideChannelHub, SideChannelResponder};
+use crate::graph_testing::{SideChannel, SideChannelResponder};
 use crate::yield_now::yield_now;
 
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
@@ -238,7 +238,7 @@ impl SteadyContext {
 
 
     pub async fn wait_future_void(&self, mut fut: Pin<Box<dyn FusedFuture<Output = ()>>>) -> bool {
-        let mut one_down = &mut self.oneshot_shutdown.lock().await;
+        let one_down = &mut self.oneshot_shutdown.lock().await;
         let mut one_fused = one_down.deref_mut().fuse();
         if !one_fused.is_terminated() {
                 select! { _ = one_fused => false, _ = fut => true, }
@@ -788,7 +788,7 @@ impl<T> Tx<T> {
 
     fn direct_use_check_and_warn(&self) {
         if self.channel_meta_data.expects_to_be_monitored {
-            write_warning_to_console(Backtrace::capture(), &mut self.dedupeset.borrow_mut());
+            write_warning_to_console( &mut self.dedupeset.borrow_mut());
         }
     }
     ////////////////////////////////////////////////////////////////
@@ -924,7 +924,7 @@ impl<T> Tx<T> {
 }
 
 /// common method to show stack trace
-pub(crate) fn write_warning_to_console(stack: Backtrace, dedupeset: &mut HashSet<String>) {
+pub(crate) fn write_warning_to_console(dedupeset: &mut HashSet<String>) {
 
     let backtrace = Backtrace::capture();
     // Pretty print the backtrace if it's captured
@@ -1357,7 +1357,7 @@ impl<T> Rx<T> {
 
     fn direct_use_check_and_warn(&self) {
         if self.channel_meta_data.expects_to_be_monitored {
-            write_warning_to_console(Backtrace::capture(), &mut self.dedupeset.borrow_mut());
+            write_warning_to_console( &mut self.dedupeset.borrow_mut());
         }
     }
 

@@ -75,7 +75,7 @@ pub(crate) async fn run(context: SteadyContext
     // TODO: build a small CLI app which plays it into a a server
     //       add some text commands to pause requind etc
 
-    #[cfg(any(feature = "prometheus_metrics") )]
+    #[cfg(feature = "prometheus_metrics" )]
     let _ = app.at("/metrics")
         .get(|req: Request<Arc<Mutex<State>>>| async move {
             let body = Body::from_bytes({
@@ -212,7 +212,7 @@ pub(crate) async fn run(context: SteadyContext
                                     //  info!("write hitory file");
                                       //NOTE we do not expect to get any more messages for this seq
                                       //    and we have 32ms or so to record the history log file
-                                      history.apply_edge(&total_take_send, ctrl.frame_rate_ms as u64);
+                                      history.apply_edge(&total_take_send, ctrl.frame_rate_ms);
 
                                       //since we got the edge data we know we have a full frame
                                       //and we can update the history

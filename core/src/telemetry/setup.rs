@@ -6,12 +6,12 @@ use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
 use num_traits::Zero;
-use crate::{abstract_executor, ActorIdentity, config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, steady_tx_bundle, SteadyContext, SteadyTxBundle, telemetry};
+use crate::{abstract_executor, ActorIdentity, config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, steady_tx_bundle, SteadyContext, telemetry};
 use crate::channel_builder::ChannelBuilder;
 use crate::config::*;
 use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
 use crate::telemetry::{metrics_collector, metrics_server};
-use crate::telemetry::metrics_collector::{CollectorDetail, DiagramData};
+use crate::telemetry::metrics_collector::{CollectorDetail};
 
 pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(that: &SteadyContext
                                                                                      , rx_meta_data: Vec<Arc<ChannelMetaData>>

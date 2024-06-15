@@ -25,7 +25,7 @@ use futures::channel::oneshot;
 use log::*;
 use async_ringbuf::traits::Split;
 //# use ringbuf::storage::Heap;
-use crate::{abstract_executor, AlertColor, config, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger, Tx};
+use crate::{abstract_executor, AlertColor, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger, Tx};
 use crate::actor_builder::Percentile;
 use crate::monitor::ChannelMetaData;
 
@@ -104,7 +104,7 @@ impl ChannelBuilder {
             max_filled: false,
             min_filled: false,
             connects_sidecar: false,
-            frame_rate_ms: frame_rate_ms,
+            frame_rate_ms,
         }
     }
 
