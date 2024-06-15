@@ -3204,6 +3204,7 @@ dependencies = [
  "ringbuf",
  "rustdds",
  "structopt",
+ "structopt-derive",
  "stun-rs",
  "tempfile",
  "tide",

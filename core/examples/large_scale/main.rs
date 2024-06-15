@@ -42,6 +42,11 @@ fn main() {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::from_args();
 
+    //TODO: for round trip CLI testing we need to build a PR against stuctopt-derive to give us
+    //      into String from the built struct, this will allow for better testability of products.
+    //let text:String = opt.into();
+    //warn!("{}",text);
+
     if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }

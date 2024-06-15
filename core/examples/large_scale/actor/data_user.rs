@@ -3,6 +3,7 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
+use steady_state::{Rx, SteadyRx};
 use crate::actor::data_generator::Packet;
 
 #[cfg(not(test))]

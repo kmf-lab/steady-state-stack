@@ -8,6 +8,8 @@ use crate::actor::data_generator::Packet;
 use std::time::Duration;
 use futures_util::lock::MutexGuard;
 use num_traits::Zero;
+use steady_state::{Rx, SteadyRx};
+use steady_state::{SteadyTxBundle, Tx};
 
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , one_of: usize

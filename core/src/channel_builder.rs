@@ -25,9 +25,13 @@ use futures::channel::oneshot;
 use log::*;
 use async_ringbuf::traits::Split;
 //# use ringbuf::storage::Heap;
-use crate::{abstract_executor, AlertColor, Metric, MONITOR_UNKNOWN, Rx, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger, Tx};
+use crate::{abstract_executor, AlertColor, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::Percentile;
 use crate::monitor::ChannelMetaData;
+//# use ringbuf::storage::Heap;
+use crate::steady_rx::{Rx};
+//# use ringbuf::storage::Heap;
+use crate::steady_tx::{Tx};
 
 #[derive(Clone)]
 pub struct ChannelBuilder {
@@ -555,6 +559,11 @@ impl ChannelBuilder {
 
 impl Metric for Rate {}
 
+/// Represents a rate of occurrence over time.
+///
+/// The `Rate` struct is used to express a rate of events per unit of time.
+/// Internally, it is represented as a rational number with a numerator (units) and
+/// a denominator (time in milliseconds).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rate {
     // Internal representation as a rational number of the rate per ms
@@ -564,7 +573,20 @@ pub struct Rate {
 }
 
 impl Rate {
-    // Milliseconds
+    /// Creates a new `Rate` instance representing units per millisecond.
+    ///
+    /// # Arguments
+    ///
+    /// * `units` - The number of units occurring per millisecond.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Rate;
+    ///
+    /// let rate = Rate::per_millis(5);
+    /// assert_eq!(rate.rational_ms(), (5, 1));
+    /// ```
     pub fn per_millis(units: u64) -> Self {
         Self {
             numerator: units,
@@ -572,6 +594,20 @@ impl Rate {
         }
     }
 
+    /// Creates a new `Rate` instance representing units per second.
+    ///
+    /// # Arguments
+    ///
+    /// * `units` - The number of units occurring per second.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Rate;
+    ///
+    /// let rate = Rate::per_seconds(5);
+    /// assert_eq!(rate.rational_ms(), (5000, 1));
+    /// ```
     pub fn per_seconds(units: u64) -> Self {
         Self {
             numerator: units * 1000,
@@ -579,6 +615,20 @@ impl Rate {
         }
     }
 
+    /// Creates a new `Rate` instance representing units per minute.
+    ///
+    /// # Arguments
+    ///
+    /// * `units` - The number of units occurring per minute.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Rate;
+    ///
+    /// let rate = Rate::per_minutes(5);
+    /// assert_eq!(rate.rational_ms(), (300000, 1));
+    /// ```
     pub fn per_minutes(units: u64) -> Self {
         Self {
             numerator: units * 1000 * 60,
@@ -586,6 +636,20 @@ impl Rate {
         }
     }
 
+    /// Creates a new `Rate` instance representing units per hour.
+    ///
+    /// # Arguments
+    ///
+    /// * `units` - The number of units occurring per hour.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Rate;
+    ///
+    /// let rate = Rate::per_hours(5);
+    /// assert_eq!(rate.rational_ms(), (18000000, 1));
+    /// ```
     pub fn per_hours(units: u64) -> Self {
         Self {
             numerator: units * 1000 * 60 * 60,
@@ -593,6 +657,20 @@ impl Rate {
         }
     }
 
+    /// Creates a new `Rate` instance representing units per day.
+    ///
+    /// # Arguments
+    ///
+    /// * `units` - The number of units occurring per day.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Rate;
+    ///
+    /// let rate = Rate::per_days(5);
+    /// assert_eq!(rate.rational_ms(), (432000000, 1));
+    /// ```
     pub fn per_days(units: u64) -> Self {
         Self {
             numerator: units * 1000 * 60 * 60 * 24,
@@ -602,46 +680,198 @@ impl Rate {
 
     /// Returns the rate as a rational number (numerator, denominator) to represent the rate per ms.
     /// This method ensures the rate can be used without performing division, preserving precision.
-    pub(crate) fn rational_ms(&self) -> (u64, u64) {
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Rate;
+    ///
+    /// let rate = Rate::per_seconds(5);
+    /// assert_eq!(rate.rational_ms(), (5000, 1));
+    /// ```
+    pub fn rational_ms(&self) -> (u64, u64) {
         (self.numerator, self.denominator)
     }
 }
 
+
 impl Metric for Filled {}
 
-
+/// Represents different types of fill levels for metrics alerts.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Filled {
-    Percentage(u64,u64),  // Represents a percentage filled, as numerator and denominator
-    Exact(u64),           // Represents an exact fill level
+    /// Represents a percentage filled, as numerator and denominator.
+    Percentage(u64, u64),
+    /// Represents an exact fill level.
+    Exact(u64),
 }
 
 impl Filled {
     /// Creates a new `Filled` instance representing a percentage filled.
-    /// Ensures the percentage is within the valid range of 0.0 to 100.0.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A floating-point value representing the percentage.
+    ///
+    /// # Returns
+    ///
+    /// * `Some(Filled::Percentage)` if the percentage is within the valid range of 0.0 to 100.0.
+    /// * `None` if the percentage is outside the valid range.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::percentage(75.0);
+    /// assert_eq!(fill, Some(Filled::Percentage(75000, 100000)));
+    ///
+    /// let invalid_fill = Filled::percentage(150.0);
+    /// assert_eq!(invalid_fill, None);
+    /// ```
     pub fn percentage(value: f32) -> Option<Self> {
         if (0.0..=100.0).contains(&value) {
-            Some(Self::Percentage((value * 100_000f32) as u64, 100_000u64))
+            Some(Self::Percentage((value * 1_000f32) as u64, 100_000u64))
         } else {
             None
         }
     }
 
-    pub fn p10() -> Self { Self::Percentage(10, 100)}
-    pub fn p20() -> Self { Self::Percentage(20, 100)}
-    pub fn p30() -> Self { Self::Percentage(30, 100)}
-    pub fn p40() -> Self { Self::Percentage(40, 100)}
-    pub fn p50() -> Self { Self::Percentage(50, 100)}
-    pub fn p60() -> Self { Self::Percentage(60, 100)}
-    pub fn p70() -> Self { Self::Percentage(70, 100)}
-    pub fn p80() -> Self { Self::Percentage(80, 100)}
-    pub fn p90() -> Self { Self::Percentage(90, 100)}
-    pub fn p100() -> Self { Self::Percentage(100, 100)}
+    /// Creates a new `Filled` instance representing a 10% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p10();
+    /// assert_eq!(fill, Filled::Percentage(10, 100));
+    /// ```
+    pub fn p10() -> Self { Self::Percentage(10, 100) }
 
+    /// Creates a new `Filled` instance representing a 20% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p20();
+    /// assert_eq!(fill, Filled::Percentage(20, 100));
+    /// ```
+    pub fn p20() -> Self { Self::Percentage(20, 100) }
+
+    /// Creates a new `Filled` instance representing a 30% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p30();
+    /// assert_eq!(fill, Filled::Percentage(30, 100));
+    /// ```
+    pub fn p30() -> Self { Self::Percentage(30, 100) }
+
+    /// Creates a new `Filled` instance representing a 40% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p40();
+    /// assert_eq!(fill, Filled::Percentage(40, 100));
+    /// ```
+    pub fn p40() -> Self { Self::Percentage(40, 100) }
+
+    /// Creates a new `Filled` instance representing a 50% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p50();
+    /// assert_eq!(fill, Filled::Percentage(50, 100));
+    /// ```
+    pub fn p50() -> Self { Self::Percentage(50, 100) }
+
+    /// Creates a new `Filled` instance representing a 60% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p60();
+    /// assert_eq!(fill, Filled::Percentage(60, 100));
+    /// ```
+    pub fn p60() -> Self { Self::Percentage(60, 100) }
+
+    /// Creates a new `Filled` instance representing a 70% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p70();
+    /// assert_eq!(fill, Filled::Percentage(70, 100));
+    /// ```
+    pub fn p70() -> Self { Self::Percentage(70, 100) }
+
+    /// Creates a new `Filled` instance representing an 80% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p80();
+    /// assert_eq!(fill, Filled::Percentage(80, 100));
+    /// ```
+    pub fn p80() -> Self { Self::Percentage(80, 100) }
+
+    /// Creates a new `Filled` instance representing a 90% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p90();
+    /// assert_eq!(fill, Filled::Percentage(90, 100));
+    /// ```
+    pub fn p90() -> Self { Self::Percentage(90, 100) }
+
+    /// Creates a new `Filled` instance representing a 100% fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::p100();
+    /// assert_eq!(fill, Filled::Percentage(100, 100));
+    /// ```
+    pub fn p100() -> Self { Self::Percentage(100, 100) }
 
     /// Creates a new `Filled` instance representing an exact fill level.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - An unsigned integer representing the exact fill level.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use steady_state::Filled;
+    ///
+    /// let fill = Filled::exact(42);
+    /// assert_eq!(fill, Filled::Exact(42));
+    /// ```
     pub fn exact(value: u64) -> Self {
         Self::Exact(value)
     }
 }
-

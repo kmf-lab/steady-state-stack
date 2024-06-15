@@ -3,6 +3,8 @@ use std::error::Error;
 use log::*;
 use steady_state::*;
 use steady_state::monitor::LocalMonitor;
+use steady_state::{Rx, SteadyRx};
+use steady_state::{SteadyTx, Tx};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FailureFeedback {

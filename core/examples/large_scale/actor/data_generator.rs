@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::mem;
-use std::time::Duration;
 use bytes::Bytes;
 
 #[allow(unused_imports)]

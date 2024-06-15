@@ -1,3 +1,6 @@
+//! # cargo-steady-state - A tool to generate Rust code from a DOT file
+//! Dot files can be written by hand or with the help of LLMs. This generates a new empty project.
+
 mod extract_details;
 mod args;
 mod templates;
@@ -25,7 +28,6 @@ struct ProjectModel {
 
 fn main() {
     let opt = Args::from_args();
-
 
     if let Ok(s) = LevelFilter::from_str(&opt.loglevel) {
         let mut builder = LogSpecBuilder::new();

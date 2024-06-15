@@ -4,6 +4,8 @@ use std::error::Error;
 use log::*;
 use steady_state::*;
 use steady_state::monitor::LocalMonitor;
+use steady_state::SteadyRx;
+use steady_state::{SteadyTx, Tx};
 use crate::actor::data_feedback::ChangeRequest;
 
 #[derive(Clone, Debug, Copy)]

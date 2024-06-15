@@ -1,3 +1,16 @@
+//! Build process for steady-state. Ensures we have the telemetry web files in place before building.
+//! The macro `include_str!` is used to include the contents of the files in the binary if enabled.
+
+/// Features:
+/// - telemetry_server_builtin: Include the telemetry server in the binary
+///                   Great for offline or internet isolated projects
+/// - telemetry_server_cdn: Use the telemetry server from a CDN
+///                   Good for smaller binary and projects which have internet access
+/// - prometheus_metrics: Include the prometheus server to be scraped in the binary
+/// - telemetry_history: Generate history files of the telemetry for playback later
+/// - proactor_nuclei: Use the nuclei based proactor io_uring async runtime (default)
+/// - praactor_tokio: Use the tokio based proactor io_uring async runtime
+
 use std::process::{Command, Stdio};
 use std::{env, fs};
 use std::fs::{File};

@@ -88,6 +88,8 @@ if [ $exit_code -ne 0 ]; then
     exit $exit_code
 fi
 
+cargo doc --no-deps
+
 # Build documentation like on docs.rs server
 RUSTDOCFLAGS="--cfg=docsrs" cargo rustdoc --features "proactor_nuclei" --no-default-features -- -Zunstable-options -Zrustdoc-scrape-examples
 exit_code=$?

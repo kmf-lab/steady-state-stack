@@ -1,27 +1,22 @@
+//! This module facilitates the deployment of SteadyState projects on Linux and their management as systemd services.
+//!
+//! The module provides functionalities to create, install, and uninstall systemd service files, enabling seamless
+//! service management for SteadyState applications.
+
 use std::{env, fs};
 use std::process::Command;
 use log::*;
-#[allow(unused_imports)]
-use std::io::Write;
-#[allow(unused_imports)]
 use std::path::{Path, PathBuf};
-#[allow(unused_imports)]
-use nuclei::{drive, Handle};
-
-#[allow(unused_imports)]
-use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-#[allow(unused_imports)]
-use std::fs::{create_dir_all, File, OpenOptions};
 use crate::abstract_executor;
 use crate::dot::FrameHistory;
 
+/// A builder for configuring and creating a systemd service manager.
 #[derive(Clone)]
 pub struct SystemdBuilder {
     service_name: String,
     service_user: String,
-    service_file_default_folder : String,
+    service_file_default_folder: String,
     service_executable_folder: String,
-
     on_boot: bool,
     secrets: Vec<String>,
     after: String,
@@ -31,14 +26,22 @@ pub struct SystemdBuilder {
 }
 
 impl SystemdBuilder {
+    /// Creates a new `SystemdBuilder` with the given executable name and user.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_executable_name` - The name of the service executable.
+    /// * `service_user` - The user under which the service will run.
+    ///
+
     pub fn new(service_executable_name: String, service_user: String) -> Self {
         SystemdBuilder {
             service_executable_folder: "/usr/local/bin".to_string(),
-            service_file_default_folder : "/etc/systemd/system".to_string(),
+            service_file_default_folder: "/etc/systemd/system".to_string(),
             service_name: service_executable_name.clone(),
             secrets: Vec::new(),
             on_boot: true,
-            description: format!("steady_state:{}",service_executable_name),
+            description: format!("steady_state:{}", service_executable_name),
             after: "network.target".to_string(),
             wanted_by: "multi-user.target".to_string(),
             restart: "always".to_string(),
@@ -46,12 +49,26 @@ impl SystemdBuilder {
         }
     }
 
+    /// Adds a secret to the service configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the secret.
+    /// * `absolute_file` - The absolute path to the secret file.
+    ///
+
     pub fn with_secret(&self, name: String, absolute_file: String) -> Self {
         let mut result = self.clone();
-        //absolute_file probably should start with /etc/secrets/
         result.secrets.push(format!("{}:/{}", name, absolute_file));
         result
     }
+
+    /// Configures the service to start on boot.
+    ///
+    /// # Arguments
+    ///
+    /// * `on_boot` - A boolean indicating whether the service should start on boot.
+    ///
 
     pub fn with_on_boot(&self, on_boot: bool) -> Self {
         let mut result = self.clone();
@@ -59,11 +76,25 @@ impl SystemdBuilder {
         result
     }
 
+    /// Sets the description of the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `description` - The description of the service.
+    ///
+
     pub fn with_description(&self, description: String) -> Self {
         let mut result = self.clone();
         result.description = description;
         result
     }
+
+    /// Sets the `After` directive for the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `after` - The service or target that this service should start after.
+    ///
 
     pub fn with_after(&self, after: String) -> Self {
         let mut result = self.clone();
@@ -71,11 +102,25 @@ impl SystemdBuilder {
         result
     }
 
+    /// Sets the `WantedBy` directive for the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `wanted_by` - The target that wants this service.
+    ///
+
     pub fn with_wanted_by(&self, wanted_by: String) -> Self {
         let mut result = self.clone();
         result.wanted_by = wanted_by;
         result
     }
+
+    /// Sets the `Restart` directive for the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `restart` - The restart policy for the service.
+    ///
 
     pub fn with_restart(&self, restart: String) -> Self {
         let mut result = self.clone();
@@ -83,11 +128,25 @@ impl SystemdBuilder {
         result
     }
 
+    /// Sets the user under which the service will run.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_user` - The user for the service.
+    ///
+
     pub fn with_service_user(&self, service_user: String) -> Self {
         let mut result = self.clone();
         result.service_user = service_user;
         result
     }
+
+    /// Sets the name of the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_name` - The name of the service.
+    ///
 
     pub fn with_service_name(&self, service_name: String) -> Self {
         let mut result = self.clone();
@@ -95,11 +154,25 @@ impl SystemdBuilder {
         result
     }
 
+    /// Sets the default folder for the service file.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_file_default_folder` - The default folder for the service file.
+    ///
+
     pub fn with_service_file_default_folder(&self, service_file_default_folder: String) -> Self {
         let mut result = self.clone();
         result.service_file_default_folder = service_file_default_folder;
         result
     }
+
+    /// Sets the folder for the service executable.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_executable_folder` - The folder for the service executable.
+    ///
 
     pub fn with_service_executable_folder(&self, service_executable_folder: String) -> Self {
         let mut result = self.clone();
@@ -107,10 +180,13 @@ impl SystemdBuilder {
         result
     }
 
+    /// Builds and returns a `SystemdServiceManager`.
+    ///
+
     pub fn build(self) -> SystemdServiceManager {
         SystemdServiceManager {
-            service_file_name: format!("{}{}.service",&self.service_file_default_folder, &self.service_name),
-            service_executable: format!("{}{}",&self.service_executable_folder, &self.service_name),
+            service_file_name: format!("{}/{}.service", &self.service_file_default_folder, &self.service_name),
+            service_executable: format!("{}/{}", &self.service_executable_folder, &self.service_name),
             service_name: self.service_name,
             service_user: self.service_user,
             on_boot: self.on_boot,
@@ -123,6 +199,7 @@ impl SystemdBuilder {
     }
 }
 
+/// Manages a systemd service for a SteadyState project.
 pub struct SystemdServiceManager {
     pub service_name: String,
     pub service_user: String, // NEVER share this user with other services
@@ -137,7 +214,11 @@ pub struct SystemdServiceManager {
 }
 
 impl SystemdServiceManager {
-
+    /// Checks if the platform setup is appropriate for managing a systemd service.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure.
     fn check_platform_setup(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Check for systemd via systemctl
         if !Command::new("systemctl")
@@ -153,8 +234,19 @@ impl SystemdServiceManager {
         Ok(())
     }
 
-    // to_cli_string(self.service_executable,cmd_line_arg)
-    pub fn install(&self, start_now:bool, start_string: String) -> Result<(), Box<dyn std::error::Error>> {
+    /// Installs the service, optionally starting it immediately.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_now` - A boolean indicating whether to start the service immediately.
+    /// * `start_string` - The command to start the service.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure.
+    ///
+
+    pub fn install(&self, start_now: bool, start_string: String) -> Result<(), Box<dyn std::error::Error>> {
         self.check_platform_setup()?;
 
         // Detect the current executable's path
@@ -171,11 +263,10 @@ impl SystemdServiceManager {
             .status()?;
 
         if !status.success() {
-            //NOTE: Could be replaced with a more dynamic or builder approach based on distribution
+            // Could be replaced with a more dynamic or builder approach based on distribution
             let useradd_command = "useradd";
             let useradd_args = ["-r", "-s", "/usr/sbin/nologin", &self.service_user];
 
-            ////
             Command::new(useradd_command)
                 .args(useradd_args)
                 .status()?;
@@ -189,78 +280,93 @@ impl SystemdServiceManager {
 
         // Reload the systemd daemon
         Command::new("systemctl")
-                    .arg("daemon-reload")
-                    .status()?;
+            .arg("daemon-reload")
+            .status()?;
         info!("Reloaded the systemd daemon");
 
         if self.on_boot {
             // Enable the service to start on boot
             Command::new("systemctl")
-                        .args(["enable", &self.service_name])
-                        .status()?;
-            info!("Enabled '{}' service to start on boot",self.service_name);
+                .args(["enable", &self.service_name])
+                .status()?;
+            info!("Enabled '{}' service to start on boot", self.service_name);
         }
 
         if start_now {
             Command::new("systemctl")
-                        .args(["start", &self.service_name])
-                        .status()?;
-            info!("Started '{}' service",self.service_name);
-            info!("To debug try: journalctl -u {}",self.service_name);
+                .args(["start", &self.service_name])
+                .status()?;
+            info!("Started '{}' service", self.service_name);
+            info!("To debug try: journalctl -u {}", self.service_name);
         }
 
         Ok(())
     }
+
+    /// Uninstalls the service.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure.
+    ///
 
     pub fn uninstall(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.check_platform_setup()?;
 
         // Stop the service
         Command::new("systemctl")
-                    .args(["stop", &self.service_name])
-                    .status()?;
-        info!("Stopped '{}' service",self.service_name);
+            .args(["stop", &self.service_name])
+            .status()?;
+        info!("Stopped '{}' service", self.service_name);
 
         // Disable the service
         Command::new("systemctl")
-                    .args(["disable", &self.service_name])
-                    .status()?;
-        info!("Disabled '{}' service from starting on boot",self.service_name);
+            .args(["disable", &self.service_name])
+            .status()?;
+        info!("Disabled '{}' service from starting on boot", self.service_name);
 
         // Remove the systemd service file
         std::fs::remove_file(Path::new(&self.service_file_name))?;
-        info!("Removed the systemd service file: {}",self.service_file_name);
+        info!("Removed the systemd service file: {}", self.service_file_name);
 
         // Reload the systemd daemon
         Command::new("systemctl")
-                        .arg("daemon-reload")
-                        .status()?;
+            .arg("daemon-reload")
+            .status()?;
         info!("Reloaded the systemd daemon");
 
         // Remove the executable
         std::fs::remove_file(Path::new(&self.service_executable))?;
-        info!("Removed the executable: {}",self.service_executable);
+        info!("Removed the executable: {}", self.service_executable);
 
         Command::new("userdel")
-                    .arg(&self.service_user)
-                    .status()?;
-        info!("Deleted the service user '{}'",self.service_user);
+            .arg(&self.service_user)
+            .status()?;
+        info!("Deleted the service user '{}'", self.service_user);
 
         Ok(())
     }
 
-
+    /// Creates the systemd service file.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_string` - The command to start the service.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure.
     fn create_service_file(&self, start_string: String) -> Result<(), String> {
-
-         let mut load_creds = String::new();
-         if !self.secrets.is_empty() {
+        let mut load_creds = String::new();
+        if !self.secrets.is_empty() {
             load_creds.push_str("# systemd's LoadCredential Option (systemd v246+)\n");
-         }
-         for secret in &self.secrets {
-                load_creds.push_str(&format!("LoadCredential={}\n", secret));
-         }
+        }
+        for secret in &self.secrets {
+            load_creds.push_str(&format!("LoadCredential={}\n", secret));
+        }
 
-        let service_content = format!(r#"[Unit]
+        let service_content = format!(
+            r#"[Unit]
 Description={}
 After={}
 
@@ -272,22 +378,19 @@ Restart={}
 
 [Install]
 WantedBy={}
-"#
- ,self.description, self.after, load_creds, start_string, self.service_user
- ,self.restart, self.wanted_by  );
+"#,
+            self.description, self.after, load_creds, start_string, self.service_user, self.restart, self.wanted_by
+        );
 
-        info!("write service content to file: {}",service_content);
+        info!("Write service content to file: {}", service_content);
 
         let filename = (&self.service_file_name).into();
-        abstract_executor::block_on(
-            async move {
-                match FrameHistory::truncate_file(filename, service_content.as_bytes().into()).await {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(e.to_string())
-                }
+        abstract_executor::block_on(async move {
+            match FrameHistory::truncate_file(filename, service_content.as_bytes().into()).await {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e.to_string()),
             }
-        )
+        })
     }
-
 }
 

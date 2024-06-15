@@ -92,7 +92,7 @@ ahash            = "0.8.11"  # for fast hashing
 tide             = "0.17.0-beta.1" # for http server, to remove
 
 structopt        = "0.3.26"  # CLI parse for type safe arguments
-#structopt-derive = "0.4.18"
+structopt-derive = "0.4.18" # adds Args::from_args() to your structopt struct
 
 # NOTE: more thought here about which is the best
 futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
