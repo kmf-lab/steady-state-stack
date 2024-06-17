@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use ahash::AHasher;
 use futures_util::{FutureExt, select, task};
 use std::sync::Arc;
-use futures_util::lock::{Mutex, MutexLockFuture};
+use futures_util::lock::{MutexLockFuture};
 use std::time::{Duration, Instant};
 use log::error;
 use futures::channel::oneshot;

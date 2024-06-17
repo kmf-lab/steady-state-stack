@@ -4,7 +4,6 @@
 
 use log::*;
 use num_traits::Zero;
-use std::cmp;
 use std::fmt::Write;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::PathBuf;
@@ -12,13 +11,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use bytes::{BufMut, BytesMut};
-use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use futures::{AsyncWriteExt};
 use nuclei::{self, Handle};
 use time::macros::format_description;
 use time::OffsetDateTime;
 
 use crate::actor_stats::ActorStatsComputer;
-use crate::channel_stats::{ChannelStatsComputer, compute_labels, ComputeLabelsConfig, ComputeLabelsLabels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW};
+use crate::channel_stats::{ChannelStatsComputer};
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;

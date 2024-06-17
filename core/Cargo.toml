@@ -2,8 +2,8 @@
 name = "steady_state"   # rename from sss
 version = "0.0.17"
 documentation = "https://docs.rs/steady_state/0.0.17/steady_state/"
-               #"https://docs.rs/crate/steady_state/0.0.16"  #debugging
-authors = ["Nathan Tippy <nathan.tippy.name>"]
+               #"https://docs.rs/crate/steady_state/0.0.17"  #debugging
+authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
@@ -21,6 +21,7 @@ name = "steady_state"
 path = "src/lib.rs"
 
 # cargo build --release --features telemetry_history,telemetry_server_builtin
+
 [profile.release]
 opt-level = 'z' # optimize for size
 lto = true # link time optimization
@@ -161,13 +162,3 @@ async-std        = {  version = "1.12.0", features = ["attributes"] }  # for asy
 rand_distr       = "0.5.0-alpha.1" # for random number generation
 #testcontainers   = "0.15.0" # for integration testing, DO NOT upgrade to 0.16.0 since Tokio is not supported here
 rand             = "0.9.0-alpha.1" # for random number generation
-
-[target.armv7-unknown-linux-gnueabihf]
-linker = "arm-linux-gnueabihf-gcc"
-
-
-
-#
-# Future work: to test if the code compiles for no_std use this command:
-#  cargo build --target thumbv6m-none-eabi
-#

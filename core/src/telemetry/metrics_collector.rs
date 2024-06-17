@@ -399,6 +399,7 @@ async fn send_data_details(
                 Err(_) => {}
             }
         } else if warn {
+            #[cfg(not(test))]
             warn!(
                 "{:?} is accumulating frames since consumer is not keeping up, perhaps capacity of {:?} may need to be increased.",
                 ident, consumer.capacity()

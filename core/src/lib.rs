@@ -4,23 +4,38 @@
 //!  Build low latency high volume solutions.
 
 pub(crate) mod telemetry {
-    //! Telemetry module for monitoring and collecting metrics.
+    /// Telemetry module for monitoring and collecting metrics.
     pub(crate) mod metrics_collector;
+    /// Telemetry module for consume of all collected metrics either for
+    /// Prometheus or for the local telemetry server. Also writes history file.
     pub(crate) mod metrics_server;
+    /// Build logic for adding telemetry actors to an application graph.
     pub(crate) mod setup;
 }
 
 pub(crate) mod serialize {
-    //! Serialization module for efficient data packing.
+    /// Serialization module for efficient data packing.
     pub(crate) mod byte_buffer_packer;
+    /// Implementation of packed int/long from the FAST/FIX protocol
     pub(crate) mod fast_protocol_packed;
 }
+
 pub(crate) mod channel_stats;
+pub(crate) mod actor_stats;
 pub(crate) mod config;
 pub(crate) mod dot;
-pub mod monitor;
 
+mod graph_liveliness;
+mod loop_driver;
+mod yield_now;
+mod abstract_executor;
+mod test_panic_capture;
+mod steady_telemetry;
+/////////////////////////////////////////////////
+
+pub mod monitor;
 pub mod channel_builder;
+pub mod actor_builder;
 pub mod util;
 pub mod install {
     //! Installation module for setting up various deployment methods.
@@ -28,19 +43,10 @@ pub mod install {
     pub mod local_cli;
     pub mod container;
 }
-pub mod actor_builder;
-mod actor_stats;
+
 pub mod graph_testing;
-mod graph_liveliness;
-mod loop_driver;
-mod yield_now;
-mod abstract_executor;
-mod test_panic_capture;
-mod steady_telemetry;
 pub mod steady_tx;
 pub mod steady_rx;
-
-
 
 pub use graph_testing::GraphTestResult;
 pub use monitor::LocalMonitor;
@@ -61,7 +67,7 @@ pub use steady_tx::SteadyTxBundleTrait;
 pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
 
-use std::any::{Any, type_name};
+use std::any::{Any};
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::time::{Duration, Instant};
 #[cfg(test)]
@@ -71,19 +77,17 @@ use std::fmt::Debug;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
-use futures::lock::{Mutex, MutexLockFuture};
-use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use futures::lock::{Mutex};
+use std::ops::{DerefMut};
 use std::pin::Pin;
-use ahash::AHasher;
 use log::*;
-use channel_builder::{InternalReceiver, InternalSender};
 
-use async_ringbuf::traits::{Consumer, Observer, Producer};
+use async_ringbuf::traits::{Observer};
 use colored::Colorize;
 
 use actor_builder::ActorBuilder;
-use crate::monitor::{ActorMetaData, CALL_OTHER, CALL_SINGLE_READ, ChannelMetaData, RxMetaData, TxMetaData};
+use crate::monitor::{ActorMetaData, ChannelMetaData, RxMetaData, TxMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
 use crate::util::steady_logging_init;
@@ -91,9 +95,8 @@ use futures::*;
 use futures::channel::oneshot;
 use futures::select;
 use futures_timer::Delay;
-use futures_util::future::{BoxFuture, FusedFuture, select_all};
+use futures_util::future::{FusedFuture};
 use futures_util::lock::MutexGuard;
-use num_traits::Zero;
 use steady_rx::{RxDef};
 use steady_telemetry::SteadyTelemetry;
 use steady_tx::{TxDef};
@@ -495,6 +498,10 @@ impl SteadyContext {
     }
 }
 
+/// Macro takes a SteadyContext and a list of Rx and Tx channels
+/// and returns a LocalMonitor. The Monitor is the only way to produce
+/// metrics for telemetry and prometheus.  The macro is used to ensure
+/// specifically which channels are monitored.
 #[macro_export]
 macro_rules! into_monitor {
     ($self:expr, [$($rx:expr),*], [$($tx:expr),*]) => {{
@@ -645,14 +652,43 @@ pub(crate) fn write_warning_to_console(dedupeset: &mut HashSet<String>) {
     }
 }
 
+/// Represents the behavior of the system when the channel is saturated (i.e., full).
+///
+/// The `SendSaturation` enum defines how the system should respond when attempting to send a message
+/// to a channel that is already at capacity. This helps in managing backpressure and ensuring
+/// the system behaves predictably under load.
 #[derive(Default)]
 pub enum SendSaturation {
+    /// Ignore the saturation and wait until space is available in the channel.
+    ///
+    /// This option blocks the sender until there is space in the channel, ensuring that
+    /// all messages are eventually sent. This can help maintain a reliable flow of messages
+    /// but may lead to increased latency under high load.
     IgnoreAndWait,
+
+    /// Ignore the saturation and return an error immediately.
+    ///
+    /// This option allows the sender to detect and handle the saturation condition
+    /// without blocking. It returns an error, which can be used to implement custom
+    /// backpressure handling or retry logic.
     IgnoreAndErr,
+
+    /// Warn about the saturation condition but allow the message to be sent anyway.
+    ///
+    /// This is the default behavior. It logs a warning when saturation occurs,
+    /// which can be useful for monitoring and diagnostics, but does not prevent the message
+    /// from being sent. This can help maintain throughput but may lead to resource exhaustion
+    /// if not monitored properly.
     #[default]
     Warn,
+
+    /// Ignore the saturation condition entirely in release builds.
+    ///
+    /// This option is similar to `Warn`, but it does not generate warnings in release builds.
+    /// This can be useful for performance-critical applications where logging overhead needs to be minimized.
     IgnoreInRelease,
 }
+
 
 struct HashedIterator<I, T> {
     inner: I,
@@ -781,12 +817,15 @@ impl StdDev {
     }
 }
 
-
+/// Base Trait for all metrics for use on Telemetry and Prometheus.
 pub trait Metric {}
 
+/// Represents a Metric suitable for channels which transfer data.
 pub trait DataMetric: Metric {}
 
+/// Represents a Metric suitable for actors which perform computations.
 pub trait ComputeMetric: Metric {}
+
 impl Metric for Duration {}
 
 /// Represents the color of an alert in the Steady State framework.

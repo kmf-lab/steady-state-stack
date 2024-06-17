@@ -7,7 +7,7 @@ use std::time::Instant;
 use futures::channel::oneshot;
 use std::cell::RefCell;
 use std::collections::HashSet;
-use futures_util::lock::{Mutex, MutexLockFuture};
+use futures_util::lock::{MutexLockFuture};
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use futures_util::future::{FusedFuture, select_all};
@@ -17,7 +17,6 @@ use std::ops::Deref;
 use crate::{ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::monitor::{ChannelMetaData, TxMetaData};
-use crate::steady_rx::Rx;
 
 /// The `Tx` struct represents a transmission channel for messages of type `T`.
 /// It provides methods to send messages to the channel, check the channel's state, and handle the transmission lifecycle.

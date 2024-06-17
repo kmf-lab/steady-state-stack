@@ -137,7 +137,6 @@ pub mod logger {
     use parking_lot::Once;
     use crate::util;
 
-    /// A `Once` instance to ensure the logger is initialized only once.
     lazy_static! {
         static ref INIT: Once = Once::new();
     }

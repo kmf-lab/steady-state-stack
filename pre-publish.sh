@@ -79,6 +79,16 @@ if [ $exit_code -ne 0 ]; then
     exit $exit_code
 fi
 
+# Build documentation like on docs.rs server
+cd core
+RUSTDOCFLAGS="--cfg=docsrs" cargo rustdoc --features "proactor_nuclei" --no-default-features
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo "Docs build failed with exit code $exit_code"
+    exit $exit_code
+fi
+cd ..
+
 # Run tarpaulin for code coverage
 # cargo install cargo-tarpaulin --force
 RUST_TEST_THREADS=6 cargo tarpaulin --timeout 180 --out html --ignore-config --output-dir target/tarpaulin-report
@@ -88,15 +98,6 @@ if [ $exit_code -ne 0 ]; then
     exit $exit_code
 fi
 
-cargo doc --no-deps
-
-# Build documentation like on docs.rs server
-RUSTDOCFLAGS="--cfg=docsrs" cargo rustdoc --features "proactor_nuclei" --no-default-features -- -Zunstable-options -Zrustdoc-scrape-examples
-exit_code=$?
-if [ $exit_code -ne 0 ]; then
-    echo "Docs build failed with exit code $exit_code"
-    exit $exit_code
-fi
 
 
 echo "cargo outdated"
