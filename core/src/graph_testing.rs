@@ -19,15 +19,29 @@ use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
 /// or `Err` with a value of type `E`.
+///
+/// The `GraphTestResult` enum is used to encapsulate the outcome of testing a graph of actors
+/// within the Steady State framework. It provides a way to represent either a successful test
+/// result or an error encountered during the test.
 #[derive(Debug)]
 pub enum GraphTestResult<K, E>
     where
         K: Any + Send + Sync + Debug,
         E: Any + Send + Sync + Debug,
 {
+    /// Represents a successful test result.
+    ///
+    /// This variant contains the value `K`, which provides details about the successful outcome
+    /// of the graph test.
     Ok(K),
+
+    /// Represents a failed test result.
+    ///
+    /// This variant contains the value `E`, which provides details about the error encountered
+    /// during the graph test.
     Err(E),
 }
+
 
 /// Type alias for a side channel, which is a pair of internal sender and receiver.
 pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, InternalReceiver<Box<dyn Any + Send + Sync>>);

@@ -19,7 +19,8 @@ use crate::channel_builder::InternalSender;
 use crate::monitor::{ChannelMetaData, TxMetaData};
 use crate::steady_rx::Rx;
 
-
+/// The `Tx` struct represents a transmission channel for messages of type `T`.
+/// It provides methods to send messages to the channel, check the channel's state, and handle the transmission lifecycle.
 pub struct Tx<T> {
     pub(crate) tx: InternalSender<T>,
     pub(crate) channel_meta_data: Arc<ChannelMetaData>,
@@ -33,43 +34,51 @@ pub struct Tx<T> {
     pub(crate) dedupeset: RefCell<HashSet<String>>
 }
 
-////////////////////////////////////////////////////////////////
 impl<T> Tx<T> {
 
+    /// Returns the unique identifier of the transmission channel.
+    ///
+    /// # Returns
+    /// A `usize` representing the channel's unique ID.
     pub fn id(&self) -> usize {
         self.channel_meta_data.id
     }
 
+    /// Checks if the receiver instance has changed.
+    ///
+    /// # Returns
+    /// `true` if the receiver instance has changed, otherwise `false`.
     pub fn rx_instance_changed(&mut self) -> bool {
         let id = self.rx_version.load(Ordering::SeqCst);
         if id == self.last_checked_rx_instance {
             false
         } else {
-            //after restart
-            //you only get one chance to act on this once detected
+            // After restart, you only get one chance to act on this once detected
             self.last_checked_rx_instance = id;
             true
         }
     }
+
+    /// Resets the receiver instance tracking to the current state.
     pub fn rx_instance_reset(&mut self) {
         let id = self.rx_version.load(Ordering::SeqCst);
         self.last_checked_rx_instance = id;
     }
 
-
-    ///the Rx should not expect any more messages than those already found
-    ///on the channel. This is a signal that this actor has probably stopped
+    /// Marks the channel as closed, indicating no more messages are expected.
+    ///
+    /// # Returns
+    /// `true` if the channel was successfully marked as closed, otherwise `false`.
     pub fn mark_closed(&mut self) -> bool {
         if let Some(c) = self.make_closed.take() {
             match c.send(()) {
-                Ok(_) => {true},
-                Err(_) => {false}
+                Ok(_) => true,
+                Err(_) => false,
             }
         } else {
-            true //already closed
+            true // already closed
         }
     }
-
 
     /// Returns the total capacity of the channel.
     /// This method retrieves the maximum number of messages the channel can hold.
@@ -80,7 +89,6 @@ impl<T> Tx<T> {
     /// # Example Usage
     /// This method is useful for understanding the size constraints of the channel
     /// and for configuring buffer sizes or for performance tuning.
-
     pub fn capacity(&self) -> usize {
         self.shared_capacity()
     }
@@ -97,7 +105,7 @@ impl<T> Tx<T> {
     /// # Example Usage
     /// Use this method for non-blocking send operations where immediate feedback on send success is required.
     /// Not suitable for scenarios where ensuring message delivery is critical without additional handling for failed sends.
-    pub fn try_send(& mut self, msg: T) -> Result<(), T> {
+    pub fn try_send(&mut self, msg: T) -> Result<(), T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_try_send(msg)
@@ -133,7 +141,7 @@ impl<T> Tx<T> {
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    pub(crate) async fn send_async(&mut self, ident:ActorIdentity, a: T, saturation:SendSaturation) -> Result<(), T> {
+    pub(crate) async fn send_async(&mut self, ident: ActorIdentity, a: T, saturation: SendSaturation) -> Result<(), T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_send_async(a, ident, saturation).await
@@ -169,7 +177,7 @@ impl<T> Tx<T> {
     ///
     /// By requiring `T: Copy`, this method optimizes for scenarios where messages are lightweight and can be copied without significant overhead, making it an excellent choice for high-throughput, low-latency applications.
     pub fn send_slice_until_full(&mut self, slice: &[T]) -> usize
-       where T: Copy {
+        where T: Copy {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_send_slice_until_full(slice)
@@ -218,8 +226,6 @@ impl<T> Tx<T> {
         self.shared_wait_empty().await
     }
 
-
-
     //////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////
 
@@ -229,7 +235,7 @@ impl<T> Tx<T> {
         }
     }
     ////////////////////////////////////////////////////////////////
-    // Shared implmentations, if you need to swap out the channel it is done here
+    // Shared implementations, if you need to swap out the channel it is done here
     ////////////////////////////////////////////////////////////////
 
     #[inline]
@@ -238,15 +244,16 @@ impl<T> Tx<T> {
     }
 
     #[inline]
-    pub(crate) fn shared_try_send(& mut self, msg: T) -> Result<(), T> {
+    pub(crate) fn shared_try_send(&mut self, msg: T) -> Result<(), T> {
         if self.make_closed.is_none() {
             warn!("Send called after channel marked closed");
         }
         match self.tx.try_push(msg) {
-            Ok(_) => {Ok(())}
-            Err(m) => {Err(m)}
+            Ok(_) => Ok(()),
+            Err(m) => Err(m),
         }
     }
+
     #[inline]
     pub(crate) fn shared_send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
         if self.make_closed.is_none() {
@@ -254,6 +261,7 @@ impl<T> Tx<T> {
         }
         self.tx.push_iter(iter)
     }
+
     #[inline]
     pub(crate) fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
         where T: Copy {
@@ -262,14 +270,17 @@ impl<T> Tx<T> {
         }
         self.tx.push_slice(slice)
     }
+
     #[inline]
     fn shared_is_full(&self) -> bool {
         self.tx.is_full()
     }
+
     #[inline]
     pub(crate) fn shared_vacant_units(&self) -> usize {
         self.tx.vacant_len()
     }
+
     #[inline]
     pub(crate) async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
         let mut one_down = &mut self.oneshot_shutdown;
@@ -277,7 +288,6 @@ impl<T> Tx<T> {
             let mut operation = &mut self.tx.wait_vacant(count);
             select! { _ = one_down => false, _ = operation => true, }
         } else {
-            //we are already shutting down but we need to confirm that we have some room
             let operation = &mut self.tx.wait_vacant(1);
             operation.await;
             false
@@ -295,35 +305,24 @@ impl<T> Tx<T> {
         }
     }
 
-
-
     #[inline]
-    pub(crate) async fn shared_send_async(& mut self, msg: T, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), T> {
+    pub(crate) async fn shared_send_async(&mut self, msg: T, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), T> {
         if self.make_closed.is_none() {
             warn!("Send called after channel marked closed");
         }
-        //by design, we ignore the runtime state because even if we are shutting down we
-        //still want to wait for room for our very last message
 
         match self.tx.try_push(msg) {
-            Ok(_) => {Ok(())},
+            Ok(_) => Ok(()),
             Err(msg) => {
-                //caller can decide this is ok and not a warning
                 match saturation {
-                    SendSaturation::IgnoreAndWait => {
-                       //never warn just await
-                       //nothing to do
-                    }
+                    SendSaturation::IgnoreAndWait => {}
                     SendSaturation::IgnoreAndErr => {
-                       //return error to try again
-                       return Err(msg);
+                        return Err(msg);
                     }
                     SendSaturation::Warn => {
-                        //always warn
                         self.report_tx_full_warning(ident);
                     }
                     SendSaturation::IgnoreInRelease => {
-                        //check release status and if not then warn
                         #[cfg(debug_assertions)]
                         {
                             self.report_tx_full_warning(ident);
@@ -331,12 +330,11 @@ impl<T> Tx<T> {
                     }
                 }
 
-                //push when space becomes available
                 match self.tx.push(msg).await {
-                    Ok(_) => {Ok(())}
-                    Err(_) => { //should not happen, internal error
-                                error!("channel is closed");
-                                Ok(())
+                    Ok(_) => Ok(()),
+                    Err(_) => {
+                        error!("channel is closed");
+                        Ok(())
                     }
                 }
             }
@@ -344,30 +342,24 @@ impl<T> Tx<T> {
     }
 
     fn report_tx_full_warning(&mut self, ident: ActorIdentity) {
-             // to debug where enable this.
-            // println!("{:?}",Backtrace::new());
-
-            if self.last_error_send.elapsed().as_secs() > 10 {
-                let type_name = type_name::<T>().split("::").last();
-                warn!("{:?} tx full channel #{} {:?} cap:{:?} type:{:?} "
-                                   , ident
-                                   , self.channel_meta_data.id
-                                   , self.channel_meta_data.labels
-                                   , self.tx.capacity(), type_name);
-                self.last_error_send = Instant::now();
-            }
-
+        if self.last_error_send.elapsed().as_secs() > 10 {
+            let type_name = type_name::<T>().split("::").last();
+            warn!("{:?} tx full channel #{} {:?} cap:{:?} type:{:?} ",
+                  ident, self.channel_meta_data.id, self.channel_meta_data.labels,
+                  self.tx.capacity(), type_name);
+            self.last_error_send = Instant::now();
+        }
     }
 }
 
-
+/// A trait representing a definition for a transmission channel.
 pub trait TxDef: Debug {
+    /// Retrieves the metadata for the transmission channel.
     fn meta_data(&self) -> TxMetaData;
 }
 
-impl <T> TxDef for SteadyTx<T> {
+impl<T> TxDef for SteadyTx<T> {
     fn meta_data(&self) -> TxMetaData {
-        //used on startup where we want to avoid holding the lock or using another thread
         loop {
             if let Some(guard) = self.try_lock() {
                 return TxMetaData(guard.deref().channel_meta_data.clone());
@@ -378,23 +370,31 @@ impl <T> TxDef for SteadyTx<T> {
     }
 }
 
-pub trait SteadyTxBundleTrait<T,const GIRTH:usize> {
+/// A trait for handling bundles of transmission channels.
+pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
+    /// Locks all channels in the bundle, returning a future that resolves when all locks are acquired.
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>>;
-    fn def_slice(&self) -> [& dyn TxDef; GIRTH];
+
+    /// Retrieves a slice of transmission channel definitions.
+    fn def_slice(&self) -> [&dyn TxDef; GIRTH];
+
+    /// Retrieves the metadata for all transmission channels in the bundle.
     fn meta_data(&self) -> [TxMetaData; GIRTH];
-    fn wait_vacant_units(&self
-                                  , avail_count: usize
-                                  , ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
+
+    /// Waits until a specified number of units are vacant in the channels.
+    ///
+    /// # Parameters
+    /// - `avail_count`: The number of vacant units to wait for.
+    /// - `ready_channels`: The number of channels that should have the vacant units.
+    fn wait_vacant_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
 }
 
-
-impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyTxBundle<T, GIRTH> {
+impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyTxBundle<T, GIRTH> {
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>> {
-        //by design we always get the locks in the same order
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
-    fn def_slice(&self) -> [& dyn TxDef; GIRTH] {
+    fn def_slice(&self) -> [&dyn TxDef; GIRTH] {
         self.iter()
             .map(|x| x as &dyn TxDef)
             .collect::<Vec<&dyn TxDef>>()
@@ -410,59 +410,57 @@ impl<T: Sync+Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyT
             .expect("Internal Error")
     }
 
-
-
-    async fn wait_vacant_units(&self
-                                                          , avail_count: usize
-                                                          , ready_channels: usize)
-        {
+    async fn wait_vacant_units(&self, avail_count: usize, ready_channels: usize) {
         let futures = self.iter().map(|tx| {
             let tx = tx.clone();
             async move {
                 let mut tx = tx.lock().await;
                 tx.wait_vacant_units(avail_count).await;
-            }.boxed() // Box the future to make them the same type
+            }
+                .boxed()
         });
-        let mut futures: Vec<_> = futures.collect();
 
+        let mut futures: Vec<_> = futures.collect();
         let mut count_down = ready_channels.min(GIRTH);
 
         while !futures.is_empty() {
-            // Wait for the first future to complete
             let (_result, _index, remaining) = select_all(futures).await;
             futures = remaining;
             count_down -= 1;
-            if 0 == count_down {
+            if count_down == 0 {
                 break;
             }
         }
     }
-
 }
 
-
+/// A trait for handling transmission channel bundles.
 pub trait TxBundleTrait {
+    /// Marks all channels in the bundle as closed.
     fn mark_closed(&mut self) -> bool;
-    fn rx_instance_changed(&mut self) -> bool;
-    fn rx_instance_reset(&mut self);
 
+    /// Checks if any receiver instances have changed.
+    fn rx_instance_changed(&mut self) -> bool;
+
+    /// Resets the receiver instance tracking for all channels in the bundle.
+    fn rx_instance_reset(&mut self);
 }
 
 impl<T> TxBundleTrait for TxBundle<'_, T> {
     fn mark_closed(&mut self) -> bool {
-        self.iter_mut().all(|f| f.mark_closed() )
+        self.iter_mut().all(|f| f.mark_closed())
     }
 
-    //TODO: we need docs and examples on how to restart downstream actors.
     fn rx_instance_changed(&mut self) -> bool {
-        if self.iter_mut().any(|f| f.rx_instance_changed() ) {
-            self.iter_mut().for_each(|f| f.rx_instance_reset() );
+        if self.iter_mut().any(|f| f.rx_instance_changed()) {
+            self.iter_mut().for_each(|f| f.rx_instance_reset());
             true
         } else {
             false
         }
     }
+
     fn rx_instance_reset(&mut self) {
-        self.iter_mut().for_each(|f| f.rx_instance_reset() );
+        self.iter_mut().for_each(|f| f.rx_instance_reset());
     }
 }

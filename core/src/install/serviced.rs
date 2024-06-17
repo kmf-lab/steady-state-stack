@@ -200,18 +200,62 @@ impl SystemdBuilder {
 }
 
 /// Manages a systemd service for a SteadyState project.
+///
+/// The `SystemdServiceManager` struct is used to manage the creation, configuration, and control
+/// of a systemd service associated with a SteadyState project. It contains various fields to specify
+/// the service details and configuration options.
 pub struct SystemdServiceManager {
+    /// The name of the systemd service.
+    ///
+    /// This name is used to identify the service within systemd.
     pub service_name: String,
-    pub service_user: String, // NEVER share this user with other services
+
+    /// The user under which the service runs.
+    ///
+    /// **Note:** Never share this user with other services to maintain security isolation.
+    pub service_user: String,
+
+    /// The file name of the systemd service unit file.
+    ///
+    /// This file contains the configuration for the service and is typically located in `/etc/systemd/system/`.
     pub service_file_name: String,
+
+    /// The executable that the service will run.
+    ///
+    /// This is the path to the binary or script that will be executed when the service starts.
     pub service_executable: String,
+
+    /// Indicates whether the service should start on boot.
+    ///
+    /// If `true`, the service will be configured to start automatically when the system boots.
     pub on_boot: bool,
+
+    /// A list of secrets required by the service.
+    ///
+    /// These secrets are used to provide sensitive information to the service in a secure manner.
     secrets: Vec<String>,
+
+    /// Specifies the units that this service should start after.
+    ///
+    /// This is used to ensure that this service starts only after the specified units have started.
     pub after: String,
+
+    /// The restart policy for the service.
+    ///
+    /// This field defines the conditions under which systemd should attempt to restart the service.
     pub restart: String,
+
+    /// Specifies the target unit that should want this service.
+    ///
+    /// This field is typically used to associate the service with a particular target, such as `multi-user.target`.
     pub wanted_by: String,
+
+    /// A description of the service.
+    ///
+    /// This description provides information about the service and its purpose, and is often displayed by systemd tools.
     pub description: String,
 }
+
 
 impl SystemdServiceManager {
     /// Checks if the platform setup is appropriate for managing a systemd service.

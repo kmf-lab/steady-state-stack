@@ -2,8 +2,6 @@
 //! based on the settings for the actor builder in the SteadyState project. It includes functions for
 //! computing and refreshing metrics, building DOT and Prometheus outputs, and managing historical data.
 
-use std::collections::VecDeque;
-use hdrhistogram::{Counter, Histogram};
 use log::*;
 use num_traits::Zero;
 use std::cmp;

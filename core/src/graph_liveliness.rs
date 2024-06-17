@@ -29,15 +29,38 @@ use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 
-/// Represents the state of the graph liveliness.
+/// Represents the state of graph liveliness in the Steady State framework.
+///
+/// The `GraphLivelinessState` enum is used to indicate the current state of the graph of actors.
+/// This state can change as the graph is built, run, or stopped.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum GraphLivelinessState {
+    /// The graph is currently being built.
+    ///
+    /// In this state, actors are being added to the graph and it is not yet ready to run.
     Building,
+
+    /// The graph is currently running.
+    ///
+    /// In this state, all actors in the graph are executing their tasks concurrently.
     Running,
-    StopRequested, // All actors are voting or changing their vote
+
+    /// A stop request has been issued, and all actors are voting or changing their vote on the stop request.
+    ///
+    /// In this state, the graph is in the process of shutting down, but not all actors have stopped yet.
+    StopRequested,
+
+    /// The graph has been stopped.
+    ///
+    /// In this state, all actors have ceased execution and the graph is no longer running.
     Stopped,
+
+    /// The graph has stopped, but not all actors have stopped cleanly.
+    ///
+    /// In this state, the graph encountered issues during shutdown, resulting in some actors not stopping as expected.
     StoppedUncleanly,
 }
+
 
 /// Represents a vote for shutdown by an actor.
 #[derive(Default, Clone)]

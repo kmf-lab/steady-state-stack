@@ -46,22 +46,77 @@ pub(crate) const CALL_OTHER: usize = 4;
 pub(crate) const CALL_WAIT: usize = 5;
 
 /// Metadata for an actor.
+///
+/// The `ActorMetaData` struct contains information and configurations related to an actor within the
+/// Steady State framework. This metadata is used to monitor and manage the performance and behavior of the actor.
 #[derive(Clone, Default, Debug)]
 pub struct ActorMetaData {
+    /// The unique identifier for the actor.
+    ///
+    /// This ID is used to distinguish between different actors within the system.
     pub(crate) id: usize,
+
+    /// The name of the actor.
+    ///
+    /// This name provides a human-readable identifier for the actor.
     pub(crate) name: &'static str,
+
+    /// Indicates whether the average microcontroller processing unit (MCPU) usage is monitored.
+    ///
+    /// If `true`, the average MCPU usage is tracked for this actor.
     pub(crate) avg_mcpu: bool,
+
+    /// Indicates whether the average work performed by the actor is monitored.
+    ///
+    /// If `true`, the average work is tracked for this actor.
     pub(crate) avg_work: bool,
+
+    /// A list of percentiles for the MCPU usage.
+    ///
+    /// This list defines various percentiles to be tracked for the MCPU usage of the actor.
     pub percentiles_mcpu: Vec<Percentile>,
+
+    /// A list of percentiles for the work performed by the actor.
+    ///
+    /// This list defines various percentiles to be tracked for the work metrics of the actor.
     pub percentiles_work: Vec<Percentile>,
+
+    /// A list of standard deviations for the MCPU usage.
+    ///
+    /// This list defines various standard deviation metrics to be tracked for the MCPU usage of the actor.
     pub std_dev_mcpu: Vec<StdDev>,
+
+    /// A list of standard deviations for the work performed by the actor.
+    ///
+    /// This list defines various standard deviation metrics to be tracked for the work metrics of the actor.
     pub std_dev_work: Vec<StdDev>,
+
+    /// A list of triggers for the MCPU usage with associated alert colors.
+    ///
+    /// This list defines conditions (triggers) for the MCPU usage that, when met, will raise alerts of specific colors.
     pub trigger_mcpu: Vec<(Trigger<MCPU>, AlertColor)>,
+
+    /// A list of triggers for the work performed by the actor with associated alert colors.
+    ///
+    /// This list defines conditions (triggers) for the work metrics that, when met, will raise alerts of specific colors.
     pub trigger_work: Vec<(Trigger<Work>, AlertColor)>,
+
+    /// The refresh rate for monitoring data, expressed in bits.
+    ///
+    /// This field defines how frequently the monitoring data should be refreshed.
     pub refresh_rate_in_bits: u8,
+
+    /// The size of the window bucket for metrics, expressed in bits.
+    ///
+    /// This field defines the size of the window bucket used for metrics aggregation.
     pub window_bucket_in_bits: u8,
+
+    /// Indicates whether usage review is enabled for the actor.
+    ///
+    /// If `true`, the actor's usage is periodically reviewed.
     pub usage_review: bool,
 }
+
 
 /// Metadata for a channel, which is immutable once built.
 #[derive(Clone, Default, Debug)]

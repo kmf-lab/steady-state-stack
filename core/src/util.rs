@@ -126,22 +126,34 @@ impl LogLineFilter for TideHide {
 ////////////////////////////////////////////
 
 
+/// Logger module.
+///
+/// The `logger` module provides functionality for initializing the logging system used within
+/// the Steady State framework. It ensures that the logging system is initialized only once
+/// during the runtime of the application.
 
 pub mod logger {
     use lazy_static::lazy_static;
     use parking_lot::Once;
     use crate::util;
+
+    /// A `Once` instance to ensure the logger is initialized only once.
     lazy_static! {
-            static ref INIT: Once = Once::new();
+        static ref INIT: Once = Once::new();
     }
 
-    pub fn initialize() {
+    /// Initializes the logger.
+    ///
+    /// This function initializes the logging system for the Steady State framework. It ensures
+    /// that the logging system is initialized only once, even if this function is called multiple times.
+    /// If the initialization fails, a warning message is printed.
+    ///
 
+    pub fn initialize() {
         INIT.call_once(|| {
             if let Err(e) = util::steady_logging_init("info") {
                 print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
             }
         });
     }
-
 }

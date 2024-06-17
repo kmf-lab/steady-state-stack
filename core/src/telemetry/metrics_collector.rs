@@ -10,7 +10,7 @@ use std::time::Duration;
 use log::*; // Allow unused import
 
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-use crate::{config, into_monitor, SendSaturation, SteadyContext, SteadyTx, SteadyTxBundle, yield_now};
+use crate::{config, SendSaturation, SteadyContext, SteadyTx, SteadyTxBundle, yield_now};
 
 use futures::future::*;
 use futures_timer::Delay;
