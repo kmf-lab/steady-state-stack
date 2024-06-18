@@ -33,7 +33,8 @@ pub struct Rx<T> {
     pub(crate) last_checked_tx_instance: u32,
     pub(crate) tx_version: Arc<AtomicU32>,
     pub(crate) rx_version: Arc<AtomicU32>,
-    pub(crate) dedupeset: RefCell<HashSet<String>>,
+    pub(crate) internal_warn_dedupe_set: RefCell<HashSet<String>>, // could be removed someday
+  //  pub(crate) take_count: u64, //wrap increment //TODO: remove hash needed by peek check
     pub(crate) peek_hash: AtomicU64, // For bad message detection
     pub(crate) peek_hash_repeats: AtomicUsize, // For bad message detection
 }
@@ -411,7 +412,7 @@ impl<T> Rx<T> {
 
     fn direct_use_check_and_warn(&self) {
         if self.channel_meta_data.expects_to_be_monitored {
-            crate::write_warning_to_console(&mut self.dedupeset.borrow_mut());
+            crate::write_warning_to_console(&mut self.internal_warn_dedupe_set.borrow_mut());
         }
     }
 

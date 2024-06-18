@@ -618,7 +618,7 @@ impl ChannelBuilder {
                 rx_version: rx_version.clone(),
                 tx_version: tx_version.clone(),
                 last_checked_tx_instance: tx_version.load(Ordering::SeqCst),
-                dedupeset: Default::default(),
+                internal_warn_dedupe_set: Default::default(),
                 peek_hash: AtomicU64::new(0),
                 peek_hash_repeats: AtomicUsize::new(0),
             })),
