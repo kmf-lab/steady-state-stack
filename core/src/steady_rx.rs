@@ -328,7 +328,7 @@ impl<T> Rx<T> {
     /// - **Design Rigidity**: Imposes a strict design requirement on the types that can be used with the channel, which might not align with all application designs or data models.
     ///
     /// Incorporating the `T: Copy` requirement, `take_slice` is optimized for use cases prioritizing efficiency and simplicity in handling a series of lightweight messages, making it a key method for high-performance message processing tasks.
-    pub fn take_slice(&mut self, elems: &mut [T]) -> usize
+    pub(crate) fn take_slice(&mut self, elems: &mut [T]) -> usize
         where T: Copy {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
@@ -342,7 +342,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Useful for scenarios where messages need to be processed in a streaming manner.
-    pub fn take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
+    pub(crate) fn take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_take_into_iter()
@@ -355,7 +355,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Ideal for non-blocking single message consumption, allowing for immediate feedback on message availability.
-    pub fn try_take(&mut self) -> Option<T> {
+    pub(crate) fn try_take(&mut self) -> Option<T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_try_take()
@@ -368,7 +368,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Suitable for async processing where messages are consumed one at a time as they become available.
-    pub async fn take_async(&mut self) -> Option<T> {
+    pub(crate) async fn take_async(&mut self) -> Option<T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_take_async().await

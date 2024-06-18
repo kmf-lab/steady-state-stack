@@ -104,7 +104,7 @@ impl<T> Tx<T> {
     /// # Example Usage
     /// Use this method for non-blocking send operations where immediate feedback on send success is required.
     /// Not suitable for scenarios where ensuring message delivery is critical without additional handling for failed sends.
-    pub fn try_send(&mut self, msg: T) -> Result<(), T> {
+    pub(crate) fn try_send(&mut self, msg: T) -> Result<(), T> {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_try_send(msg)
@@ -122,7 +122,7 @@ impl<T> Tx<T> {
     /// # Example Usage
     /// Ideal for batch sending operations where partial success is acceptable.
     /// Less suitable when all messages must be sent without loss, as this method does not guarantee all messages are sent.
-    pub fn send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
+    pub(crate) fn send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
         self.shared_send_iter_until_full(iter)
@@ -175,7 +175,7 @@ impl<T> Tx<T> {
     /// - **Design Constraints**: Imposes a design constraint on the types used with the channel, which might not always align with the broader application architecture or data handling strategies.
     ///
     /// By requiring `T: Copy`, this method optimizes for scenarios where messages are lightweight and can be copied without significant overhead, making it an excellent choice for high-throughput, low-latency applications.
-    pub fn send_slice_until_full(&mut self, slice: &[T]) -> usize
+    pub(crate) fn send_slice_until_full(&mut self, slice: &[T]) -> usize
         where T: Copy {
         #[cfg(debug_assertions)]
         self.direct_use_check_and_warn();
