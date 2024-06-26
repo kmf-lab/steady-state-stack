@@ -50,6 +50,7 @@ type NodeName = String;
 /// The `SideChannelHub` struct manages side channels for nodes in the graph.
 /// Each node holds its own lock on read and write to the backplane.
 /// The backplane functions as a central message hub, ensuring that only one user can hold it at a time.
+#[derive(Default)]
 pub struct SideChannelHub {
     node: HashMap<NodeName, Arc<Mutex<SideChannel>>>,
     pub(crate) backplane: HashMap<NodeName, SideChannel>,
@@ -58,12 +59,12 @@ pub struct SideChannelHub {
 impl SideChannelHub {
     /// Creates a new `SideChannelHub`.
 
-    pub fn new() -> Self {
-        SideChannelHub {
-            node: Default::default(),
-            backplane: HashMap::new(),
-        }
-    }
+    // pub fn new() -> Self {
+    //     SideChannelHub {
+    //         node: Default::default(),
+    //         backplane: HashMap::new(),
+    //     }
+    // }
 
     /// Retrieves the transmitter and receiver for a node by its name.
     ///

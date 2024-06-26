@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures::lock::Mutex;
 use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
-use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 
 
 pub(crate) type ChannelBacking<T> = Heap<T>;

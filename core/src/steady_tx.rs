@@ -70,10 +70,7 @@ impl<T> Tx<T> {
     /// `true` if the channel was successfully marked as closed, otherwise `false`.
     pub fn mark_closed(&mut self) -> bool {
         if let Some(c) = self.make_closed.take() {
-            match c.send(()) {
-                Ok(_) => true,
-                Err(_) => false,
-            }
+            c.send(()).is_ok()
         } else {
             true // already closed
         }

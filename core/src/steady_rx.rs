@@ -1,5 +1,4 @@
-use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use futures_util::{FutureExt, select, task};
 use std::sync::Arc;
 use futures_util::lock::{MutexLockFuture};
@@ -8,7 +7,6 @@ use log::error;
 use futures::channel::oneshot;
 use std::cell::RefCell;
 use std::collections::HashSet;
-use num_traits::Zero;
 use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use async_ringbuf::consumer::AsyncConsumer;
 use ringbuf::consumer::Consumer;
@@ -152,7 +150,7 @@ impl <T> Rx<T> {
         }
         let result = self.rx.first();
 
-        if let Some(r) = result {
+        if let Some(_) = result {
 
             let take_count = self.take_count.load(Ordering::Relaxed);
             let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
@@ -211,7 +209,7 @@ impl <T> Rx<T> {
     #[inline]
     pub(crate) fn shared_try_peek(&self) -> Option<&T> {
         let result = self.rx.first();
-        if let Some(r) = result {
+        if let Some(_) = result {
             let take_count = self.take_count.load(Ordering::Relaxed);
             let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
             if !cached_take_count == take_count {

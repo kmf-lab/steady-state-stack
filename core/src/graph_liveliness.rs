@@ -624,7 +624,7 @@ impl Graph {
         // dynamic type message sending to and from all nodes for coordination of testing
         let backplane: Option<SideChannelHub> = None;
         #[cfg(test)]
-            let backplane = Some(SideChannelHub::new());
+            let backplane = Some(SideChannelHub::default());
 
         let mut result = Graph {
             args: Arc::new(Box::new(args)),

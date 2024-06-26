@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::error::Error;
 use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
+
 use std::sync::{Arc, LockResult};
 use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
@@ -10,7 +10,7 @@ use std::time::Duration;
 use log::*; // Allow unused import
 
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-use crate::{config, SendSaturation, SteadyContext, SteadyTx, SteadyTxBundle, yield_now};
+use crate::{config, SendSaturation, SteadyContext, SteadyTxBundle, yield_now};
 
 use futures::future::*;
 use futures_timer::Delay;
@@ -56,17 +56,17 @@ struct RawDiagramState {
 }
 
 /// Locks an optional `SteadyTx` and returns a future resolving to a `MutexGuard`.
-#[allow(clippy::type_complexity)]
-fn lock_if_some<'a, T: Send + 'a + Sync>(
-    opt_lock: &'a Option<SteadyTx<T>>,
-) -> Pin<Box<dyn Future<Output = Option<MutexGuard<'a, Tx<T>>>> + Send + 'a>> {
-    Box::pin(async move {
-        match opt_lock {
-            Some(lock) => Some(lock.lock().await),
-            None => None,
-        }
-    })
-}
+// #[allow(clippy::type_complexity)]
+// fn lock_if_some<'a, T: Send + 'a + Sync>(
+//     opt_lock: &'a Option<SteadyTx<T>>,
+// ) -> Pin<Box<dyn Future<Output = Option<MutexGuard<'a, Tx<T>>>> + Send + 'a>> {
+//     Box::pin(async move {
+//         match opt_lock {
+//             Some(lock) => Some(lock.lock().await),
+//             None => None,
+//         }
+//     })
+// }
 
 /// Runs the metrics collector actor, collecting telemetry data from all actors and consolidating it for sharing and logging.
 pub(crate) async fn run<const GIRTH: usize>(

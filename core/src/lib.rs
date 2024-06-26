@@ -74,7 +74,7 @@ use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash};
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -83,7 +83,6 @@ use std::ops::{DerefMut};
 use std::pin::Pin;
 use log::*;
 
-use async_ringbuf::traits::{Observer};
 use colored::Colorize;
 
 use actor_builder::ActorBuilder;

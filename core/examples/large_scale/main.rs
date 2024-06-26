@@ -224,8 +224,8 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
                 }
             }
         }
-    let x = actor_team.spawn();
-    //trace!("remaining actors in global group: {:?}",x);
+    let _x = actor_team.spawn();
+    //trace!("remaining actors in global group: {:?}",_x);
 
     graph
 }

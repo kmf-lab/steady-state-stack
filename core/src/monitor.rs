@@ -11,12 +11,12 @@ use num_traits::{One, Zero};
 use futures::future::select_all;
 use futures_timer::Delay;
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::thread::ThreadId;
 use futures::channel::oneshot;
 use futures::FutureExt;
 use futures_util::select;
-use tide::new;
+
 use crate::*;
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};

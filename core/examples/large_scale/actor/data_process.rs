@@ -23,7 +23,7 @@ pub async fn run(context: SteadyContext
 
     while monitor.is_running(&mut || rx.is_closed() && rx.is_empty() && tx.mark_closed()){
 
-        let clean = wait_for_all_or_proceed_upon!(
+        let _clean = wait_for_all_or_proceed_upon!(
              monitor.wait_periodic(Duration::from_millis(20))
             ,monitor.wait_avail_units(&mut rx,count)
             ,monitor.wait_vacant_units(&mut tx,count)
