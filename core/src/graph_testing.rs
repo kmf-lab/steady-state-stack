@@ -113,7 +113,7 @@ impl SideChannelHub {
     ///
     /// ```
     /// use steady_state::graph_testing::SideChannelHub;
-    /// let mut hub = SideChannelHub::new();
+    /// let mut hub = SideChannelHub::default();
     /// hub.register_node("test_node", 10);
     /// let response = hub.node_call(Box::new("test message"), "test_node"); //.await
     /// ```
