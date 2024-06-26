@@ -99,7 +99,7 @@ fn base64_encode(target: &Path, file_path: &str) {
     // Open the output file for writing
     let mut output_file = File::create(target_file.clone()).expect("Failed to create output file");
 
-    // Run the base64 command
+    // Run the base64 command, strange but the base64 crate is always broken
     let base64_output = Command::new("base64")
         .arg("-w")
         .arg("0")
@@ -166,6 +166,7 @@ fn gzip_and_base64_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
         .stdout
         .expect("Failed to open gzip stdout");
 
+    // Run the base64 command, strange but the base64 crate is always broken
     let base64_output = Command::new("base64")
         .arg("-w")
         .arg("0")

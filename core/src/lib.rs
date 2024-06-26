@@ -687,7 +687,7 @@ pub enum SendSaturation {
     IgnoreInRelease,
 }
 
-
+/*
 struct HashedIterator<I, T> {
     inner: I,
     _marker: std::marker::PhantomData<T>,
@@ -721,6 +721,7 @@ impl<I, T> Iterator for HashedIterator<I, T>
         }
     }
 }
+*/
 
 /// Represents a standard deviation value.
 ///

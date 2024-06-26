@@ -1,6 +1,5 @@
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
-use ahash::AHasher;
+use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use futures_util::{FutureExt, select, task};
 use std::sync::Arc;
 use futures_util::lock::{MutexLockFuture};
@@ -34,12 +33,15 @@ pub struct Rx<T> {
     pub(crate) tx_version: Arc<AtomicU32>,
     pub(crate) rx_version: Arc<AtomicU32>,
     pub(crate) internal_warn_dedupe_set: RefCell<HashSet<String>>, // could be removed someday
-  //  pub(crate) take_count: u64, //wrap increment //TODO: remove hash needed by peek check
-    pub(crate) peek_hash: AtomicU64, // For bad message detection
-    pub(crate) peek_hash_repeats: AtomicUsize, // For bad message detection
+
+    pub(crate) take_count: AtomicU32, // inc upon every take, For bad message detection
+    pub(crate) cached_take_count: AtomicU32, // to find repeats, For bad message detection
+    pub(crate) peek_repeats: AtomicUsize, // count of repeats, For bad message detection
+
+    pub(crate) iterator_count_drift: Arc<AtomicIsize>, //for RX iterator drift detection to keep telemetry right
 }
 
-impl<T: Hash> Rx<T> {
+impl <T> Rx<T> {
 
     /// Checks if the same item is being peeked multiple times, indicating it should be moved to dead letters.
     ///
@@ -53,21 +55,9 @@ impl<T: Hash> Rx<T> {
         assert_ne!(threshold, 1); // We have the first unique item
 
         // If we have a lot of repeats, then we have a problem
-        self.peek_hash_repeats.load(Ordering::Relaxed) >= threshold
+        self.peek_repeats.load(Ordering::Relaxed) >= threshold
     }
 
-    /// Stores the hash of the item for future comparison.
-    fn store_item_hash(&self, hasher: AHasher) {
-        let hash: u64 = hasher.finish();
-        let new_hash = if !hash.is_zero() { hash } else { 1 };
-        let old_hash = self.peek_hash.load(Ordering::Relaxed);
-        if new_hash != old_hash {
-            self.peek_hash.store(new_hash, Ordering::Relaxed);
-            self.peek_hash_repeats.store(1, Ordering::Relaxed);
-        } else {
-            self.peek_hash_repeats.fetch_add(1, Ordering::Relaxed);
-        }
-    }
 
     /// Attempts to peek at the next message in the channel without removing it.
     ///
@@ -163,13 +153,18 @@ impl<T: Hash> Rx<T> {
         let result = self.rx.first();
 
         if let Some(r) = result {
-            let mut hasher = AHasher::default();
-            r.hash(&mut hasher);
-            self.store_item_hash(hasher);
-        } else {
-            self.clear_item_hash();
-        }
 
+            let take_count = self.take_count.load(Ordering::Relaxed);
+            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
+            if !cached_take_count == take_count {
+                self.peek_repeats.store(0, Ordering::Relaxed);
+                self.cached_take_count.store(take_count, Ordering::Relaxed);
+            } else {
+                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
+            }
+        } else {
+            self.peek_repeats.store(0, Ordering::Relaxed);
+        }
         result
     }
 
@@ -188,13 +183,17 @@ impl<T: Hash> Rx<T> {
         let count = last_index + 1;
 
         if count > 0 {
-            let mut hasher = AHasher::default();
-            elems[0].hash(&mut hasher);
-            self.store_item_hash(hasher);
+            let take_count = self.take_count.load(Ordering::Relaxed);
+            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
+            if !cached_take_count == take_count {
+                self.peek_repeats.store(0, Ordering::Relaxed);
+                self.cached_take_count.store(take_count, Ordering::Relaxed);
+            } else {
+                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
+            }
         } else {
-            self.clear_item_hash();
+            self.peek_repeats.store(0, Ordering::Relaxed);
         }
-
         count
     }
 
@@ -212,13 +211,17 @@ impl<T: Hash> Rx<T> {
     #[inline]
     pub(crate) fn shared_try_peek(&self) -> Option<&T> {
         let result = self.rx.first();
-
         if let Some(r) = result {
-            let mut hasher = AHasher::default();
-            r.hash(&mut hasher);
-            self.store_item_hash(hasher);
+            let take_count = self.take_count.load(Ordering::Relaxed);
+            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
+            if !cached_take_count == take_count {
+                self.peek_repeats.store(0, Ordering::Relaxed);
+                self.cached_take_count.store(take_count, Ordering::Relaxed);
+            } else {
+                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
+            }
         } else {
-            self.clear_item_hash();
+            self.peek_repeats.store(0, Ordering::Relaxed);
         }
 
         result
@@ -226,10 +229,6 @@ impl<T: Hash> Rx<T> {
 }
 
 impl<T> Rx<T> {
-
-    fn clear_item_hash(&self) {
-        self.peek_hash.store(0, Ordering::Relaxed);
-    }
 
     /// Returns the unique identifier of the channel.
     ///
@@ -424,20 +423,23 @@ impl<T> Rx<T> {
     #[inline]
     pub(crate) fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
         where T: Copy {
-        self.clear_item_hash();
-        self.rx.pop_slice(elems)
+        let count = self.rx.pop_slice(elems);
+        self.take_count.fetch_add(count as u32, Ordering::Relaxed); //wraps on overflow
+        count
     }
 
     #[inline]
     pub(crate) fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
-        self.clear_item_hash();
-        self.rx.pop_iter()
+        CountingIterator::new(self.rx.pop_iter(), &mut self.take_count)
     }
 
     #[inline]
     pub(crate) fn shared_try_take(&mut self) -> Option<T> {
-        self.clear_item_hash();
-        self.rx.try_pop()
+        let result = self.rx.try_pop();
+        if result.is_some() {
+            self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
+        }
+        result
     }
 
     #[inline]
@@ -447,14 +449,17 @@ impl<T> Rx<T> {
 
     #[inline]
     pub(crate) async fn shared_take_async(&mut self) -> Option<T> {
-        self.clear_item_hash();
         let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
+        let result = if !one_down.is_terminated() {
             let mut operation = &mut self.rx.pop();
             select! { _ = one_down => self.rx.try_pop(), p = operation => p, }
         } else {
             self.rx.try_pop()
+        };
+        if result.is_some() {
+            self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
         }
+        result
     }
 
     #[inline]
@@ -496,6 +501,37 @@ impl<T> Rx<T> {
         }
     }
 }
+
+
+pub(crate) struct CountingIterator<'a, I> {
+    iter: I,
+    counter: &'a AtomicU32,
+}
+
+impl<'a, I> CountingIterator<'a, I> {
+    pub fn new(iter: I, count: &'a AtomicU32) -> Self {
+        CountingIterator {
+            iter,
+            counter: count,
+        }
+    }
+}
+
+impl<'a, I> Iterator for CountingIterator<'a, I>
+where
+    I: Iterator,
+{
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.iter.next();
+        if item.is_some() {
+            self.counter.fetch_add(1,Ordering::Relaxed); // wraps on overflow
+        }
+        item
+    }
+}
+
 
 /// Trait defining the required methods for a receiver definition.
 pub trait RxDef: Debug + Send {

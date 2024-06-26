@@ -311,15 +311,19 @@ impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
     }
 
     /// Processes an event for telemetry.
-    pub(crate) fn process_event(&mut self, index: usize, id: usize, done: usize) -> usize {
+    pub(crate) fn process_event(&mut self, index: usize, id: usize, done: isize) -> usize {
         let telemetry = self;
         if index < MONITOR_NOT {
-            telemetry.count[index] = telemetry.count[index].saturating_add(done);
+            let result: isize = done.saturating_add(telemetry.count[index] as isize);
+            assert!(result >= 0, "internal error, already added then subtracted so negative is not possible");
+            telemetry.count[index] = result as usize;
             index
         } else if index == MONITOR_UNKNOWN {
             let local_index = monitor::find_my_index(telemetry, id);
             if local_index < MONITOR_NOT {
-                telemetry.count[local_index] = telemetry.count[local_index].saturating_add(done);
+                let result: isize = done.saturating_add(telemetry.count[local_index] as isize);
+                assert!(result >= 0, "internal error, already added then subtracted so negative is not possible");
+                telemetry.count[local_index] = result as usize;
             }
             local_index
         } else {

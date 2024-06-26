@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures::lock::Mutex;
 use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 
 pub(crate) type ChannelBacking<T> = Heap<T>;
@@ -619,8 +619,10 @@ impl ChannelBuilder {
                 tx_version: tx_version.clone(),
                 last_checked_tx_instance: tx_version.load(Ordering::SeqCst),
                 internal_warn_dedupe_set: Default::default(),
-                peek_hash: AtomicU64::new(0),
-                peek_hash_repeats: AtomicUsize::new(0),
+                take_count: AtomicU32::new(0),
+                cached_take_count: AtomicU32::new(0),
+                peek_repeats: AtomicUsize::new(0),
+                iterator_count_drift: Arc::new(AtomicIsize::new(0)),
             })),
         )
     }

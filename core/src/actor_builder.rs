@@ -512,7 +512,7 @@ impl ActorBuilder {
     pub fn build_join<F, I>(self, build_actor_exec: I, target: &mut ActorTeam)
         where
             I: Fn(SteadyContext) -> F + 'static + Sync + Send,
-            F: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
+            F: Future<Output = Result<(), Box<dyn Error>>> + 'static + Send,
     {
         let rate = self.frame_rate_ms;
         let actor_startup_receiver = Some(Self::build_startup_oneshot(self.oneshot_startup_vec.clone()));

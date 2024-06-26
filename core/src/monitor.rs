@@ -11,11 +11,12 @@ use num_traits::{One, Zero};
 use futures::future::select_all;
 use futures_timer::Delay;
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
 use std::thread::ThreadId;
 use futures::channel::oneshot;
 use futures::FutureExt;
 use futures_util::select;
+use tide::new;
 use crate::*;
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
@@ -757,36 +758,13 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
         let done = this.shared_take_slice(slice);
-        this.local_index = if let Some(ref mut tel) = self.telemetry.send_rx {
-            tel.process_event(this.local_index, this.channel_meta_data.id, done)
-        } else {
-            MONITOR_NOT
-        };
+        this.local_index = self.dynamic_event_count(
+            this.local_index,
+            this.channel_meta_data.id,
+            done as isize);
         done
     }
 
-    /// Takes messages into an iterator.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// An iterator over the taken messages.
-    pub fn take_into_iter<'a, T>(&mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a
-    {
-        if let Some(ref st) = self.telemetry.state {
-            let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
-
-        let avail = this.avail_units();
-        this.local_index = if let Some(ref mut tel) = self.telemetry.send_rx {
-            tel.process_event(this.local_index, this.channel_meta_data.id, avail)
-        } else {
-            MONITOR_NOT
-        };
-        // we only iterate the count of what was available when we called this.
-        this.shared_take_into_iter().take(avail)
-    }
 
     /// Attempts to take a single message from the channel without blocking.
     ///
@@ -801,11 +779,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
         match this.shared_try_take() {
             Some(msg) => {
-                this.local_index = if let Some(ref mut tel) = self.telemetry.send_rx {
-                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
-                } else {
-                    MONITOR_NOT
-                };
+                this.local_index = self.dynamic_event_count(
+                    this.local_index,
+                    this.channel_meta_data.id,
+                    1);
                 Some(msg)
             }
             None => None,
@@ -943,11 +920,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         drop(guard);
         match result {
             Some(result) => {
-                this.local_index = if let Some(ref mut tel) = self.telemetry.send_rx {
-                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
-                } else {
-                    MONITOR_NOT
-                };
+                this.local_index = self.dynamic_event_count(this.local_index, this.channel_meta_data.id, 1);
                 #[cfg(test)]
                 self.test_count.entry("take_async").and_modify(|e| *e += 1).or_insert(1);
                 Some(result)
@@ -955,6 +928,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             None => None,
         }
     }
+
 
     /// Sends a slice of messages to the Tx channel until it is full.
     ///
@@ -978,7 +952,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let done = this.shared_send_slice_until_full(slice);
 
         this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-            tel.process_event(this.local_index, this.channel_meta_data.id, done)
+            tel.process_event(this.local_index, this.channel_meta_data.id, done as isize)
         } else {
             MONITOR_NOT
         };
@@ -1002,7 +976,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let done = this.shared_send_iter_until_full(iter);
 
         this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-            tel.process_event(this.local_index, this.channel_meta_data.id, done)
+            tel.process_event(this.local_index, this.channel_meta_data.id, done as isize)
         } else {
             MONITOR_NOT
         };
@@ -1134,4 +1108,100 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             }
         }
     }
+
+    /// Takes messages into an iterator.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An iterator over the taken messages.
+    pub fn take_into_iter<'a, T: Sync + Send>(& mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a
+    {
+        if let Some(ref st) = self.telemetry.state {
+            let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+
+        //we assume these will be consumed by the iterator but on drop we will
+        //confirm the exact number if it is too large or too small
+        let units = this.shared_avail_units();
+
+        this.local_index = if let Some(ref mut tel) = self.telemetry.send_rx {
+                                let drift = this.iterator_count_drift.load(Ordering::Relaxed);
+                                this.iterator_count_drift.store(0, Ordering::Relaxed);
+                                let idx = this.local_index;
+                                let id = this.channel_meta_data.id;
+                                tel.process_event(idx, id, units as isize + drift)
+                            } else {
+                                MONITOR_NOT
+                            };
+        // get the iterator from this RX so we can count each item there.
+        let iterator_count_drift = this.iterator_count_drift.clone();
+        DriftCountIterator::new( units
+                                , this.shared_take_into_iter()
+                                , iterator_count_drift )
+        //this.shared_take_into_iter()
+    }
+
+    fn dynamic_event_count(&mut self
+                              , local_index: usize //this.local_index
+                              , id: usize //this.channel_meta_data.id
+                              , count: isize) -> usize {
+        if let Some(ref mut tel) = self.telemetry.send_rx {
+            tel.process_event(local_index, id, count)
+        } else {
+            MONITOR_NOT
+        }
+    }
+
 }
+
+pub(crate) struct DriftCountIterator<I> {
+    iter: I,
+    expected_count: usize,
+    actual_count: usize,
+    iterator_count_drift: Arc<AtomicIsize>,
+}
+
+impl<I> DriftCountIterator<I>
+    where I: Iterator + Send {
+
+    pub fn new(
+        expected_count: usize,
+        iter: I,
+        iterator_count_drift: Arc<AtomicIsize>,
+    ) -> Self
+    {
+        DriftCountIterator {
+            iter,
+            expected_count,
+            actual_count: 0,
+            iterator_count_drift
+        }
+    }
+}
+
+impl<I> Drop for DriftCountIterator<I> {
+    fn drop(&mut self) {
+        let drift = self.actual_count as isize - self.expected_count as isize;
+        if !drift.is_zero() {
+            self.iterator_count_drift.fetch_add(drift,Ordering::Relaxed);
+        }
+    }
+}
+
+impl<I> Iterator for DriftCountIterator<I>
+    where
+        I: Iterator, {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.iter.next();
+        if item.is_some() {
+            self.actual_count += 1;
+        };
+        item
+    }
+}
+
+
