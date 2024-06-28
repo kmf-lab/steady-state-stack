@@ -545,19 +545,7 @@ impl ChannelBuilder {
             avg_rate: self.avg_rate,
             avg_latency: self.avg_latency,
             connects_sidecar: self.connects_sidecar,
-            expects_to_be_monitored: self.window_bucket_in_bits > 0
-                && (self.display_labels
-                || self.line_expansion
-                || show_type.is_some()
-                || !self.percentiles_filled.is_empty()
-                || !self.percentiles_latency.is_empty()
-                || !self.percentiles_rate.is_empty()
-                || self.avg_filled
-                || self.avg_latency
-                || self.avg_rate
-                || !self.std_dev_filled.is_empty()
-                || !self.std_dev_latency.is_empty()
-                || !self.std_dev_rate.is_empty()),
+
         }
     }
 
@@ -607,7 +595,6 @@ impl ChannelBuilder {
                 rx_version: rx_version.clone(),
                 tx_version: tx_version.clone(),
                 last_checked_rx_instance: rx_version.load(Ordering::SeqCst),
-                dedupeset: Default::default(),
             })),
             Arc::new(Mutex::new(Rx {
                 rx,
@@ -618,7 +605,6 @@ impl ChannelBuilder {
                 rx_version: rx_version.clone(),
                 tx_version: tx_version.clone(),
                 last_checked_tx_instance: tx_version.load(Ordering::SeqCst),
-                internal_warn_dedupe_set: Default::default(),
                 take_count: AtomicU32::new(0),
                 cached_take_count: AtomicU32::new(0),
                 peek_repeats: AtomicUsize::new(0),

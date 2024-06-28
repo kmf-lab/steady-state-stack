@@ -33,19 +33,28 @@ mod test_panic_capture;
 mod steady_telemetry;
 /////////////////////////////////////////////////
 
+    /// module for all monitor features
 pub mod monitor;
+    /// module for all channel features
 pub mod channel_builder;
+    /// module for all actor features
 pub mod actor_builder;
+    /// util module for various utility functions.
 pub mod util;
+/// Installation modules for setting up various deployment methods.
 pub mod install {
-    //! Installation module for setting up various deployment methods.
+    /// module with support for creating and removing systemd configuration
     pub mod serviced;
+    /// module with support for creating local command line applications
     pub mod local_cli;
+    /// module with support for creating docker containers (may be deprecated)
     pub mod container;
 }
-
+    /// module for testing full graphs of actors
 pub mod graph_testing;
+    /// module for all tx channel features
 pub mod steady_tx;
+    /// module for all rx channel features
 pub mod steady_rx;
 
 pub use graph_testing::GraphTestResult;
@@ -68,11 +77,9 @@ pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
 
 use std::any::{Any};
-use std::backtrace::{Backtrace, BacktraceStatus};
 use std::time::{Duration, Instant};
 #[cfg(test)]
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::{Hash};
 use std::sync::Arc;
@@ -83,7 +90,6 @@ use std::ops::{DerefMut};
 use std::pin::Pin;
 use log::*;
 
-use colored::Colorize;
 
 use actor_builder::ActorBuilder;
 use crate::monitor::{ActorMetaData, ChannelMetaData, RxMetaData, TxMetaData};
@@ -615,39 +621,6 @@ macro_rules! into_monitor {
 const MONITOR_UNKNOWN: usize = usize::MAX;
 const MONITOR_NOT: usize = MONITOR_UNKNOWN-1;
 
-pub(crate) fn write_warning_to_console(dedupeset: &mut HashSet<String>) {
-    let backtrace = Backtrace::capture();
-    match backtrace.status() {
-        BacktraceStatus::Captured => {
-            let backtrace_str = format!("{:#?}", backtrace);
-            let mut call_seeker = 0;
-            let mut tofix = String::new();
-            let mut called = String::new();
-            for line in backtrace_str.lines() {
-                if line.contains("::direct_use_check_and_warn") {
-                    call_seeker = 1;
-                } else if call_seeker == 2 {
-                    if !line.contains("futures_util::future::") && !line.contains("::pin::Pin") {
-                        tofix = line.to_string();
-                        break;
-                    }
-                } else if call_seeker == 1 {
-                    called = line.to_string();
-                    call_seeker = 2;
-                }
-            }
-            if dedupeset.contains(&tofix) {
-                return;
-            }
-            eprintln!("       called:{} but probably should have used monitor.XXX since monitoring was enabled.", called);
-            eprintln!("fix code here:{}\n", tofix.red());
-            dedupeset.insert(tofix);
-        }
-        _ => {
-            warn!("you called this without the monitor but monitoring for this channel is enabled. see the monitor version of this method");
-        }
-    }
-}
 
 /// Represents the behavior of the system when the channel is saturated (i.e., full).
 ///

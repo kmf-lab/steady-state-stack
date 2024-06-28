@@ -89,6 +89,7 @@ fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>
         Ok(())
     }
 
+/// TODO: this is a hack to hide the tide info messages, but Tide will be removed shortly this week.
 pub struct TideHide;
 impl LogLineFilter for TideHide {
     fn write(&self, now: &mut DeferredNow

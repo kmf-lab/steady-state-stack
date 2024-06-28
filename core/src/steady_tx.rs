@@ -5,8 +5,6 @@ use futures_util::{FutureExt, select};
 use std::any::type_name;
 use std::time::Instant;
 use futures::channel::oneshot;
-use std::cell::RefCell;
-use std::collections::HashSet;
 use futures_util::lock::{MutexLockFuture};
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
@@ -30,7 +28,6 @@ pub struct Tx<T> {
     pub(crate) last_checked_rx_instance: u32,
     pub(crate) tx_version: Arc<AtomicU32>,
     pub(crate) rx_version: Arc<AtomicU32>,
-    pub(crate) dedupeset: RefCell<HashSet<String>>
 }
 
 impl<T> Tx<T> {
@@ -89,6 +86,7 @@ impl<T> Tx<T> {
         self.shared_capacity()
     }
 
+    /*
     /// Attempts to send a message to the channel without blocking.
     /// If the channel is full, the send operation will fail and return the message.
     ///
@@ -178,6 +176,7 @@ impl<T> Tx<T> {
         self.direct_use_check_and_warn();
         self.shared_send_slice_until_full(slice)
     }
+//  */
 
     /// Checks if the channel is currently full.
     ///
@@ -222,14 +221,6 @@ impl<T> Tx<T> {
         self.shared_wait_empty().await
     }
 
-    //////////////////////////////////////////////////////////////////
-    //////////////////////////////////////////////////////////////////
-
-    pub(crate) fn direct_use_check_and_warn(&self) {
-        if self.channel_meta_data.expects_to_be_monitored {
-            crate::write_warning_to_console( &mut self.dedupeset.borrow_mut());
-        }
-    }
     ////////////////////////////////////////////////////////////////
     // Shared implementations, if you need to swap out the channel it is done here
     ////////////////////////////////////////////////////////////////

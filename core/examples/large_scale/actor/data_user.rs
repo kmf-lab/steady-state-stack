@@ -14,7 +14,7 @@ pub async fn run(context: SteadyContext
     let mut monitor = into_monitor!(context,[rx], []);
 
     let mut rx = rx.lock().await;
-    let mut count = 0;
+    let mut _count = 0;
 
     while monitor.is_running(&mut || rx.is_closed() && rx.is_closed()) {
 
@@ -22,10 +22,10 @@ pub async fn run(context: SteadyContext
 
         while let Some(packet) = monitor.try_take(&mut rx) {
             assert_eq!(packet.data.len(),62);
-            count += 1;
+            _count += 1;
             //info!("data_router: {:?}", packet);
 
-            //if count % 1000_000 == 0 {
+            //if _count % 1000_000 == 0 {
             //    info!("hello");
             //    panic!("go");
             //}

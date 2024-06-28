@@ -56,10 +56,12 @@ pub struct ActorBuilder {
     backplane: Arc<Mutex<Option<SideChannelHub>>>,
 }
 
+type FutureBuilderType = Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>, bool) + Send>;
+
 /// The `ActorTeam` struct manages a collection of actors, facilitating their coordinated execution.
 #[derive(Default)]
 pub struct ActorTeam {
-    future_builder: VecDeque<Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>, bool) + Send>>,
+    future_builder: VecDeque<FutureBuilderType>,
 }
 
 impl ActorTeam {

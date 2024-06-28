@@ -26,14 +26,14 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     let mut tx = tx.lock().await;
 
     //let count = rx.capacity().clone()/4;
-    let tx_girth = tx.len();
+    //let _tx_girth = tx.len();
 
     while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()   ) {
 
         wait_for_all_or_proceed_upon!(
             monitor.wait_periodic(Duration::from_millis(40)),
             monitor.wait_avail_units(&mut rx,2),
-           // monitor.wait_vacant_units_bundle(&mut tx,count/2,tx_girth)
+           // monitor.wait_vacant_units_bundle(&mut tx,count/2,_tx_girth)
         ).await;
 
         let mut iter = monitor.take_into_iter(&mut rx);

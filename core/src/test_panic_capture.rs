@@ -78,9 +78,9 @@ mod simple_graph_test {
                 async move {
                     let mut rx = rx.lock().await;
                     while context.is_running(&mut || rx.is_closed() && rx.is_empty()) {
-                        if let Some(packet) = rx.try_take() {
+                        if let Some(_packet) = rx.shared_try_take() {
                             count.fetch_add(1, Ordering::Relaxed);
-                            // info!("received packet: {:?}", packet);
+                            // info!("received packet: {:?}", _packet);
                         }
                     }
                     Ok(())

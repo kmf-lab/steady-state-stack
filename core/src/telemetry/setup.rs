@@ -232,7 +232,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         }
 
                         let msg = actor_status.status_message();
-                        match tx.try_send(msg) {
+                        match tx.shared_try_send(msg) {
                             Ok(_) => {
                                 if let Some(ref mut send_tx) = this.telemetry.send_tx {
                                     if tx.local_index.lt(&MONITOR_NOT) {
@@ -288,7 +288,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                 if let Some(ref mut lock_guard) = send_tx.tx.try_lock() {
                     if send_tx.count.iter().any(|x| !x.is_zero()) {
                         let tx = lock_guard.deref_mut();
-                        match tx.try_send(send_tx.count) {
+                        match tx.shared_try_send(send_tx.count) {
                             Ok(_) => {
                                 send_tx.count.fill(0);
                                 if tx.local_index.lt(&MONITOR_NOT) {
@@ -319,7 +319,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                 if let Some(ref mut lock_guard) = send_rx.tx.try_lock() {
                     if send_rx.count.iter().any(|x| !x.is_zero()) {
                         let rx = lock_guard.deref_mut();
-                        match rx.try_send(send_rx.count) {
+                        match rx.shared_try_send(send_rx.count) {
                             Ok(_) => {
                                 send_rx.count.fill(0);
                                 if rx.local_index.lt(&MONITOR_NOT) {
@@ -395,7 +395,7 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
                 let needs_to_be_closed = tx.make_closed.is_some();
                 if needs_to_be_closed {
                     status.bool_stop = true;
-                    let _ = tx.send_async(ident, status, SendSaturation::IgnoreInRelease).await;
+                    let _ = tx.shared_send_async(status, ident, SendSaturation::IgnoreInRelease).await;
                     tx.mark_closed();
                     tx.wait_empty().await;
                 }
@@ -408,7 +408,7 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
             let mut tx = send_tx.tx.lock().await;
             if tx.make_closed.is_none() {
                 if send_tx.count.iter().any(|x| !x.is_zero()) {
-                    let _ = tx.send_async(ident, send_tx.count, SendSaturation::IgnoreInRelease).await;
+                    let _ = tx.shared_send_async(send_tx.count, ident, SendSaturation::IgnoreInRelease).await;
                 }
                 tx.mark_closed();
                 tx.wait_empty().await;
@@ -419,7 +419,7 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
             let mut rx = send_rx.tx.lock().await;
             if rx.make_closed.is_none() {
                 if send_rx.count.iter().any(|x| !x.is_zero()) {
-                    let _ = rx.send_async(ident, send_rx.count, SendSaturation::IgnoreInRelease).await;
+                    let _ = rx.shared_send_async(send_rx.count, ident, SendSaturation::IgnoreInRelease).await;
                 }
                 rx.mark_closed();
                 rx.wait_empty().await;

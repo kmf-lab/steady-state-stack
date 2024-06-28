@@ -4,7 +4,7 @@ use std::thread::sleep;
 use structopt::*;
 use log::*;
 use args::Args;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use steady_state::*;
 use steady_state::actor_builder::ActorTeam;
 

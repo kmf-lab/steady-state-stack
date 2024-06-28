@@ -51,7 +51,8 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
         doc: Vec::new(),
         metric: Vec::new(),
     }));
-    let mut history = FrameHistory::new();
+
+    let mut history = FrameHistory::new(ctrl.frame_rate_ms);
 
     let mut app = tide::with_state(state.clone());
     add_all_telemetry_paths(&mut app);
@@ -108,6 +109,7 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
                             }
                         },
                         DiagramData::NodeProcessData(seq, actor_status) => {
+                            assert_eq!(seq, metrics_state.seq);
                             let total_work_ns: u128 = actor_status.iter().map(|status| {
                                 assert!(status.unit_total_ns >= status.await_total_ns, "unit_total_ns:{} await_total_ns:{}", status.unit_total_ns, status.await_total_ns);
                                 (status.unit_total_ns - status.await_total_ns) as u128
@@ -132,7 +134,8 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
                             if config::TELEMETRY_HISTORY {
                                 history.apply_edge(&total_take_send, ctrl.frame_rate_ms);
                                 let flush_all = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped], true);
-                                history.update(metrics_state.seq, flush_all).await;
+
+                                history.update(flush_all).await;
                                 history.mark_position();
                             }
 

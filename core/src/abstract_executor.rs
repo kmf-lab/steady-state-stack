@@ -113,9 +113,8 @@ pub(crate) fn spawn_detached<F, T>(future: F)
         T: Send + 'static,
 {
     nuclei::spawn(async move {
-        match nuclei::spawn_more_threads(1).await {
-            Ok(_) => {}
-            Err(_) => {} // Log max thread issues?
+        if let Err(e) = nuclei::spawn_more_threads(1).await {
+            error!("Failed to spawn one more thread: {:?}", e);
         };
         future.await;
     })

@@ -622,9 +622,9 @@ impl Graph {
 
         // Only used for testing but this backplane is here to support
         // dynamic type message sending to and from all nodes for coordination of testing
-        let backplane: Option<SideChannelHub> = None;
+        let _backplane: Option<SideChannelHub> = None;
         #[cfg(test)]
-            let backplane = Some(SideChannelHub::default());
+            let _backplane = Some(SideChannelHub::default());
 
         let mut result = Graph {
             args: Arc::new(Box::new(args)),
@@ -634,7 +634,7 @@ impl Graph {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(monitor_count, oneshot_shutdown_vec.clone()))),
             oneshot_shutdown_vec,
             oneshot_startup_vec,
-            backplane: Arc::new(Mutex::new(backplane)),
+            backplane: Arc::new(Mutex::new(_backplane)),
             noise_threshold: Instant::now().sub(Duration::from_secs(config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64)),
             block_fail_fast,
             iouring_queue_length: 1 << 5,

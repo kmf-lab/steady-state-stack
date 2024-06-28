@@ -159,7 +159,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let count = {
                 if let Some(mut guard) = act.try_lock() {
                     let act = guard.deref_mut();
-                    act.take_slice(&mut buffer)
+                    act.shared_take_slice(&mut buffer)
                 } else {
                     0
                 }
@@ -217,7 +217,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let count = {
                 if let Some(mut rx_guard) = take.rx.try_lock() {
                     let rx = rx_guard.deref_mut();
-                    rx.take_slice(&mut buffer)
+                    rx.shared_take_slice(&mut buffer)
                 } else {
                     0
                 }
@@ -271,7 +271,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let count = {
                 if let Some(mut tx_guard) = send.rx.try_lock() {
                     let tx = tx_guard.deref_mut();
-                    tx.take_slice(&mut buffer)
+                    tx.shared_take_slice(&mut buffer)
                 } else {
                     0
                 }

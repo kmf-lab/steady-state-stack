@@ -163,6 +163,7 @@ impl<T> PackedVecReader<T>
     /// # Returns
     ///
     /// An `Option` containing the restored vector or `None` if the read failed.
+    #[allow(dead_code)]
     fn restore_vec(&mut self, buffer: &mut Bytes) -> Option<Vec<T>> {
         // Read the length of chunks
         let chunks_len = read_long_signed(buffer)?;

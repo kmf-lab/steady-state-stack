@@ -17,6 +17,7 @@ use bytes::BytesMut;
 /// # Returns
 ///
 /// * `Option<i64>` - Returns `Some(i64)` if the read operation is successful, or `None` if the buffer is empty or data is invalid.
+#[allow(dead_code)]
 pub fn read_long_signed(byte_buffer: &mut Bytes) -> Option<i64> {
     let initial_remaining: usize = byte_buffer.remaining();
     if initial_remaining > 0 {
@@ -43,6 +44,7 @@ pub fn read_long_signed(byte_buffer: &mut Bytes) -> Option<i64> {
 /// # Returns
 ///
 /// * `Option<i64>` - Returns `Some(i64)` if the read operation is successful, or `None` if data is invalid.
+#[allow(dead_code)]
 fn read_long_signed_tail(a: i64, byte_buffer: &mut Bytes, initial_remaining: usize) -> Option<i64> {
     let remaining: usize = byte_buffer.remaining();
     if remaining > 0 {
@@ -68,6 +70,7 @@ fn read_long_signed_tail(a: i64, byte_buffer: &mut Bytes, initial_remaining: usi
 /// # Returns
 ///
 /// * `Option<u64>` - Returns `Some(u64)` if the read operation is successful, or `None` if the buffer is empty or data is invalid.
+#[allow(dead_code)]
 pub fn read_long_unsigned(byte_buffer: &mut Bytes) -> Option<u64> {
     let mut value: u64 = 0;
     let mut byte_count = 0;

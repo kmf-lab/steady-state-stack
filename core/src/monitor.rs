@@ -144,7 +144,6 @@ pub struct ChannelMetaData {
     pub(crate) max_filled: bool,
     pub(crate) connects_sidecar: bool,
     pub(crate) type_byte_count: usize,
-    pub(crate) expects_to_be_monitored: bool,
 }
 
 /// Metadata for a transmitter channel.
@@ -433,7 +432,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Returns
     /// `true` if the liveliness state matches any target state, otherwise `false`.
-    pub(crate) fn is_liveliness_in(&self, target: &[GraphLivelinessState], upon_posion: bool) -> bool {
+    pub fn is_liveliness_in(&self, target: &[GraphLivelinessState], upon_posion: bool) -> bool {
         match self.runtime_state.read() {
             Ok(liveliness) => liveliness.is_in_state(target),
             Err(e) => {

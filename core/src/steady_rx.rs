@@ -5,8 +5,6 @@ use futures_util::lock::{MutexLockFuture};
 use std::time::{Duration, Instant};
 use log::error;
 use futures::channel::oneshot;
-use std::cell::RefCell;
-use std::collections::HashSet;
 use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use async_ringbuf::consumer::AsyncConsumer;
 use ringbuf::consumer::Consumer;
@@ -30,7 +28,6 @@ pub struct Rx<T> {
     pub(crate) last_checked_tx_instance: u32,
     pub(crate) tx_version: Arc<AtomicU32>,
     pub(crate) rx_version: Arc<AtomicU32>,
-    pub(crate) internal_warn_dedupe_set: RefCell<HashSet<String>>, // could be removed someday
 
     pub(crate) take_count: AtomicU32, // inc upon every take, For bad message detection
     pub(crate) cached_take_count: AtomicU32, // to find repeats, For bad message detection
@@ -150,7 +147,7 @@ impl <T> Rx<T> {
         }
         let result = self.rx.first();
 
-        if let Some(_) = result {
+        if result.is_some() {
 
             let take_count = self.take_count.load(Ordering::Relaxed);
             let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
@@ -209,7 +206,7 @@ impl <T> Rx<T> {
     #[inline]
     pub(crate) fn shared_try_peek(&self) -> Option<&T> {
         let result = self.rx.first();
-        if let Some(_) = result {
+        if result.is_some() {
             let take_count = self.take_count.load(Ordering::Relaxed);
             let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
             if !cached_take_count == take_count {
@@ -297,80 +294,7 @@ impl<T> Rx<T> {
         self.shared_capacity()
     }
 
-    /// Retrieves and removes a slice of messages from the channel.
-    /// This operation is blocking and will remove the messages from the channel.
-    /// Note: May take fewer messages than the slice length if the channel is not full.
-    /// This method requires `T` to implement the `Copy` trait, ensuring efficient handling of message data.
-    ///
-    /// # Requirements
-    /// - `T` must implement the `Copy` trait. This constraint ensures that messages can be efficiently copied out of the channel without ownership issues.
-    ///
-    /// # Parameters
-    /// - `elems`: A mutable slice where the taken messages will be stored.
-    ///
-    /// # Returns
-    /// The number of messages actually taken and stored in `elems`.
-    ///
-    /// # Example Usage
-    /// Useful for batch processing where multiple messages are consumed at once for efficiency. Particularly effective in scenarios where processing overhead needs to be minimized.
-    ///
-    /// # Pros and Cons of `T: Copy`
-    /// ## Pros:
-    /// - **Performance Optimization**: Facilitates quick, lightweight operations by leveraging the ability to copy data directly, without the overhead of more complex memory management.
-    /// - **Simplicity in Message Handling**: Reduces the complexity of managing message lifecycles and ownership, streamlining channel operations.
-    /// - **Reliability**: Ensures that the operation does not inadvertently alter or lose message data during transfer, maintaining message integrity.
-    ///
-    /// ## Cons:
-    /// - **Type Limitation**: Limits the use of the channel to data types that implement `Copy`, potentially excluding more complex or resource-managed types that might require more nuanced handling.
-    /// - **Overhead for Larger Types**: While `Copy` is intended for lightweight types, using it with larger, though still `Copy`, data types could introduce unnecessary copying overhead.
-    /// - **Design Rigidity**: Imposes a strict design requirement on the types that can be used with the channel, which might not align with all application designs or data models.
-    ///
-    /// Incorporating the `T: Copy` requirement, `take_slice` is optimized for use cases prioritizing efficiency and simplicity in handling a series of lightweight messages, making it a key method for high-performance message processing tasks.
-    pub(crate) fn take_slice(&mut self, elems: &mut [T]) -> usize
-        where T: Copy {
-        #[cfg(debug_assertions)]
-        self.direct_use_check_and_warn();
-        self.shared_take_slice(elems)
-    }
 
-    /// Retrieves and removes messages from the channel into an iterator.
-    ///
-    /// # Returns
-    /// An iterator over the messages in the channel.
-    ///
-    /// # Example Usage
-    /// Useful for scenarios where messages need to be processed in a streaming manner.
-    pub(crate) fn take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
-        #[cfg(debug_assertions)]
-        self.direct_use_check_and_warn();
-        self.shared_take_into_iter()
-    }
-
-    /// Attempts to take a single message from the channel without blocking.
-    ///
-    /// # Returns
-    /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
-    ///
-    /// # Example Usage
-    /// Ideal for non-blocking single message consumption, allowing for immediate feedback on message availability.
-    pub(crate) fn try_take(&mut self) -> Option<T> {
-        #[cfg(debug_assertions)]
-        self.direct_use_check_and_warn();
-        self.shared_try_take()
-    }
-
-    /// Asynchronously retrieves and removes a single message from the channel.
-    ///
-    /// # Returns
-    /// A `Result<T, String>`, where `Ok(T)` is the message if available, and `Err(String)` contains an error message if the retrieval fails.
-    ///
-    /// # Example Usage
-    /// Suitable for async processing where messages are consumed one at a time as they become available.
-    pub(crate) async fn take_async(&mut self) -> Option<T> {
-        #[cfg(debug_assertions)]
-        self.direct_use_check_and_warn();
-        self.shared_take_async().await
-    }
 
     /// Checks if the channel is currently empty.
     ///
@@ -407,11 +331,6 @@ impl<T> Rx<T> {
         false
     }
 
-    fn direct_use_check_and_warn(&self) {
-        if self.channel_meta_data.expects_to_be_monitored {
-            crate::write_warning_to_console(&mut self.internal_warn_dedupe_set.borrow_mut());
-        }
-    }
 
     #[inline]
     fn shared_capacity(&self) -> usize {
@@ -428,7 +347,7 @@ impl<T> Rx<T> {
 
     #[inline]
     pub(crate) fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
-        CountingIterator::new(self.rx.pop_iter(), &mut self.take_count)
+        CountingIterator::new(self.rx.pop_iter(), &self.take_count)
     }
 
     #[inline]

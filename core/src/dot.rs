@@ -330,7 +330,6 @@ pub(crate) struct FrameHistory {
     pub(crate) guid: String,
     output_log_path: PathBuf,
     file_bytes_written: Arc<AtomicUsize>,
-    file_buffer_last_seq: u64,
     last_file_to_append_onto: String,
     buffer_bytes_count: usize,
     local_thread_bytes_cache: usize,
@@ -346,21 +345,56 @@ impl FrameHistory {
     /// # Returns
     ///
     /// A new `FrameHistory` instance.
-    pub fn new() -> FrameHistory {
+    pub fn new(ms_rate: u64) -> FrameHistory {
+        let mut buf = BytesMut::with_capacity(HISTORY_WRITE_BLOCK_SIZE*2);
+
+        //set history file header with key information about our run
+        //
+        //what time did we start
+        let now:u64 = OffsetDateTime::now_utc().unix_timestamp() as u64;
+        write_long_unsigned(now, &mut buf);
+        //
+        //set history file header with key information about our frame rate
+        write_long_unsigned(ms_rate, &mut buf); //time between frames
+
+        let mut runtime_config = 0;
+
+        #[cfg(test)]
+        {runtime_config |= 1;} // ones bit is ether test(1) or release(0)
+
+        #[cfg(feature = "prometheus_metrics")]
+        {runtime_config |= 2;} // twos bit is ether prometheus(1) or none(0)
+
+        #[cfg(feature = "proactor_tokio")]
+        {runtime_config |= 4;} // fours bit is ether tokio(1) or nuclei(0)
+
+        #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))]
+        {runtime_config |= 8;} // eights bit is ether telemetry(1) or none(0)
+
+        #[cfg(feature = "telemetry_server_cdn")]
+        {runtime_config |= 16;} // sixteenth bit is ether cdn(1) or builtin(0)
+
+        //write bits which captured the runtime conditions
+        write_long_unsigned(runtime_config, &mut buf);
+
+        //TODO: add file version!!
+
         let result = FrameHistory {
             packed_sent_writer: PackedVecWriter::new(),
             packed_take_writer: PackedVecWriter::new(),
-            history_buffer: BytesMut::new(),
+            history_buffer: buf,
             // Immutable details
             guid: uuid::Uuid::new_v4().to_string(), // Unique GUID for the run instance
             output_log_path: PathBuf::from("../output_logs"),
             // Running state
             file_bytes_written: Arc::new(AtomicUsize::from(0usize)),
-            file_buffer_last_seq: 0u64,
+
             last_file_to_append_onto: "".to_string(),
             buffer_bytes_count: 0usize,
             local_thread_bytes_cache: 0usize,
         };
+
+
         let _ = create_dir_all(&result.output_log_path);
         result
     }
@@ -439,7 +473,7 @@ impl FrameHistory {
     ///
     /// * `sequence` - The current sequence number.
     /// * `flush_all` - A boolean indicating if all data should be flushed to disk.
-    pub async fn update(&mut self, sequence: u64, flush_all: bool) {
+    pub async fn update(&mut self, flush_all: bool) {
         // We write to disk in blocks just under a fixed power of two size
         // If we are about to enter a new block ensure we write the old one
         // NOTE: We block and do not write if the previous write was not completed.

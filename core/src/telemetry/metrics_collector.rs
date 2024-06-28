@@ -356,7 +356,7 @@ async fn send_structure_details(
     for consumer in consumer_vec.iter_mut() {
         let to_send = nodes.clone().into_iter();
         for send_me in to_send {
-            match consumer.send_async(ident, send_me, SendSaturation::IgnoreAndWait).await {
+            match consumer.shared_send_async(send_me, ident, SendSaturation::IgnoreAndWait).await {
                 Ok(_) => {}
                 Err(e) => {
                     error!("error sending node data {:?}", e);
@@ -375,29 +375,26 @@ async fn send_data_details(
 ) {
     for consumer in consumer_vec.iter_mut() {
         if consumer.vacant_units().ge(&2) {
-            match consumer
-                .send_async(
-                    ident,
+            if let Err(e) = consumer.shared_send_async(
                     DiagramData::NodeProcessData(state.sequence, state.actor_status.clone().into_boxed_slice()),
+                    ident,
                     SendSaturation::IgnoreInRelease,
                 )
                 .await
             {
-                Ok(_) => {}
-                Err(_) => {}
+             error!("error sending node process data {:?}", e);
             }
 
-            match consumer
-                .send_async(
-                    ident,
+            if let Err(e) = consumer.shared_send_async(
                     DiagramData::ChannelVolumeData(state.sequence, state.total_take_send.clone().into_boxed_slice()),
+                    ident,
                     SendSaturation::IgnoreInRelease,
                 )
                 .await
             {
-                Ok(_) => {}
-                Err(_) => {}
+             error!("error sending node process data {:?}", e);
             }
+
         } else if warn {
             #[cfg(not(test))]
             warn!(
