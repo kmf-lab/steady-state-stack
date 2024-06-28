@@ -108,8 +108,7 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
                                 history.apply_node(name, id, &defs.1, &defs.2);
                             }
                         },
-                        DiagramData::NodeProcessData(seq, actor_status) => {
-                            assert_eq!(seq, metrics_state.seq);
+                        DiagramData::NodeProcessData(_seq, actor_status) => {
                             let total_work_ns: u128 = actor_status.iter().map(|status| {
                                 assert!(status.unit_total_ns >= status.await_total_ns, "unit_total_ns:{} await_total_ns:{}", status.unit_total_ns, status.await_total_ns);
                                 (status.unit_total_ns - status.await_total_ns) as u128
