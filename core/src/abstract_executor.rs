@@ -80,7 +80,7 @@ pub(crate) fn init(enable_driver: bool, nuclei_config: IoUringConfiguration) {
         );
 
         if enable_driver {
-            error!("Starting IOUring driver");
+            //trace!("Starting IOUring driver");
             nuclei::spawn_blocking(|| {
                 loop {
                     let result = catch_unwind(AssertUnwindSafe(|| {

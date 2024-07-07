@@ -65,7 +65,7 @@ fn main() {
     }
 
 
-    let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
+    let mut graph = build_simple_graph(&opt); //graph is built here and tested below in the test section.
 
     graph.start();
     {  //remove this block to run forever.
@@ -78,103 +78,109 @@ fn main() {
 }
 
 
-fn build_graph(cli_arg: &Args) -> steady_state::Graph {
+fn build_simple_graph(cli_arg: &Args) -> steady_state::Graph {
     debug!("args: {:?}",&cli_arg);
 
-    //create the mutable graph object
-    let mut graph = Graph::new(cli_arg.clone());
+    build_simple_widgets_graph(Graph::new(cli_arg.clone()))
+}
 
+fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
     let mut group = ActorTeam::new();
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_channel_builder = graph.channel_builder()
-                            .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
-                            .with_labels(&["widgets"],true)
-                            .with_filled_trigger(Trigger::AvgAbove(Filled::p50())
-                                             ,AlertColor::Red)
-                            .with_filled_trigger(Trigger::AvgAbove(Filled::p20())
-                                             ,AlertColor::Yellow)
-                            .with_type()
-                            .with_line_expansion();
+        .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10))
+        .with_labels(&["widgets"], true)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p50())
+                             , AlertColor::Red)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p20())
+                             , AlertColor::Yellow)
+        .with_type()
+        .with_line_expansion();
 
     //upon construction these are set up to be monitored by the telemetry telemetry
     let (generator_tx, generator_rx) = base_channel_builder
-                         .with_rate_percentile(Percentile::p80())
-                         .with_capacity(4000)
-                         .build();
+        .with_rate_percentile(Percentile::p80())
+        .with_capacity(4000)
+        .build();
 
     let (consumer_tx, consumer_rx) = base_channel_builder
-                         .with_avg_rate()
-                         .with_capacity(4000)
-                         .build();
+        .with_avg_rate()
+        .with_capacity(4000)
+        .build();
 
     let (failure_tx, failure_rx) = base_channel_builder
-                        .with_capacity(300)
-                        .connects_sidecar()//hint for display
-                        .build();
+        .with_capacity(300)
+        .connects_sidecar() //hint for display
+        .build();
 
     let (change_tx, change_rx) = base_channel_builder
-                         .with_filled_max()
-                         .with_filled_min()
-                         .with_filled_percentile(Percentile::p25())
-                         .with_capacity(200)
-                         .build();
+        .with_filled_max()
+        .with_filled_min()
+        .with_filled_percentile(Percentile::p25())
+        .with_capacity(200)
+        .build();
 
-    let base_actor_builder = graph.actor_builder()//with default OneForOne supervisor....
+    let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor....
         .with_mcpu_percentile(Percentile::p80())
         .with_work_percentile(Percentile::p80())
-        .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m64()),AlertColor::Red)
-        .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
+        .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m64()), AlertColor::Red)
+        .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10));
 
-        base_actor_builder.with_name("generator")
-             .build_join( move |context| actor::data_generator::run(context
-                                                                     , change_rx.clone()
-                                                                     , generator_tx.clone()) ,&mut group
+    base_actor_builder.with_name("generator")
+        .build_join(move |context| actor::data_generator::run(context
+                                                              , change_rx.clone()
+                                                              , generator_tx.clone()), &mut group
         );
 
-        base_actor_builder.with_name("approval")
-             .build_join( move |context| actor::data_approval::run(context
-                                                                    , generator_rx.clone()
-                                                                    , consumer_tx.clone()
-                                                                    , failure_tx.clone()) ,&mut group
+    base_actor_builder.with_name("approval")
+        .build_join(move |context| actor::data_approval::run(context
+                                                             , generator_rx.clone()
+                                                             , consumer_tx.clone()
+                                                             , failure_tx.clone()), &mut group
         );
 
-        base_actor_builder.with_name("feedback")
-             .build_join( move |context| actor::data_feedback::run(context
-                                                                    , failure_rx.clone()
-                                                                    , change_tx.clone()),&mut group
-            );
+    base_actor_builder.with_name("feedback")
+        .build_join(move |context| actor::data_feedback::run(context
+                                                             , failure_rx.clone()
+                                                             , change_tx.clone()), &mut group
+        );
 
-       base_actor_builder.with_name("consumer")
-            .build_join( move |context| actor::data_consumer::run(context
-                                                                   , consumer_rx.clone()),&mut group
-            );
-       group.spawn();
+    base_actor_builder.with_name("consumer")
+        .build_join(move |context| actor::data_consumer::run(context
+                                                             , consumer_rx.clone()), &mut group
+        );
+    group.spawn();
 
     graph
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use std::any::Any;
     use std::ops::{DerefMut};
     use super::*;
-
 
     #[async_std::test]
     async fn test_graph_one() {
 
+        warn!("start of test_graph_one");
+
         let test_ops = Args {
             duration: 21,
             loglevel: "debug".to_string(),
-            gen_rate_micros: 0,
+            gen_rate_micros: 100,
             systemd_install: false,
             systemd_uninstall: false,
         };
-        let mut graph = build_graph(&test_ops);
+        let cli_arg = &test_ops;
+        debug!("args: {:?}",&cli_arg);
+
+        //create the mutable graph object
+        let args = cli_arg.clone();
+        let block_fail_fast = false;
+        let graph = Graph::internal_new(args, block_fail_fast, false);
+        let mut graph = build_simple_widgets_graph(graph);
         graph.start();
 
         let mut guard = graph.sidechannel_director().await;
@@ -202,7 +208,7 @@ mod tests {
         drop(guard);
 
         graph.stop();
-        graph.block_until_stopped(Duration::from_secs(3));
+        graph.block_until_stopped(Duration::from_secs(7));
 
     }
 }

@@ -90,7 +90,8 @@ mod tests {
     #[test]
     async fn test_process() {
         util::logger::initialize();
-        let graph = Graph::new(());
+        let block_fail_fast = false;
+        let graph = Graph::internal_new((), block_fail_fast, false);
         let _mock_monitor = graph.new_test_monitor("test_monitor");
 
     /*

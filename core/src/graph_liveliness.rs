@@ -614,7 +614,7 @@ impl Graph {
     /// # Returns
     ///
     /// A new `Graph` instance.
-    pub(crate) fn internal_new<A: Any + Send + Sync>(args: A, block_fail_fast: bool, enable_telemtry: bool) -> Graph {
+    pub fn internal_new<A: Any + Send + Sync>(args: A, block_fail_fast: bool, enable_telemtry: bool) -> Graph {
         let channel_count = Arc::new(AtomicUsize::new(0));
         let monitor_count = Arc::new(AtomicUsize::new(0));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));

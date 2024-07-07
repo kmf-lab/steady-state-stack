@@ -135,6 +135,8 @@ pub(crate) fn build_optional_telemetry_graph(graph: &mut Graph) {
         feature = "prometheus_metrics"
     ))]
     {
+        warn!("hello world");
+
         let base = graph.channel_builder().with_compute_refresh_window_bucket_bits(0, 0);
 
         #[cfg(feature = "telemetry_on_telemetry")]

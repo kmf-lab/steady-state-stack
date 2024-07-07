@@ -163,7 +163,8 @@ mod tests {
 
         util::logger::initialize();
 
-        let mut graph = Graph::new(());
+        let block_fail_fast = false;
+        let mut graph = Graph::internal_new((), block_fail_fast, false);
         let (tx, rx) = graph.channel_builder().with_capacity(8).build();
         let mock_context = graph.new_test_monitor("mock");
 

@@ -102,7 +102,8 @@ mod tests {
 
         util::logger::initialize();
 
-        let _graph = Graph::new("");
+        let block_fail_fast = false;
+        let _graph = Graph::internal_new("", block_fail_fast, false);
 
 
 

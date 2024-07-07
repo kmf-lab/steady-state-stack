@@ -102,7 +102,8 @@ mod tests {
     async fn test_process() {
         util::logger::initialize();
 
-        let mut graph = Graph::new("");
+        let block_fail_fast = false;
+        let mut graph = Graph::internal_new("", block_fail_fast, false);
         let (tx_in, rx_in) = graph.channel_builder().with_capacity(8).build();
         let (tx_out, rx_out) = graph.channel_builder().with_capacity(8).build();
         let (tx_feedback, _rx_feedback) = graph.channel_builder().with_capacity(8).build();
