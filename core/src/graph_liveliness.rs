@@ -2,7 +2,7 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{abstract_executor, config, SteadyContext};
+use crate::{abstract_executor, steady_config, SteadyContext};
 use std::ops::Sub;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -460,7 +460,7 @@ impl Graph {
 
         // If we are not in release mode we will enable fail-fast
         // This is most helpful while new code is under development
-        if !crate::config::DISABLE_DEBUG_FAIL_FAST {
+        if !crate::steady_config::DISABLE_DEBUG_FAIL_FAST {
             #[cfg(debug_assertions)]
             self.enable_fail_fast();
         }
@@ -600,7 +600,7 @@ impl Graph {
     /// A new `Graph` instance.
     pub fn new<A: Any + Send + Sync>(args: A) -> Graph {
         let block_fail_fast = false;
-        Self::internal_new(args, block_fail_fast, config::TELEMETRY_SERVER)
+        Self::internal_new(args, block_fail_fast, steady_config::TELEMETRY_SERVER)
     }
 
     /// Creates a new graph for normal or unit test use.
@@ -635,7 +635,7 @@ impl Graph {
             oneshot_shutdown_vec,
             oneshot_startup_vec,
             backplane: Arc::new(Mutex::new(_backplane)),
-            noise_threshold: Instant::now().sub(Duration::from_secs(config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64)),
+            noise_threshold: Instant::now().sub(Duration::from_secs(steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64)),
             block_fail_fast,
             iouring_queue_length: 1 << 5,
             enable_io_driver: true,

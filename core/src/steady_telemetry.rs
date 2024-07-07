@@ -8,7 +8,7 @@ use std::process::exit;
 use std::ops::DerefMut;
 use num_traits::Zero;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-use crate::{config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
+use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
 use crate::steady_rx::{Rx, RxDef};
 use crate::steady_tx::{ Tx};
 
@@ -155,7 +155,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
 
     fn consume_actor(&self) -> Option<ActorStatus> {
         if let Some(ref act) = &self.actor {
-            let mut buffer = [ActorStatus::default(); config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
+            let mut buffer = [ActorStatus::default(); steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
             let count = {
                 if let Some(mut guard) = act.try_lock() {
                     let act = guard.deref_mut();
@@ -212,7 +212,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         future_send: &mut Vec<i128>,
     ) -> bool {
         if let Some(ref take) = &self.take {
-            let mut buffer = [[0usize; RXL]; config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
+            let mut buffer = [[0usize; RXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
 
             let count = {
                 if let Some(mut rx_guard) = take.rx.try_lock() {
@@ -266,7 +266,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         future_send: &mut Vec<i128>,
     ) -> bool {
         if let Some(ref send) = &self.send {
-            let mut buffer = [[0usize; TXL]; config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
+            let mut buffer = [[0usize; TXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
 
             let count = {
                 if let Some(mut tx_guard) = send.rx.try_lock() {

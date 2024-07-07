@@ -22,7 +22,7 @@ pub(crate) mod serialize {
 
 pub(crate) mod channel_stats;
 pub(crate) mod actor_stats;
-pub(crate) mod config;
+pub(crate) mod steady_config;
 pub(crate) mod dot;
 
 mod graph_liveliness;
@@ -325,6 +325,14 @@ impl SteadyContext {
         this.shared_try_take()
     }
 
+    /// Attempts to take a message from the channel if available.
+    ///
+    /// # Returns
+    /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
+    pub async fn take_async<T>(&self, this: &mut Rx<T>) -> Option<T> {
+        this.shared_take_async().await
+    }
+
     /// Waits until the specified number of available units are in the receiver.
     ///
     /// # Parameters
@@ -450,7 +458,7 @@ impl SteadyContext {
         rx_mons: [RxMetaData; RX_LEN],
         tx_mons: [TxMetaData; TX_LEN],
     ) -> LocalMonitor<RX_LEN, TX_LEN> {
-        let (send_rx, send_tx, state) = if config::TELEMETRY_HISTORY || config::TELEMETRY_SERVER {
+        let (send_rx, send_tx, state) = if steady_config::TELEMETRY_HISTORY || steady_config::TELEMETRY_SERVER {
             let mut rx_meta_data = Vec::new();
             let mut rx_inverse_local_idx = [0; RX_LEN];
             rx_mons.iter().enumerate().for_each(|(c, md)| {

@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
 use num_traits::Zero;
-use crate::{abstract_executor, ActorIdentity, config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, steady_tx_bundle, SteadyContext, telemetry};
+use crate::{abstract_executor, ActorIdentity, steady_config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, steady_tx_bundle, SteadyContext, telemetry};
 use crate::channel_builder::ChannelBuilder;
-use crate::config::*;
+use crate::steady_config::*;
 use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel};
 use crate::steady_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
 use crate::telemetry::{metrics_collector, metrics_server};
@@ -46,7 +46,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
     )
         .with_labels(&["steady_state-telemetry"], false)
         .with_compute_refresh_window_bucket_bits(0, 0)
-        .with_capacity(config::REAL_CHANNEL_LENGTH_TO_COLLECTOR);
+        .with_capacity(steady_config::REAL_CHANNEL_LENGTH_TO_COLLECTOR);
 
     let rx_tuple: (Option<SteadyTelemetrySend<RX_LEN>>, Option<SteadyTelemetryTake<RX_LEN>>) =
         if 0usize == RX_LEN {
@@ -144,7 +144,7 @@ pub(crate) fn build_optional_telemetry_graph(graph: &mut Graph) {
 
         let (tx, rx) = base
             .with_labels(&["steady_state-telemetry"], true)
-            .with_capacity(config::REAL_CHANNEL_LENGTH_TO_FEATURE)
+            .with_capacity(steady_config::REAL_CHANNEL_LENGTH_TO_FEATURE)
             .build();
 
         let outgoing = [tx; 1];

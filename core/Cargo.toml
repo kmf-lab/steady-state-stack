@@ -88,9 +88,6 @@ time             = { version = "0.3.36", features = ["macros","formatting", "par
 dirs             = "5.0.1"
 colored          = "2.1.0"
 
-#kanagawa         = "0.1.3"  # Future replacement for async http server?
-tide             = "0.17.0-beta.1" # for http server, to remove
-
 structopt        = "0.3.26"  # CLI parse for type safe arguments
 structopt-derive = "0.4.18" # adds Args::from_args() to your structopt struct
 
@@ -102,6 +99,7 @@ parking_lot      = "0.12.2"# TODO: review our lock usage and possible use of par
 # TODO: still in progess, this is for distributed instances across mutiple nodes
 stun-rs   = "0.1.8"
 rustdds   = "0.10.1"
+
 # use rustdds::serialization::CDRSerializerAdapter; # we must remain ROS2 compatible
 #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
 #  https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021

@@ -10,7 +10,7 @@ use std::time::Duration;
 use log::*; // Allow unused import
 
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-use crate::{config, SendSaturation, SteadyContext, SteadyTxBundle, yield_now};
+use crate::{steady_config, SendSaturation, SteadyContext, SteadyTxBundle, yield_now};
 
 use futures::future::*;
 use futures_timer::Delay;
@@ -115,7 +115,7 @@ pub(crate) async fn run<const GIRTH: usize>(
         if let Some(ref scan) = all_actors_to_scan {
             let mut futures_unordered = FuturesUnordered::new();
             if let Some(ref timelords) = timelords {
-                timelords.iter().for_each(|i| scan.get(*i).iter().for_each(|f| futures_unordered.push(f.wait_avail_units(config::CONSUMED_MESSAGES_BY_COLLECTOR))));
+                timelords.iter().for_each(|i| scan.get(*i).iter().for_each(|f| futures_unordered.push(f.wait_avail_units(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))));
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
                     if full_frame_of_data {
                         break;
@@ -124,7 +124,7 @@ pub(crate) async fn run<const GIRTH: usize>(
                     }
                 }
             } else {
-                scan.iter().for_each(|f| futures_unordered.push(f.wait_avail_units(config::CONSUMED_MESSAGES_BY_COLLECTOR)));
+                scan.iter().for_each(|f| futures_unordered.push(f.wait_avail_units(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR)));
                 let count = 5;
                 let mut timelord_collector = Vec::new();
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
@@ -186,7 +186,7 @@ pub(crate) async fn run<const GIRTH: usize>(
         if let Some(nodes) = nodes {
             send_structure_details(ident, &mut locked_servers, nodes).await;
         }
-        let warn = !is_shutting_down && config::TELEMETRY_SERVER;
+        let warn = !is_shutting_down && steady_config::TELEMETRY_SERVER;
         send_data_details(ident, &mut locked_servers, &state, warn).await;
 
         state.sequence += 1;
