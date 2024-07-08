@@ -347,6 +347,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) actor_start_time: Instant, // never changed from context
     pub(crate) node_tx_rx: Option<Arc<Mutex<SideChannel>>>,
     pub(crate) frame_rate_ms: u64,
+    pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     #[cfg(test)]
     pub(crate) test_count: HashMap<&'static str, usize>,
 }
@@ -474,7 +475,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         target.iter_mut().for_each(|rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
     }
 
-    /// Waits while the monitor is running.
+    /// Waits while the actor is running.
     ///
     /// # Returns
     /// A future that resolves to `Ok(())` if the monitor stops, otherwise `Err(())`.
@@ -482,12 +483,20 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         crate::graph_liveliness::WaitWhileRunningFuture::new(self.runtime_state.clone())
     }
 
-    /// Checks if the monitor is part of the graph.
+    /// Checks if the actor is part of the graph.
     ///
     /// # Returns
     /// `true` if the monitor is in the graph, otherwise `false`.
     pub fn is_in_graph(&self) -> bool {
         self.is_in_graph
+    }
+
+    /// Simulates edge behavior for the actor.
+    ///
+    /// # Returns
+    /// An `Option<SideChannelResponder>` if the simulation is available, otherwise `None`.
+    pub fn edge_simulator(&self) -> Option<SideChannelResponder> {
+        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone()))
     }
 
     /// Returns a side channel responder if available.
@@ -1140,6 +1149,21 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                                 , this.shared_take_into_iter()
                                 , iterator_count_drift )
         //this.shared_take_into_iter()
+    }
+    /// Retrieves the actor's arguments, cast to the specified type.
+    ///
+    /// # Returns
+    /// An `Option<&A>` containing the arguments if available and of the correct type.
+    pub fn args<A: Any>(&self) -> Option<&A> {
+        self.args.downcast_ref::<A>()
+    }
+
+    /// Retrieves the actor's identity.
+    ///
+    /// # Returns
+    /// An `ActorIdentity` representing the actor's identity.
+    pub fn identity(&self) -> ActorIdentity {
+        self.ident
     }
 
     fn dynamic_event_count(&mut self

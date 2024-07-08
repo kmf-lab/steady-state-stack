@@ -27,6 +27,7 @@ mod simple_graph_test {
     ///     // Test implementation...
     /// }
     /// ```
+    #[cfg(not(tarpaulin))]
     #[async_std::test]
     async fn test_panic_graph() {
         if let Err(e) = init_logging("info") {
@@ -37,7 +38,7 @@ mod simple_graph_test {
         // It is not recommended to inline actors this way, but it is possible.
 
         // Special test graph which does NOT fail fast but instead shows the prod behavior of restarting actors.
-        let mut graph = Graph::internal_new((), true, false);
+        let mut graph = Graph::internal_new((), true, true);
 
         let (tx, rx) = graph.channel_builder()
             .with_capacity(300)
@@ -53,7 +54,9 @@ mod simple_graph_test {
                 async move {
                     let mut tx = tx.lock().await;
                     while context.is_running(&mut || tx.mark_closed()) {
-                        let x = count.fetch_add(1, Ordering::Relaxed);
+                        let x = count.fetch_add(1, Ordering::SeqCst);
+                        info!("attempted sent: {:?}", count.load(Ordering::SeqCst));
+
                         if x >= 10 {
                             context.request_graph_stop();
                             continue;
@@ -80,7 +83,7 @@ mod simple_graph_test {
                     while context.is_running(&mut || rx.is_closed() && rx.is_empty()) {
                         if let Some(_packet) = rx.shared_try_take() {
                             count.fetch_add(1, Ordering::SeqCst);
-                            // info!("received packet: {:?}", _packet);
+                            info!("received: {:?}", count.load(Ordering::SeqCst));
                         }
                     }
                     Ok(())

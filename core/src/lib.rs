@@ -84,7 +84,7 @@ use std::fmt::Debug;
 use std::hash::{Hash};
 use std::sync::Arc;
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex};
 use std::ops::{DerefMut};
 use std::pin::Pin;
@@ -100,7 +100,7 @@ use futures::*;
 use futures::channel::oneshot;
 use futures::select;
 use futures_timer::Delay;
-use futures_util::future::{FusedFuture};
+use futures_util::future::{FusedFuture, select_all};
 use futures_util::lock::MutexGuard;
 use steady_rx::{RxDef};
 use steady_telemetry::SteadyTelemetry;
@@ -198,8 +198,15 @@ impl SteadyContext {
         self.ident.name
     }
 
-    /// Check if the actor's liveliness is in the specified state.
-    pub(crate) fn is_liveliness_in(&self, target: &[GraphLivelinessState], upon_poison: bool) -> bool {
+    /// Checks if the liveliness state matches any of the target states.
+    ///
+    /// # Parameters
+    /// - `target`: A slice of `GraphLivelinessState`.
+    /// - `upon_posion`: The return value if the liveliness state is poisoned.
+    ///
+    /// # Returns
+    /// `true` if the liveliness state matches any target state, otherwise `false`.
+    pub fn is_liveliness_in(&self, target: &[GraphLivelinessState], upon_poison: bool) -> bool {
         match self.runtime_state.read() {
             Ok(liveliness) => liveliness.is_in_state(target),
             Err(e) => {
@@ -207,6 +214,22 @@ impl SteadyContext {
                 upon_poison
             }
         }
+    }
+
+    /// Checks if the actor is part of the graph.
+    ///
+    /// # Returns
+    /// `true` if the monitor is in the graph, otherwise `false`.
+    pub fn is_in_graph(&self) -> bool {
+        self.is_in_graph
+    }
+
+    /// Waits while the actor is running.
+    ///
+    /// # Returns
+    /// A future that resolves to `Ok(())` if the monitor stops, otherwise `Err(())`.
+    pub fn wait_while_running(&self) -> impl Future<Output = Result<(), ()>> {
+        crate::graph_liveliness::WaitWhileRunningFuture::new(self.runtime_state.clone())
     }
 
     /// Update the transmission instance for the given channel.
@@ -227,6 +250,338 @@ impl SteadyContext {
     /// Update the reception instance for the given bundle of channels.
     pub fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
         target.iter_mut().for_each(|rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
+    }
+
+    /// Waits until a specified number of units are available in the Rx channel bundle.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `RxBundle<T>` instance.
+    /// - `avail_count`: The number of units to wait for availability.
+    /// - `ready_channels`: The number of ready channels to wait for.
+    ///
+    /// # Returns
+    /// `true` if the units are available, otherwise `false`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Send` and `Sync`.
+    ///
+    /// # Asynchronous
+    pub async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        T: Send + Sync,
+    {
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+        let futures = this.iter_mut().map(|rx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = rx.shared_wait_avail_units(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let futures: Vec<_> = futures.collect();
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+    /// Waits until a specified number of units are vacant in the Tx channel bundle.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
+    /// - `avail_count`: The number of vacant units to wait for.
+    /// - `ready_channels`: The number of ready channels to wait for.
+    ///
+    /// # Returns
+    /// `true` if the units are vacant, otherwise `false`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Send` and `Sync`.
+    ///
+    /// # Asynchronous
+    pub async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        T: Send + Sync,
+    {
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+
+        let futures = this.iter_mut().map(|tx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = tx.shared_wait_vacant_units(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let futures: Vec<_> = futures.collect();
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+
+    /// Attempts to peek at a slice of messages without removing them from the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance for peeking.
+    /// - `elems`: A mutable slice to store the peeked messages.
+    ///
+    /// # Returns
+    /// The number of messages peeked and stored in `elems`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    pub fn try_peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+    where
+        T: Copy + Hash,
+    {
+        this.shared_try_peek_slice(elems)
+    }
+
+    /// Asynchronously peeks at a slice of messages, waiting for a specified count to be available.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `wait_for_count`: The number of messages to wait for before peeking.
+    /// - `elems`: A mutable slice to store the peeked messages.
+    ///
+    /// # Returns
+    /// The number of messages peeked and stored in `elems`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    ///
+    /// # Asynchronous
+    pub async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
+    where
+        T: Copy + Hash,
+    {
+        this.shared_peek_async_slice(wait_for_count, elems).await
+    }
+
+    /// Retrieves and removes a slice of messages from the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `slice`: A mutable slice where the taken messages will be stored.
+    ///
+    /// # Returns
+    /// The number of messages actually taken and stored in `slice`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    pub fn take_slice<T>(&mut self, this: &mut Rx<T>, slice: &mut [T]) -> usize
+    where
+        T: Copy,
+    {
+        this.shared_take_slice(slice)
+    }
+
+    /// Attempts to peek at the next message in the channel without removing it.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
+    pub fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
+    where
+        T: Hash,
+    {
+        this.shared_try_peek()
+    }
+
+    /// Returns an iterator over the messages currently in the channel without removing them.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
+    pub fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
+        this.shared_try_peek_iter()
+    }
+
+    /// Asynchronously returns an iterator over the messages in the channel,
+    /// waiting for a specified number of messages to be available.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `wait_for_count`: The number of messages to wait for before returning the iterator.
+    ///
+    /// # Returns
+    /// An iterator over the messages in the channel.
+    ///
+    /// # Asynchronous
+    pub async fn peek_async_iter<'a, T>(&'a self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
+        this.shared_peek_async_iter(wait_for_count).await
+    }
+
+    /// Checks if the channel is currently empty.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// `true` if the channel has no messages available, otherwise `false`.
+    pub fn is_empty<T>(&self, this: &mut Rx<T>) -> bool {
+        this.shared_is_empty()
+    }
+
+    /// Returns the number of messages currently available in the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// A `usize` indicating the number of available messages.
+    pub fn avail_units<T>(&self, this: &mut Rx<T>) -> usize {
+        this.shared_avail_units()
+    }
+
+    /// Asynchronously peeks at the next available message in the channel without removing it.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
+    ///
+    /// # Asynchronous
+    pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
+    where
+        T: Hash,
+    {
+        this.shared_peek_async().await
+    }
+    /// Sends a slice of messages to the Tx channel until it is full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `slice`: A slice of messages to be sent.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    pub fn send_slice_until_full<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
+    where
+        T: Copy,
+    {
+        this.shared_send_slice_until_full(slice)
+    }
+
+    /// Sends messages from an iterator to the Tx channel until it is full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `iter`: An iterator that yields messages of type `T`.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
+    pub fn send_iter_until_full<T, I: Iterator<Item = T>>(&mut self, this: &mut Tx<T>, iter: I) -> usize {
+        this.shared_send_iter_until_full(iter)
+    }
+
+    /// Attempts to send a single message to the Tx channel without blocking.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `msg`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
+    pub fn try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T> {
+        this.shared_try_send(msg)
+    }
+
+    /// Checks if the Tx channel is currently full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Returns
+    /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
+    pub fn is_full<T>(&self, this: &mut Tx<T>) -> bool {
+        this.is_full()
+    }
+
+    /// Returns the number of vacant units in the Tx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Returns
+    /// The number of messages that can still be sent before the channel is full.
+    pub fn vacant_units<T>(&self, this: &mut Tx<T>) -> usize {
+        this.shared_vacant_units()
+    }
+
+    /// Asynchronously waits until the Tx channel is empty.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Asynchronous
+    pub async fn wait_empty<T>(&self, this: &mut Tx<T>) -> bool {
+        this.shared_wait_empty().await
+    }
+
+    /// Takes messages into an iterator.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An iterator over the taken messages.
+    pub fn take_into_iter<'a, T: Sync + Send>(& mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a
+    {
+        this.shared_take_into_iter()
+    }
+
+
+    /// Calls an asynchronous function and monitors its execution for telemetry.
+    ///
+    /// # Parameters
+    /// - `f`: The asynchronous function to call.
+    ///
+    /// # Returns
+    /// The output of the asynchronous function `f`.
+    ///
+    /// # Asynchronous
+    pub async fn call_async<F>(&self, operation: F) -> Option<F::Output>
+    where
+        F: Future,
+    {
+        let one_down = &mut self.oneshot_shutdown.lock().await;
+        select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), }
     }
 
     /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
@@ -360,6 +715,16 @@ impl SteadyContext {
     /// # Returns
     /// An `Option<SideChannelResponder>` if the simulation is available, otherwise `None`.
     pub fn edge_simulator(&self) -> Option<SideChannelResponder> {
+        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone()))
+    }
+
+
+    /// Returns a side channel responder if available.
+    ///
+    /// # Returns
+    /// An `Option` containing a `SideChannelResponder` if available.
+    pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
+        // if we have no back channel plane then we cannot simulate the edges
         self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone()))
     }
 
@@ -502,7 +867,7 @@ impl SteadyContext {
             actor_start_time: self.actor_start_time,
             node_tx_rx: self.node_tx_rx.clone(),
             frame_rate_ms: self.frame_rate_ms,
-
+            args: self.args,
             #[cfg(test)]
             test_count: HashMap::new(),
         }
