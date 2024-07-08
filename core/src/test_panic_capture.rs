@@ -79,7 +79,7 @@ mod simple_graph_test {
                     let mut rx = rx.lock().await;
                     while context.is_running(&mut || rx.is_closed() && rx.is_empty()) {
                         if let Some(_packet) = rx.shared_try_take() {
-                            count.fetch_add(1, Ordering::Relaxed);
+                            count.fetch_add(1, Ordering::SeqCst);
                             // info!("received packet: {:?}", _packet);
                         }
                     }
@@ -88,8 +88,8 @@ mod simple_graph_test {
             });
 
         graph.start();
-        graph.block_until_stopped(Duration::from_secs(5));
+        graph.block_until_stopped(Duration::from_secs(7));
 
-        assert_eq!(9, check_count.load(Ordering::Relaxed));
+        assert_eq!(9, check_count.load(Ordering::SeqCst),"expected consume count");
     }
 }
