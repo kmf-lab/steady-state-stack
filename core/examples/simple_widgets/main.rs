@@ -85,7 +85,7 @@ fn build_simple_graph(cli_arg: &Args) -> steady_state::Graph {
 }
 
 fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
-    let mut group = ActorTeam::new();
+    let mut team = ActorTeam::new();
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
@@ -131,27 +131,27 @@ fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
     base_actor_builder.with_name("generator")
         .build_join(move |context| actor::data_generator::run(context
                                                               , change_rx.clone()
-                                                              , generator_tx.clone()), &mut group
+                                                              , generator_tx.clone()), &mut team
         );
 
     base_actor_builder.with_name("approval")
         .build_join(move |context| actor::data_approval::run(context
                                                              , generator_rx.clone()
                                                              , consumer_tx.clone()
-                                                             , failure_tx.clone()), &mut group
+                                                             , failure_tx.clone()), &mut team
         );
 
     base_actor_builder.with_name("feedback")
         .build_join(move |context| actor::data_feedback::run(context
                                                              , failure_rx.clone()
-                                                             , change_tx.clone()), &mut group
+                                                             , change_tx.clone()), &mut team
         );
 
     base_actor_builder.with_name("consumer")
         .build_join(move |context| actor::data_consumer::run(context
-                                                             , consumer_rx.clone()), &mut group
+                                                             , consumer_rx.clone()), &mut team
         );
-    group.spawn();
+    team.spawn();
 
     graph
 }

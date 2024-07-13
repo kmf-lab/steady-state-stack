@@ -99,6 +99,7 @@ parking_lot      = "0.12.2"# TODO: review our lock usage and possible use of par
 # TODO: still in progess, this is for distributed instances across mutiple nodes
 stun-rs   = "0.1.8"
 rustdds   = "0.10.1"
+async-trait = "0.1.81"
 
 # use rustdds::serialization::CDRSerializerAdapter; # we must remain ROS2 compatible
 #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"

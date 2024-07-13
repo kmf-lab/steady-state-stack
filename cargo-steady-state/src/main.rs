@@ -48,36 +48,7 @@ fn main() {
 }
 
 fn process_dot_file(dotfile: &str, name: &str) {
-    //before we parse the dot string we must remove all comments
-    //we will remove all text starting with // up to the end of the line
-    let temp_file = if let Ok(g) = fs::read_to_string(dotfile) {
-          let dot = g.lines()
-              .map(|line| {
-                  if let Some(pos) = line.find("//") {
-                      &line[0..pos]
-                  } else {
-                      line
-                  }
-              })
-              .collect::<Vec<&str>>()
-              .join("\n");
-          //write new temp dot
-            let temp_dot = format!("{}.temp", dotfile);
-            fs::write(&temp_dot, dot).expect("Failed to write temp dot file");
-          temp_dot
-      } else {
-          error!("Failed to read dot file: {}", dotfile);
-          return;
-      };
-
-// let x = ast::Graph::from_file(&opt.dotfile);
-//
-    //
-   // match ast::Graph::read_dot(&dot) {
-
-  //  println!("filename {:?}", dotfile);
-
-    match ast::Graph::from_file(temp_file) {
+    match ast::Graph::from_file(dotfile) {
         Ok(ast) => {
             //Dot is clean now try to build the folders
             ///////////
