@@ -57,6 +57,7 @@ pub mod steady_tx;
     /// module for all rx channel features
 pub mod steady_rx;
 
+
 pub use graph_testing::GraphTestResult;
 pub use monitor::LocalMonitor;
 pub use channel_builder::Rate;
@@ -81,7 +82,6 @@ use std::time::{Duration, Instant};
 #[cfg(test)]
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::hash::{Hash};
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -359,7 +359,7 @@ impl SteadyContext {
     /// - `T`: Must implement `Copy`.
     pub fn try_peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
     where
-        T: Copy + Hash,
+        T: Copy
     {
         this.shared_try_peek_slice(elems)
     }
@@ -380,7 +380,7 @@ impl SteadyContext {
     /// # Asynchronous
     pub async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
     where
-        T: Copy + Hash,
+        T: Copy
     {
         this.shared_peek_async_slice(wait_for_count, elems).await
     }
@@ -411,9 +411,8 @@ impl SteadyContext {
     /// # Returns
     /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
     pub fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
-    where
-        T: Hash,
     {
+
         this.shared_try_peek()
     }
 
@@ -475,9 +474,8 @@ impl SteadyContext {
     ///
     /// # Asynchronous
     pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
-    where
-        T: Hash,
     {
+
         this.shared_peek_async().await
     }
     /// Sends a slice of messages to the Tx channel until it is full.

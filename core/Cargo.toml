@@ -1,8 +1,8 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.18" # prep for 0.1.0 version
-documentation = "https://docs.rs/steady_state/0.0.18/steady_state/"
-               #"https://docs.rs/crate/steady_state/0.0.18"  #debugging
+version = "0.0.19" # prep for 0.1.0 version
+documentation = "https://docs.rs/steady_state/0.0.19/steady_state/"
+               #"https://docs.rs/crate/steady_state/0.0.19"  #debugging
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2021"
 description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
@@ -153,7 +153,21 @@ isahc            = "1.7.2"
 askama           = "0.12.1"
 
 
+[[example]]
+name = "simple_widgets"
+path = "examples/simple_widgets/main.rs"
 
+[[example]]
+name = "large_scale"
+path = "examples/large_scale/main.rs"
+
+[[example]]
+name = "high_performance"
+path = "examples/high_performance/main.rs"
+
+[[example]]
+name = "high_durability"
+path = "examples/high_durability/main.rs"
 
 [dev-dependencies]
 async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only,

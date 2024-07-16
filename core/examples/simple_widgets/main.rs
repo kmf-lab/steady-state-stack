@@ -81,7 +81,8 @@ fn main() {
 fn build_simple_graph(cli_arg: &Args) -> steady_state::Graph {
     debug!("args: {:?}",&cli_arg);
 
-    build_simple_widgets_graph(Graph::new(cli_arg.clone()))
+    let graph = Graph::new(cli_arg.clone());
+   build_simple_widgets_graph(graph)
 }
 
 fn build_simple_widgets_graph(mut graph: Graph) -> Graph {

@@ -21,7 +21,7 @@ pub async fn run(context: SteadyContext
     let count = rx.capacity().min(tx.capacity()) /2;
 
 
-    while monitor.is_running(&mut || rx.is_closed() && rx.is_empty() && tx.mark_closed()){
+    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()){
 
         let _clean = wait_for_all_or_proceed_upon!(
              monitor.wait_periodic(Duration::from_millis(20))

@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use log::{error, warn};
 use futures_util::{FutureExt, select};
 use std::any::type_name;
+use std::backtrace::Backtrace;
 use std::time::Instant;
 use futures::channel::oneshot;
 use futures_util::lock::{MutexLockFuture};
@@ -352,7 +353,10 @@ impl<T> TxDef for SteadyTx<T> {
                 return TxMetaData(guard.deref().channel_meta_data.clone());
             }
             std::thread::yield_now();
-            error!("got stuck");
+            let backtrace = Backtrace::capture();
+            eprintln!("{:?}",backtrace);
+
+            error!("got stuck on meta_data, unable to get lock on ChannelMetaData");
         }
     }
 }

@@ -28,7 +28,7 @@ pub async fn run(context: SteadyContext
     let mut rx = rx.lock().await;
 
 
-    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()  ) {
+    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()  ) {
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
@@ -52,7 +52,7 @@ pub async fn run(context: SteadyContext
     let mut tx = tx.lock().await;
     let mut rx = rx.lock().await;
 
-    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()  ) {
+    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()  ) {
 
         iterate_once( &mut monitor
                          , &mut rx

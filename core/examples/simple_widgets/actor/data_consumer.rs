@@ -39,7 +39,7 @@ pub async fn run(context: SteadyContext
 
 
     //predicate which affirms or denies the shutdown request
-    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() ) {
+    while monitor.is_running(&mut || rx.is_closed_and_empty() ) {
 
         let _clean = wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
            //single pass of work, in this high volume example we stay in iterate_once as long
@@ -100,7 +100,7 @@ pub async fn run(context: SteadyContext
 
     let mut rx = rx.lock().await;
 
-    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed()) {
+    while monitor.is_running(&mut || rx.is_closed_and_empty()) {
 
         wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
 

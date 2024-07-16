@@ -160,7 +160,7 @@ pub(crate) fn build_optional_telemetry_graph(graph: &mut Graph) {
             .with_avg_work();
 
         bldr.with_name(metrics_server::NAME).build_spawn(move |context| {
-            telemetry::metrics_server::run(context, rx.clone())
+            metrics_server::run(context, rx.clone())
         });
 
         let all_tel_rx = graph.all_telemetry_rx.clone();
@@ -220,10 +220,9 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                             GraphLivelinessState::StoppedUncleanly,
                                         ]) {
                                             error!(
-                                                "{:?} EXIT hard delay on actor status: scale {} empty {} of {}",
+                                                "{:?} EXIT hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector has died and is not consuming messages",
                                                 this.ident, scale, vacant_units, capacity
                                             );
-                                            error!("assume metrics_collector has died and is not consuming messages");
                                             std::process::exit(-1);
                                         }
                                     }

@@ -720,8 +720,8 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
     pub fn try_peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
-        where
-            T: Copy + Hash,
+    where
+        T: Copy
     {
         this.shared_try_peek_slice(elems)
     }
@@ -741,8 +741,8 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Asynchronous
     pub async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
-        where
-            T: Copy + Hash,
+    where
+        T: Copy
     {
         this.shared_peek_async_slice(wait_for_count, elems).await
     }
@@ -805,8 +805,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Returns
     /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
     pub fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
-        where
-            T: Hash,
     {
         this.shared_try_peek()
     }
@@ -905,8 +903,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Asynchronous
     pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
-        where
-            T: Hash,
     {
         let _guard = self.start_profile(CALL_OTHER);
         this.shared_peek_async().await

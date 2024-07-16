@@ -28,7 +28,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     //let count = rx.capacity().clone()/4;
     //let _tx_girth = tx.len();
 
-    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()   ) {
+    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()   ) {
 
         wait_for_all_or_proceed_upon!(
             monitor.wait_periodic(Duration::from_millis(40)),

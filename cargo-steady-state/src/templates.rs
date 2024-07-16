@@ -57,7 +57,7 @@ pub(crate) enum ActorDriver {
     Other(Vec<String>),
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum ConsumePattern {
     PeekCopy, //do work on peek copy for greater durability
     TakeCopy, //take using copy for faster slice processing

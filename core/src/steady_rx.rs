@@ -166,16 +166,18 @@ impl <T> Rx<T> {
     #[inline]
     pub(crate) fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
         where T: Copy {
-        let mut last_index = 0;
+        let mut count = 0;
+        let c = self.rx.occupied_len();
+
         for (i, e) in self.rx.iter().enumerate() {
             if i < elems.len() {
                 elems[i] = *e; // Assuming e is a reference and needs dereferencing
-                last_index = i;
+                count += 1;
             } else {
                 break;
             }
         }
-        let count = last_index + 1;
+        assert!(self.rx.occupied_len() >= c); //confirm we took nothing.
 
         if count > 0 {
             let take_count = self.take_count.load(Ordering::Relaxed);
@@ -269,6 +271,22 @@ impl<T> Rx<T> {
         }
     }
 
+
+    /// Checks if the channel is closed.
+    ///
+    /// # Returns
+    /// `true` if the channel is closed, otherwise `false`.
+    pub fn is_closed_and_empty(&mut self) -> bool {
+        if self.is_closed.is_terminated() {
+            self.shared_is_empty()
+        } else {
+            let waker = task::noop_waker();
+            let mut context = task::Context::from_waker(&waker);
+            self.is_closed.poll_unpin(&mut context).is_ready()
+        }
+    }
+
+
     /// Checks if the channel is closed.
     ///
     /// # Returns
@@ -283,18 +301,6 @@ impl<T> Rx<T> {
         }
     }
 
-    /// Returns the total capacity of the channel.
-    ///
-    /// # Returns
-    /// A `usize` indicating the total capacity of the channel.
-    ///
-    /// # Example Usage
-    /// Useful for initial configuration and monitoring of channel capacity to ensure it aligns with expected load.
-    pub fn capacity(&self) -> usize {
-        self.shared_capacity()
-    }
-
-
 
     /// Checks if the channel is currently empty.
     ///
@@ -306,6 +312,18 @@ impl<T> Rx<T> {
     pub fn is_empty(&self) -> bool {
         self.shared_is_empty()
     }
+
+    /// Returns the total capacity of the channel.
+    ///
+    /// # Returns
+    /// A `usize` indicating the total capacity of the channel.
+    ///
+    /// # Example Usage
+    /// Useful for initial configuration and monitoring of channel capacity to ensure it aligns with expected load.
+    pub fn capacity(&self) -> usize {
+        self.shared_capacity()
+    }
+
 
     /// Returns the number of messages currently available in the channel.
     ///
@@ -583,12 +601,27 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
 
 /// Trait defining the required methods for a receiver bundle.
 pub trait RxBundleTrait {
+
+    /// Checks if all receivers in the bundle are closed and empty.
+    /// This is the preferred method for shutdown checks in the is_running method
+    ///
+    /// # Returns
+    /// `true` if all receivers are closed, otherwise `false`.
+    fn is_closed_and_empty(&mut self) -> bool;
+
     /// Checks if all receivers in the bundle are closed.
     ///
     /// # Returns
     /// `true` if all receivers are closed, otherwise `false`.
     fn is_closed(&mut self) -> bool;
 
+    /// Checks if all receivers in the bundle are empty. (avoid)
+    /// This may not work since we just attempted to re-define is_empty on a vector of receivers
+    /// To solve this please use the preferred is_closed_and_empty method for clarity
+    ///
+    /// # Returns
+    /// `true` if all receivers are empty, otherwise `false`.
+    fn is_empty(&mut self) -> bool;
     /// Checks if the Tx instance has changed for any receiver in the bundle.
     ///
     /// # Returns
@@ -600,8 +633,18 @@ pub trait RxBundleTrait {
 }
 
 impl<T> RxBundleTrait for RxBundle<'_, T> {
+
+    fn is_closed_and_empty(&mut self) -> bool {
+        self.iter_mut().all(|f| f.is_closed() && f.is_empty())
+    }
+
     fn is_closed(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed())
+    }
+
+    //probably not something you can normally reach
+    fn is_empty(&mut self) -> bool {
+        self.iter_mut().all(|f| f.is_empty())
     }
 
     fn tx_instance_changed(&mut self) -> bool {

@@ -87,7 +87,7 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
  {%- endfor %}
 
     while monitor.is_running(&mut ||{%- for channel in rx_channels %}
-    {{channel[0].name}}_rx.is_empty() && {{channel[0].name}}_rx.is_closed()
+    {{channel[0].name}}_rx.is_closed_and_empty()
     {%- if loop.last %}{% else %} && {% endif -%}
  {% endfor %}{%- for channel in tx_channels %}
     {%- if loop.first && !rx_channels.is_empty() %} && {% else %}{% endif -%}

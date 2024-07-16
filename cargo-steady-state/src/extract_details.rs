@@ -81,8 +81,8 @@ fn extract_module_name(node_id: &str, label_text: &str) -> String {
     let module_prefix = "mod::";
     if let Some(start) = label_text.find(module_prefix) {
         let remaining = &label_text[start + module_prefix.len()..];
-        // Find the first occurrence of either a comma or a whitespace character
-        if let Some(end) = remaining.find(|c: char| c == ',' || c.is_whitespace()) {
+        // Find the first occurrence of either a comma or a whitespace character or escape \n etc
+        if let Some(end) = remaining.find(|c: char| c == ',' || c.is_whitespace() || c == '\\') {
             remaining[..end].to_string()
         } else {
             remaining.to_string()

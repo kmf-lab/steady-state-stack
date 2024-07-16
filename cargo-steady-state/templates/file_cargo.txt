@@ -6,11 +6,11 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-# steady_state     = { path = "../../../core", features = ["proactor_nuclei", "prometheus_metrics"], default-features = false }
+steady_state     = { path = "../../../core", features = ["proactor_nuclei", "prometheus_metrics"], default-features = false }
 
-steady_state     = "0.0.18"
+# steady_state     = "0.0.19"
 structopt        = "0.3.26"
 structopt-derive = "0.4.18"
-flexi_logger     = "0.27.4"
+flexi_logger     = "0.28.5"
 log              = "0.4.21"
 futures          = "0.3.30"

@@ -9,7 +9,7 @@ use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
 use std::process::exit;
-use log::{error, log_enabled, warn};
+use log::{error, info, log_enabled, warn};
 use std::any::Any;
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::future::Future;
@@ -480,7 +480,7 @@ impl Graph {
             Ok(mut state) => {
                 // error!("to running");
                 state.building_to_running();
-                // error!("we are now running");
+                info!("we are now running");
                 let v = self.oneshot_startup_vec.clone();
                 abstract_executor::block_on(async move {
                     let mut one_shots: MutexGuard<Vec<Sender<_>>> = v.lock().await;

@@ -26,7 +26,7 @@ use log::*;
 use async_ringbuf::traits::Split;
 //# use ringbuf::storage::Heap;
 use crate::{abstract_executor, AlertColor, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
-use crate::actor_builder::Percentile;
+use crate::actor_builder::{ActorTeam, Percentile};
 use crate::monitor::ChannelMetaData;
 //# use ringbuf::storage::Heap;
 use crate::steady_rx::{Rx};
@@ -547,6 +547,11 @@ impl ChannelBuilder {
             connects_sidecar: self.connects_sidecar,
 
         }
+    }
+
+    pub fn with_team(&self, actor_team: &ActorTeam) {
+        //actor_team.
+        //TODO: precreate thread and do our build on it
     }
 
     /// Finalizes the channel configuration and creates the channel with the specified settings.

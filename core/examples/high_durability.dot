@@ -1,0 +1,18 @@
+digraph DurableReliableTickSystem {
+
+    TickGenerator [label="Generates ticks\nmod::tick_generator AtLeastEvery(1ms)"];
+    FinalConsumer [label="Outputs total tick count and records per second\nmod::final_consumer AtLeastEvery(1sec) && OnEvent(tick_counts:1)"];
+
+    TickConsumer1 [label="Consumes ticks and sends total count periodically\nmod::tick_consumer AtLeastEvery(1sec)"];
+    TickConsumer2 [label="Consumes ticks and sends total count periodically\nmod::tick_consumer AtLeastEvery(1sec)"];
+    TickConsumer3 [label="Consumes ticks and sends total count periodically\nmod::tick_consumer AtLeastEvery(1sec)"];
+
+    TickGenerator -> TickConsumer1 [label="name::ticks <Tick> >>PeekCopy #1000"];
+    TickGenerator -> TickConsumer2 [label="name::ticks <Tick> >>PeekCopy #1000"];
+    TickGenerator -> TickConsumer3 [label="name::ticks <Tick> >>PeekCopy #1000"];
+
+    TickConsumer1 -> FinalConsumer [label="name::tick_counts <TickCount> >>TakeCopy #100"];
+    TickConsumer2 -> FinalConsumer [label="name::tick_counts <TickCount> >>TakeCopy #100"];
+    TickConsumer3 -> FinalConsumer [label="name::tick_counts <TickCount> >>TakeCopy #100"];
+}
+

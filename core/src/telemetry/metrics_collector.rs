@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::error::Error;
 use std::ops::{Deref, DerefMut};
-
+use std::process::exit;
 use std::sync::{Arc, LockResult};
 use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
@@ -18,11 +18,13 @@ use futures_timer::Delay;
 use futures_util::{select, StreamExt};
 use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
-
+use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
+use crate::GraphLivelinessState::{Building, Running};
 use crate::steady_rx::RxDef;
 use crate::steady_tx::{SteadyTxBundleTrait, Tx, TxBundleTrait};
 use crate::telemetry::metrics_collector;
+use crate::wait_for_all;
 
 pub const NAME: &str = "metrics_collector";
 
@@ -77,11 +79,15 @@ pub(crate) async fn run<const GIRTH: usize>(
 ) -> Result<(), Box<dyn Error>> {
     let ident = context.identity();
 
+
     let ctrl = context;
     #[cfg(all(feature = "telemetry_on_telemetry", any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
         let mut ctrl = {
+        info!("should not happen");
+
         into_monitor!(ctrl, [], optional_servers)
     };
+
 
     let mut state = RawDiagramState::default();
     let mut all_actors_to_scan: Option<Vec<Box<dyn RxDef>>> = None;
@@ -92,7 +98,10 @@ pub(crate) async fn run<const GIRTH: usize>(
     let mut rebuild_scan_requested: bool = false;
     let mut is_shutting_down = false;
 
+
+
     loop {
+
         let confirm_shutdown = &mut || {
             is_shutting_down = true;
             is_all_empty_and_closed(dynamic_senders_vec.read())
@@ -101,17 +110,23 @@ pub(crate) async fn run<const GIRTH: usize>(
 
         #[cfg(feature = "telemetry_on_telemetry")]
         ctrl.relay_stats_smartly();
-
+        //  ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed())
+        //let _clean = wait_for_all!(ctrl.wait_vacant_units(&mut tick_counts_tx,1)  ).await;
         if !ctrl.is_running(confirm_shutdown) {
             break;
         }
         let instance_id = ctrl.instance_id;
 
+        //warn!("all actors to scan {:?}",all_actors_to_scan);
+
         if all_actors_to_scan.is_none() || rebuild_scan_requested {
             all_actors_to_scan = gather_valid_actor_telemetry_to_scan(instance_id, &dynamic_senders_vec);
+
+
             timelords = None;
             rebuild_scan_requested = false;
         }
+
 
         if let Some(ref scan) = all_actors_to_scan {
             let mut futures_unordered = FuturesUnordered::new();
@@ -142,6 +157,7 @@ pub(crate) async fn run<const GIRTH: usize>(
             yield_now().await;
         }
 
+
         let (nodes, to_pop) = {
             match dynamic_senders_vec.read() {
                 Ok(guard) => {
@@ -153,9 +169,17 @@ pub(crate) async fn run<const GIRTH: usize>(
                     } else {
                         all_actors_to_scan = None;
                         rebuild_scan_requested = true;
+
+
                         if let Some(n) = gather_node_details(&mut state, dynamic_senders) {
                             (Some(n), collect_channel_data(&mut state, dynamic_senders))
                         } else {
+                            //TODO: find  a way to dect this..
+                            info!("is building {}",ctrl.is_liveliness_in( &[Building] , true));
+                            info!("is running {}",ctrl.is_liveliness_in( &[Running] , true));
+
+
+
                             (None, Vec::new())
                         }
                     }
@@ -184,13 +208,15 @@ pub(crate) async fn run<const GIRTH: usize>(
             }
         }
 
+
         if let Some(nodes) = nodes {
             send_structure_details(ident, &mut locked_servers, nodes).await;
         }
         let warn = !is_shutting_down && steady_config::TELEMETRY_SERVER;
-        send_data_details(ident, &mut locked_servers, &state, warn).await;
-
-        state.sequence += 1;
+        let next_frame = send_data_details(ident, &mut locked_servers, &state, warn).await;
+        if next_frame {
+            state.sequence += 1;
+        }
     }
     Ok(())
 }
@@ -316,7 +342,36 @@ fn gather_node_details(
         });
     });
 
+
     if !matches.iter().all(|x| *x == 3 || *x == 0) {
+       //NOTE: on startup it may be possible to get a false positive here, not proven yet
+        //    if so add support to wait for the second failure before reporting.
+        //    better approach is we need a flag to tell us everything is up and running.
+        matches.iter()
+               .enumerate()
+               .filter(|(_, x)| **x != 3 && **x != 0)
+               .for_each(|(i, x)| {
+
+                  dynamic_senders.iter().for_each(|sender| {
+                      sender.telemetry_take.iter().for_each(|f| {
+
+                          if x.is_one() {
+                              f.rx_channel_id_vec().iter().for_each(|meta| {
+                                  if meta.id == i {
+                                      warn!("Missing TX for actor {:?} RX {:?}  Channel:{:?} ", sender.ident, meta.show_type, i);
+                                  }
+                              });
+                          } else {
+                              f.tx_channel_id_vec().iter().for_each(|meta| {
+                                  if meta.id == i {
+                                      warn!("Missing RX for actor {:?} TX {:?} Channel:{:?} ", sender.ident, meta.show_type, i );
+                                  }
+                              });
+                          }
+                      });
+                  });
+        });
+       // Do not launch if any error is found instead try again.
         return None;
     }
 
@@ -373,27 +428,34 @@ async fn send_data_details(
     consumer_vec: &mut [MutexGuard<'_, Tx<DiagramData>>],
     state: &RawDiagramState,
     warn: bool,
-) {
+) -> bool {
+    let mut next_frame = false;
     for consumer in consumer_vec.iter_mut() {
+
         if consumer.vacant_units().ge(&2) {
-            if let Err(e) = consumer.shared_send_async(
+
+            //do not write if we have no actors
+            if !state.actor_status.is_empty() {
+                next_frame = true; //only increase frame when we have real actors in play
+                if let Err(e) = consumer.shared_send_async(
                     DiagramData::NodeProcessData(state.sequence, state.actor_status.clone().into_boxed_slice()),
                     ident,
                     SendSaturation::IgnoreInRelease,
                 )
-                .await
-            {
-             error!("error sending node process data {:?}", e);
-            }
+                    .await
+                {
+                    error!("error sending node process data {:?}", e);
+                }
 
-            if let Err(e) = consumer.shared_send_async(
+                if let Err(e) = consumer.shared_send_async(
                     DiagramData::ChannelVolumeData(state.sequence, state.total_take_send.clone().into_boxed_slice()),
                     ident,
                     SendSaturation::IgnoreInRelease,
                 )
-                .await
-            {
-             error!("error sending node process data {:?}", e);
+                    .await
+                {
+                    error!("error sending node process data {:?}", e);
+                }
             }
 
         } else if warn {
@@ -402,8 +464,11 @@ async fn send_data_details(
                 "{:?} is accumulating frames since consumer is not keeping up, perhaps capacity of {:?} may need to be increased.",
                 ident, consumer.capacity()
             );
+
         }
+
     }
+    next_frame
 }
 
 /// Details of the telemetry collector.

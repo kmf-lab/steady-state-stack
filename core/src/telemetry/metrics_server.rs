@@ -33,7 +33,7 @@ struct State {
 pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> std::result::Result<(), Box<dyn Error>> {
     let ctrl = context;
     #[cfg(feature = "telemetry_on_telemetry")]
-        let mut ctrl = into_monitor!(ctrl, [rx], []);
+    let mut ctrl = into_monitor!(ctrl, [rx], []);
 
     let mut rxg = rx.lock().await;
     let mut metrics_state = MetricState::default();
@@ -53,43 +53,49 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
 
     let mut history = FrameHistory::new(ctrl.frame_rate_ms);
 
+    let addr = format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port());
+
+    let (tcp_sender_tx, tcp_receiver_tx) = oneshot::channel();
+    let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
+
+    //TODO: this hack spawn block will go to spawn_local after nuclei is fixed.
+    // if I use spawn_local this blocks all other work on my thread but I am not sure why.
+    let state2 = state.clone();
+    nuclei::spawn(async move {
+        let listener_new = Handle::<TcpListener>::bind(addr).expect("Unable to Bind"); //TODO: need better error.
+        #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
+        println!("Telemetry on http://{}", listener_new.get_ref().local_addr().expect("Unable to read local address"));
+
+        #[cfg(feature = "prometheus_metrics")]
+        println!("Prometheus can scrape on on http://{}/metrics", listener_new.get_ref().local_addr().expect("Unable to read local address"));
+
+        //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
+        //      for per/second metrics and many telemetry observers with slower refresh rates
+        loop {
+            let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
+            select! {  _ = shutdown.deref_mut() => {  break;  },
+                          result = listener_new.accept().fuse() => {
+                         match result {
+                            Ok((stream, _peer_addr)) => {
+                                let _ = handle_request(stream,state2.clone()).await;
+                            }
+                            Err(e) => {
+                                error!("Error accepting connection: {}",e);
+                            }
+                        }
+                    } };
+        }
+    }).detach();
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
-        #[cfg(feature = "telemetry_on_telemetry")]
-        ctrl.relay_stats_smartly();
 
-        let addr = format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port());
+        let _clean = wait_for_all!(
+                                    ctrl.wait_avail_units(&mut rxg,1)
+                                  ).await;
 
-        //TODO: this hack spawn block will go to spawn_local after nuclei is fixed.
-        // //if I use spawn_local this blocks all other work on my thread but I am not sure why.
-        let state2 = state.clone();
-        nuclei::spawn(async move {
-            let listener_new = Handle::<TcpListener>::bind(addr).expect("Unable to Bind"); //TODO: need better error.
-
-            #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
-            println!("Telemetry on http://{}", listener_new.get_ref().local_addr().expect("ss"));
-
-            #[cfg(feature = "prometheus_metrics")]
-            println!("Prometheus can scrape on on http://{}/metrics", listener_new.get_ref().local_addr().expect("ss"));
-
-            //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
-            //      for per/second metrics and many telemetry observers with slower refresh rates
-            loop {
-                    match listener_new.accept().await {
-                        Ok((stream, _peer_addr)) => {
-                            let _ = handle_request(stream,state2.clone()).await;
-                        }
-                        Err(e) => {
-                            error!("Error accepting connection: {}",e);
-                        }
-                    };
-            }
-        }).detach();
-
-        while let Some(msg) = ctrl.take_async(&mut rxg).await {
+        if let Some(msg) = ctrl.try_take(&mut rxg) {
             let rate = ctrl.frame_rate_ms;
             let flush = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped], true);
-
             process_msg(msg
                         , &mut metrics_state
                         , &mut history
@@ -99,12 +105,18 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
                         , &rxg
                         , rankdir
                         , state.clone()).await;
-
             #[cfg(feature = "telemetry_on_telemetry")]
             ctrl.relay_stats_smartly();
         }
 
+        #[cfg(feature = "telemetry_on_telemetry")]
+        ctrl.relay_stats_smartly();
+
     }
+
+    tcp_sender_tx.send(());
+
+
     Ok(())
 }
 

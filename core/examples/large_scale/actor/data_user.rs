@@ -16,7 +16,7 @@ pub async fn run(context: SteadyContext
     let mut rx = rx.lock().await;
     let mut _count = 0;
 
-    while monitor.is_running(&mut || rx.is_closed() && rx.is_closed()) {
+    while monitor.is_running(&mut || rx.is_closed_and_empty()) {
 
         wait_for_all!(monitor.wait_avail_units(&mut rx, 1)).await;
 

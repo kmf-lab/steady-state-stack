@@ -26,7 +26,7 @@ pub async fn run(context: SteadyContext
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    while monitor.is_running(&mut || rx.is_empty() && rx.is_closed() && tx.mark_closed()) {
+    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
         //single pass of work, do not loop in here
         iterate_once( &mut monitor
