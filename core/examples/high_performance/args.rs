@@ -20,7 +20,7 @@ pub struct Args {
 }
 
 impl Args {
-    pub(crate) fn to_cli_string(&self, app: &str) -> String {
+    pub(crate) fn _to_cli_string(&self, app: &str) -> String {
         format!("{} --loglevel={}" //NOTE: add other args here as needed
                 , app
                 , self.loglevel

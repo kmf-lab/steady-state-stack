@@ -62,6 +62,8 @@ pub use graph_testing::GraphTestResult;
 pub use monitor::LocalMonitor;
 pub use channel_builder::Rate;
 pub use channel_builder::Filled;
+pub use channel_builder::LazySteadyRx;
+pub use channel_builder::LazySteadyTx;
 pub use actor_builder::MCPU;
 pub use actor_builder::Work;
 pub use actor_builder::Percentile;
@@ -117,6 +119,11 @@ pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 /// This type alias simplifies the usage of a bundle of transmitters that can be shared across multiple threads.
 pub type SteadyTxBundle<T, const GIRTH: usize> = Arc<[SteadyTx<T>; GIRTH]>;
 
+/// Type alias for an array of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
+///
+/// This type alias simplifies the usage of a bundle of transmitters that can be shared across multiple threads.
+pub type LazySteadyTxBundle<T, const GIRTH: usize> = [LazySteadyTx<T>; GIRTH];
+
 /// Type alias for a thread-safe receiver (Rx) wrapped in an `Arc` and `Mutex`.
 ///
 /// This type alias simplifies the usage of a receiver that can be shared across multiple threads.
@@ -127,6 +134,11 @@ pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
 /// This type alias simplifies the usage of a bundle of receivers that can be shared across multiple threads.
 pub type SteadyRxBundle<T, const GIRTH: usize> = Arc<[SteadyRx<T>; GIRTH]>;
 
+/// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
+///
+/// This type alias simplifies the usage of a bundle of receivers that can be shared across multiple threads.
+pub type LazySteadyRxBundle<T, const GIRTH: usize> = [LazySteadyRx<T>; GIRTH];
+
 /// Type alias for a vector of `MutexGuard` references to transmitters (Tx).
 ///
 /// This type alias simplifies the usage of a collection of transmitter guards for batch operations.
@@ -136,6 +148,38 @@ pub type TxBundle<'a, T> = Vec<MutexGuard<'a, Tx<T>>>;
 ///
 /// This type alias simplifies the usage of a collection of receiver guards for batch operations.
 pub type RxBundle<'a, T> = Vec<MutexGuard<'a, Rx<T>>>;
+
+pub trait LazySteadyTxBundleClone<T, const GIRTH: usize> {
+    fn clone(&self) -> SteadyTxBundle<T, GIRTH>;
+}
+
+impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBundle<T, GIRTH> {
+    fn clone(&self) -> SteadyTxBundle<T, GIRTH> {
+        let mut tx_clones:Vec<SteadyTx<T>> = self.iter().map(|l|l.clone()).collect();
+        match tx_clones.try_into() {
+            Ok(array) => steady_tx_bundle(array),
+            Err(e) => {
+                panic!("Internal error, bad length");
+            }
+        }
+    }
+}
+
+pub trait LazySteadyRxBundleClone<T, const GIRTH: usize> {
+    fn clone(&self) -> SteadyRxBundle<T, GIRTH>;
+}
+
+impl<T, const GIRTH: usize> crate::LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBundle<T, GIRTH> {
+    fn clone(&self) -> SteadyRxBundle<T, GIRTH> {
+        let mut rx_clones:Vec<SteadyRx<T>> = self.iter().map(|l|l.clone()).collect();
+        match rx_clones.try_into() {
+            Ok(array) => steady_rx_bundle(array),
+            Err(e) => {
+                panic!("Internal error, bad length");
+            }
+        }
+    }
+}
 
 /// Creates a bundle of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
 ///
@@ -150,6 +194,19 @@ pub fn steady_tx_bundle<T, const GIRTH: usize>(internal_array: [SteadyTx<T>; GIR
     Arc::new(internal_array)
 }
 
+/// Creates a bundle of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
+///
+/// This function takes an array of transmitters and wraps it in an `Arc` for shared ownership.
+///
+/// # Parameters
+/// - `internal_array`: An array of `SteadyTx<T>` with a fixed size (GIRTH).
+///
+/// # Returns
+/// - `SteadyTxBundle<T, GIRTH>`: A bundle of transmitters wrapped in an `Arc`.
+// pub fn steady_tx_lazy_bundle<T, const GIRTH: usize>(internal_array: [LazySteadyTx<T>; GIRTH]) -> LazySteadyTxBundle<T, GIRTH> {
+//     internal_array
+// }
+
 /// Creates a bundle of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
 ///
 /// This function takes an array of receivers and wraps it in an `Arc` for shared ownership.
@@ -162,6 +219,19 @@ pub fn steady_tx_bundle<T, const GIRTH: usize>(internal_array: [SteadyTx<T>; GIR
 pub fn steady_rx_bundle<T, const GIRTH: usize>(internal_array: [SteadyRx<T>; GIRTH]) -> SteadyRxBundle<T, GIRTH> {
     Arc::new(internal_array)
 }
+
+/// Creates a bundle of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
+///
+/// This function takes an array of receivers and wraps it in an `Arc` for shared ownership.
+///
+/// # Parameters
+/// - `internal_array`: An array of `SteadyRx<T>` with a fixed size (GIRTH).
+///
+/// # Returns
+/// - `SteadyRxBundle<T, GIRTH>`: A bundle of receivers wrapped in an `Arc`.
+// pub fn steady_rx_lazy_bundle<T, const GIRTH: usize>(internal_array: [LazySteadyRx<T>; GIRTH]) -> LazySteadyRxBundle<T, GIRTH> {
+//     internal_array
+// }
 
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.

@@ -7,7 +7,7 @@ use std::error::Error;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicU32, AtomicUsize};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use core::default::Default;
 use std::collections::VecDeque;
@@ -108,16 +108,21 @@ impl ActorTeam {
         }
     }
 
-    /// Spawns all actors in the team, returning the count of actors spawned.
     pub fn spawn(mut self) -> usize {
+        let count = Arc::new(AtomicUsize::new(0));
         if self.future_builder.is_empty() {
             return 0; // Nothing to spawn, so return
         }
 
-        let count = self.future_builder.len();
+        let (local_send, local_take) = oneshot::channel();
+
         let super_task = {
+            let count = count.clone();
             async move {
-                let mut actor_future_vec = Vec::with_capacity(count);
+                count.store(self.future_builder.len(),Ordering::SeqCst);
+                let _ = local_send.send(()); //may now return we have count and started
+
+                let mut actor_future_vec = Vec::with_capacity(self.future_builder.len());
 
                 for f in &mut self.future_builder {
                     let (future, _drive_io) = f();
@@ -166,8 +171,12 @@ impl ActorTeam {
             }
         };
         abstract_executor::spawn_detached(super_task);
-        count
+        //only continue after startup has finished
+        let _ = nuclei::block_on(local_take);
+        count.load(Ordering::SeqCst)
     }
+
+
 }
 
 /// WARNING: do not rename this function without change of backtrace printing since we use this as a "stop" to shorten traces.

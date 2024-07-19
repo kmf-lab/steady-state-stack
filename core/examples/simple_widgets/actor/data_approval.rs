@@ -107,6 +107,12 @@ mod tests {
         let (tx_in, rx_in) = graph.channel_builder().with_capacity(8).build();
         let (tx_out, rx_out) = graph.channel_builder().with_capacity(8).build();
         let (tx_feedback, _rx_feedback) = graph.channel_builder().with_capacity(8).build();
+        let tx_in = tx_in.clone();
+        let rx_in = rx_in.clone();
+        let tx_out = tx_out.clone();
+        let rx_out = rx_out.clone();
+        let tx_feedback = tx_feedback.clone();
+
 
         let mock_monitor = graph.new_test_monitor("approval_monitor");
         let mut mock_monitor = mock_monitor.into_monitor([], []);

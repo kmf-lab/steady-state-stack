@@ -54,8 +54,9 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         } else {
             let (telemetry_send_rx, telemetry_take_rx) = channel_builder.build();
             (
-                Some(SteadyTelemetrySend::new(telemetry_send_rx, [0; RX_LEN], rx_inverse_local_idx, start_now)),
-                Some(SteadyTelemetryTake { rx: telemetry_take_rx, details: rx_meta_data }),
+                //TODO: perhaps we should have LazySend...
+                Some(SteadyTelemetrySend::new(telemetry_send_rx.clone(), [0; RX_LEN], rx_inverse_local_idx, start_now)),
+                Some(SteadyTelemetryTake { rx: telemetry_take_rx.clone(), details: rx_meta_data }),
             )
         };
 
@@ -64,9 +65,9 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
             (None, None)
         } else {
             let (telemetry_send_tx, telemetry_take_tx) = channel_builder.build();
-            (
-                Some(SteadyTelemetrySend::new(telemetry_send_tx, [0; TX_LEN], tx_inverse_local_idx, start_now)),
-                Some(SteadyTelemetryTake { rx: telemetry_take_tx, details: tx_meta_data }),
+            (  //TODO: may need LazySend..
+                Some(SteadyTelemetrySend::new(telemetry_send_tx.clone(), [0; TX_LEN], tx_inverse_local_idx, start_now)),
+                Some(SteadyTelemetryTake { rx: telemetry_take_tx.clone(), details: tx_meta_data }),
             )
         };
 
@@ -74,7 +75,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
     let det = SteadyTelemetryRx {
         send: tx_tuple.1,
         take: rx_tuple.1,
-        actor: Some(act_tuple.1),
+        actor: Some(act_tuple.1.clone()), //TODO: may need LazySend...
         actor_metadata: that.actor_metadata.clone(),
     };
 
@@ -110,7 +111,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
 
     let calls: [AtomicU16; 6] = Default::default();
     let telemetry_actor = Some(SteadyTelemetryActorSend {
-        tx: act_tuple.0,
+        tx: act_tuple.0.clone(), //TODO: may need LazySend...
         last_telemetry_error: start_now,
         instant_start: Instant::now(),
         hot_profile_await_ns_unit: AtomicU64::new(0),
@@ -148,7 +149,7 @@ pub(crate) fn build_optional_telemetry_graph(graph: &mut Graph) {
             .with_capacity(steady_config::REAL_CHANNEL_LENGTH_TO_FEATURE)
             .build();
 
-        let outgoing = [tx; 1];
+        let outgoing = [tx.clone()]; //TODO: may need LazySend...
         let optional_servers = steady_tx_bundle(outgoing);
 
         let bldr = graph.actor_builder();

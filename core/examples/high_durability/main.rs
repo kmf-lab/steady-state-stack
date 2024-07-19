@@ -11,6 +11,7 @@ mod actor {
         pub mod final_consumer;
         pub mod tick_consumer;
         pub mod tick_generator;
+        pub mod tick_relay;
 }
 
 fn main() {
@@ -26,7 +27,7 @@ fn main() {
     graph.start();
 
     {  //remove this block to run forever.
-       std::thread::sleep(Duration::from_secs(25));
+       std::thread::sleep(Duration::from_secs(600));
        graph.stop(); //actors can also call stop as desired on the context or monitor
     }
 
@@ -42,7 +43,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let base_channel_builder = graph.channel_builder()
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
         .with_type()
-        .with_line_expansion();
+        .with_line_expansion(0.002f32);//expecting a lot of records
     //this common root of the actor builder allows for common config of all actors
     let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor
         .with_mcpu_percentile(Percentile::p80())
@@ -50,24 +51,26 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
     //build channels
 
-    const PARALLEL:usize = 6;
+    const PARALLEL:usize = 5;
+    const CHANNEL_SIZE:usize = 2000;
 
     let (tick_consumern_to_finalconsumer_tick_counts_tx, finalconsumer_tick_counts_rx) = base_channel_builder
-        .with_capacity(1000)
+        .with_capacity(CHANNEL_SIZE)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p30()),AlertColor::Yellow)
-        .with_filled_trigger(Trigger::AvgAbove(Filled::p40()),AlertColor::Orange)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p50()),AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p80()),AlertColor::Red)
-        .with_rate_percentile(Percentile::p90())
+        .with_avg_rate()
         .build_as_bundle::<_,PARALLEL>();
     
     let (tickgenerator_ticks_tx, tickgenerator_to_tick_consumer_ticks_rx) = base_channel_builder
-        .with_capacity(10000)
+        .with_capacity(CHANNEL_SIZE)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p30()),AlertColor::Yellow)
-        .with_filled_trigger(Trigger::AvgAbove(Filled::p40()),AlertColor::Orange)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p50()),AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p80()),AlertColor::Red)
-        .with_rate_percentile(Percentile::p90())
+        .with_avg_rate()
         .build_as_bundle::<_,PARALLEL>();
-    
+
+
 
     {
        base_actor_builder.with_name("FinalConsumer")
@@ -82,11 +85,30 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
             {
                 let tick_consumer_ticks_rx = tick_consumer_ticks_rx.clone();
                 let tick_consumer_tick_counts_tx = tick_consumer_tick_counts_tx.clone();
+
+                let (tickrelay_ticks_tx, tickrelay_ticks_rx) = base_channel_builder
+                    .with_capacity(CHANNEL_SIZE)
+                    .with_filled_trigger(Trigger::AvgAbove(Filled::p30()),AlertColor::Yellow)
+                    .with_filled_trigger(Trigger::AvgAbove(Filled::p50()),AlertColor::Orange)
+                    .with_filled_trigger(Trigger::AvgAbove(Filled::p80()),AlertColor::Red)
+                    .with_avg_rate()
+                    .build();
+
+
+                base_actor_builder.with_name("TickRelay")
+                    .build_spawn( move |context| actor::tick_relay::run(context
+                                            , tick_consumer_ticks_rx.clone()
+                                            , tickrelay_ticks_tx.clone()
+                    )
+                    );
+
                 base_actor_builder.with_name("TickConsumer")
                     .build_spawn( move |context| actor::tick_consumer::run(context
-                        , tick_consumer_ticks_rx.clone()
-                        , tick_consumer_tick_counts_tx.clone())
+                                           , tickrelay_ticks_rx.clone()
+                                           , tick_consumer_tick_counts_tx.clone()
+                    )
                    );
+
             }
         });
 

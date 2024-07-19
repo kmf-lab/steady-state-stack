@@ -14,7 +14,7 @@ use crate::actor::tick_generator::Tick;
 
 #[derive(Default,Clone,Copy)]
 pub struct TickCount {
-   pub count: u32
+   pub count: u128
 }
 
 
@@ -31,21 +31,18 @@ pub async fn run(context: SteadyContext
     let mut tick_counts_tx = tick_counts_tx.lock().await;
     let mut buffer = [Tick::default(); 1000];
 
-    while monitor.is_running(&mut || ticks_rx.is_empty() && ticks_rx.is_closed() && tick_counts_tx.mark_closed()) {
+    while monitor.is_running(&mut || ticks_rx.is_closed_and_empty() && tick_counts_tx.mark_closed()) {
 
-         let _clean = wait_for_all!(monitor.wait_vacant_units(&mut tick_counts_tx,1)
+         let _clean = wait_for_all!(
+                                    monitor.wait_avail_units(&mut ticks_rx,100),
+                                    monitor.wait_vacant_units(&mut tick_counts_tx,1)
                                    ).await;
 
          let count = monitor.try_peek_slice(&mut ticks_rx, &mut buffer);
          if count>0 {
              let max_count = TickCount { count: buffer[count - 1].value };
-
-             let _ = monitor.try_send(&mut tick_counts_tx, max_count);//.expect("internal error");
-
-             for _n in 0..count {
-                 let _ = monitor.try_take(&mut ticks_rx); //TODO: add a better method for this.
-             }
-
+             let _ = monitor.try_send(&mut tick_counts_tx, max_count);
+             monitor.take_slice(&mut ticks_rx, &mut buffer[0..count]);
              monitor.relay_stats_smartly();
          }
     }

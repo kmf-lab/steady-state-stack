@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::ops::{Deref, DerefMut};
 use std::process::exit;
@@ -21,8 +21,8 @@ use futures_util::stream::FuturesUnordered;
 use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
 use crate::GraphLivelinessState::{Building, Running};
-use crate::steady_rx::RxDef;
-use crate::steady_tx::{SteadyTxBundleTrait, Tx, TxBundleTrait};
+use crate::steady_rx::*;
+use crate::steady_tx::*;
 use crate::telemetry::metrics_collector;
 use crate::wait_for_all;
 
@@ -56,6 +56,7 @@ struct RawDiagramState {
     total_take_send: Vec<(i128, i128)>,
     future_take: Vec<i128>, // These are for the next frame since we do not have the matching sent yet.
     future_send: Vec<i128>, // These are for the next frame if we ended up with too many items.
+    error_map:HashMap<String,u32>
 }
 
 /// Locks an optional `SteadyTx` and returns a future resolving to a `MutexGuard`.
@@ -79,15 +80,12 @@ pub(crate) async fn run<const GIRTH: usize>(
 ) -> Result<(), Box<dyn Error>> {
     let ident = context.identity();
 
-
     let ctrl = context;
     #[cfg(all(feature = "telemetry_on_telemetry", any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-        let mut ctrl = {
+    let mut ctrl = {
         info!("should not happen");
-
         into_monitor!(ctrl, [], optional_servers)
     };
-
 
     let mut state = RawDiagramState::default();
     let mut all_actors_to_scan: Option<Vec<Box<dyn RxDef>>> = None;
@@ -170,16 +168,9 @@ pub(crate) async fn run<const GIRTH: usize>(
                         all_actors_to_scan = None;
                         rebuild_scan_requested = true;
 
-
                         if let Some(n) = gather_node_details(&mut state, dynamic_senders) {
                             (Some(n), collect_channel_data(&mut state, dynamic_senders))
                         } else {
-                            //TODO: find  a way to dect this..
-                            info!("is building {}",ctrl.is_liveliness_in( &[Building] , true));
-                            info!("is running {}",ctrl.is_liveliness_in( &[Running] , true));
-
-
-
                             (None, Vec::new())
                         }
                     }
@@ -248,6 +239,7 @@ fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<'_, Vec<Collec
         Err(_) => false,
     }
 }
+
 
 /// Gathers valid actor telemetry to scan.
 fn gather_valid_actor_telemetry_to_scan(
@@ -343,8 +335,9 @@ fn gather_node_details(
     });
 
 
+
     if !matches.iter().all(|x| *x == 3 || *x == 0) {
-       //NOTE: on startup it may be possible to get a false positive here, not proven yet
+        //NOTE: on startup it may be possible to get a false positive here, not proven yet
         //    if so add support to wait for the second failure before reporting.
         //    better approach is we need a flag to tell us everything is up and running.
         matches.iter()
@@ -352,28 +345,37 @@ fn gather_node_details(
                .filter(|(_, x)| **x != 3 && **x != 0)
                .for_each(|(i, x)| {
 
-                  dynamic_senders.iter().for_each(|sender| {
+                 dynamic_senders.iter().for_each(|sender| {
                       sender.telemetry_take.iter().for_each(|f| {
-
                           if x.is_one() {
                               f.rx_channel_id_vec().iter().for_each(|meta| {
                                   if meta.id == i {
-                                      warn!("Missing TX for actor {:?} RX {:?}  Channel:{:?} ", sender.ident, meta.show_type, i);
+                                      let msg = format!("Possible missing TX for actor {:?} RX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
+                                      let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c = *c + 1u32;}).or_insert(0u32);
+                                      if *count ==2 {
+                                          warn!("{}",msg);
+                                      }
                                   }
                               });
                           } else {
                               f.tx_channel_id_vec().iter().for_each(|meta| {
                                   if meta.id == i {
-                                      warn!("Missing RX for actor {:?} TX {:?} Channel:{:?} ", sender.ident, meta.show_type, i );
+                                      let msg = format!("Possible missing RX for actor {:?} TX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
+                                      let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c = *c + 1u32;}).or_insert(0u32);
+                                      if *count==2 {
+                                          warn!("{}",msg);
+                                      }
                                   }
                               });
                           }
                       });
                   });
+
         });
        // Do not launch if any error is found instead try again.
         return None;
     }
+    state.error_map.clear(); //no need to hold these counts since we are now clear
 
     let max_channels_len = matches.len();
 

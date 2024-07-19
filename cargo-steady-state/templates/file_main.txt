@@ -45,7 +45,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let base_channel_builder = graph.channel_builder()
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
         .with_type()
-        .with_line_expansion();
+        .with_line_expansion(1.0f32);
     //this common root of the actor builder allows for common config of all actors
     let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor
         .with_mcpu_percentile(Percentile::p80())

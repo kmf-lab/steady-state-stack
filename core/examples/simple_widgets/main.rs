@@ -98,7 +98,7 @@ fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p20())
                              , AlertColor::Yellow)
         .with_type()
-        .with_line_expansion();
+        .with_line_expansion(1.0f32);
 
     //upon construction these are set up to be monitored by the telemetry telemetry
     let (generator_tx, generator_rx) = base_channel_builder

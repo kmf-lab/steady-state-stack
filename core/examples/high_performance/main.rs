@@ -5,19 +5,13 @@ use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
-
-
-
-
+use steady_state::actor_builder::ActorTeam;
 
 mod actor {
-    
         pub mod final_consumer;
-    
         pub mod tick_consumer;
-    
         pub mod tick_generator;
-    
+        pub mod tick_relay;
 }
 
 fn main() {
@@ -33,7 +27,7 @@ fn main() {
     graph.start();
 
     {  //remove this block to run forever.
-       std::thread::sleep(Duration::from_secs(60));
+       std::thread::sleep(Duration::from_secs(600));
        graph.stop(); //actors can also call stop as desired on the context or monitor
     }
 
@@ -49,87 +43,94 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
     let base_channel_builder = graph.channel_builder()
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
         .with_type()
-        .with_line_expansion();
+        .with_line_expansion(0.002f32);//expecting a lot of records
     //this common root of the actor builder allows for common config of all actors
     let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor
         .with_mcpu_percentile(Percentile::p80())
         .with_work_percentile(Percentile::p80())
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
     //build channels
-    
+
+    const PARALLEL:usize = 5;
+    const CHANNEL_SIZE:usize = 2000;
+
     let (tick_consumern_to_finalconsumer_tick_counts_tx, finalconsumer_tick_counts_rx) = base_channel_builder
-        .with_capacity(100)
-        .build_as_bundle::<_,3>();
+        .with_capacity(CHANNEL_SIZE)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p30()),AlertColor::Yellow)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p50()),AlertColor::Orange)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p80()),AlertColor::Red)
+        .with_avg_rate()
+        .build_as_bundle::<_,PARALLEL>();
     
     let (tickgenerator_ticks_tx, tickgenerator_to_tick_consumer_ticks_rx) = base_channel_builder
-        .with_capacity(1000)
-        .build_as_bundle::<_,3>();
-    
-    //build actors
-    
+        .with_capacity(CHANNEL_SIZE)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p30()),AlertColor::Yellow)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p50()),AlertColor::Orange)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p80()),AlertColor::Red)
+        .with_avg_rate()
+        .build_as_bundle::<_,PARALLEL>();
+
+    {
+        base_actor_builder.with_name("TickGenerator")
+            .build_spawn( move |context| actor::tick_generator::run(context
+                                                                    , tickgenerator_ticks_tx.clone())
+            );
+    }
     {
        base_actor_builder.with_name("FinalConsumer")
                  .build_spawn( move |context| actor::final_consumer::run(context
                                             , finalconsumer_tick_counts_rx.clone())
                  );
     }
-    {
-       let tickconsumer1_ticks_rx = tickgenerator_to_tick_consumer_ticks_rx[0].clone();
-      
-      
-       let tickconsumer1_tick_counts_tx = tick_consumern_to_finalconsumer_tick_counts_tx[0].clone();
-      
-    
-       base_actor_builder.with_name("TickConsumer1")
-                 .build_spawn( move |context| actor::tick_consumer::run(context
-                                            , tickconsumer1_ticks_rx.clone()
-                                            , tickconsumer1_tick_counts_tx.clone())
-                 );
-    }
-    {
-       let tickconsumer2_ticks_rx = tickgenerator_to_tick_consumer_ticks_rx[1].clone();
-      
-      
-       let tickconsumer2_tick_counts_tx = tick_consumern_to_finalconsumer_tick_counts_tx[1].clone();
-      
-    
-       base_actor_builder.with_name("TickConsumer2")
-                 .build_spawn( move |context| actor::tick_consumer::run(context
-                                            , tickconsumer2_ticks_rx.clone()
-                                            , tickconsumer2_tick_counts_tx.clone())
-                 );
-    }
-    {
-       let tickconsumer3_ticks_rx = tickgenerator_to_tick_consumer_ticks_rx[2].clone();
-      
-      
-       let tickconsumer3_tick_counts_tx = tick_consumern_to_finalconsumer_tick_counts_tx[1].clone();
-      
-    
-       base_actor_builder.with_name("TickConsumer3")
-                 .build_spawn( move |context| actor::tick_consumer::run(context
-                                            , tickconsumer3_ticks_rx.clone()
-                                            , tickconsumer3_tick_counts_tx.clone())
-                 );
-    }
-    {
-       base_actor_builder.with_name("TickGenerator")
-                 .build_spawn( move |context| actor::tick_generator::run(context
-                                            , tickgenerator_ticks_tx.clone())
-                 );
-    }
+
+    tickgenerator_to_tick_consumer_ticks_rx.iter()
+         .zip(tick_consumern_to_finalconsumer_tick_counts_tx.iter()).enumerate()
+        .for_each(|(i, (tick_consumer_ticks_rx, tick_consumer_tick_counts_tx))| {
+            {
+                let mut team =  ActorTeam::default();
+
+                let tick_consumer_ticks_rx = tick_consumer_ticks_rx.clone();
+                let tick_consumer_tick_counts_tx = tick_consumer_tick_counts_tx.clone();
+
+                let (tickrelay_ticks_tx, tickrelay_ticks_rx) = base_channel_builder
+                    .with_capacity(CHANNEL_SIZE)
+                    .with_filled_trigger(Trigger::AvgAbove(Filled::p30()), AlertColor::Yellow)
+                    .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Orange)
+                    .with_filled_trigger(Trigger::AvgAbove(Filled::p80()), AlertColor::Red)
+                    .with_avg_rate()
+                    .build();
+
+                base_actor_builder.with_name("TickRelay")
+                    .build_join(move |context| actor::tick_relay::run(context
+                                                                      , tick_consumer_ticks_rx.clone()
+                                                                      , tickrelay_ticks_tx.clone()
+                    )
+                                , &mut team
+                    );
+                base_actor_builder.with_name("TickConsumer")
+                    .build_join(move |context| actor::tick_consumer::run(context
+                                                                         , tickrelay_ticks_rx.clone()
+                                                                         , tick_consumer_tick_counts_tx.clone()
+                    )
+                                , &mut team
+                    );
+
+
+                team.spawn();
+            }
+        });
+
+
+
+
     graph
 }
 
 /*
 #[cfg(test)]
 mod graph_tests {
-    use std::ops::DerefMut;
-    use std::time::Duration;
     use async_std::test;
     use steady_state::*;
-    use crate::args::Args;
-    use crate::build_graph;
 
     #[test]
     async fn test_graph_one() {
@@ -156,5 +157,4 @@ mod graph_tests {
 
     }
 }
-
- */
+*/

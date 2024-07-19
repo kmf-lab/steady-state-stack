@@ -151,6 +151,8 @@ mod tests {
         let block_fail_fast = false;
         let mut graph = Graph::internal_new("", block_fail_fast, false);
         let (tx, rx) = graph.channel_builder().with_capacity(5).build();
+        let tx = tx.clone();
+        let rx = rx.clone();
 
         let mock_monitor = graph.new_test_monitor("generator_monitor");
         let mut mock_monitor = mock_monitor.into_monitor([&rx], [&tx]);

@@ -124,7 +124,7 @@ pub struct ChannelMetaData {
     pub(crate) labels: Vec<&'static str>,
     pub(crate) capacity: usize,
     pub(crate) display_labels: bool,
-    pub(crate) line_expansion: bool,
+    pub(crate) line_expansion: f32,
     pub(crate) show_type: Option<&'static str>,
     pub(crate) refresh_rate_in_bits: u8,
     pub(crate) window_bucket_in_bits: u8,
@@ -202,6 +202,8 @@ pub(crate) mod monitor_tests {
 
         let mut graph = Graph::new("");
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(8).build();
+        let tx_string = tx_string.clone();
+        let rx_string = rx_string.clone();
 
         let monitor = graph.new_test_monitor("test");
         let mut monitor = into_monitor!(monitor, [rx_string], [tx_string]);
@@ -255,6 +257,9 @@ pub(crate) mod monitor_tests {
         let monitor = graph.new_test_monitor("test");
 
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build();
+        let tx_string = tx_string.clone();
+        let rx_string = rx_string.clone();
+
         let mut monitor = monitor.into_monitor([&rx_string], [&tx_string]);
 
         let mut rx_string_guard = rx_string.lock().await;

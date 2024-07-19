@@ -28,7 +28,7 @@ static DOT_PEN_WIDTH: [&str; 16] = [
 #[derive(Default, Debug)]
 pub struct ChannelStatsComputer {
     pub(crate) display_labels: Option<Vec<&'static str>>,
-    pub(crate) line_expansion: bool,
+    pub(crate) line_expansion: f32,
     pub(crate) show_type: Option<&'static str>,
     pub(crate) type_byte_count: usize, // Used to know bytes/sec sent
     pub(crate) percentiles_filled: Vec<Percentile>, // To show
@@ -491,8 +491,17 @@ impl ChannelStatsComputer {
             line_color = DOT_RED;
         };
 
-        let line_thick = if self.line_expansion {
-            DOT_PEN_WIDTH[(128usize - (take >> 20).leading_zeros() as usize).min(DOT_PEN_WIDTH.len() - 1)]
+        let line_thick = if !self.line_expansion.is_nan() {
+
+            // Adjust the 'take' value using the line_expansion factor
+            let adjusted_take = ((take as f32) * self.line_expansion ) as u128;
+
+            // Calculate the index from the adjusted 'take' value
+            let index = (128usize - (adjusted_take >> 20).leading_zeros() as usize).min(DOT_PEN_WIDTH.len() - 1);
+
+            // Get the line thickness from the DOT_PEN_WIDTH array
+            DOT_PEN_WIDTH[index]
+
         } else {
             "1"
         };

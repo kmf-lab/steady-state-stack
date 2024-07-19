@@ -22,7 +22,7 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
     let mut tick_counts_rx = tick_counts_rx.lock().await;
     let mut buffer = [TickCount::default(); 1000];
 
-    let mut my_max_count: u32 = 0; //keep outside..
+    let mut my_max_count: u128 = 0;
 
     while monitor.is_running(&mut || tick_counts_rx.is_closed_and_empty()) { //TODO: fix code generator!!
 

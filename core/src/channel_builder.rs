@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use ringbuf::storage::Heap;
 use std::sync::Arc;
 use futures::lock::Mutex;
@@ -25,7 +26,7 @@ use futures::channel::oneshot;
 use log::*;
 use async_ringbuf::traits::Split;
 //# use ringbuf::storage::Heap;
-use crate::{abstract_executor, AlertColor, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
+use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorTeam, Percentile};
 use crate::monitor::ChannelMetaData;
 //# use ringbuf::storage::Heap;
@@ -38,7 +39,7 @@ use crate::steady_tx::{Tx};
 /// The `ChannelBuilder` struct allows for the detailed configuration of channels, including
 /// performance metrics, thresholds, and other operational parameters. This provides flexibility
 /// in tailoring channels to specific requirements and monitoring needs.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChannelBuilder {
     /// The noise threshold as an `Instant`.
     ///
@@ -75,10 +76,9 @@ pub struct ChannelBuilder {
     /// This field defines the size of the window bucket used for metrics aggregation, ensuring it is a power of 2.
     window_bucket_in_bits: u8,
 
-    /// Indicates whether line expansion is enabled.
+    /// if not NAN Indicates line expansion enabled rate
     ///
-    /// If `true`, line expansion features are activated for the channel.
-    line_expansion: bool,
+    line_expansion: f32,
 
     /// Indicates whether the type of the channel should be displayed.
     ///
@@ -199,7 +199,7 @@ impl ChannelBuilder {
             oneshot_shutdown_vec,
             refresh_rate_in_bits: 6, // 1<<6 == 64
             window_bucket_in_bits: 5, // 1<<5 == 32
-            line_expansion: false,
+            line_expansion: f32::NAN, // use 1.0 as the default
             show_type: false,
             percentiles_filled: Vec::with_capacity(0),
             percentiles_rate: Vec::with_capacity(0),
@@ -260,7 +260,23 @@ impl ChannelBuilder {
     ///
     /// # Returns
     /// A tuple containing bundles of transmitters and receivers.
-    pub fn build_as_bundle<T, const GIRTH: usize>(&self) -> (SteadyTxBundle<T, GIRTH>, SteadyRxBundle<T, GIRTH>) {
+    pub fn build_as_eager_bundle<T, const GIRTH: usize>(&self) -> (SteadyTxBundle<T, GIRTH>, SteadyRxBundle<T, GIRTH>) {
+        let mut tx_vec = Vec::with_capacity(GIRTH);
+        let mut rx_vec = Vec::with_capacity(GIRTH);
+
+        (0..GIRTH).for_each(|_| {
+            let (t, r) = self.eager_build();
+            tx_vec.push(t);
+            rx_vec.push(r);
+        });
+
+        (
+            Arc::new(tx_vec.try_into().expect("Incorrect length")),
+            Arc::new(rx_vec.try_into().expect("Incorrect length")),
+        )
+    }
+
+    pub fn build_as_bundle<T, const GIRTH: usize>(&self) -> (LazySteadyTxBundle<T, GIRTH>, LazySteadyRxBundle<T, GIRTH>) {
         let mut tx_vec = Vec::with_capacity(GIRTH);
         let mut rx_vec = Vec::with_capacity(GIRTH);
 
@@ -271,10 +287,22 @@ impl ChannelBuilder {
         });
 
         (
-            Arc::new(tx_vec.try_into().expect("Incorrect length")),
-            Arc::new(rx_vec.try_into().expect("Incorrect length")),
+            {
+                match tx_vec.try_into() {
+                    Ok(t) => t,
+                    Err(t) => panic!("Internal error, incorrect length")
+                }
+            },
+            {
+                match rx_vec.try_into() {
+                    Ok(t) => t,
+                    Err(t) => panic!("Internal error, incorrect length")
+                }
+            }
+            ,
         )
     }
+
 
     /// Sets the capacity for the channel being built.
     ///
@@ -301,11 +329,14 @@ impl ChannelBuilder {
 
     /// Enables line expansion in telemetry visualization.
     ///
+    /// # Parameters
+    /// - `scale`: use 1.0 as the default scale factor
+    ///
     /// # Returns
     /// A `ChannelBuilder` instance with line expansion enabled.
-    pub fn with_line_expansion(&self) -> Self {
+    pub fn with_line_expansion(&self, scale: f32) -> Self {
         let mut result = self.clone();
-        result.line_expansion = true;
+        result.line_expansion = scale;
         result
     }
 
@@ -503,6 +534,7 @@ impl ChannelBuilder {
         result
     }
 
+
     /// Converts the `ChannelBuilder` configuration into `ChannelMetaData`.
     ///
     /// # Parameters
@@ -549,22 +581,29 @@ impl ChannelBuilder {
         }
     }
 
-    pub fn with_team(&self, actor_team: &ActorTeam) {
-        //actor_team.
-        //TODO: precreate thread and do our build on it
-    }
 
     /// Finalizes the channel configuration and creates the channel with the specified settings.
     /// This method ties together all the configured options, applying them to the newly created channel.
     pub const UNSET: u32 = u32::MAX;
 
-    /// Builds and returns a pair of transmitter and receiver with the current configuration.
+    /// Builds and returns a pair of lazy wrappers of the transmitter and receiver with
+    /// the current configuration.
+    ///
+    /// # Returns
+    /// A tuple containing the transmitter (`LazySteadyTx<T>`) and receiver (`LazySteadyRx<T>`).
+    pub fn build<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
+        let lazy_channel = Arc::new(LazyChannel::new(self));
+        (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))
+    }
+
+    /// Builds eager and returns a pair of transmitter and receiver with the current configuration.
+    /// For most cases the build() should be used as its lazy and build on the actor thread.
+    /// This method is here mostly for testing a normal eager build.
     ///
     /// # Returns
     /// A tuple containing the transmitter (`SteadyTx<T>`) and receiver (`SteadyRx<T>`).
-    pub fn build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
-        let rb = AsyncRb::<ChannelBacking<T>>::new(self.capacity);
-        let (tx, rx) = rb.split();
+    pub fn eager_build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
+
         let type_byte_count = std::mem::size_of::<T>();
         let type_string_name = std::any::type_name::<T>();
         let channel_meta_data = Arc::new(self.to_meta_data(type_string_name, type_byte_count));
@@ -589,6 +628,8 @@ impl ChannelBuilder {
         let rx_version = Arc::new(AtomicU32::new(Self::UNSET));
         let noise_threshold = self.noise_threshold;
 
+        let rb = AsyncRb::<ChannelBacking<T>>::new(self.capacity);
+        let (tx, rx) = rb.split();
         (
             Arc::new(Mutex::new(Tx {
                 tx,
@@ -618,6 +659,73 @@ impl ChannelBuilder {
         )
     }
 }
+
+
+
+
+
+#[derive(Debug)]
+pub struct LazySteadyTx<T> {
+    lazy_channel: Arc<LazyChannel<T>>,
+}
+impl <T> LazySteadyTx<T> {
+    fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
+        LazySteadyTx {
+            lazy_channel,
+        }
+    }
+    pub fn clone(&self) -> SteadyTx<T> {
+        nuclei::block_on(self.lazy_channel.getTxClone())
+    }
+}
+
+#[derive(Debug)]
+pub struct LazySteadyRx<T> {
+    lazy_channel: Arc<LazyChannel<T>>,
+}
+impl <T> crate::channel_builder::LazySteadyRx<T> {
+    fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
+        crate::channel_builder::LazySteadyRx {
+            lazy_channel,
+        }
+    }
+    pub fn clone(&self) -> SteadyRx<T> {
+        nuclei::block_on(self.lazy_channel.getRxClone())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct LazyChannel<T> {
+    builder: ChannelBuilder,
+    channel: Mutex<Option<(SteadyTx<T>, SteadyRx<T>)>>,
+}
+
+impl <T> LazyChannel<T> {
+    fn new(builder: &ChannelBuilder) -> Self {
+        LazyChannel {
+            builder: builder.clone(),
+            channel: Mutex::new(None),
+        }
+    }
+
+    pub(crate) async fn getTxClone(&self) -> SteadyTx<T> {
+        let mut channel = self.channel.lock().await;
+        if channel.is_none() {
+            *channel = Some(self.builder.eager_build());
+        }
+        channel.as_ref().expect("internal error").0.clone()
+    }
+
+    pub(crate) async fn getRxClone(&self) -> SteadyRx<T> {
+        let mut channel = self.channel.lock().await;
+        if channel.is_none() {
+            *channel = Some(self.builder.eager_build());
+        }
+        channel.as_ref().expect("internal error").1.clone()
+    }
+}
+
+
 
 impl Metric for Rate {}
 
