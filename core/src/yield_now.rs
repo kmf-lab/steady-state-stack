@@ -65,3 +65,66 @@ pub fn yield_now() -> impl Future<Output = ()> {
     YieldNow::new()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::task::{Context, Poll, Waker};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
+    use std::sync::mpsc::{sync_channel, SyncSender, Receiver};
+
+    // A simple waker that does nothing, used for testing.
+    fn noop_waker() -> Waker {
+        struct NoopWaker;
+        impl std::task::Wake for NoopWaker {
+            fn wake(self: Arc<Self>) {}
+        }
+
+        Arc::new(NoopWaker).into()
+    }
+
+    #[test]
+    fn test_yield_now_initially_pending() {
+        let mut yield_now = yield_now();
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        // The first poll should return Poll::Pending
+        assert_eq!(Pin::new(&mut yield_now).poll(&mut cx), Poll::Pending);
+    }
+
+    #[test]
+    fn test_yield_now_ready_after_yielding() {
+        let mut yield_now = yield_now();
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        // The first poll should return Poll::Pending
+        assert_eq!(Pin::new(&mut yield_now).poll(&mut cx), Poll::Pending);
+
+        // The second poll should return Poll::Ready(())
+        assert_eq!(Pin::new(&mut yield_now).poll(&mut cx), Poll::Ready(()));
+    }
+
+    // #[test]
+    // fn test_yield_now_wakes_correctly() {
+    //     let mut yield_now = yield_now();
+    //     let (sender, receiver): (SyncSender<()>, Receiver<()>) = sync_channel(1);
+    //     let waker = waker_fn::waker_fn(move || {
+    //         let _ = sender.send(());
+    //     });
+    //     let mut cx = Context::from_waker(&waker);
+    //
+    //     // The first poll should return Poll::Pending and trigger the waker
+    //     assert_eq!(Pin::new(&mut yield_now).poll(&mut cx), Poll::Pending);
+    //
+    //     // Ensure the waker was called
+    //     assert!(receiver.try_recv().is_ok());
+    //
+    //     // The second poll should return Poll::Ready(())
+    //     assert_eq!(Pin::new(&mut yield_now).poll(&mut cx), Poll::Ready(()));
+    // }
+}
+
+

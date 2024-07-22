@@ -603,3 +603,231 @@ impl FrameHistory {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::monitor::{ActorStatus, ChannelMetaData, ActorMetaData};
+    use std::sync::Arc;
+    use bytes::BytesMut;
+    use std::path::PathBuf;
+    use time::OffsetDateTime;
+
+    // #[test]
+    // fn test_node_compute_and_refresh() {
+    //     let actor_status = ActorStatus {
+    //         await_total_ns: 100,
+    //         unit_total_ns: 200,
+    //         thread_id: None,
+    //         total_count_restarts: 1,
+    //         bool_stop: false,
+    //         calls: [0;6],
+    //     };
+    //     let total_work_ns = 1000u128;
+    //     let mut node = Node {
+    //         id: 1,
+    //         color: "grey",
+    //         pen_width: "1",
+    //         stats_computer: ActorStatsComputer::default(),
+    //         display_label: String::new(),
+    //         metric_text: String::new(),
+    //     };
+    //     node.compute_and_refresh(actor_status, total_work_ns);
+    //     assert_eq!(node.color, "grey");
+    //     assert_eq!(node.pen_width, "1");
+    // }
+
+    #[test]
+    fn test_edge_compute_and_refresh() {
+        let mut edge = Edge {
+            id: 1,
+            from: 0,
+            to: 1,
+            color: "grey",
+            sidecar: false,
+            pen_width: "1",
+            ctl_labels: Vec::new(),
+            stats_computer: ChannelStatsComputer::default(),
+            display_label: String::new(),
+            metric_text: String::new(),
+        };
+        edge.compute_and_refresh(100, 50);
+        assert_eq!(edge.color, "grey");
+        assert_eq!(edge.pen_width, "1");
+    }
+
+    #[test]
+    fn test_build_metric() {
+        let state = MetricState {
+            nodes: vec![
+                Node {
+                    id: 1,
+                    color: "grey",
+                    pen_width: "1",
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: String::new(),
+                    metric_text: "node_metric".to_string(),
+                }
+            ],
+            edges: vec![
+                Edge {
+                    id: 1,
+                    from: 0,
+                    to: 1,
+                    color: "grey",
+                    sidecar: false,
+                    pen_width: "1",
+                    ctl_labels: Vec::new(),
+                    stats_computer: ChannelStatsComputer::default(),
+                    display_label: String::new(),
+                    metric_text: "edge_metric".to_string(),
+                }
+            ],
+            seq: 0,
+        };
+        let mut txt_metric = BytesMut::new();
+        build_metric(&state, &mut txt_metric);
+        assert_eq!(txt_metric.to_vec(), b"node_metricedge_metric");
+    }
+
+    #[test]
+    fn test_build_dot() {
+        let state = MetricState {
+            nodes: vec![
+                Node {
+                    id: 1,
+                    color: "grey",
+                    pen_width: "1",
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "node1".to_string(),
+                    metric_text: String::new(),
+                }
+            ],
+            edges: vec![
+                Edge {
+                    id: 1,
+                    from: 0,
+                    to: 1,
+                    color: "grey",
+                    sidecar: false,
+                    pen_width: "1",
+                    ctl_labels: Vec::new(),
+                    stats_computer: ChannelStatsComputer::default(),
+                    display_label: "edge1".to_string(),
+                    metric_text: String::new(),
+                }
+            ],
+            seq: 0,
+        };
+        let mut dot_graph = BytesMut::new();
+        build_dot(&state, "LR", &mut dot_graph);
+        let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1];\n\"0\" -> \"1\" [label=\"edge1\", color=grey, penwidth=1];\n}\n";
+        assert_eq!(dot_graph.to_vec(), expected);
+    }
+
+    // #[test]
+    // fn test_apply_node_def() {
+    //     let mut local_state = MetricState::default();
+    //     let actor = Arc::new(ActorMetaData::default());
+    //     let channels_in = vec![Arc::new(ChannelMetaData::default())];
+    //     let channels_out = vec![Arc::new(ChannelMetaData::default())];
+    //     apply_node_def(&mut local_state, "node1", 1, actor, &channels_in, &channels_out, 1000);
+    //     assert_eq!(local_state.nodes.len(), 2);
+    //     assert_eq!(local_state.nodes[1].id, 1);
+    // }
+
+    #[test]
+    fn test_define_unified_edges() {
+        let mut local_state = MetricState::default();
+        let channels = vec![Arc::new(ChannelMetaData::default())];
+        define_unified_edges(&mut local_state, 1, &channels, true, 1000);
+        assert_eq!(local_state.edges.len(), 1);
+        assert_eq!(local_state.edges[0].to, 1);
+    }
+
+    #[test]
+    fn test_frame_history_new() {
+        let frame_history = FrameHistory::new(1000);
+        assert_eq!(frame_history.packed_sent_writer.delta_write_count(), 0);
+        assert_eq!(frame_history.packed_take_writer.delta_write_count(), 0);
+        assert!(frame_history.history_buffer.len() > 0);
+    }
+
+    #[test]
+    fn test_frame_history_apply_node() {
+        let mut frame_history = FrameHistory::new(1000);
+        let chin = vec![Arc::new(ChannelMetaData::default())];
+        let chout = vec![Arc::new(ChannelMetaData::default())];
+        frame_history.apply_node("node1", 1, &chin, &chout);
+        assert!(frame_history.history_buffer.len() > 0);
+    }
+
+    #[test]
+    fn test_frame_history_apply_edge() {
+        let mut frame_history = FrameHistory::new(1000);
+        let total_take_send = vec![(100, 50)];
+        frame_history.apply_edge(&total_take_send, 1000);
+        assert!(frame_history.history_buffer.len() > 0);
+    }
+
+    #[test]
+    fn test_frame_history_build_history_path() {
+        let mut frame_history = FrameHistory::new(1000);
+        let path = frame_history.build_history_path();
+        assert!(path.to_str().unwrap().contains(&frame_history.guid));
+    }
+
+    // #[test]
+    // fn test_frame_history_will_span_into_next_block() {
+    //     let mut frame_history = FrameHistory::new(1000);
+    //     frame_history.buffer_bytes_count = HISTORY_WRITE_BLOCK_SIZE;
+    //     assert!(frame_history.will_span_into_next_block());
+    // }
+
+    #[test]
+    fn test_frame_history_mark_position() {
+        let mut frame_history = FrameHistory::new(1000);
+        frame_history.mark_position();
+        assert_eq!(frame_history.buffer_bytes_count, frame_history.history_buffer.len());
+    }
+
+    // #[test]
+    // fn test_frame_history_update() {
+    //     let mut frame_history = FrameHistory::new(1000);
+    //     frame_history.mark_position();
+    //     nuclei::block_on(frame_history.update(true));
+    //     assert_eq!(frame_history.history_buffer.len(), frame_history.buffer_bytes_count);
+    // }
+
+    // #[test]
+    // fn test_frame_history_truncate_file() {
+    //     let data = BytesMut::from("test data");
+    //     let path = PathBuf::from("test_truncate_file.dat");
+    //     nuclei::block_on(FrameHistory::truncate_file(path.clone(), data.clone()));
+    //     let result = std::fs::read_to_string(path).expect("Failed to read truncated file");
+    //     assert_eq!(result, "test data");
+    // }
+
+    #[test]
+    fn test_frame_history_all_to_file_async() {
+        let data = BytesMut::from("test data");
+        let path = PathBuf::from("test_all_to_file.dat");
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&path)
+            .expect("Failed to open file");
+        let handle = nuclei::Handle::new(file).expect("Failed to create handle");
+        nuclei::drive(FrameHistory::all_to_file_async(handle, data.clone()));
+        let result = std::fs::read_to_string(path).expect("Failed to read written file");
+        assert_eq!(result, "test data");
+    }
+
+    // #[test]
+    // fn test_frame_history_append_to_file() {
+    //     let data = BytesMut::from("test data");
+    //     let path = PathBuf::from("test_append_file.dat");
+    //     nuclei::drive(FrameHistory::append_to_file(path.clone(), data.clone(), true));
+    //     let result = std::fs::read_to_string(path).expect("Failed to read appended file");
+    //     assert_eq!(result, "test data");
+    // }
+}

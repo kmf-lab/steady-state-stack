@@ -478,3 +478,139 @@ pub struct CollectorDetail {
     pub(crate) telemetry_take: VecDeque<Box<dyn RxTel>>,
     pub(crate) ident: ActorIdentity,
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
+    use crate::{steady_config, SendSaturation, SteadyContext, SteadyTxBundle};
+    use futures_util::stream::FuturesUnordered;
+    use std::sync::Arc;
+    use std::sync::{RwLock, Mutex as StdMutex};
+    use std::collections::VecDeque;
+    use std::error::Error;
+    use futures::executor::block_on;
+    use futures_util::lock::Mutex;
+    use std::time::Duration;
+
+    #[test]
+    fn test_raw_diagram_state_default() {
+        let state: RawDiagramState = Default::default();
+        assert_eq!(state.sequence, 0);
+        assert_eq!(state.actor_count, 0);
+        assert!(state.actor_status.is_empty());
+        assert!(state.total_take_send.is_empty());
+        assert!(state.future_take.is_empty());
+        assert!(state.future_send.is_empty());
+        assert!(state.error_map.is_empty());
+    }
+
+    // #[test]
+    // fn test_collect_channel_data() {
+    //     let mut state = RawDiagramState::default();
+    //     let dynamic_senders = vec![
+    //         CollectorDetail {
+    //             telemetry_take: VecDeque::new(),
+    //             ident: ActorIdentity { id: 0, name: "test_actor" },
+    //         }
+    //     ];
+    //     let to_pop = collect_channel_data(&mut state, &dynamic_senders);
+    //     assert!(to_pop.is_empty());
+    // }
+
+    #[test]
+    fn test_gather_valid_actor_telemetry_to_scan() {
+        let dynamic_senders_vec = Arc::new(RwLock::new(vec![
+            CollectorDetail {
+                telemetry_take: VecDeque::new(),
+                ident: ActorIdentity { id: 0, name: "test_actor" },
+            }
+        ]));
+        let result = gather_valid_actor_telemetry_to_scan(1, &dynamic_senders_vec);
+        assert!(result.is_none());
+    }
+
+    // #[test]
+    // fn test_gather_node_details() {
+    //     let mut state = RawDiagramState::default();
+    //     let dynamic_senders = vec![
+    //         CollectorDetail {
+    //             telemetry_take: VecDeque::new(),
+    //             ident: ActorIdentity { id: 0, name: "test_actor" },
+    //         }
+    //     ];
+    //     let result = gather_node_details(&mut state, &dynamic_senders);
+    //     assert!(result.is_none());
+    // }
+
+    #[test]
+    fn test_is_all_empty_and_closed() {
+        let dynamic_senders_vec = Arc::new(RwLock::new(vec![
+            CollectorDetail {
+                telemetry_take: VecDeque::new(),
+                ident: ActorIdentity { id: 0, name: "test_actor" },
+            }
+        ]));
+        let result = is_all_empty_and_closed(dynamic_senders_vec.read());
+        assert!(result);
+    }
+
+    #[test]
+    fn test_send_structure_details() {
+        let ident = ActorIdentity { id: 0, name: "test_actor" };
+        let mut consumer_vec: [MutexGuard<'_, Tx<DiagramData>>; 0] = [];
+        let nodes = vec![
+            DiagramData::NodeDef(0, Box::new((
+                Arc::new(ActorMetaData::default()),
+                Box::new([]),
+                Box::new([]),
+            )))
+        ];
+        block_on(send_structure_details(ident, &mut consumer_vec, nodes));
+    }
+
+    #[test]
+    fn test_send_data_details() {
+        let ident = ActorIdentity { id: 0, name: "test_actor" };
+        let mut consumer_vec: [MutexGuard<'_, Tx<DiagramData>>; 0] = [];
+        let state = RawDiagramState::default();
+        let result = block_on(send_data_details(ident, &mut consumer_vec, &state, false));
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_full_frame_or_timeout() {
+        let mut futures_unordered = FuturesUnordered::new();
+        let telemetry_rate_ms = 1000;
+        let result = block_on(full_frame_or_timeout(&mut futures_unordered, telemetry_rate_ms));
+        assert!(result.is_none());
+    }
+
+    // #[test]
+    // fn test_confirm_shutdown() {
+    //     let dynamic_senders_vec = Arc::new(RwLock::new(vec![
+    //         CollectorDetail {
+    //             telemetry_take: VecDeque::new(),
+    //             ident: ActorIdentity { id: 0, name: "test_actor" },
+    //         }
+    //     ]));
+    //     let mut locked_servers = nuclei::block_on(SteadyTxBundle::<DiagramData, 1>::default().lock());
+    //     let result = is_all_empty_and_closed(dynamic_senders_vec.read());
+    //     assert!(result);
+    // }
+
+    // #[test]
+    // fn test_run() {
+    //     let context = SteadyContext::default();
+    //     let dynamic_senders_vec = Arc::new(RwLock::new(vec![
+    //         CollectorDetail {
+    //             telemetry_take: VecDeque::new(),
+    //             ident: ActorIdentity { id: 0, name: "test_actor" },
+    //         }
+    //     ]));
+    //     let optional_servers = SteadyTxBundle::<DiagramData, 1>::default();
+    //     let result = block_on(run(context, dynamic_senders_vec, optional_servers));
+    //     assert!(result.is_ok());
+    // }
+}

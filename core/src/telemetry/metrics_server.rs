@@ -500,6 +500,3 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
         Ok(())
     }
 }
-
-
-

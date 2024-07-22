@@ -100,3 +100,96 @@ pub fn wrap_bool_future<F>(flag: Arc<AtomicBool>, fut: F) -> impl Future<Output 
     }
 }
 
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::future::ready;
+    use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+    use std::future::Future;
+    use std::time::Duration;
+    use futures::executor::block_on;
+    use futures::future::{join};
+    use futures_timer::Delay;
+
+    #[test]
+    fn test_wrap_bool_future_true() {
+        let flag = Arc::new(AtomicBool::new(true));
+        let wrapped = wrap_bool_future(flag.clone(), ready(true));
+
+        block_on(wrapped);
+        assert!(flag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_wrap_bool_future_false() {
+        let flag = Arc::new(AtomicBool::new(true));
+        let wrapped = wrap_bool_future(flag.clone(), ready(false));
+
+        block_on(wrapped);
+        assert!(!flag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_wait_for_all_true() {
+        let future1 = ready(true);
+        let future2 = ready(true);
+        let future3 = ready(true);
+
+        let result = block_on(wait_for_all!(future1, future2, future3));
+        assert!(result);
+    }
+
+    #[test]
+    fn test_wait_for_all_false() {
+        let future1 = ready(true);
+        let future2 = ready(false);
+        let future3 = ready(true);
+
+        let result = block_on(wait_for_all!(future1, future2, future3));
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_wait_for_all_or_proceed_upon_first_complete() {
+        let future1 = ready(true);
+        let future2 = async {
+            Delay::new(Duration::from_millis(10)).await;
+            true
+        };
+        let future3 = async {
+            Delay::new(Duration::from_millis(10)).await;
+            true
+        };
+
+        let result = block_on(wait_for_all_or_proceed_upon!(future1, future2, future3));
+        assert!(result);
+    }
+
+    #[test]
+    fn test_wait_for_all_or_proceed_upon_rest_complete() {
+        let future1 = async {
+            Delay::new(Duration::from_millis(10)).await;
+            true
+        };
+        let future2 = ready(true);
+        let future3 = ready(true);
+
+        let result = block_on(wait_for_all_or_proceed_upon!(future1, future2, future3));
+        assert!(result);
+    }
+
+    #[test]
+    fn test_wait_for_all_or_proceed_upon_false() {
+        let future1 = async {
+            Delay::new(Duration::from_millis(10)).await;
+            true
+        };
+        let future2 = ready(false);
+        let future3 = ready(true);
+
+        let result = block_on(wait_for_all_or_proceed_upon!(future1, future2, future3));
+        assert!(!result);
+    }
+}
