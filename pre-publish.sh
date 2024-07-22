@@ -89,6 +89,7 @@ if [ $exit_code -ne 0 ]; then
 fi
 cd ..
 
+
 # Run tarpaulin for code coverage
 # cargo install cargo-tarpaulin --force
 RUST_TEST_THREADS=6 cargo tarpaulin --timeout 180 --out html --ignore-config --output-dir target/tarpaulin-report
@@ -98,6 +99,7 @@ if [ $exit_code -ne 0 ]; then
     exit $exit_code
 fi
 
+tree -I 'target'
 
 
 echo "cargo outdated"

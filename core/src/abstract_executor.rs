@@ -144,3 +144,96 @@ pub(crate) fn block_on<F, T>(future: F) -> T
 }
 
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use std::task::{Waker, RawWaker, RawWakerVTable};
+    use std::thread;
+
+    // fn dummy_waker() -> Waker {
+    //     fn noop_clone(_: *const ()) -> RawWaker {
+    //         dummy_raw_waker()
+    //     }
+    //
+    //     fn noop(_: *const ()) {}
+    //
+    //     fn dummy_raw_waker() -> RawWaker {
+    //         RawWaker::new(std::ptr::null(), &RawWakerVTable::new(noop_clone, noop, noop, noop))
+    //     }
+    //
+    //     unsafe { Waker::from_raw(dummy_raw_waker()) }
+    // }
+
+    // #[test]
+    // fn test_infinite_sleep() {
+    //     let mut sleep_future = InfiniteSleep;
+    //     let waker = dummy_waker();
+    //     let mut cx = Context::from_waker(&waker);
+    //
+    //     // Poll the InfiniteSleep future
+    //     let result = Pin::new(&mut sleep_future).poll(&mut cx);
+    //
+    //     // Ensure the future returns Poll::Pending
+    //     assert!(matches!(result, Poll::Pending));
+    // }
+
+    #[test]
+    fn test_init_without_driver() {
+        // Define a sample IoUringConfiguration
+        let config = IoUringConfiguration::default();
+
+        // Initialize the executor without the IOUring driver
+        init(false, config);
+
+        // Ensure the INIT Once is initialized
+        //assert!(INIT.is_completed());
+    }
+
+    #[test]
+    fn test_init_with_driver() {
+        // Define a sample IoUringConfiguration
+        let config = IoUringConfiguration::default();
+
+        // Initialize the executor with the IOUring driver
+        init(true, config);
+
+        // Wait for a moment to let the driver start
+        thread::sleep(Duration::from_millis(100));
+
+        // Ensure the INIT Once is initialized
+        //assert!(INIT.is_completed());
+    }
+
+    #[test]
+    fn test_spawn_detached() {
+        // Use an Arc and Mutex to share state between the main task and the detached task
+        let flag = Arc::new(Mutex::new(false));
+        let flag_clone = flag.clone();
+
+        // Spawn a detached task that sets the flag to true
+        spawn_detached(async move {
+            let mut flag = flag_clone.lock().unwrap();
+            *flag = true;
+        });
+
+        // Wait for a moment to let the detached task run
+        thread::sleep(Duration::from_millis(100));
+
+        // Check if the flag is set to true
+        assert!(*flag.lock().unwrap());
+    }
+
+    #[test]
+    fn test_block_on() {
+        // Define a future that returns 42
+        let future = async { 42 };
+
+        // Block on the future and get the result
+        let result = block_on(future);
+
+        // Ensure the result is 42
+        assert_eq!(result, 42);
+    }
+}

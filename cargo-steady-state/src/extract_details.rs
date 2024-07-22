@@ -598,4 +598,107 @@ mod tests {
 
 }
 
+#[cfg(test)]
+mod additional_tests {
+    use super::*;
+    use std::error::Error;
+    use dot_parser::canonical::{Graph, Node, Edge};
+    use crate::templates::{Actor, Channel, ActorDriver, ConsumePattern};
+
+    #[test]
+    fn test_to_snake_case() {
+        assert_eq!(to_snake_case("CamelCase"), "camel_case");
+        assert_eq!(to_snake_case("camelCase"), "camel_case");
+        assert_eq!(to_snake_case("CamelCaseWithMultipleWords"), "camel_case_with_multiple_words");
+        assert_eq!(to_snake_case("already_snake_case"), "already_snake_case");
+    }
+
+    #[test]
+    fn test_find_start_position() {
+        let label = "AtLeastEvery(100ms) && OnEvent(C1//10||B2//10)";
+        assert_eq!(find_start_position(label), 0);
+
+        let label = "Some text before AtMostEvery(500ms) && OnEvent(C1//10||B2//10)";
+        assert_eq!(find_start_position(label), 17);
+
+        let label = "No matching keywords";
+        assert_eq!(find_start_position(label), label.len());
+    }
+
+    #[test]
+    fn test_extract_channel_name() {
+        let label = "name::MyChannelName";
+        assert_eq!(extract_channel_name(label, "NodeA", "NodeB"), "MyChannelName");
+
+        let label = "No name here";
+        assert_eq!(extract_channel_name(label, "NodeA", "NodeB"), "node_a_to_node_b");
+    }
+
+    // #[test]
+    // fn test_extract_project_model() -> Result<(), Box<dyn Error>> {
+    //     let graph = Graph {
+    //         nodes: vec![
+    //             (String::from("NodeA"), Node { attr: vec![(String::from("label"), String::from("mod::ModuleA"))] }),
+    //             (String::from("NodeB"), Node { attr: vec![(String::from("label"), String::from("mod::ModuleB"))] }),
+    //         ].into_iter().collect(),
+    //         edges: vec![
+    //             (String::from("NodeA"), String::from("NodeB"), Edge { attr: vec![(String::from("label"), String::from("<TypeName>#100"))] }),
+    //         ].into_iter().collect(),
+    //     };
+    //
+    //     let pm = extract_project_model("TestProject", graph)?;
+    //
+    //     assert_eq!(pm.name, "TestProject");
+    //     assert_eq!(pm.actors.len(), 2);
+    //     assert_eq!(pm.actors[0].display_name, "NodeA");
+    //     assert_eq!(pm.actors[0].mod_name, "ModuleA");
+    //     assert_eq!(pm.actors[1].display_name, "NodeB");
+    //     assert_eq!(pm.actors[1].mod_name, "ModuleB");
+    //
+    //     assert_eq!(pm.channels.len(), 1);
+    //     assert_eq!(pm.channels[0][0].name, "TypeName");
+    //     assert_eq!(pm.channels[0][0].capacity, 100);
+    //     assert_eq!(pm.channels[0][0].from_node, "NodeA");
+    //     assert_eq!(pm.channels[0][0].to_node, "NodeB");
+    //
+    //     Ok(())
+    // }
+
+    #[test]
+    fn test_extract_capacity_from_edge_label_edge_cases() {
+        let label = "Capacity #1024extra";
+        assert_eq!(extract_capacity_from_edge_label(label, 512), 1024);
+
+        let label = "Capacity #invalid";
+        assert_eq!(extract_capacity_from_edge_label(label, 512), 512);
+    }
+
+    // #[test]
+    // fn test_roll_up_bundle() {
+    //     let mut collection: Vec<Vec<Channel>> = Vec::new();
+    //     let channel1 = Channel {
+    //         name: "Channel1".to_string(),
+    //         from_mod: "ModA".to_string(),
+    //         to_mod: "ModB".to_string(),
+    //         capacity: 10,
+    //         ..Default::default()
+    //     };
+    //     let channel2 = Channel {
+    //         name: "Channel1".to_string(),
+    //         from_mod: "ModA".to_string(),
+    //         to_mod: "ModB".to_string(),
+    //         capacity: 20,
+    //         ..Default::default()
+    //     };
+    //
+    //     roll_up_bundle(&mut collection, channel1.clone(), |_t, _v| true);
+    //     roll_up_bundle(&mut collection, channel2.clone(), |_t, _v| true);
+    //
+    //     assert_eq!(collection.len(), 1);
+    //     assert_eq!(collection[0].len(), 2);
+    //     assert_eq!(collection[0][0].capacity, 20);
+    //     assert_eq!(collection[0][1].capacity, 20);
+    // }
+}
+
 
