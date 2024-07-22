@@ -1045,3 +1045,194 @@ impl Filled {
         Self::Exact(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+    use crate::actor_builder::Percentile;
+    use crate::monitor::ChannelMetaData;
+    use futures::channel::oneshot;
+
+    #[test]
+    fn test_channel_builder_new() {
+        let channel_count = Arc::new(AtomicUsize::new(0));
+        let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
+        let noise_threshold = Instant::now();
+        let frame_rate_ms = 1000;
+
+        let builder = ChannelBuilder::new(channel_count.clone(), oneshot_shutdown_vec.clone(), noise_threshold, frame_rate_ms);
+
+        assert_eq!(builder.capacity, DEFAULT_CAPACITY);
+      //  assert_eq!(builder.labels, &[]);
+        assert_eq!(builder.frame_rate_ms, frame_rate_ms);
+    }
+
+    #[test]
+    fn test_channel_builder_with_capacity() {
+        let builder = create_test_channel_builder();
+        let new_builder = builder.with_capacity(128);
+
+        assert_eq!(new_builder.capacity, 128);
+    }
+
+    #[test]
+    fn test_channel_builder_with_type() {
+        let builder = create_test_channel_builder();
+        let new_builder = builder.with_type();
+
+        assert!(new_builder.show_type);
+    }
+
+    #[test]
+    fn test_channel_builder_with_avg_filled() {
+        let builder = create_test_channel_builder();
+        let new_builder = builder.with_avg_filled();
+
+        assert!(new_builder.avg_filled);
+    }
+
+    #[test]
+    fn test_channel_builder_with_filled_max() {
+        let builder = create_test_channel_builder();
+        let new_builder = builder.with_filled_max();
+
+        assert!(new_builder.max_filled);
+    }
+
+    #[test]
+    fn test_channel_builder_with_filled_min() {
+        let builder = create_test_channel_builder();
+        let new_builder = builder.with_filled_min();
+
+        assert!(new_builder.min_filled);
+    }
+
+    #[test]
+    fn test_channel_builder_with_avg_rate() {
+        let builder = create_test_channel_builder();
+        let new_builder = builder.with_avg_rate();
+
+        assert!(new_builder.avg_rate);
+    }
+
+    #[test]
+    fn test_channel_builder_with_avg_latency() {
+        let builder = create_test_channel_builder();
+        let new_builder = builder.with_avg_latency();
+
+        assert!(new_builder.avg_latency);
+    }
+
+    #[test]
+    fn test_channel_builder_with_labels() {
+        let builder = create_test_channel_builder();
+        let labels = &["label1", "label2"];
+        let new_builder = builder.with_labels(labels, true);
+
+        assert_eq!(new_builder.labels, labels);
+    }
+
+    #[test]
+    fn test_channel_builder_with_filled_standard_deviation() {
+        let builder = create_test_channel_builder();
+        let std_dev = StdDev::one();
+        let new_builder = builder.with_filled_standard_deviation(std_dev);
+
+        assert_eq!(new_builder.std_dev_filled.len(), 1);
+    }
+
+    #[test]
+    fn test_channel_builder_with_rate_standard_deviation() {
+        let builder = create_test_channel_builder();
+        let std_dev = StdDev::one();
+        let new_builder = builder.with_rate_standard_deviation(std_dev);
+
+        assert_eq!(new_builder.std_dev_rate.len(), 1);
+    }
+
+    #[test]
+    fn test_channel_builder_with_latency_standard_deviation() {
+        let builder = create_test_channel_builder();
+        let std_dev = StdDev::one();
+        let new_builder = builder.with_latency_standard_deviation(std_dev);
+
+        assert_eq!(new_builder.std_dev_latency.len(), 1);
+    }
+
+    #[test]
+    fn test_channel_builder_with_filled_percentile() {
+        let builder = create_test_channel_builder();
+        let percentile = Percentile::p50();
+        let new_builder = builder.with_filled_percentile(percentile);
+
+        assert_eq!(new_builder.percentiles_filled.len(), 1);
+    }
+
+    #[test]
+    fn test_channel_builder_with_rate_percentile() {
+        let builder = create_test_channel_builder();
+        let percentile = Percentile::p50();
+        let new_builder = builder.with_rate_percentile(percentile);
+
+        assert_eq!(new_builder.percentiles_rate.len(), 1);
+    }
+
+    #[test]
+    fn test_channel_builder_with_latency_percentile() {
+        let builder = create_test_channel_builder();
+        let percentile = Percentile::p50();
+        let new_builder = builder.with_latency_percentile(percentile);
+
+        assert_eq!(new_builder.percentiles_latency.len(), 1);
+    }
+
+    // #[test]
+    // fn test_channel_builder_with_rate_trigger() {
+    //     let builder = create_test_channel_builder();
+    //     let trigger = Trigger::default();
+    //     let color = AlertColor::default();
+    //     let new_builder = builder.with_rate_trigger(trigger, color);
+    //
+    //     assert_eq!(new_builder.trigger_rate.len(), 1);
+    // }
+    //
+    // #[test]
+    // fn test_channel_builder_with_filled_trigger() {
+    //     let builder = create_test_channel_builder();
+    //     let trigger = Trigger::default();
+    //     let color = AlertColor::default();
+    //     let new_builder = builder.with_filled_trigger(trigger, color);
+    //
+    //     assert_eq!(new_builder.trigger_filled.len(), 1);
+    // }
+    //
+    // #[test]
+    // fn test_channel_builder_with_latency_trigger() {
+    //     let builder = create_test_channel_builder();
+    //     let trigger = Trigger::default();
+    //     let color = AlertColor::default();
+    //     let new_builder = builder.with_latency_trigger(trigger, color);
+    //
+    //     assert_eq!(new_builder.trigger_latency.len(), 1);
+    // }
+
+    #[test]
+    fn test_channel_builder_to_meta_data() {
+        let builder = create_test_channel_builder();
+        let type_name = "TestType";
+        let type_byte_count = 4;
+        let meta_data = builder.to_meta_data(type_name, type_byte_count);
+
+        assert_eq!(meta_data.capacity, builder.capacity);
+        assert_eq!(meta_data.labels, builder.labels);
+    }
+
+    fn create_test_channel_builder() -> ChannelBuilder {
+        let channel_count = Arc::new(AtomicUsize::new(0));
+        let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
+        let noise_threshold = Instant::now();
+        let frame_rate_ms = 1000;
+        ChannelBuilder::new(channel_count, oneshot_shutdown_vec, noise_threshold, frame_rate_ms)
+    }
+}
