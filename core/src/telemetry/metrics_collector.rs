@@ -1,7 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::ops::{Deref, DerefMut};
-use std::process::exit;
 use std::sync::{Arc, LockResult};
 use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
@@ -81,11 +80,11 @@ pub(crate) async fn run<const GIRTH: usize>(
     let ident = context.identity();
 
     let ctrl = context;
-    #[cfg(all(feature = "telemetry_on_telemetry", any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-    let mut ctrl = {
-        info!("should not happen");
-        into_monitor!(ctrl, [], optional_servers)
-    };
+    // #[cfg(all(feature = "telemetry_on_telemetry", any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+    // let mut ctrl = {
+    //     info!("should not happen");
+    //     into_monitor!(ctrl, [], optional_servers)
+    // };
 
     let mut state = RawDiagramState::default();
     let mut all_actors_to_scan: Option<Vec<Box<dyn RxDef>>> = None;
@@ -106,8 +105,9 @@ pub(crate) async fn run<const GIRTH: usize>(
                 && locked_servers.mark_closed()
         };
 
-        #[cfg(feature = "telemetry_on_telemetry")]
-        ctrl.relay_stats_smartly();
+        // #[cfg(feature = "telemetry_on_telemetry")]
+        // ctrl.relay_stats_smartly();
+
         //  ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed())
         //let _clean = wait_for_all!(ctrl.wait_vacant_units(&mut tick_counts_tx,1)  ).await;
         if !ctrl.is_running(confirm_shutdown) {

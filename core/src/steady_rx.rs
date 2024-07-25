@@ -280,9 +280,13 @@ impl<T> Rx<T> {
         if self.is_closed.is_terminated() {
             self.shared_is_empty()
         } else {
-            let waker = task::noop_waker();
-            let mut context = task::Context::from_waker(&waker);
-            self.is_closed.poll_unpin(&mut context).is_ready()
+            if self.shared_is_empty() {
+                let waker = task::noop_waker();
+                let mut context = task::Context::from_waker(&waker);
+                self.is_closed.poll_unpin(&mut context).is_ready()
+            } else {
+                false
+            }
         }
     }
 

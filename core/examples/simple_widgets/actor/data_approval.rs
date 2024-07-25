@@ -25,7 +25,10 @@ pub async fn run(context: SteadyContext
                  , tx: SteadyTx<ApprovedWidgets>
                  , feedback: SteadyTx<FailureFeedback>
                 ) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context, rx, tx, feedback).await
+}
 
+async fn internal_behavior(context: SteadyContext, rx: SteadyRx<WidgetInventory>, tx: SteadyTx<ApprovedWidgets>, feedback: SteadyTx<FailureFeedback>) -> Result<(), Box<dyn Error>> {
     let mut monitor = into_monitor!(context,[rx],[tx,feedback]);
 
     let mut tx = tx.lock().await;
@@ -34,8 +37,7 @@ pub async fn run(context: SteadyContext
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
-    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed() && feedback.mark_closed() ) {
-
+    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed() && feedback.mark_closed()) {
         let _clean = wait_for_all_or_proceed_upon!( monitor.wait_periodic(Duration::from_millis(300))
                             , monitor.wait_avail_units(&mut rx, BATCH_SIZE)
                             ,monitor.wait_vacant_units(&mut tx, BATCH_SIZE)
@@ -45,49 +47,32 @@ pub async fn run(context: SteadyContext
 
         //error!("avail units {} ", monitor.avail_units(&mut rx));
 
-        iterate_once(&mut monitor
-                        , &mut rx
-                        , &mut tx
-                        , &mut feedback
-                        , &mut buffer
-        );
-
-        monitor.relay_stats_smartly();
-    }
-    Ok(())
-}
-
-
-// important function break out to ensure we have a point to test on
-fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor<R, T>
-                                              , rx: & mut Rx<WidgetInventory>
-                                              , tx: & mut Tx<ApprovedWidgets>
-                                              , feedback: & mut Tx<FailureFeedback>
-                                              , buf: &mut [WidgetInventory; BATCH_SIZE]) {
-
-        let count = monitor.take_slice(rx, buf);
+        let count = monitor.take_slice(&mut rx, &mut buffer);
         let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
-        for b in buf.iter().take(count) {
+        for b in buffer.iter().take(count) {
             approvals.push(ApprovedWidgets {
                 original_count: b.count,
                 approved_count: b.count / 2,
             });
             if b.count % 20000 == 0 {
 
-                let _ = monitor.try_send(feedback, FailureFeedback {
+                let _ = monitor.try_send(&mut feedback, FailureFeedback {
                     count: b.count,
                     message: "count is a multiple of 20000".to_string(),
                 });
             }
         }
 
-        let sent = monitor.send_slice_until_full(tx, &approvals);
+        let sent = monitor.send_slice_until_full(&mut tx, &approvals);
         //iterator of sent until the end
         let send = approvals.into_iter().skip(sent);
         for send_me in send {
-            let _ = monitor.try_send(tx, send_me);
+            let _ = monitor.try_send(&mut tx, send_me);
         }
 
+        monitor.relay_stats_smartly();
+    }
+    Ok(())
 }
 
 
@@ -131,7 +116,28 @@ mod tests {
         },SendSaturation::Warn).await;
         let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
 
-        iterate_once(&mut mock_monitor, &mut rx_in, &mut tx_out, &mut tx_feedback, &mut buffer );
+        let count = mock_monitor.take_slice(&mut rx_in, &mut buffer);
+        let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
+        for b in buffer.iter().take(count) {
+            approvals.push(ApprovedWidgets {
+                original_count: b.count,
+                approved_count: b.count / 2,
+            });
+            if b.count % 20000 == 0 {
+
+                let _ = mock_monitor.try_send(&mut tx_feedback, FailureFeedback {
+                    count: b.count,
+                    message: "count is a multiple of 20000".to_string(),
+                });
+            }
+        }
+
+        let sent = mock_monitor.send_slice_until_full(&mut tx_out, &approvals);
+        //iterator of sent until the end
+        let send = approvals.into_iter().skip(sent);
+        for send_me in send {
+            let _ = mock_monitor.try_send(&mut tx_out, send_me);
+        }
 
         let result = mock_monitor.take_async(&mut rx_out).await.unwrap();
         assert_eq!(result.original_count, 5);

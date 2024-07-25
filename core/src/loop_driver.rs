@@ -61,6 +61,40 @@ macro_rules! wait_for_all_or_proceed_upon {
     };
 }
 
+/// This macro waits for any of the provided futures to complete.
+/// It returns a boolean indicating if any one of the futures returned true.
+///
+/// # Arguments
+///
+/// * `$($t:expr),*` - A list of futures to wait for.
+///
+#[macro_export]
+macro_rules! wait_for_any {
+    ($($t:expr),* $(,)?) => {
+        async {
+            use futures::future::FutureExt;
+            use futures::pin_mut;
+            use futures::future::select_all;
+            use std::sync::Arc;
+            use std::sync::atomic::{AtomicBool, Ordering};
+
+            let flag = Arc::new(AtomicBool::new(false));
+            let mut futures_vec = Vec::new();
+
+            $(
+                futures_vec.push(wrap_bool_future(flag.clone(), $t).boxed());
+            )*
+
+            // Wait for any of the futures to complete
+            let (res, _index, _remaining) = select_all(futures_vec).await;
+            res;  // This ensures the future has been awaited
+
+            flag.load(Ordering::Relaxed)
+        }
+    };
+}
+
+
 /// Wraps a future that returns a boolean into one that updates a shared flag if it returns false.
 ///
 /// # Arguments

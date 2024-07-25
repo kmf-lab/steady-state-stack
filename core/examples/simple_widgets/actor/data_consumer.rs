@@ -21,7 +21,10 @@ struct InternalState {
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context, rx).await
+}
 
+async fn internal_behavior(context: SteadyContext, rx: SteadyRx<ApprovedWidgets>) -> Result<(), Box<dyn Error>> {
     //let args:Option<&Args> = context.args(); //you can make the type explicit
     let _args = context.args::<Args>(); //or you can turbo fish here to get your args
     //trace!("running {:?} {:?}",context.id(),context.name());
@@ -37,19 +40,15 @@ pub async fn run(context: SteadyContext
     };
 
 
-
     //predicate which affirms or denies the shutdown request
-    while monitor.is_running(&mut || rx.is_closed_and_empty() ) {
-
+    while monitor.is_running(&mut || rx.is_closed_and_empty()) {
         let _clean = wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
-           //single pass of work, in this high volume example we stay in iterate_once as long
-            //as the input channel as more work to process.
-            iterate_once(&mut monitor, &mut state, &mut rx).await;
-
+        //single pass of work, in this high volume example we stay in iterate_once as long
+        //as the input channel as more work to process.
+        iterate_once(&mut monitor, &mut state, &mut rx).await;
     }
     Ok(())
 }
-
 
 async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonitor<R,T>
                                                       , state: &mut InternalState

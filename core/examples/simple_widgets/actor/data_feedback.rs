@@ -20,6 +20,10 @@ pub struct FailureFeedback {
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
                  , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context, rx, tx).await
+}
+
+async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>, tx: SteadyTx<ChangeRequest>) -> Result<(), Box<dyn Error>> {
     //trace!("running {:?} {:?}",context.id(),context.name());
 
     let mut monitor = into_monitor!(context, [rx], [tx]);
@@ -28,20 +32,19 @@ pub async fn run(context: SteadyContext
     let mut rx = rx.lock().await;
 
 
-    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()  ) {
+    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
         iterate_once(&mut monitor
-                        , &mut rx
-                        , &mut tx
+                     , &mut rx
+                     , &mut tx
         ).await;
         //we relay all our telemetry and return to the top to block for more work.
         monitor.relay_stats_smartly();
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
@@ -57,7 +60,7 @@ pub async fn run(context: SteadyContext
         iterate_once( &mut monitor
                          , &mut rx
                          , &mut tx
-                         ).await;
+                         );
 
 
          monitor.relay_stats_smartly();

@@ -16,9 +16,13 @@ pub struct Packet {
 }
 
 
-
 #[cfg(not(test))]
 pub async fn run<const GIRTH:usize>(context: SteadyContext
+                                                  , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context, tx).await
+}
+
+async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
                                     , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
     //info!("running {:?} {:?}",context.id(),context.name());
@@ -42,34 +46,29 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
         ).await;
 
 
-        single_iteration(&mut monitor, &mut buffers, &mut tx, limit);
+        loop {
+            let route = thread_rng().gen::<u16>();
+            let packet = Packet {
+                route,
+                data: Bytes::from_static(&[0u8; 62]),
+            };
+            let index = (packet.route as usize) % tx.len();
+            &mut buffers[index].push(packet);
+            if &mut buffers[index].len() >= &mut (limit * 2) {
+                //first one we fill to limit, the rest will not be as full
+                break;
+            }
+        }
+        //repeat
+        for i in 0..GIRTH {
+            let replace = mem::replace(&mut buffers[i], Vec::with_capacity(limit * 2));
+            let iter = replace.into_iter();
+            monitor.send_iter_until_full(&mut tx[i], iter);
+        }
         monitor.relay_stats_smartly();
 
     }
     Ok(())
-}
-
-fn single_iteration<const GIRTH: usize>(monitor: &mut LocalMonitor<0, GIRTH>, buffers: &mut [Vec<Packet>; GIRTH]
-                                              , tx: &mut TxBundle<'_, Packet>, limit: usize) {
-    loop {
-        let route = thread_rng().gen::<u16>();
-        let packet = Packet {
-            route,
-            data: Bytes::from_static(&[0u8; 62]),
-        };
-        let index = (packet.route as usize) % tx.len();
-        buffers[index].push(packet);
-        if buffers[index].len() >= limit*2 {
-            //first one we fill to limit, the rest will not be as full
-            break;
-        }
-    }
-    //repeat
-    for i in 0..GIRTH {
-        let iter = mem::replace(&mut buffers[i], Vec::with_capacity(limit*2)).into_iter();
-        monitor.send_iter_until_full(&mut tx[i], iter);
-    }
-
 }
 
 

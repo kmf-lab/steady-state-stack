@@ -25,13 +25,10 @@ use futures::channel::oneshot;
 #[allow(unused_imports)]
 use log::*;
 use async_ringbuf::traits::Split;
-//# use ringbuf::storage::Heap;
 use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
-use crate::actor_builder::{ActorTeam, Percentile};
+use crate::actor_builder::{Percentile};
 use crate::monitor::ChannelMetaData;
-//# use ringbuf::storage::Heap;
 use crate::steady_rx::{Rx};
-//# use ringbuf::storage::Heap;
 use crate::steady_tx::{Tx};
 
 /// Builder for configuring and creating channels within the Steady State framework.
@@ -290,13 +287,13 @@ impl ChannelBuilder {
             {
                 match tx_vec.try_into() {
                     Ok(t) => t,
-                    Err(t) => panic!("Internal error, incorrect length")
+                    Err(_) => panic!("Internal error, incorrect length")
                 }
             },
             {
                 match rx_vec.try_into() {
                     Ok(t) => t,
-                    Err(t) => panic!("Internal error, incorrect length")
+                    Err(_) => panic!("Internal error, incorrect length")
                 }
             }
             ,
@@ -668,6 +665,7 @@ impl ChannelBuilder {
 pub struct LazySteadyTx<T> {
     lazy_channel: Arc<LazyChannel<T>>,
 }
+
 impl <T> LazySteadyTx<T> {
     fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
         LazySteadyTx {
@@ -675,7 +673,16 @@ impl <T> LazySteadyTx<T> {
         }
     }
     pub fn clone(&self) -> SteadyTx<T> {
-        nuclei::block_on(self.lazy_channel.getTxClone())
+        nuclei::block_on(self.lazy_channel.get_tx_clone())
+    }
+
+    pub async fn testing_send(&self, data: Vec<T>, close: bool) {
+        let tx = self.lazy_channel.get_tx_clone().await;
+        let mut tx = tx.lock().await;
+        tx.shared_send_iter_until_full(data.into_iter());
+        if close {
+            tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
+        }
     }
 }
 
@@ -690,8 +697,16 @@ impl <T> crate::channel_builder::LazySteadyRx<T> {
         }
     }
     pub fn clone(&self) -> SteadyRx<T> {
-        nuclei::block_on(self.lazy_channel.getRxClone())
+        nuclei::block_on(self.lazy_channel.get_rx_clone())
     }
+
+    pub async fn testing_avail_units(&self) -> usize {
+        let rx = self.lazy_channel.get_rx_clone().await;
+        let mut rx = rx.lock().await;
+        rx.avail_units()
+    }
+
+
 }
 
 #[derive(Debug)]
@@ -708,7 +723,7 @@ impl <T> LazyChannel<T> {
         }
     }
 
-    pub(crate) async fn getTxClone(&self) -> SteadyTx<T> {
+    pub(crate) async fn get_tx_clone(&self) -> SteadyTx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
             *channel = Some(self.builder.eager_build());
@@ -716,7 +731,7 @@ impl <T> LazyChannel<T> {
         channel.as_ref().expect("internal error").0.clone()
     }
 
-    pub(crate) async fn getRxClone(&self) -> SteadyRx<T> {
+    pub(crate) async fn get_rx_clone(&self) -> SteadyRx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
             *channel = Some(self.builder.eager_build());

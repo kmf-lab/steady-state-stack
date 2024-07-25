@@ -28,7 +28,7 @@ fn main() {
 
     {  //remove this block to run forever.
        std::thread::sleep(Duration::from_secs(600));
-       graph.stop(); //actors can also call stop as desired on the context or monitor
+       graph.request_stop(); //actors can also call stop as desired on the context or monitor
     }
 
     graph.block_until_stopped(Duration::from_secs(2));
@@ -85,7 +85,7 @@ fn build_graph(cli_arg: &Args) -> steady_state::Graph {
 
     tickgenerator_to_tick_consumer_ticks_rx.iter()
          .zip(tick_consumern_to_finalconsumer_tick_counts_tx.iter()).enumerate()
-        .for_each(|(i, (tick_consumer_ticks_rx, tick_consumer_tick_counts_tx))| {
+        .for_each(|(_i, (tick_consumer_ticks_rx, tick_consumer_tick_counts_tx))| {
             {
                 let mut team =  ActorTeam::default();
 

@@ -28,7 +28,7 @@ fn main() {
 
     {  //remove this block to run forever.
        std::thread::sleep(Duration::from_secs(600));
-       graph.stop(); //actors can also call stop as desired on the context or monitor
+       graph.request_stop(); //actors can also call stop as desired on the context or monitor
     }
 
     graph.block_until_stopped(Duration::from_secs(2));

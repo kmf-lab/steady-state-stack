@@ -71,7 +71,7 @@ fn main() {
     {  //remove this block to run forever.
        if opt.duration > 0 {
            sleep(Duration::from_secs(opt.duration));
-           graph.stop();
+           graph.request_stop();
        }
     }
     graph.block_until_stopped(Duration::from_secs(2));
@@ -208,7 +208,7 @@ mod tests {
         }
         drop(guard);
 
-        graph.stop();
+        graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(7));
 
     }

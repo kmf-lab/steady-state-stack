@@ -119,11 +119,6 @@ pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 /// This type alias simplifies the usage of a bundle of transmitters that can be shared across multiple threads.
 pub type SteadyTxBundle<T, const GIRTH: usize> = Arc<[SteadyTx<T>; GIRTH]>;
 
-/// Type alias for an array of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
-///
-/// This type alias simplifies the usage of a bundle of transmitters that can be shared across multiple threads.
-pub type LazySteadyTxBundle<T, const GIRTH: usize> = [LazySteadyTx<T>; GIRTH];
-
 /// Type alias for a thread-safe receiver (Rx) wrapped in an `Arc` and `Mutex`.
 ///
 /// This type alias simplifies the usage of a receiver that can be shared across multiple threads.
@@ -133,11 +128,6 @@ pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
 ///
 /// This type alias simplifies the usage of a bundle of receivers that can be shared across multiple threads.
 pub type SteadyRxBundle<T, const GIRTH: usize> = Arc<[SteadyRx<T>; GIRTH]>;
-
-/// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
-///
-/// This type alias simplifies the usage of a bundle of receivers that can be shared across multiple threads.
-pub type LazySteadyRxBundle<T, const GIRTH: usize> = [LazySteadyRx<T>; GIRTH];
 
 /// Type alias for a vector of `MutexGuard` references to transmitters (Tx).
 ///
@@ -149,21 +139,62 @@ pub type TxBundle<'a, T> = Vec<MutexGuard<'a, Tx<T>>>;
 /// This type alias simplifies the usage of a collection of receiver guards for batch operations.
 pub type RxBundle<'a, T> = Vec<MutexGuard<'a, Rx<T>>>;
 
+
+/// Type alias for an array of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
+///
+/// This type alias simplifies the usage of a bundle of transmitters that can be shared across multiple threads.
+pub type LazySteadyTxBundle<T, const GIRTH: usize> = [LazySteadyTx<T>; GIRTH];
+
 pub trait LazySteadyTxBundleClone<T, const GIRTH: usize> {
     fn clone(&self) -> SteadyTxBundle<T, GIRTH>;
+    async fn testing_send(&self, data: Vec<T>, index:usize, close: bool) -> ();
+    async fn testing_mark_closed(&self, index: usize) -> ();
 }
 
 impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyTxBundle<T, GIRTH> {
-        let mut tx_clones:Vec<SteadyTx<T>> = self.iter().map(|l|l.clone()).collect();
+        let tx_clones:Vec<SteadyTx<T>> = self.iter().map(|l|l.clone()).collect();
         match tx_clones.try_into() {
             Ok(array) => steady_tx_bundle(array),
-            Err(e) => {
+            Err(_) => {
                 panic!("Internal error, bad length");
             }
         }
     }
+
+    async fn testing_send(&self, data: Vec<T>, index: usize, close: bool) -> () {
+        if index >= GIRTH {
+            panic!("Index out of bounds");
+        }
+
+        let tx_clone:SteadyTx<T> = self[index].clone();
+
+        let mut tx = tx_clone.lock().await;
+        for d in data.into_iter() {
+            tx.shared_send_iter_until_full([d].into_iter());
+        }
+        if close {
+            tx.mark_closed();
+        };
+    }
+
+    async fn testing_mark_closed(&self, index: usize) -> () {
+        if index >= GIRTH {
+            panic!("Index out of bounds");
+        }
+
+        let tx_clone:SteadyTx<T> = self[index].clone();
+        let mut tx = tx_clone.lock().await;
+        tx.mark_closed();
+
+    }
+
 }
+
+/// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
+///
+/// This type alias simplifies the usage of a bundle of receivers that can be shared across multiple threads.
+pub type LazySteadyRxBundle<T, const GIRTH: usize> = [LazySteadyRx<T>; GIRTH];
 
 pub trait LazySteadyRxBundleClone<T, const GIRTH: usize> {
     fn clone(&self) -> SteadyRxBundle<T, GIRTH>;
@@ -171,10 +202,10 @@ pub trait LazySteadyRxBundleClone<T, const GIRTH: usize> {
 
 impl<T, const GIRTH: usize> crate::LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyRxBundle<T, GIRTH> {
-        let mut rx_clones:Vec<SteadyRx<T>> = self.iter().map(|l|l.clone()).collect();
+        let rx_clones:Vec<SteadyRx<T>> = self.iter().map(|l|l.clone()).collect();
         match rx_clones.try_into() {
             Ok(array) => steady_rx_bundle(array),
-            Err(e) => {
+            Err(_) => {
                 panic!("Internal error, bad length");
             }
         }

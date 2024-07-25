@@ -2,14 +2,14 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{abstract_executor, steady_config, SteadyContext};
+use crate::{abstract_executor, steady_config, SteadyContext, util};
 use std::ops::Sub;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
 use std::process::exit;
-use log::{error, info, log_enabled, warn};
+use log::{error, info, log_enabled, trace, warn};
 use std::any::Any;
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::future::Future;
@@ -356,22 +356,23 @@ impl Graph {
         let channel_count = self.channel_count.clone();
         let all_telemetry_rx = self.all_telemetry_rx.clone();
 
-        let oneshot_shutdown = {
-            let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
+        let oneshot_shutdown_rx = {
+            let (send_shutdown_notice_to_periodic_wait, rx) = oneshot::channel();
             let local_vec = self.oneshot_shutdown_vec.clone();
             abstract_executor::block_on(async move {
                 local_vec.lock().await.push(send_shutdown_notice_to_periodic_wait);
             });
-            oneshot_shutdown
+            rx
         };
-        let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown));
+        let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown_rx));
         let now = Instant::now();
 
         SteadyContext {
             channel_count,
             ident: ActorIdentity {
                 name,
-                id: self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                id: usize::MAX, //  skip normal behavior since this only for testing and is not a real actor
+                                //  self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
             },
             args: self.args.clone(),
             is_in_graph: false, // This is key, we are not running in a graph by design
@@ -452,6 +453,17 @@ impl Graph {
         self.backplane.lock()
     }
 
+    /// Runs the full graph with an immediate stop which allows actors to cascade
+    /// shutdown based on closed channels. Also makes use of an expected timeout.
+    ///
+    /// This is excellent for command line applications which take in data, do a
+    /// specific job and then exit.  This is frequently used for unit tests of actors.
+    pub fn start_as_data_driven(mut self, timeout: Duration) {
+        self.start(); //startup the graph
+        self.request_stop(); //let all actors close when inputs are closed
+        self.block_until_stopped(timeout); //wait for the graph to stop
+    }
+
     /// Starts the graph.
     ///
     /// This should be done after building the graph.
@@ -480,7 +492,7 @@ impl Graph {
             Ok(mut state) => {
                 // error!("to running");
                 state.building_to_running();
-                info!("we are now running");
+                trace!("we are now running");
                 let v = self.oneshot_startup_vec.clone();
                 abstract_executor::block_on(async move {
                     let mut one_shots: MutexGuard<Vec<Sender<_>>> = v.lock().await;
@@ -497,8 +509,8 @@ impl Graph {
         }
     }
 
-    /// Stops the graph.
-    pub fn stop(&mut self) {
+    /// Stops the graph procedure requested.
+    pub fn request_stop(&mut self) {
         match self.runtime_state.write() {
             Ok(mut a) => {
                 a.request_shutdown();
@@ -601,6 +613,11 @@ impl Graph {
     pub fn new<A: Any + Send + Sync>(args: A) -> Graph {
         let block_fail_fast = false;
         Self::internal_new(args, block_fail_fast, steady_config::TELEMETRY_SERVER)
+    }
+
+    pub fn new_test<A: Any + Send + Sync>(args: A) -> Graph {
+        util::logger::initialize();
+        Self::internal_new(args, false, false)
     }
 
     /// Creates a new graph for normal or unit test use.

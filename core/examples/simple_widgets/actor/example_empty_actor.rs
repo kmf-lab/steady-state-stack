@@ -17,6 +17,12 @@ struct SomeLocalState {
 #[allow(dead_code)]
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
+                               , tx: SteadyTx<SomeExampleRecord>
+                               , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
+    internal_behavior(context, tx, rx).await
+}
+
+pub async fn internal_behavior(context: SteadyContext
                  , tx: SteadyTx<SomeExampleRecord>
                  , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
 
@@ -56,10 +62,10 @@ pub async fn run(context: SteadyContext
 
     loop {
         //single pass of work, do not loop in here
-        if iterate_once( &mut monitor
+        if iterate_once(&mut monitor
                         , &mut state
-                      , &mut tx
-                      , &mut rx).await {
+                        , &mut tx
+                        , &mut rx).await {
             break Ok(());
         }
         //when the outgoing pipe is full or the input is empty we do not want to spin

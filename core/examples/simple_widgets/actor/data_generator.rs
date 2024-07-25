@@ -24,6 +24,12 @@ struct InternalState {
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
+                               , feedback: SteadyRx<ChangeRequest>
+                               , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context, feedback, tx).await
+}
+
+pub async fn internal_behavior(context: SteadyContext
                  , feedback: SteadyRx<ChangeRequest>
                  , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
     //trace!("running {:?} {:?}",context.id(),context.name());

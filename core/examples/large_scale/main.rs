@@ -60,7 +60,7 @@ fn main() {
 
     {   //remove this block to run forever.
         sleep(Duration::from_secs(opt.duration));
-        graph.stop();
+        graph.request_stop();
     }
 
 

@@ -114,7 +114,7 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
 
     }
 
-    tcp_sender_tx.send(());
+    let _ = tcp_sender_tx.send(());
 
 
     Ok(())

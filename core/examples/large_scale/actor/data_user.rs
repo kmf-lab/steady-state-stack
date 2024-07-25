@@ -9,6 +9,10 @@ use crate::actor::data_generator::Packet;
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context, rx).await
+}
+
+async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>) -> Result<(), Box<dyn Error>> {
     //info!("running {:?} {:?}",context.id(),context.name());
 
     let mut monitor = into_monitor!(context,[rx], []);
@@ -17,11 +21,10 @@ pub async fn run(context: SteadyContext
     let mut _count = 0;
 
     while monitor.is_running(&mut || rx.is_closed_and_empty()) {
-
         wait_for_all!(monitor.wait_avail_units(&mut rx, 1)).await;
 
         while let Some(packet) = monitor.try_take(&mut rx) {
-            assert_eq!(packet.data.len(),62);
+            assert_eq!(packet.data.len(), 62);
             _count += 1;
             //info!("data_router: {:?}", packet);
 
@@ -32,13 +35,9 @@ pub async fn run(context: SteadyContext
         }
 
         monitor.relay_stats_smartly();
-
     }
     Ok(())
 }
-
-
-
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
