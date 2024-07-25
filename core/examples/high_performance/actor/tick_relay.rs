@@ -36,7 +36,7 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
 }
 
 #[cfg(test)]
-mod actor_tests {
+pub(crate) mod actor_tests {
     use std::time::Duration;
     use async_std::test;
     use steady_state::*;
@@ -44,7 +44,7 @@ mod actor_tests {
     use crate::actor::tick_relay::{BATCH, internal_behavior};
 
     #[test]
-    async fn test_simple_process() {
+    pub(crate) async fn test_simple_process() {
         //1. build test graph, the input and output channels and our actor
         let mut graph = Graph::new_test(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()

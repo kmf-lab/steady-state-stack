@@ -1062,7 +1062,7 @@ impl Filled {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::time::{Duration, Instant};
     use crate::actor_builder::Percentile;
@@ -1070,7 +1070,7 @@ mod tests {
     use futures::channel::oneshot;
 
     #[test]
-    fn test_channel_builder_new() {
+    pub(crate) fn test_channel_builder_new() {
         let channel_count = Arc::new(AtomicUsize::new(0));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
         let noise_threshold = Instant::now();
@@ -1084,7 +1084,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_capacity() {
+    pub(crate) fn test_channel_builder_with_capacity() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_capacity(128);
 
@@ -1092,7 +1092,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_type() {
+    pub(crate) fn test_channel_builder_with_type() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_type();
 
@@ -1100,7 +1100,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_avg_filled() {
+    pub(crate) fn test_channel_builder_with_avg_filled() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_avg_filled();
 
@@ -1108,7 +1108,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_filled_max() {
+    pub(crate) fn test_channel_builder_with_filled_max() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_filled_max();
 
@@ -1116,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_filled_min() {
+    pub(crate) fn test_channel_builder_with_filled_min() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_filled_min();
 
@@ -1124,7 +1124,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_avg_rate() {
+    pub(crate) fn test_channel_builder_with_avg_rate() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_avg_rate();
 
@@ -1132,7 +1132,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_avg_latency() {
+    pub(crate) fn test_channel_builder_with_avg_latency() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_avg_latency();
 
@@ -1140,7 +1140,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_labels() {
+    pub(crate) fn test_channel_builder_with_labels() {
         let builder = create_test_channel_builder();
         let labels = &["label1", "label2"];
         let new_builder = builder.with_labels(labels, true);
@@ -1149,7 +1149,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_filled_standard_deviation() {
+    pub(crate) fn test_channel_builder_with_filled_standard_deviation() {
         let builder = create_test_channel_builder();
         let std_dev = StdDev::one();
         let new_builder = builder.with_filled_standard_deviation(std_dev);
@@ -1158,7 +1158,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_rate_standard_deviation() {
+    pub(crate) fn test_channel_builder_with_rate_standard_deviation() {
         let builder = create_test_channel_builder();
         let std_dev = StdDev::one();
         let new_builder = builder.with_rate_standard_deviation(std_dev);
@@ -1167,7 +1167,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_latency_standard_deviation() {
+    pub(crate) fn test_channel_builder_with_latency_standard_deviation() {
         let builder = create_test_channel_builder();
         let std_dev = StdDev::one();
         let new_builder = builder.with_latency_standard_deviation(std_dev);
@@ -1176,7 +1176,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_filled_percentile() {
+    pub(crate) fn test_channel_builder_with_filled_percentile() {
         let builder = create_test_channel_builder();
         let percentile = Percentile::p50();
         let new_builder = builder.with_filled_percentile(percentile);
@@ -1185,7 +1185,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_rate_percentile() {
+    pub(crate) fn test_channel_builder_with_rate_percentile() {
         let builder = create_test_channel_builder();
         let percentile = Percentile::p50();
         let new_builder = builder.with_rate_percentile(percentile);
@@ -1194,7 +1194,7 @@ mod tests {
     }
 
     #[test]
-    fn test_channel_builder_with_latency_percentile() {
+    pub(crate) fn test_channel_builder_with_latency_percentile() {
         let builder = create_test_channel_builder();
         let percentile = Percentile::p50();
         let new_builder = builder.with_latency_percentile(percentile);
@@ -1233,7 +1233,7 @@ mod tests {
     // }
 
     #[test]
-    fn test_channel_builder_to_meta_data() {
+    pub(crate) fn test_channel_builder_to_meta_data() {
         let builder = create_test_channel_builder();
         let type_name = "TestType";
         let type_byte_count = 4;

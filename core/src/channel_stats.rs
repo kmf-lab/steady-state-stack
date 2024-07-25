@@ -1042,7 +1042,7 @@ pub(crate) fn compute_labels<T: Counter>(
 }
 
 #[cfg(test)]
-mod stats_tests {
+pub(crate) mod stats_tests {
     use super::*;
     use rand_distr::{Distribution, Normal};
     use rand::{rngs::StdRng, SeedableRng};
@@ -1056,7 +1056,7 @@ mod stats_tests {
     ///////////////////////////////
 
     #[test]
-    fn filled_avg_percent_trigger() {
+    pub(crate) fn filled_avg_percent_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -1083,7 +1083,7 @@ mod stats_tests {
     }
 
     #[test]
-    fn filled_avg_fixed_trigger() {
+    pub(crate) fn filled_avg_fixed_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -1115,7 +1115,7 @@ mod stats_tests {
     }
 
     #[test]
-    fn filled_std_dev_trigger() {
+    pub(crate) fn filled_std_dev_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -1160,7 +1160,7 @@ mod stats_tests {
     }
 
     #[test]
-    fn filled_percentile_trigger() {
+    pub(crate) fn filled_percentile_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -1206,7 +1206,7 @@ mod stats_tests {
 
     ////////////////////////////////////////////////////////
     #[test]
-    fn rate_avg_trigger() {
+    pub(crate) fn rate_avg_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -1238,7 +1238,7 @@ mod stats_tests {
     }
 
     #[test]
-    fn rate_std_dev_trigger() {
+    pub(crate) fn rate_std_dev_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -1282,7 +1282,7 @@ mod stats_tests {
 
     ///////////////////
     #[test]
-    fn rate_percentile_trigger() {
+    pub(crate) fn rate_percentile_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -1338,7 +1338,7 @@ mod stats_tests {
     /////////////////////////
 
     #[test]
-    fn latency_avg_trigger() {
+    pub(crate) fn latency_avg_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -1406,7 +1406,7 @@ mod stats_tests {
     }
 
     #[test]
-    fn latency_std_dev_trigger() {
+    pub(crate) fn latency_std_dev_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
@@ -1445,7 +1445,7 @@ mod stats_tests {
     }
 
     #[test]
-    fn latency_percentile_trigger() {
+    pub(crate) fn latency_percentile_trigger() {
         util::logger::initialize();
 
         let mut cmd = ChannelMetaData::default();

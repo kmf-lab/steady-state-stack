@@ -91,7 +91,7 @@ cd ..
 
 # Run tarpaulin for code coverage
 # cargo install cargo-tarpaulin --force
-RUST_TEST_THREADS=6 cargo tarpaulin --timeout 180 --out html --ignore-config --output-dir target/tarpaulin-report
+RUST_TEST_THREADS=6 cargo tarpaulin --timeout 180 --out html --no-fail-fast --ignore-tests --tests --examples --output-dir target/tarpaulin-report
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Code coverage check failed with exit code $exit_code"
