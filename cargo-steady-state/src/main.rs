@@ -567,20 +567,8 @@ mod tests {
         assert!(output.success());
     }
 
-    //for code coverage we are not going to use the test_run folder
-    #[cfg(tarpaulin)]
-    #[test]
-    fn test_none() {
-        let working_path = PathBuf::from("test_run");
-        if working_path.exists() {
-            if let Err(e) = fs::remove_dir_all(&working_path) {
-                error!("Failed to remove test_run directory: {}", e);
-                return;
-            }
-        }
-    }
 
-    #[cfg(not(tarpaulin))]
+
     #[test]
     fn test_unnamed1_project() {
 
@@ -610,8 +598,7 @@ mod tests {
         build_and_parse("unnamed1", g, false, false);
     }
 
-    //need to skip running this when using tarpaulin coverage
-    #[cfg(not(tarpaulin))]
+
     #[test]
     fn test_pbft_project() {
         let g = r#"

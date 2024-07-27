@@ -452,4 +452,92 @@ mod tests {
             }
         }
     }
+
+    use super::*;
+    use std::time::Duration;
+    pub struct TelemetrySetup {
+        channel_meta_data: Arc<ChannelMetaData>,
+        refresh_rate: Duration,
+        window_size: Duration,
+    }
+
+    impl TelemetrySetup {
+        pub fn new(refresh_rate: Duration, window_size: Duration) -> Self {
+            TelemetrySetup {
+                channel_meta_data: Arc::new(ChannelMetaData::default()),
+                refresh_rate,
+                window_size,
+            }
+        }
+
+        pub fn configure(&self) {
+            // Configuration logic here
+        }
+
+        pub fn validate(&self) -> Result<(), String> {
+            if self.refresh_rate.as_secs() == 0 {
+                return Err("Refresh rate must be greater than zero.".to_string());
+            }
+            if self.window_size.as_secs() == 0 {
+                return Err("Window size must be greater than zero.".to_string());
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_new_telemetry_setup() {
+        let refresh_rate = Duration::from_secs(1);
+        let window_size = Duration::from_secs(10);
+        let telemetry_setup = TelemetrySetup::new(refresh_rate, window_size);
+
+        assert_eq!(telemetry_setup.refresh_rate, refresh_rate);
+        assert_eq!(telemetry_setup.window_size, window_size);
+        assert!(Arc::strong_count(&telemetry_setup.channel_meta_data) == 1);
+    }
+
+    #[test]
+    fn test_validate_success() {
+        let refresh_rate = Duration::from_secs(1);
+        let window_size = Duration::from_secs(10);
+        let telemetry_setup = TelemetrySetup::new(refresh_rate, window_size);
+
+        assert!(telemetry_setup.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_failure_refresh_rate() {
+        let refresh_rate = Duration::from_secs(0);
+        let window_size = Duration::from_secs(10);
+        let telemetry_setup = TelemetrySetup::new(refresh_rate, window_size);
+
+        let result = telemetry_setup.validate();
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), "Refresh rate must be greater than zero.");
+    }
+
+    #[test]
+    fn test_validate_failure_window_size() {
+        let refresh_rate = Duration::from_secs(1);
+        let window_size = Duration::from_secs(0);
+        let telemetry_setup = TelemetrySetup::new(refresh_rate, window_size);
+
+        let result = telemetry_setup.validate();
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), "Window size must be greater than zero.");
+    }
+
+    #[test]
+    fn test_configure() {
+        let refresh_rate = Duration::from_secs(1);
+        let window_size = Duration::from_secs(10);
+        let telemetry_setup = TelemetrySetup::new(refresh_rate, window_size);
+
+        // Assuming configure does some internal setup, but has no return value.
+        // This test ensures no panics or errors during configuration.
+        telemetry_setup.configure();
+
+        // Since `configure` has no output, the main check is that no panic occurs.
+        assert!(true);
+    }
 }

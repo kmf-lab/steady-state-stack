@@ -5,9 +5,6 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use crate::Args;
-
-
-
 use std::error::Error;
 use crate::actor::tick_generator::Tick;
 
@@ -75,7 +72,7 @@ pub(crate) mod actor_tests {
 
         //2. add test data to the input channels
         let test_data:Vec<Tick> = (0..WAIT_AVAIL).map(|i| Tick { value: i as u128 }).collect();
-        ticks_tx_in.testing_send(test_data, true).await;
+        ticks_tx_in.testing_send(test_data, Duration::from_millis(30), true).await;
 
         //3. run graph until the actor detects the input is closed
         graph.start_as_data_driven(Duration::from_secs(240));

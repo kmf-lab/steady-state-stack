@@ -88,42 +88,5 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
          monitor.relay_stats_smartly();
    }
 }
-#[cfg(test)]
-async fn relay_test<const R:usize, const T:usize>(_monitor: &mut LocalMonitor<R,T>
-                    , _tx: &Tx<Packet>) {
-
-    /*
-    if let Some(ctx) = monitor.ctx() {
-        MessageHandler::new(ctx.recv().await.unwrap())
-            .on_question(|message: WidgetInventory, answer_sender| {
-                info!("relay_test: {:?}", message);
-                run!(async {
-                    let _ = monitor.send_async(tx, message).await;
-                    answer_sender.reply("ok").unwrap();
-                   });
-            });
-    }
-    //      */
 
 
-}
-
-
-
-/*
-#[cfg(test)]
-mod tests {
-    use std::ops::DerefMut;
-    use crate::actor::data_generator::{InternalState, iterate_once};
-    use steady_state::{Graph, util};
-
-    #[async_std::test]
-    async fn test_iterate_once() {
-        util::logger::initialize();
-
-        let mut graph = Graph::new();
-
-    }
-
-}
-//             */

@@ -5,7 +5,7 @@ use futures::lock::Mutex;
 use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
-
+use async_ringbuf::producer::AsyncProducer;
 
 pub(crate) type ChannelBacking<T> = Heap<T>;
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
@@ -25,7 +25,8 @@ use futures::channel::oneshot;
 #[allow(unused_imports)]
 use log::*;
 use async_ringbuf::traits::Split;
-use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
+use futures_timer::Delay;
+use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, SendSaturation, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{Percentile};
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::{Rx};
@@ -676,14 +677,36 @@ impl <T> LazySteadyTx<T> {
         nuclei::block_on(self.lazy_channel.get_tx_clone())
     }
 
-    pub async fn testing_send(&self, data: Vec<T>, close: bool) {
+    /// For testing simulates sending data to the actor in a controlled manner.
+    pub async fn testing_send(&self, data: Vec<T>, step_delay: Duration, close: bool) {
+        Delay::new(step_delay).await;
         let tx = self.lazy_channel.get_tx_clone().await;
         let mut tx = tx.lock().await;
-        tx.shared_send_iter_until_full(data.into_iter());
+
+        let mut trigger:isize = data.len() as isize;
+        //split data into two vec of equal length
+        for d in data.into_iter() {
+            tx.tx.push(d);
+            trigger = trigger - 1;
+            if 0==trigger {
+                Delay::new(step_delay).await;
+            }
+        }
+        Delay::new(step_delay).await;
         if close {
             tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
         }
     }
+
+    pub async fn testing_close(&self, step_delay: Duration) {
+        Delay::new(step_delay).await;
+        let tx = self.lazy_channel.get_tx_clone().await;
+        let mut tx = tx.lock().await;
+        tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
+        Delay::new(step_delay).await;
+    }
+
+
 }
 
 #[derive(Debug)]
@@ -705,6 +728,14 @@ impl <T> crate::channel_builder::LazySteadyRx<T> {
         let mut rx = rx.lock().await;
         rx.avail_units()
     }
+
+    pub async fn testing_take(&self) -> Vec<T> {
+        let rx = self.lazy_channel.get_rx_clone().await;
+        let mut rx = rx.lock().await;
+        let limit = rx.capacity();
+        rx.shared_take_into_iter().take(limit).collect()
+    }
+
 
 
 }

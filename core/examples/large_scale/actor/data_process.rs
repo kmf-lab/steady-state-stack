@@ -53,20 +53,3 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: Ste
 }
 
 
-#[cfg(test)]
-mod tests {
-
-    use async_std::test;
-    use steady_state::Graph;
-
-    #[test]
-    async fn test_iterate_once() {
-
-        //util::logger::initialize();
-
-        let _graph = Graph::new("");
-
-
-    }
-
-}

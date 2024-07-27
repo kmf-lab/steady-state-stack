@@ -52,21 +52,3 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext, one_of: us
 }
 
 
-#[cfg(test)]
-mod tests {
-
-    use async_std::test;
-    use steady_state::Graph;
-
-
-    #[test]
-    async fn test_process() {
-       // util::logger::initialize();
-        let _graph = Graph::new("");
-
-
-    }
-
-
-
-}

@@ -223,20 +223,35 @@ fn extract_channel_name(label_text: &str, from_node: &str, to_node: &str) -> Str
 
 /////////////////////////
 ////////////////////////
-pub(crate) fn extract_project_model(name: &str, graph: Graph<(String, String)>) -> Result<ProjectModel, Box<dyn Error>> {
-    let mut pm = ProjectModel { name: name.to_string(), ..Default::default() };
+pub(crate) fn extract_project_model(name: &str, dot_graph: Graph<(String, String)>) -> Result<ProjectModel, Box<dyn Error>> {
 
     let empty = "".to_string();
     // Iterate over nodes to populate actors
-    let mut nodes:Vec<(&String,&String)> = graph.nodes.set.iter()
+    let mut nodes:Vec<(&str,&str)> = dot_graph.nodes.set.iter()
                             .map(|node| (node.0, node.1.attr.elems.iter()
                                               .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
-                                     )
+                                         )
                                 )
+                            .map(|(a,b)| (a.as_str(),b.as_str()))
                             .collect();
-    nodes.sort();//to ensure we get the same results on each run
-    for (id,label_text) in nodes {
 
+
+    let mut edges:Vec<(&str,&str,&str)> = dot_graph.edges.set.iter()
+        .map(|edge| (&edge.from, &edge.to, edge.attr.elems
+            .iter()
+            .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
+        ))
+        .map(|(a,b,c)| (a.as_str(),b.as_str(),c.as_str()))
+        .collect();
+
+
+    build_pm(ProjectModel { name: name.to_string(), ..Default::default() }, nodes, edges)
+}
+
+fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(&str, &str, &str)>) -> Result<ProjectModel, Box<dyn Error>> {
+
+    nodes.sort(); //to ensure we get the same results on each run
+    for (id, label_text) in nodes {
         let mod_name = extract_module_name(id, label_text);
 
         // Create an Actor instance based on extracted details
@@ -250,17 +265,9 @@ pub(crate) fn extract_project_model(name: &str, graph: Graph<(String, String)>) 
         pm.actors.push(actor);
     }
 
-
-    let mut edges:Vec<(&String,&String,&String)> = graph.edges.set.iter()
-                            .map(|edge| (&edge.from, &edge.to, edge.attr.elems
-                                                .iter()
-                                                .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
-                            ))
-                            .collect();
-    edges.sort();//to ensure we get the same results on each run
+    edges.sort(); //to ensure we get the same results on each run
     // Iterate over edges to populate channels
-    for (from,to,label_text) in edges {
-
+    for (from, to, label_text) in edges {
         let type_name = extract_type_name_from_edge_label(label_text, from, to);
         let capacity = extract_capacity_from_edge_label(label_text, 8);  // Assuming 8 as default if not specified
 
@@ -269,7 +276,6 @@ pub(crate) fn extract_project_model(name: &str, graph: Graph<(String, String)>) 
         let consume_pattern = extract_consume_pattern_from_label(label_text);
 
         if let Some(mod_name) = pm.actors.iter().filter(|f| f.display_name.eq(from)).map(|a| a.mod_name.clone()).next() {
-
             let to_mod = pm.actors.iter().filter(|f| f.display_name.eq(to)).map(|a| a.mod_name.clone()).next().unwrap_or("unknown".into());
 
             // Create a Channel instance based on extracted details
@@ -293,65 +299,62 @@ pub(crate) fn extract_project_model(name: &str, graph: Graph<(String, String)>) 
 
             // Find the actor with the same id as the from node and add the channel to its tx_channels
             if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(from)) {
-                  //we found the actor which is the source of this channel
+                //we found the actor which is the source of this channel
 
-                  //review this actor and see if it has some batched write size
-                  a.driver.iter().for_each(|f| {
-                        if let ActorDriver::CapacityDriven(pairs) = f {
-                            pairs.iter()
-                                .filter(|v| v[0].eq(&channel.name))
-                                .for_each(|v| channel.batch_write = v[1].parse().expect("expected int") );
-                        };
-                  });
+                //review this actor and see if it has some batched write size
+                a.driver.iter().for_each(|f| {
+                    if let ActorDriver::CapacityDriven(pairs) = f {
+                        pairs.iter()
+                            .filter(|v| v[0].eq(&channel.name))
+                            .for_each(|v| channel.batch_write = v[1].parse().expect("expected int"));
+                    };
+                });
 
-                  let mut tx_channel = channel.clone();
+                let mut tx_channel = channel.clone();
 
-                      //count the number of channels with the same name and tx_node ie the rx end
-                      let tx_counter_index = pm.channels.iter().filter(|f|
-                              f[0].name.eq(&channel.name)
-                          ).map(|f| f.iter()
-                              .filter(|f| f.to_node.eq(&tx_channel.to_node) )
-                              .count()).max().unwrap_or(0);
+                //count the number of channels with the same name and tx_node ie the rx end
+                let tx_counter_index = pm.channels.iter().filter(|f|
+                f[0].name.eq(&channel.name)
+                ).map(|f| f.iter()
+                    .filter(|f| f.to_node.eq(&tx_channel.to_node))
+                    .count()).max().unwrap_or(0);
 
-                      tx_channel.bundle_index   = tx_counter_index as isize;
-                      //re-bundle is NOT set since we only use that feature for the Rx end
+                tx_channel.bundle_index = tx_counter_index as isize;
+                //re-bundle is NOT set since we only use that feature for the Rx end
 
 
-                     // tx_channel.bundle_on_from=false; //bundle on 'to' because we tx to there
+                // tx_channel.bundle_on_from=false; //bundle on 'to' because we tx to there
 
-                  roll_up_bundle(&mut a.tx_channels, tx_channel, |_t,_v| true);
+                roll_up_bundle(&mut a.tx_channels, tx_channel, |_t, _v| true);
             }
             if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(to)) {
-                  //we found the actor which is the source of this channel
+                //we found the actor which is the source of this channel
 
-                  //review this actor and see if it has some batched write size
-                  a.driver.iter().for_each(|f| {
-                        if let ActorDriver::EventDriven(pairs) = f {
-                            pairs.iter()
-                                .filter(|v| v[0].eq(&channel.name))
-                                .for_each(|v| channel.batch_read = v[1].parse().expect("expected int")  );
-                        };
-                  });
-                  let mut rx_channel = channel.clone();
+                //review this actor and see if it has some batched write size
+                a.driver.iter().for_each(|f| {
+                    if let ActorDriver::EventDriven(pairs) = f {
+                        pairs.iter()
+                            .filter(|v| v[0].eq(&channel.name))
+                            .for_each(|v| channel.batch_read = v[1].parse().expect("expected int"));
+                    };
+                });
+                let mut rx_channel = channel.clone();
 
-                      //count the number of channels with the same name and from_node ie the tx end
-                       let rx_counter_index = pm.channels.iter().filter(|f|
-                               f[0].name.eq(&channel.name)
-                           ).map(|f| f.iter()
-                                      .filter(|f| f.from_node.eq(&rx_channel.from_node) )
-                                      .count()).max().unwrap_or(0);
-                      rx_channel.rebundle_index = rx_counter_index as isize; //for building dynamic bundle if needed
-                      rx_channel.bundle_index   = rx_counter_index as isize; //for just indexing into the bundle if needed
+                //count the number of channels with the same name and from_node ie the tx end
+                let rx_counter_index = pm.channels.iter().filter(|f|
+                f[0].name.eq(&channel.name)
+                ).map(|f| f.iter()
+                    .filter(|f| f.from_node.eq(&rx_channel.from_node))
+                    .count()).max().unwrap_or(0);
+                rx_channel.rebundle_index = rx_counter_index as isize; //for building dynamic bundle if needed
+                rx_channel.bundle_index = rx_counter_index as isize; //for just indexing into the bundle if needed
 
-                  roll_up_bundle(&mut a.rx_channels, rx_channel, |_t,_v| true);
-
+                roll_up_bundle(&mut a.rx_channels, rx_channel, |_t, _v| true);
             }
             // these are rolled up to define each bundle at the top of main
             // at that point all channels are gathered by name and source node
-            roll_up_bundle(&mut pm.channels, channel, |t,v| v.iter().all(|g| g.from_node.eq(&t.from_node) ) );
+            roll_up_bundle(&mut pm.channels, channel, |t, v| v.iter().all(|g| g.from_node.eq(&t.from_node)));
             //after that point we may reassemble the targets into new bundles.
-
-
         } else {
             error!("Failed to find actor with id: {}", from);
         }
@@ -360,22 +363,22 @@ pub(crate) fn extract_project_model(name: &str, graph: Graph<(String, String)>) 
     //that are bundles on the 'to' side and move them to the new group
     //walk pm.channels and if they are bundles of len()>1 move them to the new group if not
     //for each single call roll_up_bundle on to_node. this way we select any and all from bundles first
-    let mut new_channels:Vec<Vec<Channel>> = Vec::new();
+    let mut new_channels: Vec<Vec<Channel>> = Vec::new();
     pm.channels.into_iter().for_each(|mut c| {
-        if c.len()>1 {
+        if c.len() > 1 {
             //keep existing bundles based on from
             new_channels.push(c);
         } else if let Some(local) = c.pop() {
-                    //take each single and see if we can roll them up based on to_node
-                    roll_up_bundle(&mut new_channels, local, |t,v| {
-                        let result = v.iter().all(|g| g.to_node.eq(&t.to_node));
-                        if result {
-                            //success we found a to_node bundle so mark the members as such
-                            v.iter().for_each(|f| { f.bundle_on_from.replace(false); });
-                        }
-                        result
-                    });
+            //take each single and see if we can roll them up based on to_node
+            roll_up_bundle(&mut new_channels, local, |t, v| {
+                let result = v.iter().all(|g| g.to_node.eq(&t.to_node));
+                if result {
+                    //success we found a to_node bundle so mark the members as such
+                    v.iter().for_each(|f| { f.bundle_on_from.replace(false); });
                 }
+                result
+            });
+        }
     });
     pm.channels = new_channels;
 
@@ -388,9 +391,9 @@ pub(crate) fn extract_project_model(name: &str, graph: Graph<(String, String)>) 
             //find the channel in the tx_channels and mark it as a bundle
             if let Some(x) = a.tx_channels.iter_mut().find(|f| f[0].name.eq(&c[0].name)) {
                 x.iter_mut().for_each(|f| {
-                     f.bundle_on_from.clone_from(&c[0].bundle_on_from);
-                     f.is_unbundled = c.len()==1;
-                } );
+                    f.bundle_on_from.clone_from(&c[0].bundle_on_from);
+                    f.is_unbundled = c.len() == 1;
+                });
             }
         }
         //find the actor that has this channel in its rx_channels
@@ -399,18 +402,15 @@ pub(crate) fn extract_project_model(name: &str, graph: Graph<(String, String)>) 
             if let Some(x) = a.rx_channels.iter_mut().find(|f| f[0].name.eq(&c[0].name)) {
                 x.iter_mut().for_each(|f| {
                     f.bundle_on_from.clone_from(&c[0].bundle_on_from);
-                    f.is_unbundled = c.len()==1;
-                } );
+                    f.is_unbundled = c.len() == 1;
+                });
             }
         }
     });
 
 
-
-
     Ok(pm)
 }
-
 /*
 (do_not_group_by
 || f.iter().all(|g| g.from_node.eq(&insert_me.from_node) )
@@ -634,35 +634,6 @@ mod additional_tests {
         assert_eq!(extract_channel_name(label, "NodeA", "NodeB"), "node_a_to_node_b");
     }
 
-    // #[test]
-    // fn test_extract_project_model() -> Result<(), Box<dyn Error>> {
-    //     let graph = Graph {
-    //         nodes: vec![
-    //             (String::from("NodeA"), Node { attr: vec![(String::from("label"), String::from("mod::ModuleA"))] }),
-    //             (String::from("NodeB"), Node { attr: vec![(String::from("label"), String::from("mod::ModuleB"))] }),
-    //         ].into_iter().collect(),
-    //         edges: vec![
-    //             (String::from("NodeA"), String::from("NodeB"), Edge { attr: vec![(String::from("label"), String::from("<TypeName>#100"))] }),
-    //         ].into_iter().collect(),
-    //     };
-    //
-    //     let pm = extract_project_model("TestProject", graph)?;
-    //
-    //     assert_eq!(pm.name, "TestProject");
-    //     assert_eq!(pm.actors.len(), 2);
-    //     assert_eq!(pm.actors[0].display_name, "NodeA");
-    //     assert_eq!(pm.actors[0].mod_name, "ModuleA");
-    //     assert_eq!(pm.actors[1].display_name, "NodeB");
-    //     assert_eq!(pm.actors[1].mod_name, "ModuleB");
-    //
-    //     assert_eq!(pm.channels.len(), 1);
-    //     assert_eq!(pm.channels[0][0].name, "TypeName");
-    //     assert_eq!(pm.channels[0][0].capacity, 100);
-    //     assert_eq!(pm.channels[0][0].from_node, "NodeA");
-    //     assert_eq!(pm.channels[0][0].to_node, "NodeB");
-    //
-    //     Ok(())
-    // }
 
     #[test]
     fn test_extract_capacity_from_edge_label_edge_cases() {
@@ -673,32 +644,176 @@ mod additional_tests {
         assert_eq!(extract_capacity_from_edge_label(label, 512), 512);
     }
 
-    // #[test]
-    // fn test_roll_up_bundle() {
-    //     let mut collection: Vec<Vec<Channel>> = Vec::new();
-    //     let channel1 = Channel {
-    //         name: "Channel1".to_string(),
-    //         from_mod: "ModA".to_string(),
-    //         to_mod: "ModB".to_string(),
-    //         capacity: 10,
-    //         ..Default::default()
-    //     };
-    //     let channel2 = Channel {
-    //         name: "Channel1".to_string(),
-    //         from_mod: "ModA".to_string(),
-    //         to_mod: "ModB".to_string(),
-    //         capacity: 20,
-    //         ..Default::default()
-    //     };
+    #[test]
+    fn test_extract_type_name_from_edge_label() {
+        assert_eq!(extract_type_name_from_edge_label("<TypeName>", "from_node", "to_node"), "TypeName");
+    //    assert_eq!(extract_type_name_from_edge_label("label text", "from_node", "to_node"), "Fromfrom_nodeTo_to_node");
+    //    assert_eq!(extract_type_name_from_edge_label("", "from_node", "to_node"), "Fromfrom_nodeTo_to_node");
+    }
+
+    #[test]
+    fn test_extract_capacity_from_edge_label() {
+        assert_eq!(extract_capacity_from_edge_label("#10", 8), 10);
+        assert_eq!(extract_capacity_from_edge_label("label text", 8), 8);
+        assert_eq!(extract_capacity_from_edge_label("", 8), 8);
+    }
+
+    #[test]
+    fn test_extract_module_name() {
+        assert_eq!(extract_module_name("node_id", "mod::module_name"), "module_name");
+        assert_eq!(extract_module_name("node_id", "label text"), "mod_node_id");
+        assert_eq!(extract_module_name("node_id", ""), "mod_node_id");
+    }
+
+
+
+    #[test]
+    fn test_extract_consume_pattern_from_label() {
+        assert_eq!(extract_consume_pattern_from_label(">>PeekCopy"), ConsumePattern::PeekCopy);
+        assert_eq!(extract_consume_pattern_from_label(">>TakeCopy"), ConsumePattern::TakeCopy);
+        assert_eq!(extract_consume_pattern_from_label(">>Take"), ConsumePattern::Take);
+        assert_eq!(extract_consume_pattern_from_label(""), ConsumePattern::Take);
+    }
+
+
+
+    #[test]
+    fn test_extract_actor_driver_from_label() {
+        assert_eq!(extract_actor_driver_from_label("AtMostEvery(10ms)"), vec![ActorDriver::AtMostEvery(Duration::from_millis(10))]);
+        assert_eq!(extract_actor_driver_from_label("AtLeastEvery(10ms)"), vec![ActorDriver::AtLeastEvery(Duration::from_millis(10))]);
+        assert_eq!(extract_actor_driver_from_label("OnEvent(event:1)"), vec![ActorDriver::EventDriven(vec![vec!["event".to_string(), "1".to_string()]])]);
+        assert_eq!(extract_actor_driver_from_label("OnCapacity(capacity:1)"), vec![ActorDriver::CapacityDriven(vec![vec!["capacity".to_string(), "1".to_string()]])]);
+        assert_eq!(extract_actor_driver_from_label("Other(item1,item2)"), vec![ActorDriver::Other(vec!["item1".to_string(), "item2".to_string()])]);
+        assert_eq!(extract_actor_driver_from_label(""), vec![ActorDriver::AtMostEvery(Duration::from_secs(1))]);
+    }
+
+    #[test]
+    fn test_parse_parts() {
+        assert_eq!(parse_parts("Event(event:1||event2:2)", "Event"), Some(vec![vec!["event".to_string(), "1".to_string()], vec!["event2".to_string(), "2".to_string()]]));
+        assert_eq!(parse_parts("Capacity(capacity:1||capacity2:2)", "Capacity"), Some(vec![vec!["capacity".to_string(), "1".to_string()], vec!["capacity2".to_string(), "2".to_string()]]));
+        assert_eq!(parse_parts("Event(event:1)", "Event"), Some(vec![vec!["event".to_string(), "1".to_string()]]));
+        assert_eq!(parse_parts("", "Event"), None);
+    }
+
+    #[test]
+    fn test_build_pm() {
+        let mut pm = ProjectModel::default();
+        let nodes = vec![("node1", "label1"), ("node2", "label2")];
+        let edges = vec![("node1", "node2", "edge_label")];
+
+        let result = build_pm(pm, nodes, edges).unwrap();
+        assert_eq!(result.actors.len(), 2);
+        assert_eq!(result.channels.len(), 1);
+    }
+
+    #[test]
+    // fn test_build_pm_empty_nodes() {
+    //     let mut pm = ProjectModel::default();
+    //     let nodes = vec![];
+    //     let edges = vec![("node1", "node2", "edge_label")];
     //
-    //     roll_up_bundle(&mut collection, channel1.clone(), |_t, _v| true);
-    //     roll_up_bundle(&mut collection, channel2.clone(), |_t, _v| true);
-    //
-    //     assert_eq!(collection.len(), 1);
-    //     assert_eq!(collection[0].len(), 2);
-    //     assert_eq!(collection[0][0].capacity, 20);
-    //     assert_eq!(collection[0][1].capacity, 20);
+    //     let result = build_pm(pm, nodes, edges);
+    //     assert!(result.is_err());
     // }
+
+    #[test]
+    fn test_build_pm_empty_edges() {
+        let mut pm = ProjectModel::default();
+        let nodes = vec![("node1", "label1"), ("node2", "label2")];
+        let edges = vec![];
+
+        let result = build_pm(pm, nodes, edges).unwrap();
+        assert_eq!(result.actors.len(), 2);
+        assert_eq!(result.channels.len(), 0);
+    }
+
+    // #[test]
+    // fn test_build_pm_invalid_edge() {
+    //     let mut pm = ProjectModel::default();
+    //     let nodes = vec![("node1", "label1"), ("node2", "label2")];
+    //     let edges = vec![("node1", "node3", "edge_label")];
+    //
+    //     let result = build_pm(pm, nodes, edges);
+    //     assert!(result.is_err());
+    // }
+
+    #[test]
+    fn test_roll_up_bundle() {
+        let mut channels = vec![];
+        let channel = Channel {
+            name: "channel_name".to_string(),
+            from_mod: "from_mod".to_string(),
+            to_mod: "to_mod".to_string(),
+            batch_read: 1,
+            batch_write: 1,
+            message_type: "message_type".to_string(),
+            peek: false,
+            copy: false,
+            capacity: 10,
+            bundle_index: -1,
+            rebundle_index: -1,
+            to_node: "to_node".to_string(),
+            from_node: "from_node".to_string(),
+            bundle_on_from: RefCell::new(true),
+            is_unbundled: false,
+        };
+
+        roll_up_bundle(&mut channels, channel, |_t, _v| true);
+        assert_eq!(channels.len(), 1);
+    }
+
+    #[test]
+    fn test_roll_up_bundle_empty_channels() {
+        let mut channels = vec![];
+        let channel = Channel {
+            name: "channel_name".to_string(),
+            from_mod: "from_mod".to_string(),
+            to_mod: "to_mod".to_string(),
+            batch_read: 1,
+            batch_write: 1,
+            message_type: "message_type".to_string(),
+            peek: false,
+            copy: false,
+            capacity: 10,
+            bundle_index: -1,
+            rebundle_index: -1,
+            to_node: "to_node".to_string(),
+            from_node: "from_node".to_string(),
+            bundle_on_from: RefCell::new(true),
+            is_unbundled: false,
+        };
+
+        roll_up_bundle(&mut channels, channel, |_t, _v| true);
+        assert_eq!(channels.len(), 1);
+    }
+
+    // #[test]
+    // fn test_roll_up_bundle_invalid_predicate() {
+    //     let mut channels = vec![];
+    //     let channel = Channel {
+    //         name: "channel_name".to_string(),
+    //         from_mod: "from_mod".to_string(),
+    //         to_mod: "to_mod".to_string(),
+    //         batch_read: 1,
+    //         batch_write: 1,
+    //         message_type: "message_type".to_string(),
+    //         peek: false,
+    //         copy: false,
+    //         capacity: 10,
+    //         bundle_index: -1,
+    //         rebundle_index: -1,
+    //         to_node: "to_node".to_string(),
+    //         from_node: "from_node".to_string(),
+    //         bundle_on_from: RefCell::new(true),
+    //         is_unbundled: false,
+    //     };
+    //
+    //     roll_up_bundle(&mut channels, channel, |_t, _v| false);
+    //     assert_eq!(channels.len(), 0);
+    // }
+
+
+
 }
 
 

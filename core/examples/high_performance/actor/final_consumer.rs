@@ -13,10 +13,18 @@ use crate::actor::tick_consumer::TickCount;
 const BATCH: usize = 1000;
 const TICK_COUNTS_RX_GIRTH: usize = 3;
 
+#[cfg(not(test))]
 pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
         ,tick_counts_rx: SteadyRxBundle<TickCount, TICK_COUNTS_RX_GIRTH>) -> Result<(),Box<dyn Error>> {
     internal_behavior(context, tick_counts_rx).await
 }
+
+#[cfg(test)]
+pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
+                                                    ,tick_counts_rx: SteadyRxBundle<TickCount, TICK_COUNTS_RX_GIRTH>) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context, tick_counts_rx).await
+}
+
 
 async fn internal_behavior<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext, tick_counts_rx: SteadyRxBundle<TickCount, { TICK_COUNTS_RX_GIRTH }>) -> Result<(), Box<dyn Error>> {
     let _cli_args = context.args::<Args>();

@@ -639,7 +639,7 @@ pub trait RxBundleTrait {
 impl<T> RxBundleTrait for RxBundle<'_, T> {
 
     fn is_closed_and_empty(&mut self) -> bool {
-        self.iter_mut().all(|f| f.is_closed() && f.is_empty())
+        self.iter_mut().all(|f| f.is_closed_and_empty())
     }
 
     fn is_closed(&mut self) -> bool {

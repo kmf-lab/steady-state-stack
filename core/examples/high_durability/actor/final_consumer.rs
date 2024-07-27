@@ -9,11 +9,18 @@ use crate::Args;
 use std::error::Error;
 use crate::actor::tick_consumer::TickCount;
 
-
+#[cfg(not(test))]
 pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
         ,tick_counts_rx: SteadyRxBundle<TickCount, TICK_COUNTS_RX_GIRTH>) -> Result<(),Box<dyn Error>> {
     internal_behavior(context, tick_counts_rx).await
 }
+
+#[cfg(test)]
+pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
+                                                    ,tick_counts_rx: SteadyRxBundle<TickCount, TICK_COUNTS_RX_GIRTH>) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context, tick_counts_rx).await
+}
+
 
 const BATCH: usize = 1000;
 
@@ -52,7 +59,6 @@ pub(crate) mod actor_tests {
     use steady_state::*;
     use crate::actor::final_consumer::{BATCH, internal_behavior};
     use crate::actor::tick_consumer::TickCount;
-    use crate::actor::tick_generator::Tick;
 
     #[test]
     pub(crate) async fn test_simple_process() {

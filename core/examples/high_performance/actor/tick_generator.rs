@@ -16,10 +16,19 @@ pub struct Tick {
   pub value: u128
 }
 
+#[cfg(not(test))]
 pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                                                             ,ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
     internal_behavior(context, ticks_tx).await
 }
+
+#[cfg(test)]
+pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
+                                              ,ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context, ticks_tx).await
+}
+
+
 const BUFFER_SIZE:usize = 2000;
 
 async fn internal_behavior<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
@@ -34,28 +43,20 @@ async fn internal_behavior<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
 
     let mut count: u128 = 0;
     while monitor.is_running(&mut || ticks_tx.mark_closed()) {
-
          let _clean = wait_for_all!(monitor.wait_vacant_units_bundle(&mut ticks_tx, batch, TICKS_TX_GIRTH)    )
              .await;
-
          for i in 0..TICKS_TX_GIRTH {
              let c = ticks_tx[i].vacant_units().min(BUFFER_SIZE);
-
              for n in 0..c {
                  count = count + 1;
                  buffers[n] = Tick { value: count };
              }
              monitor.send_slice_until_full(&mut ticks_tx[i], &buffers[..c]);
-
          }
-
-
          monitor.relay_stats_smartly();
-
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 pub(crate) mod actor_tests {

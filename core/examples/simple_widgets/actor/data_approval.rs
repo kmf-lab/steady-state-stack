@@ -6,7 +6,7 @@ use crate::actor::data_generator::WidgetInventory;
 use log::*;
 
 use steady_state::*;
-use steady_state::monitor::LocalMonitor;
+
 use steady_state::{Rx, SteadyRx};
 use steady_state::{SteadyTx, Tx};
 use crate::actor::data_feedback::FailureFeedback;
@@ -45,8 +45,6 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<WidgetInventory>
         ).await;
 
 
-        //error!("avail units {} ", monitor.avail_units(&mut rx));
-
         let count = monitor.take_slice(&mut rx, &mut buffer);
         let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
         for b in buffer.iter().take(count) {
@@ -77,71 +75,43 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<WidgetInventory>
 
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub(crate) mod actor_tests {
+    use std::time::Duration;
     use async_std::test;
-    use steady_state::{Graph, util};
-
+    use steady_state::*;
+    use crate::actor::data_approval::{BATCH_SIZE, internal_behavior};
+    use crate::actor::WidgetInventory;
 
     #[test]
-    async fn test_process() {
-        util::logger::initialize();
+    pub(crate) async fn test_simple_process() {
+        //1. build test graph, the input and output channels and our actor
+        let mut graph = Graph::new_test(());
 
-        let block_fail_fast = false;
-        let mut graph = Graph::internal_new("", block_fail_fast, false);
-        let (tx_in, rx_in) = graph.channel_builder().with_capacity(8).build();
-        let (tx_out, rx_out) = graph.channel_builder().with_capacity(8).build();
-        let (tx_feedback, _rx_feedback) = graph.channel_builder().with_capacity(8).build();
-        let tx_in = tx_in.clone();
-        let rx_in = rx_in.clone();
-        let tx_out = tx_out.clone();
-        let rx_out = rx_out.clone();
-        let tx_feedback = tx_feedback.clone();
+       // , rx: SteadyRx<WidgetInventory>
+       // , tx: SteadyTx<ApprovedWidgets>
+       // , feedback: SteadyTx<FailureFeedback>
 
+        let (widget_inventory_tx_in, widget_inventory_rx_in) = graph.channel_builder()
+            .with_capacity(BATCH_SIZE).build();
+        let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
+            .with_capacity(BATCH_SIZE).build();
+        let (feedback_tx_out,feedback_rx_out) = graph.channel_builder()
+            .with_capacity(BATCH_SIZE).build();
+        graph.actor_builder()
+            .with_name("UnitTest")
+            .build_spawn( move |context| internal_behavior(context
+                                                           , widget_inventory_rx_in.clone()
+                                                           , approved_widget_tx_out.clone()
+                                                           , feedback_tx_out.clone()) );
 
-        let mock_monitor = graph.new_test_monitor("approval_monitor");
-        let mut mock_monitor = mock_monitor.into_monitor([], []);
+        // //2. add test data to the input channels
+        let test_data:Vec<WidgetInventory> = (0..BATCH_SIZE).map(|i| WidgetInventory { count: i as u64, _payload: 0 }).collect();
+        widget_inventory_tx_in.testing_send(test_data, Duration::from_millis(30),true).await;
 
-        let mut tx_in = tx_in.lock().await;
-        let mut rx_in = rx_in.lock().await;
+        //3. run graph until the actor detects the input is closed
+        graph.start_as_data_driven(Duration::from_secs(240));
 
-        let mut tx_out = tx_out.lock().await;
-        let mut rx_out = rx_out.lock().await;
-        let mut tx_feedback = tx_feedback.lock().await;
-
-
-        let _ = mock_monitor.send_async(&mut tx_in, WidgetInventory {
-            count: 5
-            , _payload: 42
-        },SendSaturation::Warn).await;
-        let mut buffer = [WidgetInventory { count: 0, _payload: 0 }; BATCH_SIZE];
-
-        let count = mock_monitor.take_slice(&mut rx_in, &mut buffer);
-        let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
-        for b in buffer.iter().take(count) {
-            approvals.push(ApprovedWidgets {
-                original_count: b.count,
-                approved_count: b.count / 2,
-            });
-            if b.count % 20000 == 0 {
-
-                let _ = mock_monitor.try_send(&mut tx_feedback, FailureFeedback {
-                    count: b.count,
-                    message: "count is a multiple of 20000".to_string(),
-                });
-            }
-        }
-
-        let sent = mock_monitor.send_slice_until_full(&mut tx_out, &approvals);
-        //iterator of sent until the end
-        let send = approvals.into_iter().skip(sent);
-        for send_me in send {
-            let _ = mock_monitor.try_send(&mut tx_out, send_me);
-        }
-
-        let result = mock_monitor.take_async(&mut rx_out).await.unwrap();
-        assert_eq!(result.original_count, 5);
-        assert_eq!(result.approved_count, 2);
+        //4. assert expected results
+        assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
     }
-
 }

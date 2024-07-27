@@ -45,37 +45,29 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<ApprovedWidgets>
         let _clean = wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
         //single pass of work, in this high volume example we stay in iterate_once as long
         //as the input channel as more work to process.
-        iterate_once(&mut monitor, &mut state, &mut rx).await;
-    }
-    Ok(())
-}
-
-async fn iterate_once<const R: usize, const T: usize>(monitor: & mut LocalMonitor<R,T>
-                                                      , state: &mut InternalState
-                                                      , rx: &mut Rx<ApprovedWidgets>) -> bool  {
-
-    //wait for new work, we could also use a timer here to send telemetry periodically
-    if rx.is_empty() {
-        let msg = monitor.take_async(rx).await;
-        process_msg(state, msg);
-    }
-    //example of high volume processing, we stay here until there is no more work BUT
-    //we must also relay our telemetry data periodically
-    while !rx.is_empty() {
-            let count = monitor.take_slice(rx, &mut state.buffer);
+        //wait for new work, we could also use a timer here to send telemetry periodically
+        if rx.is_empty() {
+            let msg = monitor.take_async(&mut rx).await;
+            process_msg(&mut state, msg);
+        }
+        //example of high volume processing, we stay here until there is no more work BUT
+        //we must also relay our telemetry data periodically
+        while !rx.is_empty() {
+            let mut buf = state.buffer;;
+            let count = monitor.take_slice(&mut rx, &mut buf);
             for x in 0..count {
-               process_msg(state, Some(state.buffer[x].to_owned()));
+                process_msg(&mut state, Some(buf[x].to_owned()));
             }
 
             //based on the channel capacity this will send batched updates so most calls do nothing.
             monitor.relay_stats_smartly();
 
+        }
     }
-
-
-    false
-
+    Ok(())
 }
+
+
 
 #[inline]
 fn process_msg(state: &mut InternalState, msg: Option<ApprovedWidgets>) {
@@ -96,15 +88,10 @@ fn process_msg(state: &mut InternalState, msg: Option<ApprovedWidgets>) {
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
     let mut monitor = into_monitor!(context,[rx],[]);
-
     let mut rx = rx.lock().await;
-
     while monitor.is_running(&mut || rx.is_closed_and_empty()) {
-
         wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
-
         relay_test(&mut monitor, &mut rx).await;
-
     }
     Ok(())
 }
@@ -184,10 +171,25 @@ mod tests {
             approved_count: 2,
         },SendSaturation::Warn).await;
 
+        //wait for new work, we could also use a timer here to send telemetry periodically
+        if rx.is_empty() {
+            let msg = mock_monitor.take_async(&mut rx).await;
+            process_msg(&mut state, msg);
+        }
+        //example of high volume processing, we stay here until there is no more work BUT
+        //we must also relay our telemetry data periodically
+        while !rx.is_empty() {
+            let mut buf = state.buffer;
+            let count = mock_monitor.take_slice(&mut rx, &mut buf);
+            for x in 0..count {
+                process_msg(&mut state, Some(buf[x].to_owned()));
+            }
 
-        let exit= iterate_once(&mut mock_monitor, &mut state, &mut *rx).await;
+            //based on the channel capacity this will send batched updates so most calls do nothing.
+            mock_monitor.relay_stats_smartly();
 
-        assert_eq!(exit, false);
+        }
+
         let widgets = state.last_approval.unwrap();
         assert_eq!(widgets.original_count, 1);
         assert_eq!(widgets.approved_count, 2);

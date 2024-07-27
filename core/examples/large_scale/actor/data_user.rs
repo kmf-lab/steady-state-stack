@@ -86,19 +86,3 @@ async fn relay_test(monitor: &mut LocalMonitor<1, 0>, rx: &mut Rx< Packet>) {
 }
 
 
-
-#[cfg(test)]
-mod tests {
-    use async_std::test;
-    use steady_state::Graph;
-
-    #[test]
-    async fn test_iterate_once() {
-
-
-        let _graph = Graph::new("");
-
-
-    }
-
-}

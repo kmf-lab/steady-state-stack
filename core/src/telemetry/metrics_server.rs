@@ -31,6 +31,11 @@ struct State {
 /// # Errors
 /// This function returns an error if the server fails to start or encounters a runtime error.
 pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> std::result::Result<(), Box<dyn Error>> {
+    let addr = Some(format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port()));
+    internal_behavior(context, rx, addr).await
+}
+
+async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, addr: Option<String>) -> Result<(), Box<dyn Error>> {
     let ctrl = context;
     #[cfg(feature = "telemetry_on_telemetry")]
     let mut ctrl = into_monitor!(ctrl, [rx], []);
@@ -53,27 +58,27 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
 
     let mut history = FrameHistory::new(ctrl.frame_rate_ms);
 
-    let addr = format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port());
-
     let (tcp_sender_tx, tcp_receiver_tx) = oneshot::channel();
     let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
 
-    //TODO: this hack spawn block will go to spawn_local after nuclei is fixed.
-    // if I use spawn_local this blocks all other work on my thread but I am not sure why.
-    let state2 = state.clone();
-    nuclei::spawn(async move {
-        let listener_new = Handle::<TcpListener>::bind(addr).expect("Unable to Bind"); //TODO: need better error.
-        #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
-        println!("Telemetry on http://{}", listener_new.get_ref().local_addr().expect("Unable to read local address"));
+    //Only spin up server if addr is provided, this allows for unit testing where we cannot open that port.
+    if let Some(addr) = addr {
+        let state2 = state.clone();
+        //TODO: this hack spawn block will go to spawn_local after nuclei is fixed.
+        // if I use spawn_local this blocks all other work on my thread but I am not sure why.
+        nuclei::spawn(async move {
+            let listener_new = Handle::<TcpListener>::bind(addr).expect("Unable to Bind"); //TODO: need better error.
+            #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
+            println!("Telemetry on http://{}", listener_new.get_ref().local_addr().expect("Unable to read local address"));
 
-        #[cfg(feature = "prometheus_metrics")]
-        println!("Prometheus can scrape on on http://{}/metrics", listener_new.get_ref().local_addr().expect("Unable to read local address"));
+            #[cfg(feature = "prometheus_metrics")]
+            println!("Prometheus can scrape on on http://{}/metrics", listener_new.get_ref().local_addr().expect("Unable to read local address"));
 
-        //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
-        //      for per/second metrics and many telemetry observers with slower refresh rates
-        loop {
-            let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
-            select! {  _ = shutdown.deref_mut() => {  break;  },
+            //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
+            //      for per/second metrics and many telemetry observers with slower refresh rates
+            loop {
+                let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
+                select! {  _ = shutdown.deref_mut() => {  break;  },
                           result = listener_new.accept().fuse() => {
                          match result {
                             Ok((stream, _peer_addr)) => {
@@ -83,12 +88,13 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
                                 error!("Error accepting connection: {}",e);
                             }
                         }
-                    } };
-        }
-    }).detach();
+                    } }
+                ;
+            }
+        }).detach();
+    }
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
-
         let _clean = wait_for_all!(
                                     ctrl.wait_avail_units(&mut rxg,1)
                                   ).await;
@@ -111,7 +117,6 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> st
 
         #[cfg(feature = "telemetry_on_telemetry")]
         ctrl.relay_stats_smartly();
-
     }
 
     let _ = tcp_sender_tx.send(());
@@ -499,4 +504,49 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
         stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n").await?;
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod meteric_server_tests {
+    use std::time::Duration;
+    use crate::telemetry::metrics_server::{decode_base64, internal_behavior};
+    use async_std::test;
+    use crate::Graph;
+    use crate::telemetry::metrics_collector::DiagramData;
+
+    #[test]
+    async fn test_decode_base64() {
+        let input = "SGVsbG8gV29ybGQh";
+        let expected = b"Hello World!";
+        let result = decode_base64(input).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    pub(crate) async fn test_simple_process() {
+        //1. build test graph, the input and output channels and our actor
+        let mut graph = Graph::new_test(());
+        let (tx_in, rx_in) = graph.channel_builder()
+            .with_capacity(10).build();
+        graph.actor_builder()
+            .with_name("UnitTest")
+            .build_spawn( move |context| internal_behavior(context, rx_in.clone(), None) );
+
+      // let d = DiagramData::NodeDef(0, ("".to_string(), "".to_string(), "".to_string()));
+      //  let e = DiagramData::NodeProcessData(0, vec![]);
+      //  let f = DiagramData::ChannelVolumeData(0, vec![]);
+
+
+
+        //2. add test data to the input channels
+       // let test_data:Vec<DiagramData> = (0..1).map(|i| DiagramData { seq: i, data: vec![]  }).collect();
+       // tx_in.testing_send(test_data, true).await;
+
+        tx_in.testing_close(Duration::from_millis(30)).await;
+
+        //3. run graph until the actor detects the input is closed
+        graph.start_as_data_driven(Duration::from_secs(240));
+
+    }
+
 }

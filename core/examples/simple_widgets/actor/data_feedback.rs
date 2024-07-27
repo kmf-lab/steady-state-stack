@@ -36,10 +36,12 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
-        iterate_once(&mut monitor
-                     , &mut rx
-                     , &mut tx
-        ).await;
+        if let Some(msg) = monitor.take_async(&mut rx).await {
+            //we have a message to process
+            //we do not care about the message we just need to send a change request
+            let _ = monitor.send_async(&mut tx,ChangeRequest {msg},SendSaturation::Warn).await;
+        }
+
         //we relay all our telemetry and return to the top to block for more work.
         monitor.relay_stats_smartly();
     }
@@ -57,10 +59,12 @@ pub async fn run(context: SteadyContext
 
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()  ) {
 
-        iterate_once( &mut monitor
-                         , &mut rx
-                         , &mut tx
-                         );
+        if let Some(msg) = monitor.take_async(&mut rx).await {
+            //we have a message to process
+            //we do not care about the message we just need to send a change request
+            let _ = monitor.send_async(&mut tx,ChangeRequest {msg},SendSaturation::Warn).await;
+        }
+
 
 
          monitor.relay_stats_smartly();
@@ -68,20 +72,7 @@ pub async fn run(context: SteadyContext
     Ok(())
 }
 
-// important function break out to ensure we have a point to test on
-async fn iterate_once<const R: usize, const T: usize>(monitor: &mut LocalMonitor<R, T>
-                                                      , rx: & mut Rx<FailureFeedback>
-                                                      , tx: & mut Tx<ChangeRequest>
-) -> bool {
 
-    if let Some(msg) = monitor.take_async(rx).await {
-        //we have a message to process
-        //we do not care about the message we just need to send a change request
-        let _ = monitor.send_async(tx,ChangeRequest {msg},SendSaturation::Warn).await;
-    }
-
-    false
-}
 
 
 #[cfg(test)]

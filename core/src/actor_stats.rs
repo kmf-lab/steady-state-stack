@@ -578,3 +578,115 @@ pub(crate) struct ChannelBlock<T> where T: Counter {
     pub(crate) runner: u128,
     pub(crate) sum_of_squares: u128,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hdrhistogram::Histogram;
+    use std::sync::{Arc, RwLock};
+    use std::time::Duration;
+
+    fn create_mock_metadata() -> Arc<ActorMetaData> {
+        Arc::new(ActorMetaData {
+            id: 1,
+            name: "test_actor",
+            avg_mcpu: true,
+            avg_work: true,
+            percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
+            percentiles_work: vec![Percentile::p50(), Percentile::p90()],
+            std_dev_mcpu: vec![StdDev::new(1.0).expect("")],
+            std_dev_work: vec![StdDev::new(1.0).expect("")],
+            trigger_mcpu: vec![(Trigger::AvgAbove(MCPU::m512()), AlertColor::Red)],
+            trigger_work: vec![(Trigger::AvgAbove(Work::p50()), AlertColor::Red)],
+            usage_review: false,
+            refresh_rate_in_bits: 6,
+            window_bucket_in_bits: 5,
+        })
+    }
+
+    #[test]
+    fn test_init() {
+        let metadata = create_mock_metadata();
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata.clone(), 1000);
+
+        assert_eq!(actor_stats.id, 1);
+        assert_eq!(actor_stats.name, "test_actor");
+        assert_eq!(actor_stats.show_avg_mcpu, true);
+        assert_eq!(actor_stats.show_avg_work, true);
+        assert_eq!(actor_stats.percentiles_mcpu.len(), 2);
+        assert_eq!(actor_stats.percentiles_work.len(), 2);
+        assert_eq!(actor_stats.std_dev_mcpu.len(), 1);
+        assert_eq!(actor_stats.std_dev_work.len(), 1);
+        assert_eq!(actor_stats.mcpu_trigger.len(), 1);
+        assert_eq!(actor_stats.work_trigger.len(), 1);
+        assert_eq!(actor_stats.frame_rate_ms, 1000);
+        assert_eq!(actor_stats.refresh_rate_in_bits, 6);
+        assert_eq!(actor_stats.window_bucket_in_bits, 5);
+    }
+
+    #[test]
+    fn test_accumulate_data_frame() {
+        let metadata = create_mock_metadata();
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata.clone(), 1000);
+
+        actor_stats.accumulate_data_frame(512, 50);
+
+        let mcpu_histogram = actor_stats.history_mcpu.front().unwrap().histogram.as_ref().unwrap();
+        let work_histogram = actor_stats.history_work.front().unwrap().histogram.as_ref().unwrap();
+
+        assert_eq!(mcpu_histogram.value_at_quantile(0.5), 543);
+        assert_eq!(work_histogram.value_at_quantile(0.5), 51);
+    }
+
+
+
+    #[test]
+    fn test_compute_labels() {
+        let metadata = create_mock_metadata();
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata.clone(), 1000);
+
+        actor_stats.accumulate_data_frame(512, 50);
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        let (line_color, line_width) = actor_stats.compute(
+            &mut dot_label,
+            &mut metric_text,
+            512,
+            50,
+            1,
+            false,
+        );
+
+        assert_eq!(line_color, DOT_GREEN);
+        assert_eq!(line_width, "2");
+
+        assert!(dot_label.contains("test_actor"));
+        assert!(metric_text.contains("graph_node_restarts"));
+    }
+
+
+
+
+
+    #[test]
+    fn test_percentile_rational() {
+        let metadata = create_mock_metadata();
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata.clone(), 1000);
+
+        actor_stats.accumulate_data_frame(512, 50);
+
+        let percentile_result = percentile_rational(
+            &Percentile::p50(),
+            &actor_stats.current_mcpu,
+            (512, 1024),
+        );
+
+        assert_eq!(percentile_result, std::cmp::Ordering::Equal);
+    }
+}
