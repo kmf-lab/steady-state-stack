@@ -64,7 +64,7 @@ pub(crate) mod actor_tests {
     use async_std::test;
     use futures_timer::Delay;
     use steady_state::*;
-    use crate::actor::tick_generator::{BUFFER_SIZE, internal_behavior, Tick};
+    use crate::actor::tick_generator::{BUFFER_SIZE, internal_behavior};
 
     #[test]
     pub(crate) async fn test_simple_process() {

@@ -50,9 +50,8 @@ fn main() {
     if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
-   // let start = Instant::now();
-    let mut graph = build_graph(&opt); //graph is built here and tested below in the test section.
-    //println!("graph built in {:?}", start.elapsed());
+    let mut graph = Graph::new_test(opt.clone());
+
 
     graph.start();
    // println!("graph started in {:?}", start.elapsed());

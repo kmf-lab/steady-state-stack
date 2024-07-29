@@ -541,10 +541,10 @@ mod tests {
             process_dot_file(&dot_file, test_name);
             fs::remove_file(&dot_file).expect("Failed to remove dot file");
 
-            const DO_COMPILE_TEST:bool = true;
-            if DO_COMPILE_TEST {
-                do_compile_test(test_name);
-            }
+            // do not compile when we run our coverage test because this times out due to network usage.
+            #[cfg(not(tarpaulin))]
+            do_compile_test(test_name);
+
         }
 
     }

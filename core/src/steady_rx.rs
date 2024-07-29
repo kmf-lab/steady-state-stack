@@ -279,15 +279,14 @@ impl<T> Rx<T> {
     pub fn is_closed_and_empty(&mut self) -> bool {
         if self.is_closed.is_terminated() {
             self.shared_is_empty()
-        } else {
-            if self.shared_is_empty() {
+        } else if self.shared_is_empty() {
                 let waker = task::noop_waker();
                 let mut context = task::Context::from_waker(&waker);
                 self.is_closed.poll_unpin(&mut context).is_ready()
             } else {
                 false
             }
-        }
+
     }
 
 
@@ -664,3 +663,5 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
         self.iter_mut().for_each(|f| f.tx_instance_reset());
     }
 }
+
+

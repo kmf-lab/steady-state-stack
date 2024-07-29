@@ -21,10 +21,10 @@ struct InternalState {
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, rx).await
+    _internal_behavior(context, rx).await
 }
 
-async fn internal_behavior(context: SteadyContext, rx: SteadyRx<ApprovedWidgets>) -> Result<(), Box<dyn Error>> {
+async fn _internal_behavior(context: SteadyContext, rx: SteadyRx<ApprovedWidgets>) -> Result<(), Box<dyn Error>> {
     //let args:Option<&Args> = context.args(); //you can make the type explicit
     let _args = context.args::<Args>(); //or you can turbo fish here to get your args
     //trace!("running {:?} {:?}",context.id(),context.name());

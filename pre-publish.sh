@@ -91,8 +91,9 @@ cd ..
 
 # Run tarpaulin for code coverage
 # cargo install cargo-tarpaulin --force
-echo "RUST_TEST_THREADS=3 cargo tarpaulin --timeout 180 --out html --no-fail-fast --tests --examples"
-RUST_TEST_THREADS=3 cargo tarpaulin --timeout 180 --out Stdout --no-fail-fast --tests --examples || true
+echo "RUST_TEST_THREADS=3 cargo tarpaulin --timeout 180 --out Stdout --tests --examples --verbose"
+RUST_TEST_THREADS=3 cargo tarpaulin --timeout 180 --out html --tests --examples --output-dir target/tarpaulin-report
+# || true
  #  --output-dir target/tarpaulin-report  --no-fail-fast
 
 

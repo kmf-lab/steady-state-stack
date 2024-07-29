@@ -38,9 +38,13 @@ fn log_variants() -> &'static [&'static str] {
 }
 
 fn validate_logging_level(level: String) -> Result<(), String> {
-    LogSpecification::parse(level)
-        .map(|_| ())
-        .map_err(|_| String::from("Invalid logging level format."))
+    let level_lower = level.to_lowercase();
+    let valid_levels = log_variants();
+    if valid_levels.contains(&level_lower.as_str()) {
+        Ok(())
+    } else {
+        Err(String::from("Invalid logging level format."))
+    }
 }
 
 impl Args {

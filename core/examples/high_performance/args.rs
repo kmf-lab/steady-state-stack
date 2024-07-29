@@ -1,4 +1,3 @@
-use flexi_logger::LogSpecification;
 use structopt_derive::StructOpt;
 
 #[derive(StructOpt, Debug, PartialEq, Clone)]
@@ -33,7 +32,76 @@ fn log_variants() -> &'static [&'static str] {
 }
 
 fn validate_logging_level(level: String) -> Result<(), String> {
-    LogSpecification::parse(level)
-        .map(|_| ())
-        .map_err(|_| String::from("Invalid logging level format."))
+    let level_lower = level.to_lowercase();
+    let valid_levels = log_variants();
+    if valid_levels.contains(&level_lower.as_str()) {
+        Ok(())
+    } else {
+        Err(String::from("Invalid logging level format."))
+    }
+}
+
+#[cfg(test)]
+mod arg_tests {
+    use super::*;
+    use structopt::StructOpt;
+
+    #[test]
+    fn test_args_parsing() {
+        let args = Args::from_iter_safe(&[
+            "test_app",
+            "--loglevel", "info",
+            "--install",
+        ]).unwrap();
+        assert_eq!(args.loglevel, "info");
+        assert!(args.systemd_install);
+        assert!(!args.systemd_uninstall);
+
+        let args = Args::from_iter_safe(&[
+            "test_app",
+            "-l", "debug",
+            "-u",
+        ]).unwrap();
+        assert_eq!(args.loglevel, "debug");
+        assert!(!args.systemd_install);
+        assert!(args.systemd_uninstall);
+    }
+
+    #[test]
+    fn test_to_cli_string() {
+        let args = Args {
+            loglevel: String::from("info"),
+            systemd_install: false,
+            systemd_uninstall: false,
+        };
+        let cli_string = args._to_cli_string("test_app");
+        assert_eq!(cli_string, "test_app --loglevel=info");
+    }
+
+    #[test]
+    fn test_log_variants() {
+        let variants = log_variants();
+        assert_eq!(variants, &["error", "warn", "info", "debug", "trace"]);
+    }
+
+    #[test]
+    fn test_validate_logging_level() {
+        let valid_levels = vec!["error", "warn", "info", "debug", "trace"];
+        for level in valid_levels {
+            assert!(validate_logging_level(level.to_string()).is_ok());
+        }
+
+        let invalid_levels = vec!["invalid", "verbose", "none"];
+        for level in invalid_levels {
+            assert!(validate_logging_level(level.to_string()).is_err());
+        }
+    }
+
+    #[test]
+    fn test_case_insensitive_logging_level() {
+        let valid_levels = vec!["ERROR", "Warn", "Info", "DeBuG", "TRACE"];
+        for level in valid_levels {
+            assert!(validate_logging_level(level.to_string()).is_ok());
+        }
+    }
 }

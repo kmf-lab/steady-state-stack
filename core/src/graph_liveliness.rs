@@ -9,6 +9,7 @@ use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
 use std::process::exit;
+#[allow(unused_imports)]
 use log::{error, info, log_enabled, trace, warn};
 use std::any::Any;
 use std::backtrace::{Backtrace, BacktraceStatus};
@@ -73,7 +74,7 @@ pub struct ShutdownVote {
 pub struct GraphLiveliness {
     pub(crate) voters: Arc<AtomicUsize>,
     pub(crate) state: GraphLivelinessState,
-    pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>,
+    pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>, //TODO: under no telemetry we may have phantom voters...
     pub(crate) vote_in_favor_total: AtomicUsize,
     pub(crate) shutdown_one_shot_vec: Arc<Mutex<Vec<Sender<()>>>>,
 }
@@ -255,7 +256,7 @@ impl GraphLiveliness {
                     drop(vote);
                     !in_favor // Return the opposite to keep running when we vote no
                 } else {
-                    // NOTE: this may be the reader not a voter: TODO: fix.
+                    // NOTE: this may be the reader not a voter:
                     error!("voting integrity error, someone else has my ballot {:?} in_favor of shutdown: {:?}", ident, in_favor);
                     true // If we can't vote we oppose the shutdown by continuing to run
                 }

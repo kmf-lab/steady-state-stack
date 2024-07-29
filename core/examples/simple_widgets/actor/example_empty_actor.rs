@@ -19,10 +19,10 @@ struct SomeLocalState {
 pub async fn run(context: SteadyContext
                                , tx: SteadyTx<SomeExampleRecord>
                                , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
-    internal_behavior(context, tx, rx).await
+    _internal_behavior(context, tx, rx).await
 }
 
-pub async fn internal_behavior(context: SteadyContext
+pub async fn _internal_behavior(context: SteadyContext
                  , tx: SteadyTx<SomeExampleRecord>
                  , rx: SteadyRx<SomeExampleRecord>) -> Result<(),()> {
 

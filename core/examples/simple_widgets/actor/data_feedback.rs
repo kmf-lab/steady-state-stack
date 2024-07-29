@@ -20,10 +20,10 @@ pub struct FailureFeedback {
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
                  , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, rx, tx).await
+    _internal_behavior(context, rx, tx).await
 }
 
-async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>, tx: SteadyTx<ChangeRequest>) -> Result<(), Box<dyn Error>> {
+async fn _internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>, tx: SteadyTx<ChangeRequest>) -> Result<(), Box<dyn Error>> {
     //trace!("running {:?} {:?}",context.id(),context.name());
 
     let mut monitor = into_monitor!(context, [rx], [tx]);

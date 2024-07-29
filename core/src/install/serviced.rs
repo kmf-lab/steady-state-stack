@@ -438,3 +438,97 @@ WantedBy={}
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_systemd_builder_new() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string());
+        assert_eq!(builder.service_name, "test_service");
+        assert_eq!(builder.service_user, "test_user");
+        assert_eq!(builder.service_file_default_folder, "/etc/systemd/system");
+        assert_eq!(builder.service_executable_folder, "/usr/local/bin");
+    }
+
+    #[test]
+    fn test_systemd_builder_with_secret() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_secret("secret_name".to_string(), "path/to/secret".to_string());
+        assert_eq!(builder.secrets.len(), 1);
+        assert_eq!(builder.secrets[0], "secret_name:/path/to/secret");
+    }
+
+    #[test]
+    fn test_systemd_builder_with_on_boot() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_on_boot(false);
+        assert!(!builder.on_boot);
+    }
+
+    #[test]
+    fn test_systemd_builder_with_description() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_description("A test service".to_string());
+        assert_eq!(builder.description, "A test service");
+    }
+
+    #[test]
+    fn test_systemd_builder_with_after() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_after("network-online.target".to_string());
+        assert_eq!(builder.after, "network-online.target");
+    }
+
+    #[test]
+    fn test_systemd_builder_with_wanted_by() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_wanted_by("default.target".to_string());
+        assert_eq!(builder.wanted_by, "default.target");
+    }
+
+    #[test]
+    fn test_systemd_builder_with_restart() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_restart("on-failure".to_string());
+        assert_eq!(builder.restart, "on-failure");
+    }
+
+    #[test]
+    fn test_systemd_builder_with_service_user() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_service_user("new_user".to_string());
+        assert_eq!(builder.service_user, "new_user");
+    }
+
+    #[test]
+    fn test_systemd_builder_with_service_name() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_service_name("new_service".to_string());
+        assert_eq!(builder.service_name, "new_service");
+    }
+
+    #[test]
+    fn test_systemd_builder_with_service_file_default_folder() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_service_file_default_folder("/custom/systemd".to_string());
+        assert_eq!(builder.service_file_default_folder, "/custom/systemd");
+    }
+
+    #[test]
+    fn test_systemd_builder_with_service_executable_folder() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
+            .with_service_executable_folder("/custom/bin".to_string());
+        assert_eq!(builder.service_executable_folder, "/custom/bin");
+    }
+
+    #[test]
+    fn test_systemd_service_manager_creation() {
+        let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string());
+        let manager = builder.build();
+        assert_eq!(manager.service_name, "test_service");
+        assert_eq!(manager.service_user, "test_user");
+        assert_eq!(manager.service_file_name, "/etc/systemd/system/test_service.service");
+        assert_eq!(manager.service_executable, "/usr/local/bin/test_service");
+    }
+}

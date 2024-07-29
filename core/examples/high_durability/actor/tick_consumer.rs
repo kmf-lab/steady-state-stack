@@ -14,7 +14,6 @@ pub struct TickCount {
    pub count: u128
 }
 
-const BATCH: usize = 2000;
 const WAIT_AVAIL: usize = 250;
 
 pub async fn run(context: SteadyContext

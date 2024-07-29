@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::mem;
-use std::time::Duration;
 use bytes::Bytes;
 
 #[allow(unused_imports)]
@@ -19,10 +18,10 @@ pub struct Packet {
 #[cfg(not(test))]
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                                                   , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, tx).await
+    _internal_behavior(context, tx).await
 }
 
-async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
+async fn _internal_behavior<const GIRTH:usize>(context: SteadyContext
                                     , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
     //info!("running {:?} {:?}",context.id(),context.name());
@@ -53,7 +52,7 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
                 data: Bytes::from_static(&[0u8; 62]),
             };
             let index = (packet.route as usize) % tx.len();
-            &mut buffers[index].push(packet);
+            buffers[index].push(packet);
             if &mut buffers[index].len() >= &mut (limit * 2) {
                 //first one we fill to limit, the rest will not be as full
                 break;

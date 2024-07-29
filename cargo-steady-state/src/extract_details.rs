@@ -227,7 +227,7 @@ pub(crate) fn extract_project_model(name: &str, dot_graph: Graph<(String, String
 
     let empty = "".to_string();
     // Iterate over nodes to populate actors
-    let mut nodes:Vec<(&str,&str)> = dot_graph.nodes.set.iter()
+    let nodes:Vec<(&str,&str)> = dot_graph.nodes.set.iter()
                             .map(|node| (node.0, node.1.attr.elems.iter()
                                               .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
                                          )
@@ -236,7 +236,7 @@ pub(crate) fn extract_project_model(name: &str, dot_graph: Graph<(String, String
                             .collect();
 
 
-    let mut edges:Vec<(&str,&str,&str)> = dot_graph.edges.set.iter()
+    let edges:Vec<(&str,&str,&str)> = dot_graph.edges.set.iter()
         .map(|edge| (&edge.from, &edge.to, edge.attr.elems
             .iter()
             .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
@@ -707,16 +707,6 @@ mod additional_tests {
     }
 
     #[test]
-    // fn test_build_pm_empty_nodes() {
-    //     let mut pm = ProjectModel::default();
-    //     let nodes = vec![];
-    //     let edges = vec![("node1", "node2", "edge_label")];
-    //
-    //     let result = build_pm(pm, nodes, edges);
-    //     assert!(result.is_err());
-    // }
-
-    #[test]
     fn test_build_pm_empty_edges() {
         let mut pm = ProjectModel::default();
         let nodes = vec![("node1", "label1"), ("node2", "label2")];
@@ -726,16 +716,6 @@ mod additional_tests {
         assert_eq!(result.actors.len(), 2);
         assert_eq!(result.channels.len(), 0);
     }
-
-    // #[test]
-    // fn test_build_pm_invalid_edge() {
-    //     let mut pm = ProjectModel::default();
-    //     let nodes = vec![("node1", "label1"), ("node2", "label2")];
-    //     let edges = vec![("node1", "node3", "edge_label")];
-    //
-    //     let result = build_pm(pm, nodes, edges);
-    //     assert!(result.is_err());
-    // }
 
     #[test]
     fn test_roll_up_bundle() {

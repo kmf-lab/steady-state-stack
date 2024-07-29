@@ -931,3 +931,156 @@ impl Percentile {
 }
 
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_work_new_valid() {
+        assert_eq!(Work::new(50.0), Some(Work { work: 5000 }));
+        assert_eq!(Work::new(0.0), Some(Work { work: 0 }));
+        assert_eq!(Work::new(100.0), Some(Work { work: 10_000 }));
+    }
+
+    #[test]
+    fn test_work_new_invalid() {
+        assert_eq!(Work::new(-1.0), None);
+        assert_eq!(Work::new(101.0), None);
+    }
+
+    #[test]
+    fn test_work_rational() {
+        let work = Work::new(25.0).unwrap();
+        assert_eq!(work.rational(), (2500, 10_000));
+    }
+
+    #[test]
+    fn test_work_percent_methods() {
+        assert_eq!(Work::p10(), Work { work: 1000 });
+        assert_eq!(Work::p20(), Work { work: 2000 });
+        assert_eq!(Work::p30(), Work { work: 3000 });
+        assert_eq!(Work::p40(), Work { work: 4000 });
+        assert_eq!(Work::p50(), Work { work: 5000 });
+        assert_eq!(Work::p60(), Work { work: 6000 });
+        assert_eq!(Work::p70(), Work { work: 7000 });
+        assert_eq!(Work::p80(), Work { work: 8000 });
+        assert_eq!(Work::p90(), Work { work: 9000 });
+        assert_eq!(Work::p100(), Work { work: 10_000 });
+    }
+
+    #[test]
+    fn test_mcpu_new_valid() {
+        assert_eq!(MCPU::new(512), Some(MCPU { mcpu: 512 }));
+        assert_eq!(MCPU::new(0), Some(MCPU { mcpu: 0 }));
+        assert_eq!(MCPU::new(1024), Some(MCPU { mcpu: 1024 }));
+    }
+
+    #[test]
+    fn test_mcpu_new_invalid() {
+        assert_eq!(MCPU::new(1025), None);
+    }
+
+    #[test]
+    fn test_mcpu_rational() {
+        let mcpu = MCPU::new(256).unwrap();
+        assert_eq!(mcpu.rational(), (256, 1024));
+    }
+
+    #[test]
+    fn test_mcpu_methods() {
+        assert_eq!(MCPU::m16(), MCPU { mcpu: 16 });
+        assert_eq!(MCPU::m64(), MCPU { mcpu: 64 });
+        assert_eq!(MCPU::m256(), MCPU { mcpu: 256 });
+        assert_eq!(MCPU::m512(), MCPU { mcpu: 512 });
+        assert_eq!(MCPU::m768(), MCPU { mcpu: 768 });
+        assert_eq!(MCPU::m1024(), MCPU { mcpu: 1024 });
+    }
+
+    #[test]
+    fn test_percentile_new_valid() {
+        assert_eq!(Percentile::new(25.0), Some(Percentile(25.0)));
+        assert_eq!(Percentile::new(0.0), Some(Percentile(0.0)));
+        assert_eq!(Percentile::new(100.0), Some(Percentile(100.0)));
+    }
+
+    #[test]
+    fn test_percentile_new_invalid() {
+        assert_eq!(Percentile::new(-1.0), None);
+        assert_eq!(Percentile::new(101.0), None);
+    }
+
+    #[test]
+    fn test_percentile_methods() {
+        assert_eq!(Percentile::p25(), Percentile(25.0));
+        assert_eq!(Percentile::p50(), Percentile(50.0));
+        assert_eq!(Percentile::p75(), Percentile(75.0));
+        assert_eq!(Percentile::p80(), Percentile(80.0));
+        assert_eq!(Percentile::p90(), Percentile(90.0));
+        assert_eq!(Percentile::p96(), Percentile(96.0));
+        assert_eq!(Percentile::p99(), Percentile(99.0));
+    }
+
+    #[test]
+    fn test_percentile_custom() {
+        assert_eq!(Percentile::custom(42.0), Some(Percentile(42.0)));
+        assert_eq!(Percentile::custom(-1.0), None);
+        assert_eq!(Percentile::custom(101.0), None);
+    }
+
+    #[test]
+    fn test_percentile_getter() {
+        let percentile = Percentile::new(42.0).unwrap();
+        assert_eq!(percentile.percentile(), 42.0);
+    }
+}
+
+
+#[cfg(test)]
+mod test_actor_builder {
+    use super::*;
+
+
+    #[test]
+    fn test_actor_builder_creation() {
+        let mut graph =  Graph::new_test(());
+        let builder = ActorBuilder::new(&mut graph);
+        assert_eq!(builder.name, "");
+        assert_eq!(builder.refresh_rate_in_bits, 6);
+        assert_eq!(builder.window_bucket_in_bits, 5);
+    }
+
+    #[test]
+    fn test_actor_builder_with_name() {
+        let mut graph = Graph::new_test(());
+        let builder = ActorBuilder::new(&mut graph).with_name("TestActor");
+        assert_eq!(builder.name, "TestActor");
+    }
+
+    #[test]
+    fn test_actor_builder_with_name_and_suffix() {
+        let mut graph = Graph::new_test(());
+        let builder = ActorBuilder::new(&mut graph).with_name_and_suffix("TestActor", 1);
+        assert_eq!(builder.name, "TestActor");
+        assert_eq!(builder.suffix, Some(1));
+    }
+
+
+
+    #[test]
+    fn test_work_new() {
+        let work = Work::new(50.0).unwrap();
+        assert_eq!(work.work, 5000);
+    }
+
+    #[test]
+    fn test_mcpu_new() {
+        let mcpu = MCPU::new(512).unwrap();
+        assert_eq!(mcpu.mcpu, 512);
+    }
+
+    #[test]
+    fn test_percentile_new() {
+        let percentile = Percentile::new(99.0).unwrap();
+        assert_eq!(percentile.percentile(), 99.0);
+    }
+}

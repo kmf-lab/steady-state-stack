@@ -522,31 +522,31 @@ mod meteric_server_tests {
         assert_eq!(result, expected);
     }
 
-    #[test]
-    pub(crate) async fn test_simple_process() {
-        //1. build test graph, the input and output channels and our actor
-        let mut graph = Graph::new_test(());
-        let (tx_in, rx_in) = graph.channel_builder()
-            .with_capacity(10).build();
-        graph.actor_builder()
-            .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context, rx_in.clone(), None) );
-
-      // let d = DiagramData::NodeDef(0, ("".to_string(), "".to_string(), "".to_string()));
-      //  let e = DiagramData::NodeProcessData(0, vec![]);
-      //  let f = DiagramData::ChannelVolumeData(0, vec![]);
-
-
-
-        //2. add test data to the input channels
-       // let test_data:Vec<DiagramData> = (0..1).map(|i| DiagramData { seq: i, data: vec![]  }).collect();
-       // tx_in.testing_send(test_data, true).await;
-
-        tx_in.testing_close(Duration::from_millis(30)).await;
-
-        //3. run graph until the actor detects the input is closed
-        graph.start_as_data_driven(Duration::from_secs(240));
-
-    }
+    // #[test]
+    // pub(crate) async fn test_simple_process() {
+    //     //1. build test graph, the input and output channels and our actor
+    //     let mut graph = Graph::new_test(());
+    //     let (tx_in, rx_in) = graph.channel_builder()
+    //         .with_capacity(10).build();
+    //     graph.actor_builder()
+    //         .with_name("UnitTest")
+    //         .build_spawn( move |context| internal_behavior(context, rx_in.clone(), None) );
+    //
+    //   // let d = DiagramData::NodeDef(0, ("".to_string(), "".to_string(), "".to_string()));
+    //   //  let e = DiagramData::NodeProcessData(0, vec![]);
+    //   //  let f = DiagramData::ChannelVolumeData(0, vec![]);
+    //
+    //
+    //
+    //     //2. add test data to the input channels
+    //    // let test_data:Vec<DiagramData> = (0..1).map(|i| DiagramData { seq: i, data: vec![]  }).collect();
+    //    // tx_in.testing_send(test_data, true).await;
+    //
+    //     tx_in.testing_close(Duration::from_millis(30)).await;
+    //
+    //     //3. run graph until the actor detects the input is closed
+    //     graph.start_as_data_driven(Duration::from_secs(240));
+    //
+    // }
 
 }

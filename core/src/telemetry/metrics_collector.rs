@@ -19,11 +19,9 @@ use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
 use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
-use crate::GraphLivelinessState::{Building, Running};
 use crate::steady_rx::*;
 use crate::steady_tx::*;
 use crate::telemetry::metrics_collector;
-use crate::wait_for_all;
 
 pub const NAME: &str = "metrics_collector";
 
@@ -351,7 +349,7 @@ fn gather_node_details(
                               f.rx_channel_id_vec().iter().for_each(|meta| {
                                   if meta.id == i {
                                       let msg = format!("Possible missing TX for actor {:?} RX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
-                                      let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c = *c + 1u32;}).or_insert(0u32);
+                                      let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
                                       if *count ==2 {
                                           warn!("{}",msg);
                                       }
@@ -361,7 +359,7 @@ fn gather_node_details(
                               f.tx_channel_id_vec().iter().for_each(|meta| {
                                   if meta.id == i {
                                       let msg = format!("Possible missing RX for actor {:?} TX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
-                                      let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c = *c + 1u32;}).or_insert(0u32);
+                                      let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
                                       if *count==2 {
                                           warn!("{}",msg);
                                       }

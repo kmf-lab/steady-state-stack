@@ -10,10 +10,10 @@ use crate::actor::data_generator::Packet;
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>
                  , tx: SteadyTx<Packet>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, rx, tx).await
+    _internal_behavior(context, rx, tx).await
 }
 
-async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: SteadyTx<Packet>) -> Result<(), Box<dyn Error>> {
+async fn _internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: SteadyTx<Packet>) -> Result<(), Box<dyn Error>> {
     //info!("running {:?} {:?}",context.id(),context.name());
 
     let mut monitor = into_monitor!(context, [rx], [tx]);

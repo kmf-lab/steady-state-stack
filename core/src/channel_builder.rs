@@ -26,7 +26,7 @@ use futures::channel::oneshot;
 use log::*;
 use async_ringbuf::traits::Split;
 use futures_timer::Delay;
-use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, SendSaturation, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
+use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{Percentile};
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::{Rx};
@@ -683,11 +683,11 @@ impl <T> LazySteadyTx<T> {
         let tx = self.lazy_channel.get_tx_clone().await;
         let mut tx = tx.lock().await;
 
-        let mut trigger:isize = data.len() as isize;
+        let mut trigger:isize = (data.len()/2) as isize;
         //split data into two vec of equal length
         for d in data.into_iter() {
-            tx.tx.push(d);
-            trigger = trigger - 1;
+            let _ =  tx.tx.push(d).await;
+            trigger -= 1;
             if 0==trigger {
                 Delay::new(step_delay).await;
             }
@@ -723,12 +723,15 @@ impl <T> crate::channel_builder::LazySteadyRx<T> {
         nuclei::block_on(self.lazy_channel.get_rx_clone())
     }
 
+    /// For testing simulates taking data from the actor in a controlled manner.
     pub async fn testing_avail_units(&self) -> usize {
         let rx = self.lazy_channel.get_rx_clone().await;
         let mut rx = rx.lock().await;
         rx.avail_units()
     }
 
+
+    /// For testing simulates taking data from the actor in a controlled manner.
     pub async fn testing_take(&self) -> Vec<T> {
         let rx = self.lazy_channel.get_rx_clone().await;
         let mut rx = rx.lock().await;
@@ -1093,7 +1096,111 @@ impl Filled {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests_inputs {
+    use super::*;
+
+    #[test]
+    fn test_rate_per_millis() {
+        let rate = Rate::per_millis(5);
+        assert_eq!(rate.rational_ms(), (5, 1));
+    }
+
+    #[test]
+    fn test_rate_per_seconds() {
+        let rate = Rate::per_seconds(5);
+        assert_eq!(rate.rational_ms(), (5000, 1));
+    }
+
+    #[test]
+    fn test_rate_per_minutes() {
+        let rate = Rate::per_minutes(5);
+        assert_eq!(rate.rational_ms(), (300000, 1));
+    }
+
+    #[test]
+    fn test_rate_per_hours() {
+        let rate = Rate::per_hours(5);
+        assert_eq!(rate.rational_ms(), (18000000, 1));
+    }
+
+    #[test]
+    fn test_rate_per_days() {
+        let rate = Rate::per_days(5);
+        assert_eq!(rate.rational_ms(), (432000000, 1));
+    }
+
+    #[test]
+    fn test_filled_percentage_valid() {
+        assert_eq!(Filled::percentage(75.0), Some(Filled::Percentage(75000, 100000)));
+        assert_eq!(Filled::percentage(0.0), Some(Filled::Percentage(0, 100000)));
+        assert_eq!(Filled::percentage(100.0), Some(Filled::Percentage(100000, 100000)));
+    }
+
+    #[test]
+    fn test_filled_percentage_invalid() {
+        assert_eq!(Filled::percentage(-1.0), None);
+        assert_eq!(Filled::percentage(101.0), None);
+    }
+
+    #[test]
+    fn test_filled_exact() {
+        assert_eq!(Filled::exact(42), Filled::Exact(42));
+    }
+
+    #[test]
+    fn test_filled_p10() {
+        assert_eq!(Filled::p10(), Filled::Percentage(10, 100));
+    }
+
+    #[test]
+    fn test_filled_p20() {
+        assert_eq!(Filled::p20(), Filled::Percentage(20, 100));
+    }
+
+    #[test]
+    fn test_filled_p30() {
+        assert_eq!(Filled::p30(), Filled::Percentage(30, 100));
+    }
+
+    #[test]
+    fn test_filled_p40() {
+        assert_eq!(Filled::p40(), Filled::Percentage(40, 100));
+    }
+
+    #[test]
+    fn test_filled_p50() {
+        assert_eq!(Filled::p50(), Filled::Percentage(50, 100));
+    }
+
+    #[test]
+    fn test_filled_p60() {
+        assert_eq!(Filled::p60(), Filled::Percentage(60, 100));
+    }
+
+    #[test]
+    fn test_filled_p70() {
+        assert_eq!(Filled::p70(), Filled::Percentage(70, 100));
+    }
+
+    #[test]
+    fn test_filled_p80() {
+        assert_eq!(Filled::p80(), Filled::Percentage(80, 100));
+    }
+
+    #[test]
+    fn test_filled_p90() {
+        assert_eq!(Filled::p90(), Filled::Percentage(90, 100));
+    }
+
+    #[test]
+    fn test_filled_p100() {
+        assert_eq!(Filled::p100(), Filled::Percentage(100, 100));
+    }
+}
+
+
+#[cfg(test)]
+pub(crate) mod test_builder {
     use super::*;
     use std::time::{Duration, Instant};
     use crate::actor_builder::Percentile;

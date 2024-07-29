@@ -55,7 +55,7 @@ mod simple_graph_test {
                     let mut tx = tx.lock().await;
                     while context.is_running(&mut || tx.mark_closed()) {
                         let x = count.fetch_add(1, Ordering::SeqCst);
-                        info!("attempted sent: {:?}", count.load(Ordering::SeqCst));
+                        //info!("attempted sent: {:?}", count.load(Ordering::SeqCst));
 
                         if x >= 10 {
                             context.request_graph_stop();
@@ -83,7 +83,7 @@ mod simple_graph_test {
                     while context.is_running(&mut || rx.is_closed() && rx.is_empty()) {
                         if let Some(_packet) = rx.shared_try_take() {
                             count.fetch_add(1, Ordering::SeqCst);
-                            info!("received: {:?}", count.load(Ordering::SeqCst));
+                           // info!("received: {:?}", count.load(Ordering::SeqCst));
                         }
                     }
                     Ok(())

@@ -21,7 +21,29 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
 #[cfg(test)]
 pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                                               ,ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, ticks_tx).await
+/*
+     let mut monitor = context.into_monitor([], [&ticks_tx]);
+     let mut ticks_tx = ticks_tx.lock().await;
+
+    if let Some(responder) = monitor.sidechannel_responder() {
+        responder.respond_with(|message| {
+            let msg: &Tick = message.downcast_ref::<Tick>().expect("error casting");
+            match monitor.try_send(&ticks_tx, msg.clone()) {
+                Ok(()) => Box::new("ok".to_string()),
+                Err(m) => Box::new(m),
+            }
+        }).await;
+    }
+
+    while monitor.is_running(&mut || ticks_tx.mark_closed()) {
+
+
+
+
+    }
+    */
+
+    Ok(())
 }
 
 const BUFFER_SIZE:usize = 1000;
@@ -60,7 +82,7 @@ pub(crate) mod actor_tests {
     use async_std::test;
     use futures_timer::Delay;
     use steady_state::*;
-    use crate::actor::tick_generator::{BUFFER_SIZE, internal_behavior, Tick};
+    use crate::actor::tick_generator::{BUFFER_SIZE, internal_behavior};
 
     #[test]
     pub(crate) async fn test_simple_process() {

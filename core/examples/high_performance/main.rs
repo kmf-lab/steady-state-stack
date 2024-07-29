@@ -133,19 +133,15 @@ mod graph_tests {
     use std::time::Duration;
     use async_std::test;
     use futures_timer::Delay;
+    use steady_state::Graph;
     use crate::actor::tick_generator::Tick;
-    use crate::args::Args;
-    use crate::build_graph;
+
 
     #[test]
     async fn test_graph_one() {
 
-        let test_ops = Args {
-            loglevel: "debug".to_string(),
-            systemd_install: false,
-            systemd_uninstall: false,
-        };
-        let mut graph = build_graph(&test_ops);
+        let mut graph = Graph::new_test(());
+
         graph.start();
         let mut guard = graph.sidechannel_director().await;
         if let Some(plane) = guard.deref_mut() {

@@ -7,8 +7,8 @@ use log::*;
 
 use steady_state::*;
 
-use steady_state::{Rx, SteadyRx};
-use steady_state::{SteadyTx, Tx};
+use steady_state::{SteadyRx};
+use steady_state::{SteadyTx};
 use crate::actor::data_feedback::FailureFeedback;
 
 const BATCH_SIZE: usize = 2000;

@@ -16,22 +16,20 @@ pub struct WidgetInventory {
 
 
 
-#[derive(Clone, Debug, Copy)]
-struct InternalState {
-    pub(crate) count: u64,
-
-}
-
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                                , feedback: SteadyRx<ChangeRequest>
                                , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, feedback, tx).await
+    _internal_behavior(context, feedback, tx).await
 }
 
-pub async fn internal_behavior(context: SteadyContext
-                 , feedback: SteadyRx<ChangeRequest>
-                 , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
+struct InternalState {
+    count: u64
+}
+
+pub async fn _internal_behavior(context: SteadyContext
+                                , feedback: SteadyRx<ChangeRequest>
+                                , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
 
     let gen_rate_micros = if let Some(a) = context.args::<crate::Args>() {
         a.gen_rate_micros
