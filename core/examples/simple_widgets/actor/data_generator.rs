@@ -20,14 +20,14 @@ pub struct WidgetInventory {
 pub async fn run(context: SteadyContext
                                , feedback: SteadyRx<ChangeRequest>
                                , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
-    _internal_behavior(context, feedback, tx).await
+    internal_behavior(context, feedback, tx).await
 }
 
 struct InternalState {
     count: u64
 }
 
-pub async fn _internal_behavior(context: SteadyContext
+pub async fn internal_behavior(context: SteadyContext
                                 , feedback: SteadyRx<ChangeRequest>
                                 , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
 
@@ -86,34 +86,28 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ChangeRequest>
                  , tx: SteadyTx<WidgetInventory>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = context.into_monitor([&rx], [&tx]);
-
-    let mut _rx = rx.lock().await;
-    let mut tx = tx.lock().await;
-
-    loop {
-         relay_test(& mut monitor, &mut tx).await;
-         monitor.relay_stats_smartly();
-   }
-}
-
-
-#[cfg(test)]
-async fn relay_test<const R:usize, const T:usize>(
-                     monitor: &mut LocalMonitor<R,T>
-                    , tx: &mut Tx<WidgetInventory>) {
-
+    let mut monitor = into_monitor!(context, [&rx], [&tx]);
     if let Some(responder) = monitor.sidechannel_responder() {
 
-        responder.respond_with(|message| {
-            let msg: &WidgetInventory = message.downcast_ref::<WidgetInventory>().expect("error casting");
-            match monitor.try_send(tx, msg.clone()) {
-                Ok(()) => Box::new("ok".to_string()),
-                Err(m) => Box::new(m),
-            }
-        }).await;
+        let mut _rx = rx.lock().await;
+        let mut tx = tx.lock().await;
+
+        while monitor.is_running(&mut || tx.mark_closed() ) {
+            let responder = responder.respond_with(|message| {
+                let msg: &WidgetInventory = message.downcast_ref::<WidgetInventory>().expect("error casting");
+                match monitor.try_send(&mut tx, msg.clone()) {
+                    Ok(()) => Box::new("ok".to_string()),
+                    Err(m) => Box::new(m),
+                }
+            }).await;
+
+            monitor.relay_stats_smartly();
+        }
     }
+
+    Ok(())
 }
+
 
 
 

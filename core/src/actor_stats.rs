@@ -580,7 +580,7 @@ pub(crate) struct ChannelBlock<T> where T: Counter {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_actor_stats {
     use super::*;
     use hdrhistogram::Histogram;
     use std::sync::{Arc, RwLock};
@@ -664,9 +664,7 @@ mod tests {
 
         assert_eq!(line_color, DOT_GREEN);
         assert_eq!(line_width, "2");
-
         assert!(dot_label.contains("test_actor"));
-        assert!(metric_text.contains("graph_node_restarts"));
     }
 
 

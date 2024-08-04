@@ -200,7 +200,7 @@ pub(crate) mod monitor_tests {
     async fn test_relay_stats_tx_rx_custom() {
         util::logger::initialize();
 
-        let mut graph = Graph::new("");
+        let mut graph = Graph::new_test("");
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(8).build();
         let tx_string = tx_string.clone();
         let rx_string = rx_string.clone();
@@ -253,7 +253,7 @@ pub(crate) mod monitor_tests {
     async fn test_relay_stats_tx_rx_batch() {
         util::logger::initialize();
 
-        let mut graph = Graph::new("");
+        let mut graph = Graph::new_test("");
         let monitor = graph.new_test_monitor("test");
 
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build();
@@ -501,7 +501,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Returns
     /// An `Option<SideChannelResponder>` if the simulation is available, otherwise `None`.
     pub fn edge_simulator(&self) -> Option<SideChannelResponder> {
-        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone()))
+        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone()))
     }
 
     /// Returns a side channel responder if available.
@@ -510,7 +510,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// An `Option` containing a `SideChannelResponder` if available.
     pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
         // if we have no back channel plane then we cannot simulate the edges
-        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone()))
+        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone()))
     }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
@@ -919,13 +919,14 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `this`: A mutable reference to an `Rx<T>` instance.
     ///
     /// # Returns
-    /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
+    /// An `Option<T>` which is `Some(T)` when a message becomes available.
+    /// None is ONLY returned if there is no data AND a shutdown was requested!
     ///
     /// # Asynchronous
     pub async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
         let guard = self.start_profile(CALL_SINGLE_READ);
 
-        let result = this.shared_take_async().await;
+        let result = this.shared_take_async().await; //Can return None if we are shutting down
         drop(guard);
         match result {
             Some(result) => {

@@ -17,6 +17,8 @@ pub const TELEMETRY_SERVER: bool = true;
 #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin", feature = "prometheus_metrics")))]
 pub const TELEMETRY_SERVER: bool = false;
 
+pub const SHOW_ACTORS: bool = false; //if we want to see each actor ID logged upon creation
+
 /// Indicates whether telemetry history is enabled.
 /// This is determined by the presence of the `telemetry_history` feature.
 #[cfg(feature = "telemetry_history")]
@@ -82,4 +84,36 @@ pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECT
 /// Length of the channel for feature processing.
 /// Allows features to fall behind with minimal latency.
 pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 256;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_telemetry_server_port_with_env_var() {
+        env::set_var("TELEMETRY_SERVER_PORT", "9200");
+        assert_eq!(telemetry_server_port(), 9200);
+        env::remove_var("TELEMETRY_SERVER_PORT");
+    }
+
+    #[test]
+    fn test_telemetry_server_port_without_env_var() {
+        env::remove_var("TELEMETRY_SERVER_PORT");
+        assert_eq!(telemetry_server_port(), 9100);
+    }
+
+    // #[test]
+    // fn test_telemetry_server_ip_with_env_var() {
+    //     env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+    //     assert_eq!(telemetry_server_ip(), "127.0.0.1");
+    //     env::remove_var("TELEMETRY_SERVER_IP");
+    // }
+
+    #[test]
+    fn test_telemetry_server_ip_without_env_var() {
+        env::remove_var("TELEMETRY_SERVER_IP");
+        assert_eq!(telemetry_server_ip(), "0.0.0.0");
+    }
+}
 

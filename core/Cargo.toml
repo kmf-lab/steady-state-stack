@@ -102,7 +102,6 @@ rustdds   = "0.10.1"
 async-trait = "0.1.81"
 env_logger = "0.11.3"
 waker-fn = "1.2.0"
-tokio = "1.39.2"
 
 # use rustdds::serialization::CDRSerializerAdapter; # we must remain ROS2 compatible
 #Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"

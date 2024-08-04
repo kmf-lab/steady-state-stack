@@ -16,14 +16,14 @@ pub struct FailureFeedback {
     pub msg: FailureFeedback,
 }
 
-#[cfg(not(test))]
+
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
                  , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
-    _internal_behavior(context, rx, tx).await
+    internal_behavior(context, rx, tx).await
 }
 
-async fn _internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>, tx: SteadyTx<ChangeRequest>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>, tx: SteadyTx<ChangeRequest>) -> Result<(), Box<dyn Error>> {
     //trace!("running {:?} {:?}",context.id(),context.name());
 
     let mut monitor = into_monitor!(context, [rx], [tx]);
@@ -33,13 +33,17 @@ async fn _internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback
 
 
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
+
+        let _clean = wait_for_all!(   monitor.wait_avail_units(&mut rx,1)
+                                     ,monitor.wait_vacant_units(&mut tx,1)   ).await;
+
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
         if let Some(msg) = monitor.take_async(&mut rx).await {
             //we have a message to process
             //we do not care about the message we just need to send a change request
-            let _ = monitor.send_async(&mut tx,ChangeRequest {msg},SendSaturation::Warn).await;
+            let _ = monitor.try_send(&mut tx,ChangeRequest {msg});
         }
 
         //we relay all our telemetry and return to the top to block for more work.
@@ -47,31 +51,6 @@ async fn _internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback
     }
     Ok(())
 }
-
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<FailureFeedback>
-                 , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
-
-    let mut monitor = into_monitor!(context, [rx], [tx]);
-    let mut tx = tx.lock().await;
-    let mut rx = rx.lock().await;
-
-    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()  ) {
-
-        if let Some(msg) = monitor.take_async(&mut rx).await {
-            //we have a message to process
-            //we do not care about the message we just need to send a change request
-            let _ = monitor.send_async(&mut tx,ChangeRequest {msg},SendSaturation::Warn).await;
-        }
-
-
-
-         monitor.relay_stats_smartly();
-    }
-    Ok(())
-}
-
 
 
 
@@ -83,9 +62,7 @@ mod tests {
 
     #[test]
     async fn test_process() {
-        util::logger::initialize();
-        let block_fail_fast = false;
-        let graph = Graph::internal_new((), block_fail_fast, false);
+        let graph = Graph::new_test(());
         let _mock_monitor = graph.new_test_monitor("test_monitor");
 
     /*

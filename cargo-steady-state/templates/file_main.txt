@@ -24,7 +24,8 @@ fn main() {
     }
     info!("Starting up");
 
-    let mut graph = build_graph(&opt);
+
+    let mut graph = build_graph(steady_state::Graph::new(opt.clone()) );
 
     graph.start();
 
@@ -36,10 +37,7 @@ fn main() {
     graph.block_until_stopped(Duration::from_secs(2));
 }
 
-fn build_graph(cli_arg: &Args) -> steady_state::Graph {
-    debug!("args: {:?}",&cli_arg);
-
-    let mut graph = steady_state::Graph::new(cli_arg.clone());
+fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
     //this common root of the channel builder allows for common config of all channels
     let base_channel_builder = graph.channel_builder()
@@ -106,7 +104,7 @@ mod graph_tests {
                 systemd_install: false,
                 systemd_uninstall: false,
             };
-            let mut graph = build_graph(&test_ops);
+            let mut graph = build_graph(steady_state::Graph::new_test(test_ops.clone()) );
             graph.start();
             let mut guard = graph.sidechannel_director().await;
             if let Some(plane) = guard.deref_mut() {

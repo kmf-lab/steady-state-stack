@@ -18,7 +18,7 @@ use futures_util::lock::Mutex;
 use log::*;
 use futures_util::future::{BoxFuture, select_all};
 
-use crate::{abstract_executor, AlertColor, Graph, Metric, StdDev, SteadyContext, Trigger};
+use crate::{abstract_executor, AlertColor, Graph, Metric, StdDev, steady_config, SteadyContext, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, SideChannelHub};
 use crate::monitor::ActorMetaData;
@@ -130,6 +130,7 @@ impl ActorTeam {
                 }
 
                 loop {
+                    // trace!("hello team loop");
                     // This result is for panics.
                     // Panic will cause all the grouped actors under this thread to be restarted together.
                     let result = catch_unwind(AssertUnwindSafe(|| {
@@ -141,9 +142,12 @@ impl ActorTeam {
                             actor_future_vec[index] = self.future_builder[index]().0;
                             true
                         } else {
+                            //trace("working on group stop");
                             // This actor was finished, so remove it from the list
                             drop(actor_future_vec.remove(index));
-                            !actor_future_vec.is_empty() // true we keep running
+                            let result = !actor_future_vec.is_empty(); // true we keep running
+                            //trace!("Actor {:?} finished, result {:?} count of remaining {:?} ", index, result, actor_future_vec.len());
+                            result
                         }
                     }));
                     match result {
@@ -151,7 +155,7 @@ impl ActorTeam {
                             // Keep running the loop
                         }
                         Ok(false) => {
-                            // trace!("Actor {:?} finished ", name);
+                             info!("finished exit ");
                             break; // Exit the loop, we are all done
                         }
                         Err(e) => {
@@ -559,7 +563,9 @@ impl ActorBuilder {
 
         let id = self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let immutable_identity = ActorIdentity { id, name };
-        // info!(" Actor {:?} defined ", immutable_identity);
+        if steady_config::SHOW_ACTORS {
+            info!(" Actor {:?} defined ", immutable_identity);
+        }
         let immutable_actor_metadata = self.build_actor_metadata(id, name).clone();
 
         /////////////////////////////////////////////

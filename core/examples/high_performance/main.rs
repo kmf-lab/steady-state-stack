@@ -22,7 +22,7 @@ fn main() {
     }
     info!("Starting up");
 
-    let mut graph = build_graph(&opt);
+    let mut graph = build_graph(steady_state::Graph::new(opt.clone()));
 
     graph.start();
 
@@ -34,10 +34,8 @@ fn main() {
     graph.block_until_stopped(Duration::from_secs(2));
 }
 
-fn build_graph(cli_arg: &Args) -> steady_state::Graph {
-    debug!("args: {:?}",&cli_arg);
+fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
-    let mut graph = steady_state::Graph::new(cli_arg.clone());
 
     //this common root of the channel builder allows for common config of all channels
     let base_channel_builder = graph.channel_builder()

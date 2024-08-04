@@ -72,11 +72,8 @@ const LEVEL_2: usize = 2; //3
 const LEVEL_3: usize = 3; //2
 const LEVEL_4: usize = 2; //One will remove all the user filters and loggers
 
-fn build_graph(cli_arg: &Args) -> steady_state::Graph {
-    debug!("args: {:?}",&cli_arg);
+fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
-    //create the mutable graph object
-    let mut graph = steady_state::Graph::new(cli_arg.clone());
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_channel_builder = graph.channel_builder()
@@ -237,6 +234,8 @@ mod tests {
     async fn test_graph_one() {
 
 
+        //create the mutable graph object
+        //let mut graph = steady_state::Graph::new(cli_arg.clone());
 
     }
 

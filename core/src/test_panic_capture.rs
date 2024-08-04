@@ -8,6 +8,7 @@ mod simple_graph_test {
     use crate::*;
     use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
     use std::time::Duration;
+    use crate::graph_testing::SideChannelHub;
 
     /// Tests the capture of panics within the graph.
     ///
@@ -38,7 +39,7 @@ mod simple_graph_test {
         // It is not recommended to inline actors this way, but it is possible.
 
         // Special test graph which does NOT fail fast but instead shows the prod behavior of restarting actors.
-        let mut graph = Graph::internal_new((), true, true);
+        let mut graph = Graph::internal_new((), true, true, Some(SideChannelHub::default()));
 
         let (tx, rx) = graph.channel_builder()
             .with_capacity(300)

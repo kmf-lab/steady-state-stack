@@ -7,7 +7,6 @@ use args::Args;
 use std::time::Duration;
 
 mod actor {
-    pub mod example_empty_actor;
     pub mod data_generator;
     #[cfg(test)]
     pub use data_generator::WidgetInventory;
@@ -45,43 +44,23 @@ fn main() {
     //TODO: 2025 add this as a feature to the code generator
     let service_executable_name = "simple_widgets";
     let service_user = "simple_widgets_user";
+    let systemd_command = process_systemd_commands(  opt.systemd_action()
+                                                   , opt.to_cli_string(service_executable_name)
+                                                   , service_executable_name
+                                                   , service_user);
 
-    if opt.systemd_uninstall || opt.systemd_install{
-        let systemd = SystemdBuilder::new(service_executable_name.into(), service_user.into())
-                        .with_on_boot(true)
-                        .build();
-        //we do uninstall first in case we are doing both so we uninstall the old one first.
-        if opt.systemd_uninstall {
-            if let Err(e) = systemd.uninstall() {
-                eprintln!("Failed to uninstall systemd service: {:?}",e);
+    if !systemd_command {
+        let mut graph = build_simple_widgets_graph(Graph::new(opt.clone()));
+
+        graph.start();
+        {  //remove this block to run forever.
+            if opt.duration > 0 {
+                sleep(Duration::from_secs(opt.duration));
+                graph.request_stop();
             }
         }
-        if opt.systemd_install {
-            if let Err(e) = systemd.install(true, Args::to_cli_string(&opt,service_executable_name)) {
-                 eprintln!("Failed to install systemd service: {:?}",e);
-            }
-        }
-        return;
+        graph.block_until_stopped(Duration::from_secs(2));
     }
-
-
-    let mut graph = build_simple_graph(&opt); //graph is built here and tested below in the test section.
-
-    graph.start();
-    {  //remove this block to run forever.
-       if opt.duration > 0 {
-           sleep(Duration::from_secs(opt.duration));
-           graph.request_stop();
-       }
-    }
-    graph.block_until_stopped(Duration::from_secs(2));
-}
-
-
-fn build_simple_graph(cli_arg: &Args) -> steady_state::Graph {
-    debug!("args: {:?}",&cli_arg);
-    let graph = Graph::new(cli_arg.clone());
-    build_simple_widgets_graph(graph)
 }
 
 fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
@@ -131,25 +110,29 @@ fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
     base_actor_builder.with_name("generator")
         .build_join(move |context| actor::data_generator::run(context
                                                               , change_rx.clone()
-                                                              , generator_tx.clone()), &mut team
+                                                              , generator_tx.clone())
+                      , &mut team
         );
 
     base_actor_builder.with_name("approval")
         .build_join(move |context| actor::data_approval::run(context
                                                              , generator_rx.clone()
                                                              , consumer_tx.clone()
-                                                             , failure_tx.clone()), &mut team
+                                                             , failure_tx.clone())
+                    , &mut team
         );
 
     base_actor_builder.with_name("feedback")
         .build_join(move |context| actor::data_feedback::run(context
                                                              , failure_rx.clone()
-                                                             , change_tx.clone()), &mut team
+                                                             , change_tx.clone())
+                    , &mut team
         );
 
     base_actor_builder.with_name("consumer")
         .build_join(move |context| actor::data_consumer::run(context
-                                                             , consumer_rx.clone()), &mut team
+                                                             , consumer_rx.clone())
+                    , &mut team
         );
     team.spawn();
 
@@ -157,14 +140,13 @@ fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::ops::{DerefMut};
+mod simple_widget_tests {
+    use std::ops::DerefMut;
     use super::*;
 
+    #[cfg(test)]
     #[async_std::test]
-    async fn test_graph_one() {
-
-        warn!("start of test_graph_one");
+    async fn test_simple_widget_graph() {
 
         let test_ops = Args {
             duration: 21,
@@ -173,18 +155,16 @@ mod tests {
             systemd_install: false,
             systemd_uninstall: false,
         };
-        let cli_arg = &test_ops;
-        debug!("args: {:?}",&cli_arg);
 
-        //create the mutable graph object
-        let args = cli_arg.clone();
-        let block_fail_fast = false;
-        let graph = Graph::internal_new(args, block_fail_fast, false);
+        let graph = Graph::new_test(test_ops);
+
         let mut graph = build_simple_widgets_graph(graph);
         graph.start();
 
         let mut guard = graph.sidechannel_director().await;
-        if let Some(plane) = guard.deref_mut() {
+        let g = guard.deref_mut();
+        assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
+        if let Some(plane) = g {
             let to_send = WidgetInventory {
                 count: 42,
                 _payload: 0
@@ -196,11 +176,9 @@ mod tests {
                     approved_count: 21,
                 };
                 let response = plane.node_call(Box::new(expected_message), "consumer").await;
-                if let Some(_) = response {
-                    trace!("happy");
-                } else {
-                    panic!("bad response from consumer: {:?}", response);
-                }
+                assert_eq!("ok", response.expect("no response")
+                                        .downcast_ref::<String>().expect("bad type"));
+
             } else {
                 panic!("bad response from generator: {:?}", response);
             }
@@ -208,7 +186,9 @@ mod tests {
         drop(guard);
 
         graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(7));
+        //if you make this timeout very large you will have plenty of time to debug steam through
+        //this test method if you like.
+        graph.block_until_stopped(Duration::from_secs(3));
 
     }
 }

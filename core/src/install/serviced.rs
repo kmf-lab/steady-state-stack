@@ -6,9 +6,17 @@
 use std::{env, fs};
 use std::process::Command;
 use log::*;
-use std::path::{Path};
+use std::path::Path;
 use crate::abstract_executor;
 use crate::dot::FrameHistory;
+
+#[derive(Clone,Debug,PartialEq)]
+pub enum SystemdCommand {
+    Install,
+    Uninstall,
+    None,
+}
+
 
 /// A builder for configuring and creating a systemd service manager.
 #[derive(Clone)]
@@ -531,4 +539,26 @@ mod tests {
         assert_eq!(manager.service_file_name, "/etc/systemd/system/test_service.service");
         assert_eq!(manager.service_executable, "/usr/local/bin/test_service");
     }
+}
+
+pub fn process_systemd_commands(command: SystemdCommand , opt_cli_string: String, service_executable_name: &str, service_user: &str) -> bool {
+
+    if command == SystemdCommand::None {
+        false
+    } else {
+        let systemd = SystemdBuilder::new(service_executable_name.into(), service_user.into())
+            .with_on_boot(true)
+            .build();
+        match command {
+            SystemdCommand::Install => {if let Err(e) = systemd.install(true, opt_cli_string) {
+                eprintln!("Failed to install systemd service: {:?}", e);
+            }}
+            SystemdCommand::Uninstall => {if let Err(e) = systemd.uninstall() {
+                eprintln!("Failed to uninstall systemd service: {:?}", e);
+            }}
+            SystemdCommand::None => {}
+        }
+        true
+    }
+
 }

@@ -72,7 +72,7 @@ pub struct ShutdownVote {
 
 /// Manages the liveliness state of the graph and handles the shutdown voting process.
 pub struct GraphLiveliness {
-    pub(crate) voters: Arc<AtomicUsize>,
+    pub(crate) registered_voters: Arc<AtomicUsize>,
     pub(crate) state: GraphLivelinessState,
     pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>, //TODO: under no telemetry we may have phantom voters...
     pub(crate) vote_in_favor_total: AtomicUsize,
@@ -134,7 +134,7 @@ impl GraphLiveliness {
     /// A new `GraphLiveliness` instance.
     pub(crate) fn new(actors_count: Arc<AtomicUsize>, one_shot_shutdown: Arc<Mutex<Vec<Sender<()>>>>) -> Self {
         GraphLiveliness {
-            voters: actors_count,
+            registered_voters: actors_count,
             state: GraphLivelinessState::Building,
             votes: Arc::new(Box::new([])),
             vote_in_favor_total: AtomicUsize::new(0),
@@ -158,7 +158,7 @@ impl GraphLiveliness {
     /// Requests a shutdown of the graph.
     pub fn request_shutdown(&mut self) {
         if self.state.eq(&GraphLivelinessState::Running) {
-            let voters = self.voters.load(std::sync::atomic::Ordering::SeqCst);
+            let voters = self.registered_voters.load(std::sync::atomic::Ordering::SeqCst);
 
             // Print new ballots for this new election
             let votes: Vec<Mutex<ShutdownVote>> = (0..voters)
@@ -244,6 +244,8 @@ impl GraphLiveliness {
             }
             GraphLivelinessState::Running => true,
             GraphLivelinessState::StopRequested => {
+                // trace!("stop requested, voting now: {:?}", ident);
+
                 let in_favor = accept_fn();
                 let my_ballot = &self.votes[ident.id];
                 if let Some(mut vote) = my_ballot.try_lock() {
@@ -612,13 +614,16 @@ impl Graph {
     ///
     /// A new `Graph` instance.
     pub fn new<A: Any + Send + Sync>(args: A) -> Graph {
-        let block_fail_fast = false;
-        Self::internal_new(args, block_fail_fast, steady_config::TELEMETRY_SERVER)
+        #[cfg(test)]
+        panic!("should not call new in tests");
+        #[cfg(not(test))]
+        Self::internal_new(args, false, steady_config::TELEMETRY_SERVER, None)
+
     }
 
     pub fn new_test<A: Any + Send + Sync>(args: A) -> Graph {
         util::logger::initialize();
-        Self::internal_new(args, false, false)
+        Self::internal_new(args, false, false, Some(SideChannelHub::default()))
     }
 
     /// Creates a new graph for normal or unit test use.
@@ -632,17 +637,15 @@ impl Graph {
     /// # Returns
     ///
     /// A new `Graph` instance.
-    pub fn internal_new<A: Any + Send + Sync>(args: A, block_fail_fast: bool, enable_telemtry: bool) -> Graph {
+    pub fn internal_new<A: Any + Send + Sync>(args: A
+                                              , block_fail_fast: bool
+                                              , enable_telemtry: bool
+                                              , backplane: Option<SideChannelHub>
+                                            ) -> Graph {
         let channel_count = Arc::new(AtomicUsize::new(0));
         let monitor_count = Arc::new(AtomicUsize::new(0));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
         let oneshot_startup_vec = Arc::new(Mutex::new(Vec::new()));
-
-        // Only used for testing but this backplane is here to support
-        // dynamic type message sending to and from all nodes for coordination of testing
-        let _backplane: Option<SideChannelHub> = None;
-        #[cfg(test)]
-            let _backplane = Some(SideChannelHub::default());
 
         let mut result = Graph {
             args: Arc::new(Box::new(args)),
@@ -652,7 +655,7 @@ impl Graph {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(monitor_count, oneshot_shutdown_vec.clone()))),
             oneshot_shutdown_vec,
             oneshot_startup_vec,
-            backplane: Arc::new(Mutex::new(_backplane)),
+            backplane: Arc::new(Mutex::new(backplane)),
             noise_threshold: Instant::now().sub(Duration::from_secs(steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64)),
             block_fail_fast,
             iouring_queue_length: 1 << 5,

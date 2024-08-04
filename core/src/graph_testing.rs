@@ -9,12 +9,17 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
 use log::error;
 use futures_util::lock::Mutex;
 use async_ringbuf::traits::Split;
+use futures::channel::oneshot::Receiver;
+use futures_util::future::FusedFuture;
+use futures_util::select;
+use ringbuf::consumer::Consumer;
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
@@ -56,15 +61,16 @@ pub struct SideChannelHub {
     pub(crate) backplane: HashMap<NodeName, SideChannel>,
 }
 
-impl SideChannelHub {
-    /// Creates a new `SideChannelHub`.
+impl Debug for SideChannelHub {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SideChannelHub")
+            .field("node", &self.node)
+            .finish()
+    }
+}
 
-    // pub fn new() -> Self {
-    //     SideChannelHub {
-    //         node: Default::default(),
-    //         backplane: HashMap::new(),
-    //     }
-    // }
+impl SideChannelHub {
+
 
     /// Retrieves the transmitter and receiver for a node by its name.
     ///
@@ -121,6 +127,7 @@ impl SideChannelHub {
         if let Some((tx, rx)) = self.backplane.get_mut(name) {
             match tx.push(msg).await {
                 Ok(_) => {
+                    //do nothing else but immediately get the response for more deterministic testing
                     return rx.pop().await;
                 }
                 Err(e) => {
@@ -135,6 +142,7 @@ impl SideChannelHub {
 /// The `SideChannelResponder` struct provides a way to respond to messages from a side channel.
 pub struct SideChannelResponder {
     pub(crate) arc: Arc<Mutex<SideChannel>>,
+    pub(crate) shutdown: Arc<Mutex<Receiver<()>>>,
 }
 
 impl SideChannelResponder {
@@ -147,8 +155,8 @@ impl SideChannelResponder {
     /// # Returns
     ///
     /// A new `SideChannelResponder` instance.
-    pub fn new(arc: Arc<Mutex<SideChannel>>) -> Self {
-        SideChannelResponder { arc }
+    pub fn new(arc: Arc<Mutex<SideChannel>>, shutdown: Arc<Mutex<Receiver<()>>>) -> Self {
+        SideChannelResponder { arc, shutdown}
     }
 
     /// Responds to messages from the side channel using the provided function.
@@ -163,8 +171,28 @@ impl SideChannelResponder {
     {
         let mut guard = self.arc.lock().await;
         let (ref mut tx, ref mut rx) = guard.deref_mut();
-        if let Some(msg) = rx.pop().await {
-            match tx.push(f(msg)).await {
+
+
+        //wait for message unless we see the shutdown signal
+        let question: Option<Box<dyn Any + Send + Sync>> = {
+            let mut shutdown_guard = self.shutdown.lock().await;
+            let mut one_down = &mut shutdown_guard.deref_mut();
+            if !one_down.is_terminated() {
+                let mut operation = &mut rx.pop();
+                select! { _ = one_down => rx.try_pop(),
+                     p = operation => p }
+            } else {
+                rx.try_pop()
+            }
+        };
+
+        if let Some(q) = question {
+
+            //NOTE: if a shutdown is called for and we are not able to push this message
+            //      it will result in a timeout and error by design for testing. This will
+            //      happen if the main test block is not consuming the answers to the questions
+            //NOTE: this should never block on shutdown since above we immediately pull the answer
+            match tx.push(f(q)).await {
                 Ok(_) => {}
                 Err(e) => {
                     error!("Error sending test implementation response: {:?}", e);
@@ -172,7 +200,76 @@ impl SideChannelResponder {
             }
         }
     }
+
+
+
 }
 
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_std::test;
 
+    #[test]
+    async fn test_graph_test_result_ok() {
+        let result: GraphTestResult<i32, &str> = GraphTestResult::Ok(42);
+        if let GraphTestResult::Ok(value) = result {
+            assert_eq!(value, 42);
+        } else {
+            panic!("Expected Ok variant");
+        }
+    }
+
+    #[test]
+    async fn test_graph_test_result_err() {
+        let result: GraphTestResult<i32, &str> = GraphTestResult::Err("error");
+        if let GraphTestResult::Err(value) = result {
+            assert_eq!(value, "error");
+        } else {
+            panic!("Expected Err variant");
+        }
+    }
+
+    #[test]
+    async fn test_side_channel_hub_register_node() {
+        let mut hub = SideChannelHub::default();
+        hub.register_node("test_node", 10);
+        assert!(hub.node.contains_key("test_node"));
+        assert!(hub.backplane.contains_key("test_node"));
+    }
+
+    #[test]
+    async fn test_side_channel_hub_node_tx_rx() {
+        let mut hub = SideChannelHub::default();
+        hub.register_node("test_node", 10);
+        let node = hub.node_tx_rx("test_node");
+        assert!(node.is_some());
+    }
+
+    // #[test]
+    // async fn test_side_channel_hub_node_call() {
+    //     let mut hub = SideChannelHub::default();
+    //     hub.register_node("test_node", 10);
+    //     let response = hub.node_call(Box::new("test message"), "test_node").await;
+    //     assert!(response.is_none());
+    // }
+
+    // #[test]
+    // async fn test_side_channel_responder_respond_with() {
+    //     let mut hub = SideChannelHub::default();
+    //     hub.register_node("test_node", 10);
+    //     let node = hub.node_tx_rx("test_node").unwrap();
+    //     let responder = SideChannelResponder::new(node);
+    //
+    //     let _ = nuclei::spawn(async move {
+    //         responder.respond_with(|msg| {
+    //             assert_eq!(*msg.downcast_ref::<&str>().unwrap(), "test message");
+    //             Box::new("response message")
+    //         }).await;
+    //     });
+    //
+    //     let response = hub.node_call(Box::new("test message"), "test_node").await;
+    //     assert_eq!(*response.unwrap().downcast_ref::<&str>().unwrap(), "response message");
+    // }
+}

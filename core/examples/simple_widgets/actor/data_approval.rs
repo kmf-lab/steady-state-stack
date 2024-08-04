@@ -38,12 +38,16 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<WidgetInventory>
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed() && feedback.mark_closed()) {
-        let _clean = wait_for_all_or_proceed_upon!( monitor.wait_periodic(Duration::from_millis(300))
-                            , monitor.wait_avail_units(&mut rx, BATCH_SIZE)
+
+        if monitor.is_liveliness_in(&[GraphLivelinessState::StopRequested],false) {
+            info!("Stop requested, exiting");
+        }
+
+        let _clean = wait_for_all_or_proceed_upon!(monitor.wait_periodic(Duration::from_millis(300))
+                            ,monitor.wait_avail_units(&mut rx, BATCH_SIZE)
                             ,monitor.wait_vacant_units(&mut tx, BATCH_SIZE)
                             ,monitor.wait_vacant_units(&mut feedback, 1)
         ).await;
-
 
         let count = monitor.take_slice(&mut rx, &mut buffer);
         let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
@@ -86,10 +90,6 @@ pub(crate) mod actor_tests {
     pub(crate) async fn test_simple_process() {
         //1. build test graph, the input and output channels and our actor
         let mut graph = Graph::new_test(());
-
-       // , rx: SteadyRx<WidgetInventory>
-       // , tx: SteadyTx<ApprovedWidgets>
-       // , feedback: SteadyTx<FailureFeedback>
 
         let (widget_inventory_tx_in, widget_inventory_rx_in) = graph.channel_builder()
             .with_capacity(BATCH_SIZE).build();

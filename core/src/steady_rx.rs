@@ -255,7 +255,7 @@ impl<T> Rx<T> {
         self.last_checked_tx_instance = id;
     }
 
-    /// Only for use in unit tests.
+    /// Only for use in unit tests. (TODO: delete??)
     pub fn block_until_not_empty(&self, duration: Duration) {
         assert!(cfg!(debug_assertions), "This function is only for testing");
         let start = Instant::now();
@@ -385,6 +385,14 @@ impl<T> Rx<T> {
         self.rx.iter()
     }
 
+    /// Asynchronously retrieves and removes a single message from the channel.
+    ///
+    ///
+    /// # Returns
+    /// An `Option<T>` which is `Some(T)` when a message becomes available.
+    /// None is ONLY returned if there is no data AND a shutdown was requested!
+    ///
+    /// # Asynchronous
     #[inline]
     pub(crate) async fn shared_take_async(&mut self) -> Option<T> {
         let mut one_down = &mut self.oneshot_shutdown;

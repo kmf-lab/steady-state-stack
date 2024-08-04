@@ -24,8 +24,6 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 async fn _internal_behavior<const GIRTH:usize>(context: SteadyContext
                                     , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    //info!("running {:?} {:?}",context.id(),context.name());
-
     let mut monitor =into_monitor!(context,[],tx);
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
@@ -77,15 +75,26 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
     let mut monitor = into_monitor!(context,[], tx);
 
-    let mut tx:TxBundle<Packet> = tx.lock().await;
+    if let Some(responder) = monitor.sidechannel_responder() {
 
-    loop {
-         tx[0].wait_vacant_units(1).await;
+        let mut tx = tx.lock().await;
 
+        while monitor.is_running(&mut || tx.mark_closed() ) {
+            let responder = responder.respond_with(|message| {
 
-  //       relay_test(& mut monitor, &mut tx).await;
-         monitor.relay_stats_smartly();
-   }
+                let msg: &Packet = message.downcast_ref::<Packet>().expect("error casting");
+                match monitor.try_send(&mut tx[0], msg.clone()) {
+                    Ok(()) => Box::new("ok".to_string()),
+                    Err(m) => Box::new(m),
+                }
+
+            }).await;
+
+            monitor.relay_stats_smartly();
+        }
+    }
+
+    Ok(())
 }
 
 

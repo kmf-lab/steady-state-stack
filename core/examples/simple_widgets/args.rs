@@ -1,5 +1,6 @@
 use flexi_logger::LogSpecification;
 use structopt_derive::StructOpt;
+use steady_state::SystemdCommand;
 
 #[derive(StructOpt, Debug, PartialEq, Clone)]
 pub struct Args {
@@ -47,6 +48,7 @@ fn validate_logging_level(level: String) -> Result<(), String> {
     }
 }
 
+//TODO: in the future these will be derived.
 impl Args {
     pub(crate) fn to_cli_string(&self, app: &str) -> String {
         format!("{} --duration={} --loglevel={} --gen-rate={}"
@@ -55,13 +57,25 @@ impl Args {
                 , self.loglevel
                 , self.gen_rate_micros)
     }
+    pub(crate) fn systemd_action(&self) -> SystemdCommand {
+        if self.systemd_install {
+            SystemdCommand::Install
+        } else if self.systemd_uninstall {
+            SystemdCommand::Uninstall
+        } else {
+            SystemdCommand::None
+        }
+    }
+
+
 }
 
 #[cfg(test)]
 mod tests {
     use log::*;
     use structopt::StructOpt;
-    use crate::args::Args;
+    use steady_state::SystemdCommand;
+    use crate::args::{Args, log_variants, run_duration_validator, validate_logging_level};
 
     #[test]
     fn test_args_round_trip() {
@@ -79,6 +93,85 @@ mod tests {
         trace!("to_test: {}", to_test);
         let cli_args = Args::from_iter(to_test.split_whitespace());
         assert_eq!(cli_args, *orig_args);
+    }
+
+    #[test]
+    fn test_log_level_validation() {
+        assert!(validate_logging_level("debug".to_string()).is_ok());
+        assert!(validate_logging_level("DEBUG".to_string()).is_ok());
+        assert!(validate_logging_level("invalid".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_run_duration_validator() {
+        assert!(run_duration_validator("100".to_string()).is_ok());
+        assert!(run_duration_validator("240".to_string()).is_ok());
+        assert!(run_duration_validator("241".to_string()).is_err());
+        assert!(run_duration_validator("invalid".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_systemd_command_mapping() {
+        let args = Args {
+            loglevel: "info".to_string(),
+            gen_rate_micros: 5000,
+            duration: 120,
+            systemd_install: true,
+            systemd_uninstall: false,
+        };
+        assert_eq!(args.systemd_action(), SystemdCommand::Install);
+
+        let args = Args {
+            loglevel: "info".to_string(),
+            gen_rate_micros: 5000,
+            duration: 120,
+            systemd_install: false,
+            systemd_uninstall: true,
+        };
+        assert_eq!(args.systemd_action(), SystemdCommand::Uninstall);
+
+        let args = Args {
+            loglevel: "info".to_string(),
+            gen_rate_micros: 5000,
+            duration: 120,
+            systemd_install: false,
+            systemd_uninstall: false,
+        };
+        assert_eq!(args.systemd_action(), SystemdCommand::None);
+    }
+
+    #[test]
+    fn test_log_variants() {
+        let variants = log_variants();
+        assert_eq!(variants, ["error", "warn", "info", "debug", "trace"]);
+    }
+
+    #[test]
+    fn test_invalid_log_level() {
+        let result = Args::from_iter_safe(&[
+            "myapp",
+            "--loglevel",
+            "invalid",
+            "--gen-rate",
+            "5000",
+            "--duration",
+            "120"
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_duration() {
+        let result = Args::from_iter_safe(&[
+            "myapp",
+            "--loglevel",
+            "info",
+            "--gen-rate",
+            "5000",
+            "--duration",
+            "241"
+        ]);
+        assert!(result.is_err());
     }
 
 }

@@ -1,4 +1,5 @@
 use structopt_derive::StructOpt;
+use steady_state::SystemdCommand;
 
 #[derive(StructOpt, Debug, PartialEq, Clone)]
 pub struct Args {
@@ -49,20 +50,6 @@ impl Args {
                 , self.gen_rate_micros)
     }
 
-    /*
-    pub fn to_cli_string(&self, app: &str) -> Result<String, serde_json::Error> {
-        let map = serde_json::to_value(self)?;
-        let mut parts = vec![app.to_string()];
-
-        for (key, value) in map.as_object().unwrap() {
-            // Convert the field name to a command-line flag
-            let flag = format!("--{}", key.replace('_', "-"));
-            // Append the flag and its value to the command string
-            parts.push(format!("{flag}={value}"));
-        }
-
-        Ok(parts.join(" "))
-    }*/
 
 }
 

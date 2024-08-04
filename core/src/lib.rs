@@ -814,7 +814,7 @@ impl SteadyContext {
     /// # Returns
     /// An `Option<SideChannelResponder>` if the simulation is available, otherwise `None`.
     pub fn edge_simulator(&self) -> Option<SideChannelResponder> {
-        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone()))
+        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone() ))
     }
 
 
@@ -824,7 +824,7 @@ impl SteadyContext {
     /// An `Option` containing a `SideChannelResponder` if available.
     pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
         // if we have no back channel plane then we cannot simulate the edges
-        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone()))
+        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone() ))
     }
 
     /// Checks if the actor is running, using a custom accept function.
