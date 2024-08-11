@@ -13,7 +13,7 @@ use std::task::{Context, Poll};
 /// This struct is used internally to create a future that will yield (i.e., return `Poll::Pending`)
 /// once before it completes. It is useful for cooperative multitasking scenarios where you want
 /// to allow other tasks to run.
-pub(crate) struct YieldNow(bool);
+pub struct YieldNow(bool);
 
 impl YieldNow {
     /// Creates a new `YieldNow` instance.

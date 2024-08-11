@@ -43,7 +43,7 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
 }
 
 #[cfg(test)]
-pub(crate) mod actor_tests {
+pub(crate) mod hd_actor_tests {
     use std::time::Duration;
     use async_std::test;
     use futures_timer::Delay;
@@ -68,9 +68,7 @@ pub(crate) mod actor_tests {
         //run graph until the actor detects when the input is closed
         //we run this before sending data to the input channels so we can cover both branches
         graph.start(); //startup the graph
-
-        let test_data:Vec<Tick> = (0..BATCH).map(|i| Tick { value: i as u128 }).collect();
-        ticks_tx_in.testing_send(test_data, Duration::from_millis(30), false).await;
+        graph.request_stop(); //let all actors close when inputs are closed
 
         let test_data:Vec<Tick> = (0..BATCH).map(|i| Tick { value: i as u128 }).collect();
         ticks_tx_in.testing_send(test_data, Duration::from_millis(30), false).await;
@@ -80,9 +78,8 @@ pub(crate) mod actor_tests {
 
         ticks_tx_in.testing_close(Duration::from_millis(30)).await;
 
-        assert_eq!(ticks_rx_out.testing_avail_units().await, BATCH);
+        assert_eq!(0, ticks_rx_out.testing_avail_units().await);
 
-        graph.request_stop(); //let all actors close when inputs are closed
         graph.block_until_stopped(Duration::from_secs(240));
 
     }

@@ -79,7 +79,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<WidgetInventory>
 
 
 #[cfg(test)]
-pub(crate) mod actor_tests {
+pub(crate) mod approval_tests {
     use std::time::Duration;
     use async_std::test;
     use steady_state::*;
@@ -87,15 +87,15 @@ pub(crate) mod actor_tests {
     use crate::actor::WidgetInventory;
 
     #[test]
-    pub(crate) async fn test_simple_process() {
-        //1. build test graph, the input and output channels and our actor
+    pub(crate) async fn test_approval() {
+        // build test graph, the input and output channels and our actor
         let mut graph = Graph::new_test(());
 
         let (widget_inventory_tx_in, widget_inventory_rx_in) = graph.channel_builder()
             .with_capacity(BATCH_SIZE).build();
         let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
             .with_capacity(BATCH_SIZE).build();
-        let (feedback_tx_out,feedback_rx_out) = graph.channel_builder()
+        let (feedback_tx_out,_feedback_rx_out) = graph.channel_builder()
             .with_capacity(BATCH_SIZE).build();
         graph.actor_builder()
             .with_name("UnitTest")
@@ -104,14 +104,20 @@ pub(crate) mod actor_tests {
                                                            , approved_widget_tx_out.clone()
                                                            , feedback_tx_out.clone()) );
 
-        // //2. add test data to the input channels
+        graph.start();
+        graph.request_stop();
+
         let test_data:Vec<WidgetInventory> = (0..BATCH_SIZE).map(|i| WidgetInventory { count: i as u64, _payload: 0 }).collect();
         widget_inventory_tx_in.testing_send(test_data, Duration::from_millis(30),true).await;
 
-        //3. run graph until the actor detects the input is closed
-        graph.start_as_data_driven(Duration::from_secs(240));
+        graph.block_until_stopped(Duration::from_secs(240));
 
-        //4. assert expected results
+
+        //assert expected results
         assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
     }
+
+
+
+
 }

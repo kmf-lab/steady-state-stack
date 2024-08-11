@@ -13,15 +13,20 @@ use std::process::exit;
 use log::{error, info, log_enabled, trace, warn};
 use std::any::Any;
 use std::backtrace::{Backtrace, BacktraceStatus};
+use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
-use std::thread;
+use std::{thread};
 use colored::Colorize;
 use futures::channel::oneshot;
-use futures::channel::oneshot::Sender;
+use futures::channel::oneshot::{Sender};
+use futures_timer::Delay;
+use futures::FutureExt;
+use futures_util::future::FusedFuture;
 use futures_util::lock::{MutexGuard, MutexLockFuture};
+use futures_util::{select, task};
 use nuclei::config::IoUringConfiguration;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
@@ -66,17 +71,20 @@ pub enum GraphLivelinessState {
 /// Represents a vote for shutdown by an actor.
 #[derive(Default, Clone)]
 pub struct ShutdownVote {
+    pub(crate) id: usize,
     pub(crate) ident: Option<ActorIdentity>,
     pub(crate) in_favor: bool,
 }
 
 /// Manages the liveliness state of the graph and handles the shutdown voting process.
 pub struct GraphLiveliness {
-    pub(crate) registered_voters: Arc<AtomicUsize>,
+    pub(crate) registered_voters: Vec<Option<ActorIdentity>>,
     pub(crate) state: GraphLivelinessState,
-    pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>, //TODO: under no telemetry we may have phantom voters...
+    pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>,
     pub(crate) vote_in_favor_total: AtomicUsize,
-    pub(crate) shutdown_one_shot_vec: Arc<Mutex<Vec<Sender<()>>>>,
+    pub(crate) shutdown_one_shot_vec: Arc<Mutex<Vec< Sender<()> >>>,
+    pub(crate) registered_voter_count: AtomicUsize,
+    pub(crate) actors_count: Arc<AtomicUsize>,
 }
 
 /// A future that waits while the graph is running.
@@ -132,9 +140,13 @@ impl GraphLiveliness {
     /// # Returns
     ///
     /// A new `GraphLiveliness` instance.
-    pub(crate) fn new(actors_count: Arc<AtomicUsize>, one_shot_shutdown: Arc<Mutex<Vec<Sender<()>>>>) -> Self {
+    pub(crate) fn new(one_shot_shutdown: Arc<Mutex<Vec< Sender<()> >>>
+                      , actors_count: Arc<AtomicUsize>) -> Self {
+
         GraphLiveliness {
-            registered_voters: actors_count,
+            actors_count,
+            registered_voter_count: AtomicUsize::new(0),
+            registered_voters: Vec::new(),
             state: GraphLivelinessState::Building,
             votes: Arc::new(Box::new([])),
             vote_in_favor_total: AtomicUsize::new(0),
@@ -155,14 +167,54 @@ impl GraphLiveliness {
         }
     }
 
+    pub fn register_voter(&mut self, ident: ActorIdentity) {
+            if ident.id >= self.registered_voters.len() {
+                self.registered_voters.resize(ident.id + 1, None);
+            }
+            trace!("register voter {:?} of expected count: {:?}",ident,self.actors_count.load(Ordering::SeqCst));
+
+            if self.registered_voters[ident.id].is_none() {
+                self.registered_voter_count.fetch_add(1, Ordering::SeqCst);
+            }
+            self.registered_voters[ident.id] = Some(ident);
+
+    }
+
+    pub fn wait_for_registrations(&mut self, timeout: Duration) {
+        if self.actors_count.load(Ordering::SeqCst)>0 {
+           //will rarely take the while loop since all the actors have had a while to start on threads
+           //this is only done once on startup an is not async by design.
+            trace!("waiting for actors to register: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
+            let start = Instant::now();
+            while self.registered_voter_count.load(Ordering::SeqCst) < self.actors_count.load(Ordering::SeqCst) {
+                trace!(" waiting for actors to register: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
+                let elapsed = start.elapsed();
+                if elapsed > timeout {
+                    error!("timeout on startup, not all actors registered: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
+                    break;
+                }
+                thread::sleep(Duration::from_millis(40));
+            }
+
+        } else {
+            warn!("no actors to wait for");
+        }
+        trace!("changed to running state");
+        self.building_to_running();
+    }
+
     /// Requests a shutdown of the graph.
     pub fn request_shutdown(&mut self) {
         if self.state.eq(&GraphLivelinessState::Running) {
-            let voters = self.registered_voters.load(std::sync::atomic::Ordering::SeqCst);
+            let voters = self.registered_voters.len();
 
             // Print new ballots for this new election
             let votes: Vec<Mutex<ShutdownVote>> = (0..voters)
-                .map(|_| Mutex::new(ShutdownVote::default()))
+                .map(|i| Mutex::new(ShutdownVote {
+                                    id: i,
+                                    ident: None,
+                                    in_favor: false,
+                }))
                 .collect();
             self.votes = Arc::new(votes.into_boxed_slice());
             self.vote_in_favor_total.store(0, std::sync::atomic::Ordering::SeqCst); // Redundant but safe for clarity
@@ -174,6 +226,7 @@ impl GraphLiveliness {
             abstract_executor::block_on(async move {
                 let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
                 while let Some(f) = one_shots.pop() {
+                    //info!("one shot shutdown for one actor");
                     f.send(()).expect("oops");
                 }
             });
@@ -222,7 +275,9 @@ impl GraphLiveliness {
     ///
     /// `true` if the graph is in one of the specified states, `false` otherwise.
     pub fn is_in_state(&self, matches: &[GraphLivelinessState]) -> bool {
-        matches.iter().any(|f| f.eq(&self.state))
+        let result = matches.iter().any(|f| f.eq(&self.state));
+        trace!("is in state called: {:?} looking for {:?} match {:?}", self.state, matches, result);
+        result
     }
 
     /// Checks if an actor is running.
@@ -236,23 +291,39 @@ impl GraphLiveliness {
     ///
     /// `true` if the actor is running, `false` otherwise.
     pub fn is_running(&self, ident: ActorIdentity, accept_fn: &mut dyn FnMut() -> bool) -> bool {
+        //warn!("is running called on {:?}", ident);
+
         match self.state {
             GraphLivelinessState::Building => {
+              //  info!("building now: {:?}", ident);
                 // Allow run to start but also let the other startup if needed.
-                thread::yield_now();
+              //  thread::yield_now();
                 true
             }
-            GraphLivelinessState::Running => true,
+            GraphLivelinessState::Running => {
+               //info!("running now: {:?}", ident);
+                true
+            },
             GraphLivelinessState::StopRequested => {
-                // trace!("stop requested, voting now: {:?}", ident);
+
+
+                //TODO: do not allow stop until we have run once??
+
+               //info!("stop requested, voting now: {:?}", ident);
 
                 let in_favor = accept_fn();
+
                 let my_ballot = &self.votes[ident.id];
                 if let Some(mut vote) = my_ballot.try_lock() {
+                    assert_eq!(vote.id, ident.id);
                     vote.ident = Some(ident); // Signature it is me
                     if in_favor && !vote.in_favor {
                         // Safe total where we know this can only be done once for each
                         self.vote_in_favor_total.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    } else {
+                        if vote.in_favor {
+                            error!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
+                        }
                     }
                     vote.in_favor = in_favor;
                     drop(vote);
@@ -262,18 +333,60 @@ impl GraphLiveliness {
                     error!("voting integrity error, someone else has my ballot {:?} in_favor of shutdown: {:?}", ident, in_favor);
                     true // If we can't vote we oppose the shutdown by continuing to run
                 }
+
             }
-            GraphLivelinessState::Stopped => false,
-            GraphLivelinessState::StoppedUncleanly => false,
+            GraphLivelinessState::Stopped => {
+               // info!("stopped now: {:?}", ident);
+                false
+            },
+            GraphLivelinessState::StoppedUncleanly => {
+               //info!("stopped unclean now: {:?}", ident);
+
+                false},
         }
     }
 }
 
 /// Represents the identity of an actor.
-#[derive(Clone, Debug, Default, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Default, Copy, PartialEq, Eq, Hash)]
 pub struct ActorIdentity {
-    pub(crate) id: usize,
-    pub(crate) name: &'static str,
+    pub id: usize,         //unique identifier
+    pub label: ActorName,  //for backplanee
+}
+#[derive(Clone, Default, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct ActorName {
+    pub name: &'static str,    //for backplane
+    pub suffix: Option<usize>, //for backplane
+}
+
+impl ActorIdentity {
+    pub fn new(id: usize, name: &'static str, suffix: Option<usize>) -> Self {
+        ActorIdentity {
+            id,
+            label: ActorName {
+                    name,
+                    suffix,
+            },
+        }
+    }
+}
+impl ActorName {
+    pub fn new(name: &'static str, suffix: Option<usize>) -> Self {
+        ActorName {
+            name,
+            suffix,
+        }
+    }
+}
+
+impl Debug for ActorIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{:?} {}", self.id, self.label.name)?;
+        if let Some(suffix) = self.label.suffix {
+            write!(f, "-{}", suffix)?;
+        }
+        Ok(())
+    }
 }
 
 /// Configuration options for the proactor.
@@ -298,46 +411,28 @@ pub enum ProactorConfig {
 pub struct Graph {
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     pub(crate) channel_count: Arc<AtomicUsize>,
-    pub(crate) monitor_count: Arc<AtomicUsize>,
+    pub(crate) actor_count: Arc<AtomicUsize>,
+    pub(crate) thread_lock: Arc<Mutex<()>>,
+
     // Used by collector but could grow if we get new actors at runtime
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
-    pub(crate) oneshot_startup_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     pub(crate) backplane: Arc<Mutex<Option<SideChannelHub>>>, // Only used in testing
     pub(crate) noise_threshold: Instant,
     pub(crate) block_fail_fast: bool,
-    pub(crate) iouring_queue_length: u32,
-    pub(crate) enable_io_driver: bool,
-    pub(crate) proactor_config: ProactorConfig,
     pub(crate) telemetry_production_rate_ms: u64,
 }
 
 impl Graph {
-    /// Disables the IO driver.
-    ///
-    /// If you are sure you have no IO and will not add any IO_URING IO, this can be disabled.
-    /// Do not call unless you are sure this will not be needed.
-    pub fn disable_io_driver(&mut self) {
-        self.enable_io_driver = false;
+
+
+    /// Returns the telemetry production rate in milliseconds.
+    pub fn telemetry_production_rate_ms(&self) -> u64 {
+        self.telemetry_production_rate_ms
     }
 
-    /// Returns the IO_URING queue length.
-    pub fn iouring_queue_length(&self) -> u32 {
-        self.iouring_queue_length
-    }
-
-    /// Sets the IO_URING queue length.
-    pub fn set_iouring_queue_length(&mut self, iouring_queue_length: u32) {
-        self.iouring_queue_length = iouring_queue_length;
-    }
-
-    /// Sets the proactor configuration.
-    pub fn set_proactor_config(&mut self, proactor_config: ProactorConfig) {
-        self.proactor_config = proactor_config;
-    }
-
-    /// Creates a new test monitor.
+     /// Creates a new test monitor.
     ///
     /// This monitor assumes we are running without a full graph and will not be used in production.
     ///
@@ -372,11 +467,7 @@ impl Graph {
 
         SteadyContext {
             channel_count,
-            ident: ActorIdentity {
-                name,
-                id: usize::MAX, //  skip normal behavior since this only for testing and is not a real actor
-                                //  self.monitor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
-            },
+            ident: ActorIdentity::new(usize::MAX, name, None), //no Id this is for testing
             args: self.args.clone(),
             is_in_graph: false, // This is key, we are not running in a graph by design
             actor_metadata: Arc::new(ActorMetaData::default()),
@@ -456,21 +547,28 @@ impl Graph {
         self.backplane.lock()
     }
 
-    /// Runs the full graph with an immediate stop which allows actors to cascade
-    /// shutdown based on closed channels. Also makes use of an expected timeout.
-    ///
-    /// This is excellent for command line applications which take in data, do a
-    /// specific job and then exit.  This is frequently used for unit tests of actors.
-    pub fn start_as_data_driven(mut self, timeout: Duration) {
-        self.start(); //startup the graph
-        self.request_stop(); //let all actors close when inputs are closed
-        self.block_until_stopped(timeout); //wait for the graph to stop
-    }
+    // /// Runs the full graph with an immediate stop which allows actors to cascade
+    // /// shutdown based on closed channels. Also makes use of an expected timeout.
+    // ///
+    // /// This is excellent for command line applications which take in data, do a
+    // /// specific job and then exit.  This is frequently used for unit tests of actors.
+    // pub fn start_as_data_driven(mut self, timeout: Duration) -> bool {
+    //     self.start(); //startup the graph
+    //     self.request_stop(); //let all actors close when inputs are closed
+    //     self.block_until_stopped(timeout) //wait for the graph to stop
+    // }
 
     /// Starts the graph.
     ///
     /// This should be done after building the graph.
     pub fn start(&mut self) {
+        self.start_with_timeout(Duration::from_secs(40));
+    }
+
+    /// Starts the graph.
+    ///
+    /// This should be done after building the graph.
+    pub fn start_with_timeout(&mut self, duration:Duration) {
         // error!("start called");
 
         // If we are not in release mode we will enable fail-fast
@@ -480,31 +578,16 @@ impl Graph {
             self.enable_fail_fast();
         }
 
-        let nuclei_config = match self.proactor_config {
-            ProactorConfig::InterruptDriven => IoUringConfiguration::interrupt_driven(self.iouring_queue_length),
-            ProactorConfig::KernelPollDriven => IoUringConfiguration::kernel_poll_only(self.iouring_queue_length),
-            ProactorConfig::LowLatencyDriven => IoUringConfiguration::low_latency_driven(self.iouring_queue_length),
-            ProactorConfig::IoPoll => IoUringConfiguration::io_poll(self.iouring_queue_length),
-        };
-
-        abstract_executor::init(self.enable_io_driver, nuclei_config);
-
-        // trace!("start was called");
+        trace!("start was called");
         // Everything has been scheduled and running so change the state
         match self.runtime_state.write() {
             Ok(mut state) => {
-                // error!("to running");
-                state.building_to_running();
-                trace!("we are now running");
-                let v = self.oneshot_startup_vec.clone();
-                abstract_executor::block_on(async move {
-                    let mut one_shots: MutexGuard<Vec<Sender<_>>> = v.lock().await;
-                    while let Some(sender) = one_shots.pop() {
-                        if let Err(e) = sender.send(()) {
-                            error!("failed to send startup signal: {:?}", e);
-                        }
-                    }
-                });
+                //actors all started upon spawn or team spawn when graph building
+                //here we wait to ensure each one of them have a thread and are running
+                state.wait_for_registrations(duration);
+                if !state.is_in_state(&[GraphLivelinessState::Running]) {
+                    error!("timeout on startup, graph is not in the running state");
+                }
             }
             Err(e) => {
                 error!("failed to start graph: {:?}", e);
@@ -514,6 +597,10 @@ impl Graph {
 
     /// Stops the graph procedure requested.
     pub fn request_stop(&mut self) {
+
+        if self.runtime_state.read().expect("internal error").is_in_state(&[GraphLivelinessState::Building]) {
+            error!("request_stop should only be called after start");
+        }
         match self.runtime_state.write() {
             Ok(mut a) => {
                 a.request_shutdown();
@@ -529,11 +616,11 @@ impl Graph {
     /// # Arguments
     ///
     /// * `clean_shutdown_timeout` - The timeout duration for a clean shutdown.
-    pub fn block_until_stopped(self, clean_shutdown_timeout: Duration) {
+    pub fn block_until_stopped(self, clean_shutdown_timeout: Duration) -> bool {
         if let Some(wait_on) = match self.runtime_state.write() {
             Ok(state) => {
                 if state.is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
-                    let (tx, rx) = futures::channel::oneshot::channel();
+                    let (tx, rx) = oneshot::channel();
                     let v = state.shutdown_one_shot_vec.clone();
                     abstract_executor::block_on(async move {
                         v.lock().await.push(tx);
@@ -588,16 +675,21 @@ impl Graph {
 
                             // Now iterate over the sorted voters and log the results
                             voters.iter().for_each(|voter| {
-                                warn!("Voted: {:?} Ident: {:?}", voter.as_ref().map_or(false, |f| f.in_favor), voter.as_ref().map_or(Default::default(), |f| f.ident));
+                                warn!("#{:?} Voted: {:?} Ident: {:?}"
+                                       , voter.as_ref().map_or(usize::MAX, |f| f.id)
+                                       , voter.as_ref().map_or(false, |f| f.in_favor)
+                                       , voter.as_ref().map_or(Default::default(), |f| f.ident));
                             });
                             warn!("graph stopped uncleanly");
+                            return false;
                         }
                     }
                     Err(e) => {
                         error!("failed to request stop of graph: {:?}", e);
+                        return false;
                     }
                 }
-                break;
+                return true;
             } else {
                 thread::sleep(Duration::from_millis(self.telemetry_production_rate_ms));
             }
@@ -617,13 +709,20 @@ impl Graph {
         #[cfg(test)]
         panic!("should not call new in tests");
         #[cfg(not(test))]
-        Self::internal_new(args, false, steady_config::TELEMETRY_SERVER, None)
+        Self::internal_new(args, false, steady_config::TELEMETRY_SERVER, None, Some(ProactorConfig::InterruptDriven),true)
 
     }
 
     pub fn new_test<A: Any + Send + Sync>(args: A) -> Graph {
         util::logger::initialize();
-        Self::internal_new(args, false, false, Some(SideChannelHub::default()))
+        Self::internal_new(args, false, false
+                           , Some(SideChannelHub::default()),Some(ProactorConfig::InterruptDriven),true)
+    }
+
+    pub fn new_test_with_telemetry<A: Any + Send + Sync>(args: A) -> Graph {
+        util::logger::initialize();
+        Self::internal_new(args, false, true
+                           , Some(SideChannelHub::default()),Some(ProactorConfig::InterruptDriven),true)
     }
 
     /// Creates a new graph for normal or unit test use.
@@ -639,32 +738,55 @@ impl Graph {
     /// A new `Graph` instance.
     pub fn internal_new<A: Any + Send + Sync>(args: A
                                               , block_fail_fast: bool
-                                              , enable_telemtry: bool
+                                              , telemetry_metric_features: bool
                                               , backplane: Option<SideChannelHub>
+                                              , proactor_config: Option<ProactorConfig>
+                                              , enable_io_driver: bool
                                             ) -> Graph {
+
+
+
+        let proactor_config =  if let Some(config) = proactor_config {
+            config
+        } else {
+            ProactorConfig::InterruptDriven
+        };
+
+        let iouring_queue_length =  1 << 5; //TODO: expose as arg.
+        let telemetry_production_rate_ms = 40; // TODO: set default somewhere.
+
+        //setup our threading and IO driver
+        let nuclei_config = match proactor_config {
+            ProactorConfig::InterruptDriven => IoUringConfiguration::interrupt_driven(iouring_queue_length),
+            ProactorConfig::KernelPollDriven => IoUringConfiguration::kernel_poll_only(iouring_queue_length),
+            ProactorConfig::LowLatencyDriven => IoUringConfiguration::low_latency_driven(iouring_queue_length),
+            ProactorConfig::IoPoll => IoUringConfiguration::io_poll(iouring_queue_length),
+        };
+        abstract_executor::init(enable_io_driver, nuclei_config);
+
         let channel_count = Arc::new(AtomicUsize::new(0));
-        let monitor_count = Arc::new(AtomicUsize::new(0));
+        let actor_count = Arc::new(AtomicUsize::new(0));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
-        let oneshot_startup_vec = Arc::new(Mutex::new(Vec::new()));
+
 
         let mut result = Graph {
             args: Arc::new(Box::new(args)),
             channel_count: channel_count.clone(),
-            monitor_count: monitor_count.clone(), // This is the count of all monitors
+            actor_count: actor_count.clone(), // This is the count of all monitors
             all_telemetry_rx: Arc::new(RwLock::new(Vec::new())), // This is all telemetry receivers
-            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(monitor_count, oneshot_shutdown_vec.clone()))),
+            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
+                                        oneshot_shutdown_vec.clone()
+                                        , actor_count.clone()) ) ),
+            thread_lock: Arc::new(Mutex::new(())),
             oneshot_shutdown_vec,
-            oneshot_startup_vec,
             backplane: Arc::new(Mutex::new(backplane)),
             noise_threshold: Instant::now().sub(Duration::from_secs(steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64)),
             block_fail_fast,
-            iouring_queue_length: 1 << 5,
-            enable_io_driver: true,
-            proactor_config: ProactorConfig::InterruptDriven,
-            telemetry_production_rate_ms: 40, // TODO: set default somewhere.
+            telemetry_production_rate_ms,
         };
-        if enable_telemtry {
-            telemetry::setup::build_optional_telemetry_graph(&mut result);
+
+        if telemetry_metric_features {
+            telemetry::setup::build_telemetry_metric_features(&mut result);
         }
         result
     }

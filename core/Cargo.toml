@@ -91,10 +91,10 @@ colored          = "2.1.0"
 structopt        = "0.3.26"  # CLI parse for type safe arguments
 structopt-derive = "0.4.18" # adds Args::from_args() to your structopt struct
 
-# NOTE: more thought here about which is the best
 futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3.30"
 parking_lot      = "0.12.2"# TODO: review our lock usage and possible use of parking_lot
+serial_test      = "3.1.1" # for serializing tests
 
 # TODO: still in progess, this is for distributed instances across mutiple nodes
 stun-rs   = "0.1.8"
@@ -176,3 +176,4 @@ async-std        = {  version = "1.12.0", features = ["attributes"] }  # for asy
 rand_distr       = "0.5.0-alpha.1" # for random number generation
 #testcontainers   = "0.15.0" # for integration testing, DO NOT upgrade to 0.16.0 since Tokio is not supported here
 rand             = "0.9.0-alpha.1" # for random number generation
+isahc            = "1.7.2"

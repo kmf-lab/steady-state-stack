@@ -1,7 +1,6 @@
 
 use std::str::FromStr;
-use flexi_logger::{DeferredNow, Logger, LogSpecBuilder};
-use flexi_logger::filter::{LogLineFilter, LogLineWriter};
+use flexi_logger::{Logger, LogSpecBuilder};
 
 use log::*;
 

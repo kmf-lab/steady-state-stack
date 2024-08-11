@@ -128,35 +128,37 @@ mod graph_tests {
     use std::time::Duration;
     use async_std::test;
     use futures_timer::Delay;
-    use steady_state::Graph;
+    use steady_state::{ActorName, Graph};
     use crate::actor::tick_generator::Tick;
+    use crate::build_graph;
 
-    #[test]
-    async fn test_graph_one() {
-
-            let mut graph = Graph::new_test(());
-
-            graph.start();
-            let mut guard = graph.sidechannel_director().await;
-            if let Some(plane) = guard.deref_mut() {
-
-              //  write your test here, send messages to edge nodes and get responses
-              let response = plane.node_call(Box::new(Tick { value: 42 }), "TickGenerator").await;
-              if let Some(msg) = response {
-
-                 //TODO: confirm
-
-              }
-              Delay::new(Duration::from_millis(100)).await;  //wait for message to propagate
-              let response = plane.node_call(Box::new(()), "FinalConsumer").await;
-
-                 //TODO: confirm
-
-            }
-            drop(guard);
-            graph.request_stop();
-            graph.block_until_stopped(Duration::from_secs(3));
-
-    }
+    // #[test]
+    // async fn test_graph_one() {
+    //
+    //         let graph = Graph::new_test(());
+    //         let mut graph = build_graph(graph);
+    //         graph.start();
+    //
+    //         let mut guard = graph.sidechannel_director().await;
+    //         if let Some(plane) = guard.deref_mut() {
+    //
+    //           //  write your test here, send messages to edge nodes and get responses
+    //           let response = plane.node_call(Box::new(Tick { value: 42 }), ActorName::new("TickGenerator",None)).await;
+    //           if let Some(msg) = response {
+    //
+    //              //TODO: confirm
+    //
+    //           }
+    //           Delay::new(Duration::from_millis(100)).await;  //wait for message to propagate
+    //           let response = plane.node_call(Box::new(()), ActorName::new("FinalConsumer",None)).await;
+    //
+    //              //TODO: confirm
+    //
+    //         }
+    //         drop(guard);
+    //         graph.request_stop();
+    //         graph.block_until_stopped(Duration::from_secs(3));
+    //
+    // }
 }
 

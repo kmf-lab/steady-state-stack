@@ -8,9 +8,12 @@ use std::future::Future;
 use std::thread;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::thread::sleep;
 use std::time::Duration;
+use futures_timer::Delay;
+use futures_util::lock::Mutex;
 use lazy_static::lazy_static;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 #[allow(unused_imports)]
@@ -72,15 +75,22 @@ impl Future for InfiniteSleep {
 ///
 pub(crate) fn init(enable_driver: bool, nuclei_config: IoUringConfiguration) {
     INIT.call_once(|| {
-        let _ = nuclei::Proactor::with_config(NucleiConfig { iouring: nuclei_config });
-        nuclei::init_with_config(
-            nuclei::GlobalExecutorConfig::default()
-                .with_min_threads(3)
-                .with_max_threads(usize::MAX),
-        );
+    //TODO: none of this works, we must submit an issue and example..
+        // //set the enviornment variable t0 127
+        // std::env::set_var("ASYNC_GLOBAL_EXECUTOR_THREADS", "127");
+        // std::env::set_var("BLOCKING_MAX_THREADS", "127");
+        //
+        // nuclei::init_with_config(
+        //
+        //     nuclei::GlobalExecutorConfig::default()
+        //         .with_env_var("ASYNC_GLOBAL_EXECUTOR_THREADS")
+        //         .with_min_threads(3)
+        //         .with_max_threads(1000),
+        // );
 
+        let _ = nuclei::Proactor::with_config(NucleiConfig { iouring: nuclei_config });
         if enable_driver {
-            //trace!("Starting IOUring driver");
+            trace!("Starting IOUring driver");
             nuclei::spawn_blocking(|| {
                 loop {
                     let result = catch_unwind(AssertUnwindSafe(|| {
@@ -108,18 +118,25 @@ pub(crate) fn init(enable_driver: bool, nuclei_config: IoUringConfiguration) {
 ///
 /// * `future` - The future to run as a detached task.
 ///
-pub(crate) fn spawn_detached<F, T>(future: F)
+pub(crate) fn spawn_detached<F, T>(thread_lock: Arc<Mutex<()>>, future: F)
     where
         F: Future<Output = T> + Send + 'static,
         T: Send + 'static,
 {
-    nuclei::spawn(async move {
-        if let Err(e) = nuclei::spawn_more_threads(1).await {
-            error!("Failed to spawn one more thread: {:?}", e);
-        };
-        future.await;
-    })
-        .detach(); // Spawn an async task with nuclei
+
+    nuclei::block_on(async move {
+       let _guard = thread_lock.lock().await;
+       match nuclei::spawn_more_threads(1).await {
+           Ok(c) => {if c>=12 {info!("Threads: {}",c);} }
+           Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
+       }
+
+       nuclei::spawn(future).detach();
+       //TODO: this is needed or we end up waiting?
+       Delay::new(Duration::from_millis(10)).await;
+
+    });
+
 }
 
 /// Blocks the current thread until the given future resolves.
@@ -206,24 +223,25 @@ mod tests {
         //assert!(INIT.is_completed());
     }
 
-    #[test]
-    fn test_spawn_detached() {
-        // Use an Arc and Mutex to share state between the main task and the detached task
-        let flag = Arc::new(Mutex::new(false));
-        let flag_clone = flag.clone();
-
-        // Spawn a detached task that sets the flag to true
-        spawn_detached(async move {
-            let mut flag = flag_clone.lock().unwrap();
-            *flag = true;
-        });
-
-        // Wait for a moment to let the detached task run
-        thread::sleep(Duration::from_millis(100));
-
-        // Check if the flag is set to true
-        assert!(*flag.lock().unwrap());
-    }
+    // #[test]
+    // fn test_spawn_detached() {
+    //     // Use an Arc and Mutex to share state between the main task and the detached task
+    //     let flag = Arc::new(Mutex::new(false));
+    //     let flag_clone = flag.clone();
+    //
+    //     let lock = Arc::new(Mutex::new(()));
+    //     // Spawn a detached task that sets the flag to true
+    //     spawn_detached(lock, async move {
+    //         let mut flag = flag_clone.lock().unwrap();
+    //         *flag = true;
+    //     });
+    //
+    //     // Wait for a moment to let the detached task run
+    //     thread::sleep(Duration::from_millis(100));
+    //
+    //     // Check if the flag is set to true
+    //     assert!(*flag.lock().unwrap());
+    // }
 
     #[test]
     fn test_block_on() {

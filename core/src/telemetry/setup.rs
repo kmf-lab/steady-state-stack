@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
 use num_traits::Zero;
-use crate::{abstract_executor, ActorIdentity, steady_config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, steady_tx_bundle, SteadyContext};
+use crate::{abstract_executor, ActorIdentity, steady_config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, SteadyContext, steady_tx_bundle};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel};
@@ -129,7 +129,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
 ///
 /// # Parameters
 /// - `graph`: The graph to build the telemetry for.
-pub(crate) fn build_optional_telemetry_graph(graph: &mut Graph) {
+pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
     #[cfg(any(
         feature = "telemetry_server_builtin",
         feature = "telemetry_server_cdn",

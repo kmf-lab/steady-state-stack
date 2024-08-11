@@ -17,11 +17,7 @@ mod actor {
     pub mod data_router;
     pub mod data_user;
     pub mod data_process;
-
-
-
 }
-#[cfg(test)]
 
 
 //use steady_state::*;
@@ -42,26 +38,16 @@ fn main() {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::from_args();
 
-    //TODO: for round trip CLI testing we need to build a PR against stuctopt-derive to give us
-    //      into String from the built struct, this will allow for better testability of products.
-    //let text:String = opt.into();
-    //warn!("{}",text);
-
     if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
-    let mut graph = Graph::new_test(opt.clone());
-
-
+    let mut graph = build_graph(Graph::new(opt.clone()));
     graph.start();
-   // println!("graph started in {:?}", start.elapsed());
-
 
     {   //remove this block to run forever.
         sleep(Duration::from_secs(opt.duration));
         graph.request_stop();
     }
-
 
     graph.block_until_stopped(Duration::from_secs(80));
 
@@ -72,7 +58,7 @@ const LEVEL_2: usize = 2; //3
 const LEVEL_3: usize = 3; //2
 const LEVEL_4: usize = 2; //One will remove all the user filters and loggers
 
-fn build_graph(mut graph: Graph) -> steady_state::Graph {
+fn build_graph(mut graph: Graph) -> Graph {
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
@@ -104,7 +90,8 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                 .build_join(
                        move |context| actor::data_generator::run(context
                                                   , btx.clone()
-                       ), &mut actor_team
+                       )
+                       , &mut actor_team
                 );
 
 
@@ -119,7 +106,8 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                                                   , LEVEL_1
                                                   , local_rx.clone()
                                                   , btx.clone()
-                           ), &mut actor_team
+                           )
+                           , &mut actor_team
                     );
 
 
@@ -133,7 +121,8 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                                                                         , LEVEL_1*LEVEL_2
                                                                         , local_rx.clone()
                                                                         , btx.clone()
-                                     ), &mut actor_team
+                                     )
+                                 , &mut actor_team
                     );
 
                 for z in 0..LEVEL_3 {
@@ -147,7 +136,8 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                                                                                 , LEVEL_1*LEVEL_2*LEVEL_3
                                                                                 , local_rx.clone()
                                                                                 , btx.clone()
-                                          ), &mut actor_team
+                                          )
+                                         , &mut actor_team
                             );
 
 
@@ -161,7 +151,8 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                                 .with_name_and_suffix("user",z)
                                 .build_join(move |context| actor::data_user::run(context
                                                                                   , local_rx.clone()
-                                             ), &mut actor_linedance_tream
+                                             )
+                                             , &mut actor_linedance_tream
                                 );
                         actor_linedance_tream.spawn();
                     } else {
@@ -178,7 +169,8 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                                     .build_join(move |context| actor::data_process::run(context
                                                                                         , local_rx.clone()
                                                                                         , filter_tx.clone()
-                                                  ), & mut group_line
+                                                  )
+                                                 , & mut group_line
                                     );
 
                             let (logging_tx, logging_rx) = base_channel_builder.build();
@@ -188,7 +180,8 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                                     .build_join(move |context| actor::data_process::run(context
                                                                                         , filter_rx.clone()
                                                                                         , logging_tx.clone()
-                                                  ), & mut group_line
+                                                  )
+                                                 , & mut group_line
                                     );
 
 
@@ -197,18 +190,20 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
 
                             base_actor_builder
-                                    .with_name_and_suffix("XXdecrypt",z)
+                                    .with_name_and_suffix("decrypt",z)
                                     .build_join(move |context| actor::data_process::run(context
                                                                                         , logging_rx.clone()
                                                                                         , decrypt_tx.clone()
-                                                    ), & mut group_line
+                                                    )
+                                                 , & mut group_line
                                     );
 
                                 base_actor_builder
-                                    .with_name_and_suffix("XXuser",z)
+                                    .with_name_and_suffix("user",z)
                                     .build_join(move |context| actor::data_user::run(context
                                                                                      , decrypt_rx.clone()
-                                                    ), & mut group_line
+                                                    )
+                                                 , & mut group_line
                                     );
 
                             group_line.spawn();
@@ -226,16 +221,117 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
     graph
 }
 
+//TODO: fix this larget test and add check for telemetry pull..
 
 
 #[cfg(test)]
-mod tests {
+mod large_tests {
+    use std::ops::DerefMut;
+    use std::time::Duration;
+    use bytes::Bytes;
+    use futures_timer::Delay;
+    use isahc::ReadResponseExt;
+    use log::{error, info};
+    use steady_state::{ActorName, Graph};
+    use crate::actor::data_generator::Packet;
+    use crate::args::Args;
+    use crate::build_graph;
+
+    #[cfg(test)]
     #[async_std::test]
-    async fn test_graph_one() {
+    async fn test_large_graph() {
+
+        let test_ops = Args {
+            duration: 21,
+            loglevel: "debug".to_string(),
+            gen_rate_micros: 100,
+        };
+
+        let graph = Graph::new_test_with_telemetry(test_ops);
+        let mut graph = build_graph(graph);
+        graph.start();
+
+        {
+            let mut guard = graph.sidechannel_director().await;// mut drop this guard before shutdown request
+            let g = guard.deref_mut();
+            assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
+            if let Some(plane) = g {
+
+                 for i in 0..96 {
+                     let to_send = Packet {
+                         route: i,
+                         data: Bytes::from_static(&[0u8; 62]),
+                     };
+                     let response = plane.node_call(Box::new(to_send), ActorName::new("generator",None)).await;
+                     if let Some(r) = response {
+                          // error!("generator response: {:?}", r.downcast_ref::<String>());
+                         let expected_message = Packet {
+                             route: i,
+                             data: Bytes::from_static(&[0u8; 62]),
+                         };
+
+                         //TODO: we need specific XXUser names to check into
+                       //  let response = plane.node_call(Box::new(expected_message), ActorName::new("user",None)).await;
+
+                         //  info!("consumer response: {:?}", response);
+                         //      assert_eq!("ok", response.expect("no response")
+                         //          .downcast_ref::<String>().expect("bad type"));
+                     } else {
+                         error!("bad response from generator: {:?}", response);
+                        // panic!("bad response from generator: {:?}", response);
+                     }
+                 }
+
+            }
+        }
+
+        //wait for one page of telemetry
+        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms()*2)).await;
 
 
-        //create the mutable graph object
-        //let mut graph = steady_state::Graph::new(cli_arg.clone());
+       //hit the telemetry site and validate if it returns
+        // this test will only work if the feature is on
+       // hit 127.0.0.1:9100/metrics using isahc
+        match isahc::get("http://127.0.0.1:9100/metrics") {
+            Ok(mut response) => {
+                assert_eq!(200, response.status().as_u16());
+                let body = response.text().expect("body text");
+                //info!("metrics: {}", body); //TODO: add more checks
+            }
+            Err(e) => {
+                info!("failed to get metrics: {:?}", e);
+                // //this is only an error if the feature is not on
+                // #[cfg(feature = "prometheus_metrics")]
+                // {
+                //     panic!("failed to get metrics: {:?}", e);
+                // }
+            }
+        };
+        match isahc::get("http://127.0.0.1:9100/graph.dot") {
+            Ok(mut response) => {
+                assert_eq!(200, response.status().as_u16());
+                let body = response.text().expect("body text");
+               //  info!("metrics: {}", body); //TODO: add more checks
+            }
+            Err(e) => {
+                info!("failed to get metrics: {:?}", e);
+                // //this is only an error if the feature is not on
+                 #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
+                 {
+                     //panic!("failed to get metrics: {:?}", e);
+                 }
+            }
+        };
+
+
+
+
+      //  Delay::new(Duration::from_secs(300)).await;
+
+//   http://0.0.0.0:9100/
+
+        graph.request_stop();
+        graph.block_until_stopped(Duration::from_secs(7));
 
     }
 

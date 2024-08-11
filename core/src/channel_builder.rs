@@ -26,6 +26,7 @@ use futures::channel::oneshot;
 use log::*;
 use async_ringbuf::traits::Split;
 use futures_timer::Delay;
+use ringbuf::traits::Observer;
 use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{Percentile};
 use crate::monitor::ChannelMetaData;
@@ -679,7 +680,6 @@ impl <T> LazySteadyTx<T> {
 
     /// For testing simulates sending data to the actor in a controlled manner.
     pub async fn testing_send(&self, data: Vec<T>, step_delay: Duration, close: bool) {
-        Delay::new(step_delay).await;
         let tx = self.lazy_channel.get_tx_clone().await;
         let mut tx = tx.lock().await;
 
@@ -689,12 +689,22 @@ impl <T> LazySteadyTx<T> {
             let _ =  tx.tx.push(d).await;
             trigger -= 1;
             if 0==trigger {
-                Delay::new(step_delay).await;
+                loop { //ensure all this was processed before moving on for repeatable tests.
+                    Delay::new(step_delay).await;
+                    if tx.tx.is_empty() {
+                        break;
+                    }
+                }
             }
         }
-        Delay::new(step_delay).await;
         if close {
             tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
+        }
+        loop { //ensure all this was processed before moving on for repeatable tests.
+            Delay::new(step_delay).await;
+            if tx.tx.is_empty() {
+                break;
+            }
         }
     }
 

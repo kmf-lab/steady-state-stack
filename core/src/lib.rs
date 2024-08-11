@@ -27,7 +27,6 @@ pub(crate) mod dot;
 
 mod graph_liveliness;
 mod loop_driver;
-mod yield_now;
 mod abstract_executor;
 mod test_panic_capture;
 mod steady_telemetry;
@@ -56,6 +55,8 @@ pub mod graph_testing;
 pub mod steady_tx;
     /// module for all rx channel features
 pub mod steady_rx;
+
+pub mod yield_now;
 
 
 pub use graph_testing::GraphTestResult;
@@ -289,14 +290,9 @@ pub struct SteadyContext {
 }
 
 impl SteadyContext {
-    /// Get the unique identifier of the actor.
-    pub fn id(&self) -> usize {
-        self.ident.id
-    }
-
-    /// Get the name of the actor.
-    pub fn name(&self) -> &str {
-        self.ident.name
+    /// Get the unique actor identifier.
+    pub fn ident(&self) -> ActorIdentity {
+        self.ident
     }
 
     /// Checks if the liveliness state matches any of the target states.
@@ -837,7 +833,9 @@ impl SteadyContext {
     #[inline]
     pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
         match self.runtime_state.read() {
-            Ok(liveliness) => liveliness.is_running(self.ident, accept_fn),
+            Ok(liveliness) => {
+                liveliness.is_running(self.ident, accept_fn)
+            },
             Err(e) => {
                 error!("Internal error, unable to get liveliness read lock {}", e);
                 true

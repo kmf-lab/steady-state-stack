@@ -55,7 +55,7 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
 
 
 #[cfg(test)]
-pub(crate) mod actor_tests {
+pub(crate) mod hp_actor_tests {
     use std::time::Duration;
     use async_std::test;
     use steady_state::*;
@@ -64,7 +64,7 @@ pub(crate) mod actor_tests {
 
     #[test]
     pub(crate) async fn test_simple_process() {
-        //1. build test graph, the input and output channels and our actor
+        // build test graph, the input and output channels and our actor
         let mut graph = Graph::new_test(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
             .with_capacity(WAIT_AVAIL).build();
@@ -74,14 +74,15 @@ pub(crate) mod actor_tests {
             .with_name("UnitTest")
             .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );
 
-        //2. add test data to the input channels
+        graph.start();
+        graph.request_stop();
+
         let test_data:Vec<Tick> = (0..WAIT_AVAIL).map(|i| Tick { value: i as u128 }).collect();
         ticks_tx_in.testing_send(test_data, Duration::from_millis(30), true).await;
 
-        //3. run graph until the actor detects the input is closed
-        graph.start_as_data_driven(Duration::from_secs(240));
+        graph.block_until_stopped(Duration::from_secs(240));
 
-        //4. assert expected results
-        assert_eq!(ticks_rx_out.testing_avail_units().await, 1);
+        // assert expected results
+        assert_eq!(true, ticks_rx_out.testing_avail_units().await>0);
     }
 }

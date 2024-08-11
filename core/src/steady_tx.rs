@@ -68,7 +68,11 @@ impl<T> Tx<T> {
     /// `true` if the channel was successfully marked as closed, otherwise `false`.
     pub fn mark_closed(&mut self) -> bool {
         if let Some(c) = self.make_closed.take() {
-            c.send(()).is_ok()
+            let result = c.send(());
+            if let Err(_) = result {
+                error!("internal error, channel already closed");
+            }
+            result.is_ok()
         } else {
             true // already closed
         }
@@ -276,8 +280,6 @@ impl<T> Tx<T> {
             let mut operation = &mut self.tx.wait_vacant(count);
             select! { _ = one_down => false, _ = operation => true, }
         } else {
-            let operation = &mut self.tx.wait_vacant(1);
-            operation.await;
             false
         }
     }
@@ -318,11 +320,13 @@ impl<T> Tx<T> {
                     }
                 }
 
+
+                //NOTE: may block here on shutdown if graph is built poorly
                 match self.tx.push(msg).await {
                     Ok(_) => Ok(()),
-                    Err(_) => {
+                    Err(t) => {
                         error!("channel is closed");
-                        Ok(())
+                        Err(t)
                     }
                 }
             }

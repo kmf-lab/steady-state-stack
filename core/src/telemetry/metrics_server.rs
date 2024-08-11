@@ -139,8 +139,8 @@ async fn process_msg(msg: DiagramData
 ) {
     match msg {
         DiagramData::NodeDef(seq, defs) => {
-            let name = defs.0.name;
-            let id = defs.0.id;
+            let id = defs.0.ident.id;
+            let name = defs.0.ident.label.name;
             apply_node_def(metrics_state, name, id, defs.0, &defs.1, &defs.2, frame_rate_ms);
             metrics_state.seq = seq;
             if steady_config::TELEMETRY_HISTORY {

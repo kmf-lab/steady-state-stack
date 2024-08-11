@@ -39,7 +39,7 @@ mod simple_graph_test {
         // It is not recommended to inline actors this way, but it is possible.
 
         // Special test graph which does NOT fail fast but instead shows the prod behavior of restarting actors.
-        let mut graph = Graph::internal_new((), true, true, Some(SideChannelHub::default()));
+        let mut graph = Graph::internal_new((), true, true, Some(SideChannelHub::default()), None, true);
 
         let (tx, rx) = graph.channel_builder()
             .with_capacity(300)

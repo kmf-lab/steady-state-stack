@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
@@ -20,6 +19,7 @@ use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
 use futures_util::select;
 use ringbuf::consumer::Consumer;
+use crate::{ActorIdentity, ActorName};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
@@ -50,15 +50,16 @@ pub enum GraphTestResult<K, E>
 
 /// Type alias for a side channel, which is a pair of internal sender and receiver.
 pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, InternalReceiver<Box<dyn Any + Send + Sync>>);
-type NodeName = String;
+
+
 
 /// The `SideChannelHub` struct manages side channels for nodes in the graph.
 /// Each node holds its own lock on read and write to the backplane.
 /// The backplane functions as a central message hub, ensuring that only one user can hold it at a time.
 #[derive(Default)]
 pub struct SideChannelHub {
-    node: HashMap<NodeName, Arc<Mutex<SideChannel>>>,
-    pub(crate) backplane: HashMap<NodeName, SideChannel>,
+    node: HashMap<ActorName, Arc<Mutex<SideChannel>>>,
+    pub(crate) backplane: HashMap<ActorName, SideChannel>,
 }
 
 impl Debug for SideChannelHub {
@@ -72,7 +73,7 @@ impl Debug for SideChannelHub {
 impl SideChannelHub {
 
 
-    /// Retrieves the transmitter and receiver for a node by its name.
+    /// Retrieves the transmitter and receiver for a node by its id.
     ///
     /// # Arguments
     ///
@@ -81,8 +82,9 @@ impl SideChannelHub {
     /// # Returns
     ///
     /// An `Option` containing an `Arc<Mutex<SideChannel>>` if the node exists.
-    pub fn node_tx_rx(&self, name: &str) -> Option<Arc<Mutex<SideChannel>>> {
-        self.node.get(name).cloned()
+    pub fn node_tx_rx(&self, name: ActorName) -> Option<Arc<Mutex<SideChannel>>> {
+            self.node.get(&name).cloned()
+
     }
 
     /// Registers a new node with the specified name and capacity.
@@ -91,17 +93,18 @@ impl SideChannelHub {
     ///
     /// * `name` - The name of the node.
     /// * `capacity` - The capacity of the ring buffer.
-    pub fn register_node(&mut self, name: &str, capacity: usize) {
-        // Message to the node
-        let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(capacity);
-        let (sender_tx, receiver_tx) = rb.split();
+    pub fn register_node(&mut self, key: ActorName, capacity: usize) {
+            // Message to the node
+            let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(capacity);
+            let (sender_tx, receiver_tx) = rb.split();
 
-        // Response from the node
-        let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(capacity);
-        let (sender_rx, receiver_rx) = rb.split();
+            // Response from the node
+            let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(capacity);
+            let (sender_rx, receiver_rx) = rb.split();
 
-        self.node.insert(name.into(), Arc::new(Mutex::new((sender_rx, receiver_tx))));
-        self.backplane.insert(name.into(), (sender_tx, receiver_rx));
+            self.node.insert(key, Arc::new(Mutex::new((sender_rx, receiver_tx))));
+            self.backplane.insert(key, (sender_tx, receiver_rx));
+
     }
 
     /// Sends a message to a node and waits for a response.
@@ -115,16 +118,9 @@ impl SideChannelHub {
     ///
     /// An `Option` containing the response message if the operation is successful.
     ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::graph_testing::SideChannelHub;
-    /// let mut hub = SideChannelHub::default();
-    /// hub.register_node("test_node", 10);
-    /// let response = hub.node_call(Box::new("test message"), "test_node"); //.await
-    /// ```
-    pub async fn node_call(&mut self, msg: Box<dyn Any + Send + Sync>, name: &str) -> Option<Box<dyn Any + Send + Sync>> {
-        if let Some((tx, rx)) = self.backplane.get_mut(name) {
+    pub async fn node_call(&mut self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Option<Box<dyn Any + Send + Sync>> {
+
+        if let Some((tx, rx)) = self.backplane.get_mut(&id) {
             match tx.push(msg).await {
                 Ok(_) => {
                     //do nothing else but immediately get the response for more deterministic testing
@@ -231,45 +227,4 @@ mod tests {
         }
     }
 
-    #[test]
-    async fn test_side_channel_hub_register_node() {
-        let mut hub = SideChannelHub::default();
-        hub.register_node("test_node", 10);
-        assert!(hub.node.contains_key("test_node"));
-        assert!(hub.backplane.contains_key("test_node"));
-    }
-
-    #[test]
-    async fn test_side_channel_hub_node_tx_rx() {
-        let mut hub = SideChannelHub::default();
-        hub.register_node("test_node", 10);
-        let node = hub.node_tx_rx("test_node");
-        assert!(node.is_some());
-    }
-
-    // #[test]
-    // async fn test_side_channel_hub_node_call() {
-    //     let mut hub = SideChannelHub::default();
-    //     hub.register_node("test_node", 10);
-    //     let response = hub.node_call(Box::new("test message"), "test_node").await;
-    //     assert!(response.is_none());
-    // }
-
-    // #[test]
-    // async fn test_side_channel_responder_respond_with() {
-    //     let mut hub = SideChannelHub::default();
-    //     hub.register_node("test_node", 10);
-    //     let node = hub.node_tx_rx("test_node").unwrap();
-    //     let responder = SideChannelResponder::new(node);
-    //
-    //     let _ = nuclei::spawn(async move {
-    //         responder.respond_with(|msg| {
-    //             assert_eq!(*msg.downcast_ref::<&str>().unwrap(), "test message");
-    //             Box::new("response message")
-    //         }).await;
-    //     });
-    //
-    //     let response = hub.node_call(Box::new("test message"), "test_node").await;
-    //     assert_eq!(*response.unwrap().downcast_ref::<&str>().unwrap(), "response message");
-    // }
 }

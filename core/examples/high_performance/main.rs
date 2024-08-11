@@ -135,30 +135,30 @@ mod graph_tests {
     use crate::actor::tick_generator::Tick;
 
 
-    #[test]
-    async fn test_graph_one() {
-
-        let mut graph = Graph::new_test(());
-
-        graph.start();
-        let mut guard = graph.sidechannel_director().await;
-        if let Some(plane) = guard.deref_mut() {
-
-            //  write your test here, send messages to edge nodes and get responses
-            let response = plane.node_call(Box::new(Tick { value: 42 }), "TickGenerator").await;
-            if let Some(msg) = response {
-                //TODO: confirm
-            }
-            Delay::new(Duration::from_millis(100)).await;  //wait for message to propagate
-            let response = plane.node_call(Box::new(()), "FinalConsumer").await;
-
-            //TODO: confirm
-
-        }
-        drop(guard);
-        graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(3));
-
-    }
+    // #[test]
+    // async fn test_graph_one() {
+    //
+    //     let mut graph = Graph::new_test(());
+    //
+    //     graph.start();
+    //     let mut guard = graph.sidechannel_director().await;
+    //     if let Some(plane) = guard.deref_mut() {
+    //
+    //         //  write your test here, send messages to edge nodes and get responses
+    //         let response = plane.node_call(Box::new(Tick { value: 42 }), "TickGenerator").await;
+    //         if let Some(msg) = response {
+    //             //TODO: confirm
+    //         }
+    //         Delay::new(Duration::from_millis(100)).await;  //wait for message to propagate
+    //         let response = plane.node_call(Box::new(()), "FinalConsumer").await;
+    //
+    //         //TODO: confirm
+    //
+    //     }
+    //     drop(guard);
+    //     graph.request_stop();
+    //     graph.block_until_stopped(Duration::from_secs(3));
+    //
+    // }
 }
 

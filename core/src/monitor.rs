@@ -52,13 +52,8 @@ pub(crate) const CALL_WAIT: usize = 5;
 pub struct ActorMetaData {
     /// The unique identifier for the actor.
     ///
-    /// This ID is used to distinguish between different actors within the system.
-    pub(crate) id: usize,
+    pub(crate) ident: ActorIdentity,
 
-    /// The name of the actor.
-    ///
-    /// This name provides a human-readable identifier for the actor.
-    pub(crate) name: &'static str,
 
     /// Indicates whether the average microcontroller processing unit (MCPU) usage is monitored.
     ///
@@ -378,20 +373,10 @@ impl<'a> Drop for FinallyRollupProfileGuard<'a> {
 
 /// Implementation of `LocalMonitor`.
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
-    /// Returns the unique identifier of the LocalMonitor instance.
+    /// Returns the unique identifier.
     ///
-    /// # Returns
-    /// A `usize` representing the monitor's unique ID.
-    pub fn id(&self) -> usize {
-        self.ident.id
-    }
-
-    /// Retrieves the static name assigned to the LocalMonitor instance.
-    ///
-    /// # Returns
-    /// A static string slice (`&'static str`) representing the monitor's name.
-    pub fn name(&self) -> &'static str {
-        self.ident.name
+    pub fn ident(&self) -> ActorIdentity {
+        self.ident
     }
 
     /// Checks if the LocalMonitor is running.
@@ -403,8 +388,20 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// `true` if the monitor is running, otherwise `false`.
     #[inline]
     pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
+        //warn!("is_running here {:?}", self.ident);
         match self.runtime_state.read() {
-            Ok(liveliness) => liveliness.is_running(self.ident, accept_fn),
+            Ok(liveliness) => {
+                //warn!("released_is_running here {:?}", self.ident);
+
+                // //TODO: if we never run then this oneshot never fired either !!!
+                // let one_down = &mut self.oneshot_shutdown.lock().await;
+                // let waker = task::noop_waker();
+                // let mut context = task::Context::from_waker(&waker);
+                // self.is_closed.poll_unpin(&mut context).is_ready()
+
+
+                liveliness.is_running(self.ident, accept_fn)
+            },
             Err(e) => {
                 error!("Internal error on poisoned state: {}", e);
                 true // Keep running as the default under error conditions
@@ -586,13 +583,15 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let op = Delay::new(remaining_duration);
 
         let _guard = self.start_profile(CALL_WAIT);
-
         let one_down = &mut self.oneshot_shutdown.lock().await;
-        let result: bool = select! {
-            _ = &mut one_down.deref_mut() => false,
-            _ = op.fuse() => true,
+        let result = if !one_down.is_terminated() {
+            select! {
+                _ = &mut one_down.deref_mut() => false,
+                _ = op.fuse() => true,
+            }
+        } else {
+            false
         };
-
         self.last_perodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
         result
     }
@@ -1113,7 +1112,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 Ok(())
             }
             Err(sensitive) => {
-                error!("Unexpected error send_async telemetry: {} type: {}", self.ident.name, type_name::<T>());
+                error!("Unexpected error send_async telemetry: {:?} type: {}", self.ident, type_name::<T>());
                 Err(sensitive)
             }
         }

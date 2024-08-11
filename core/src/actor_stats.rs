@@ -10,8 +10,7 @@ use crate::channel_stats::{compute_labels, ComputeLabelsConfig, ComputeLabelsLab
 /// `ActorStatsComputer` computes and maintains statistics for an actor.
 #[derive(Default)]
 pub struct ActorStatsComputer {
-    pub(crate) id: usize,
-    pub(crate) name: &'static str,
+    pub(crate) ident: ActorIdentity,
 
     /// CPU utilization triggers for the actor.
     pub(crate) mcpu_trigger: Vec<(Trigger<MCPU>, AlertColor)>, // If used base is green
@@ -92,9 +91,12 @@ impl ActorStatsComputer {
 
         dot_label.clear(); // For this node we cache the same allocation.
         dot_label.push('#');
-        dot_label.push_str(itoa::Buffer::new().format(self.id));
+        dot_label.push_str(itoa::Buffer::new().format(self.ident.id));
         dot_label.push(' ');
-        dot_label.push_str(self.name);
+        dot_label.push_str(self.ident.label.name);
+
+
+
         dot_label.push('\n');
 
         if self.window_bucket_in_bits != 0 {
@@ -168,15 +170,14 @@ impl ActorStatsComputer {
     /// * `meta` - The actor metadata.
     /// * `frame_rate_ms` - The frame rate in milliseconds.
     pub(crate) fn init(&mut self, meta: Arc<ActorMetaData>, frame_rate_ms: u64) {
-        self.id = meta.id;
-        self.name = meta.name;
+        self.ident = meta.ident;
 
         // Prometheus labels
         self.prometheus_labels.push_str("actor_id=\"");
-        self.prometheus_labels.push_str(itoa::Buffer::new().format(meta.id));
+        self.prometheus_labels.push_str(itoa::Buffer::new().format(meta.ident.id));
         self.prometheus_labels.push_str("\", ");
         self.prometheus_labels.push_str("actor_name=\"");
-        self.prometheus_labels.push_str(meta.name);
+        self.prometheus_labels.push_str(meta.ident.label.name);
         self.prometheus_labels.push('"');
 
         // TODO: Perf, we could pre-filter these by color here since they will not change again.
@@ -588,8 +589,7 @@ mod test_actor_stats {
 
     fn create_mock_metadata() -> Arc<ActorMetaData> {
         Arc::new(ActorMetaData {
-            id: 1,
-            name: "test_actor",
+            ident: ActorIdentity::new(1,"test_actor", None),
             avg_mcpu: true,
             avg_work: true,
             percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
@@ -610,8 +610,8 @@ mod test_actor_stats {
         let mut actor_stats = ActorStatsComputer::default();
         actor_stats.init(metadata.clone(), 1000);
 
-        assert_eq!(actor_stats.id, 1);
-        assert_eq!(actor_stats.name, "test_actor");
+        assert_eq!(actor_stats.ident.id, 1);
+        assert_eq!(actor_stats.ident.label.name, "test_actor");
         assert_eq!(actor_stats.show_avg_mcpu, true);
         assert_eq!(actor_stats.show_avg_work, true);
         assert_eq!(actor_stats.percentiles_mcpu.len(), 2);

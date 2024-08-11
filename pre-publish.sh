@@ -49,8 +49,14 @@ fi
 # cargo tree -i prost
 # cargo tree -i prost-build
 
+RUST_TEST_THREADS=48 cargo test --workspace --tests --examples -j 48 -- --nocapture
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo "Tests failed with exit code $exit_code"
+    exit $exit_code
+fi
 
-cargo build --workspace --examples -j 12
+cargo build --workspace --tests --examples -j 48
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
@@ -65,19 +71,8 @@ if [ $exit_code -ne 0 ]; then
     exit $exit_code
 fi
 
-RUST_TEST_THREADS=12 cargo test -j 12
-exit_code=$?
-if [ $exit_code -ne 0 ]; then
-    echo "Tests failed with exit code $exit_code"
-    exit $exit_code
-fi
 
-RUST_TEST_THREADS=12 cargo test --workspace --examples -j 12
-exit_code=$?
-if [ $exit_code -ne 0 ]; then
-    echo "Tests failed with exit code $exit_code"
-    exit $exit_code
-fi
+
 
 # Build documentation like on docs.rs server
 cd core
@@ -89,20 +84,10 @@ if [ $exit_code -ne 0 ]; then
 fi
 cd ..
 
-# Run tarpaulin for code coverage
-# cargo install cargo-tarpaulin --force
-echo "RUST_TEST_THREADS=3 cargo tarpaulin --timeout 180 --out Stdout --tests --examples --verbose"
-RUST_TEST_THREADS=3 cargo tarpaulin --timeout 180 --out html --tests --examples --output-dir target/tarpaulin-report --features proactor_nuclei --no-default-features
-# || true
- #  --output-dir target/tarpaulin-report  --no-fail-fast
-
-
 tree -I 'target'
-
 
 echo "cargo outdated"
 cargo outdated | tee cargo_outdated.txt
-
 
 echo "cargo audit"
 cargo audit | tee cargo_audit.txt

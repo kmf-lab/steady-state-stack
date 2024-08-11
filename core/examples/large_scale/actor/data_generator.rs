@@ -18,10 +18,10 @@ pub struct Packet {
 #[cfg(not(test))]
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                                                   , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
-    _internal_behavior(context, tx).await
+    internal_behavior(context, tx).await
 }
 
-async fn _internal_behavior<const GIRTH:usize>(context: SteadyContext
+async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
                                     , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor =into_monitor!(context,[],tx);
@@ -49,7 +49,7 @@ async fn _internal_behavior<const GIRTH:usize>(context: SteadyContext
                 route,
                 data: Bytes::from_static(&[0u8; 62]),
             };
-            let index = (packet.route as usize) % tx.len();
+            let index = compute_index(&mut tx, &packet);
             buffers[index].push(packet);
             if &mut buffers[index].len() >= &mut (limit * 2) {
                 //first one we fill to limit, the rest will not be as full
@@ -68,33 +68,77 @@ async fn _internal_behavior<const GIRTH:usize>(context: SteadyContext
     Ok(())
 }
 
+pub(crate) fn compute_index(tx: &mut TxBundle<Packet>, packet: &Packet) -> usize {
+    (packet.route as usize) % tx.len()
+}
 
 #[cfg(test)]
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , tx: SteadyTxBundle<Packet,GIRTH>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = into_monitor!(context,[], tx);
-
     if let Some(responder) = monitor.sidechannel_responder() {
+        let mut tx:TxBundle<Packet> = tx.lock().await;
 
-        let mut tx = tx.lock().await;
+        while monitor.is_running(&mut || tx.mark_closed()) {
 
-        while monitor.is_running(&mut || tx.mark_closed() ) {
+            yield_now::yield_now().await;
+
+
             let responder = responder.respond_with(|message| {
-
                 let msg: &Packet = message.downcast_ref::<Packet>().expect("error casting");
-                match monitor.try_send(&mut tx[0], msg.clone()) {
+                let index = compute_index(&mut tx, msg);
+                match monitor.try_send(&mut tx[index], msg.clone()) {
                     Ok(()) => Box::new("ok".to_string()),
-                    Err(m) => Box::new(m),
+                    Err(m) => Box::new(format!("{:?}",m)),
                 }
-
             }).await;
-
             monitor.relay_stats_smartly();
         }
     }
-
     Ok(())
+}
+
+
+#[cfg(test)]
+mod generator_tests {
+    use std::time::Duration;
+    use super::*;
+    use async_std::test;
+    use steady_state::Graph;
+
+
+    // #[test]
+    // pub(crate) async fn test_generator() {
+    //     //1. build test graph, the input and output channels and our actor
+    //     let mut graph = Graph::new_test(());
+    //
+    //     // let (approved_widget_tx_out, approved_widget_rx_out) = graph.channel_builder()
+    //     //     .with_capacity(BATCH_SIZE).build();
+    //     //
+    //     // let state = InternalState {
+    //     //     last_approval: None,
+    //     //     buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
+    //     // };
+    //
+    //     // graph.actor_builder()
+    //     //     .with_name("UnitTest")
+    //     //     .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state));
+    //     //
+    //     // // //2. add test data to the input channels
+    //     // let test_data: Vec<Packet> = (0..BATCH_SIZE).map(|i| Packet { original_count: 0, approved_count: i as u64 }).collect();
+    //     // approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
+    //
+    //     // //3. run graph until the actor detects the input is closed
+    //     graph.start_as_data_driven(Duration::from_secs(240));
+    //
+    //     //4. assert expected results
+    //     // TODO: not sure how to make this work.
+    //     //  println!("last approval: {:?}", &state.last_approval);
+    //     //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
+    // }
+
+
 }
 
 

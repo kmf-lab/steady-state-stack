@@ -441,9 +441,10 @@ impl<T> Rx<T> {
             } else if self.is_closed() {
                 false
             } else {
-                let mut closing = &mut self.is_closed;
-                let mut operation = &mut self.rx.wait_occupied(1);
-                select! { _ = closing => false, _ = operation => true }
+                false
+                //let mut closing = &mut self.is_closed;
+                //let mut operation = &mut self.rx.wait_occupied(1);
+                //select! { _ = closing => false, _ = operation => true }
             }
         }
     }

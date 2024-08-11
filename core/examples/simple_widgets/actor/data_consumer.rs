@@ -104,7 +104,7 @@ pub async fn run(context: SteadyContext
 
 
 #[cfg(test)]
-mod tests {
+mod consumer_tests {
     use std::time::Duration;
     use super::*;
     use async_std::test;
@@ -112,8 +112,8 @@ mod tests {
 
 
     #[test]
-    pub(crate) async fn test_simple_process() {
-        //1. build test graph, the input and output channels and our actor
+    pub(crate) async fn test_consumer() {
+        // build test graph, the input and output channels and our actor
         let mut graph = Graph::new_test(());
 
         let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
@@ -128,14 +128,15 @@ mod tests {
             .with_name("UnitTest")
             .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state));
 
-        // //2. add test data to the input channels
+        graph.start();
+        graph.request_stop();
+
         let test_data: Vec<ApprovedWidgets> = (0..BATCH_SIZE).map(|i| ApprovedWidgets { original_count: 0, approved_count: i as u64 }).collect();
         approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
 
-        // //3. run graph until the actor detects the input is closed
-         graph.start_as_data_driven(Duration::from_secs(240));
+        graph.block_until_stopped(Duration::from_secs(240));
 
-        //4. assert expected results
+        // assert expected results
         // TODO: not sure how to make this work.
         //  println!("last approval: {:?}", &state.last_approval);
         //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);

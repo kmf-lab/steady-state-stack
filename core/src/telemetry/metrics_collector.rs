@@ -19,6 +19,7 @@ use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
 use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
+use crate::GraphLivelinessState;
 use crate::steady_rx::*;
 use crate::steady_tx::*;
 use crate::telemetry::metrics_collector;
@@ -166,7 +167,10 @@ pub(crate) async fn run<const GIRTH: usize>(
                         all_actors_to_scan = None;
                         rebuild_scan_requested = true;
 
-                        if let Some(n) = gather_node_details(&mut state, dynamic_senders) {
+                        //when we are still building we will not report missing channel errors
+                        let is_building = ctrl.is_liveliness_in(&[GraphLivelinessState::Building], false);
+
+                        if let Some(n) = gather_node_details(&mut state, dynamic_senders, is_building) {
                             (Some(n), collect_channel_data(&mut state, dynamic_senders))
                         } else {
                             (None, Vec::new())
@@ -248,7 +252,7 @@ fn gather_valid_actor_telemetry_to_scan(
         let dynamic_senders = guard.deref();
         let v: Vec<Box<dyn RxDef>> = dynamic_senders
             .iter()
-            .filter(|f| f.ident.name != metrics_collector::NAME)
+            .filter(|f| f.ident.label.name != metrics_collector::NAME)
             .flat_map(|f| f.telemetry_take.iter().filter_map(|g| g.actor_rx(version)))
             .collect();
 
@@ -313,6 +317,7 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[Collecto
 fn gather_node_details(
     state: &mut RawDiagramState,
     dynamic_senders: &[CollectorDetail],
+    is_building: bool
 ) -> Option<Vec<DiagramData>> {
     let mut matches: Vec<u8> = Vec::new();
     dynamic_senders.iter().for_each(|x| {
@@ -347,20 +352,21 @@ fn gather_node_details(
                       sender.telemetry_take.iter().for_each(|f| {
                           if x.is_one() {
                               f.rx_channel_id_vec().iter().for_each(|meta| {
-                                  if meta.id == i {
+                                  if !is_building && meta.id == i {
                                       let msg = format!("Possible missing TX for actor {:?} RX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
                                       let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
-                                      if *count ==2 {
+                                      if *count ==5 {
                                           warn!("{}",msg);
                                       }
+
                                   }
                               });
                           } else {
                               f.tx_channel_id_vec().iter().for_each(|meta| {
-                                  if meta.id == i {
+                                  if !is_building && meta.id == i {
                                       let msg = format!("Possible missing RX for actor {:?} TX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
                                       let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
-                                      if *count==2 {
+                                      if *count==5 {
                                           warn!("{}",msg);
                                       }
                                   }
@@ -522,7 +528,7 @@ mod tests {
         let dynamic_senders_vec = Arc::new(RwLock::new(vec![
             CollectorDetail {
                 telemetry_take: VecDeque::new(),
-                ident: ActorIdentity { id: 0, name: "test_actor" },
+                ident: ActorIdentity::new(0, "test_actor", None ),
             }
         ]));
         let result = gather_valid_actor_telemetry_to_scan(1, &dynamic_senders_vec);
@@ -547,7 +553,7 @@ mod tests {
         let dynamic_senders_vec = Arc::new(RwLock::new(vec![
             CollectorDetail {
                 telemetry_take: VecDeque::new(),
-                ident: ActorIdentity { id: 0, name: "test_actor" },
+                ident: ActorIdentity::new(0, "test_actor", None ),
             }
         ]));
         let result = is_all_empty_and_closed(dynamic_senders_vec.read());
@@ -556,7 +562,7 @@ mod tests {
 
     #[test]
     fn test_send_structure_details() {
-        let ident = ActorIdentity { id: 0, name: "test_actor" };
+        let ident = ActorIdentity::new(0, "test_actor", None );
         let mut consumer_vec: [MutexGuard<'_, Tx<DiagramData>>; 0] = [];
         let nodes = vec![
             DiagramData::NodeDef(0, Box::new((
@@ -570,7 +576,7 @@ mod tests {
 
     #[test]
     fn test_send_data_details() {
-        let ident = ActorIdentity { id: 0, name: "test_actor" };
+        let ident = ActorIdentity::new( 0,  "test_actor", None );
         let mut consumer_vec: [MutexGuard<'_, Tx<DiagramData>>; 0] = [];
         let state = RawDiagramState::default();
         let result = block_on(send_data_details(ident, &mut consumer_vec, &state, false));

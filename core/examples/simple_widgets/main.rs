@@ -64,7 +64,7 @@ fn main() {
 }
 
 fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
-    let mut team = ActorTeam::new();
+    let mut team = ActorTeam::new(&graph);
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
@@ -142,9 +142,11 @@ fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
 #[cfg(test)]
 mod simple_widget_tests {
     use std::ops::DerefMut;
+    use serial_test::serial;
     use super::*;
 
     #[cfg(test)]
+    #[serial]
     #[async_std::test]
     async fn test_simple_widget_graph() {
 
@@ -161,34 +163,34 @@ mod simple_widget_tests {
         let mut graph = build_simple_widgets_graph(graph);
         graph.start();
 
-        let mut guard = graph.sidechannel_director().await;
-        let g = guard.deref_mut();
-        assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
-        if let Some(plane) = g {
-            let to_send = WidgetInventory {
-                count: 42,
-                _payload: 0
-            };
-            let response = plane.node_call(Box::new(to_send), "generator").await;
-            if let Some(_) = response {
-                let expected_message = ApprovedWidgets {
-                    original_count: 42,
-                    approved_count: 21,
+        {
+            let mut guard = graph.sidechannel_director().await;
+            let g = guard.deref_mut();
+            assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
+            if let Some(plane) = g {
+                let to_send = WidgetInventory {
+                    count: 42,
+                    _payload: 0
                 };
-                let response = plane.node_call(Box::new(expected_message), "consumer").await;
-                assert_eq!("ok", response.expect("no response")
-                                        .downcast_ref::<String>().expect("bad type"));
-
-            } else {
-                panic!("bad response from generator: {:?}", response);
+                let response = plane.node_call(Box::new(to_send), ActorName::new("generator",None)).await;
+                if let Some(_) = response {
+                    let expected_message = ApprovedWidgets {
+                        original_count: 42,
+                        approved_count: 21,
+                    };
+                    let response = plane.node_call(Box::new(expected_message), ActorName::new("consumer",None)).await;
+                    assert_eq!("ok", response.expect("no response")
+                        .downcast_ref::<String>().expect("bad type"));
+                } else {
+                    panic!("bad response from generator: {:?}", response);
+                }
             }
         }
-        drop(guard);
 
         graph.request_stop();
         //if you make this timeout very large you will have plenty of time to debug steam through
         //this test method if you like.
-        graph.block_until_stopped(Duration::from_secs(3));
+        assert!(graph.block_until_stopped(Duration::from_secs(3)));
 
     }
 }
