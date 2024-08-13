@@ -90,12 +90,16 @@ impl ActorStatsComputer {
         metric_text.clear();
 
         dot_label.clear(); // For this node we cache the same allocation.
-        dot_label.push('#');
-        dot_label.push_str(itoa::Buffer::new().format(self.ident.id));
-        dot_label.push(' ');
+
         dot_label.push_str(self.ident.label.name);
-
-
+        if let Some(suffix) =  self.ident.label.suffix {
+            dot_label.push_str(itoa::Buffer::new().format(suffix));
+        }
+        if steady_config::SHOW_ACTORS {
+            dot_label.push('[');
+            dot_label.push_str(itoa::Buffer::new().format(self.ident.id));
+            dot_label.push(']');
+        }
 
         dot_label.push('\n');
 
@@ -173,12 +177,16 @@ impl ActorStatsComputer {
         self.ident = meta.ident;
 
         // Prometheus labels
-        self.prometheus_labels.push_str("actor_id=\"");
-        self.prometheus_labels.push_str(itoa::Buffer::new().format(meta.ident.id));
-        self.prometheus_labels.push_str("\", ");
         self.prometheus_labels.push_str("actor_name=\"");
         self.prometheus_labels.push_str(meta.ident.label.name);
         self.prometheus_labels.push('"');
+
+        if let Some(suffix) = meta.ident.label.suffix {
+            self.prometheus_labels.push_str(", ");
+            self.prometheus_labels.push_str("actor_suffix=\"");
+            self.prometheus_labels.push_str(itoa::Buffer::new().format(suffix));
+            self.prometheus_labels.push('"');
+        }
 
         // TODO: Perf, we could pre-filter these by color here since they will not change again.
         // This might be needed for faster updates.

@@ -12,7 +12,7 @@ use std::error::Error;
 use crate::actor::tick_generator::Tick;
 
 
-#[derive(Default,Clone,Copy)]
+#[derive(Default,Clone,Copy,Debug,PartialEq,Ord,PartialOrd,Eq)]
 pub struct TickCount {
    pub count: u128
 }

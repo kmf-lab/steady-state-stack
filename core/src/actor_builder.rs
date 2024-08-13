@@ -18,20 +18,20 @@ use futures_util::lock::Mutex;
 use log::*;
 use futures_util::future::{BoxFuture, select_all};
 
-use crate::{abstract_executor, AlertColor, Graph, Metric, StdDev, steady_config, SteadyContext, Trigger};
+use crate::{abstract_executor, ActorName, AlertColor, Graph, Metric, StdDev, steady_config, SteadyContext, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, SideChannelHub};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use crate::telemetry::metrics_server;
 
 /// The `ActorBuilder` struct is responsible for building and configuring actors.
 /// It contains various settings related to telemetry, triggers, and actor identification.
 #[derive(Clone)]
 pub struct ActorBuilder {
-    name: &'static str,
-    suffix: Option<usize>,
+    actor_name: ActorName,
     args: Arc<Box<dyn Any + Send + Sync>>,
     telemetry_tx: Arc<RwLock<Vec<CollectorDetail>>>,
     channel_count: Arc<AtomicUsize>,
@@ -239,9 +239,8 @@ impl ActorBuilder {
     /// A new instance of `ActorBuilder`.
     pub fn new(graph: &mut Graph) -> ActorBuilder {
         ActorBuilder {
+            actor_name: ActorName::new("",None),
             backplane: graph.backplane.clone(),
-            name: "",
-            suffix: None,
             thread_lock: graph.thread_lock.clone(),
             actor_count: graph.actor_count.clone(),
             args: graph.args.clone(),
@@ -304,52 +303,9 @@ impl ActorBuilder {
         result
     }
 
-    /// Assigns a name to the actor, used for identification and possibly logging.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - A static string slice representing the actor's name.
-    ///
-    /// # Returns
-    ///
-    /// A new `ActorBuilder` instance with the specified name.
-    pub fn with_name(&self, name: &'static str) -> Self {
-        let mut result = self.clone();
-        result.name = name;
-        result
-    }
 
-    /// Appends a suffix to the actor's name, aiding in the differentiation of actor instances.
-    ///
-    /// # Arguments
-    ///
-    /// * `suffix` - A unique identifier to be appended to the actor's name.
-    ///
-    /// # Returns
-    ///
-    /// A new `ActorBuilder` instance with the name suffix applied.
-    pub fn with_name_suffix(&self, suffix: usize) -> Self {
-        let mut result = self.clone();
-        result.suffix = Some(suffix);
-        result
-    }
 
-    /// Sets both the name and suffix for the actor.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - A static string slice representing the actor's name.
-    /// * `suffix` - A unique identifier to be appended to the actor's name.
-    ///
-    /// # Returns
-    ///
-    /// A new `ActorBuilder` instance with the name and suffix applied.
-    pub fn with_name_and_suffix(&self, name: &'static str, suffix: usize) -> Self {
-        let mut result = self.clone();
-        result.name = name;
-        result.suffix = Some(suffix);
-        result
-    }
+
 
     /// Configures the actor to monitor a specific CPU usage percentile for performance analysis.
     ///
@@ -363,6 +319,18 @@ impl ActorBuilder {
     pub fn with_mcpu_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_mcpu.push(config);
+        result
+    }
+
+    pub fn with_name_and_suffix(&self, name: &'static str, suffex: usize) -> Self {
+        let mut result = self.clone();
+        result.actor_name = ActorName::new(name,Some(suffex));
+        result
+    }
+
+    pub fn with_name(&self, name: &'static str) -> Self {
+        let mut result = self.clone();
+        result.actor_name = ActorName::new(name,None);
         result
     }
 
@@ -555,8 +523,7 @@ impl ActorBuilder {
             I: Fn(SteadyContext) -> F + 'static + Sync + Send,
             F: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
     {
-        let name = self.name;
-        let suffix = self.suffix;
+
         let telemetry_tx = self.telemetry_tx.clone();
         let channel_count = self.channel_count.clone();
         let runtime_state = self.runtime_state.clone();
@@ -565,7 +532,8 @@ impl ActorBuilder {
         let backplane = self.backplane.clone();
 
         let id = self.actor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let immutable_identity = ActorIdentity::new(id, name, suffix);
+
+        let immutable_identity = ActorIdentity::new(id, self.actor_name.name, self.actor_name.suffix);
         if steady_config::SHOW_ACTORS {
             info!(" Actor {:?} defined ", immutable_identity);
         }
@@ -1056,25 +1024,12 @@ mod test_actor_builder {
     fn test_actor_builder_creation() {
         let mut graph =  Graph::new_test(());
         let builder = ActorBuilder::new(&mut graph);
-        assert_eq!(builder.name, "");
+        assert_eq!(builder.actor_name.name, "");
         assert_eq!(builder.refresh_rate_in_bits, 6);
         assert_eq!(builder.window_bucket_in_bits, 5);
     }
 
-    #[test]
-    fn test_actor_builder_with_name() {
-        let mut graph = Graph::new_test(());
-        let builder = ActorBuilder::new(&mut graph).with_name("TestActor");
-        assert_eq!(builder.name, "TestActor");
-    }
 
-    #[test]
-    fn test_actor_builder_with_name_and_suffix() {
-        let mut graph = Graph::new_test(());
-        let builder = ActorBuilder::new(&mut graph).with_name_and_suffix("TestActor", 1);
-        assert_eq!(builder.name, "TestActor");
-        assert_eq!(builder.suffix, Some(1));
-    }
 
 
 

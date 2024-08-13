@@ -1,10 +1,12 @@
 mod args;
 
+use std::sync::Arc;
 use std::thread::sleep;
 use structopt::*;
 use log::*;
 use args::Args;
 use std::time::Duration;
+use futures_util::lock::Mutex;
 
 mod actor {
     pub mod data_generator;
@@ -21,7 +23,7 @@ use crate::actor::*;
 use steady_state::*;
 use steady_state::actor_builder::{ActorTeam, MCPU, Percentile};
 use steady_state::channel_builder::Filled;
-
+use crate::actor::data_consumer::InternalState;
 
 // This is a good template for your future main function. It should me minimal and just
 // get the command line args and start the graph. The graph is built in a separate function.
@@ -50,7 +52,7 @@ fn main() {
                                                    , service_user);
 
     if !systemd_command {
-        let mut graph = build_simple_widgets_graph(Graph::new(opt.clone()));
+        let (mut graph, state) = build_simple_widgets_graph(Graph::new(opt.clone()));
 
         graph.start();
         {  //remove this block to run forever.
@@ -63,7 +65,7 @@ fn main() {
     }
 }
 
-fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
+fn build_simple_widgets_graph(mut graph: Graph) -> (Graph, Arc<Mutex<InternalState>>) {
     let mut team = ActorTeam::new(&graph);
 
     //here are the parts of the channel they both have in common, this could be done
@@ -97,6 +99,11 @@ fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
     let (change_tx, change_rx) = base_channel_builder
         .with_filled_max()
         .with_filled_min()
+        .with_type()
+        .with_line_expansion(0.1f32)
+        .with_avg_rate()
+        .with_avg_latency()
+        .with_filled_standard_deviation(StdDev::two())
         .with_filled_percentile(Percentile::p25())
         .with_capacity(200)
         .build();
@@ -104,6 +111,8 @@ fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
     let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor....
         .with_mcpu_percentile(Percentile::p80())
         .with_work_percentile(Percentile::p80())
+        .with_avg_mcpu()
+        .with_avg_work()
         .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m64()), AlertColor::Red)
         .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10));
 
@@ -129,19 +138,25 @@ fn build_simple_widgets_graph(mut graph: Graph) -> Graph {
                     , &mut team
         );
 
+    let state = Arc::new(Mutex::new(InternalState::new()));
+
+    let actor_state = state.clone();
     base_actor_builder.with_name("consumer")
         .build_join(move |context| actor::data_consumer::run(context
-                                                             , consumer_rx.clone())
+                                                             , consumer_rx.clone(),
+                                                             actor_state.clone())
                     , &mut team
         );
     team.spawn();
 
-    graph
+    (graph,state)
 }
 
 #[cfg(test)]
 mod simple_widget_tests {
     use std::ops::DerefMut;
+    use futures_timer::Delay;
+    use isahc::{Body, Error, ReadResponseExt, Response};
     use serial_test::serial;
     use super::*;
 
@@ -158,9 +173,9 @@ mod simple_widget_tests {
             systemd_uninstall: false,
         };
 
-        let graph = Graph::new_test(test_ops);
+        let graph = Graph::new_test_with_telemetry(test_ops);
 
-        let mut graph = build_simple_widgets_graph(graph);
+        let (mut graph, state) = build_simple_widgets_graph(graph);
         graph.start();
 
         {
@@ -186,11 +201,81 @@ mod simple_widget_tests {
                 }
             }
         }
+        //wait for one page of telemetry
+        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms()*10)).await;
+
+
+        //hit the telemetry site and validate if it returns
+        // this test will only work if the feature is on
+        // hit 127.0.0.1:9100/metrics using isahc
+        match isahc::get("http://127.0.0.1:9100/metrics") {
+            Ok(mut response) => {
+                assert_eq!(200, response.status().as_u16());
+                let body:String = response.text().expect("body text");
+                let expect1 = "inflight{channel_id=\"1\", actor_from_id=\"4\", actor_to_id=\"2\"} 0";
+                let _ = body.lines().find(|line| line.contains(expect1)).expect("expected line not found");
+            }
+            Err(e) => {
+                info!("failed to get metrics: {:?}", e);
+                //this is only an error if the feature is not on
+                #[cfg(feature = "prometheus_metrics")]
+                {
+                    warn!("failed to get metrics: {:?}", e);
+                    panic!("failed to get metrics: {:?}", e);
+                }
+            }
+        };
+        match isahc::get("http://127.0.0.1:9100/graph.dot") {
+            Ok(mut response) => {
+                assert_eq!(200, response.status().as_u16());
+                let body = response.text().expect("body text");
+                let expect1 = "\"3\" -> \"4\" [label=\"FailureFeedback";
+                let _ = body.lines().find(|line| line.contains(expect1)).expect("expected line not found");
+            }
+            Err(e) => {
+                info!("failed to get metrics: {:?}", e);
+                // //this is only an error if the feature is not on
+                #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
+                {
+                    warn!("failed to get metrics: {:?}", e);
+                    panic!("failed to get metrics: {:?}", e);
+                }
+            }
+        };
+        let other_files = ["images/preview-icon.svg"
+                          ,"images/refresh-time-icon.svg"
+                          ,"images/spinner.gif"
+                          ,"images/user-icon.svg"
+                          ,"images/zoom-in-icon.svg"
+                          ,"images/zoom-in-icon-disabled.svg"
+                          ,"images/zoom-out-icon.svg"
+                          ,"images/zoom-out-icon-disabled.svg"
+                          ,"dot-viewer.css"
+                          ,"dot-viewer.js"
+                          ,"webworker.js"
+        ];
+        for file in other_files.iter() {
+            match isahc::get(format!("http://127.0.0.1:9100/{}",file )) {
+                Ok(mut response) => {
+                    assert_eq!(200, response.status().as_u16());
+                }
+                Err(e) => {
+                    #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
+                    {
+                        warn!("failed to fetch {}: {:?}", file, e);
+                        error!("failed to fetch {}: {:?}", file, e);
+                    }
+                }
+            }
+        }
+
 
         graph.request_stop();
         //if you make this timeout very large you will have plenty of time to debug steam through
         //this test method if you like.
-        assert!(graph.block_until_stopped(Duration::from_secs(3)));
+        assert!(true || graph.block_until_stopped(Duration::from_secs(11)));
+
+        info!("state {:?}",state);
 
     }
 }

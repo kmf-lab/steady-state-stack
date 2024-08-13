@@ -1,34 +1,38 @@
 
 use std::error::Error;
-
-
+use std::ops::DerefMut;
+use std::sync::Arc;
+use futures_util::lock::Mutex;
 #[allow(unused_imports)]
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use steady_state::*;
-use steady_state::monitor::LocalMonitor;
-use steady_state::{Rx, SteadyRx};
 use crate::args::Args;
 
 const BATCH_SIZE: usize = 1000;
 #[derive(Clone, Debug, PartialEq, Copy)]
-struct InternalState {
+pub(crate) struct InternalState {
     pub(crate) last_approval: Option<ApprovedWidgets>,
     buffer: [ApprovedWidgets; BATCH_SIZE]
 }
 
+impl InternalState {
+    pub fn new() -> Self {
+        InternalState {
+            last_approval: None,
+            buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
+        }
+    }
+}
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
-    let state = InternalState {
-        last_approval: None,
-        buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
-    };
+                 , rx: SteadyRx<ApprovedWidgets>
+                 , state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
     internal_behavior(context, rx, state).await
 }
 
-pub(crate) async fn internal_behavior(context: SteadyContext, rx: SteadyRx<ApprovedWidgets>, mut state: InternalState) -> Result<(), Box<dyn Error>> {
+pub(crate) async fn internal_behavior(context: SteadyContext, rx: SteadyRx<ApprovedWidgets>, state: Arc<Mutex<InternalState>>) -> Result<(), Box<dyn Error>> {
     //let args:Option<&Args> = context.args(); //you can make the type explicit
     let _args = context.args::<Args>(); //or you can turbo fish here to get your args
     //trace!("running {:?} {:?}",context.id(),context.name());
@@ -37,6 +41,7 @@ pub(crate) async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Appro
     let mut monitor = into_monitor!(context,[rx],[]);
 
     let mut rx = rx.lock().await;
+    let mut state = state.lock().await;
 
     //predicate which affirms or denies the shutdown request
     while monitor.is_running(&mut || rx.is_closed_and_empty()) {
@@ -55,6 +60,7 @@ pub(crate) async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Appro
 
         }
     }
+
     Ok(())
 }
 
@@ -64,7 +70,8 @@ pub(crate) async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Appro
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<ApprovedWidgets>) -> Result<(),Box<dyn Error>> {
+                 , rx: SteadyRx<ApprovedWidgets>
+                 , state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
     let mut monitor = into_monitor!(context,[rx],[]);
     let mut rx = rx.lock().await;
 
@@ -119,14 +126,11 @@ mod consumer_tests {
         let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
             .with_capacity(BATCH_SIZE).build();
 
-        let state = InternalState {
-            last_approval: None,
-            buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
-        };
+        let state = Arc::new(Mutex::new(InternalState::new()));
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state));
+            .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state.clone()));
 
         graph.start();
         graph.request_stop();

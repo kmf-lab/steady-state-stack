@@ -24,8 +24,25 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
 
 #[cfg(test)]
 pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
-                                              ,ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, ticks_tx).await
+                                              ,tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
+
+    let mut monitor = into_monitor!(context, [], tx);
+    if let Some(responder) = monitor.sidechannel_responder() {
+
+        let mut tx = tx.lock().await;
+
+        while monitor.is_running(&mut || tx.mark_closed() ) {
+            let responder = responder.respond_with(|message| {
+                let msg: &Tick = message.downcast_ref::<Tick>().expect("error casting");
+                match monitor.try_send(&mut tx[0], msg.clone()) {
+                    Ok(()) => Box::new("ok".to_string()),
+                    Err(m) => Box::new(m),
+                }
+            }).await;
+            monitor.relay_stats_smartly();
+        }
+    }
+    Ok(())
 }
 
 

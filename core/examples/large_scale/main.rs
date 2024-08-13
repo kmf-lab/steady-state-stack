@@ -77,16 +77,23 @@ fn build_graph(mut graph: Graph) -> Graph {
                             .actor_builder()
                             .with_avg_mcpu()
                             .with_avg_work()
+//     .with_thread()  .with_actor()
                            // .with_work_percentile(Percentile::p80())
                            // .with_mcpu_percentile(Percentile::p80())
                             .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
+
+
+    let mut user_count:usize = 0;
+    let mut routerB_count:usize = 0;
+    let mut routerC_count:usize = 0;
+
 
     let mut actor_team = ActorTeam::default();
 
     let (btx,brx) = base_channel_builder.build_as_bundle::<_,LEVEL_1>();
 
             base_actor_builder
-                .with_name("generator")
+                .with_name("Generator")
                 .build_join(
                        move |context| actor::data_generator::run(context
                                                   , btx.clone()
@@ -100,7 +107,7 @@ fn build_graph(mut graph: Graph) -> Graph {
             let local_rx = brx[x].clone();
             let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_2>();
                 base_actor_builder
-                    .with_name_and_suffix("routerA",x)
+                    .with_name_and_suffix("RouterA",x)
                     .build_join(
                            move |context| actor::data_router::run(context
                                                   , LEVEL_1
@@ -116,7 +123,7 @@ fn build_graph(mut graph: Graph) -> Graph {
                 let local_rx = brx[y].clone();
                 let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_3>();
                 base_actor_builder
-                    .with_name_and_suffix("routerB",y)
+                    .with_name_and_suffix("RouterB",routerB_count)
                     .build_join(move |context| actor::data_router::run(context
                                                                         , LEVEL_1*LEVEL_2
                                                                         , local_rx.clone()
@@ -127,11 +134,10 @@ fn build_graph(mut graph: Graph) -> Graph {
 
                 for z in 0..LEVEL_3 {
 
-
                     let local_rx = brx[z].clone();
                     let (btx,brx) = base_channel_builder.build_as_bundle::<_, LEVEL_4>();
                         base_actor_builder
-                            .with_name_and_suffix("routerC",z)
+                            .with_name_and_suffix("RouterC",routerC_count)
                             .build_join(move |context| actor::data_router::run(context
                                                                                 , LEVEL_1*LEVEL_2*LEVEL_3
                                                                                 , local_rx.clone()
@@ -148,13 +154,15 @@ fn build_graph(mut graph: Graph) -> Graph {
 
                         let local_rx = brx[0].clone();
                             base_actor_builder
-                                .with_name_and_suffix("user",z)
+                                .with_name_and_suffix("User",user_count)
                                 .build_join(move |context| actor::data_user::run(context
                                                                                   , local_rx.clone()
                                              )
                                              , &mut actor_linedance_tream
                                 );
                         actor_linedance_tream.spawn();
+                        user_count += 1;
+
                     } else {
 
                         for f in 0..LEVEL_4 {
@@ -165,7 +173,7 @@ fn build_graph(mut graph: Graph) -> Graph {
 
                             let (filter_tx, filter_rx) = base_channel_builder.build();
                                 base_actor_builder
-                                    .with_name_and_suffix("filter",z)
+                                    .with_name_and_suffix("Filter",user_count)
                                     .build_join(move |context| actor::data_process::run(context
                                                                                         , local_rx.clone()
                                                                                         , filter_tx.clone()
@@ -176,7 +184,7 @@ fn build_graph(mut graph: Graph) -> Graph {
                             let (logging_tx, logging_rx) = base_channel_builder.build();
 
                                 base_actor_builder
-                                    .with_name_and_suffix("logger",z)
+                                    .with_name_and_suffix("Logger",user_count)
                                     .build_join(move |context| actor::data_process::run(context
                                                                                         , filter_rx.clone()
                                                                                         , logging_tx.clone()
@@ -190,7 +198,7 @@ fn build_graph(mut graph: Graph) -> Graph {
 
 
                             base_actor_builder
-                                    .with_name_and_suffix("decrypt",z)
+                                    .with_name_and_suffix("Decrypt",user_count)
                                     .build_join(move |context| actor::data_process::run(context
                                                                                         , logging_rx.clone()
                                                                                         , decrypt_tx.clone()
@@ -199,7 +207,7 @@ fn build_graph(mut graph: Graph) -> Graph {
                                     );
 
                                 base_actor_builder
-                                    .with_name_and_suffix("user",z)
+                                    .with_name_and_suffix("User",user_count)
                                     .build_join(move |context| actor::data_user::run(context
                                                                                      , decrypt_rx.clone()
                                                     )
@@ -207,12 +215,13 @@ fn build_graph(mut graph: Graph) -> Graph {
                                     );
 
                             group_line.spawn();
+                            user_count += 1;
+
                         }
                     }
-
-
-
+                    routerC_count+=1;
                 }
+                routerB_count += 1;
             }
         }
     let _x = actor_team.spawn();
@@ -262,7 +271,7 @@ mod large_tests {
                          route: i,
                          data: Bytes::from_static(&[0u8; 62]),
                      };
-                     let response = plane.node_call(Box::new(to_send), ActorName::new("generator",None)).await;
+                     let response = plane.node_call(Box::new(to_send), ActorName::new("Generator",None)).await;
                      if let Some(r) = response {
                           // error!("generator response: {:?}", r.downcast_ref::<String>());
                          let expected_message = Packet {
@@ -270,8 +279,18 @@ mod large_tests {
                              data: Bytes::from_static(&[0u8; 62]),
                          };
 
+                         const KNOWN_USERS:usize = 24;
+                         for u in 0..KNOWN_USERS {
+                             //let response = plane.node_call(Box::new(expected_message.clone()), ActorName::new("User",Some(u))).await;
+                             // if let Some(r) = response {
+                             //     assert_eq!("ok", r.downcast_ref::<String>().expect("bad type"));
+                             // } else {
+                             //     error!("bad response from generator: {:?}", response);
+                             //     panic!("bad response from generator: {:?}", response);
+                             // }
+                         }
                          //TODO: we need specific XXUser names to check into
-                       //  let response = plane.node_call(Box::new(expected_message), ActorName::new("user",None)).await;
+                       //  let response = plane.node_call(Box::new(expected_message), ActorName::new("User",0)).await;
 
                          //  info!("consumer response: {:?}", response);
                          //      assert_eq!("ok", response.expect("no response")
@@ -286,7 +305,7 @@ mod large_tests {
         }
 
         //wait for one page of telemetry
-        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms()*2)).await;
+        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms()*10)).await;
 
 
        //hit the telemetry site and validate if it returns
@@ -324,11 +343,6 @@ mod large_tests {
         };
 
 
-
-
-      //  Delay::new(Duration::from_secs(300)).await;
-
-//   http://0.0.0.0:9100/
 
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(7));

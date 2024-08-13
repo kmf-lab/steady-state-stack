@@ -3,9 +3,6 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::monitor::LocalMonitor;
-use steady_state::SteadyRx;
-use steady_state::{SteadyTx, Tx};
 use crate::actor::data_feedback::ChangeRequest;
 
 #[derive(Clone, Debug, Copy)]
@@ -23,6 +20,7 @@ pub async fn run(context: SteadyContext
     internal_behavior(context, feedback, tx).await
 }
 
+#[derive(Default,Clone)]
 struct InternalState {
     count: u64
 }
@@ -108,38 +106,40 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 mod generator_tests {
+    use std::time::Duration;
     use async_std::test;
     use steady_state::*;
-
+    use crate::actor::data_generator::{internal_behavior, InternalState};
 
     #[test]
     async fn test_generator() {
-        //1. build test graph, the input and output channels and our actor
-        let graph = Graph::new_test(());
-
-        // let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
-        //     .with_capacity(BATCH_SIZE).build();
+        // //1. build test graph, the input and output channels and our actor
+         let mut graph = Graph::new_test(());
         //
-        // let state = InternalState {
-        //     last_approval: None,
-        //     buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
-        // };
+        // let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
+        //     .with_capacity(256).build();
+        //
+        // let state = InternalState::default();
         //
         // graph.actor_builder()
         //     .with_name("UnitTest")
-        //     .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state));
+        //     .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone()));
         //
-        // // //2. add test data to the input channels
-        // let test_data: Vec<ApprovedWidgets> = (0..BATCH_SIZE).map(|i| ApprovedWidgets { original_count: 0, approved_count: i as u64 }).collect();
-        // approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
+        // graph.start();
+        // graph.request_stop();
         //
-        // // //3. run graph until the actor detects the input is closed
-        // graph.start_as_data_driven(Duration::from_secs(240));
+        // //
+        // // // //2. add test data to the input channels
+        // // let test_data: Vec<ApprovedWidgets> = (0..BATCH_SIZE).map(|i| ApprovedWidgets { original_count: 0, approved_count: i as u64 }).collect();
+        // // approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
+        // //
         //
-        // //4. assert expected results
-        // // TODO: not sure how to make this work.
-        // //  println!("last approval: {:?}", &state.last_approval);
-        // //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
+        // graph.block_until_stopped(Duration::from_secs(10));
+        // //
+        // // //4. assert expected results
+        // // // TODO: not sure how to make this work.
+        // // //  println!("last approval: {:?}", &state.last_approval);
+        // // //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
 
     }
 
