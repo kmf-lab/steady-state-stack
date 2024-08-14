@@ -74,24 +74,35 @@ impl ChannelStatsComputer {
     /// * `from_actor` - The ID of the actor sending data.
     /// * `to_actor` - The ID of the actor receiving data.
     /// * `frame_rate_ms` - The frame rate in milliseconds.
-    pub(crate) fn init(&mut self, meta: &Arc<ChannelMetaData>, from_actor: usize, to_actor: usize, frame_rate_ms: u64) {
+    pub(crate) fn init(&mut self, meta: &Arc<ChannelMetaData>, from_actor: ActorName, to_actor: ActorName, frame_rate_ms: u64) {
         assert!(meta.capacity > 0, "capacity must be greater than 0");
         self.capacity = meta.capacity;
 
-        self.prometheus_labels.push_str("channel_id=\"");
-        self.prometheus_labels.push_str(itoa::Buffer::new().format(meta.id));
-        self.prometheus_labels.push_str("\", ");
-        self.prometheus_labels.push_str("actor_from_id=\"");
-        self.prometheus_labels.push_str(itoa::Buffer::new().format(from_actor));
-        self.prometheus_labels.push_str("\", ");
-        self.prometheus_labels.push_str("actor_to_id=\"");
-        self.prometheus_labels.push_str(itoa::Buffer::new().format(to_actor));
-        self.prometheus_labels.push('"');
+        //TODO: add other keys but we must be sure the values do not change with configurations.
 
-        // TODO: labels
-        // self.prometheus_labels.push_str("actor_name=\"");
-        // self.prometheus_labels.push_str(meta.labels); // "T"  for each one "F" for those filtered out
-        // self.prometheus_labels.push_str("\", ");
+        meta.labels.iter().for_each(|f| {
+            self.prometheus_labels.push_str(f);
+            self.prometheus_labels.push_str("=\"T\", ");
+        });
+        if let Some(type_str) = meta.show_type {
+            self.prometheus_labels.push_str("type=\"");
+            self.prometheus_labels.push_str(type_str);
+            self.prometheus_labels.push_str("\", ");
+        }
+
+        self.prometheus_labels.push_str("from=\"");
+        self.prometheus_labels.push_str(from_actor.name);
+        if let Some(suf) = from_actor.suffix {
+            self.prometheus_labels.push_str(itoa::Buffer::new().format(suf));
+        }
+        self.prometheus_labels.push_str("\", ");
+
+        self.prometheus_labels.push_str("to=\"");
+        self.prometheus_labels.push_str(to_actor.name);
+        if let Some(suf) = to_actor.suffix {
+            self.prometheus_labels.push_str(itoa::Buffer::new().format(suf));
+        }
+        self.prometheus_labels.push('"');
 
         self.frame_rate_ms = frame_rate_ms as u128;
         self.refresh_rate_in_bits = meta.refresh_rate_in_bits;
@@ -371,17 +382,17 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A tuple containing the line color and line thickness.
-    pub(crate) fn compute(&mut self, display_label: &mut String, metric_text: &mut String, from_id: usize, send: i128, take: i128) -> (&'static str, &'static str) {
+    pub(crate) fn compute(&mut self, display_label: &mut String, metric_text: &mut String, from_id: Option<ActorName>, send: i128, take: i128) -> (&'static str, &'static str) {
         display_label.clear();
 
         if self.capacity == 0 {
             return (DOT_GREY, "1");
         }
-        assert!(self.capacity > 0, "capacity must be greater than 0 from actor {}, this was probably not init", from_id);
+        assert!(self.capacity > 0, "capacity must be greater than 0 from actor {:?}, this was probably not init", from_id);
 
         // We are in a bad state just exit and give up
         #[cfg(debug_assertions)]
-        if take > send { error!("actor {} take:{} is greater than send:{} ", from_id, take, send); exit(-1); }
+        if take > send { error!("actor: {:?} take:{} is greater than send:{} ", from_id, take, send); exit(-1); }
         assert!(send >= take, "internal error send {} must be greater or eq than take {}", send, take);
         // Compute the running totals
 
@@ -1064,7 +1075,7 @@ pub(crate) mod stats_tests {
         cmd.window_bucket_in_bits = 2;
         cmd.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_filled = true;
 
@@ -1091,7 +1102,7 @@ pub(crate) mod stats_tests {
         cmd.window_bucket_in_bits = 2;
         cmd.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_filled = true;
 
@@ -1123,7 +1134,7 @@ pub(crate) mod stats_tests {
         cmd.window_bucket_in_bits = 2;
         cmd.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_filled = true;
 
@@ -1176,7 +1187,7 @@ pub(crate) mod stats_tests {
         let mut computer = ChannelStatsComputer::default();
         computer.frame_rate_ms = 3;
         assert!(computer.percentiles_filled.is_empty());
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
         assert!(!computer.percentiles_filled.is_empty());
 
         let mean = computer.capacity as f64 * 0.13;
@@ -1214,7 +1225,7 @@ pub(crate) mod stats_tests {
         cmd.window_bucket_in_bits = 2;
         cmd.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_rate = true;
 
@@ -1246,7 +1257,7 @@ pub(crate) mod stats_tests {
         cmd.window_bucket_in_bits = 2;
         cmd.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_rate = true;
 
@@ -1295,7 +1306,7 @@ pub(crate) mod stats_tests {
         cmd.percentiles_rate.push(Percentile::p90());
         let mut computer = ChannelStatsComputer::default();
         computer.frame_rate_ms = 3;
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
 
         let mean = computer.capacity as f64 * 0.13;
         let expected_std_dev = 10.0; // Standard deviation
@@ -1346,7 +1357,7 @@ pub(crate) mod stats_tests {
         cmd.window_bucket_in_bits = 2;
         cmd.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_latency = true;
 
@@ -1414,7 +1425,7 @@ pub(crate) mod stats_tests {
         cmd.window_bucket_in_bits = 2;
         cmd.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer
 
             .frame_rate_ms = 3;
@@ -1458,7 +1469,7 @@ pub(crate) mod stats_tests {
         cmd.percentiles_latency.push(Percentile::p90());
         let mut computer = ChannelStatsComputer::default();
         computer.frame_rate_ms = 3;
-        computer.init(&Arc::new(cmd), 1, 2, 42);
+        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
 
         // Simulate rate data accumulation
         let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
