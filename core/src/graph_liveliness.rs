@@ -351,7 +351,7 @@ impl GraphLiveliness {
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash)]
 pub struct ActorIdentity {
     pub id: usize,         //unique identifier
-    pub label: ActorName,  //for backplanee
+    pub label: ActorName,  //for backplane
 }
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ActorName {

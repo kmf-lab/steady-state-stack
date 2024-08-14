@@ -39,10 +39,6 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<WidgetInventory>
 
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed() && feedback.mark_closed()) {
 
-        if monitor.is_liveliness_in(&[GraphLivelinessState::StopRequested],false) {
-            info!("Stop requested, exiting");
-        }
-
         let _clean = wait_for_all_or_proceed_upon!(monitor.wait_periodic(Duration::from_millis(300))
                             ,monitor.wait_avail_units(&mut rx, BATCH_SIZE)
                             ,monitor.wait_vacant_units(&mut tx, BATCH_SIZE)

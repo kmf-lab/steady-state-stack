@@ -337,12 +337,8 @@ fn gather_node_details(
         });
     });
 
-
-
-    if !matches.iter().all(|x| *x == 3 || *x == 0) {
-        //NOTE: on startup it may be possible to get a false positive here, not proven yet
-        //    if so add support to wait for the second failure before reporting.
-        //    better approach is we need a flag to tell us everything is up and running.
+   // only do error checking if the system is running.
+    if !is_building && !matches.iter().all(|x| *x == 3 || *x == 0) {
         matches.iter()
                .enumerate()
                .filter(|(_, x)| **x != 3 && **x != 0)
@@ -352,7 +348,7 @@ fn gather_node_details(
                       sender.telemetry_take.iter().for_each(|f| {
                           if x.is_one() {
                               f.rx_channel_id_vec().iter().for_each(|meta| {
-                                  if !is_building && meta.id == i {
+                                  if meta.id == i {
                                       let msg = format!("Possible missing TX for actor {:?} RX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
                                       let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
                                       if *count ==5 {
@@ -363,7 +359,7 @@ fn gather_node_details(
                               });
                           } else {
                               f.tx_channel_id_vec().iter().for_each(|meta| {
-                                  if !is_building && meta.id == i {
+                                  if meta.id == i {
                                       let msg = format!("Possible missing RX for actor {:?} TX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
                                       let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
                                       if *count==5 {
@@ -379,6 +375,7 @@ fn gather_node_details(
        // Do not launch if any error is found instead try again.
         return None;
     }
+
     state.error_map.clear(); //no need to hold these counts since we are now clear
 
     let max_channels_len = matches.len();

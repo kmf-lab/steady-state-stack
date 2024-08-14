@@ -211,9 +211,12 @@ mod simple_widget_tests {
         match isahc::get("http://127.0.0.1:9100/metrics") {
             Ok(mut response) => {
                 assert_eq!(200, response.status().as_u16());
+
                 let body:String = response.text().expect("body text");
-                let expect1 = "inflight{channel_id=\"1\", actor_from_id=\"4\", actor_to_id=\"2\"} 0";
-                let _ = body.lines().find(|line| line.contains(expect1)).expect("expected line not found");
+                let _ =response.consume();
+
+                trace!("body: {}", body);
+                let _ = body.lines().find(|line| line.contains("inflight{widgets=\"T\", type=\"ChangeRequest\", from=\"feedback\", to=\"generator\"} 0")).expect("expected line not found");
             }
             Err(e) => {
                 info!("failed to get metrics: {:?}", e);
@@ -228,9 +231,14 @@ mod simple_widget_tests {
         match isahc::get("http://127.0.0.1:9100/graph.dot") {
             Ok(mut response) => {
                 assert_eq!(200, response.status().as_u16());
+
                 let body = response.text().expect("body text");
-                let expect1 = "\"3\" -> \"4\" [label=\"FailureFeedback";
-                let _ = body.lines().find(|line| line.contains(expect1)).expect("expected line not found");
+                let _ =response.consume();
+
+                trace!("body: {}", body);
+
+                let _ = body.lines().find(|line| line.contains("\"feedback\" -> \"generator\" [label=")).expect("expected line not found");
+
             }
             Err(e) => {
                 info!("failed to get metrics: {:?}", e);
@@ -242,6 +250,8 @@ mod simple_widget_tests {
                 }
             }
         };
+
+        //trace!("state {:?}",state);
         let other_files = ["images/preview-icon.svg"
                           ,"images/refresh-time-icon.svg"
                           ,"images/spinner.gif"
@@ -258,6 +268,8 @@ mod simple_widget_tests {
             match isahc::get(format!("http://127.0.0.1:9100/{}",file )) {
                 Ok(mut response) => {
                     assert_eq!(200, response.status().as_u16());
+                    let _ =response.consume();
+
                 }
                 Err(e) => {
                     #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
@@ -275,7 +287,7 @@ mod simple_widget_tests {
         //this test method if you like.
         assert!(true || graph.block_until_stopped(Duration::from_secs(11)));
 
-        info!("state {:?}",state);
+        //trace!("state {:?}",state);
 
     }
 }

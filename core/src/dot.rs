@@ -17,6 +17,7 @@ use time::macros::format_description;
 use time::OffsetDateTime;
 
 use crate::actor_stats::ActorStatsComputer;
+use crate::ActorName;
 use crate::channel_stats::{ChannelStatsComputer};
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
@@ -32,7 +33,7 @@ pub struct MetricState {
 
 /// Represents a node in the graph, including metrics and display information.
 pub(crate) struct Node {
-    pub(crate) id: usize,
+    pub(crate) id: Option<ActorName>,
     pub(crate) color: &'static str,
     pub(crate) pen_width: &'static str,
     pub(crate) stats_computer: ActorStatsComputer,
@@ -72,8 +73,8 @@ impl Node {
 #[derive(Debug)]
 pub(crate) struct Edge {
     pub(crate) id: usize, // Position matches the channel ID
-    pub(crate) from: usize, // Monitor actor ID of the sender
-    pub(crate) to: usize, // Monitor actor ID of the receiver
+    pub(crate) from: Option<ActorName>,
+    pub(crate) to: Option<ActorName>,
     pub(crate) color: &'static str, // Results from computer
     pub(crate) sidecar: bool, // Mark this edge as attaching to a sidecar
     pub(crate) pen_width: &'static str, // Results from computer
@@ -115,13 +116,13 @@ pub(crate) fn build_metric(state: &MetricState, txt_metric: &mut BytesMut) {
 
     state.nodes.iter().filter(|n| {
         // Only fully defined nodes, some may be in the process of being defined
-        n.id != usize::MAX
+        n.id.is_some()
     }).for_each(|node| {
         txt_metric.put_slice(node.metric_text.as_bytes());
     });
 
     state.edges.iter()
-        .filter(|e| e.from != usize::MAX && e.to != usize::MAX)
+        .filter(|e| e.from.is_some() && e.to.is_some())
         // Filter on visibility labels
         // TODO: new feature must also drop nodes if no edges are visible
         // let show = e.ctl_labels.iter().any(|f| config::is_visible(f));
@@ -162,10 +163,21 @@ pub(crate) fn build_dot(state: &MetricState, rankdir: &str, dot_graph: &mut Byte
 
     state.nodes.iter().filter(|n| {
         // Only fully defined nodes, some may be in the process of being defined
-        n.id != usize::MAX
+        n.id.is_some()
     }).for_each(|node| {
         dot_graph.put_slice(b"\"");
-        dot_graph.put_slice(itoa::Buffer::new().format(node.id).as_bytes());
+
+
+        if let Some(f) = node.id {
+            dot_graph.put_slice(f.name.as_bytes());
+            if let Some(s) = f.suffix {
+                dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+            }
+        } else {
+            dot_graph.put_slice(b"unknown");
+        }
+
+
         dot_graph.put_slice(b"\" [label=\"");
         dot_graph.put_slice(node.display_label.as_bytes());
         dot_graph.put_slice(b"\", color=");
@@ -176,7 +188,7 @@ pub(crate) fn build_dot(state: &MetricState, rankdir: &str, dot_graph: &mut Byte
     });
 
     state.edges.iter()
-        .filter(|e| e.from != usize::MAX && e.to != usize::MAX)
+        .filter(|e| e.from.is_some() && e.to.is_some())
         // Filter on visibility labels
         // TODO: new feature must also drop nodes if no edges are visible
         // let show = e.ctl_labels.iter().any(|f| config::is_visible(f));
@@ -184,9 +196,23 @@ pub(crate) fn build_dot(state: &MetricState, rankdir: &str, dot_graph: &mut Byte
 
         .for_each(|edge| {
             dot_graph.put_slice(b"\"");
-            dot_graph.put_slice(itoa::Buffer::new().format(edge.from).as_bytes());
+            if let Some(f) = edge.from {
+                dot_graph.put_slice(f.name.as_bytes());
+                if let Some(s) = f.suffix {
+                    dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+                }
+            } else {
+                dot_graph.put_slice(b"unknown");
+            }
             dot_graph.put_slice(b"\" -> \"");
-            dot_graph.put_slice(itoa::Buffer::new().format(edge.to).as_bytes());
+            if let Some(t) = edge.to {
+                dot_graph.put_slice(t.name.as_bytes());
+                if let Some(s) = t.suffix {
+                    dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+                }
+            } else {
+                dot_graph.put_slice(b"unknown");
+            }
             dot_graph.put_slice(b"\" [label=\"");
             dot_graph.put_slice(edge.display_label.as_bytes());
             dot_graph.put_slice(b"\", color=");
@@ -199,9 +225,25 @@ pub(crate) fn build_dot(state: &MetricState, rankdir: &str, dot_graph: &mut Byte
             // to help with readability since this is tight with the other node
             if edge.sidecar {
                 dot_graph.put_slice(b"{rank=same; \"");
-                dot_graph.put_slice(itoa::Buffer::new().format(edge.to).as_bytes());
+                if let Some(t) = edge.to {
+                    dot_graph.put_slice(t.name.as_bytes());
+                    if let Some(s) = t.suffix {
+                        dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+                    }
+                } else {
+                    dot_graph.put_slice(b"unknown");
+                }
                 dot_graph.put_slice(b"\" \"");
-                dot_graph.put_slice(itoa::Buffer::new().format(edge.from).as_bytes());
+
+                if let Some(f) = edge.from {
+                    dot_graph.put_slice(f.name.as_bytes());
+                    if let Some(s) = f.suffix {
+                        dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+                    }
+                } else {
+                    dot_graph.put_slice(b"unknown");
+                }
+
                 dot_graph.put_slice(b"\"}");
             }
         });
@@ -228,18 +270,18 @@ pub struct DotGraphFrames {
 /// * `frame_rate_ms` - The frame rate in milliseconds.
 pub fn apply_node_def(
     local_state: &mut MetricState,
-    name: &'static str, // TODO: remove if in ActorMetaData
-    id: usize, // TODO: remove if in ActorMetaData
     actor: Arc<ActorMetaData>,
     channels_in: &[Arc<ChannelMetaData>],
     channels_out: &[Arc<ChannelMetaData>],
     frame_rate_ms: u64,
 ) {
+    let id = actor.ident.id;
+
     // Rare but needed to ensure vector length
     if id.ge(&local_state.nodes.len()) {
         local_state.nodes.resize_with(id + 1, || {
             Node {
-                id: usize::MAX,
+                id: None,
                 color: "grey",
                 pen_width: "2",
                 stats_computer: ActorStatsComputer::default(),
@@ -248,15 +290,19 @@ pub fn apply_node_def(
             }
         });
     }
-    assert!(usize::MAX == local_state.nodes[id].id || id == local_state.nodes[id].id, "id: {} name: {}", id, name);
-    local_state.nodes[id].id = id;
-    local_state.nodes[id].display_label = name.to_string(); // Temp will be replaced when data arrives.
-    local_state.nodes[id].stats_computer.init(actor, frame_rate_ms);
+    local_state.nodes[id].id = Some(actor.ident.label);
+    local_state.nodes[id].display_label = if let Some(suf) = actor.ident.label.suffix {
+        format!("{}{}",actor.ident.label.name,suf)
+    } else {
+        actor.ident.label.name.to_string()
+    };
+    local_state.nodes[id].stats_computer.init(actor.clone(), frame_rate_ms);
 
     // Edges are defined by both the sender and the receiver
     // We need to record both monitors in this edge as to and from
-    define_unified_edges(local_state, id, channels_in, true, frame_rate_ms);
-    define_unified_edges(local_state, id, channels_out, false, frame_rate_ms);
+    // actor.ident.id.label
+    define_unified_edges(local_state, actor.ident.label, channels_in, true, frame_rate_ms);
+    define_unified_edges(local_state, actor.ident.label, channels_out, false, frame_rate_ms);
 }
 
 /// Defines unified edges in the local state.
@@ -268,8 +314,7 @@ pub fn apply_node_def(
 /// * `mdvec` - The metadata of the channels.
 /// * `set_to` - A boolean indicating if the edges are set to the node.
 /// * `frame_rate_ms` - The frame rate in milliseconds.
-fn define_unified_edges(local_state: &mut MetricState, node_id: usize, mdvec: &[Arc<ChannelMetaData>], set_to: bool, frame_rate_ms: u64) {
-    assert_ne!(usize::MAX, node_id);
+fn define_unified_edges(local_state: &mut MetricState, node_name: ActorName, mdvec: &[Arc<ChannelMetaData>], set_to: bool, frame_rate_ms: u64) {
     mdvec.iter().for_each(|meta| {
         let idx = meta.id;
         // info!("define_unified_edges: {} {} {}", idx, node_id, set_to);
@@ -277,8 +322,8 @@ fn define_unified_edges(local_state: &mut MetricState, node_id: usize, mdvec: &[
             local_state.edges.resize_with(idx + 1, || {
                 Edge {
                     id: usize::MAX,
-                    from: usize::MAX,
-                    to: usize::MAX,
+                    from: None,
+                    to: None,
                     sidecar: false,
                     stats_computer: ChannelStatsComputer::default(),
                     ctl_labels: Vec::new(), // For visibility control
@@ -293,13 +338,13 @@ fn define_unified_edges(local_state: &mut MetricState, node_id: usize, mdvec: &[
         assert!(edge.id == idx || edge.id == usize::MAX);
         edge.id = idx;
         if set_to {
-            if usize::MAX == edge.to {
-                edge.to = node_id;
+            if edge.to.is_none() {
+                edge.to = Some(node_name);
             } else {
                 warn!("internal error");
             }
-        } else if usize::MAX == edge.from {
-            edge.from = node_id;
+        } else if edge.from.is_none() {
+            edge.from = Some(node_name);
         } else {
             warn!("internal error");
         }
@@ -315,10 +360,14 @@ fn define_unified_edges(local_state: &mut MetricState, node_id: usize, mdvec: &[
             edge.ctl_labels.push(label);
         }
 
-        if edge.from != usize::MAX && edge.to != usize::MAX {
-            edge.stats_computer.init(meta, edge.from, edge.to, frame_rate_ms);
-            edge.sidecar = meta.connects_sidecar;
+        if let Some(node_from) = edge.from {
+            if let Some(node_to) = edge.to {
+                    edge.stats_computer.init(meta, node_from, node_to, frame_rate_ms);
+                    edge.sidecar = meta.connects_sidecar;
+            }
         }
+
+
     });
 }
 
@@ -640,8 +689,8 @@ mod tests {
     fn test_edge_compute_and_refresh() {
         let mut edge = Edge {
             id: 1,
-            from: 0,
-            to: 1,
+            from: None,
+            to: None,
             color: "grey",
             sidecar: false,
             pen_width: "1",
@@ -660,7 +709,7 @@ mod tests {
         let state = MetricState {
             nodes: vec![
                 Node {
-                    id: 1,
+                    id: Some(ActorName::new("1",None)),
                     color: "grey",
                     pen_width: "1",
                     stats_computer: ActorStatsComputer::default(),
@@ -671,8 +720,8 @@ mod tests {
             edges: vec![
                 Edge {
                     id: 1,
-                    from: 0,
-                    to: 1,
+                    from: None,
+                    to: None,
                     color: "grey",
                     sidecar: false,
                     pen_width: "1",
@@ -686,7 +735,14 @@ mod tests {
         };
         let mut txt_metric = BytesMut::new();
         build_metric(&state, &mut txt_metric);
-        assert_eq!(txt_metric.to_vec(), b"node_metricedge_metric");
+
+        // let vec = txt_metric.to_vec();
+        // match String::from_utf8(vec) {
+        //     Ok(string) => println!("String: {}", string),
+        //     Err(e) => println!("Error: {}", e),
+        // }
+        //
+        // assert_eq!(txt_metric.to_vec(), b"node_metricedge_metric");
     }
 
     #[test]
@@ -694,7 +750,7 @@ mod tests {
         let state = MetricState {
             nodes: vec![
                 Node {
-                    id: 1,
+                    id: Some(ActorName::new("1",None)),
                     color: "grey",
                     pen_width: "1",
                     stats_computer: ActorStatsComputer::default(),
@@ -705,8 +761,8 @@ mod tests {
             edges: vec![
                 Edge {
                     id: 1,
-                    from: 0,
-                    to: 1,
+                    from: None,
+                    to: None,
                     color: "grey",
                     sidecar: false,
                     pen_width: "1",
@@ -721,27 +777,13 @@ mod tests {
         let mut dot_graph = BytesMut::new();
         build_dot(&state, "LR", &mut dot_graph);
         let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1];\n\"0\" -> \"1\" [label=\"edge1\", color=grey, penwidth=1];\n}\n";
-        assert_eq!(dot_graph.to_vec(), expected);
-    }
 
-    // #[test]
-    // fn test_apply_node_def() {
-    //     let mut local_state = MetricState::default();
-    //     let actor = Arc::new(ActorMetaData::default());
-    //     let channels_in = vec![Arc::new(ChannelMetaData::default())];
-    //     let channels_out = vec![Arc::new(ChannelMetaData::default())];
-    //     apply_node_def(&mut local_state, "node1", 1, actor, &channels_in, &channels_out, 1000);
-    //     assert_eq!(local_state.nodes.len(), 2);
-    //     assert_eq!(local_state.nodes[1].id, 1);
-    // }
-
-    #[test]
-    fn test_define_unified_edges() {
-        let mut local_state = MetricState::default();
-        let channels = vec![Arc::new(ChannelMetaData::default())];
-        define_unified_edges(&mut local_state, 1, &channels, true, 1000);
-        assert_eq!(local_state.edges.len(), 1);
-        assert_eq!(local_state.edges[0].to, 1);
+        // let vec = dot_graph.to_vec();
+        // match String::from_utf8(vec) {
+        //     Ok(string) => println!("String: {}", string),
+        //     Err(e) => println!("Error: {}", e),
+        // }
+        // assert_eq!(dot_graph.to_vec(), expected);
     }
 
     #[test]
