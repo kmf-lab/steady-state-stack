@@ -191,20 +191,20 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
 ) {
     let last_elapsed = this.last_telemetry_send.elapsed();
     if last_elapsed.as_micros() * (CONSUMED_MESSAGES_BY_COLLECTOR as u128) >= (1000 * this.frame_rate_ms) as u128 {
-        if this.is_in_graph() {
+
             if let Some(ref mut actor_status) = this.telemetry.state {
                 let clear_status = {
                     if let Some(ref mut lock_guard) = actor_status.tx.try_lock() {
                         let tx = lock_guard.deref_mut();
                         let rx_version = tx.rx_version.load(Ordering::SeqCst);
-                        if ChannelBuilder::UNSET == rx_version {
-                            let now = Instant::now();
-                            let dif = now.duration_since(actor_status.last_telemetry_error);
-                            if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
-                                actor_status.last_telemetry_error = now;
-                            }
-                            return;
-                        }
+                        // if ChannelBuilder::UNSET == rx_version {
+                        //     let now = Instant::now();
+                        //     let dif = now.duration_since(actor_status.last_telemetry_error);
+                        //     if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+                        //         actor_status.last_telemetry_error = now;
+                        //     }
+                        //     return;
+                        // }
 
                         let capacity = tx.capacity();
                         let vacant_units = tx.vacant_units();
@@ -347,17 +347,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                     warn!("unable to get lock");
                 }
             }
-        } else {
-            if let Some(ref mut actor_status) = this.telemetry.state {
-                actor_status.status_reset();
-            }
-            if let Some(ref mut send_rx) = this.telemetry.send_rx {
-                send_rx.count.fill(0);
-            }
-            if let Some(ref mut send_tx) = this.telemetry.send_tx {
-                send_tx.count.fill(0);
-            }
-        }
+
         this.last_telemetry_send = Instant::now();
     }
 }

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
-use log::error;
+use log::{error, warn};
 use futures_util::lock::Mutex;
 use async_ringbuf::traits::Split;
 use futures::channel::oneshot::Receiver;
@@ -92,7 +92,7 @@ impl SideChannelHub {
     ///
     /// * `name` - The name of the node.
     /// * `capacity` - The capacity of the ring buffer.
-    pub fn register_node(&mut self, key: ActorName, capacity: usize) {
+    pub fn register_node(&mut self, key: ActorName, capacity: usize) -> bool {
             // Message to the node
             let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(capacity);
             let (sender_tx, receiver_tx) = rb.split();
@@ -101,16 +101,14 @@ impl SideChannelHub {
             let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(capacity);
             let (sender_rx, receiver_rx) = rb.split();
 
-            if self.node.get(&key).is_some() {
-                error!("Node with name {:?} already exists, check suffix usage", key);
+            if self.node.get(&key).is_some() || self.backplane.get(&key).is_some()  {
+                warn!("Node with name {:?} already exists, check suffix usage", key);
+                false
+            } else {
+                self.node.insert(key, Arc::new(Mutex::new((sender_rx, receiver_tx))));
+                self.backplane.insert(key, (sender_tx, receiver_rx));
+                true
             }
-            if self.backplane.get(&key).is_some() {
-                error!("Node with name {:?} already exists, check suffix usage", key);
-            }
-
-            self.node.insert(key, Arc::new(Mutex::new((sender_rx, receiver_tx))));
-            self.backplane.insert(key, (sender_tx, receiver_rx));
-
     }
 
     /// Sends a message to a node and waits for a response.
@@ -159,6 +157,16 @@ impl SideChannelResponder {
     /// A new `SideChannelResponder` instance.
     pub fn new(arc: Arc<Mutex<SideChannel>>, shutdown: Arc<Mutex<Receiver<()>>>) -> Self {
         SideChannelResponder { arc, shutdown}
+    }
+
+
+    pub fn lookup_side_channel_responder(node: &Option<Arc<Mutex<SideChannel>>>, shutdown: Arc<Mutex<Receiver<()>>>) -> Option<SideChannelResponder> {
+        //        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone()))
+        if let Some(n) = node {
+            Some(SideChannelResponder::new(n.clone(), shutdown))
+        } else {
+            None
+        }
     }
 
     /// Responds to messages from the side channel using the provided function.
@@ -213,6 +221,7 @@ mod graph_testing_tests {
     use super::*;
     use async_std::test;
     use futures::channel::oneshot;
+    use log::info;
 
     #[test]
     async fn test_graph_test_result_ok() {
@@ -246,101 +255,45 @@ mod graph_testing_tests {
         assert!(node.is_some(), "Node should be registered and retrievable");
     }
 
-    // #[test]
-    // async fn test_node_call_success() {
-    //     let mut hub = SideChannelHub::default();
-    //     let actor_name = ActorName::new("test_actor",None);
-    //
-    //     hub.register_node(actor_name.clone(), 10);
-    //
-    //     let response_msg = Box::new(42) as Box<dyn Any + Send + Sync>;
-    //     let msg = Box::new(21) as Box<dyn Any + Send + Sync>;
-    //
-    //     {
-    //         // Manually simulate the receiving process
-    //         let temp = hub.backplane.get_mut(&actor_name);
-    //         let (sender, receiver) = temp.unwrap();
-    //
-    //         let _ = sender.push(response_msg).await;
-    //
-    //     }
-    //
-    //     let result = hub.node_call(msg, actor_name).await;
-    //     assert!(result.is_some(), "Should receive a response");
-    //     let r = result.unwrap();
-    //     let response = r.downcast_ref::<i32>().unwrap();
-    //     assert_eq!(*response, 42, "Response should match the expected value");
-    // }
 
     #[test]
-    async fn test_node_call_error() {
+    async fn test_node_call_success() {
+
+        // Simulates Graph creation where we init the side channel hub
+        // and register our actors for future testing
         let mut hub = SideChannelHub::default();
         let actor_name = ActorName::new("test_actor",None);
+        let text = format!("hub: {:?} actor: {:?}",hub,actor_name);
+        info!("custom debug {:?}",text);
 
-        hub.register_node(actor_name.clone(), 10);
+        assert_eq!(true, hub.register_node(actor_name.clone(), 10));
+        assert_eq!(false, hub.register_node(actor_name.clone(), 10));
 
-        let msg = Box::new(21) as Box<dyn Any + Send + Sync>;
 
-        // Drop the backplane's sender to simulate an error scenario
-        hub.backplane.remove(&actor_name);
+        // Simulates the startup of the actor where we typically lookup the responder once
+        let responder_inside_actor = {
+            let shutdown = oneshot::channel();
+            let r = Arc::new(Mutex::new(shutdown.1));
+            SideChannelResponder::lookup_side_channel_responder(&hub.node_tx_rx(actor_name), r)
+        };
+        // Simulates an actor which responds when a message is sent
+        //this is our simulated actor to respond to our node_call below
+        nuclei::spawn_local(async move {
+            responder_inside_actor.expect("should exist").respond_with(|msg| {
+                let received_msg = msg.downcast_ref::<i32>().unwrap();
+                Box::new(received_msg * 2) as Box<dyn Any + Send + Sync>
+            }).await;
+        }).detach();
 
+        // Simulates the main test block which makes a call and awaits for the response.
+        //test code will call to the actor and only return after above actor responds
+        let msg = Box::new(42) as Box<dyn Any + Send + Sync>;
         let result = hub.node_call(msg, actor_name).await;
-        assert!(result.is_none(), "Should return None if the sender is not available");
+
+         assert!(result.is_some(), "Should receive a response");
+         let r = result.unwrap();
+         let response = r.downcast_ref::<i32>().unwrap();
+         assert_eq!(*response, 84, "Response should match the expected value");
     }
-
-    // #[test]
-    // async fn test_side_channel_responder() {
-    //     let mut hub = SideChannelHub::default();
-    //     let actor_name = ActorName::new("test_actor",None);
-    //
-    //     hub.register_node(actor_name.clone(), 10);
-    //
-    //     let node = hub.node_tx_rx(actor_name.clone()).unwrap();
-    //     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    //
-    //     let responder = SideChannelResponder::new(node.clone(), Arc::new(Mutex::new(shutdown_rx)));
-    //
-    //     async_std::task::spawn(async move {
-    //         responder.respond_with(|msg| {
-    //             let received_msg = msg.downcast_ref::<i32>().unwrap();
-    //             Box::new(received_msg * 2) as Box<dyn Any + Send + Sync>
-    //         }).await;
-    //     });
-    //
-    //     let msg = Box::new(21) as Box<dyn Any + Send + Sync>;
-    //     let result = hub.node_call(msg, actor_name).await;
-    //
-    //     assert!(result.is_some(), "Should receive a response from the responder");
-    //     let response = result.unwrap().downcast_ref::<i32>().unwrap();
-    //     assert_eq!(*response, 42, "Response should be the doubled value of the message sent");
-    // }
-
-    // #[test]
-    // async fn test_side_channel_responder_shutdown() {
-    //     let mut hub = SideChannelHub::default();
-    //     let actor_name = ActorName::new("test_actor",None);
-    //
-    //     hub.register_node(actor_name.clone(), 10);
-    //
-    //     let node = hub.node_tx_rx(actor_name.clone()).unwrap();
-    //     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    //
-    //     let responder = SideChannelResponder::new(node.clone(), Arc::new(Mutex::new(shutdown_rx)));
-    //
-    //     async_std::task::spawn(async move {
-    //         responder.respond_with(|msg| {
-    //             let received_msg = msg.downcast_ref::<i32>().unwrap();
-    //             Box::new(received_msg * 2) as Box<dyn Any + Send + Sync>
-    //         }).await;
-    //     });
-    //
-    //     // Send a shutdown signal
-    //     shutdown_tx.send(()).unwrap();
-    //
-    //     let msg = Box::new(21) as Box<dyn Any + Send + Sync>;
-    //     let result = hub.node_call(msg, actor_name).await;
-    //
-    //     assert!(result.is_none(), "Should not receive a response after shutdown");
-    // }
 
 }

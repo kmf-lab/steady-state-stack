@@ -313,13 +313,6 @@ impl SteadyContext {
         }
     }
 
-    /// Checks if the actor is part of the graph.
-    ///
-    /// # Returns
-    /// `true` if the monitor is in the graph, otherwise `false`.
-    pub fn is_in_graph(&self) -> bool {
-        self.is_in_graph
-    }
 
     /// Waits while the actor is running.
     ///
@@ -805,22 +798,13 @@ impl SteadyContext {
         this.shared_wait_vacant_units(count).await
     }
 
-    /// Simulates edge behavior for the actor.
-    ///
-    /// # Returns
-    /// An `Option<SideChannelResponder>` if the simulation is available, otherwise `None`.
-    pub fn edge_simulator(&self) -> Option<SideChannelResponder> {
-        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone() ))
-    }
-
 
     /// Returns a side channel responder if available.
     ///
     /// # Returns
     /// An `Option` containing a `SideChannelResponder` if available.
     pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
-        // if we have no back channel plane then we cannot simulate the edges
-        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone() ))
+        SideChannelResponder::lookup_side_channel_responder(&self.node_tx_rx, self.oneshot_shutdown.clone())
     }
 
     /// Checks if the actor is running, using a custom accept function.

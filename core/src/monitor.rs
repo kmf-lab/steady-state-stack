@@ -320,12 +320,15 @@ impl<const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
         if self.is_in_graph {
             // finish sending the last telemetry if we are in a graph & have monitoring
             let tel = &mut self.telemetry;
-            send_all_local_telemetry_async(
-                self.ident,
-                tel.state.take(),
-                tel.send_tx.take(),
-                tel.send_rx.take(),
-            );
+            if tel.state.is_some() || tel.send_tx.is_some() || tel.send_rx.is_some() {
+                send_all_local_telemetry_async(
+                    self.ident,
+                    tel.state.take(),
+                    tel.send_tx.take(),
+                    tel.send_rx.take(),
+                );
+            }
+
         }
     }
 }
@@ -485,29 +488,13 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         crate::graph_liveliness::WaitWhileRunningFuture::new(self.runtime_state.clone())
     }
 
-    /// Checks if the actor is part of the graph.
-    ///
-    /// # Returns
-    /// `true` if the monitor is in the graph, otherwise `false`.
-    pub fn is_in_graph(&self) -> bool {
-        self.is_in_graph
-    }
-
-    /// Simulates edge behavior for the actor.
-    ///
-    /// # Returns
-    /// An `Option<SideChannelResponder>` if the simulation is available, otherwise `None`.
-    pub fn edge_simulator(&self) -> Option<SideChannelResponder> {
-        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone()))
-    }
 
     /// Returns a side channel responder if available.
     ///
     /// # Returns
     /// An `Option` containing a `SideChannelResponder` if available.
     pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
-        // if we have no back channel plane then we cannot simulate the edges
-        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone()))
+        SideChannelResponder::lookup_side_channel_responder(&self.node_tx_rx, self.oneshot_shutdown.clone())
     }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
