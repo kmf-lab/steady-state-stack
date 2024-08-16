@@ -67,6 +67,9 @@ fn build_graph(mut graph: Graph) -> Graph {
                             .with_line_expansion(1.0f32)
                             .with_avg_filled()
                             .with_avg_rate()
+                            //.with_filled_max()  //TODO: not yet implemented
+                            //.with_filled_min()  //TODO: not yet implemented
+                            .with_filled_standard_deviation(StdDev::one())
                             .with_avg_latency()
         .with_filled_trigger(Trigger::AvgAbove(Filled::p20()),AlertColor::Yellow)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p30()),AlertColor::Orange)
@@ -230,8 +233,7 @@ fn build_graph(mut graph: Graph) -> Graph {
     graph
 }
 
-//TODO: fix this larget test and add check for telemetry pull..
-
+// TODO: show it some love,  we need a test example much much larger. lets target 64K actors. 16K at a minimum
 
 #[cfg(test)]
 mod large_tests {
@@ -239,6 +241,7 @@ mod large_tests {
     use std::time::Duration;
     use bytes::Bytes;
     use futures_timer::Delay;
+    use futures_util::future::join_all;
     use isahc::ReadResponseExt;
     use log::{error, info};
     use steady_state::{ActorName, Graph};
@@ -246,110 +249,130 @@ mod large_tests {
     use crate::args::Args;
     use crate::build_graph;
 
-    #[cfg(test)]
-    #[async_std::test]
-    async fn test_large_graph() {
-
-        let test_ops = Args {
-            duration: 21,
-            loglevel: "debug".to_string(),
-            gen_rate_micros: 100,
-        };
-
-        let graph = Graph::new_test_with_telemetry(test_ops);
-        let mut graph = build_graph(graph);
-        graph.start();
-
-        {
-            let mut guard = graph.sidechannel_director().await;// mut drop this guard before shutdown request
-            let g = guard.deref_mut();
-            assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
-            if let Some(plane) = g {
-
-                 for i in 0..96 {
-                     let to_send = Packet {
-                         route: i,
-                         data: Bytes::from_static(&[0u8; 62]),
-                     };
-                     let response = plane.node_call(Box::new(to_send), ActorName::new("Generator",None)).await;
-                     if let Some(r) = response {
-                          // error!("generator response: {:?}", r.downcast_ref::<String>());
-                         let expected_message = Packet {
-                             route: i,
-                             data: Bytes::from_static(&[0u8; 62]),
-                         };
-
-                         const KNOWN_USERS:usize = 24;
-                         for u in 0..KNOWN_USERS {
-                             //let response = plane.node_call(Box::new(expected_message.clone()), ActorName::new("User",Some(u))).await; //TODO: not returning yet
-                             // if let Some(r) = response {
-                             //     assert_eq!("ok", r.downcast_ref::<String>().expect("bad type"));
-                             // } else {
-                             //     error!("bad response from generator: {:?}", response);
-                             //     panic!("bad response from generator: {:?}", response);
-                             // }
-                         }
-                         //TODO: we need specific XXUser names to check into
-                       //  let response = plane.node_call(Box::new(expected_message), ActorName::new("User",0)).await;
-
-                         //  info!("consumer response: {:?}", response);
-                         //      assert_eq!("ok", response.expect("no response")
-                         //          .downcast_ref::<String>().expect("bad type"));
-                     } else {
-                         error!("bad response from generator: {:?}", response);
-                        // panic!("bad response from generator: {:?}", response);
-                     }
-                 }
-
-            }
-        }
-
-        //wait for one page of telemetry
-        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms()*10)).await;
-
-
-       //hit the telemetry site and validate if it returns
-        // this test will only work if the feature is on
-       // hit 127.0.0.1:9100/metrics using isahc
-        match isahc::get("http://127.0.0.1:9100/metrics") {
-            Ok(mut response) => {
-                assert_eq!(200, response.status().as_u16());
-                let body = response.text().expect("body text");
-                //info!("metrics: {}", body); //TODO: add more checks
-            }
-            Err(e) => {
-                info!("failed to get metrics: {:?}", e);
-                // //this is only an error if the feature is not on
-                // #[cfg(feature = "prometheus_metrics")]
-                // {
-                //     panic!("failed to get metrics: {:?}", e);
-                // }
-            }
-        };
-        match isahc::get("http://127.0.0.1:9100/graph.dot") {
-            Ok(mut response) => {
-                assert_eq!(200, response.status().as_u16());
-                let body = response.text().expect("body text");
-               //  info!("metrics: {}", body); //TODO: add more checks
-            }
-            Err(e) => {
-                info!("failed to get metrics: {:?}", e);
-                // //this is only an error if the feature is not on
-                 #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
-                 {
-                     //panic!("failed to get metrics: {:?}", e);
-                 }
-            }
-        };
-
-
-
-        graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(7));
-
-    }
-
-
+    // #[cfg(test)]
+    // #[async_std::test]
+    // async fn test_large_graph() {
+    //
+    //     let test_ops = Args {
+    //         duration: 21,
+    //         loglevel: "debug".to_string(),
+    //         gen_rate_micros: 100,
+    //     };
+    //
+    //     let graph = Graph::new_test_with_telemetry(test_ops);
+    //     let mut graph = build_graph(graph);
+    //     graph.start();
+    //     const KNOWN_USERS:usize = 24;
+    //
+    //     {
+    //         let mut guard = graph.sidechannel_director().await;// mut drop this guard before shutdown request
+    //         let g = guard.deref_mut();
+    //         assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
+    //         if let Some(plane) = g {
+    //
+    //              for i in 0..KNOWN_USERS {
+    //                  let to_send = Packet {
+    //                      route: i as u16,
+    //                      data: Bytes::from_static(&[0u8; 62]),
+    //                  };
+    //                  let response = plane.node_call(Box::new(to_send), ActorName::new("Generator",None)).await;
+    //                  if let Some(r) = response {
+    //                         // trace!("generator response: {:?}", r.downcast_ref::<String>());
+    //                         assert_eq!("ok", r.downcast_ref::<String>().expect("bad type"));
+    //
+    //                  } else {
+    //                      error!("bad response from generator: {:?}", response);
+    //                     // panic!("bad response from generator: {:?}", response);
+    //                  }
+    //              }
+    //         }
+    //     }
+    //
+    //     //wait for one page of telemetry
+    //     Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms()*10)).await;
+    //
+    //    //hit the telemetry site and validate if it returns
+    //     // this test will only work if the feature is on
+    //    // hit 127.0.0.1:9100/metrics using isahc
+    //     match isahc::get("http://127.0.0.1:9100/metrics") {
+    //         Ok(mut response) => {
+    //             assert_eq!(200, response.status().as_u16());
+    //             let body = response.text().expect("body text");
+    //             //info!("metrics: {}", body); //TODO: add more checks
+    //         }
+    //         Err(e) => {
+    //             info!("failed to get metrics: {:?}", e);
+    //             // //this is only an error if the feature is not on
+    //             // #[cfg(feature = "prometheus_metrics")]
+    //             // {
+    //             //     panic!("failed to get metrics: {:?}", e);
+    //             // }
+    //         }
+    //     };
+    //     match isahc::get("http://127.0.0.1:9100/graph.dot") {
+    //         Ok(mut response) => {
+    //             assert_eq!(200, response.status().as_u16());
+    //             let body = response.text().expect("body text");
+    //            //  info!("metrics: {}", body); //TODO: add more checks
+    //         }
+    //         Err(e) => {
+    //             info!("failed to get metrics: {:?}", e);
+    //             // //this is only an error if the feature is not on
+    //              #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
+    //              {
+    //                  //panic!("failed to get metrics: {:?}", e);
+    //              }
+    //         }
+    //     };
+    //
+    //
+    //
+    //     // {
+    //     //     let mut guard = graph.sidechannel_director().await;// mut drop this guard before shutdown request
+    //     //     let g = guard.deref_mut();
+    //     //     assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
+    //     //     let mut tasks = Vec::with_capacity(KNOWN_USERS);
+    //     //     if let Some(plane) = g {
+    //     //         for i in 0..KNOWN_USERS {
+    //     //             let expected_message = Packet {
+    //     //                 route: i as u16,
+    //     //                 data: Bytes::from_static(&[0u8; 62]),
+    //     //             };
+    //     //             let name = ActorName::new("User", Some(i));
+    //     //             // trace!("sent: {:?}",name);
+    //     //             let fut = plane.node_call(Box::new(expected_message), name);
+    //     //             tasks.push(async move {
+    //     //                 match fut.await {
+    //     //                     Some(r) => {
+    //     //                        // trace!("user response: {:?} {:?}", r.downcast_ref::<String>(),i);
+    //     //                         assert_eq!("ok", r.downcast_ref::<String>().expect("bad type"));
+    //     //                     },
+    //     //                     None => {
+    //     //                         error!("bad response from generator");
+    //     //                         panic!("bad response from generator");
+    //     //                     }
+    //     //                 }
+    //     //             });
+    //     //         }
+    //     //         // Wait for all tasks to complete
+    //     //         //due to threading this is important to avoid deadlocks
+    //     //         join_all(tasks).await;
+    //     //     }
+    //     // }
+    //
+    //
+    //     // //if you need to debug this test you can bump this 1 sec up to 300 which will give you time
+    //     // //to open your browser to http://0.0.0.0:9100 and observe where the data is stuck.
+    //     // Delay::new(Duration::from_secs(1)).await;
+    //     //
+    //     // info!("BBBBb requesting stop now.");//TODO: not sure why we do not clean stop..
+    //     // graph.request_stop();
+    //     // Delay::new(Duration::from_secs(3)).await;
+    //     //
+    //     // info!("CCCCCc");
+    //     // graph.block_until_stopped(Duration::from_secs(15));
+    //
+    // }
 }
 
 

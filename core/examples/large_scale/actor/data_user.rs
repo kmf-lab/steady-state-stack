@@ -6,82 +6,90 @@ use steady_state::*;
 use steady_state::{SteadyRx};
 use crate::actor::data_generator::Packet;
 
-// #[cfg(not(test))]
-
+#[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
     internal_behavior(context, rx).await
 }
 
 async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>) -> Result<(), Box<dyn Error>> {
-   // info!("AA running #{:?} {:?}",context.id(),context.name());
-
     let mut monitor = into_monitor!(context,[rx], []);
 
     let mut rx = rx.lock().await;
     let mut _count = 0;
-
-   // info!("BB is running #{:?} {:?}",monitor.id(),monitor.name());
-
     while monitor.is_running(&mut || rx.is_closed_and_empty()) {
-
-      //  info!("CC is running #{:?} {:?}",monitor.id(),monitor.name());
-
         yield_now::yield_now().await;
-
 
         wait_for_all!(monitor.wait_avail_units(&mut rx, 1)).await;
 
         while let Some(packet) = monitor.try_take(&mut rx) {
             assert_eq!(packet.data.len(), 62);
             _count += 1;
-            //info!("data_router: {:?}", packet);
 
-            //if _count % 1000_000 == 0 {
+            //for testing panic capture
+            // if _count % 1000_000 == 0 {
             //    info!("hello");
             //    panic!("go");
-            //}
+            // }
         }
-
         monitor.relay_stats_smartly();
     }
     Ok(())
 }
 
-/*
 #[cfg(test)]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = into_monitor!(context, [&rx], []);
-    if let Some(simulator) = monitor.sidechannel_responder() {
+
+    if let Some(mut simulator) = monitor.sidechannel_responder() { //Outside is running. allocaste new...
+
         //guards for the channels, NOTE: we could share one channel across actors.
         let mut rx = rx.lock().await;
+        let mut done = false;
         while monitor.is_running(&mut || rx.is_closed_and_empty()) {
-            simulator.respond_with(|expected| {
 
-                match monitor.try_take(&mut rx) {
-                    Some(measured) => {
-                        let expected: &Packet = expected.downcast_ref::<Packet>().expect("error casting");
-                        if expected.eq(&measured) {
-                            Box::new("ok".to_string())
-                        } else {
-                            let failure = format!("no match {:?} {:?}"
-                                                  ,expected
-                                                  ,measured).to_string();
-                            error!("failure: {}", failure);
-                            Box::new(failure)
-                        }
-                    },
-                    None => Box::new("no data".to_string()),
-                }
 
-            }).await;
+            wait_for_all!(
+                  simulator.wait_available_units(1),
+                  monitor.wait_avail_units(&mut rx, 1));
+
+            if !done {
+                simulator.respond_with(|expected| {
+                    done = true;
+                    match monitor.try_take(&mut rx) {
+                        Some(measured) => {
+                            let expected: &Packet = expected.downcast_ref::<Packet>().expect("error casting");
+                            //do not check the route id since it could be any random one of the users and is expected to not match
+                            if expected.data.eq(&measured.data) {
+                                Box::new("ok".to_string())
+                            } else {
+                                let failure = format!("no match {:?} {:?}"
+                                                      , expected
+                                                      , measured).to_string();
+                                error!("failure: {}", failure);
+                                Box::new(failure)
+                            }
+                        },
+                        None => Box::new("no data, should await until rx has data before response ".to_string()),
+                    }
+                }).await;
+            }
+
+            monitor.relay_stats_smartly();
+
+            // if done {
+            //       break;//TODO: if an actor stops early we need to get its vote
+            // }
+
+
+
         }
     }
     Ok(())
 }
-*/
+
 
 #[cfg(test)]
 mod user_tests {

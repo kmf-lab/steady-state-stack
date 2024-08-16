@@ -101,6 +101,7 @@ use crate::telemetry::setup;
 use crate::util::steady_logging_init;
 use futures::*;
 use futures::channel::oneshot;
+use futures::channel::oneshot::Receiver;
 use futures::select;
 use futures_timer::Delay;
 use futures_util::future::{FusedFuture, select_all};
@@ -285,7 +286,7 @@ pub struct SteadyContext {
     pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
     pub(crate) last_periodic_wait: AtomicU64,
     pub(crate) actor_start_time: Instant,
-    pub(crate) node_tx_rx: Option<Arc<Mutex<SideChannel>>>,
+    pub(crate) node_tx_rx: Option<Arc<Mutex<(SideChannel,Receiver<()>)>>>,
     pub(crate) frame_rate_ms: u64,
 }
 
@@ -804,7 +805,11 @@ impl SteadyContext {
     /// # Returns
     /// An `Option` containing a `SideChannelResponder` if available.
     pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
-        SideChannelResponder::lookup_side_channel_responder(&self.node_tx_rx, self.oneshot_shutdown.clone())
+        if let Some(ref tr) = self.node_tx_rx {
+            Some(SideChannelResponder::new(tr.clone(), self.ident))
+        } else {
+            None
+        }
     }
 
     /// Checks if the actor is running, using a custom accept function.

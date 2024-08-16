@@ -205,7 +205,7 @@ struct SteadyContextArchetype<I> {
     actor_metadata: Arc<ActorMetaData>,
     oneshot_shutdown_vec: Arc<Mutex<Vec<Sender<()>>>>,
     oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
-    node_tx_rx: Option<Arc<Mutex<SideChannel>>>,
+    node_tx_rx: Option<Arc<Mutex<(SideChannel,Receiver<()>)>>>,
     instance_id: Arc<AtomicU32>,
 }
 
@@ -542,16 +542,27 @@ impl ActorBuilder {
         /////////////////////////////////////////////
         // This is used only when run under testing
         ////////////////////////////////////////////
+        let oneshot_shutdown_vec_for_node = oneshot_shutdown_vec.clone();
         let immutable_node_tx_rx = abstract_executor::block_on(async move {
             let mut backplane = backplane.lock().await;
             // If the backplane is enabled then register every node name for use
             if let Some(pb) = &mut *backplane {
-                pb.register_node(immutable_identity.label, steady_config::BACKPLANE_CAPACITY);
-                pb.node_tx_rx(immutable_identity.label)
+                let (shutdown_tx,shutdown_rx) = oneshot::channel();
+                abstract_executor::block_on(async move {
+                    let mut v = oneshot_shutdown_vec_for_node.lock().await;
+                    v.push(shutdown_tx);
+                });
+
+                pb.register_node(immutable_identity.label, steady_config::BACKPLANE_CAPACITY, shutdown_rx);
+                pb.node_tx_rx(immutable_identity.label) //returns side channel
+
             } else {
                 None
             }
         });
+
+
+
 
         ////////////////////////////////////////////
         // Before starting the actor setup our shutdown oneshot
@@ -660,13 +671,21 @@ fn build_actor_future<F, I>(
 {
 
     {
+       // trace!("register vote get write lock {:?}", builder_source.ident);
 
         match builder_source.runtime_state.write() {
-            Ok(mut liveliness) => liveliness.register_voter(builder_source.ident),
+            Ok(mut liveliness) => {
+             //   trace!("register vote {:?}", builder_source.ident);
+                let result = liveliness.register_voter(builder_source.ident);
+             //   trace!("done register vote {:?}", builder_source.ident);
+                result
+            },
             Err(e) => {
                 trace!("Internal error, unable to get liveliness read lock {}", e);
             }
         }
+
+
 
     }
 

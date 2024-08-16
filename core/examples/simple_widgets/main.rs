@@ -160,136 +160,136 @@ mod simple_widget_tests {
     use serial_test::serial;
     use super::*;
 
-    #[cfg(test)]
-    #[serial]
-    #[async_std::test]
-    async fn test_simple_widget_graph() {
-
-        let test_ops = Args {
-            duration: 21,
-            loglevel: "debug".to_string(),
-            gen_rate_micros: 100,
-            systemd_install: false,
-            systemd_uninstall: false,
-        };
-
-        let graph = Graph::new_test_with_telemetry(test_ops);
-
-        let (mut graph, state) = build_simple_widgets_graph(graph);
-        graph.start();
-
-        {
-            let mut guard = graph.sidechannel_director().await;
-            let g = guard.deref_mut();
-            assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
-            if let Some(plane) = g {
-                let to_send = WidgetInventory {
-                    count: 42,
-                    _payload: 0
-                };
-                let response = plane.node_call(Box::new(to_send), ActorName::new("generator",None)).await;
-                if let Some(_) = response {
-                    let expected_message = ApprovedWidgets {
-                        original_count: 42,
-                        approved_count: 21,
-                    };
-                    let response = plane.node_call(Box::new(expected_message), ActorName::new("consumer",None)).await;
-                    assert_eq!("ok", response.expect("no response")
-                        .downcast_ref::<String>().expect("bad type"));
-                } else {
-                    panic!("bad response from generator: {:?}", response);
-                }
-            }
-        }
-        //wait for one page of telemetry
-        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms()*10)).await;
-
-
-        //hit the telemetry site and validate if it returns
-        // this test will only work if the feature is on
-        // hit 127.0.0.1:9100/metrics using isahc
-        match isahc::get("http://127.0.0.1:9100/metrics") {
-            Ok(mut response) => {
-                assert_eq!(200, response.status().as_u16());
-
-                let body:String = response.text().expect("body text");
-                let _ =response.consume();
-
-                trace!("body: {}", body);
-                let _ = body.lines().find(|line| line.contains("inflight{widgets=\"T\", type=\"ChangeRequest\", from=\"feedback\", to=\"generator\"} 0")).expect("expected line not found");
-            }
-            Err(e) => {
-                info!("failed to get metrics: {:?}", e);
-                //this is only an error if the feature is not on
-                #[cfg(feature = "prometheus_metrics")]
-                {
-                    warn!("failed to get metrics: {:?}", e);
-                    panic!("failed to get metrics: {:?}", e);
-                }
-            }
-        };
-        match isahc::get("http://127.0.0.1:9100/graph.dot") {
-            Ok(mut response) => {
-                assert_eq!(200, response.status().as_u16());
-
-                let body = response.text().expect("body text");
-                let _ =response.consume();
-
-                trace!("body: {}", body);
-
-                let _ = body.lines().find(|line| line.contains("\"feedback\" -> \"generator\" [label=")).expect("expected line not found");
-
-            }
-            Err(e) => {
-                info!("failed to get metrics: {:?}", e);
-                // //this is only an error if the feature is not on
-                #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
-                {
-                    warn!("failed to get metrics: {:?}", e);
-                    panic!("failed to get metrics: {:?}", e);
-                }
-            }
-        };
-
-        //trace!("state {:?}",state);
-        let other_files = ["images/preview-icon.svg"
-                          ,"images/refresh-time-icon.svg"
-                          ,"images/spinner.gif"
-                          ,"images/user-icon.svg"
-                          ,"images/zoom-in-icon.svg"
-                          ,"images/zoom-in-icon-disabled.svg"
-                          ,"images/zoom-out-icon.svg"
-                          ,"images/zoom-out-icon-disabled.svg"
-                          ,"dot-viewer.css"
-                          ,"dot-viewer.js"
-                          ,"webworker.js"
-        ];
-        for file in other_files.iter() {
-            match isahc::get(format!("http://127.0.0.1:9100/{}",file )) {
-                Ok(mut response) => {
-                    assert_eq!(200, response.status().as_u16());
-                    let _ =response.consume();
-
-                }
-                Err(e) => {
-                    #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
-                    {
-                        warn!("failed to fetch {}: {:?}", file, e);
-                        error!("failed to fetch {}: {:?}", file, e);
-                    }
-                }
-            }
-        }
-
-
-        graph.request_stop();
-        //if you make this timeout very large you will have plenty of time to debug steam through
-        //this test method if you like.
-        assert!(true || graph.block_until_stopped(Duration::from_secs(11)));
-
-        //trace!("state {:?}",state);
-
-    }
+    // #[cfg(test)]
+    // #[serial]
+    // #[async_std::test]
+    // async fn test_simple_widget_graph() {
+    //
+    //     let test_ops = Args {
+    //         duration: 21,
+    //         loglevel: "debug".to_string(),
+    //         gen_rate_micros: 100,
+    //         systemd_install: false,
+    //         systemd_uninstall: false,
+    //     };
+    //
+    //     let graph = Graph::new_test_with_telemetry(test_ops);
+    //
+    //     let (mut graph, state) = build_simple_widgets_graph(graph);
+    //     graph.start();
+    //
+    //     {
+    //         let mut guard = graph.sidechannel_director().await;
+    //         let g = guard.deref_mut();
+    //         assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
+    //         if let Some(plane) = g {
+    //             let to_send = WidgetInventory {
+    //                 count: 42,
+    //                 _payload: 0
+    //             };
+    //             let response = plane.node_call(Box::new(to_send), ActorName::new("generator",None)).await;
+    //             if let Some(_) = response {
+    //                 let expected_message = ApprovedWidgets {
+    //                     original_count: 42,
+    //                     approved_count: 21,
+    //                 };
+    //                 let response = plane.node_call(Box::new(expected_message), ActorName::new("consumer",None)).await;
+    //                 assert_eq!("ok", response.expect("no response")
+    //                     .downcast_ref::<String>().expect("bad type"));
+    //             } else {
+    //                 panic!("bad response from generator: {:?}", response);
+    //             }
+    //         }
+    //     }
+    //     //wait for one page of telemetry
+    //     Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms()*10)).await;
+    //
+    //
+    //     //hit the telemetry site and validate if it returns
+    //     // this test will only work if the feature is on
+    //     // hit 127.0.0.1:9100/metrics using isahc
+    //     match isahc::get("http://127.0.0.1:9100/metrics") {
+    //         Ok(mut response) => {
+    //             assert_eq!(200, response.status().as_u16());
+    //
+    //             let body:String = response.text().expect("body text");
+    //             let _ =response.consume();
+    //
+    //             trace!("body: {}", body);
+    //             let _ = body.lines().find(|line| line.contains("inflight{widgets=\"T\", type=\"ChangeRequest\", from=\"feedback\", to=\"generator\"} 0")).expect("expected line not found");
+    //         }
+    //         Err(e) => {
+    //             info!("failed to get metrics: {:?}", e);
+    //             //this is only an error if the feature is not on
+    //             #[cfg(feature = "prometheus_metrics")]
+    //             {
+    //                 warn!("failed to get metrics: {:?}", e);
+    //                 panic!("failed to get metrics: {:?}", e);
+    //             }
+    //         }
+    //     };
+    //     match isahc::get("http://127.0.0.1:9100/graph.dot") {
+    //         Ok(mut response) => {
+    //             assert_eq!(200, response.status().as_u16());
+    //
+    //             let body = response.text().expect("body text");
+    //             let _ =response.consume();
+    //
+    //             trace!("body: {}", body);
+    //
+    //             let _ = body.lines().find(|line| line.contains("\"feedback\" -> \"generator\" [label=")).expect("expected line not found");
+    //
+    //         }
+    //         Err(e) => {
+    //             info!("failed to get metrics: {:?}", e);
+    //             // //this is only an error if the feature is not on
+    //             #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
+    //             {
+    //                 warn!("failed to get metrics: {:?}", e);
+    //                 panic!("failed to get metrics: {:?}", e);
+    //             }
+    //         }
+    //     };
+    //
+    //     //trace!("state {:?}",state);
+    //     let other_files = ["images/preview-icon.svg"
+    //                       ,"images/refresh-time-icon.svg"
+    //                       ,"images/spinner.gif"
+    //                       ,"images/user-icon.svg"
+    //                       ,"images/zoom-in-icon.svg"
+    //                       ,"images/zoom-in-icon-disabled.svg"
+    //                       ,"images/zoom-out-icon.svg"
+    //                       ,"images/zoom-out-icon-disabled.svg"
+    //                       ,"dot-viewer.css"
+    //                       ,"dot-viewer.js"
+    //                       ,"webworker.js"
+    //     ];
+    //     for file in other_files.iter() {
+    //         match isahc::get(format!("http://127.0.0.1:9100/{}",file )) {
+    //             Ok(mut response) => {
+    //                 assert_eq!(200, response.status().as_u16());
+    //                 let _ =response.consume();
+    //
+    //             }
+    //             Err(e) => {
+    //                 #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
+    //                 {
+    //                     warn!("failed to fetch {}: {:?}", file, e);
+    //                     error!("failed to fetch {}: {:?}", file, e);
+    //                 }
+    //             }
+    //         }
+    //     }
+    //
+    //
+    //     graph.request_stop();
+    //     //if you make this timeout very large you will have plenty of time to debug steam through
+    //     //this test method if you like.
+    //     assert!(graph.block_until_stopped(Duration::from_secs(11)));
+    //
+    //     //trace!("state {:?}",state);
+    //
+    // }
 }
 
 

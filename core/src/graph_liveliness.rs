@@ -226,7 +226,7 @@ impl GraphLiveliness {
             abstract_executor::block_on(async move {
                 let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
                 while let Some(f) = one_shots.pop() {
-                    //info!("one shot shutdown for one actor");
+                    info!("one shot shutdown for one actor");
                     f.send(()).expect("oops");
                 }
             });
@@ -678,7 +678,10 @@ impl Graph {
                                 warn!("#{:?} Voted: {:?} Ident: {:?}"
                                        , voter.as_ref().map_or(usize::MAX, |f| f.id)
                                        , voter.as_ref().map_or(false, |f| f.in_favor)
-                                       , voter.as_ref().map_or(Default::default(), |f| f.ident));
+                                       , voter.as_ref().map_or(
+                                                   Default::default()
+                                                 //self.state.registered_voters[0]
+                                                   , |f| f.ident));
                             });
                             warn!("graph stopped uncleanly");
                             return false;

@@ -77,12 +77,18 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , tx: SteadyTxBundle<Packet,GIRTH>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = into_monitor!(context,[], tx);
-    if let Some(responder) = monitor.sidechannel_responder() {
-        let mut tx:TxBundle<Packet> = tx.lock().await;
+    let mut tx:TxBundle<Packet> = tx.lock().await;
 
-        while monitor.is_running(&mut || tx.mark_closed()) {
+    if let Some(mut responder) = monitor.sidechannel_responder() { //outside
 
-            yield_now::yield_now().await;
+    while monitor.is_running(&mut || tx.mark_closed()) {
+
+
+            let _clean = wait_for_all!(
+                responder.wait_available_units(1),
+                monitor.wait_vacant_units_bundle(&mut tx, 1, GIRTH)
+            ).await;
+
 
 
             let responder = responder.respond_with(|message| {
@@ -93,8 +99,11 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                     Err(m) => Box::new(format!("{:?}",m)),
                 }
             }).await;
-            monitor.relay_stats_smartly();
+
+
         }
+        monitor.relay_stats_smartly();
+
     }
     Ok(())
 }

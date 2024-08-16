@@ -348,7 +348,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
     pub(crate) actor_start_time: Instant, // never changed from context
-    pub(crate) node_tx_rx: Option<Arc<Mutex<SideChannel>>>,
+    pub(crate) node_tx_rx: Option<Arc<Mutex<(SideChannel,oneshot::Receiver<()>)>>>,
     pub(crate) frame_rate_ms: u64,
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     #[cfg(test)]
@@ -394,7 +394,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         //warn!("is_running here {:?}", self.ident);
         match self.runtime_state.read() {
             Ok(liveliness) => {
-                //warn!("released_is_running here {:?}", self.ident);
+               // warn!("released_is_running here {:?}", self.ident);
 
                 // //TODO: if we never run then this oneshot never fired either !!!
                 // let one_down = &mut self.oneshot_shutdown.lock().await;
@@ -494,7 +494,11 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Returns
     /// An `Option` containing a `SideChannelResponder` if available.
     pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
-        SideChannelResponder::lookup_side_channel_responder(&self.node_tx_rx, self.oneshot_shutdown.clone())
+        if let Some(ref tr) = self.node_tx_rx {
+            Some(SideChannelResponder::new(tr.clone(), self.ident))
+        } else {
+            None
+        }
     }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.

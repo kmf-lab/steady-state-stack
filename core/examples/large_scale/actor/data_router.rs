@@ -22,8 +22,6 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext, one_of: us
     //info!("running {:?} {:?}",context.id(),context.name());
     let mut monitor = into_monitor!(context,[rx],tx);
 
-    let block_size = u16::MAX / one_of as u16;
-
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
@@ -40,7 +38,10 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext, one_of: us
 
         let mut iter = monitor.take_into_iter(&mut rx);
         while let Some(t) = iter.next() {
-            let index = ((t.route / block_size) as usize) % tx.len();
+            let index = (t.route as usize / one_of)  % tx.len();
+
+         //   info!("name: {:?} one_of: {:?} block_size: {:?} route: {:?} index: {:?}", monitor.ident(), one_of, block_size, t.route, index);
+
             if let Err(e) = monitor.try_send(&mut tx[index], t) {
                   let _ = monitor.send_async(&mut tx[index], e, SendSaturation::IgnoreAndWait).await;
                   break;

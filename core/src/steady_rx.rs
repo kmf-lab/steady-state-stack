@@ -438,13 +438,8 @@ impl<T> Rx<T> {
             if !one_down.is_terminated() {
                 let mut operation = &mut self.rx.wait_occupied(count);
                 select! { _ = one_down => false, _ = operation => true }
-            } else if self.is_closed() {
-                false
             } else {
                 false
-                //let mut closing = &mut self.is_closed;
-                //let mut operation = &mut self.rx.wait_occupied(1);
-                //select! { _ = closing => false, _ = operation => true }
             }
         }
     }

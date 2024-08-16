@@ -9,11 +9,12 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::time::Duration;
 use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
-use log::{error, warn};
-use futures_util::lock::Mutex;
+use log::{error, info, warn};
+use futures_util::lock::{Mutex, MutexGuard};
 use async_ringbuf::traits::Split;
 use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
@@ -21,6 +22,9 @@ use futures_util::select;
 use ringbuf::consumer::Consumer;
 use crate::{ActorIdentity, ActorName};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
+use futures::FutureExt;
+use futures_timer::Delay;
+use ringbuf::traits::Observer;
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
 /// or `Err` with a value of type `E`.
@@ -58,8 +62,8 @@ pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, Inter
 /// The backplane functions as a central message hub, ensuring that only one user can hold it at a time.
 #[derive(Default)]
 pub struct SideChannelHub {
-    node: HashMap<ActorName, Arc<Mutex<SideChannel>>>,
-    pub(crate) backplane: HashMap<ActorName, SideChannel>,
+    node: HashMap<ActorName, Arc<Mutex<(SideChannel,Receiver<()>)>>>,
+    pub(crate) backplane: HashMap<ActorName, Arc<Mutex<SideChannel>>>,
 }
 
 impl Debug for SideChannelHub {
@@ -81,8 +85,8 @@ impl SideChannelHub {
     ///
     /// # Returns
     ///
-    /// An `Option` containing an `Arc<Mutex<SideChannel>>` if the node exists.
-    pub fn node_tx_rx(&self, key: ActorName) -> Option<Arc<Mutex<SideChannel>>> {
+    /// An `Option` containing an `Arc<Mutex<(SideChannel,Receiver<()>)>>` if the node exists.
+    pub fn node_tx_rx(&self, key: ActorName) -> Option<Arc<Mutex<(SideChannel,Receiver<()>) >>> {
                 self.node.get(&key).cloned()
     }
 
@@ -92,7 +96,7 @@ impl SideChannelHub {
     ///
     /// * `name` - The name of the node.
     /// * `capacity` - The capacity of the ring buffer.
-    pub fn register_node(&mut self, key: ActorName, capacity: usize) -> bool {
+    pub fn register_node(&mut self, key: ActorName, capacity: usize, shutdown_rx: Receiver<()>) -> bool {
             // Message to the node
             let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(capacity);
             let (sender_tx, receiver_tx) = rb.split();
@@ -105,8 +109,8 @@ impl SideChannelHub {
                 warn!("Node with name {:?} already exists, check suffix usage", key);
                 false
             } else {
-                self.node.insert(key, Arc::new(Mutex::new((sender_rx, receiver_tx))));
-                self.backplane.insert(key, (sender_tx, receiver_rx));
+                self.node.insert(key, Arc::new(Mutex::new(((sender_rx, receiver_tx), shutdown_rx) )));
+                self.backplane.insert(key, Arc::new(Mutex::new((sender_tx, receiver_rx))));
                 true
             }
     }
@@ -122,11 +126,14 @@ impl SideChannelHub {
     ///
     /// An `Option` containing the response message if the operation is successful.
     ///
-    pub async fn node_call(&mut self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Option<Box<dyn Any + Send + Sync>> {
+    pub async fn node_call(&self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Option<Box<dyn Any + Send + Sync>> {
 
-        if let Some((tx, rx)) = self.backplane.get_mut(&id) {
+        if let Some(sc) = self.backplane.get(&id) {
+            let mut sc_guard = sc.lock().await;
+            let (tx, rx) = sc_guard.deref_mut();
             match tx.push(msg).await {
                 Ok(_) => {
+                    //warn!("pushed message to node: {:?}", id);
                     //do nothing else but immediately get the response for more deterministic testing
                     return rx.pop().await;
                 }
@@ -134,6 +141,8 @@ impl SideChannelHub {
                     error!("Error sending test implementation request: {:?}", e);
                 }
             }
+        } else {
+            error!("Node with name {:?} not found", id);
         }
         None
     }
@@ -141,8 +150,8 @@ impl SideChannelHub {
 
 /// The `SideChannelResponder` struct provides a way to respond to messages from a side channel.
 pub struct SideChannelResponder {
-    pub(crate) arc: Arc<Mutex<SideChannel>>,
-    pub(crate) shutdown: Arc<Mutex<Receiver<()>>>,
+    pub(crate) arc: Arc<Mutex<(SideChannel,Receiver<()>)>>,
+    pub(crate) identity: ActorIdentity,
 }
 
 impl SideChannelResponder {
@@ -155,17 +164,24 @@ impl SideChannelResponder {
     /// # Returns
     ///
     /// A new `SideChannelResponder` instance.
-    pub fn new(arc: Arc<Mutex<SideChannel>>, shutdown: Arc<Mutex<Receiver<()>>>) -> Self {
-        SideChannelResponder { arc, shutdown}
+    pub fn new(arc: Arc<Mutex<(SideChannel,Receiver<()>)>>, identity: ActorIdentity) -> Self {
+        SideChannelResponder { arc, identity}
     }
 
+    pub async fn wait_available_units(&mut self, count: usize) -> bool {
+        let mut guard = self.arc.lock().await;
+        let ((ref mut tx, ref mut rx), ref mut shutdown) = guard.deref_mut();
 
-    pub fn lookup_side_channel_responder(node: &Option<Arc<Mutex<SideChannel>>>, shutdown: Arc<Mutex<Receiver<()>>>) -> Option<SideChannelResponder> {
-        //        self.node_tx_rx.as_ref().map(|node_tx_rx| SideChannelResponder::new(node_tx_rx.clone(),self.oneshot_shutdown.clone()))
-        if let Some(n) = node {
-            Some(SideChannelResponder::new(n.clone(), shutdown))
+        if rx.occupied_len() >= count {
+            true
         } else {
-            None
+            let mut one_down = shutdown;
+            if !one_down.is_terminated() {
+                let mut operation = &mut rx.wait_occupied(count);
+                select! { _ = one_down => false, _ = operation => true }
+            } else {
+                false
+            }
         }
     }
 
@@ -180,24 +196,8 @@ impl SideChannelResponder {
             F: FnMut(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync>,
     {
         let mut guard = self.arc.lock().await;
-        let (ref mut tx, ref mut rx) = guard.deref_mut();
-
-
-        //wait for message unless we see the shutdown signal
-        let question: Option<Box<dyn Any + Send + Sync>> = {
-            let mut shutdown_guard = self.shutdown.lock().await;
-            let mut one_down = &mut shutdown_guard.deref_mut();
-            if !one_down.is_terminated() {
-                let mut operation = &mut rx.pop();
-                select! { _ = one_down => rx.try_pop(),
-                     p = operation => p }
-            } else {
-                rx.try_pop()
-            }
-        };
-
-        if let Some(q) = question {
-
+        let ((ref mut tx, ref mut rx),shutdown) = guard.deref_mut();
+        if let Some(q) = rx.try_pop() {
             //NOTE: if a shutdown is called for and we are not able to push this message
             //      it will result in a timeout and error by design for testing. This will
             //      happen if the main test block is not consuming the answers to the questions
@@ -209,6 +209,7 @@ impl SideChannelResponder {
                 }
             }
         }
+
     }
 
 
@@ -247,11 +248,14 @@ mod graph_testing_tests {
     #[test]
     async fn test_register_and_retrieve_node() {
         let mut hub = SideChannelHub::default();
-        let actor_name = ActorName::new("test_actor",None);
 
-        hub.register_node(actor_name.clone(), 10);
+        let actor = ActorIdentity::new(1,"test_actor",None);
 
-        let node = hub.node_tx_rx(actor_name.clone());
+        let (_tx,rx) = oneshot::channel();
+
+        hub.register_node(actor.label.clone(), 10, rx );
+
+        let node = hub.node_tx_rx(actor.label.clone());
         assert!(node.is_some(), "Node should be registered and retrievable");
     }
 
@@ -262,19 +266,29 @@ mod graph_testing_tests {
         // Simulates Graph creation where we init the side channel hub
         // and register our actors for future testing
         let mut hub = SideChannelHub::default();
-        let actor_name = ActorName::new("test_actor",None);
+        let actor = ActorIdentity::new(1,"test_actor",None);
+        let actor_name = actor.label;
         let text = format!("hub: {:?} actor: {:?}",hub,actor_name);
         info!("custom debug {:?}",text);
 
-        assert_eq!(true, hub.register_node(actor_name.clone(), 10));
-        assert_eq!(false, hub.register_node(actor_name.clone(), 10));
+        let (_tx,rx) = oneshot::channel();
+        assert_eq!(true, hub.register_node(actor_name.clone(), 10, rx));
+        let (_tx,rx) = oneshot::channel();
+        assert_eq!(false, hub.register_node(actor_name.clone(), 10, rx));
 
 
         // Simulates the startup of the actor where we typically lookup the responder once
         let responder_inside_actor = {
-            let shutdown = oneshot::channel();
-            let r = Arc::new(Mutex::new(shutdown.1));
-            SideChannelResponder::lookup_side_channel_responder(&hub.node_tx_rx(actor_name), r)
+            let (tx,rx) = oneshot::channel::<()>();
+            let r = Arc::new(Mutex::new(rx));
+
+            let node_tx_rx = hub.node_tx_rx(actor_name);
+            if let Some(ref tr) = node_tx_rx {
+                Some(SideChannelResponder::new(tr.clone(), actor))
+            } else {
+                None
+            }
+
         };
         // Simulates an actor which responds when a message is sent
         //this is our simulated actor to respond to our node_call below
