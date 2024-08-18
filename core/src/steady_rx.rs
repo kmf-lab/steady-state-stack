@@ -166,18 +166,8 @@ impl <T> Rx<T> {
     #[inline]
     pub(crate) fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
         where T: Copy {
-        let mut count = 0;
-        let c = self.rx.occupied_len();
 
-        for (i, e) in self.rx.iter().enumerate() {
-            if i < elems.len() {
-                elems[i] = *e; // Assuming e is a reference and needs dereferencing
-                count += 1;
-            } else {
-                break;
-            }
-        }
-        assert!(self.rx.occupied_len() >= c); //confirm we took nothing.
+        let count:usize = self.rx.peek_slice(elems);
 
         if count > 0 {
             let take_count = self.take_count.load(Ordering::Relaxed);
@@ -207,7 +197,8 @@ impl <T> Rx<T> {
 
     #[inline]
     pub(crate) fn shared_try_peek(&self) -> Option<&T> {
-        let result = self.rx.first();
+
+        let result = self.rx.try_peek();
         if result.is_some() {
             let take_count = self.take_count.load(Ordering::Relaxed);
             let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);

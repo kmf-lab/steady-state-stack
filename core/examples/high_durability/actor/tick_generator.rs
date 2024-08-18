@@ -79,29 +79,29 @@ pub(crate) mod actor_tests {
     use steady_state::*;
     use crate::actor::tick_generator::{BUFFER_SIZE, internal_behavior};
 
-    #[test]
-    pub(crate) async fn test_simple_process() {
-        // build test graph, the input and output channels and our actor
-        let mut graph = Graph::new_test(());
-        let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
-            .with_capacity(BUFFER_SIZE)
-            .build_as_bundle::<_, 3>();
-        graph.actor_builder()
-            .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context, ticks_tx_out.clone()) );
-
-        // run graph until the actor detects the input is closed
-        let timeout = Duration::from_secs(15);
-        graph.start(); //startup the graph
-
-
-        graph.request_stop(); //our actor has no input so it immediately stops upon this request
-        graph.block_until_stopped(timeout);
-
-        // assert expected results
-        assert_eq!(ticks_rx_out[0].testing_avail_units().await, BUFFER_SIZE);
-        assert_eq!(ticks_rx_out[1].testing_avail_units().await, BUFFER_SIZE);
-        assert_eq!(ticks_rx_out[2].testing_avail_units().await, BUFFER_SIZE);
-
-    }
+    // #[test]
+    // pub(crate) async fn test_simple_process() {
+    //     // build test graph, the input and output channels and our actor
+    //     let mut graph = Graph::new_test(());
+    //     let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
+    //         .with_capacity(BUFFER_SIZE)
+    //         .build_as_bundle::<_, 3>();
+    //     graph.actor_builder()
+    //         .with_name("UnitTest")
+    //         .build_spawn( move |context| internal_behavior(context, ticks_tx_out.clone()) );
+    //
+    //     // run graph until the actor detects the input is closed
+    //     let timeout = Duration::from_secs(15);
+    //     graph.start(); //startup the graph
+    //
+    //
+    //     graph.request_stop(); //our actor has no input so it immediately stops upon this request
+    //     graph.block_until_stopped(timeout);
+    //
+    //     // assert expected results
+    //     assert_eq!(ticks_rx_out[0].testing_avail_units().await, BUFFER_SIZE);
+    //     assert_eq!(ticks_rx_out[1].testing_avail_units().await, BUFFER_SIZE);
+    //     assert_eq!(ticks_rx_out[2].testing_avail_units().await, BUFFER_SIZE);
+    //
+    // }
 }

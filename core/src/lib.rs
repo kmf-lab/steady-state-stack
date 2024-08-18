@@ -386,7 +386,6 @@ impl SteadyContext {
                 break;
             }
         }
-
         result.load(Ordering::Relaxed)
     }
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
@@ -450,8 +449,7 @@ impl SteadyContext {
     /// - `T`: Must implement `Copy`.
     pub fn try_peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
     where
-        T: Copy
-    {
+        T: Copy {
         this.shared_try_peek_slice(elems)
     }
 
@@ -471,8 +469,7 @@ impl SteadyContext {
     /// # Asynchronous
     pub async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
     where
-        T: Copy
-    {
+        T: Copy {
         this.shared_peek_async_slice(wait_for_count, elems).await
     }
 
@@ -503,7 +500,6 @@ impl SteadyContext {
     /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
     pub fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
     {
-
         this.shared_try_peek()
     }
 
@@ -566,7 +562,6 @@ impl SteadyContext {
     /// # Asynchronous
     pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
     {
-
         this.shared_peek_async().await
     }
     /// Sends a slice of messages to the Tx channel until it is full.
@@ -582,8 +577,7 @@ impl SteadyContext {
     /// - `T`: Must implement `Copy`.
     pub fn send_slice_until_full<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
     where
-        T: Copy,
-    {
+        T: Copy {
         this.shared_send_slice_until_full(slice)
     }
 
@@ -650,8 +644,7 @@ impl SteadyContext {
     ///
     /// # Returns
     /// An iterator over the taken messages.
-    pub fn take_into_iter<'a, T: Sync + Send>(& mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a
-    {
+    pub fn take_into_iter<'a, T: Sync + Send>(& mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a  {
         this.shared_take_into_iter()
     }
 
@@ -1118,41 +1111,8 @@ pub enum SendSaturation {
     IgnoreInRelease,
 }
 
-/*
-struct HashedIterator<I, T> {
-    inner: I,
-    _marker: std::marker::PhantomData<T>,
-}
 
-impl<I, T> HashedIterator<I, T> {
-    fn new(inner: I) -> Self {
-        HashedIterator {
-            inner,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
 
-impl<I, T> Iterator for HashedIterator<I, T>
-    where
-        I: Iterator<Item = T>,
-        T: Hash,
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(item) = self.inner.next() {
-            let mut hasher = DefaultHasher::new();
-            item.hash(&mut hasher);
-            let hash = hasher.finish();
-            println!("Hash: {}", hash);
-            Some(item)
-        } else {
-            None
-        }
-    }
-}
-*/
 
 /// Represents a standard deviation value.
 ///
