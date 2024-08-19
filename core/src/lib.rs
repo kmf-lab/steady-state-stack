@@ -291,6 +291,8 @@ pub struct SteadyContext {
 }
 
 impl SteadyContext {
+
+
     /// Get the unique actor identifier.
     pub fn ident(&self) -> ActorIdentity {
         self.ident
@@ -1277,4 +1279,153 @@ pub enum Trigger<T>
     ///
     /// Contains the percentile value and the threshold value of type `T`.
     PercentileBelow(Percentile, T),
+}
+
+#[cfg(test)]
+mod lib_tests {
+    use super::*;
+    use std::sync::{Arc, RwLock};
+    use futures::channel::oneshot;
+    use std::time::Instant;
+    use std::sync::atomic::{AtomicU32, AtomicUsize};
+    use crate::channel_builder::ChannelBuilder;
+
+    // Helper method to build tx and rx arguments
+    fn build_tx_rx() -> (oneshot::Sender<()>, oneshot::Receiver<()>) {
+        oneshot::channel()
+    }
+
+    // Common function to create a test SteadyContext
+    fn test_steady_context() -> SteadyContext {
+        let (tx, rx) = build_tx_rx();
+        SteadyContext {
+            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
+                Default::default(),
+                Default::default()
+            ))),
+            channel_count: Arc::new(AtomicUsize::new(0)),
+            ident: ActorIdentity::new(0, "test_actor", None),
+            args: Arc::new(Box::new(())),
+            all_telemetry_rx: Arc::new(RwLock::new(Vec::new())),
+            actor_metadata: Arc::new(ActorMetaData::default()),
+            oneshot_shutdown_vec: Arc::new(Mutex::new(Vec::new())),
+            oneshot_shutdown: Arc::new(Mutex::new(rx)),
+            node_tx_rx: None,
+            instance_id: 0,
+            last_periodic_wait: Default::default(),
+            is_in_graph: true,
+            actor_start_time: Instant::now(),
+            frame_rate_ms: 1000,
+        }
+    }
+
+    // Helper function to create a new Rx instance
+    fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> Arc<Mutex<Rx<T>>> {
+        let builder = ChannelBuilder::new(
+            Arc::new(Default::default()),
+            Arc::new(Default::default()),
+            Instant::now(),
+            40);
+
+        let (tx, rx) = builder.build::<T>();
+
+        let send = tx.clone();
+        if let Some(ref mut send_guard) = send.try_lock() {
+            for item in data {
+                let _ = send_guard.shared_try_send(item);
+            }
+        }
+        rx.clone()
+    }
+
+
+
+    // Test for try_peek
+    #[test]
+    fn test_try_peek() {
+        let mut rx = create_rx(vec![1, 2, 3]);
+        let context = test_steady_context();
+        if let Some(mut rx) = rx.try_lock() {
+            let result = context.try_peek(&mut rx);
+            assert_eq!(result, Some(&1));
+        };
+    }
+
+    // Test for take_slice
+    #[test]
+    fn test_take_slice() {
+        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let mut slice = [0; 3];
+        let mut context = test_steady_context();
+        if let Some(mut rx) = rx.try_lock() {
+            let count = context.take_slice(&mut rx, &mut slice);
+            assert_eq!(count, 3);
+            assert_eq!(slice, [1, 2, 3]);
+        };
+    }
+
+    // Test for try_peek_slice
+    #[test]
+    fn test_try_peek_slice() {
+        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let mut slice = [0; 3];
+        let mut context = test_steady_context();
+        if let Some(mut rx) = rx.try_lock() {
+            let count = context.try_peek_slice(&mut rx, &mut slice);
+            assert_eq!(count, 3);
+            assert_eq!(slice, [1, 2, 3]);
+        };
+    }
+
+
+
+    // Test wait_while_running method
+    #[async_std::test]
+    async fn test_wait_while_running() {
+        let context = test_steady_context();
+        let fut = context.wait_while_running();
+        assert_eq!(fut.await, Ok(()));
+
+    }
+
+    // Test wait_avail_units_bundle method
+    #[async_std::test]
+    async fn test_wait_avail_units_bundle() {
+        let context = test_steady_context();
+        let mut rx_bundle = RxBundle::<i32>::new();
+        let fut = context.wait_avail_units_bundle(&mut rx_bundle, 1, 1);
+        assert!(fut.await);
+    }
+
+    // Test wait_vacant_units_bundle method
+    #[async_std::test]
+    async fn test_wait_vacant_units_bundle() {
+        let context = test_steady_context();
+        let mut tx_bundle = TxBundle::<i32>::new();
+        let fut = context.wait_vacant_units_bundle(&mut tx_bundle, 1, 1);
+        assert!(fut.await);
+
+    }
+
+    // Test is_empty method
+    #[test]
+    fn test_is_empty() {
+        let context = test_steady_context();
+        let mut rx = create_rx::<String>(vec![]); // Creating an empty Rx
+        if let Some(mut rx) = rx.try_lock() {
+            assert!(context.is_empty(&mut rx));
+        };
+    }
+
+    // Test avail_units method
+    #[test]
+    fn test_avail_units() {
+        let context = test_steady_context();
+        let mut rx = create_rx(vec![1, 2, 3]);
+        if let Some(mut rx) = rx.try_lock() {
+            assert_eq!(context.avail_units(&mut rx), 3);
+        };
+    }
+
+
 }
