@@ -1219,3 +1219,83 @@ impl<I> Iterator for DriftCountIterator<I>
     }
 }
 
+
+#[cfg(test)]
+mod more_monitor_tests {
+    use super::*;
+    use std::sync::{Arc, RwLock};
+    use futures::channel::oneshot;
+    use std::time::Instant;
+    use std::sync::atomic::{AtomicU32, AtomicUsize};
+    use crate::channel_builder::ChannelBuilder;
+
+    // Helper method to build tx and rx arguments
+    fn build_tx_rx() -> (oneshot::Sender<()>, oneshot::Receiver<()>) {
+        oneshot::channel()
+    }
+
+    // Common function to create a test SteadyContext
+    fn test_steady_context() -> SteadyContext {
+        let (tx, rx) = build_tx_rx();
+        SteadyContext {
+            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
+                Default::default(),
+                Default::default()
+            ))),
+            channel_count: Arc::new(AtomicUsize::new(0)),
+            ident: ActorIdentity::new(0, "test_actor", None),
+            args: Arc::new(Box::new(())),
+            all_telemetry_rx: Arc::new(RwLock::new(Vec::new())),
+            actor_metadata: Arc::new(ActorMetaData::default()),
+            oneshot_shutdown_vec: Arc::new(Mutex::new(Vec::new())),
+            oneshot_shutdown: Arc::new(Mutex::new(rx)),
+            node_tx_rx: None,
+            instance_id: 0,
+            last_periodic_wait: Default::default(),
+            is_in_graph: true,
+            actor_start_time: Instant::now(),
+            frame_rate_ms: 1000,
+        }
+    }
+
+    // Helper function to create a new Rx instance
+    fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> Arc<Mutex<Rx<T>>> {
+        let (tx, rx) = create_test_channel();
+
+        let send = tx.clone();
+        if let Some(ref mut send_guard) = send.try_lock() {
+            for item in data {
+                let _ = send_guard.shared_try_send(item);
+            }
+        }
+        rx.clone()
+    }
+
+    fn create_test_channel<T: std::fmt::Debug>() -> (LazySteadyTx<T>, LazySteadyRx<T>) {
+        let builder = ChannelBuilder::new(
+            Arc::new(Default::default()),
+            Arc::new(Default::default()),
+            Instant::now(),
+            40);
+
+        builder.build::<T>()
+    }
+
+    #[test]
+    fn test_simple_monitor_build() {
+        let context = test_steady_context();
+        let monitor = context.into_monitor([],[]);
+        assert_eq!("test_actor",monitor.ident.label.name);
+    }
+
+    #[test]
+    fn test_macro_monitor_build() {
+        let context = test_steady_context();
+        let monitor = into_monitor!(context,[],[]);
+        assert_eq!("test_actor",monitor.ident.label.name);
+
+    }
+
+
+}
+

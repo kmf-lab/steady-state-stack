@@ -855,7 +855,7 @@ impl MCPU {
 
 /// The `Percentile` struct represents a percentile value, used for performance and workload analysis.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Percentile(f64);
+pub struct Percentile(pub f64);
 
 impl Percentile {
     /// Creates a new `Percentile` instance with the specified value.

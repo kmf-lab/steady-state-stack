@@ -92,3 +92,106 @@ impl LocalCLIBuilder {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_new_local_cli_builder_system_wide() {
+        let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true);
+        assert_eq!(cli_builder.path, "/some/path");
+        assert!(cli_builder.system_wide);
+        assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
+    }
+
+    #[test]
+    fn test_new_local_cli_builder_user_local() {
+        let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
+        assert_eq!(cli_builder.path, "/some/path");
+        assert!(!cli_builder.system_wide);
+        assert_eq!(cli_builder.install_dir, dirs::home_dir().unwrap().join(".local/bin"));
+    }
+
+    // #[test]
+    // fn test_with_custom_location_in_path() {
+    //     let temp_dir = tempdir().unwrap();
+    //     let custom_path = temp_dir.path().join("custom_bin");
+    //     fs::create_dir_all(&custom_path).unwrap();
+    //
+    //     let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true)
+    //         .with_custom_location(custom_path.clone());
+    //
+    //     assert_eq!(cli_builder.install_dir, custom_path);
+    //     assert!(!cli_builder.system_wide);
+    // }
+
+    #[test]
+    fn test_with_custom_location_not_in_path() {
+        let temp_dir = tempdir().unwrap();
+        let custom_path = temp_dir.path().join("custom_bin_not_in_path");
+
+        let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true)
+            .with_custom_location(custom_path.clone());
+
+        assert_ne!(cli_builder.install_dir, custom_path);
+        assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
+    }
+
+    // #[test]
+    // fn test_build_creates_executable_in_install_dir() {
+    //     let temp_dir = tempdir().unwrap();
+    //     let custom_install_dir = temp_dir.path().join("bin");
+    //     fs::create_dir_all(&custom_install_dir).unwrap();
+    //
+    //     let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false)
+    //         .with_custom_location(custom_install_dir.clone());
+    //
+    //     let exe_path = custom_install_dir.join("test_exe");
+    //     fs::File::create(&exe_path).unwrap();
+    //
+    //     let result = cli_builder.build();
+    //     assert!(result.is_ok());
+    //
+    //     let installed_exe = custom_install_dir.join("test_exe");
+    //     assert!(installed_exe.exists());
+    //
+    //     let metadata = fs::metadata(&installed_exe).unwrap();
+    //     assert_eq!(metadata.permissions().mode() & 0o777, 0o755);
+    // }
+
+    // #[test]
+    // fn test_build_invalid_path() {
+    //     let cli_builder = LocalCLIBuilder::new("/invalid/path".to_string(), false);
+    //
+    //     let result = cli_builder.build();
+    //     assert!(result.is_err());
+    // }
+
+    // #[test]
+    // fn test_build_install_dir_creation_failure() {
+    //     let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false)
+    //         .with_custom_location(PathBuf::from("/root/protected_dir"));
+    //
+    //     let result = cli_builder.build();
+    //     assert!(result.is_err());
+    // }
+
+    #[test]
+    fn test_default_installation_directory_system_wide() {
+        let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true);
+        assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
+    }
+
+    #[test]
+    fn test_default_installation_directory_user_local() {
+        let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
+        let expected_dir = dirs::home_dir().unwrap().join(".local/bin");
+        assert_eq!(cli_builder.install_dir, expected_dir);
+    }
+}
+

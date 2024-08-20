@@ -326,22 +326,22 @@ impl SteadyContext {
     }
 
     /// Update the transmission instance for the given channel.
-    pub fn update_tx_instance<T>(&self, target: &mut Tx<T>) {
+    pub(crate) fn update_tx_instance<T>(&self, target: &mut Tx<T>) {
         target.tx_version.store(self.instance_id, Ordering::SeqCst);
     }
 
     /// Update the transmission instance for the given bundle of channels.
-    pub fn update_tx_instance_bundle<T>(&self, target: &mut TxBundle<T>) {
+    pub(crate) fn update_tx_instance_bundle<T>(&self, target: &mut TxBundle<T>) {
         target.iter_mut().for_each(|tx| tx.tx_version.store(self.instance_id, Ordering::SeqCst));
     }
 
     /// Update the reception instance for the given channel.
-    pub fn update_rx_instance<T>(&self, target: &mut Rx<T>) {
+    pub(crate) fn update_rx_instance<T>(&self, target: &mut Rx<T>) {
         target.rx_version.store(self.instance_id, Ordering::SeqCst);
     }
 
     /// Update the reception instance for the given bundle of channels.
-    pub fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
+    pub(crate) fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
         target.iter_mut().for_each(|rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
     }
 
@@ -1081,7 +1081,7 @@ const MONITOR_NOT: usize = MONITOR_UNKNOWN-1;
 /// The `SendSaturation` enum defines how the system should respond when attempting to send a message
 /// to a channel that is already at capacity. This helps in managing backpressure and ensuring
 /// the system behaves predictably under load.
-#[derive(Default)]
+#[derive(Default,PartialEq,Eq,Debug)]
 pub enum SendSaturation {
     /// Ignore the saturation and wait until space is available in the channel.
     ///
@@ -1321,13 +1321,7 @@ mod lib_tests {
 
     // Helper function to create a new Rx instance
     fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> Arc<Mutex<Rx<T>>> {
-        let builder = ChannelBuilder::new(
-            Arc::new(Default::default()),
-            Arc::new(Default::default()),
-            Instant::now(),
-            40);
-
-        let (tx, rx) = builder.build::<T>();
+        let (tx, rx) = create_test_channel();
 
         let send = tx.clone();
         if let Some(ref mut send_guard) = send.try_lock() {
@@ -1338,7 +1332,15 @@ mod lib_tests {
         rx.clone()
     }
 
+    fn create_test_channel<T: std::fmt::Debug>() -> (LazySteadyTx<T>, LazySteadyRx<T>) {
+        let builder = ChannelBuilder::new(
+            Arc::new(Default::default()),
+            Arc::new(Default::default()),
+            Instant::now(),
+            40);
 
+        builder.build::<T>()
+    }
 
     // Test for try_peek
     #[test]
@@ -1427,5 +1429,274 @@ mod lib_tests {
         };
     }
 
+    // Test for try_peek_iter
+    #[test]
+    fn test_try_peek_iter() {
+        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let context = test_steady_context();
+        if let Some(mut rx) = rx.try_lock() {
+            let mut iter = context.try_peek_iter(&mut rx);
+            assert_eq!(iter.next(), Some(&1));
+            assert_eq!(iter.next(), Some(&2));
+            assert_eq!(iter.next(), Some(&3));
+        };
+    }
 
+    // Test for peek_async_iter
+    #[async_std::test]
+    async fn test_peek_async_iter() {
+        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let context = test_steady_context();
+        if let Some(mut rx) = rx.try_lock() {
+            let mut iter = context.peek_async_iter(&mut rx, 3).await;
+            assert_eq!(iter.next(), Some(&1));
+            assert_eq!(iter.next(), Some(&2));
+            assert_eq!(iter.next(), Some(&3));
+        };
+    }
+
+    // Test for peek_async
+    #[async_std::test]
+    async fn test_peek_async() {
+        let mut rx = create_rx(vec![1, 2, 3]);
+        let context = test_steady_context();
+        if let Some(mut rx) = rx.try_lock() {
+            let result = context.peek_async(&mut rx).await;
+            assert_eq!(result, Some(&1));
+        };
+    }
+
+    // Test for send_slice_until_full
+    #[test]
+    fn test_send_slice_until_full() {
+        let (mut tx, _rx) = create_test_channel();
+        let mut context = test_steady_context();
+        let slice = [1, 2, 3];
+        let tx = tx.clone();
+        if let Some(mut tx) = tx.try_lock() {
+            let sent_count = context.send_slice_until_full(&mut tx, &slice);
+            assert_eq!(sent_count, slice.len());
+        };
+    }
+
+    // Test for send_iter_until_full
+    #[test]
+    fn test_send_iter_until_full() {
+        let (mut tx, _rx) = create_test_channel();
+        let mut context = test_steady_context();
+        let iter = vec![1, 2, 3].into_iter();
+        let tx = tx.clone();
+        if let Some(mut tx) = tx.try_lock() {
+            let sent_count = context.send_iter_until_full(&mut tx, iter);
+            assert_eq!(sent_count, 3);
+        };
+    }
+
+    // Test for try_send
+    #[test]
+    fn test_try_send() {
+        let (mut tx, _rx) = create_test_channel();
+        let mut context = test_steady_context();
+        let tx = tx.clone();
+        if let Some(mut tx) = tx.try_lock() {
+            let result = context.try_send(&mut tx, 42);
+            assert!(result.is_ok());
+        };
+    }
+
+    // Test for is_full
+    #[test]
+    fn test_is_full() {
+        let (mut tx, _rx) = create_test_channel::<String>();
+        let context = test_steady_context();
+        let tx = tx.clone();
+        if let Some(mut tx) = tx.try_lock() {
+            assert!(!context.is_full(&mut tx));
+        };
+    }
+
+    // Test for vacant_units
+    #[test]
+    fn test_vacant_units() {
+        let (mut tx, _rx) = create_test_channel::<String>();
+        let context = test_steady_context();
+        let tx = tx.clone();
+        if let Some(mut tx) = tx.try_lock() {
+            let vacant_units = context.vacant_units(&mut tx);
+            assert_eq!(vacant_units, 64); // Assuming only one unit can be vacant
+        };
+    }
+
+    // Test for wait_empty
+    #[async_std::test]
+    async fn test_wait_empty() {
+        let (mut tx, _rx) = create_test_channel::<String>();
+        let context = test_steady_context();
+        let tx  = tx.clone();
+        if let Some(mut tx) = tx.try_lock() {
+            let empty = context.wait_empty(&mut tx).await;
+            assert!(empty);
+        };
+    }
+
+    // Test for take_into_iter
+    #[test]
+    fn test_take_into_iter() {
+        let mut rx = create_rx(vec![1, 2, 3]);
+        let mut context = test_steady_context();
+        if let Some(mut rx) = rx.try_lock() {
+            let mut iter = context.take_into_iter(&mut rx);
+            assert_eq!(iter.next(), Some(1));
+            assert_eq!(iter.next(), Some(2));
+            assert_eq!(iter.next(), Some(3));
+        };
+    }
+
+    // Test for call_async
+    #[async_std::test]
+    async fn test_call_async() {
+        let context = test_steady_context();
+        let fut = async { 42 };
+        let result = context.call_async(fut).await;
+        assert_eq!(result, Some(42));
+    }
+
+}
+
+#[cfg(test)]
+mod enum_tests {
+    use super::*;
+
+    #[test]
+    fn test_send_saturation_default() {
+        let saturation = SendSaturation::default();
+        assert_eq!(saturation, SendSaturation::Warn);
+    }
+
+    #[test]
+    fn test_send_saturation_variants() {
+        let wait = SendSaturation::IgnoreAndWait;
+        let err = SendSaturation::IgnoreAndErr;
+        let warn = SendSaturation::Warn;
+        let ignore = SendSaturation::IgnoreInRelease;
+
+        match wait {
+            SendSaturation::IgnoreAndWait => assert!(true),
+            _ => assert!(false, "Expected IgnoreAndWait"),
+        }
+
+        match err {
+            SendSaturation::IgnoreAndErr => assert!(true),
+            _ => assert!(false, "Expected IgnoreAndErr"),
+        }
+
+        match warn {
+            SendSaturation::Warn => assert!(true),
+            _ => assert!(false, "Expected Warn"),
+        }
+
+        match ignore {
+            SendSaturation::IgnoreInRelease => assert!(true),
+            _ => assert!(false, "Expected IgnoreInRelease"),
+        }
+    }
+
+    #[test]
+    fn test_std_dev_creation() {
+        let valid_std_dev = StdDev::new(5.0);
+        assert_eq!(valid_std_dev, Some(StdDev(5.0)));
+
+        let invalid_std_dev = StdDev::new(10.5);
+        assert_eq!(invalid_std_dev, None);
+    }
+
+    #[test]
+    fn test_std_dev_predefined() {
+        assert_eq!(StdDev::one(), StdDev(1.0));
+        assert_eq!(StdDev::one_and_a_half(), StdDev(1.5));
+        assert_eq!(StdDev::two(), StdDev(2.0));
+        assert_eq!(StdDev::two_and_a_half(), StdDev(2.5));
+        assert_eq!(StdDev::three(), StdDev(3.0));
+        assert_eq!(StdDev::four(), StdDev(4.0));
+    }
+
+    #[test]
+    fn test_std_dev_custom() {
+        let std_dev = StdDev::custom(2.5);
+        assert_eq!(std_dev, Some(StdDev(2.5)));
+
+        let invalid_std_dev = StdDev::custom(10.1);
+        assert_eq!(invalid_std_dev, None);
+    }
+
+    #[test]
+    fn test_std_dev_value() {
+        let std_dev = StdDev(3.5);
+        assert_eq!(std_dev.value(), 3.5);
+    }
+
+    #[test]
+    fn test_alert_color_variants() {
+        let yellow = AlertColor::Yellow;
+        let orange = AlertColor::Orange;
+        let red = AlertColor::Red;
+
+        assert_eq!(yellow, AlertColor::Yellow);
+        assert_eq!(orange, AlertColor::Orange);
+        assert_eq!(red, AlertColor::Red);
+    }
+
+    #[test]
+    fn test_trigger_variants() {
+        use std::time::Duration;
+
+        let avg_above = Trigger::AvgAbove(Duration::from_secs(1));
+        let avg_below = Trigger::AvgBelow(Duration::from_secs(2));
+        let std_devs_above = Trigger::StdDevsAbove(StdDev::two(), Duration::from_secs(3));
+        let std_devs_below = Trigger::StdDevsBelow(StdDev::one(), Duration::from_secs(4));
+        let percentile_above = Trigger::PercentileAbove(Percentile(90.0), Duration::from_secs(5));
+        let percentile_below = Trigger::PercentileBelow(Percentile(10.0), Duration::from_secs(6));
+
+        match avg_above {
+            Trigger::AvgAbove(val) => assert_eq!(val, Duration::from_secs(1)),
+            _ => assert!(false, "Expected AvgAbove"),
+        }
+
+        match avg_below {
+            Trigger::AvgBelow(val) => assert_eq!(val, Duration::from_secs(2)),
+            _ => assert!(false, "Expected AvgBelow"),
+        }
+
+        match std_devs_above {
+            Trigger::StdDevsAbove(std_dev, val) => {
+                assert_eq!(std_dev, StdDev::two());
+                assert_eq!(val, Duration::from_secs(3));
+            },
+            _ => assert!(false, "Expected StdDevsAbove"),
+        }
+
+        match std_devs_below {
+            Trigger::StdDevsBelow(std_dev, val) => {
+                assert_eq!(std_dev, StdDev::one());
+                assert_eq!(val, Duration::from_secs(4));
+            },
+            _ => assert!(false, "Expected StdDevsBelow"),
+        }
+
+        match percentile_above {
+            Trigger::PercentileAbove(percentile, val) => {
+                assert_eq!(percentile, Percentile(90.0));
+                assert_eq!(val, Duration::from_secs(5));
+            },
+            _ => assert!(false, "Expected PercentileAbove"),
+        }
+
+        match percentile_below {
+            Trigger::PercentileBelow(percentile, val) => {
+                assert_eq!(percentile, Percentile(10.0));
+                assert_eq!(val, Duration::from_secs(6));
+            },
+            _ => assert!(false, "Expected PercentileBelow"),
+        }
+    }
 }
