@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::mem;
+use std::time::Duration;
 use bytes::Bytes;
 
 #[allow(unused_imports)]
@@ -37,9 +38,8 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
     while monitor.is_running(&mut || tx.mark_closed()) {
 
         let _clean = wait_for_all!(
-           // monitor.wait_periodic(Duration::from_secs(10)),
+            monitor.wait_periodic(Duration::from_millis(500)),
             monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH)
-
         ).await;
 
 

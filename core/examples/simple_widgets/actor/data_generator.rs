@@ -114,7 +114,7 @@ mod generator_tests {
     #[test]
     async fn test_generator() {
         // //1. build test graph, the input and output channels and our actor
-         let mut graph = Graph::new_test(());
+         let mut graph = GraphBuilder::for_testing().build(());
         //
         // let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
         //     .with_capacity(256).build();

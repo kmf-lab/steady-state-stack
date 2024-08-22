@@ -41,7 +41,8 @@ fn main() {
     if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
-    let mut graph = build_graph(Graph::new(opt.clone()));
+    let mut graph = build_graph(GraphBuilder::for_production().build(opt.clone()));
+
     graph.start();
 
     {   //remove this block to run forever.
@@ -176,7 +177,7 @@ fn build_graph(mut graph: Graph) -> Graph {
 
                             let (filter_tx, filter_rx) = base_channel_builder.build();
                                 base_actor_builder
-                                    .with_name_and_suffix("Filter",user_count)
+                                    .with_name_and_suffix("Logger",user_count)
                                     .build_join(move |context| actor::data_process::run(context
                                                                                         , local_rx.clone()
                                                                                         , filter_tx.clone()
@@ -184,26 +185,37 @@ fn build_graph(mut graph: Graph) -> Graph {
                                                  , & mut group_line
                                     );
 
-                            let (logging_tx, logging_rx) = base_channel_builder.build();
 
-                                base_actor_builder
-                                    .with_name_and_suffix("Logger",user_count)
-                                    .build_join(move |context| actor::data_process::run(context
-                                                                                        , filter_rx.clone()
-                                                                                        , logging_tx.clone()
-                                                  )
-                                                 , & mut group_line
-                                    );
+                            let mut input_rx = filter_rx;
+                            let mut output_rx = {
+                                //TODO: we need to profile this, also slow the frame rate
+                                let mut count = 1; //set for very large actor testing 5=200 9=300 13=400
+                                loop {
+                                    let (logging_tx, logging_rx) = base_channel_builder.build();
+
+                                    base_actor_builder
+                                        .with_name_and_suffix("Filter", (100*count)+user_count)
+                                        .build_join(move |context| actor::data_process::run(context
+                                                                                            , input_rx.clone()
+                                                                                            , logging_tx.clone()
+                                        )
+                                                    , &mut group_line
+                                        );
+
+                                    count = count - 1;
+                                    if 0==count {
+                                        break logging_rx;
+                                    }
+                                    input_rx = logging_rx;
+                                }
+                            };
 
 
                             let (decrypt_tx, decrypt_rx) = base_channel_builder.build();
-
-
-
                             base_actor_builder
                                     .with_name_and_suffix("Decrypt",user_count)
                                     .build_join(move |context| actor::data_process::run(context
-                                                                                        , logging_rx.clone()
+                                                                                        , output_rx.clone()
                                                                                         , decrypt_tx.clone()
                                                     )
                                                  , & mut group_line

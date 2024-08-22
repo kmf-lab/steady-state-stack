@@ -1036,12 +1036,13 @@ mod tests {
 
 #[cfg(test)]
 mod test_actor_builder {
+    use crate::GraphBuilder;
     use super::*;
 
 
     #[test]
     fn test_actor_builder_creation() {
-        let mut graph =  Graph::new_test(());
+        let mut graph =  GraphBuilder::for_testing().build(());
         let builder = ActorBuilder::new(&mut graph);
         assert_eq!(builder.actor_name.name, "");
         assert_eq!(builder.refresh_rate_in_bits, 6);

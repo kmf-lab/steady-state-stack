@@ -85,7 +85,7 @@ pub(crate) mod approval_tests {
     #[test]
     pub(crate) async fn test_approval() {
         // build test graph, the input and output channels and our actor
-        let mut graph = Graph::new_test(());
+        let mut graph = GraphBuilder::for_testing().build(());
 
         let (widget_inventory_tx_in, widget_inventory_rx_in) = graph.channel_builder()
             .with_capacity(BATCH_SIZE).build();

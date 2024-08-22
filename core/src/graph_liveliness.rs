@@ -390,6 +390,7 @@ impl Debug for ActorIdentity {
 }
 
 /// Configuration options for the proactor.
+#[derive(Clone, Debug)]
 pub enum ProactorConfig {
     /// Standard way to use IO_URING. No polling, purely IRQ awaken IO completion.
     /// This is a normal way to process IO, mind that with this approach
@@ -405,6 +406,75 @@ pub enum ProactorConfig {
     LowLatencyDriven,
     /// IOPOLL enabled ring configuration for operating on files with low-latency.
     IoPoll,
+}
+
+#[derive(Clone, Debug)]
+pub struct GraphBuilder {
+    block_fail_fast: bool,
+    telemetry_metric_features: bool,
+    enable_io_driver: bool,
+    backplane: Option<SideChannelHub>,
+    proactor_config: Option<ProactorConfig>,
+    iouring_queue_length: u32,
+    telemtry_production_rate_ms: u64
+    
+}
+
+impl GraphBuilder {
+
+    pub fn for_production() -> Self {
+      GraphBuilder {
+          block_fail_fast: false,
+          telemetry_metric_features: steady_config::TELEMETRY_SERVER,
+          enable_io_driver: true,
+          backplane: None,
+          proactor_config: Some(ProactorConfig::InterruptDriven),
+          iouring_queue_length: 1<<5,
+          telemtry_production_rate_ms: 40,
+      }
+    }
+
+    pub fn for_testing() -> Self {
+        util::logger::initialize();
+        GraphBuilder {
+            block_fail_fast: false,
+            telemetry_metric_features: false,
+            enable_io_driver: true,
+            backplane: Some(SideChannelHub::default()),
+            proactor_config: Some(ProactorConfig::InterruptDriven),
+            iouring_queue_length: 1<<5,
+            telemtry_production_rate_ms: 40,
+        }
+    }
+
+    pub fn with_iouring_queue_length(&self, len: u32) -> Self {
+        let mut result = self.clone();
+        result.iouring_queue_length = len;
+        result
+    }
+
+    pub fn with_telemtry_production_rate_ms(&self, ms: u64) -> Self {
+        let mut result = self.clone();
+        result.telemtry_production_rate_ms = ms;
+        result
+    }
+
+    pub fn with_telemetry_metric_features(&self, enable: bool) -> Self {
+        let mut result = self.clone();
+        result.telemetry_metric_features = enable;
+        result
+    }
+
+    pub fn build<A: Any + Send + Sync>(self, args: A) -> Graph {
+        Graph::internal_new(args
+                , self.block_fail_fast
+                , self.telemetry_metric_features
+                , self.backplane
+                , self.proactor_config
+                , self.enable_io_driver
+                , self.iouring_queue_length
+                , self.telemtry_production_rate_ms)
+    }
 }
 
 /// Manages the execution of actors in the graph.
@@ -699,6 +769,8 @@ impl Graph {
         }
     }
 
+    //TODO: need graph builder for the construction here..
+
     /// Creates a new graph for the application, typically done in `main`.
     ///
     /// # Arguments
@@ -712,29 +784,11 @@ impl Graph {
         #[cfg(test)]
         panic!("should not call new in tests");
         #[cfg(not(test))]
-        Self::internal_new(args, false, steady_config::TELEMETRY_SERVER, None, Some(ProactorConfig::InterruptDriven),true)
-
+        GraphBuilder::for_production().build(args)
     }
 
-    pub fn new_test<A: Any + Send + Sync>(args: A) -> Graph {
-        util::logger::initialize();
-        Self::internal_new(args, false, false
-                           , Some(SideChannelHub::default()),Some(ProactorConfig::InterruptDriven),true)
-    }
-
-    pub fn new_test_with_telemetry<A: Any + Send + Sync>(args: A) -> Graph {
-        util::logger::initialize();
-        Self::internal_new(args, false, true
-                           , Some(SideChannelHub::default()),Some(ProactorConfig::InterruptDriven),true)
-    }
 
     /// Creates a new graph for normal or unit test use.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - The arguments for the graph.
-    /// * `block_fail_fast` - Whether to block fail-fast behavior.
-    /// * `enable_telemtry` - Whether to enable telemetry.
     ///
     /// # Returns
     ///
@@ -745,9 +799,9 @@ impl Graph {
                                               , backplane: Option<SideChannelHub>
                                               , proactor_config: Option<ProactorConfig>
                                               , enable_io_driver: bool
+                                              , iouring_queue_length: u32
+                                              , telemetry_production_rate_ms: u64
                                             ) -> Graph {
-
-
 
         let proactor_config =  if let Some(config) = proactor_config {
             config
@@ -755,8 +809,6 @@ impl Graph {
             ProactorConfig::InterruptDriven
         };
 
-        let iouring_queue_length =  1 << 5; //TODO: expose as arg.
-        let telemetry_production_rate_ms = 40; // TODO: set default somewhere.
 
         //setup our threading and IO driver
         let nuclei_config = match proactor_config {

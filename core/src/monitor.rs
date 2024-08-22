@@ -195,7 +195,7 @@ pub(crate) mod monitor_tests {
     async fn test_relay_stats_tx_rx_custom() {
         util::logger::initialize();
 
-        let mut graph = Graph::new_test("");
+        let mut graph = GraphBuilder::for_testing().build("");
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(8).build();
         let tx_string = tx_string.clone();
         let rx_string = rx_string.clone();
@@ -248,7 +248,7 @@ pub(crate) mod monitor_tests {
     async fn test_relay_stats_tx_rx_batch() {
         util::logger::initialize();
 
-        let mut graph = Graph::new_test("");
+        let mut graph = GraphBuilder::for_testing().build("");
         let monitor = graph.new_test_monitor("test");
 
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build();

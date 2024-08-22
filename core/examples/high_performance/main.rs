@@ -22,7 +22,7 @@ fn main() {
     }
     info!("Starting up");
 
-    let mut graph = build_graph(steady_state::Graph::new(opt.clone()));
+    let mut graph = build_graph(GraphBuilder::for_production().build(opt.clone()));
 
     graph.start();
 

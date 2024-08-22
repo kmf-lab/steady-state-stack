@@ -99,7 +99,7 @@ pub(crate) mod hp_actor_tests {
     #[test]
     pub(crate) async fn test_simple_process() {
         //build test graph, the input and output channels and our actor
-        let mut graph = Graph::new_test(());
+        let mut graph = GraphBuilder::for_testing().build(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
             .with_capacity(BATCH)
             .build_as_bundle::<_, 3>();

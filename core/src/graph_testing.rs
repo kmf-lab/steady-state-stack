@@ -60,7 +60,7 @@ pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, Inter
 /// The `SideChannelHub` struct manages side channels for nodes in the graph.
 /// Each node holds its own lock on read and write to the backplane.
 /// The backplane functions as a central message hub, ensuring that only one user can hold it at a time.
-#[derive(Default)]
+#[derive(Clone,Default)]
 pub struct SideChannelHub {
     node: HashMap<ActorName, Arc<Mutex<(SideChannel,Receiver<()>)>>>,
     pub(crate) backplane: HashMap<ActorName, Arc<Mutex<SideChannel>>>,
