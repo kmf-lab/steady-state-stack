@@ -423,6 +423,9 @@ pub struct GraphBuilder {
 impl GraphBuilder {
 
     pub fn for_production() -> Self {
+        #[cfg(test)]
+        panic!("should not call for_production in tests");
+        #[cfg(not(test))]
       GraphBuilder {
           block_fail_fast: false,
           telemetry_metric_features: steady_config::TELEMETRY_SERVER,
@@ -769,23 +772,7 @@ impl Graph {
         }
     }
 
-    //TODO: need graph builder for the construction here..
 
-    /// Creates a new graph for the application, typically done in `main`.
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - The arguments for the graph.
-    ///
-    /// # Returns
-    ///
-    /// A new `Graph` instance.
-    pub fn new<A: Any + Send + Sync>(args: A) -> Graph {
-        #[cfg(test)]
-        panic!("should not call new in tests");
-        #[cfg(not(test))]
-        GraphBuilder::for_production().build(args)
-    }
 
 
     /// Creates a new graph for normal or unit test use.
