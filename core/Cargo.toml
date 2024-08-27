@@ -76,11 +76,11 @@ async-ringbuf    = "0.3.0"  # foundational bounded message passing
 log              = "0.4.22"  # common logging traits
                   # great logger but I would like to see a new crate using
                   # nuclei with log to provide a more async friendly logger
-flexi_logger     = "0.28.5"  # default flexable logging implementation
+flexi_logger     = "0.29.0"  # default flexable logging implementation
 futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
 hdrhistogram     = "7.5.4"  # for latency histograms
-bytes            = { version = "1.6.0", features = [] }
-lazy_static      = "1.4"
+bytes            = { version = "1.7.1", features = [] }
+lazy_static      = "1.5.0"
 uuid             = { version = "1.8.0", features = ["v4"] }
 num-traits       = "0.2.19" # for num::Zero and other generic math traits
 itoa             = "1.0.11"
