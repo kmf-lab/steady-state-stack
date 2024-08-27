@@ -176,126 +176,7 @@ pub trait RxTel: Send + Sync {
     fn is_empty_and_closed(&self) -> bool;
 }
 
-#[cfg(test)]
-pub(crate) mod monitor_tests {
-    use std::ops::DerefMut;
-    use async_std::test;
-    use lazy_static::lazy_static;
-    use std::sync::Once;
-    use std::time::Duration;
-    use futures_timer::Delay;
-    use crate::*;
 
-    lazy_static! {
-        static ref INIT: Once = Once::new();
-    }
-
-    /// Unit test for relay_stats_tx_custom.
-    #[test]
-    async fn test_relay_stats_tx_rx_custom() {
-        util::logger::initialize();
-
-        let mut graph = GraphBuilder::for_testing().build("");
-        let (tx_string, rx_string) = graph.channel_builder().with_capacity(8).build();
-        let tx_string = tx_string.clone();
-        let rx_string = rx_string.clone();
-
-        let monitor = graph.new_test_monitor("test");
-        let mut monitor = into_monitor!(monitor, [rx_string], [tx_string]);
-
-        let mut rxd = rx_string.lock().await;
-        let mut txd = tx_string.lock().await;
-
-        let threshold = 5;
-        let mut count = 0;
-        while count < threshold {
-            let _ = monitor.send_async(&mut txd, "test".to_string(), SendSaturation::Warn).await;
-            count += 1;
-        }
-
-        if let Some(ref mut tx) = monitor.telemetry.send_tx {
-            assert_eq!(tx.count[txd.local_index], threshold);
-        }
-
-        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
-        monitor.relay_stats_smartly();
-
-        if let Some(ref mut tx) = monitor.telemetry.send_tx {
-            assert_eq!(tx.count[txd.local_index], 0);
-        }
-
-        while count > 0 {
-            let x = monitor.take_async(&mut rxd).await;
-            assert_eq!(x, Some("test".to_string()));
-            count -= 1;
-        }
-
-        if let Some(ref mut rx) = monitor.telemetry.send_rx {
-            assert_eq!(rx.count[rxd.local_index], threshold);
-        }
-
-        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
-
-        monitor.relay_stats_smartly();
-
-        if let Some(ref mut rx) = monitor.telemetry.send_rx {
-            assert_eq!(rx.count[rxd.local_index], 0);
-        }
-    }
-
-    /// Unit test for relay_stats_tx_rx_batch.
-    #[test]
-    async fn test_relay_stats_tx_rx_batch() {
-        util::logger::initialize();
-
-        let mut graph = GraphBuilder::for_testing().build("");
-        let monitor = graph.new_test_monitor("test");
-
-        let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build();
-        let tx_string = tx_string.clone();
-        let rx_string = rx_string.clone();
-
-        let mut monitor = monitor.into_monitor([&rx_string], [&tx_string]);
-
-        let mut rx_string_guard = rx_string.lock().await;
-        let mut tx_string_guard = tx_string.lock().await;
-
-        let rxd: &mut Rx<String> = rx_string_guard.deref_mut();
-        let txd: &mut Tx<String> = tx_string_guard.deref_mut();
-
-        let threshold = 5;
-        let mut count = 0;
-        while count < threshold {
-            let _ = monitor.send_async(txd, "test".to_string(), SendSaturation::Warn).await;
-            count += 1;
-            if let Some(ref mut tx) = monitor.telemetry.send_tx {
-                assert_eq!(tx.count[txd.local_index], count);
-            }
-        }
-        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
-        monitor.relay_stats_smartly();
-
-        if let Some(ref mut tx) = monitor.telemetry.send_tx {
-            assert_eq!(tx.count[txd.local_index], 0);
-        }
-
-        while count > 0 {
-            let x = monitor.take_async(rxd).await;
-            assert_eq!(x, Some("test".to_string()));
-            count -= 1;
-        }
-        if let Some(ref mut rx) = monitor.telemetry.send_rx {
-            assert_eq!(rx.count[rxd.local_index], threshold);
-        }
-        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
-
-        monitor.relay_stats_smartly();
-
-        if let Some(ref mut rx) = monitor.telemetry.send_rx {
-            assert_eq!(rx.count[rxd.local_index], 0);
-        }
-    }
-}
 
 /// Finds the index of a given goal in the telemetry inverse local index.
 ///
@@ -1221,17 +1102,266 @@ impl<I> Iterator for DriftCountIterator<I>
 
 
 #[cfg(test)]
-mod more_monitor_tests {
+pub(crate) mod monitor_tests {
+
+    use crate::*;
     use super::*;
+    use std::ops::DerefMut;
+    use lazy_static::lazy_static;
+    use std::sync::Once;
+    use std::time::Duration;
+    use futures_timer::Delay;
     use std::sync::{Arc, RwLock};
     use futures::channel::oneshot;
     use std::time::Instant;
-    use std::sync::atomic::{AtomicU32, AtomicUsize};
+    use std::sync::atomic::{AtomicUsize};
     use crate::channel_builder::ChannelBuilder;
+
+    lazy_static! {
+        static ref INIT: Once = Once::new();
+    }
 
     // Helper method to build tx and rx arguments
     fn build_tx_rx() -> (oneshot::Sender<()>, oneshot::Receiver<()>) {
         oneshot::channel()
+    }
+
+    // Test for try_peek
+    #[test]
+    fn test_try_peek() {
+        let mut rx = create_rx(vec![1, 2, 3]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let result = monitor.try_peek(&mut rx);
+            assert_eq!(result, Some(&1));
+        };
+    }
+
+    // Test for take_slice
+    #[test]
+    fn test_take_slice() {
+        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let mut slice = [0; 3];
+        let mut context = test_steady_context();
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let count = monitor.take_slice(&mut rx, &mut slice);
+            assert_eq!(count, 3);
+            assert_eq!(slice, [1, 2, 3]);
+        };
+    }
+
+    // Test for try_peek_slice
+    #[test]
+    fn test_try_peek_slice() {
+        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let mut slice = [0; 3];
+        let mut context = test_steady_context();
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let count = monitor.try_peek_slice(&mut rx, &mut slice);
+            assert_eq!(count, 3);
+            assert_eq!(slice, [1, 2, 3]);
+        };
+    }
+
+
+
+    // Test wait_while_running method
+    #[async_std::test]
+    async fn test_wait_while_running() {
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context,[],[]);
+
+        let fut = monitor.wait_while_running();
+        assert_eq!(fut.await, Ok(()));
+
+    }
+
+
+    // Test is_empty method
+    #[test]
+    fn test_is_empty() {
+        let context = test_steady_context();
+        let mut rx = create_rx::<String>(vec![]); // Creating an empty Rx
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            assert!(monitor.is_empty(&mut rx));
+        };
+    }
+
+
+    // Test for is_full
+    #[test]
+    fn test_is_full() {
+        let (mut tx, _rx) = create_test_channel::<String>();
+        let context = test_steady_context();
+        let tx = tx.clone();
+        let mut monitor = into_monitor!(context,[],[tx]);
+
+        if let Some(mut tx) = tx.try_lock() {
+            assert!(!monitor.is_full(&mut tx));
+        };
+    }
+
+    // Test for vacant_units
+    #[test]
+    fn test_vacant_units() {
+        let (mut tx, _rx) = create_test_channel::<String>();
+        let context = test_steady_context();
+        let tx = tx.clone();
+        let mut monitor = into_monitor!(context,[],[tx]);
+
+        if let Some(mut tx) = tx.try_lock() {
+            let vacant_units = monitor.vacant_units(&mut tx);
+            assert_eq!(vacant_units, 64); // Assuming only one unit can be vacant
+        };
+    }
+
+    // Test for wait_empty
+    #[async_std::test]
+    async fn test_wait_empty() {
+        let (mut tx, _rx) = create_test_channel::<String>();
+        let tx  = tx.clone();
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context,[],[tx]);
+
+        if let Some(mut tx) = tx.try_lock() {
+            let empty = monitor.wait_empty(&mut tx).await;
+            assert!(empty);
+        };
+    }
+
+
+    // Test avail_units method
+    #[test]
+    fn test_avail_units() {
+        let mut rx = create_rx(vec![1, 2, 3]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            assert_eq!(monitor.avail_units(&mut rx), 3);
+        };
+    }
+
+    // Test for try_peek_iter
+    #[test]
+    fn test_try_peek_iter() {
+        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let mut iter = monitor.try_peek_iter(&mut rx);
+            assert_eq!(iter.next(), Some(&1));
+            assert_eq!(iter.next(), Some(&2));
+            assert_eq!(iter.next(), Some(&3));
+        };
+    }
+
+    // Test for peek_async_iter
+    #[async_std::test]
+    async fn test_peek_async_iter() {
+        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let mut iter = monitor.peek_async_iter(&mut rx, 3).await;
+            assert_eq!(iter.next(), Some(&1));
+            assert_eq!(iter.next(), Some(&2));
+            assert_eq!(iter.next(), Some(&3));
+        };
+    }
+
+    // Test for peek_async
+    #[async_std::test]
+    async fn test_peek_async() {
+        let mut rx = create_rx(vec![1, 2, 3]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let result = monitor.peek_async(&mut rx).await;
+            assert_eq!(result, Some(&1));
+        };
+    }
+
+    // Test for send_slice_until_full
+    #[test]
+    fn test_send_slice_until_full() {
+        let (mut tx, _rx) = create_test_channel();
+        let mut context = test_steady_context();
+        let tx = tx.clone();
+        let mut monitor = into_monitor!(context,[],[tx]);
+
+        let slice = [1, 2, 3];
+        if let Some(mut tx) = tx.try_lock() {
+            let sent_count = monitor.send_slice_until_full(&mut tx, &slice);
+            assert_eq!(sent_count, slice.len());
+        };
+    }
+
+    // Test for send_iter_until_full
+    #[test]
+    fn test_send_iter_until_full() {
+        let (mut tx, _rx) = create_test_channel();
+        let mut context = test_steady_context();
+        let tx = tx.clone();
+        let mut monitor = into_monitor!(context,[],[tx]);
+
+        let iter = vec![1, 2, 3].into_iter();
+        if let Some(mut tx) = tx.try_lock() {
+            let sent_count = monitor.send_iter_until_full(&mut tx, iter);
+            assert_eq!(sent_count, 3);
+        };
+    }
+
+    // Test for try_send
+    #[test]
+    fn test_try_send() {
+        let (mut tx, _rx) = create_test_channel();
+        let mut context = test_steady_context();
+        let tx = tx.clone();
+        let mut monitor = into_monitor!(context,[],[tx]);
+
+        if let Some(mut tx) = tx.try_lock() {
+            let result = monitor.try_send(&mut tx, 42);
+            assert!(result.is_ok());
+        };
+    }
+
+
+    // Test for take_into_iter
+    #[test]
+    fn test_take_into_iter() {
+        let mut rx = create_rx(vec![1, 2, 3]);
+        let mut context = test_steady_context();
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let mut iter = monitor.take_into_iter(&mut rx);
+            assert_eq!(iter.next(), Some(1));
+            assert_eq!(iter.next(), Some(2));
+            assert_eq!(iter.next(), Some(3));
+        };
+    }
+
+    // Test for call_async
+    #[async_std::test]
+    async fn test_call_async() {
+        let context = test_steady_context();
+        let monitor = into_monitor!(context,[],[]);
+
+        let fut = async { 42 };
+        let result = monitor.call_async(fut).await;
+        assert_eq!(result, Some(42));
     }
 
     // Common function to create a test SteadyContext
@@ -1297,5 +1427,109 @@ mod more_monitor_tests {
     }
 
 
-}
+    /// Unit test for relay_stats_tx_custom.
+    #[async_std::test]
+    async fn test_relay_stats_tx_rx_custom() {
+        util::logger::initialize();
 
+        let mut graph = GraphBuilder::for_testing().build("");
+        let (tx_string, rx_string) = graph.channel_builder().with_capacity(8).build();
+        let tx_string = tx_string.clone();
+        let rx_string = rx_string.clone();
+
+        let monitor = graph.new_test_monitor("test");
+        let mut monitor = into_monitor!(monitor, [rx_string], [tx_string]);
+
+        let mut rxd = rx_string.lock().await;
+        let mut txd = tx_string.lock().await;
+
+        let threshold = 5;
+        let mut count = 0;
+        while count < threshold {
+            let _ = monitor.send_async(&mut txd, "test".to_string(), SendSaturation::Warn).await;
+            count += 1;
+        }
+
+        if let Some(ref mut tx) = monitor.telemetry.send_tx {
+            assert_eq!(tx.count[txd.local_index], threshold);
+        }
+
+        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
+        monitor.relay_stats_smartly();
+
+        if let Some(ref mut tx) = monitor.telemetry.send_tx {
+            assert_eq!(tx.count[txd.local_index], 0);
+        }
+
+        while count > 0 {
+            let x = monitor.take_async(&mut rxd).await;
+            assert_eq!(x, Some("test".to_string()));
+            count -= 1;
+        }
+
+        if let Some(ref mut rx) = monitor.telemetry.send_rx {
+            assert_eq!(rx.count[rxd.local_index], threshold);
+        }
+
+        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
+
+        monitor.relay_stats_smartly();
+
+        if let Some(ref mut rx) = monitor.telemetry.send_rx {
+            assert_eq!(rx.count[rxd.local_index], 0);
+        }
+    }
+
+    /// Unit test for relay_stats_tx_rx_batch.
+    #[async_std::test]
+    async fn test_relay_stats_tx_rx_batch() {
+        util::logger::initialize();
+
+        let mut graph = GraphBuilder::for_testing().build("");
+        let monitor = graph.new_test_monitor("test");
+
+        let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build();
+        let tx_string = tx_string.clone();
+        let rx_string = rx_string.clone();
+
+        let mut monitor = monitor.into_monitor([&rx_string], [&tx_string]);
+
+        let mut rx_string_guard = rx_string.lock().await;
+        let mut tx_string_guard = tx_string.lock().await;
+
+        let rxd: &mut Rx<String> = rx_string_guard.deref_mut();
+        let txd: &mut Tx<String> = tx_string_guard.deref_mut();
+
+        let threshold = 5;
+        let mut count = 0;
+        while count < threshold {
+            let _ = monitor.send_async(txd, "test".to_string(), SendSaturation::Warn).await;
+            count += 1;
+            if let Some(ref mut tx) = monitor.telemetry.send_tx {
+                assert_eq!(tx.count[txd.local_index], count);
+            }
+        }
+        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
+        monitor.relay_stats_smartly();
+
+        if let Some(ref mut tx) = monitor.telemetry.send_tx {
+            assert_eq!(tx.count[txd.local_index], 0);
+        }
+
+        while count > 0 {
+            let x = monitor.take_async(rxd).await;
+            assert_eq!(x, Some("test".to_string()));
+            count -= 1;
+        }
+        if let Some(ref mut rx) = monitor.telemetry.send_rx {
+            assert_eq!(rx.count[rxd.local_index], threshold);
+        }
+        Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
+
+        monitor.relay_stats_smartly();
+
+        if let Some(ref mut rx) = monitor.telemetry.send_rx {
+            assert_eq!(rx.count[rxd.local_index], 0);
+        }
+    }
+}

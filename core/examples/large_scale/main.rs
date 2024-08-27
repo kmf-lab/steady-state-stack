@@ -41,7 +41,9 @@ fn main() {
     if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
-    let mut graph = build_graph(GraphBuilder::for_production().build(opt.clone()));
+    let mut graph = build_graph(GraphBuilder::for_production()
+        .with_telemtry_production_rate_ms(2000)
+        .build(opt.clone()));
 
     graph.start();
 
