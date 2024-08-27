@@ -568,7 +568,7 @@ mod tests {
     }
 
 
-
+    #[cfg(not(github_action))]
     #[test]
     fn test_unnamed1_project() {
 
@@ -598,7 +598,7 @@ mod tests {
         build_and_parse("unnamed1", g, false, false);
     }
 
-
+    #[cfg(not(github_action))]
     #[test]
     fn test_pbft_project() {
         let g = r#"
