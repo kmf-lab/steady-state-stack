@@ -19,6 +19,6 @@ jobs:
     - name: Clean
       run: cargo clean
     - name: Build
-      run: cargo build --cfg github_action --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
+      run: cargo build --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
     - name: Run tests
       run: cargo test --cfg github_action --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
