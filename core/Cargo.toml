@@ -5,7 +5,7 @@ documentation = "https://docs.rs/steady_state/0.0.19/steady_state/"
                #"https://docs.rs/crate/steady_state/0.0.19"  #debugging
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2021"
-description = "Framework for building long runnnig low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses earlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
+description = "Framework for building long running low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses Erlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
 build = "build.rs" # assumes we have gzip and base64 installed, the base64 crate is very broken and must not be used.
 
