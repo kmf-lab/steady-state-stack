@@ -472,7 +472,7 @@ version = "0.0.20"
 dependencies = [
  "askama",
  "dot-parser",
- "flexi_logger 0.28.5",
+ "flexi_logger",
  "log",
  "num-traits",
  "structopt",
@@ -877,20 +877,6 @@ checksum = "324a1be68054ef05ad64b861cc9eaf1d623d2d8cb25b4bf2cb9cdd902b4bf253"
 dependencies = [
  "crc32fast",
  "miniz_oxide 0.8.0",
-]
-
-[[package]]
-name = "flexi_logger"
-version = "0.28.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cca927478b3747ba47f98af6ba0ac0daea4f12d12f55e9104071b3dc00276310"
-dependencies = [
- "chrono",
- "glob",
- "log",
- "nu-ansi-term",
- "regex",
- "thiserror",
 ]
 
 [[package]]
@@ -2560,7 +2546,7 @@ dependencies = [
  "colored",
  "dirs",
  "env_logger",
- "flexi_logger 0.29.0",
+ "flexi_logger",
  "futures",
  "futures-timer",
  "futures-util",

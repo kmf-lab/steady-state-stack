@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::mem;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use bytes::Bytes;
 
 #[allow(unused_imports)]
@@ -40,7 +40,7 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
         let _clean = wait_for_all!(
             monitor.wait_periodic(Duration::from_millis(500)),
             monitor.wait_vacant_units_bundle(&mut tx, limit, GIRTH)
-        ).await;
+        );
 
 
         loop {
@@ -80,30 +80,35 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     let mut tx:TxBundle<Packet> = tx.lock().await;
 
     if let Some(mut responder) = monitor.sidechannel_responder() { //outside
+        //info!("test generator running");
+        while monitor.is_running(&mut || tx.mark_closed()) {
 
-    while monitor.is_running(&mut || tx.mark_closed()) {
-
-
-            let _clean = wait_for_all!(
-                responder.wait_available_units(1),
+            let now = Instant::now();
+            //info!("waiting for responder units");
+            let clean = wait_for_all!(
+               // monitor.wait_periodic(Duration::from_millis(500))
+                responder.wait_available_units(1)
+                ,
                 monitor.wait_vacant_units_bundle(&mut tx, 1, GIRTH)
-            ).await;
+            );
+            let duration = now.elapsed();
+            //info!("got a responder and we have room to write, clean: {} duration:{:?}",clean,duration);
+
+           if clean {
+               let responder = responder.respond_with(|message| {
+                   let msg: &Packet = message.downcast_ref::<Packet>().expect("error casting");
+                   let index = compute_index(&mut tx, msg);
+                   match monitor.try_send(&mut tx[index], msg.clone()) {
+                       Ok(()) => Box::new("ok".to_string()),
+                       Err(m) => Box::new(format!("{:?}", m)),
+                   }
+               }).await;
+           }
 
 
-
-            let responder = responder.respond_with(|message| {
-                let msg: &Packet = message.downcast_ref::<Packet>().expect("error casting");
-                let index = compute_index(&mut tx, msg);
-                match monitor.try_send(&mut tx[index], msg.clone()) {
-                    Ok(()) => Box::new("ok".to_string()),
-                    Err(m) => Box::new(format!("{:?}",m)),
-                }
-            }).await;
-
-
+          monitor.relay_stats_smartly();
         }
-        monitor.relay_stats_smartly();
-
+      //  info!("shutdown generator");
     }
     Ok(())
 }

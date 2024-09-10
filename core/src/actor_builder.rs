@@ -227,6 +227,12 @@ impl<I> Clone for SteadyContextArchetype<I> {
     }
 }
 
+
+pub enum Threading<'a> {
+    Spawn,
+    Join(&'a mut ActorTeam),
+}
+
 impl ActorBuilder {
     /// Creates a new `ActorBuilder` instance, initializing it with defaults and configurations derived from the given `Graph`.
     ///
@@ -502,6 +508,28 @@ impl ActorBuilder {
     {
         let rate = self.frame_rate_ms;
         target.add_actor(self.single_actor_exec_archetype(build_actor_exec), rate);
+    }
+
+    /// Builds actor but can either spawn or team the threading based on enum
+    ///
+    /// # Type Parameters
+    ///
+    /// * `F` - The future returned by the execution logic.
+    /// * `I` - The execution logic, a function taking a `SteadyContext` and returning `F`.
+    ///
+    /// # Arguments
+    ///
+    /// * `build_actor_exec` - The execution logic for the actor.
+    /// * `threading` - The `Threading` to use for the actor.
+    pub fn build<F, I>(self, build_actor_exec: I, threading: &mut Threading)
+    where
+        I: Fn(SteadyContext) -> F + 'static + Sync + Send,
+        F: Future<Output = Result<(), Box<dyn Error>>> + 'static + Send,
+    {
+        match threading {
+            Threading::Spawn =>      {self.build_spawn(build_actor_exec);}
+            Threading::Join(team) => {self.build_join(build_actor_exec, team);}
+        }
     }
 
     /// Creates a `SteadyContextArchetype` for actor execution, encapsulating the necessary parameters and state.

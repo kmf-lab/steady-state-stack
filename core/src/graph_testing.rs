@@ -133,7 +133,7 @@ impl SideChannelHub {
             let (tx, rx) = sc_guard.deref_mut();
             match tx.push(msg).await {
                 Ok(_) => {
-                    //warn!("pushed message to node: {:?}", id);
+                    //trace!("pushed message to node: {:?}", id);
                     //do nothing else but immediately get the response for more deterministic testing
                     return rx.pop().await;
                 }
@@ -191,7 +191,11 @@ impl SideChannelResponder {
     ///
     /// * `f` - A function that takes a message and returns a response.
     ///
-    pub async fn respond_with<F>(&self, mut f: F)
+    /// # Returns
+    ///
+    /// true if we found something and responded to it
+    ///
+    pub async fn respond_with<F>(&self, mut f: F) -> bool
         where
             F: FnMut(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync>,
     {
@@ -203,17 +207,16 @@ impl SideChannelResponder {
             //      happen if the main test block is not consuming the answers to the questions
             //NOTE: this should never block on shutdown since above we immediately pull the answer
             match tx.push(f(q)).await {
-                Ok(_) => {}
+                Ok(_) => {true }
                 Err(e) => {
                     error!("Error sending test implementation response: {:?}", e);
+                    false
                 }
             }
+        } else {
+            false
         }
-
     }
-
-
-
 }
 
 

@@ -43,7 +43,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<WidgetInventory>
                             ,monitor.wait_avail_units(&mut rx, BATCH_SIZE)
                             ,monitor.wait_vacant_units(&mut tx, BATCH_SIZE)
                             ,monitor.wait_vacant_units(&mut feedback, 1)
-        ).await;
+        );
 
         let count = monitor.take_slice(&mut rx, &mut buffer);
         let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);

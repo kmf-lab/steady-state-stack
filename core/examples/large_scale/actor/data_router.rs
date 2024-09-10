@@ -15,6 +15,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , rx: SteadyRx<Packet>
                  , tx: SteadyTxBundle<Packet,GIRTH>
                 ) -> Result<(),Box<dyn Error>> {
+
     internal_behavior(context, one_of, rx, tx).await
 }
 
@@ -30,11 +31,13 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext, one_of: us
 
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
-        wait_for_all_or_proceed_upon!(
+       // info!("router a");
+        let clean = wait_for_all_or_proceed_upon!(
             monitor.wait_periodic(Duration::from_millis(40)),
             monitor.wait_avail_units(&mut rx,2),
             monitor.wait_vacant_units_bundle(&mut tx,count/2,_tx_girth)
-        ).await;
+        );
+       // info!("router b");
 
         let mut iter = monitor.take_into_iter(&mut rx);
         while let Some(t) = iter.next() {

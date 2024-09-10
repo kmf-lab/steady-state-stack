@@ -17,7 +17,7 @@ macro_rules! wait_for_all {
             let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
             let _ = futures::join!($( wrap_bool_future(flag.clone(), $t) ),*);
             flag.load(std::sync::atomic::Ordering::Relaxed)
-        }
+        }.await
     };
 }
 
@@ -57,7 +57,7 @@ macro_rules! wait_for_all_or_proceed_upon {
             };
 
             flag.load(Ordering::Relaxed)
-        }
+        }.await
     };
 }
 
@@ -90,7 +90,7 @@ macro_rules! wait_for_any {
             res;  // This ensures the future has been awaited
 
             flag.load(Ordering::Relaxed)
-        }
+        }.await
     };
 }
 
@@ -165,28 +165,28 @@ mod tests {
         assert!(!flag.load(Ordering::Relaxed));
     }
 
-    #[test]
-    fn test_wait_for_all_true() {
+    #[async_std::test]
+    async fn test_wait_for_all_true() {
         let future1 = ready(true);
         let future2 = ready(true);
         let future3 = ready(true);
 
-        let result = block_on(wait_for_all!(future1, future2, future3));
+        let result = wait_for_all!(future1, future2, future3);
         assert!(result);
     }
 
-    #[test]
-    fn test_wait_for_all_false() {
+    #[async_std::test]
+    async fn test_wait_for_all_false() {
         let future1 = ready(true);
         let future2 = ready(false);
         let future3 = ready(true);
 
-        let result = block_on(wait_for_all!(future1, future2, future3));
+        let result = wait_for_all!(future1, future2, future3);
         assert!(!result);
     }
 
-    #[test]
-    fn test_wait_for_all_or_proceed_upon_first_complete() {
+    #[async_std::test]
+    async fn test_wait_for_all_or_proceed_upon_first_complete() {
         let future1 = ready(true);
         let future2 = async {
             Delay::new(Duration::from_millis(10)).await;
@@ -197,12 +197,12 @@ mod tests {
             true
         };
 
-        let result = block_on(wait_for_all_or_proceed_upon!(future1, future2, future3));
+        let result = wait_for_all_or_proceed_upon!(future1, future2, future3);
         assert!(result);
     }
 
-    #[test]
-    fn test_wait_for_all_or_proceed_upon_rest_complete() {
+    #[async_std::test]
+    async fn test_wait_for_all_or_proceed_upon_rest_complete() {
         let future1 = async {
             Delay::new(Duration::from_millis(10)).await;
             true
@@ -210,12 +210,12 @@ mod tests {
         let future2 = ready(true);
         let future3 = ready(true);
 
-        let result = block_on(wait_for_all_or_proceed_upon!(future1, future2, future3));
+        let result = wait_for_all_or_proceed_upon!(future1, future2, future3);
         assert!(result);
     }
 
-    #[test]
-    fn test_wait_for_all_or_proceed_upon_false() {
+    #[async_std::test]
+    async fn test_wait_for_all_or_proceed_upon_false() {
         let future1 = async {
             Delay::new(Duration::from_millis(10)).await;
             true
@@ -223,7 +223,7 @@ mod tests {
         let future2 = ready(false);
         let future3 = ready(true);
 
-        let result = block_on(wait_for_all_or_proceed_upon!(future1, future2, future3));
+        let result = wait_for_all_or_proceed_upon!(future1, future2, future3);
         assert!(!result);
     }
 }

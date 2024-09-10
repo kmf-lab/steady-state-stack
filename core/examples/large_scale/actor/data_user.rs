@@ -18,9 +18,8 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>) -> Resu
     let mut rx = rx.lock().await;
     let mut _count = 0;
     while monitor.is_running(&mut || rx.is_closed_and_empty()) {
-        yield_now::yield_now().await;
 
-        wait_for_all!(monitor.wait_avail_units(&mut rx, 1)).await;
+        wait_for_all!(monitor.wait_avail_units(&mut rx, 1));
 
         while let Some(packet) = monitor.try_take(&mut rx) {
             assert_eq!(packet.data.len(), 62);
@@ -43,23 +42,23 @@ pub async fn run(context: SteadyContext
 
     let mut monitor = into_monitor!(context, [&rx], []);
 
-    if let Some(mut simulator) = monitor.sidechannel_responder() { //Outside is running. allocaste new...
+    if let Some(mut reponder) = monitor.sidechannel_responder() {
 
         //guards for the channels, NOTE: we could share one channel across actors.
         let mut rx = rx.lock().await;
-        let mut done = false;
         while monitor.is_running(&mut || rx.is_closed_and_empty()) {
 
+            let clean = wait_for_all!(
+                  reponder.wait_available_units(1),
+                  monitor.wait_avail_units(&mut rx, 1)
+            );
 
-            wait_for_all!(
-                  simulator.wait_available_units(1),
-                  monitor.wait_avail_units(&mut rx, 1));
-
-            if !done {
-                simulator.respond_with(|expected| {
-                    done = true;
+            if clean  {
+               // info!("user respond");
+                reponder.respond_with(|expected| {
                     match monitor.try_take(&mut rx) {
                         Some(measured) => {
+
                             let expected: &Packet = expected.downcast_ref::<Packet>().expect("error casting");
                             //do not check the route id since it could be any random one of the users and is expected to not match
                             if expected.data.eq(&measured.data) {
@@ -71,19 +70,15 @@ pub async fn run(context: SteadyContext
                                 error!("failure: {}", failure);
                                 Box::new(failure)
                             }
+
                         },
                         None => Box::new("no data, should await until rx has data before response ".to_string()),
                     }
                 }).await;
+               //TODO: add this feature  return Ok(()); //TODO: if we leave early do we get a vote on shutdown??  BUG to fix..
             }
 
             monitor.relay_stats_smartly();
-
-            // if done {
-            //       break;//TODO: if an actor stops early we need to get its vote
-            // }
-
-
 
         }
     }

@@ -34,7 +34,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
         let _clean = wait_for_all!(   monitor.wait_avail_units(&mut rx,1)
-                                     ,monitor.wait_vacant_units(&mut tx,1)   ).await;
+                                     ,monitor.wait_vacant_units(&mut tx,1)   );
 
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels

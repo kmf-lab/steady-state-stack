@@ -272,18 +272,12 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// `true` if the monitor is running, otherwise `false`.
     #[inline]
     pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
+        // in case we are in a tight loop and need to let other actors run on this thread.
+        executor::block_on(yield_now::yield_now());
+
         //warn!("is_running here {:?}", self.ident);
         match self.runtime_state.read() {
             Ok(liveliness) => {
-               // warn!("released_is_running here {:?}", self.ident);
-
-                // //TODO: if we never run then this oneshot never fired either !!!
-                // let one_down = &mut self.oneshot_shutdown.lock().await;
-                // let waker = task::noop_waker();
-                // let mut context = task::Context::from_waker(&waker);
-                // self.is_closed.poll_unpin(&mut context).is_ready()
-
-
                 liveliness.is_running(self.ident, accept_fn)
             },
             Err(e) => {
@@ -518,15 +512,26 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 .boxed() // Box the future to make them the same type
         });
 
-        let futures: Vec<_> = futures.collect();
-        let mut futures = futures;
+        let mut futures: Vec<_> = futures.collect();
+
+        //this adds one extra feature as the last one
+        futures.push( async move {
+            let guard = &mut self.oneshot_shutdown.lock().await;
+            if !guard.is_terminated() {
+                let _ = guard.deref_mut().await;
+            }
+        }.boxed());
 
         while !futures.is_empty() {
             // Wait for the first future to complete
-            let (_result, _index, remaining) = select_all(futures).await;
+            let (_result, index, remaining) = select_all(futures).await;
+            if remaining.len() == index { //we had the last one finish
+                result.store(false, Ordering::Relaxed);
+                break;
+            }
             futures = remaining;
             count_down -= 1;
-            if 0 == count_down {
+            if count_down <= 1 {
                 break;
             }
         }
@@ -564,19 +569,29 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
-            }
-                .boxed() // Box the future to make them the same type
+            }.boxed() // Box the future to make them the same type
         });
 
-        let futures: Vec<_> = futures.collect();
-        let mut futures = futures;
+        let mut futures: Vec<_> = futures.collect();
+
+        //this adds one extra feature as the last one
+        futures.push( async move {
+            let guard = &mut self.oneshot_shutdown.lock().await;
+            if !guard.is_terminated() {
+                let _ = guard.deref_mut().await;
+            }
+        }.boxed());
 
         while !futures.is_empty() {
             // Wait for the first future to complete
-            let (_result, _index, remaining) = select_all(futures).await;
+            let (_result, index, remaining) = select_all(futures).await;
+            if remaining.len() == index { //we had the last one finish
+                result.store(false, Ordering::Relaxed);
+                break;
+            }
             futures = remaining;
             count_down -= 1;
-            if 0 == count_down {
+            if count_down <= 1 { //we may have 1 left for the shutdown
                 break;
             }
         }

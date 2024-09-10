@@ -27,7 +27,7 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
         let _clean = wait_for_all!(
                                 monitor.wait_avail_units(&mut ticks_rx_lock,BATCH),
                                 monitor.wait_vacant_units(&mut ticks_tx_lock,BATCH)
-                               ).await;
+                               );
         let count = monitor.take_slice(&mut ticks_rx_lock, &mut buffer);
         monitor.send_slice_until_full(&mut ticks_tx_lock, &buffer[0..count]);
         monitor.relay_stats_smartly();

@@ -45,7 +45,7 @@ pub(crate) async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Appro
 
     //predicate which affirms or denies the shutdown request
     while monitor.is_running(&mut || rx.is_closed_and_empty()) {
-        let _clean = wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
+        let _clean = wait_for_all!(monitor.wait_avail_units(&mut rx,1));
 
         //example of high volume processing, we stay here until there is no more work BUT
         //we must also relay our telemetry data periodically
@@ -78,7 +78,7 @@ pub async fn run(context: SteadyContext
     if let Some(simulator) = monitor.sidechannel_responder() {
         while monitor.is_running(&mut || rx.is_closed_and_empty()) {
 
-        let _clean = wait_for_all!(monitor.wait_avail_units(&mut rx,1)).await;
+        let _clean = wait_for_all!(monitor.wait_avail_units(&mut rx,1));
             simulator.respond_with(|expected| {
                 match monitor.try_take(&mut rx) {
                     Some(measured) => {

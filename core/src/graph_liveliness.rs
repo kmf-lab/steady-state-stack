@@ -226,10 +226,12 @@ impl GraphLiveliness {
             abstract_executor::block_on(async move {
                 let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
                 while let Some(f) = one_shots.pop() {
-                    info!("one shot shutdown for one actor");
+                    //trace!("one shot shutdown for one actor");
                     f.send(()).expect("oops");
                 }
             });
+        } else {
+            warn!("requesting shutdown but not running");
         }
     }
 
@@ -418,6 +420,12 @@ pub struct GraphBuilder {
     iouring_queue_length: u32,
     telemtry_production_rate_ms: u64
     
+}
+
+impl Default for GraphBuilder {
+    fn default() -> Self {
+        GraphBuilder::for_production()
+    }
 }
 
 impl GraphBuilder {
@@ -641,7 +649,7 @@ impl Graph {
     /// Starts the graph.
     ///
     /// This should be done after building the graph.
-    pub fn start_with_timeout(&mut self, duration:Duration) {
+    pub fn start_with_timeout(&mut self, duration:Duration) -> bool {
         // error!("start called");
 
         // If we are not in release mode we will enable fail-fast
@@ -660,10 +668,14 @@ impl Graph {
                 state.wait_for_registrations(duration);
                 if !state.is_in_state(&[GraphLivelinessState::Running]) {
                     error!("timeout on startup, graph is not in the running state");
+                    false
+                } else {
+                    true
                 }
             }
             Err(e) => {
                 error!("failed to start graph: {:?}", e);
+                false
             }
         }
     }
