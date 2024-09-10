@@ -58,6 +58,7 @@ This will be helpful in continuing the LLM interactions later as needed if we st
 
 Here is an example output that I would save to disk as input to my code generator:
 
+```
 diagraph PRODUCT {
      AwsEc2Manager [label="Spin up EC2 instances mod::aws AtLeastEvery(60sec) && OnEvent(cmd:1)"];
      BigBrain [label="Deside what to do mod::brain OnEvent(txt:1||status:1)"];
@@ -66,6 +67,7 @@ diagraph PRODUCT {
      AwsEc2Manager -> BigBrain [label="name::status <Ec2Status> >>PeekCopy #20"];
      TextTaker -> BigBrain [label="name::txt <FreeFormText> >>Take #100"];     
 }
+```
 
 
 After familiarizing yourself with these instructions, please acknowledge your readiness by responding with a simple "Tell me about the service or product you would like to build.".
