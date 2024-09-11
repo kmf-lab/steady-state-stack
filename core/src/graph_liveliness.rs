@@ -18,7 +18,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
-use std::{thread};
+use std::{io, thread};
+use std::io::Write;
+use std::panic::PanicHookInfo;
 use colored::Colorize;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Sender};
@@ -573,53 +575,56 @@ impl Graph {
     ///
     /// Runtime disable of fail-fast so we can unit test the recovery of panics
     /// where normally in a test condition we would want to fail fast.
-    fn enable_fail_fast(&self) {
+    pub fn enable_fail_fast(&self) {
         // Runtime disable of fail-fast so we can unit test the recovery of panics
         // where normally in a test condition we would want to fail fast
         if !self.block_fail_fast {
             std::panic::set_hook(Box::new(|panic_info| {
-                // Capture the backtrace
-                let backtrace = Backtrace::capture();
-                // Pretty print the backtrace if it's captured
-                match backtrace.status() {
-                    BacktraceStatus::Captured => {
-                        eprintln!("{:?}", panic_info);
-                        eprintln!("{:?}", backtrace.status());
-
-                        let backtrace_str = format!("{:#?}", backtrace);
-
-                        let mut is_first_unknown_line = true;
-                        for line in backtrace_str.lines() {
-                            if line.contains("steady_state") || line.contains("Backtrace [") || line.contains("nuclei::proactor::") {
-                                // Avoid printing our line we used for generating the stack trace
-                                if !line.contains("graph_liveliness::<impl steady_state::Graph>::enable_fail_fast") {
-                                    // Make the steady_state lines green
-                                    eprintln!("{}", line.green());
-                                    // Stop early since we have the bottom of the actor
-                                    if line.contains("steady_state::actor_builder::launch_actor") {
-                                        eprintln!("{}", "]".green());
-                                        break;
-                                    }
-                                }
-                            } else {
-                                // If is first it is the call to this function and not something to review.
-                                if is_first_unknown_line || line.contains("::panicking::") || line.contains("::backtrace::") || line.contains("begin_unwind") {
-                                    if log_enabled!(log::Level::Trace) {
-                                        eprintln!("{}", line.blue()); // No need to see the panic logic most of the time unless we are debugging
-                                    }
-                                } else {
-                                    eprintln!("{}", line);
-                                }
-                                is_first_unknown_line = false;
-                            }
-                        }
-                    }
-                    _ => {
-                        eprintln!("Backtrace could not be captured: {}", panic_info);
-                    }
-                }
+                Self::fail_fast_stack_trace(panic_info,&mut io::stderr());
                 exit(-1);
             }));
+        }
+    }
+
+    pub(crate) fn fail_fast_stack_trace<T, W>(panic_info: &T, writer: &mut W)
+    where
+        T: Debug,
+        W: Write,
+    {
+        // Capture the backtrace
+        let backtrace = Backtrace::capture();
+
+        // Write the backtrace information to the given writer
+        match backtrace.status() {
+            BacktraceStatus::Captured => {
+                writeln!(writer, "{:?}", panic_info).unwrap();
+                writeln!(writer, "{:?}", backtrace.status()).unwrap();
+
+                let backtrace_str = format!("{:#?}", backtrace);
+
+                let mut is_first_unknown_line = true;
+                for line in backtrace_str.lines() {
+                    if line.contains("steady_state") || line.contains("Backtrace [") || line.contains("nuclei::proactor::") {
+                        if !line.contains("graph_liveliness::<impl steady_state::Graph>::enable_fail_fast") {
+                            writeln!(writer, "{}", line).unwrap(); // Here you'd add color formatting if needed
+                            if line.contains("steady_state::actor_builder::launch_actor") {
+                                writeln!(writer, "]").unwrap();
+                                break;
+                            }
+                        }
+                    } else {
+                        if is_first_unknown_line || line.contains("::panicking::") || line.contains("::backtrace::") || line.contains("begin_unwind") {
+                            writeln!(writer, "{}", line).unwrap();
+                        } else {
+                            writeln!(writer, "{}", line).unwrap();
+                        }
+                        is_first_unknown_line = false;
+                    }
+                }
+            }
+            _ => {
+                writeln!(writer, "Backtrace could not be captured: {:?}", panic_info).unwrap();
+            }
         }
     }
 
@@ -627,17 +632,6 @@ impl Graph {
     pub fn sidechannel_director(&self) -> MutexLockFuture<'_, Option<SideChannelHub>> {
         self.backplane.lock()
     }
-
-    // /// Runs the full graph with an immediate stop which allows actors to cascade
-    // /// shutdown based on closed channels. Also makes use of an expected timeout.
-    // ///
-    // /// This is excellent for command line applications which take in data, do a
-    // /// specific job and then exit.  This is frequently used for unit tests of actors.
-    // pub fn start_as_data_driven(mut self, timeout: Duration) -> bool {
-    //     self.start(); //startup the graph
-    //     self.request_stop(); //let all actors close when inputs are closed
-    //     self.block_until_stopped(timeout) //wait for the graph to stop
-    // }
 
     /// Starts the graph.
     ///
@@ -856,3 +850,84 @@ impl Graph {
     }
 }
 
+
+
+
+#[cfg(test)]
+mod graph_liveliness_tests {
+    use crate::{Graph, GraphLivelinessState};
+
+    #[test]
+    fn test_fail_fast_stack_trace() {
+        let mut buffer = Vec::new();
+        let panic_info = "Test Panic Info";
+
+        // Call the function with the buffer
+        Graph::fail_fast_stack_trace(&panic_info, &mut buffer);
+
+        // Convert the buffer to a string to check the output
+        let output = String::from_utf8(buffer).unwrap();
+        assert!(output.contains("Test Panic Info"));
+    }
+
+
+    #[test]
+    fn test_graph_liveliness_state_equality() {
+        let building = GraphLivelinessState::Building;
+        let running = GraphLivelinessState::Running;
+        let stop_requested = GraphLivelinessState::StopRequested;
+        let stopped = GraphLivelinessState::Stopped;
+        let stopped_uncleanly = GraphLivelinessState::StoppedUncleanly;
+
+        // Ensure each state can be compared for equality and inequality
+        assert_eq!(building, GraphLivelinessState::Building);
+        assert_ne!(building, running);
+
+        assert_eq!(running, GraphLivelinessState::Running);
+        assert_ne!(running, stop_requested);
+
+        assert_eq!(stop_requested, GraphLivelinessState::StopRequested);
+        assert_ne!(stop_requested, stopped);
+
+        assert_eq!(stopped, GraphLivelinessState::Stopped);
+        assert_ne!(stopped, stopped_uncleanly);
+
+        assert_eq!(stopped_uncleanly, GraphLivelinessState::StoppedUncleanly);
+        assert_ne!(stopped_uncleanly, building);
+    }
+
+    #[test]
+    fn test_graph_liveliness_state_cloning() {
+        let building = GraphLivelinessState::Building;
+        let building_clone = building.clone();
+
+        // Verify cloning works and the clone is equal to the original
+        assert_eq!(building, building_clone);
+    }
+
+    #[test]
+    fn test_graph_liveliness_state_debug_output() {
+        let building = GraphLivelinessState::Building;
+
+        // Ensure Debug output works as expected
+        let debug_str = format!("{:?}", building);
+        assert_eq!(debug_str, "Building");
+    }
+
+    #[test]
+    fn test_pattern_matching_on_graph_liveliness_state() {
+        let state = GraphLivelinessState::Running;
+
+        // Test pattern matching
+        let result = match state {
+            GraphLivelinessState::Building => "Building",
+            GraphLivelinessState::Running => "Running",
+            GraphLivelinessState::StopRequested => "StopRequested",
+            GraphLivelinessState::Stopped => "Stopped",
+            GraphLivelinessState::StoppedUncleanly => "StoppedUncleanly",
+        };
+
+        assert_eq!(result, "Running");
+    }
+
+}

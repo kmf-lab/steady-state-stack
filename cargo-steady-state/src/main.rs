@@ -135,6 +135,7 @@ fn write_project_files(pm: ProjectModel
    actor_mods.dedup();
 
    fs::write(main_rs, templates::MainTemplate {
+        project_name: pm.name.clone(),
         test_only,
         actor_mods,
         channels: &pm.channels,
@@ -379,7 +380,7 @@ fn build_driver_block(actor: &Actor) -> String {
         if andy_drivers.is_empty() {
             full_driver_block.push_str("    let _clean = wait_for_all!(");
             full_driver_block.push_str(&t);
-            full_driver_block.push_str(").await;\n");
+            full_driver_block.push_str(");\n");
         } else {
             full_driver_block.push_str("    let _clean = wait_for_all_or_proceed_upon!(");
 
@@ -392,7 +393,7 @@ fn build_driver_block(actor: &Actor) -> String {
                 full_driver_block.push_str(t);
                 full_driver_block.push('\n');
             });
-            full_driver_block.push_str("    ).await;\n");
+            full_driver_block.push_str("    );\n");
         }
     } else {
         full_driver_block.push_str("    let _clean = wait_for_all!(");
@@ -402,7 +403,7 @@ fn build_driver_block(actor: &Actor) -> String {
             }
             full_driver_block.push_str(t);
         });
-        full_driver_block.push_str("    ).await;\n");
+        full_driver_block.push_str("    );\n");
     }
 
     full_driver_block
@@ -579,6 +580,7 @@ mod tests {
     EmailMover [label="Email Mover\nMoves spam emails to a designated folder"];
     ConfigLoader [label="Config Loader\nLoads configuration for IMAP and settings"];
     Logger [label="Logger\nLogs system activities for monitoring"];
+    __TossOut [label="TossOut\nnothing here"];
 
     ConfigLoader -> IMAPClient [label="name::cfg <ServerDetails> Imap server details\nemail, password"];
     ImapClient -> EmailFilter [label="name::email <Email> Emails\nRaw email data"];
@@ -587,7 +589,7 @@ mod tests {
     EmailFilter -> EmailMover [label="name::spam <SpamBody> Spam emails\nIdentified spam messages"];
     EmailMover -> Logger [label="name::email_log <SuccessLog> Move operations\nSuccess or failure logs"];
     ImapClient -> Logger [label="name::con_log <Connections> Connection logs\nSuccess or failure"];
-    EmailFilter -> Logger [label="name::filt_log <FilterLog> Filtering logs\nProcessed emails and results"];
+    EmailFilter -> Logger [label="name::filt_log Filtering logs\nProcessed emails and results"];
 
     edge [color=blue];
     node [style=filled, color=lightgrey];

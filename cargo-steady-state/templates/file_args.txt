@@ -1,5 +1,6 @@
 use flexi_logger::LogSpecification;
 use structopt_derive::StructOpt;
+use steady_state::SystemdCommand;
 
 #[derive(StructOpt, Debug, PartialEq, Clone)]
 pub struct Args {
@@ -25,6 +26,15 @@ impl Args {
                 , app
                 , self.loglevel
                )
+    }
+    pub(crate) fn systemd_action(&self) -> SystemdCommand {
+        if self.systemd_install {
+            SystemdCommand::Install
+        } else if self.systemd_uninstall {
+            SystemdCommand::Uninstall
+        } else {
+            SystemdCommand::None
+        }
     }
 }
 

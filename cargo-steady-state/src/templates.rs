@@ -180,6 +180,7 @@ pub(crate) struct ArgsTemplate {
 #[derive(Template)]
 #[template(path = "file_main.txt")]
 pub(crate) struct MainTemplate<'a> {
+    pub(crate) project_name: String,
     pub(crate) test_only: &'static str,
     pub(crate) actors: &'a Vec<Actor>,
     pub(crate) actor_mods: Vec<String>,

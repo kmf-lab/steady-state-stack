@@ -22,18 +22,26 @@ fn main() {
         //do not use logger to report logger could not start
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
-    info!("Starting up");
 
-    let mut graph = build_graph(steady_state::GraphBuilder::for_production().build(opt.clone()) );
+    let service_executable_name = "{{project_name}}";
+    let service_user = "{{project_name}}_user";
+    let systemd_command = SystemdBuilder::process_systemd_commands(  opt.systemd_action()
+                                                   , opt.to_cli_string(service_executable_name)
+                                                   , service_executable_name
+                                                   , service_user);
 
-    graph.start();
+    if !systemd_command {
+        info!("Starting up");
+        let mut graph = build_graph(steady_state::GraphBuilder::for_production().build(opt.clone()) );
+        graph.start();
 
-    {  //remove this block to run forever.
-       std::thread::sleep(Duration::from_secs(60));
-       graph.request_stop(); //actors can also call stop as desired on the context or monitor
+        {  //remove this block to run forever.
+           std::thread::sleep(Duration::from_secs(60));
+           graph.request_stop(); //actors can also call stop as desired on the context or monitor
+        }
+
+        graph.block_until_stopped(Duration::from_secs(2));
     }
-
-    graph.block_until_stopped(Duration::from_secs(2));
 }
 
 fn build_graph(mut graph: Graph) -> steady_state::Graph {

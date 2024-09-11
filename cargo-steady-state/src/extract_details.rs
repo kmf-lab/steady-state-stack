@@ -36,11 +36,12 @@ fn extract_type_name_from_edge_label(label_text: &str, from_node: &str, to_node:
 
         let parts: Vec<String> = first_line.split_whitespace()
             .map(|s| {
+                let contains_colon  = s.contains(":");
                 let mut chars = s.chars();
                 match chars.next() {
                     Some(first_char) =>
                         {
-                            if first_char.is_alphabetic() {
+                            if first_char.is_alphabetic() && !contains_colon {
                                 first_char.to_uppercase().collect::<String>() + chars.as_str()
                             } else {
                                 format!("From{}To{}",from_node,to_node).to_string()
@@ -233,6 +234,7 @@ pub(crate) fn extract_project_model(name: &str, dot_graph: Graph<(String, String
                                          )
                                 )
                             .map(|(a,b)| (a.as_str(),b.as_str()))
+                            .filter(|(a,b)| !a.starts_with("__"))
                             .collect();
 
 

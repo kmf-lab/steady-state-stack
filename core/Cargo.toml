@@ -1,6 +1,6 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.20" # prep for 0.1.0 version
+version = "0.0.21" # prep for 0.1.0 version
 documentation = "https://docs.rs/steady_state/0.0.19/steady_state/"
                #"https://docs.rs/crate/steady_state/0.0.19"  #debugging
 authors = ["Nathan Tippy <nathan@tippy.name>"]

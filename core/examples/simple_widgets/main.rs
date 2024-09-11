@@ -46,7 +46,7 @@ fn main() {
     //TODO: 2025 add this as a feature to the code generator
     let service_executable_name = "simple_widgets";
     let service_user = "simple_widgets_user";
-    let systemd_command = process_systemd_commands(  opt.systemd_action()
+    let systemd_command = SystemdBuilder::process_systemd_commands(  opt.systemd_action()
                                                    , opt.to_cli_string(service_executable_name)
                                                    , service_executable_name
                                                    , service_user);
