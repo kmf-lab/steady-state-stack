@@ -18,7 +18,6 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: Ste
 
     let mut monitor = into_monitor!(context, [rx], [tx]);
 
-    //guards for the channels, NOTE: we could share one channel across actors.
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 

@@ -263,6 +263,11 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         self.ident
     }
 
+
+    //TODO: future feature to optimize threading, not yet implemented
+    //monitor.chain_channels([rx],tx); //any of the left channels may produce output on the right
+
+
     /// Checks if the LocalMonitor is running.
     ///
     /// # Parameters

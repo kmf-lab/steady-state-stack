@@ -15,7 +15,10 @@ macro_rules! wait_for_all {
     ($($t:expr),*) => {
         async {
             let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-            let _ = futures::join!($( wrap_bool_future(flag.clone(), $t) ),*);
+            // we do not check the rest if the early one is blocked since it saves cycles
+            $(
+                let _ = wrap_bool_future(flag.clone(), $t).await;
+            )*
             flag.load(std::sync::atomic::Ordering::Relaxed)
         }.await
     };
@@ -47,7 +50,11 @@ macro_rules! wait_for_all_or_proceed_upon {
 
             // Create the combined future for the rest and pin it
             let rest = async {
-                futures::join!($(wrap_bool_future(flag.clone(), $rest_futures)),*)
+                $(
+                    let next = wrap_bool_future(flag.clone(), $rest_futures).fuse();
+                    pin_mut!(next);
+                    next.await;
+                )*
             }.fuse();
             pin_mut!(rest);
 

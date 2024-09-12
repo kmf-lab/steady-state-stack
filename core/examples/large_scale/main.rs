@@ -41,9 +41,9 @@ fn main() {
     if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
-    let mut graph = build_graph::<2,2,2,2>(GraphBuilder::for_production()
-        .with_telemtry_production_rate_ms(2000)
-        .build(opt.clone()),false,false);
+    let mut graph = build_graph::<3,2,2,2>(GraphBuilder::for_production()
+        .with_telemtry_production_rate_ms(4000)
+        .build(opt.clone()),false,false,13); // (24* (N+3)) -> 400
 
     graph.start();
 
@@ -61,7 +61,7 @@ fn build_graph<const level_1: usize,
                const level_2: usize,
                const level_3: usize,
                const level_4: usize
-             >(mut graph: Graph, spawn_a: bool, spawn_b: bool) -> Graph {
+             >(mut graph: Graph, spawn_a: bool, spawn_b: bool, large_scale_test: usize) -> Graph {
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
@@ -209,7 +209,7 @@ fn build_graph<const level_1: usize,
                             let mut input_rx = filter_rx;
                             let mut output_rx = {
                                 //TODO: we need to profile this, also slow the frame rate
-                                let mut count = 1; //set for very large actor testing 5=200 9=300 13=400
+                                let mut count = large_scale_test;
                                 loop {
                                     let (logging_tx, logging_rx) = base_channel_builder.build();
 
@@ -303,7 +303,7 @@ mod large_tests {
         const LEVEL_4:usize = 2;
 
         //TODO: when we set first to false the unit test fails due to unclean shutdown (needs investigation)
-        let mut graph = build_graph::<LEVEL_1,LEVEL_2,LEVEL_3,LEVEL_4>(graph,true,false);
+        let mut graph = build_graph::<LEVEL_1,LEVEL_2,LEVEL_3,LEVEL_4>(graph,true,false,1);
         const KNOWN_USERS:usize = LEVEL_1 * LEVEL_2 * LEVEL_3 * LEVEL_4;
 
         //info!("finished building graph");
