@@ -71,8 +71,8 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
 nuclei           = { version = "0.4.4", optional = true } # foundational proactive runtime
-ringbuf          = "0.4.1"  # foundational bounded message passing
-async-ringbuf    = "0.3.0"  # foundational bounded message passing
+ringbuf          = "0.4.4"  # foundational bounded message passing
+async-ringbuf    = "0.3.1"  # foundational bounded message passing
 log              = "0.4.22"  # common logging traits
                   # great logger but I would like to see a new crate using
                   # nuclei with log to provide a more async friendly logger
@@ -81,7 +81,7 @@ futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used place
 hdrhistogram     = "7.5.4"  # for latency histograms
 bytes            = { version = "1.7.1", features = [] }
 lazy_static      = "1.5.0"
-uuid             = { version = "1.8.0", features = ["v4"] }
+uuid             = { version = "1.10.0", features = ["v4"] }
 num-traits       = "0.2.19" # for num::Zero and other generic math traits
 itoa             = "1.0.11"
 time             = { version = "0.3.36", features = ["macros","formatting", "parsing"] }
@@ -93,16 +93,15 @@ structopt-derive = "0.4.18" # adds Args::from_args() to your structopt struct
 
 futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3.30"
-parking_lot      = "0.12.2"# TODO: review our lock usage and possible use of parking_lot
+parking_lot      = "0.12.3"# TODO: review our lock usage and possible use of parking_lot
 serial_test      = "3.1.1" # for serializing tests
 
 # TODO: still in progess, this is for distributed instances across mutiple nodes
 stun-rs   = "0.1.8"
-rustdds   = "0.10.1"
-async-trait = "0.1.81"
-env_logger = "0.11.3"
+#rustdds   = "0.10.1"
+async-trait = "0.1.82"
+env_logger = "0.11.5"
 waker-fn = "1.2.0"
-tempdir = "0.3.7"
 tempfile = "3.12.0"
 
 
@@ -156,7 +155,6 @@ tempfile = "3.12.0"
 isahc            = "1.7.2"
 askama           = "0.12.1"
 tempfile = "3.12.0"  # for testing
-tempdir = "0.3.7"
 
 [[example]]
 name = "simple_widgets"
