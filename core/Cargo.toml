@@ -1,8 +1,7 @@
 [package]
 name = "steady_state"   # rename from sss
 version = "0.0.21" # prep for 0.1.0 version
-documentation = "https://docs.rs/steady_state/0.0.19/steady_state/"
-               #"https://docs.rs/crate/steady_state/0.0.19"  #debugging
+documentation = "https://docs.rs/steady_state/0.0.21/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2021"
 description = "Framework for building long running low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses Erlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
