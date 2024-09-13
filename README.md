@@ -1,37 +1,73 @@
-# Steady State: Pioneering Resilient Services with Rust
+# Steady State: Revolutionizing Resilient Service Development in Rust
 
-Welcome to the Steady State project, a pioneering effort to redefine the development of resilient, high-performance services using the Rust programming language. Steady State is designed from the ground up to tackle the most pressing challenges in service development today: ensuring reliability, performance, and observability at scale.
+Welcome to **Steady State**, an ambitious and opinionated project designed to redefine how we build resilient, high-performance services in Rust. We are actively seeking **sponsors** to join us on this journey to push the boundaries of what's possible in service reliability and efficiency.
 
-## Why Steady State?
+![Telemetry Visualization Example](core/simple-example.gif)
+*An animated GIF demonstrating real-time telemetry visualization in action.*
 
-In an era where digital services form the backbone of businesses across industries, the cost of downtime, inefficiency, and lack of visibility can be astronomical. Steady State arises as a solution to these challenges, providing a robust framework that empowers developers to build services that are not just fault-tolerant but thrive in the face of failure.
+![Complex Graph Snapshot](core/overload.png)
+*A snapshot of a more complex example.*
 
-### Unmatched Reliability
+## Why Sponsor Steady State?
 
-Drawing inspiration from the Erlang ecosystem, Steady State introduces an advanced supervision system that guarantees continuity and reliability. This means your services keep running, even when unexpected failures occur, minimizing downtime and maintaining business operations smoothly.
+In today's fast-paced digital landscape, businesses require services that are not only high-performing but also resilient and observable. **Steady State** is poised to meet these demands by offering a comprehensive framework that simplifies the development of robust services across various industries, including:
 
-### Performance at Scale
+- **Background Services**: Enhance backend processes with high throughput and fault tolerance.
+- **Robotics and IoT**: Ensure precise control and clean shutdowns in critical systems.
+- **Distributed Systems**: Build scalable architectures with built-in telemetry and performance monitoring.
 
-Steady State leverages Rust's efficiency and the actor model to offer high throughput and fine-grained control over latency. This ensures that your services can handle high volumes of messages and maintain consistent performance, crucial for meeting and exceeding stringent SLA requirements.
+Your sponsorship will accelerate the development of this groundbreaking framework, enabling features that will benefit the entire Rust community and beyond.
 
-### Comprehensive Observability
+## Key Features
 
-With built-in telemetry features, Steady State provides real-time insights into your services' performance. This embedded observability enables quick identification and resolution of bottlenecks, facilitating continuous optimization and improvement of service quality.
+### Flexible Concurrency Management
 
-## Commitment to the Community
+- **Easy Async**: Simplify asynchronous programming with ergonomic abstractions.
+- **Thread Management**: Easily configure actors to run on a single thread or distribute them across multiple threads for optimal performance.
 
-Steady State is not just a framework; it's a commitment to the future of resilient service development. We're building a community of developers, contributors, and users who share a passion for creating reliable, high-performance services with Rust. Join us on this exciting journey to shape the future of service development.
+### Clean Shutdown on Signal
 
-## Getting Started
+- **Graceful Termination**: Ensure all actors in the system shut down cleanly, preserving data integrity and system stability.
+- **Ideal for Critical Systems**: Perfect for robotics and IoT applications where orderly shutdowns are crucial.
 
-The project is structured into a main workspace with the core framework located in the `backend` folder. For detailed technical documentation, examples, and guides on how to use Steady State for your projects, please refer to the README in the `backend` folder.
+### Built-in Prometheus Integration
 
-### Contributing
+- **Real-Time Monitoring**: Collect metrics out of the box for immediate insights into system performance.
+- **Easy Integration**: Seamlessly connect with Prometheus for advanced analytics and alerting.
 
-We welcome contributions from the community! Whether it's reporting issues, submitting patches, or proposing new features, your input is valuable to us. Check out our contribution guidelines for more information on how you can get involved.
+### Comprehensive Testing Framework
 
-## License
+- **Individual Actor Testing**: Isolate and test actors to ensure each component functions correctly.
+- **Full Graph Testing**: Validate the entire system's behavior under various scenarios.
+- **Mock Actors**: Utilize mock actors for end-to-end and load testing without external dependencies.
 
-Steady State is open-source and licensed under the MIT license. Feel free to use, modify, and distribute it as per the license terms.
+## Where Can Steady State Be Used?
 
-Join us in revolutionizing the development of resilient, high-performance services with Rust. Together, we can build a future where digital services are more reliable, efficient, and observable than ever before.
+- **Backend Services**: Build scalable and resilient microservices.
+- **Robotics**: Control complex robotic systems with precise coordination and fault tolerance.
+- **IoT Devices**: Manage fleets of devices with reliable communication and clean shutdown capabilities.
+- **Financial Systems**: Ensure high availability and data consistency in transaction processing.
+
+## Roadmap
+
+We have an exciting roadmap ahead and your support can make it a reality:
+
+- **Enhanced Test Coverage**: More code coverage for maximum reliability.
+- **Video Tutorials**: Produce educational content to help developers adopt Steady State easily.
+- **Distributed Actors**: Expand capabilities to support network-wide graphs and distributed computing.
+- **Performance Enhancements**: Continually optimize for speed and efficiency.
+- **Additional Example Actors**: Provide a library of pre-built actors for common use cases.
+
+## Get Involved
+
+We invite you to be part of this transformative project. Your sponsorship will directly contribute to:
+
+- Accelerating feature development.
+- Expanding documentation and learning resources.
+- Building a stronger community around resilient Rust services.
+
+[**Sponsor Steady State on GitHub Today**](https://github.com/sponsors/kmf-lab)
+
+  
+                             
+       

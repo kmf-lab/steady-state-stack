@@ -78,9 +78,9 @@ After familiarizing yourself with these instructions, please acknowledge your re
 * I would like to build a system to demonstrate the PBFT (Practical Byzantine Fault Tolerance) across 5 actors.
 * Build me a chat server. 
 * My IOT home control needs a management system for my lights, garage and door locks.       
-       
-       
-       
+
+[Sponsor steady_state on GitHub Today](https://github.com/sponsors/kmf-lab)
+  
                              
        
        

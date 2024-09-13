@@ -1,52 +1,86 @@
-## steady_state: The Next Frontier in Rust Frameworks for Resilient Services
-'steady_state' embarks on an ambitious journey to revolutionize the development of resilient,
-high-performance services in Rust.  With a clear vision of integrating advanced latency management,
-system observability, and unparalleled fault tolerance, steady_state is designed to set new standards
-in software reliability and efficiency.
+# Steady State Core: The Foundation of Resilient Rust Services
 
-*Please note: these old snapshots may not match the most recent updates.
-![Telemetry Visualization Example](simple-example.gif)
-*An animated GIF demonstrating real-time telemetry visualization in action.*
-![Telemetry Visualization Example](overload.png)
-![Telemetry Visualization Example](overload2.png)
-*A snapshots of a more complex example
+Welcome to the **Steady State Core**, the backbone of the Steady State framework designed to empower developers to build resilient, high-performance services with ease.
 
-## Why `steady_state`?
+## Overview
 
-Named for its commitment to maintaining a consistent, optimal operational state, `steady_state` offers:
+The Steady State Core focuses on delivering essential features that ensure safety, reliability, and performance:
 
-- **Fine-Grained Latency Control**: Through customizable batch processing and adjustable channel lengths, empowering developers to meet rigorous SLA requirements.
-- **Embedded Observability**: Built-in telemetry features for real-time performance insights, facilitating targeted optimizations.
-- **Erlang-Inspired Fault Tolerance**: Leveraging an advanced supervision system to ensure service continuity, even in the face of unexpected failures.
-- **Clean Shutdown Logic**: Suitable for IoT, Robotics and many other systems which require well-ordered clean shutdown of actors.
+- **Safety and Concurrency**: Leverage Rust's memory safety guarantees with actor-based supervised threading for secure and manageable concurrency.
+- **High Throughput**: Handle high message volumes efficiently with support for batch processing in actors.
+- **Rapid Prototyping**: Use Graphviz DOT files to model your actor graph, then generate Rust code to focus on your business logic.
+- **Visibility and Observability**: Built-in telemetry provides real-time insights, enabling you to identify and resolve bottlenecks swiftly.
+  
+  ![Telemetry Visualization Example](simple-example.gif)
+  *An animated GIF demonstrating real-time telemetry visualization in action.*
 
+  ![Complex Graph Snapshot](overload.png)
+  *A snapshot of a more complex example.*
+## Key Features
 
-## Core Features
+### Built-in Prometheus Integration
 
-`steady_state` is crafted to ensure safety, reliability, and performance, focusing on:
+- **Metrics Collection**: Automatically gather performance metrics without additional setup.
+- **Customizable Metrics**: Extend and customize metrics to suit your application's needs.
 
-- **Safety and Concurrency**: Harnessing Rust's memory safety features and actor-based supervised threading for secure, durable, manageable concurrency.
-- **High Throughput**: Engineered for handling high message volumes with consistent processing capacity, crucial for demanding systems. Actors can consume and produce messages in batches for greater efficiency.
-- **Visibility**: Find and fix performance bottlenecks quickly with built-in telemetry, enabling real-time monitoring and analysis of your service's operational state.
-- **Rapid Prototyping**: Mock up your ideas in graphiz DOT files, then generate your Rust service project to get started.
+### Comprehensive Testing Framework
 
-# see the cargo-steady-state project
-- * You will write a small graphiz Dot file with clear annotations in the labels
-- * The code generator will take that dot and rough in your new project so business logic can be your focus.
-- * See the cargo-steady-state readme where we provide a LLM prompt so you can have a discussion with AI about your new product and then have it build the dot for you. 
+- **Actor Unit Testing**: Write tests for individual actors to ensure they function correctly in isolation.
+- **Graph Testing**: Validate the behavior of the entire actor graph under various conditions.
+- **Mocking Support**: Use mock actors to simulate components and external systems for thorough testing.
 
-## Vision and Roadmap
+### Flexible Actor Management
 
-`steady_state` is more than just a framework; it's a vision for building the future of service development in Rust. Our roadmap includes:
-- **App Wrappers**: Solutions for CLI, systemd, ROS2 or Kubernetes Operators 
-- **Cross-Machine Telemetry**: Extending observability across distributed system deployments, essential for comprehensive performance management.
-- **Prebuilt Actors for Cloud Services**: Simplifying the integration with popular cloud platforms and services.
+- **Async Made Easy**: Simplify asynchronous operations with built-in support.
+- **Thread Configuration**: Assign actors to single threads or have actors share threads for greater scale.
 
-### Commitment to Testing
+### Clean Shutdown Logic
 
-In `steady_state`, we prioritize rigorous testing to ensure service stability:
-- **Individual Actor Tests**: Roughing in tests for each actor to maintain clarity and ease of maintenance.
-- **Comprehensive Mock Actors**: Enabling full end-to-end and load testing capabilities for thorough validation of your service architecture without requiring external services.
-- **External Testing**: On the roadmap but we would like to integrate the popular Testcontainers
+- **Signal Handling**: Respond to system signals to initiate a clean shutdown sequence.
+- **Ordered Teardown**: Ensure actors shut down in a controlled manner to maintain system integrity.
 
-`steady_state` combines Rust's safety guarantees with extensive code coverage and a supervisor system to offer unmatched stability in service delivery.
+## Getting Started
+
+### 1. Define Your Actor Graph
+
+- Write a Graphviz DOT file with annotations to model your actor system.
+- Use clear labels to specify actor properties and relationships.
+
+### 2. Generate Your Project
+
+- Utilize the `cargo-steady-state` tool to generate your Rust service project from the DOT file.
+- Focus on implementing your business logic rather than boilerplate code.
+
+### 3. Implement and Test
+
+- Implement your actors' behavior within the generated framework.
+- Write unit tests for actors and integration tests for the actor graph.
+- Leverage the built-in testing framework for robust validation.
+
+## Roadmap
+
+- **Enhanced Test Coverage**: Increase code coverage to ensure robustness.
+- **Video Tutorials**: Produce educational content to help developers adopt Steady State easily.
+- **Distributed Actor Support**: Enable actors to communicate across network boundaries.
+- **Performance Optimizations**: Continuously improve processing efficiency.
+- **Expanded Actor Library**: Provide more pre-built actors for common patterns.
+
+## Contributing
+
+We welcome contributions from the community. Whether it's bug reports, feature requests, or pull requests, your input is invaluable.
+
+## License
+
+Steady State Core is open-source under the MIT License. You are free to use, modify, and distribute it under the terms of the license.
+
+[**Sponsor Steady State on GitHub Today**](https://github.com/sponsors/kmf-lab)
+
+---
+
+By sponsoring Steady State, you're not just supporting a project—you're investing in the future of resilient, high-performance service development in Rust. Together, we can build solutions that keep businesses moving forward.
+
+---
+
+Feel free to reach out if you have any questions or need further assistance. Thank you for considering supporting Steady State!
+                             
+       
