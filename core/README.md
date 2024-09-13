@@ -1,4 +1,4 @@
-# Steady State Core: The Foundation of Resilient Rust Services
+# Steady State: The Foundation of Resilient Rust Services
 
 Welcome to the **Steady State Core**, the backbone of the Steady State framework designed to empower developers to build resilient, high-performance services with ease.
 
@@ -47,8 +47,7 @@ The Steady State Core focuses on delivering essential features that ensure safet
 - Use clear labels to specify actor properties and relationships.
 
 ### 2. Generate Your Project
-
-- Utilize the `cargo-steady-state` tool to generate your Rust service project from the DOT file.
+- Utilize the [cargo-steady-state](https://crates.io/crates/cargo-steady-state) tool to generate your Rust service project from the DOT file.
 - Focus on implementing your business logic rather than boilerplate code.
 
 ### 3. Implement and Test
