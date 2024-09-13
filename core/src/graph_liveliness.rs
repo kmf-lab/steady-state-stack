@@ -20,7 +20,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::{io, thread};
 use std::io::Write;
-use std::panic::PanicHookInfo;
 use colored::Colorize;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Sender};
