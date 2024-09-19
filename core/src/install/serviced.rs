@@ -10,10 +10,14 @@ use std::path::Path;
 use crate::abstract_executor;
 use crate::dot::FrameHistory;
 
+/// An enum representing the possible systemd commands.
 #[derive(Clone,Debug,PartialEq)]
 pub enum SystemdCommand {
+    /// install systemd service
     Install,
+    /// uninstall systemd service
     Uninstall,
+    /// do normal operations do not modify the service
     None,
 }
 

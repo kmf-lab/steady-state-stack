@@ -719,6 +719,10 @@ impl <T> LazySteadyTx<T> {
 
 }
 
+
+/// Same as SteadyRx however provides clone() to lazy init the SteadyRx
+/// If already cloned it returns clone of the SteadyRx.
+///
 #[derive(Debug)]
 pub struct LazySteadyRx<T> {
     lazy_channel: Arc<LazyChannel<T>>,

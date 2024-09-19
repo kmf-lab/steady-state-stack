@@ -25,7 +25,6 @@ use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use crate::telemetry::metrics_server;
 
 /// The `ActorBuilder` struct is responsible for building and configuring actors.
 /// It contains various settings related to telemetry, triggers, and actor identification.
@@ -113,6 +112,7 @@ impl ActorTeam {
         }
     }
 
+    /// take actor team and start the thread and consume the struct
     pub fn spawn(mut self) -> usize {
         let count = Arc::new(AtomicUsize::new(0));
         if self.future_builder.is_empty() {
@@ -147,11 +147,11 @@ impl ActorTeam {
                             actor_future_vec[index] = self.future_builder[index]().0;
                             true
                         } else {
-                            //trace("working on group stop");
+                            trace!("working on group stop");
                             // This actor was finished, so remove it from the list
                             drop(actor_future_vec.remove(index));
                             let result = !actor_future_vec.is_empty(); // true we keep running
-                            //trace!("Actor {:?} finished, result {:?} count of remaining {:?} ", index, result, actor_future_vec.len());
+                            trace!("Actor {:?} finished, result {:?} count of remaining {:?} ", index, result, actor_future_vec.len());
                             result
                         }
                     }));
@@ -227,7 +227,9 @@ impl<I> Clone for SteadyContextArchetype<I> {
     }
 }
 
-
+/// Enum to select the treading approach for building an Actor. Each actor can spawn a new thread
+/// or it can take a Join wrapping an ActorTeam to run the Actors together.
+///
 pub enum Threading<'a> {
     Spawn,
     Join(&'a mut ActorTeam),
@@ -703,11 +705,8 @@ fn build_actor_future<F, I>(
 
         match builder_source.runtime_state.write() {
             Ok(mut liveliness) => {
-             //   trace!("register vote {:?}", builder_source.ident);
-                let result = liveliness.register_voter(builder_source.ident);
-             //   trace!("done register vote {:?}", builder_source.ident);
-                result
-            },
+                liveliness.register_voter(builder_source.ident);
+                 },
             Err(e) => {
                 trace!("Internal error, unable to get liveliness read lock {}", e);
             }

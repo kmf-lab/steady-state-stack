@@ -1,12 +1,12 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64};
 use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
 use num_traits::Zero;
-use crate::{abstract_executor, ActorIdentity, steady_config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, SteadyContext, steady_tx_bundle, ActorName};
+use crate::{abstract_executor, ActorIdentity, steady_config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, SteadyContext, steady_tx_bundle};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel};
@@ -196,7 +196,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                 let clear_status = {
                     if let Some(ref mut lock_guard) = actor_status.tx.try_lock() {
                         let tx = lock_guard.deref_mut();
-                        let rx_version = tx.rx_version.load(Ordering::SeqCst);
+                        //let _rx_version = tx.rx_version.load(Ordering::SeqCst);
                         // if ChannelBuilder::UNSET == rx_version {
                         //     let now = Instant::now();
                         //     let dif = now.duration_since(actor_status.last_telemetry_error);

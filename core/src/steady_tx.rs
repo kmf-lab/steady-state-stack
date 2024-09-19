@@ -69,7 +69,7 @@ impl<T> Tx<T> {
     pub fn mark_closed(&mut self) -> bool {
         if let Some(c) = self.make_closed.take() {
             let result = c.send(());
-            if let Err(_) = result {
+            if result.is_err() {
                 error!("internal error, channel already closed");
             }
             result.is_ok()

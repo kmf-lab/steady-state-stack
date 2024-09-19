@@ -292,12 +292,6 @@ pub struct SteadyContext {
 
 impl SteadyContext {
 
-
-    /// Get the unique actor identifier.
-    pub fn ident(&self) -> ActorIdentity {
-        self.ident
-    }
-
     /// Checks if the liveliness state matches any of the target states.
     ///
     /// # Parameters

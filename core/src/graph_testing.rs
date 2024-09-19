@@ -9,12 +9,11 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use std::time::Duration;
 use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
-use log::{error, info, warn};
-use futures_util::lock::{Mutex, MutexGuard};
+use log::*;
+use futures_util::lock::{Mutex};
 use async_ringbuf::traits::Split;
 use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
@@ -22,8 +21,6 @@ use futures_util::select;
 use ringbuf::consumer::Consumer;
 use crate::{ActorIdentity, ActorName};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
-use futures::FutureExt;
-use futures_timer::Delay;
 use ringbuf::traits::Observer;
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
@@ -105,7 +102,7 @@ impl SideChannelHub {
             let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(capacity);
             let (sender_rx, receiver_rx) = rb.split();
 
-            if self.node.get(&key).is_some() || self.backplane.get(&key).is_some()  {
+            if self.node.contains_key(&key) || self.backplane.contains_key(&key)  {
                 warn!("Node with name {:?} already exists, check suffix usage", key);
                 false
             } else {
@@ -168,6 +165,15 @@ impl SideChannelResponder {
         SideChannelResponder { arc, identity}
     }
 
+    /// Wait for requests which will need a response
+    ///
+    /// # Arguments
+    ///
+    /// * `count` - how many requests to wait for, must be less than length of the channel
+    ///
+    /// # Returns
+    ///
+    /// True if the count is met and False if we must return because a shutdown is in process
     pub async fn wait_available_units(&mut self, count: usize) -> bool {
         let mut guard = self.arc.lock().await;
         let ((ref mut tx, ref mut rx), ref mut shutdown) = guard.deref_mut();

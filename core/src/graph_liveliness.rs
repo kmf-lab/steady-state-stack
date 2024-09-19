@@ -20,14 +20,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 use std::{io, thread};
 use std::io::Write;
-use colored::Colorize;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Sender};
-use futures_timer::Delay;
-use futures::FutureExt;
+
 use futures_util::future::FusedFuture;
 use futures_util::lock::{MutexGuard, MutexLockFuture};
-use futures_util::{select, task};
 use nuclei::config::IoUringConfiguration;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
@@ -431,6 +428,8 @@ impl Default for GraphBuilder {
 
 impl GraphBuilder {
 
+    /// build the default production or normal graph builder.
+    ///
     pub fn for_production() -> Self {
         #[cfg(test)]
         panic!("should not call for_production in tests");
@@ -446,6 +445,9 @@ impl GraphBuilder {
       }
     }
 
+    /// build a default graph builder for running unit tests.  This has backplane communications
+    /// enabled for test building.
+    ///
     pub fn for_testing() -> Self {
         util::logger::initialize();
         GraphBuilder {
@@ -459,24 +461,35 @@ impl GraphBuilder {
         }
     }
 
+
+    /// set the iouring queue length
+    /// this may be too short by default and when lots of IO is required may need to grow
+    ///
     pub fn with_iouring_queue_length(&self, len: u32) -> Self {
         let mut result = self.clone();
         result.iouring_queue_length = len;
         result
     }
 
+    /// set telemetry production frame rate in MS.  For very large graphs it may be necessary
+    /// to set this to a larger value to keep up with the volume of data.
+    ///
     pub fn with_telemtry_production_rate_ms(&self, ms: u64) -> Self {
         let mut result = self.clone();
         result.telemtry_production_rate_ms = ms;
         result
     }
 
+    /// set the metric features to ensure we can scrape this server from Prometheus
+    ///
     pub fn with_telemetry_metric_features(&self, enable: bool) -> Self {
         let mut result = self.clone();
         result.telemetry_metric_features = enable;
         result
     }
 
+    /// consume the graph builder and build the graph for use
+    ///
     pub fn build<A: Any + Send + Sync>(self, args: A) -> Graph {
         Graph::internal_new(args
                 , self.block_fail_fast

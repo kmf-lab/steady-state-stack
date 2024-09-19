@@ -3,6 +3,7 @@ use dot_parser::canonical::Graph;
 use std::error::Error;
 use std::time::Duration;
 use log::{error, warn};
+use num_traits::Zero;
 use crate::ProjectModel;
 use crate::templates::{Actor, ActorDriver, Channel, ConsumePattern};
 
@@ -36,7 +37,7 @@ fn extract_type_name_from_edge_label(label_text: &str, from_node: &str, to_node:
 
         let parts: Vec<String> = first_line.split_whitespace()
             .map(|s| {
-                let contains_colon  = s.contains(":");
+                let contains_colon  = s.contains(':');
                 let mut chars = s.chars();
                 match chars.next() {
                     Some(first_char) =>
@@ -234,7 +235,7 @@ pub(crate) fn extract_project_model(name: &str, dot_graph: Graph<(String, String
                                          )
                                 )
                             .map(|(a,b)| (a.as_str(),b.as_str()))
-                            .filter(|(a,b)| !a.starts_with("__"))
+                            .filter(|(a,_b)| !a.starts_with("__"))
                             .collect();
 
 
@@ -270,95 +271,86 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
     edges.sort(); //to ensure we get the same results on each run
     // Iterate over edges to populate channels
     for (from, to, label_text) in edges {
-        let type_name = extract_type_name_from_edge_label(label_text, from, to);
-        let capacity = extract_capacity_from_edge_label(label_text, 8);  // Assuming 8 as default if not specified
+        //do not include the documentation notes
+        if !from.starts_with("__") && !to.starts_with("__") {
+            let type_name = extract_type_name_from_edge_label(label_text, from, to);
+            let capacity = extract_capacity_from_edge_label(label_text, 8);  // Assuming 8 as default if not specified
 
+            let name = extract_channel_name(label_text, from, to);
+            let consume_pattern = extract_consume_pattern_from_label(label_text);
 
-        let name = extract_channel_name(label_text, from, to);
-        let consume_pattern = extract_consume_pattern_from_label(label_text);
+            if let Some(mod_name) = pm.actors.iter().filter(|f| f.display_name.eq(from)).map(|a| a.mod_name.clone()).next() {
+                let to_mod = pm.actors.iter().filter(|f| f.display_name.eq(to)).map(|a| a.mod_name.clone()).next().unwrap_or("unknown".into());
 
-        if let Some(mod_name) = pm.actors.iter().filter(|f| f.display_name.eq(from)).map(|a| a.mod_name.clone()).next() {
-            let to_mod = pm.actors.iter().filter(|f| f.display_name.eq(to)).map(|a| a.mod_name.clone()).next().unwrap_or("unknown".into());
+                // Create a Channel instance based on extracted details
+                let mut channel = Channel {
+                    name,
+                    from_mod: mod_name,
+                    to_mod,
+                    batch_read: 1,  //default replaced later if set
+                    batch_write: 1,  //default replaced later if set
+                    message_type: type_name,
+                    peek: consume_pattern == ConsumePattern::PeekCopy,
+                    copy: consume_pattern != ConsumePattern::Take,
+                    capacity,
+                    bundle_index: -1,
+                    rebundle_index: -1,
+                    bundle_struct_mod: "".to_string(), //only for bundles
+                    to_node: to.into(),
+                    from_node: from.into(),
+                    bundle_on_from: RefCell::new(true),
+                    is_unbundled: false,
+                };
 
-            // Create a Channel instance based on extracted details
-            let mut channel = Channel {
-                name,
-                from_mod: mod_name,
-                to_mod,
-                batch_read: 1,  //default replaced later if set
-                batch_write: 1,  //default replaced later if set
-                message_type: type_name,
-                peek: consume_pattern == ConsumePattern::PeekCopy,
-                copy: consume_pattern != ConsumePattern::Take,
-                capacity,
-                bundle_index: -1,
-                rebundle_index: -1,
-                to_node: to.into(),
-                from_node: from.into(),
-                bundle_on_from: RefCell::new(true),
-                is_unbundled: false,
-            };
+                // Find the actor with the same id as the from node and add the channel to its tx_channels
+                if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(from)) {
+                    //we found the actor which is the source of this channel
 
-            // Find the actor with the same id as the from node and add the channel to its tx_channels
-            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(from)) {
-                //we found the actor which is the source of this channel
+                    //review this actor and see if it has some batched write size
+                    a.driver.iter().for_each(|f| {
+                        if let ActorDriver::CapacityDriven(pairs) = f {
+                            pairs.iter()
+                                .filter(|v| v[0].eq(&channel.name))
+                                .for_each(|v| channel.batch_write = v[1].parse().expect("expected int"));
+                        };
+                    });
 
-                //review this actor and see if it has some batched write size
-                a.driver.iter().for_each(|f| {
-                    if let ActorDriver::CapacityDriven(pairs) = f {
-                        pairs.iter()
-                            .filter(|v| v[0].eq(&channel.name))
-                            .for_each(|v| channel.batch_write = v[1].parse().expect("expected int"));
-                    };
-                });
+                    let mut insert_me_tx_channel = channel.clone();
+                    roll_up_bundle(&mut a.tx_channels, insert_me_tx_channel, |_t, _v| true);
 
-                let mut tx_channel = channel.clone();
+                }
+                if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(to)) {
+                    //we found the actor which is the source of this channel
 
-                //count the number of channels with the same name and tx_node ie the rx end
-                let tx_counter_index = pm.channels.iter().filter(|f|
-                f[0].name.eq(&channel.name)
-                ).map(|f| f.iter()
-                    .filter(|f| f.to_node.eq(&tx_channel.to_node))
-                    .count()).max().unwrap_or(0);
+                    //review this actor and see if it has some batched write size
+                    a.driver.iter().for_each(|f| {
+                        if let ActorDriver::EventDriven(pairs) = f {
+                            pairs.iter()
+                                .filter(|v| v[0].eq(&channel.name))
+                                .for_each(|v| channel.batch_read = v[1].parse().expect("expected int"));
+                        };
+                    });
+                    let mut insert_me_rx_channel = channel.clone();
 
-                tx_channel.bundle_index = tx_counter_index as isize;
-                //re-bundle is NOT set since we only use that feature for the Rx end
+                    //count the number of channels with the same name and from_node ie the tx end
+                    let rx_counter_index = pm.channels.iter()
+                        .filter(|f|  f[0].name.eq(&channel.name)          )
+                        .map(|f| f.iter()
+                                  .filter(|f| f.from_node.eq(&insert_me_rx_channel.from_node))
+                                  .count())
+                        .max()
+                        .unwrap_or(0);
+                    insert_me_rx_channel.rebundle_index = rx_counter_index as isize; //for building dynamic bundle if needed
 
-
-                // tx_channel.bundle_on_from=false; //bundle on 'to' because we tx to there
-
-                roll_up_bundle(&mut a.tx_channels, tx_channel, |_t, _v| true);
+                    roll_up_bundle(&mut a.rx_channels, insert_me_rx_channel, |_t, _v| true);
+                }
+                // these are rolled up to define each bundle at the top of main
+                // at that point all channels are gathered by name and source node
+                roll_up_bundle(&mut pm.channels, channel, |t, v| v.iter().all(|g| g.from_node.eq(&t.from_node)));
+                //after that point we may reassemble the targets into new bundles.
+            } else {
+                error!("Failed to find actor with id: {}", from);
             }
-            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(to)) {
-                //we found the actor which is the source of this channel
-
-                //review this actor and see if it has some batched write size
-                a.driver.iter().for_each(|f| {
-                    if let ActorDriver::EventDriven(pairs) = f {
-                        pairs.iter()
-                            .filter(|v| v[0].eq(&channel.name))
-                            .for_each(|v| channel.batch_read = v[1].parse().expect("expected int"));
-                    };
-                });
-                let mut rx_channel = channel.clone();
-
-                //count the number of channels with the same name and from_node ie the tx end
-                let rx_counter_index = pm.channels.iter().filter(|f|
-                f[0].name.eq(&channel.name)
-                ).map(|f| f.iter()
-                    .filter(|f| f.from_node.eq(&rx_channel.from_node))
-                    .count()).max().unwrap_or(0);
-                rx_channel.rebundle_index = rx_counter_index as isize; //for building dynamic bundle if needed
-                rx_channel.bundle_index = rx_counter_index as isize; //for just indexing into the bundle if needed
-
-                roll_up_bundle(&mut a.rx_channels, rx_channel, |_t, _v| true);
-            }
-            // these are rolled up to define each bundle at the top of main
-            // at that point all channels are gathered by name and source node
-            roll_up_bundle(&mut pm.channels, channel, |t, v| v.iter().all(|g| g.from_node.eq(&t.from_node)));
-            //after that point we may reassemble the targets into new bundles.
-        } else {
-            error!("Failed to find actor with id: {}", from);
         }
     }
     //now that all bundle_on_from are detected look at the remaining channels to find any
@@ -374,8 +366,9 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
             //take each single and see if we can roll them up based on to_node
             roll_up_bundle(&mut new_channels, local, |t, v| {
                 let result = v.iter().all(|g| g.to_node.eq(&t.to_node));
-                if result {
+                if result && !v.is_empty() {
                     //success we found a to_node bundle so mark the members as such
+                    t.bundle_on_from.replace(false);
                     v.iter().for_each(|f| { f.bundle_on_from.replace(false); });
                 }
                 result
@@ -388,36 +381,38 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
     // we need to post process the channels now that we know which are bundles
     // find all the non bundles in the main channels list
     pm.channels.iter().for_each(|c| {
-        //find the actor that has this channel in its tx_channels
-        if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&c[0].from_node)) {
-            //find the channel in the tx_channels and mark it as a bundle
-            if let Some(x) = a.tx_channels.iter_mut().find(|f| f[0].name.eq(&c[0].name)) {
-                x.iter_mut().for_each(|f| {
-                    f.bundle_on_from.clone_from(&c[0].bundle_on_from);
-                    f.is_unbundled = c.len() == 1;
-                });
+        //walk the channels in this group
+        for cc in c {
+           //find the actor that has this channel in its tx_channels
+            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&cc.from_node)) {
+                //find the channel in the tx_channels and mark it as a bundle
+                if let Some(x) = a.tx_channels.iter_mut().find(|f| f[0].name.eq(&cc.name)) {
+                    x.iter_mut().for_each(|f| {
+                        f.bundle_on_from.clone_from(&c[0].bundle_on_from);
+                        f.is_unbundled = c.len() == 1;
+                        if !f.is_unbundled {
+                            //if we are bundled then we need to know the struct mod name
+                            f.bundle_struct_mod = c[0].from_mod.clone();
+                        }
+                    });
+                }
             }
-        }
-        //find the actor that has this channel in its rx_channels
-        if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&c[0].to_node)) {
-            //find the channel in the rx_channels and mark it as a bundle
-            if let Some(x) = a.rx_channels.iter_mut().find(|f| f[0].name.eq(&c[0].name)) {
-                x.iter_mut().for_each(|f| {
-                    f.bundle_on_from.clone_from(&c[0].bundle_on_from);
-                    f.is_unbundled = c.len() == 1;
-                });
+            //find the actor that has this channel in its rx_channels
+            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&cc.to_node)) {
+                //find the channel in the rx_channels and mark it as a bundle
+                if let Some(x) = a.rx_channels.iter_mut().find(|f| f[0].name.eq(&cc.name)) {
+                    x.iter_mut().for_each(|f| {
+                        f.bundle_on_from.clone_from(&c[0].bundle_on_from);
+                        f.is_unbundled = c.len() == 1;
+                    });
+                }
             }
         }
     });
 
-
     Ok(pm)
 }
-/*
-(do_not_group_by
-|| f.iter().all(|g| g.from_node.eq(&insert_me.from_node) )
-|| f.iter().all(|g| g.to_node.eq(&insert_me.to_node))
-)*/
+
 
 /// This function is used to roll up channels into bundles and is important for the code generation
 /// Some Channels are grouped into vecs because they are all the same and either originate
@@ -430,9 +425,9 @@ fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, gr
                 && f[0].capacity.eq(&insert_me.capacity) // we all agree on the capacity
                 && f[0].message_type.eq(&insert_me.message_type) // we should all agree on the type
                 && group_by(&insert_me, f)
-        }
+        } )
 
-        ) { //this is clearly part of the same bundle
+        { //this is clearly part of the same bundle
             //before doing the push we need to confirm we all have the same capacity and from_mod
 
             //update all others to our desired greater capacity, ie all are expanded to match the longest
@@ -453,11 +448,17 @@ fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, gr
                     x.iter_mut().for_each(|f| f.copy = true );
                 }
             }
-            x.push(insert_me); //keep our re-bundle_index unchanged
+            //insert_me.bundle_index = x.len() as isize;
+       //     insert_me.bundle_struct_mod = x[0].bundle_struct_mod.clone();
+            x.push(insert_me);
+            //keep our re-bundle_index unchanged
             //restore all to -1 since we now know this is a bundle for sure.
             x.iter_mut().for_each(|f| f.bundle_index = -1 );
 
         } else {
+            //may be a new bundle or a single
+         //   insert_me.bundle_struct_mod = insert_me.from_mod.clone();
+            insert_me.bundle_index = 0;
             collection.push(vec![insert_me]);
         }
 
@@ -603,9 +604,7 @@ mod tests {
 #[cfg(test)]
 mod additional_tests {
     use super::*;
-    use std::error::Error;
-    use dot_parser::canonical::{Graph, Node, Edge};
-    use crate::templates::{Actor, Channel, ActorDriver, ConsumePattern};
+    use crate::templates::{ Channel, ActorDriver, ConsumePattern};
 
     #[test]
     fn test_to_snake_case() {
@@ -699,7 +698,7 @@ mod additional_tests {
 
     #[test]
     fn test_build_pm() {
-        let mut pm = ProjectModel::default();
+        let pm = ProjectModel::default();
         let nodes = vec![("node1", "label1"), ("node2", "label2")];
         let edges = vec![("node1", "node2", "edge_label")];
 
@@ -710,7 +709,7 @@ mod additional_tests {
 
     #[test]
     fn test_build_pm_empty_edges() {
-        let mut pm = ProjectModel::default();
+        let pm = ProjectModel::default();
         let nodes = vec![("node1", "label1"), ("node2", "label2")];
         let edges = vec![];
 
@@ -734,6 +733,7 @@ mod additional_tests {
             capacity: 10,
             bundle_index: -1,
             rebundle_index: -1,
+            bundle_struct_mod: "".to_string(), //only for bundles
             to_node: "to_node".to_string(),
             from_node: "from_node".to_string(),
             bundle_on_from: RefCell::new(true),
@@ -759,6 +759,7 @@ mod additional_tests {
             capacity: 10,
             bundle_index: -1,
             rebundle_index: -1,
+            bundle_struct_mod: "".to_string(), //only for bundles
             to_node: "to_node".to_string(),
             from_node: "from_node".to_string(),
             bundle_on_from: RefCell::new(true),

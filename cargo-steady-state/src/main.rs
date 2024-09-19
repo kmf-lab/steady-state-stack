@@ -96,7 +96,7 @@ fn process_dot_file(dotfile: &str, name: &str) {
                     }
                 }
                 Err(e) => {
-                    error!("Failed to extract project model: {}", e);
+                     error!("Failed to extract project model: {}", e);
                 }
             }
         }
@@ -150,18 +150,36 @@ fn write_project_files(pm: ProjectModel
             .iter()
             .map(|f| format!("use crate::actor::{}::{}",f[0].from_mod, f[0].message_type))
             .collect();
-       my_struct_use.sort();
-       my_struct_use.dedup();
 
        //NOTE: if we use a struct of the same name we assume it is the same and
-       //      do not define it again.
+       //      do not define it again. if its bundled only define it for the first
        let mut my_struct_def:Vec<String> = actor.tx_channels
            .iter()
-           .filter(|f| actor.rx_channels.iter().all(|g| !g[0].message_type.eq(&f[0].message_type)))
+           .filter(|f| {
+               if !actor.mod_name.eq(&f[0].bundle_struct_mod) &&
+                  !f[0].is_unbundled {
+                   my_struct_use.push(format!("use crate::actor::{}::{}",
+                                              f[0].bundle_struct_mod,
+                                              f[0].message_type));
+                   false
+               } else {
+                   true
+               }
+              } )
+           .filter(|f| actor.rx_channels.iter().all(|g| {
+                       //if we have no rx on this actor returns true
+                       //if ALL the actor rx to not equal this actor tx type
+                       !g[0].message_type.eq(&f[0].message_type)
+                    }
+           ))
            .map(|f| format!("{}pub(crate) struct {}", derive_block(f[0].copy), f[0].message_type))
            .collect();
+       ///////////////////////////
+       my_struct_use.sort();
+       my_struct_use.dedup();
        my_struct_def.sort();
        my_struct_def.dedup();
+
 
        let full_driver_block = build_driver_block(&actor);
        let full_process_example_block = build_process_block(&actor);
@@ -195,7 +213,7 @@ fn build_process_block(actor: &Actor) -> String {
             //single
             if f[0].copy {
                 if f[0].peek {
-                     //single copy peek
+                     //single copy peek                TODO: NEED URGENT SIMPLE EXAMPLE...
                     full_process_example_block
                         .push_str(&format!("//trythis:  monitor.try_peek_slice(buffer,{}_rx);\n",f[0].name));
                     full_process_example_block
@@ -542,8 +560,6 @@ mod tests {
             process_dot_file(&dot_file, test_name);
             fs::remove_file(&dot_file).expect("Failed to remove dot file");
 
-            // do not compile when we run our coverage test because this times out due to network usage.
-            #[cfg(not(tarpaulin))]
             do_compile_test(test_name);
 
         }
@@ -566,6 +582,52 @@ mod tests {
         let output = output.wait().expect("failed to wait on child");
 
         assert!(output.success());
+    }
+
+
+    #[test]
+    fn test_fizz_buzz_project() {
+
+        let g = r#"
+digraph PRODUCT {
+    // Documentation node
+    __SystemOverview [shape=box, label="This graph represents a FizzBuzz processing system for an educational video.\nActors produce numbers divisible by 3 and 5.\nA processor combines them into FizzBuzz messages.\nA console printer outputs summary statistics every 10 seconds.\nAn ErrorLogger captures any processing errors."];
+
+    // Actors
+    DivBy3Producer [label="Produces numbers divisible by 3\nmod::div_by_3_producer\nAtLeastEvery(1ms)"];
+    DivBy5Producer [label="Produces numbers divisible by 5\nmod::div_by_5_producer\nAtLeastEvery(1ms)"];
+    FizzBuzzProcessor [label="Generates Fizz, Buzz, and FizzBuzz records\nmod::fizz_buzz_processor\nOnEvent(numbers:1)"];
+    ConsolePrinter [label="Prints summary counts to console\nmod::console_printer\nOnEvent(print_signal:1)"];
+    TimerActor [label="Triggers printing every 10 seconds\nmod::timer_actor\nAtLeastEvery(10sec)"];
+    ErrorLogger [label="Logs processing errors\nmod::error_logger\nOnEvent(errors:1)"];
+
+    // Channels
+    DivBy3Producer -> FizzBuzzProcessor [label="name::numbers <NumberMessage> >>TakeCopy #1000"];
+    DivBy5Producer -> FizzBuzzProcessor [label="name::numbers <NumberMessage> >>TakeCopy #1000"];
+    FizzBuzzProcessor -> ConsolePrinter [label="name::fizzbuzz_messages <FizzBuzzMessage> >>Take #10000"];
+    TimerActor -> ConsolePrinter [label="name::print_signal <PrintSignal> >>Take #1"];
+    FizzBuzzProcessor -> ErrorLogger [label="name::errors <ErrorMessage> >>Take #100"];
+
+
+    // Union types and descriptions
+    __NumberMessage [shape=box, label="NumberMessage is a union type for numbers from DivBy3Producer and DivBy5Producer.\nVariants: DivBy3Number, DivBy5Number."];
+    __NumberMessage -> DivBy3Producer [style=dotted];
+    __NumberMessage -> DivBy5Producer [style=dotted];
+    __NumberMessage -> FizzBuzzProcessor [style=dotted];
+
+    __FizzBuzzMessage [shape=box, label="FizzBuzzMessage contains 'Fizz', 'Buzz', or 'FizzBuzz' records.\nGenerated by FizzBuzzProcessor for ConsolePrinter."];
+    __FizzBuzzMessage -> FizzBuzzProcessor [style=dotted];
+    __FizzBuzzMessage -> ConsolePrinter [style=dotted];
+
+    __ErrorMessage [shape=box, label="ErrorMessage captures any errors during processing.\nUsed by FizzBuzzProcessor to send to ErrorLogger."];
+    __ErrorMessage -> FizzBuzzProcessor [style=dotted];
+    __ErrorMessage -> ErrorLogger [style=dotted];
+}
+        "#;
+
+        if !std::env::var("GITHUB_ACTIONS").is_ok() {
+            build_and_parse("fizz_buzz", g, false, false);
+        }
     }
 
 

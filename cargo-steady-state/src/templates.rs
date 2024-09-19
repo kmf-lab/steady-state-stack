@@ -65,11 +65,12 @@ pub(crate) enum ConsumePattern {
 }
 
 
-#[derive(Eq, PartialEq, Clone)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub(crate) struct Channel {
     pub(crate) name: String,
-    pub(crate) from_mod: String, //this is where the struct message_type is defined
+    pub(crate) from_mod: String,
     pub(crate) to_mod: String,
+    pub(crate) bundle_struct_mod: String, //this is where the struct message_type is defined
     pub(crate) message_type: String,
     pub(crate) peek: bool,
     pub(crate) copy: bool,
@@ -94,12 +95,12 @@ impl Channel {
                 !self.is_unbundled
     }
 
-    pub fn has_bundle_index(&self) -> bool {
-                 self.bundle_index>=0
-    }
-    pub fn bundle_index(&self) -> isize {
-                 self.bundle_index
-    }
+     pub fn has_bundle_index(&self) -> bool {
+         self.bundle_index>=0
+     }
+     pub fn bundle_index(&self) -> isize {
+          self.bundle_index
+     }
 
     // if we fan out we use the mod name so the [index] is clear
     pub fn tx_prefix_name(&self, channels:&[Channel]) -> String {
@@ -112,8 +113,8 @@ impl Channel {
 
     /// Used for building the synthetic bundles
     pub fn tx_prefix_distributed_name(&self) -> String {
-            format!("{}n_to_{}", self.from_mod.to_lowercase(), self.to_node.to_lowercase())
-
+            //format!("{}n_to_{}", self.from_mod.to_lowercase(), self.to_node.to_lowercase())
+            format!("n_to_{}", self.to_node.to_lowercase())
     }
 
     // if we fan out we use the mod name so the [index] is clear
@@ -131,10 +132,10 @@ impl Channel {
     pub fn restructured_bundle_rx(&self, _channels:&[Channel]) -> bool {
         //special case where we do not want this def because we already have it
         *self.bundle_on_from.borrow() &&
-            -1==self.bundle_index && self.rebundle_index>=0
+            self.rebundle_index>=0
     }
 
-    pub fn restructured_bundle(&self) -> bool { -1==self.bundle_index && self.rebundle_index>=0 }
+    pub fn restructured_bundle(&self) -> bool { self.rebundle_index>=0 }
     pub fn rebundle_index(&self) -> isize { self.rebundle_index }
 
 

@@ -102,6 +102,9 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 mod graph_tests {
     use async_std::test;
     use steady_state::*;
+    use std::time::Duration;
+    use crate::args::Args;
+    use crate::build_graph;
 
     #[test]
     async fn test_graph_one() {
@@ -111,10 +114,10 @@ mod graph_tests {
                 systemd_install: false,
                 systemd_uninstall: false,
             };
-            let mut graph = build_graph(steady_state::Graph::new_test(test_ops.clone()) );
+            let mut graph = build_graph( GraphBuilder::for_testing().build(test_ops.clone()) );
             graph.start();
             let mut guard = graph.sidechannel_director().await;
-            if let Some(plane) = guard.deref_mut() {
+            if let Some(ref mut plane) = guard {
 
               //  write your test here, send messages to edge nodes and get responses
               //  let response = plane.node_call(Box::new(SOME_STRUCT), "SOME_NODE_NAME").await;

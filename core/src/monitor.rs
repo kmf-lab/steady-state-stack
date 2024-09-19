@@ -257,11 +257,6 @@ impl<'a> Drop for FinallyRollupProfileGuard<'a> {
 
 /// Implementation of `LocalMonitor`.
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
-    /// Returns the unique identifier.
-    ///
-    pub fn ident(&self) -> ActorIdentity {
-        self.ident
-    }
 
 
     //TODO: future feature to optimize threading, not yet implemented
@@ -332,7 +327,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Parameters
     /// - `target`: A mutable reference to a `Tx<T>` instance.
-    pub fn update_tx_instance<T>(&self, target: &mut Tx<T>) {
+    pub(crate) fn update_tx_instance<T>(&self, target: &mut Tx<T>) {
         target.tx_version.store(self.instance_id, Ordering::SeqCst);
     }
 
@@ -340,7 +335,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Parameters
     /// - `target`: A mutable reference to a `TxBundle<T>` instance.
-    pub fn update_tx_instance_bundle<T>(&self, target: &mut TxBundle<T>) {
+    pub(crate) fn update_tx_instance_bundle<T>(&self, target: &mut TxBundle<T>) {
         target.iter_mut().for_each(|tx| tx.tx_version.store(self.instance_id, Ordering::SeqCst));
     }
 
@@ -348,7 +343,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Parameters
     /// - `target`: A mutable reference to a `Rx<T>` instance.
-    pub fn update_rx_instance<T>(&self, target: &mut Rx<T>) {
+    pub(crate) fn update_rx_instance<T>(&self, target: &mut Rx<T>) {
         target.rx_version.store(self.instance_id, Ordering::SeqCst);
     }
 
@@ -356,7 +351,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Parameters
     /// - `target`: A mutable reference to a `RxBundle<T>` instance.
-    pub fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
+    pub(crate) fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
         target.iter_mut().for_each(|rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
     }
 
@@ -374,11 +369,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Returns
     /// An `Option` containing a `SideChannelResponder` if available.
     pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
-        if let Some(ref tr) = self.node_tx_rx {
-            Some(SideChannelResponder::new(tr.clone(), self.ident))
-        } else {
-            None
-        }
+        self.node_tx_rx.as_ref().map(|tr| SideChannelResponder::new(tr.clone(), self.ident))
     }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
