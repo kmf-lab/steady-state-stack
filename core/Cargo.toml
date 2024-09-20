@@ -1,6 +1,6 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.21" # prep for 0.1.0 version
+version = "0.0.22" # prep for 0.1.0 version
 documentation = "https://docs.rs/steady_state/0.0.21/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2021"
@@ -78,7 +78,7 @@ log              = "0.4.22"  # common logging traits
 flexi_logger     = "0.29.0"  # default flexable logging implementation
 futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
 hdrhistogram     = "7.5.4"  # for latency histograms
-bytes            = { version = "1.7.1", features = [] }
+bytes            = { version = "1.7.2", features = [] }
 lazy_static      = "1.5.0"
 uuid             = { version = "1.10.0", features = ["v4"] }
 num-traits       = "0.2.19" # for num::Zero and other generic math traits
