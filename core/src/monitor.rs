@@ -229,7 +229,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
     pub(crate) actor_start_time: Instant, // never changed from context
-    pub(crate) node_tx_rx: Option<Arc<Mutex<(SideChannel,oneshot::Receiver<()>)>>>,
+    pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
     pub(crate) frame_rate_ms: u64,
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     #[cfg(test)]

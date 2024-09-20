@@ -22,6 +22,7 @@ use ringbuf::consumer::Consumer;
 use crate::{ActorIdentity, ActorName};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
+use crate::actor_builder::NodeTxRx;
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
 /// or `Err` with a value of type `E`.
@@ -59,7 +60,7 @@ pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, Inter
 /// The backplane functions as a central message hub, ensuring that only one user can hold it at a time.
 #[derive(Clone,Default)]
 pub struct SideChannelHub {
-    node: HashMap<ActorName, Arc<Mutex<(SideChannel,Receiver<()>)>>>,
+    node: HashMap<ActorName, Arc<NodeTxRx>>,
     pub(crate) backplane: HashMap<ActorName, Arc<Mutex<SideChannel>>>,
 }
 
@@ -83,7 +84,7 @@ impl SideChannelHub {
     /// # Returns
     ///
     /// An `Option` containing an `Arc<Mutex<(SideChannel,Receiver<()>)>>` if the node exists.
-    pub fn node_tx_rx(&self, key: ActorName) -> Option<Arc<Mutex<(SideChannel,Receiver<()>) >>> {
+    pub fn node_tx_rx(&self, key: ActorName) -> Option<Arc<NodeTxRx>> {
                 self.node.get(&key).cloned()
     }
 

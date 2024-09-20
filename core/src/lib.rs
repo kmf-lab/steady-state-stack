@@ -109,6 +109,7 @@ use futures_util::lock::MutexGuard;
 use steady_rx::{RxDef};
 use steady_telemetry::SteadyTelemetry;
 use steady_tx::{TxDef};
+use crate::actor_builder::NodeTxRx;
 use crate::graph_testing::{SideChannel, SideChannelResponder};
 use crate::yield_now::yield_now;
 /// Type alias for a thread-safe transmitter (Tx) wrapped in an `Arc` and `Mutex`.
@@ -286,7 +287,7 @@ pub struct SteadyContext {
     pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
     pub(crate) last_periodic_wait: AtomicU64,
     pub(crate) actor_start_time: Instant,
-    pub(crate) node_tx_rx: Option<Arc<Mutex<(SideChannel,Receiver<()>)>>>,
+    pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
     pub(crate) frame_rate_ms: u64,
 }
 
@@ -794,11 +795,7 @@ impl SteadyContext {
     /// # Returns
     /// An `Option` containing a `SideChannelResponder` if available.
     pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
-        if let Some(ref tr) = self.node_tx_rx {
-            Some(SideChannelResponder::new(tr.clone(), self.ident))
-        } else {
-            None
-        }
+        self.node_tx_rx.as_ref().map(|tr| SideChannelResponder::new(tr.clone(), self.ident))
     }
 
     /// Checks if the actor is running, using a custom accept function.

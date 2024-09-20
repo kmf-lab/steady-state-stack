@@ -1,6 +1,31 @@
+
+# Our Targeted Values and Goals
+
+## Simplicity
+* How can we implement complex behaviors while fully utilizing all available cores?
+* How do we efficiently manage systems with numerous business rules without added complexity?
+* How can we guarantee a fixed memory footprint for consistent performance?
+* How do we deliver dependable service levels that our clients can trust?
+### Transparency
+* How can we make the system’s interactions clear and understandable to our engineers?
+* How can product owners gain visibility into the system's behavior without technical barriers?
+* How can operations teams easily monitor the system’s health and status?
+* How can we enable rapid diagnosis and resolution of issues to minimize downtime?
+### Reliability
+* How do we guarantee system availability, no matter the circumstance?
+* How can we ensure the system remains consistent, even under stress?
+* How can we ensure responsiveness, delivering what’s needed, when it’s needed?
+* How do we maintain trust in our services, even in remote or challenging environments?
+### Efficiency
+* How can we unleash the full potential of our hardware and infrastructure?
+* How can we minimize power consumption while maximizing performance?
+* How can we extract the most from every CPU cycle to boost productivity?
+* How can we reduce latency and delays across the board?
+* How can we maximize throughput for optimal business outcomes?
+
 # Steady State: Revolutionizing Resilient Service Development in Rust
 
-Welcome to **Steady State**, an ambitious and opinionated project designed to redefine how we build resilient, high-performance services in Rust. We are actively seeking **sponsors** to join us on this journey to push the boundaries of what's possible in service reliability and efficiency.
+SteadyState is a Rust-based framework that simplifies building and managing complex, concurrent systems. It maximizes your hardware’s potential, provides transparency into system performance, and ensures reliability and efficiency. With SteadyState, businesses can deliver powerful software solutions without the complexity, reducing development time and operational headaches, all while keeping your systems running smoothly and consistently.
 
 ![Telemetry Visualization Example](core/simple-example.gif)
 *An animated GIF demonstrating real-time telemetry visualization in action.*

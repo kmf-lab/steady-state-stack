@@ -80,15 +80,16 @@ pub(crate) mod actor_tests {
     use async_std::test;
     use futures_timer::Delay;
     use steady_state::*;
-    use crate::actor::tick_generator::{BUFFER_SIZE, internal_behavior};
+    use super::*;
 
     #[test]
     pub(crate) async fn test_simple_process() {
-        //1. build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
+
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
             .with_capacity(BUFFER_SIZE)
             .build_as_bundle::<_, 3>();
+
         graph.actor_builder()
             .with_name("UnitTest")
             .build_spawn( move |context| internal_behavior(context, ticks_tx_out.clone()) );

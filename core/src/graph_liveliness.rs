@@ -23,7 +23,6 @@ use std::io::Write;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Sender};
 
-use futures_util::future::FusedFuture;
 use futures_util::lock::{MutexGuard, MutexLockFuture};
 use nuclei::config::IoUringConfiguration;
 use crate::actor_builder::ActorBuilder;

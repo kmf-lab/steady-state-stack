@@ -3,7 +3,6 @@ use dot_parser::canonical::Graph;
 use std::error::Error;
 use std::time::Duration;
 use log::{error, warn};
-use num_traits::Zero;
 use crate::ProjectModel;
 use crate::templates::{Actor, ActorDriver, Channel, ConsumePattern};
 
@@ -315,7 +314,7 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
                         };
                     });
 
-                    let mut insert_me_tx_channel = channel.clone();
+                    let insert_me_tx_channel = channel.clone();
                     roll_up_bundle(&mut a.tx_channels, insert_me_tx_channel, |_t, _v| true);
 
                 }

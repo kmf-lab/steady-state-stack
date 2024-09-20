@@ -193,6 +193,7 @@ pub fn launch_actor<F: Future<Output = T>, T>(future: F) -> T {
     nuclei::block_on(future)
 }
 
+pub(crate) type NodeTxRx = Mutex<(SideChannel,Receiver<()>)>;
 /// The `SteadyContextArchetype` struct serves as a template for building actor contexts,
 /// encapsulating all the necessary parameters and state.
 struct SteadyContextArchetype<I> {
@@ -205,7 +206,7 @@ struct SteadyContextArchetype<I> {
     actor_metadata: Arc<ActorMetaData>,
     oneshot_shutdown_vec: Arc<Mutex<Vec<Sender<()>>>>,
     oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
-    node_tx_rx: Option<Arc<Mutex<(SideChannel,Receiver<()>)>>>,
+    node_tx_rx: Option<Arc<NodeTxRx>>,
     instance_id: Arc<AtomicU32>,
 }
 
