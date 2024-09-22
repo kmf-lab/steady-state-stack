@@ -21,7 +21,7 @@ use crate::*;
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
-use crate::graph_testing::{SideChannel, SideChannelResponder};
+use crate::graph_testing::{SideChannelResponder};
 use crate::steady_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
@@ -275,14 +275,22 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         // in case we are in a tight loop and need to let other actors run on this thread.
         executor::block_on(yield_now::yield_now());
 
-        //warn!("is_running here {:?}", self.ident);
-        match self.runtime_state.read() {
-            Ok(liveliness) => {
-                liveliness.is_running(self.ident, accept_fn)
-            },
-            Err(e) => {
-                error!("Internal error on poisoned state: {}", e);
-                true // Keep running as the default under error conditions
+        loop {
+            //warn!("is_running here {:?}", self.ident);
+            let result = match self.runtime_state.read() {
+                Ok(liveliness) => {
+                    liveliness.is_running(self.ident, accept_fn)
+                },
+                Err(e) => {
+                    error!("Internal error on poisoned state: {}", e);
+                    Some(true) // Keep running as the default under error conditions
+                }
+            };
+            if let Some(result) = result {
+                return result;
+            } else {
+                //wait until we are in a running state
+                executor::block_on(Delay::new(Duration::from_millis(10)));
             }
         }
     }
@@ -376,7 +384,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// This method holds the data if it is called more frequently than the collector can consume the data.
     /// It is designed for use in tight loops where telemetry data is collected frequently.
-    pub fn relay_stats_smartly(&mut self) {
+    pub fn relay_stats_smartly(&mut self) {        
         telemetry::setup::try_send_all_local_telemetry(self);
     }
 
@@ -1377,7 +1385,7 @@ pub(crate) mod monitor_tests {
 
     // Common function to create a test SteadyContext
     fn test_steady_context() -> SteadyContext {
-        let (tx, rx) = build_tx_rx();
+        let (_tx, rx) = build_tx_rx();
         SteadyContext {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
                 Default::default(),

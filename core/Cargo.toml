@@ -1,6 +1,6 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.22" # prep for 0.1.0 version
+version = "0.0.23" # prep for 0.1.0 version
 documentation = "https://docs.rs/steady_state/0.0.21/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2021"
@@ -14,6 +14,7 @@ repository = "https://github.com/kmf-lab/steady-state-stack"
 include = ["templates/**", "src/**", "Cargo.toml", "README.md", "build.rs", "static/telemetry/**", "**/*.gz.b64"]
 exclude = ["**/*.txt", "**/*.sh", "notes/", "temp/", "target/**"]
 
+[worspace.lints.clippy]
 
 [lib]
 name = "steady_state"

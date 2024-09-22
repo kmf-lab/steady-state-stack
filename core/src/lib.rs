@@ -91,6 +91,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex};
 use std::ops::{DerefMut};
 use std::pin::Pin;
+use std::thread;
 use log::*;
 
 
@@ -101,7 +102,6 @@ use crate::telemetry::setup;
 use crate::util::steady_logging_init;
 use futures::*;
 use futures::channel::oneshot;
-use futures::channel::oneshot::Receiver;
 use futures::select;
 use futures_timer::Delay;
 use futures_util::future::{FusedFuture, select_all};
@@ -110,7 +110,7 @@ use steady_rx::{RxDef};
 use steady_telemetry::SteadyTelemetry;
 use steady_tx::{TxDef};
 use crate::actor_builder::NodeTxRx;
-use crate::graph_testing::{SideChannel, SideChannelResponder};
+use crate::graph_testing::{SideChannelResponder};
 use crate::yield_now::yield_now;
 /// Type alias for a thread-safe transmitter (Tx) wrapped in an `Arc` and `Mutex`.
 ///
@@ -807,13 +807,22 @@ impl SteadyContext {
     /// `true` if the actor is running, `false` otherwise.
     #[inline]
     pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
-        match self.runtime_state.read() {
-            Ok(liveliness) => {
-                liveliness.is_running(self.ident, accept_fn)
-            },
-            Err(e) => {
-                error!("Internal error, unable to get liveliness read lock {}", e);
-                true
+        loop {
+            //warn!("is_running here {:?}", self.ident);
+            let result = match self.runtime_state.read() {
+                Ok(liveliness) => {
+                    liveliness.is_running(self.ident, accept_fn)
+                },
+                Err(e) => {
+                    error!("Internal error on poisoned state: {}", e);
+                    Some(true) // Keep running as the default under error conditions
+                }
+            };
+            if let Some(result) = result {
+                return result;
+            } else {
+                //wait until we are in a running state
+                thread::yield_now();
             }
         }
     }
@@ -895,6 +904,9 @@ impl SteadyContext {
         rx_mons: [RxMetaData; RX_LEN],
         tx_mons: [TxMetaData; TX_LEN],
     ) -> LocalMonitor<RX_LEN, TX_LEN> {
+        
+        //TODO: if the telemetry is disabled in the graph do NOT build these.
+        
         let (send_rx, send_tx, state) = if steady_config::TELEMETRY_HISTORY || steady_config::TELEMETRY_SERVER {
             let mut rx_meta_data = Vec::new();
             let mut rx_inverse_local_idx = [0; RX_LEN];
@@ -1288,7 +1300,7 @@ mod lib_tests {
 
     // Common function to create a test SteadyContext
     fn test_steady_context() -> SteadyContext {
-        let (tx, rx) = build_tx_rx();
+        let (_tx, rx) = build_tx_rx();
         SteadyContext {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
                 Default::default(),
@@ -1336,7 +1348,7 @@ mod lib_tests {
     // Test for try_peek
     #[test]
     fn test_try_peek() {
-        let mut rx = create_rx(vec![1, 2, 3]);
+        let rx = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
             let result = context.try_peek(&mut rx);
@@ -1347,7 +1359,7 @@ mod lib_tests {
     // Test for take_slice
     #[test]
     fn test_take_slice() {
-        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let rx = create_rx(vec![1, 2, 3, 4, 5]);
         let mut slice = [0; 3];
         let mut context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
@@ -1360,9 +1372,9 @@ mod lib_tests {
     // Test for try_peek_slice
     #[test]
     fn test_try_peek_slice() {
-        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let rx = create_rx(vec![1, 2, 3, 4, 5]);
         let mut slice = [0; 3];
-        let mut context = test_steady_context();
+        let context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
             let count = context.try_peek_slice(&mut rx, &mut slice);
             assert_eq!(count, 3);
@@ -1404,7 +1416,7 @@ mod lib_tests {
     #[test]
     fn test_is_empty() {
         let context = test_steady_context();
-        let mut rx = create_rx::<String>(vec![]); // Creating an empty Rx
+        let rx = create_rx::<String>(vec![]); // Creating an empty Rx
         if let Some(mut rx) = rx.try_lock() {
             assert!(context.is_empty(&mut rx));
         };
@@ -1414,7 +1426,7 @@ mod lib_tests {
     #[test]
     fn test_avail_units() {
         let context = test_steady_context();
-        let mut rx = create_rx(vec![1, 2, 3]);
+        let rx = create_rx(vec![1, 2, 3]);
         if let Some(mut rx) = rx.try_lock() {
             assert_eq!(context.avail_units(&mut rx), 3);
         };
@@ -1423,7 +1435,7 @@ mod lib_tests {
     // Test for try_peek_iter
     #[test]
     fn test_try_peek_iter() {
-        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let rx = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
             let mut iter = context.try_peek_iter(&mut rx);
@@ -1436,7 +1448,7 @@ mod lib_tests {
     // Test for peek_async_iter
     #[async_std::test]
     async fn test_peek_async_iter() {
-        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let rx = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
             let mut iter = context.peek_async_iter(&mut rx, 3).await;
@@ -1449,7 +1461,7 @@ mod lib_tests {
     // Test for peek_async
     #[async_std::test]
     async fn test_peek_async() {
-        let mut rx = create_rx(vec![1, 2, 3]);
+        let rx = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
             let result = context.peek_async(&mut rx).await;
@@ -1460,7 +1472,7 @@ mod lib_tests {
     // Test for send_slice_until_full
     #[test]
     fn test_send_slice_until_full() {
-        let (mut tx, _rx) = create_test_channel();
+        let (tx, _rx) = create_test_channel();
         let mut context = test_steady_context();
         let slice = [1, 2, 3];
         let tx = tx.clone();
@@ -1473,7 +1485,7 @@ mod lib_tests {
     // Test for send_iter_until_full
     #[test]
     fn test_send_iter_until_full() {
-        let (mut tx, _rx) = create_test_channel();
+        let (tx, _rx) = create_test_channel();
         let mut context = test_steady_context();
         let iter = vec![1, 2, 3].into_iter();
         let tx = tx.clone();
@@ -1486,7 +1498,7 @@ mod lib_tests {
     // Test for try_send
     #[test]
     fn test_try_send() {
-        let (mut tx, _rx) = create_test_channel();
+        let (tx, _rx) = create_test_channel();
         let mut context = test_steady_context();
         let tx = tx.clone();
         if let Some(mut tx) = tx.try_lock() {
@@ -1498,7 +1510,7 @@ mod lib_tests {
     // Test for is_full
     #[test]
     fn test_is_full() {
-        let (mut tx, _rx) = create_test_channel::<String>();
+        let (tx, _rx) = create_test_channel::<String>();
         let context = test_steady_context();
         let tx = tx.clone();
         if let Some(mut tx) = tx.try_lock() {
@@ -1509,7 +1521,7 @@ mod lib_tests {
     // Test for vacant_units
     #[test]
     fn test_vacant_units() {
-        let (mut tx, _rx) = create_test_channel::<String>();
+        let (tx, _rx) = create_test_channel::<String>();
         let context = test_steady_context();
         let tx = tx.clone();
         if let Some(mut tx) = tx.try_lock() {
@@ -1521,7 +1533,7 @@ mod lib_tests {
     // Test for wait_empty
     #[async_std::test]
     async fn test_wait_empty() {
-        let (mut tx, _rx) = create_test_channel::<String>();
+        let (tx, _rx) = create_test_channel::<String>();
         let context = test_steady_context();
         let tx  = tx.clone();
         if let Some(mut tx) = tx.try_lock() {
@@ -1533,7 +1545,7 @@ mod lib_tests {
     // Test for take_into_iter
     #[test]
     fn test_take_into_iter() {
-        let mut rx = create_rx(vec![1, 2, 3]);
+        let rx = create_rx(vec![1, 2, 3]);
         let mut context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
             let mut iter = context.take_into_iter(&mut rx);

@@ -44,6 +44,7 @@ fn validate_logging_level(level: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod arg_tests {
+    use log::trace;
     use super::*;
     use structopt::StructOpt;
 
@@ -94,7 +95,7 @@ mod arg_tests {
 
         let invalid_levels = vec!["invalid", "verbose", "none"];
         for level in invalid_levels {
-            println!("level: {}", level);
+            trace!("level: {}", level);
             assert!(validate_logging_level(level.to_string()).is_err());
         }
     }

@@ -859,7 +859,7 @@ mod tests {
             .open(&path)
             .expect("Failed to open file");
         let handle = nuclei::Handle::new(file).expect("Failed to create handle");
-        nuclei::drive(FrameHistory::all_to_file_async(handle, data.clone()));
+        let _ = nuclei::drive(FrameHistory::all_to_file_async(handle, data.clone()));
         let result = std::fs::read_to_string(path).expect("Failed to read written file");
         assert_eq!(result, "test data");
     }

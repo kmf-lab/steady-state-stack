@@ -508,11 +508,8 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
 
 #[cfg(test)]
 mod meteric_server_tests {
-    use std::time::Duration;
-    use crate::telemetry::metrics_server::{decode_base64, internal_behavior};
+    use crate::telemetry::metrics_server::{decode_base64};
     use async_std::test;
-    use crate::Graph;
-    use crate::telemetry::metrics_collector::DiagramData;
 
     #[test]
     async fn test_decode_base64() {

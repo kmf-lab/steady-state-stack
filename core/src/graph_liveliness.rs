@@ -4,7 +4,7 @@
 
 use crate::{abstract_executor, steady_config, SteadyContext, util};
 use std::ops::Sub;
-use std::sync::Arc;
+use std::sync::{Arc, RwLockWriteGuard};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
@@ -194,7 +194,7 @@ impl GraphLiveliness {
             }
 
         } else {
-            warn!("no actors to wait for");
+            trace!("no actors to wait for");
         }
         trace!("changed to running state");
         self.building_to_running();
@@ -288,26 +288,22 @@ impl GraphLiveliness {
     ///
     /// # Returns
     ///
-    /// `true` if the actor is running, `false` otherwise.
-    pub fn is_running(&self, ident: ActorIdentity, accept_fn: &mut dyn FnMut() -> bool) -> bool {
+    /// Option `true` if the actor is running, `false` otherwise. None if the actor is building.
+    pub(crate) fn is_running(&self, ident: ActorIdentity, accept_fn: &mut dyn FnMut() -> bool) -> Option<bool> {
         //warn!("is running called on {:?}", ident);
 
         match self.state {
             GraphLivelinessState::Building => {
-              //  info!("building now: {:?}", ident);
-                // Allow run to start but also let the other startup if needed.
-              //  thread::yield_now();
-                true
+                //  info!("building now: {:?}", ident);
+                // Let the other startup if needed.
+                thread::yield_now();
+                None
             }
             GraphLivelinessState::Running => {
                //info!("running now: {:?}", ident);
-                true
+                Some(true)
             },
             GraphLivelinessState::StopRequested => {
-
-
-                //TODO: do not allow stop until we have run once??
-
                //info!("stop requested, voting now: {:?}", ident);
 
                 let in_favor = accept_fn();
@@ -326,22 +322,22 @@ impl GraphLiveliness {
                     }
                     vote.in_favor = in_favor;
                     drop(vote);
-                    !in_favor // Return the opposite to keep running when we vote no
+                    Some(!in_favor) // Return the opposite to keep running when we vote no
                 } else {
                     // NOTE: this may be the reader not a voter:
                     error!("voting integrity error, someone else has my ballot {:?} in_favor of shutdown: {:?}", ident, in_favor);
-                    true // If we can't vote we oppose the shutdown by continuing to run
+                    Some(true) // If we can't vote we oppose the shutdown by continuing to run
                 }
 
             }
             GraphLivelinessState::Stopped => {
                // info!("stopped now: {:?}", ident);
-                false
+                Some(false)
             },
             GraphLivelinessState::StoppedUncleanly => {
                //info!("stopped unclean now: {:?}", ident);
 
-                false},
+                Some(false)},
         }
     }
 }
@@ -755,25 +751,8 @@ impl Graph {
                         state.state = shutdown;
 
                         if state.state.eq(&GraphLivelinessState::StoppedUncleanly) {
-                            warn!("voter log: (approved votes at the top, total:{})", state.votes.len());
-                            let mut voters = state.votes.iter()
-                                .map(|f| f.try_lock().map(|v| v.clone()))
-                                .collect::<Vec<_>>();
-
-                            // You can sort or prioritize the votes as needed here
-                            voters.sort_by_key(|voter| !voter.as_ref().map_or(false, |f| f.in_favor)); // This will put `true` (in favor) votes first
-
-                            // Now iterate over the sorted voters and log the results
-                            voters.iter().for_each(|voter| {
-                                warn!("#{:?} Voted: {:?} Ident: {:?}"
-                                       , voter.as_ref().map_or(usize::MAX, |f| f.id)
-                                       , voter.as_ref().map_or(false, |f| f.in_favor)
-                                       , voter.as_ref().map_or(
-                                                   Default::default()
-                                                 //self.state.registered_voters[0]
-                                                   , |f| f.ident));
-                            });
                             warn!("graph stopped uncleanly");
+                            Self::report_votes(&mut state);
                             return false;
                         }
                     }
@@ -789,8 +768,27 @@ impl Graph {
         }
     }
 
+    fn report_votes(state: &mut RwLockWriteGuard<GraphLiveliness>) {
+        warn!("voter log: (approved votes at the top, total:{})", state.votes.len());
+        let mut voters = state.votes.iter()
+            .map(|f| f.try_lock().map(|v| v.clone()))
+            .collect::<Vec<_>>();
 
+        // You can sort or prioritize the votes as needed here
+        voters.sort_by_key(|voter| !voter.as_ref().map_or(false, |f| f.in_favor)); // This will put `true` (in favor) votes first
 
+        // Now iterate over the sorted voters and log the results
+        voters.iter().for_each(|voter| {
+            warn!("#{:?} Voted: {:?} Ident: {:?}"
+                                       , voter.as_ref().map_or(usize::MAX, |f| f.id)
+                                       , voter.as_ref().map_or(false, |f| f.in_favor)
+                                       , voter.as_ref().map_or(
+                                                   Default::default()
+                                                 //self.state.registered_voters[0]
+                                                   , |f| f.ident));
+        });
+        warn!("graph stopped uncleanly");
+    }
 
     /// Creates a new graph for normal or unit test use.
     ///
@@ -925,20 +923,5 @@ mod graph_liveliness_tests {
         assert_eq!(debug_str, "Building");
     }
 
-    #[test]
-    fn test_pattern_matching_on_graph_liveliness_state() {
-        let state = GraphLivelinessState::Running;
-
-        // Test pattern matching
-        let result = match state {
-            GraphLivelinessState::Building => "Building",
-            GraphLivelinessState::Running => "Running",
-            GraphLivelinessState::StopRequested => "StopRequested",
-            GraphLivelinessState::Stopped => "Stopped",
-            GraphLivelinessState::StoppedUncleanly => "StoppedUncleanly",
-        };
-
-        assert_eq!(result, "Running");
-    }
 
 }

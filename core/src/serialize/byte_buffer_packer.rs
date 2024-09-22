@@ -209,6 +209,7 @@ impl<T> PackedVecReader<T>
 mod tests {
     use super::*;
     use bytes::BytesMut;
+    use log::trace;
 
     #[test]
     fn test_round_trip_single_change() {
@@ -225,7 +226,7 @@ mod tests {
         let new_vec: Vec<i128> = vec![1, 2, 3, 5]; // One element changed
         writer.add_vec(&mut buffer, &new_vec);
 
-        println!("buffer len {:?}", buffer.len());
+        trace!("buffer len {:?}", buffer.len());
 
         let mut buffer = buffer.freeze();
         let restored_vec = reader.restore_vec(&mut buffer);
@@ -248,7 +249,7 @@ mod tests {
         let new_vec = vec![11, 21, 31, 41]; // All elements changed
         writer.add_vec(&mut buffer, &new_vec);
 
-        println!("buffer len {:?}", buffer.len());
+        trace!("buffer len {:?}", buffer.len());
 
         let mut buffer = buffer.freeze();
         let restored_vec = reader.restore_vec(&mut buffer);
@@ -271,7 +272,7 @@ mod tests {
         let new_vec = vec![5, 5, 5, 5]; // No change
         writer.add_vec(&mut buffer, &new_vec);
 
-        println!("buffer len {:?}", buffer.len());
+        trace!("buffer len {:?}", buffer.len());
 
         let mut buffer = buffer.freeze().clone();
         let restored_vec = reader.restore_vec(&mut buffer);

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use log::{error, warn};
+use log::{error, trace, warn};
 use futures_util::{FutureExt, select};
 use std::any::type_name;
 use std::backtrace::Backtrace;
@@ -13,6 +13,7 @@ use futures_util::future::{FusedFuture, select_all};
 use async_ringbuf::producer::AsyncProducer;
 use std::fmt::Debug;
 use std::ops::Deref;
+use std::thread;
 use crate::{ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::monitor::{ChannelMetaData, TxMetaData};
@@ -70,12 +71,11 @@ impl<T> Tx<T> {
         if let Some(c) = self.make_closed.take() {
             let result = c.send(());
             if result.is_err() {
-                error!("internal error, channel already closed");
+                //not a serious issue, may happen with bundles
+                trace!("close called but the receiver already dropped");
             }
-            result.is_ok()
-        } else {
-            true // already closed
-        }
+        } 
+        true // always returns true, close request is never rejected by this method.        
     }
 
     /// Returns the total capacity of the channel.
@@ -258,6 +258,10 @@ impl<T> Tx<T> {
     pub(crate) fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
         where T: Copy {
         if self.make_closed.is_none() {
+
+            let backtrace = Backtrace::capture();
+            eprintln!("{:?}", backtrace);
+
             warn!("Send called after channel marked closed");
         }
         self.tx.push_slice(slice)
@@ -275,12 +279,16 @@ impl<T> Tx<T> {
 
     #[inline]
     pub(crate) async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.tx.wait_vacant(count);
-            select! { _ = one_down => false, _ = operation => true, }
+        if self.tx.vacant_len() >= count {
+            true
         } else {
-            false
+            let mut one_down = &mut self.oneshot_shutdown;
+            if !one_down.is_terminated() {
+                let mut operation = &mut self.tx.wait_vacant(count);
+                select! { _ = one_down => false, _ = operation => true, }
+            } else {
+                false
+            }
         }
     }
 
@@ -352,15 +360,20 @@ pub trait TxDef: Debug {
 
 impl<T> TxDef for SteadyTx<T> {
     fn meta_data(&self) -> TxMetaData {
+        let mut count = 0;
         loop {
             if let Some(guard) = self.try_lock() {
                 return TxMetaData(guard.deref().channel_meta_data.clone());
             }
-            std::thread::yield_now();
-            let backtrace = Backtrace::capture();
-            eprintln!("{:?}",backtrace);
+            thread::yield_now();
+            count += 1;
 
-            error!("got stuck on meta_data, unable to get lock on ChannelMetaData");
+            //only print once we have tried for a while
+            if 10000 == count {
+                let backtrace = Backtrace::capture();
+                eprintln!("{:?}", backtrace);
+                error!("got stuck on meta_data, unable to get lock on ChannelMetaData");
+            }
         }
     }
 }
@@ -443,7 +456,9 @@ pub trait TxBundleTrait {
 
 impl<T> TxBundleTrait for TxBundle<'_, T> {
     fn mark_closed(&mut self) -> bool {
-        self.iter_mut().all(|f| f.mark_closed())
+        //NOTE: must be all or nothing it never returns early
+        self.iter_mut().for_each(|f| {let _ = f.mark_closed();});
+        true  // always returns true, close request is never rejected by this method.
     }
 
     fn rx_instance_changed(&mut self) -> bool {

@@ -45,6 +45,10 @@ pub async fn internal_behavior(context: SteadyContext
         count: 0,
     };
     while monitor.is_running(&mut || tx.mark_closed() ) {
+        
+        
+        wait_for_all!(monitor.wait_vacant_units(&mut tx, MULTIPLIER));
+        
 
         let mut wids = Vec::with_capacity(MULTIPLIER);
 

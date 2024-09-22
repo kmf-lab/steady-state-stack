@@ -7,13 +7,23 @@ use std::time::Duration;
 use steady_state::*;
 
 
-{{test_only}}
+#[allow(unused)]
 
 
 mod actor {
-    {% for mod in actor_mods %}
-        pub mod {{mod}};
-    {% endfor %}
+    
+        pub mod console_printer;
+    
+        pub mod div_by_3_producer;
+    
+        pub mod div_by_5_producer;
+    
+        pub mod error_logger;
+    
+        pub mod fizz_buzz_processor;
+    
+        pub mod timer_actor;
+    
 }
 
 fn main() {
@@ -23,8 +33,8 @@ fn main() {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
-    let service_executable_name = "{{project_name}}";
-    let service_user = "{{project_name}}_user";
+    let service_executable_name = "fizz_buzz";
+    let service_user = "fizz_buzz_user";
     let systemd_command = SystemdBuilder::process_systemd_commands(  opt.systemd_action()
                                                    , opt.to_cli_string(service_executable_name)
                                                    , service_executable_name
@@ -57,44 +67,78 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
         .with_work_percentile(Percentile::p80())
         .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
     //build channels
-    {% for channel in channels %}
-    let ({{channel[0].tx_prefix_name(channel)}}_{{channel[0].name}}_tx, {{channel[0].rx_prefix_name(channel)}}_{{channel[0].name}}_rx) = base_channel_builder
-        .with_capacity({{channel[0].capacity}}){% if channel.len()>1 %}
-        .build_as_bundle::<_,{{channel.len()}}>();{% else %}
-        .build();{% endif %}
-    {% endfor %}
+    
+    let (n_to_fizzbuzzprocessor_numbers_tx, fizzbuzzprocessor_numbers_rx) = base_channel_builder
+        .with_capacity(1000)
+        .build_as_bundle::<_,2>();
+    
+    let (fizzbuzzprocessor_fizzbuzz_messages_tx, consoleprinter_fizzbuzz_messages_rx) = base_channel_builder
+        .with_capacity(10000)
+        .build();
+    
+    let (fizzbuzzprocessor_errors_tx, errorlogger_errors_rx) = base_channel_builder
+        .with_capacity(100)
+        .build();
+    
+    let (timeractor_print_signal_tx, consoleprinter_print_signal_rx) = base_channel_builder
+        .with_capacity(1)
+        .build();
+    
     //build actors
-    {% for actor in actors %}
+    
     {
-    {%- for channel in actor.rx_channels %}{% if channel[0].has_bundle_index() -%}
-      {% if channel[0].needs_rx_single_clone() %}
-       let {{channel[0].rx_prefix_name(channel)}}_{{channel[0].name}}_rx = {{channel[0].rx_prefix_distributed_name()}}_{{channel[0].name}}_rx[{{channel[0].bundle_index()}}].clone();
-      {% endif %}
-    {%- else -%}{% if channel[0].restructured_bundle_rx(channel) %}
-       let {{actor.display_name|lowercase}}_{{channel[0].name}}_rx = steady_rx_bundle([{%- for ch in channel -%}{{ch.rx_prefix_distributed_name()}}_{{ch.name}}_rx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}].clone(){% endif -%}
-                                                                                       {%- if loop.last -%}{%- else -%},{%- endif -%}{%- endfor -%}]);
-       {% endif -%}
-    {%- endif %}{% endfor -%}
-
-    {%- for channel in actor.tx_channels %}{% if channel[0].has_bundle_index() %}
-      {% if channel[0].needs_tx_single_clone() %}
-       let {{channel[0].tx_prefix_name(channel)}}_{{channel[0].name}}_tx = {{channel[0].tx_prefix_distributed_name()}}_{{channel[0].name}}_tx[{{channel[0].bundle_index()}}].clone();
-      {% endif %}
-    {% else -%}{%- if channel[0].restructured_bundle() %}
-       let {{actor.display_name|lowercase}}_{{channel[0].name}}_tx = steady_tx_bundle([{%- for ch in channel -%}{{ch.tx_prefix_distributed_name()}}_{{ch.name}}_tx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}].clone(){% endif -%}
-                                                                                       {%- if loop.last -%}{%- else -%},{%- endif -%}{%- endfor -%}]);
-       {% endif -%}
-
-    {%- endif %}{% endfor %}
-       base_actor_builder.with_name("{{actor.display_name}}")
-                 .build_spawn( move |context| actor::{{actor.mod_name}}::run(context
-                                          {%- for channel in actor.rx_channels %}
-                                            , {% if channel[0].restructured_bundle() %}{{actor.display_name|lowercase}}{% else %}{{channel[0].rx_prefix_name(channel)}}{% endif %}_{{channel[0].name}}_rx.clone(){% endfor -%}
-                                          {%- for channel in actor.tx_channels %}
-                                            , {% if channel[0].restructured_bundle() %}{{actor.display_name|lowercase}}{% else %}{{channel[0].tx_prefix_name(channel)}}{% endif %}_{{channel[0].name}}_tx.clone(){% endfor -%}
-                                         )
+       base_actor_builder.with_name("ConsolePrinter")
+                 .build_spawn( move |context| actor::console_printer::run(context
+                                            , consoleprinter_fizzbuzz_messages_rx.clone()
+                                            , consoleprinter_print_signal_rx.clone())
                  );
-    }{% endfor %}
+    }
+    {
+      
+       let divby3producer_numbers_tx = n_to_fizzbuzzprocessor_numbers_tx[0].clone();
+      
+    
+       base_actor_builder.with_name("DivBy3Producer")
+                 .build_spawn( move |context| actor::div_by_3_producer::run(context
+                                            , divby3producer_numbers_tx.clone())
+                 );
+    }
+    {
+      
+       let divby5producer_numbers_tx = n_to_fizzbuzzprocessor_numbers_tx[1].clone();
+      
+    
+       base_actor_builder.with_name("DivBy5Producer")
+                 .build_spawn( move |context| actor::div_by_5_producer::run(context
+                                            , divby5producer_numbers_tx.clone())
+                 );
+    }
+    {
+       base_actor_builder.with_name("ErrorLogger")
+                 .build_spawn( move |context| actor::error_logger::run(context
+                                            , errorlogger_errors_rx.clone())
+                 );
+    }
+    {
+      
+    
+      
+    
+       base_actor_builder.with_name("FizzBuzzProcessor")
+                 .build_spawn( move |context| actor::fizz_buzz_processor::run(context
+                                            , fizzbuzzprocessor_numbers_rx.clone()
+                                            , fizzbuzzprocessor_fizzbuzz_messages_tx.clone()
+                                            , fizzbuzzprocessor_errors_tx.clone())
+                 );
+    }
+    {
+      
+    
+       base_actor_builder.with_name("TimerActor")
+                 .build_spawn( move |context| actor::timer_actor::run(context
+                                            , timeractor_print_signal_tx.clone())
+                 );
+    }
     graph
 }
 

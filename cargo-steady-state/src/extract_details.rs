@@ -315,7 +315,7 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
                     });
 
                     let insert_me_tx_channel = channel.clone();
-                    roll_up_bundle(&mut a.tx_channels, insert_me_tx_channel, |_t, _v| true);
+                    roll_up_bundle(&mut a.tx_channels, insert_me_tx_channel,  false, |_t, _v| true);
 
                 }
                 if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(to)) {
@@ -341,11 +341,11 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
                         .unwrap_or(0);
                     insert_me_rx_channel.rebundle_index = rx_counter_index as isize; //for building dynamic bundle if needed
 
-                    roll_up_bundle(&mut a.rx_channels, insert_me_rx_channel, |_t, _v| true);
+                    roll_up_bundle(&mut a.rx_channels, insert_me_rx_channel, false,|_t, _v| true);
                 }
                 // these are rolled up to define each bundle at the top of main
                 // at that point all channels are gathered by name and source node
-                roll_up_bundle(&mut pm.channels, channel, |t, v| v.iter().all(|g| g.from_node.eq(&t.from_node)));
+                roll_up_bundle(&mut pm.channels, channel, false,|t, v| v.iter().all(|g| g.from_node.eq(&t.from_node)));
                 //after that point we may reassemble the targets into new bundles.
             } else {
                 error!("Failed to find actor with id: {}", from);
@@ -356,50 +356,59 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
     //that are bundles on the 'to' side and move them to the new group
     //walk pm.channels and if they are bundles of len()>1 move them to the new group if not
     //for each single call roll_up_bundle on to_node. this way we select any and all from bundles first
-    let mut new_channels: Vec<Vec<Channel>> = Vec::new();
-    pm.channels.into_iter().for_each(|mut c| {
-        if c.len() > 1 {
+    let mut new_main_channels: Vec<Vec<Channel>> = Vec::new();
+    pm.channels.into_iter().for_each(|mut main_channel| {
+        if main_channel.len() > 1 {
             //keep existing bundles based on from
-            new_channels.push(c);
-        } else if let Some(local) = c.pop() {
+            new_main_channels.push(main_channel);
+        } else if let Some(local) = main_channel.pop() {
             //take each single and see if we can roll them up based on to_node
-            roll_up_bundle(&mut new_channels, local, |t, v| {
-                let result = v.iter().all(|g| g.to_node.eq(&t.to_node));
-                if result && !v.is_empty() {
+            roll_up_bundle(&mut new_main_channels, local, true, |t, v| {
+                let do_add_to_group = v.iter().all(|g| g.to_node.eq(&t.to_node));                
+                if do_add_to_group && !v.is_empty() {
                     //success we found a to_node bundle so mark the members as such
                     t.bundle_on_from.replace(false);
-                    v.iter().for_each(|f| { f.bundle_on_from.replace(false); });
+                    v.iter().for_each(|f| {
+                        f.bundle_on_from.replace(false);
+                    });
                 }
-                result
+                do_add_to_group
             });
+            
+            
         }
     });
-    pm.channels = new_channels;
+    pm.channels = new_main_channels;
 
 
     // we need to post process the channels now that we know which are bundles
     // find all the non bundles in the main channels list
     pm.channels.iter().for_each(|c| {
         //walk the channels in this group
-        for cc in c {
+        for main_channel in c {
            //find the actor that has this channel in its tx_channels
-            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&cc.from_node)) {
+            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&main_channel.from_node)) {
                 //find the channel in the tx_channels and mark it as a bundle
-                if let Some(x) = a.tx_channels.iter_mut().find(|f| f[0].name.eq(&cc.name)) {
-                    x.iter_mut().for_each(|f| {
-                        f.bundle_on_from.clone_from(&c[0].bundle_on_from);
-                        f.is_unbundled = c.len() == 1;
-                        if !f.is_unbundled {
-                            //if we are bundled then we need to know the struct mod name
-                            f.bundle_struct_mod = c[0].from_mod.clone();
+                if let Some(x) = a.tx_channels.iter_mut().find(|f| f[0].name.eq(&main_channel.name)) {
+                    x.iter_mut().enumerate().for_each(|(i, actor_channel)| {
+                        actor_channel.bundle_on_from.clone_from(&c[0].bundle_on_from);
+                        actor_channel.is_unbundled = c.len() == 1;
+                        
+                        if !actor_channel.is_unbundled {
+                            // if bundled we need the main index values copied in
+                            actor_channel.bundle_index = main_channel.bundle_index;
+                            actor_channel.rebundle_index = main_channel.rebundle_index;
+                        
+                            // if bundled then we need to know the struct mod name
+                            actor_channel.bundle_struct_mod = c[0].from_mod.clone();  
                         }
                     });
                 }
             }
             //find the actor that has this channel in its rx_channels
-            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&cc.to_node)) {
+            if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&main_channel.to_node)) {
                 //find the channel in the rx_channels and mark it as a bundle
-                if let Some(x) = a.rx_channels.iter_mut().find(|f| f[0].name.eq(&cc.name)) {
+                if let Some(x) = a.rx_channels.iter_mut().find(|f| f[0].name.eq(&main_channel.name)) {
                     x.iter_mut().for_each(|f| {
                         f.bundle_on_from.clone_from(&c[0].bundle_on_from);
                         f.is_unbundled = c.len() == 1;
@@ -416,7 +425,7 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
 /// This function is used to roll up channels into bundles and is important for the code generation
 /// Some Channels are grouped into vecs because they are all the same and either originate
 /// or terminate at the same actor. This simplifies code to allow for indexing of channels.
-fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, group_by: fn(&Channel, &Vec<Channel>) -> bool) {
+fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, index: bool, group_by: fn(&Channel, &Vec<Channel>) -> bool) {
 
         if let Some(x) = collection.iter_mut().find(|f| {
 
@@ -435,10 +444,6 @@ fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, gr
             } else {
                 insert_me.capacity = x[0].capacity;
             }
-            //update all others to match the first from_mod used
-            if !insert_me.from_mod.eq(&x[0].from_mod) {
-                insert_me.from_mod.clone_from(&x[0].from_mod);
-            }
             //update all to match the copy boolean in the bundle
             if insert_me.copy != x[0].copy {
                 if x[0].copy {
@@ -447,17 +452,19 @@ fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, gr
                     x.iter_mut().for_each(|f| f.copy = true );
                 }
             }
-            //insert_me.bundle_index = x.len() as isize;
-       //     insert_me.bundle_struct_mod = x[0].bundle_struct_mod.clone();
             x.push(insert_me);
-            //keep our re-bundle_index unchanged
-            //restore all to -1 since we now know this is a bundle for sure.
-            x.iter_mut().for_each(|f| f.bundle_index = -1 );
-
+            if index {
+                x.iter_mut().enumerate().for_each(|(i,f)| {
+                    f.rebundle_index = i as isize;
+                    f.bundle_index = i as isize;
+                } );
+            } else {
+                //keep our re-bundle_index unchanged
+                //restore all to -1 since we now know this is a bundle for sure.
+                x.iter_mut().for_each(|f| f.bundle_index = -1 );
+            }
         } else {
-            //may be a new bundle or a single
-         //   insert_me.bundle_struct_mod = insert_me.from_mod.clone();
-            insert_me.bundle_index = 0;
+            insert_me.bundle_index = 0;            
             collection.push(vec![insert_me]);
         }
 
@@ -739,7 +746,7 @@ mod additional_tests {
             is_unbundled: false,
         };
 
-        roll_up_bundle(&mut channels, channel, |_t, _v| true);
+        roll_up_bundle(&mut channels, channel, false, |_t, _v| true);
         assert_eq!(channels.len(), 1);
     }
 
@@ -765,7 +772,7 @@ mod additional_tests {
             is_unbundled: false,
         };
 
-        roll_up_bundle(&mut channels, channel, |_t, _v| true);
+        roll_up_bundle(&mut channels, channel, false, |_t, _v| true);
         assert_eq!(channels.len(), 1);
     }
 

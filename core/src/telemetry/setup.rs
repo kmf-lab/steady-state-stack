@@ -189,6 +189,7 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
 pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
     this: &mut LocalMonitor<RX_LEN, TX_LEN>,
 ) {
+   
     let last_elapsed = this.last_telemetry_send.elapsed();
     if last_elapsed.as_micros() * (CONSUMED_MESSAGES_BY_COLLECTOR as u128) >= (1000 * this.frame_rate_ms) as u128 {
 
@@ -387,7 +388,10 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
                 if needs_to_be_closed {
                     status.bool_stop = true;
                     let _ = tx.shared_send_async(status, ident, SendSaturation::IgnoreInRelease).await;
-                    tx.mark_closed();
+                    if let Some(c) = tx.make_closed.take() {
+                        let _ = c.send(());
+                        //ignore any failure since this may already be closed which is ok here
+                    }; 
                     tx.wait_empty().await;
                 }
             } else {

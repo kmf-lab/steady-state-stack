@@ -28,8 +28,9 @@ mod simple_graph_test {
     ///     // Test implementation...
     /// }
     /// ```
-    #[cfg(not(tarpaulin))]
-    #[async_std::test]
+    /// this test should only be run manually, as it will panic by design
+    
+    //#[async_std::test]
     async fn test_panic_graph() {
         if let Err(e) = init_logging("info") {
             eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
@@ -40,6 +41,8 @@ mod simple_graph_test {
 
         // Special test graph which does NOT fail fast but instead shows the prod behavior of restarting actors.
         let mut graph = GraphBuilder::for_testing()
+            .with_telemtry_production_rate_ms(100)
+            .with_iouring_queue_length(8)
             .with_telemetry_metric_features(true)
             .build(());
 

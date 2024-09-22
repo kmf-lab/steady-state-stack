@@ -292,6 +292,7 @@ mod large_tests {
         };
 
         let graph = GraphBuilder::for_testing()
+                       .with_telemtry_production_rate_ms(500)
                        .with_telemetry_metric_features(true)
                        .build(test_ops);
 
@@ -389,7 +390,7 @@ mod large_tests {
                     tasks.push(async move {
                         match fut.await {
                             Some(r) => {
-                                info!("user response: {:?} {:?}", r.downcast_ref::<String>(),i);
+                                trace!("user response: {:?} {:?}", r.downcast_ref::<String>(),i);
                                 assert_eq!("ok", r.downcast_ref::<String>().expect("bad type"));
                             },
                             None => {

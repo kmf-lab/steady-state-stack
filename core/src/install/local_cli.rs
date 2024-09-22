@@ -61,7 +61,7 @@ impl LocalCLIBuilder {
         if in_path {
             self.install_dir = custom_install_dir;
         } else {
-            warn!("Custom install directory is not in the PATH");
+            info!("Custom install directory {:?} is not in the PATH {:?}", custom_install_dir, env::var_os("PATH"));
         }
         self
     }

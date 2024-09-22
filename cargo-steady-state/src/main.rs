@@ -79,9 +79,9 @@ fn process_dot_file(dotfile: &str, name: &str) {
             // Save the actor folder path for later use
             let actor_folder_path = working_path.clone();
 
-            info!("Project folder created at: {}", base_folder_path.display());
-            info!("Source folder created at: {}", source_folder_path.display());
-            info!("Actor folder created at: {}", actor_folder_path.display());
+            trace!("Project folder created at: {}", base_folder_path.display());
+            trace!("Source folder created at: {}", source_folder_path.display());
+            trace!("Actor folder created at: {}", actor_folder_path.display());
 
             ///////////
             ///////////
@@ -89,11 +89,13 @@ fn process_dot_file(dotfile: &str, name: &str) {
             ///////////
             match extract_details::extract_project_model(name, canonical::Graph::from(ast)) {
                 Ok(project_model) => {
-                    info!("Project model extracted");
+                    trace!("Project model extracted");
                     //last write out the project files
-                    if let Err(e) = write_project_files(project_model, base_folder_path, source_folder_path, actor_folder_path) {
+                    if let Err(e) = write_project_files(project_model, &base_folder_path, &source_folder_path, &actor_folder_path) {
                         error!("Partial project files written: {}", e);
                     }
+                    println!("New project written to: {}", base_folder_path.display());
+                    println!("Check it (expect TODO and unused warnings): cd {} && cargo build", base_folder_path.display());
                 }
                 Err(e) => {
                      error!("Failed to extract project model: {}", e);
@@ -108,9 +110,9 @@ fn process_dot_file(dotfile: &str, name: &str) {
 }
 
 fn write_project_files(pm: ProjectModel
-                       , folder_base: PathBuf
-                       , folder_src: PathBuf
-                       , folder_actor: PathBuf) -> Result<(), Box<dyn Error>> {
+                       , folder_base: &PathBuf
+                       , folder_src: &PathBuf
+                       , folder_actor: &PathBuf) -> Result<(), Box<dyn Error>> {
 
    let cargo = folder_base.join("Cargo.toml");
    fs::write(cargo, templates::CargoTemplate { name: &pm.name }.render()?)?;
@@ -353,13 +355,16 @@ fn build_driver_block(actor: &Actor) -> String {
             ActorDriver::CapacityDriven(t) => {
                 let mut each: Vec<String> = t.iter().map(|v| {
 
+                    let girth = if let Some(g) = actor.tx_channels.iter()
+                        .find(|f| f[0].name == v[0])
+                        .map(|f| f.len()) { g } else { 1 };
+                    
                     //validate the name
                     if actor.tx_channels.iter().all(|f| f[0].name != v[0]) {
                         warn!("Failed to find channel: {}, please fix dot file node label for actor: {}", v[0], actor.display_name);
                     }
 
-
-                    if v.len() == 2 {
+                    if v.len() == 2 && 1==girth {
                         format!("monitor.wait_vacant_units(&mut {}_tx,{})", v[0], v[1])
                     } else {
                         let girth = actor.tx_channels
@@ -383,7 +388,7 @@ fn build_driver_block(actor: &Actor) -> String {
             }
             ActorDriver::Other(t) => {
                 let mut each: Vec<String> = t.iter().map(|name| {
-                    format!("//monitor.call_async({}())", name) //TODO: urgent, method is missing..
+                    format!("monitor.call_async({}())", name) 
                 }).collect();
                 andy_drivers.append(&mut each);
             }

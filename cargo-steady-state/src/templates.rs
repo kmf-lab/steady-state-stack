@@ -111,7 +111,6 @@ impl Channel {
         }
     }
 
-    /// Used for building the synthetic bundles
     pub fn tx_prefix_distributed_name(&self) -> String {
             //format!("{}n_to_{}", self.from_mod.to_lowercase(), self.to_node.to_lowercase())
             format!("n_to_{}", self.to_node.to_lowercase())

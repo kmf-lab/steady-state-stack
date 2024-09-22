@@ -4,10 +4,8 @@ use log::*;
 #[allow(unused_imports)]
 use std::time::Duration;
 use steady_state::*;
-use steady_state::monitor::LocalMonitor;
 use crate::Args;
-use futures::join;
-use futures::select;
+
 
 use std::error::Error;
 {% for u in message_types_to_use -%}
@@ -16,7 +14,7 @@ use std::error::Error;
 
 {% for st in message_types_to_define -%}
 {{st}} {
-   {{note_for_the_user}}: add your fields here
+   dummy: u8 {{note_for_the_user}}: replace this and put your fields here
 }
 {% endfor %}
 
@@ -96,10 +94,8 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
 
     // monitor consumes context and ensures all the traffic on the passed channels is monitored
     let mut monitor =  into_monitor!(context, [{% for def in rx_monitor_defs %}
-                        {{def}}{%- if loop.last %}{% else -%}
-                           ,{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs %}
-                        {{def}}{%- if loop.last %}{% else -%}
-                           ,{%- endif %}{% endfor %}]
+                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs %}
+                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]
                            );
 
    //every channel must be locked before use, if this actor should panic the lock will be released
@@ -125,13 +121,13 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
 
      {{note_for_the_user}} here are all the channels you can read from
           {%- for channel in rx_channels %}
-          //let {{channel[0].name}}_rx_ref: &mut {% if 1==channel.len()%}Rx<{% else %}RxBundle<'_, {% endif -%}{{channel[0].message_type}}> = {{channel[0].name}}_rx;
-          {% endfor %}
+          let {{channel[0].name}}_rx_ref: &mut {% if 1==channel.len()%}Rx<{% else %}RxBundle<'_, {% endif -%}{{channel[0].message_type}}> = &mut {{channel[0].name}}_rx;
+          {%- endfor %}
 
      {{note_for_the_user}} here are all the channels you can write to
           {%- for channel in tx_channels %}
-          //let {{channel[0].name}}_tx_ref: &mut {% if 1==channel.len()%}Tx<{% else %}TxBundle<'_, {% endif -%}{{channel[0].message_type}}> = {{channel[0].name}}_tx;
-          {% endfor %}
+          let {{channel[0].name}}_tx_ref: &mut {% if 1==channel.len()%}Tx<{% else %}TxBundle<'_, {% endif -%}{{channel[0].message_type}}> = &mut {{channel[0].name}}_tx;
+          {%- endfor %}
 
      {{note_for_the_user}} to get started try calling the monitor.* methods:
       //    try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>  ie monitor.try_take(...
@@ -163,16 +159,48 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
     ) -> Result<(),Box<dyn Error>> {
 
+
+    let mut monitor =  into_monitor!(context, [{% for def in rx_monitor_defs %}
+                            {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs %}
+                            {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]
+                               );
+
+    if let Some(responder) = monitor.sidechannel_responder() {
+
+         {% for channel in rx_channels %}
+            let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;
+         {% endfor %}{% for channel in tx_channels %}
+            let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.lock().await;
+         {% endfor %}
+
+         while monitor.is_running(&mut ||{%- for channel in rx_channels %}
+             {{channel[0].name}}_rx.is_closed_and_empty()
+             {%- if loop.last %}{% else %} && {% endif -%}
+          {% endfor %}{%- for channel in tx_channels %}
+             {%- if loop.first && !rx_channels.is_empty() %} && {% else %}{% endif -%}
+             {{channel[0].name}}_tx.mark_closed()
+             {%- if loop.last %}{% else %} && {% endif -%}
+          {% endfor %}) {
+
+                {{note_for_the_user}} write responder code:: let responder = responder.respond_with(|message| {
+
+                monitor.relay_stats_smartly();
+         }
+
+    }
+
+    Ok(())
+
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use async_std::test;
+    use std::time::Duration;
     use steady_state::*;
     use super::*;
 
 
-    #[test]
+    #[async_std::test]
     pub(crate) async fn test_simple_process() {
        let mut graph = GraphBuilder::for_testing().build(());
 
@@ -193,14 +221,12 @@ pub(crate) mod tests {
         //                    internal_behavior(context {%- for channel in rx_channels %},{{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %},{{channel[0].name}}_tx.clone(){%- endfor -%} )
         //             );
 
-        let timeout = Duration::from_secs(15);
         graph.start(); //startup the graph
 
         {{note_for_the_user}} add your test values here
-        Delay::new(Duration::from_millis(100)).await;
 
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
-        graph.block_until_stopped(timeout);
+        graph.block_until_stopped(Duration::from_secs(15));
 
         {{note_for_the_user}} confirm values on the output channels
         //    assert_eq!(XX_rx_out[0].testing_avail_units().await, 1);

@@ -484,16 +484,11 @@ pub struct CollectorDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
-    use crate::{steady_config, SendSaturation, SteadyContext, SteadyTxBundle};
     use futures_util::stream::FuturesUnordered;
     use std::sync::Arc;
-    use std::sync::{RwLock, Mutex as StdMutex};
+    use std::sync::{RwLock};
     use std::collections::VecDeque;
-    use std::error::Error;
     use futures::executor::block_on;
-    use futures_util::lock::Mutex;
-    use std::time::Duration;
 
     #[test]
     fn test_raw_diagram_state_default() {

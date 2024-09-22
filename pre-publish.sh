@@ -96,7 +96,8 @@ cargo audit | tee cargo_audit.txt
 echo "cargo tree"
 tokei | tee cargo_tokei.txt
 
-echo "If this is confirmed by GitHub build YOU may now run:   cargo publish"
+echo "Confirm that warnings you do not want published have been removed"
+echo "If this is confirmed by successful GitHub build YOU may now cd and run:   cargo publish"
 
 
 
