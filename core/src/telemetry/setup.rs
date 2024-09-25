@@ -45,7 +45,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         that.frame_rate_ms,
     )
         .with_labels(&["steady_state-telemetry"], false)
-        .with_compute_refresh_window_bucket_bits(0, 0)
+        .with_no_refresh_window()
         .with_capacity(steady_config::REAL_CHANNEL_LENGTH_TO_COLLECTOR);
 
     let rx_tuple: (Option<SteadyTelemetrySend<RX_LEN>>, Option<SteadyTelemetryTake<RX_LEN>>) =
@@ -65,7 +65,8 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
             (None, None)
         } else {
             let (telemetry_send_tx, telemetry_take_tx) = channel_builder.build();
-            (  //TODO: may need LazySend..
+            (  
+                //TODO: may need LazySend..
                 Some(SteadyTelemetrySend::new(telemetry_send_tx.clone(), [0; TX_LEN], tx_inverse_local_idx, start_now)),
                 Some(SteadyTelemetryTake { rx: telemetry_take_tx.clone(), details: tx_meta_data }),
             )
@@ -137,7 +138,7 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
     ))]
     {
 
-        let base = graph.channel_builder().with_compute_refresh_window_bucket_bits(0, 0);
+        let base = graph.channel_builder().with_no_refresh_window();
 
         #[cfg(feature = "telemetry_on_telemetry")]
             let base = base
@@ -187,11 +188,8 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
 /// - `this`: The local monitor to send telemetry for.
 #[inline]
 pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
-    this: &mut LocalMonitor<RX_LEN, TX_LEN>,
+    this: &mut LocalMonitor<RX_LEN, TX_LEN>, elapsed_micros: Option<u64>
 ) {
-   
-    let last_elapsed = this.last_telemetry_send.elapsed();
-    if last_elapsed.as_micros() * (CONSUMED_MESSAGES_BY_COLLECTOR as u128) >= (1000 * this.frame_rate_ms) as u128 {
 
             if let Some(ref mut actor_status) = this.telemetry.state {
                 let clear_status = {
@@ -212,24 +210,26 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         if vacant_units >= (capacity >> 1) {
                         } else {
                             let scale = calculate_exponential_channel_backoff(capacity, vacant_units);
-                            if last_elapsed.as_micros() < scale as u128 * this.frame_rate_ms as u128 {
-                                if scale >= 128 {
-                                    if let Ok(guard) = this.runtime_state.read() {
-                                        let state = guard.deref();
-                                        if !state.is_in_state(&[
-                                            GraphLivelinessState::StopRequested,
-                                            GraphLivelinessState::Stopped,
-                                            GraphLivelinessState::StoppedUncleanly,
-                                        ]) {
-                                            error!(
-                                                "{:?} EXIT hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector has died and is not consuming messages",
-                                                this.ident, scale, vacant_units, capacity
-                                            );
-                                            std::process::exit(-1);
+                            if let Some(last_elapsed) = elapsed_micros {
+                                if last_elapsed < scale as u64 * this.frame_rate_ms {
+                                    if scale >= 128 {
+                                        if let Ok(guard) = this.runtime_state.read() {
+                                            let state = guard.deref();
+                                            if !state.is_in_state(&[
+                                                GraphLivelinessState::StopRequested,
+                                                GraphLivelinessState::Stopped,
+                                                GraphLivelinessState::StoppedUncleanly,
+                                            ]) {
+                                                error!(
+                                                    "{:?} EXIT hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector has died and is not consuming messages",
+                                                    this.ident, scale, vacant_units, capacity
+                                                );
+                                                std::process::exit(-1);
+                                            }
                                         }
                                     }
+                                    return;
                                 }
-                                return;
                             }
                         }
 
@@ -239,13 +239,15 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                 if let Some(ref mut send_tx) = this.telemetry.send_tx {
                                     if tx.local_index.lt(&MONITOR_NOT) {
                                         send_tx.count[tx.local_index] += 1;
-                                        if last_elapsed.as_millis() >= this.frame_rate_ms as u128 {
-                                            let now = Instant::now();
-                                            let dif = now.duration_since(actor_status.last_telemetry_error);
-                                            if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
-                                                warn!("{:?} consider shortening period of relay_stats_periodic or adding relay_stats_all() in your work loop,\n it is called too infrequently at {}ms which is larger than your frame rate of {}ms",
-                                                    this.ident, last_elapsed.as_millis(), this.frame_rate_ms);
-                                                actor_status.last_telemetry_error = now;
+                                        if let Some(last_elapsed) = elapsed_micros {
+                                            if last_elapsed >= this.frame_rate_ms {
+                                                let now = Instant::now();
+                                                let dif = now.duration_since(actor_status.last_telemetry_error);
+                                                if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+                                                    warn!("{:?} consider shortening period of relay_stats_periodic or adding relay_stats_all() in your work loop,\n it is called too infrequently at {}ms which is larger than your frame rate of {}ms",
+                                                        this.ident, last_elapsed, this.frame_rate_ms);
+                                                    actor_status.last_telemetry_error = now;
+                                                }
                                             }
                                         }
                                     } else if tx.local_index.eq(&MONITOR_UNKNOWN) {
@@ -349,8 +351,6 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                 }
             }
 
-        this.last_telemetry_send = Instant::now();
-    }
 }
 
 /// Calculates exponential backoff for telemetry channels.

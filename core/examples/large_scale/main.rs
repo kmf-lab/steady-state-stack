@@ -66,7 +66,6 @@ fn build_graph<const level_1: usize,
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_channel_builder = graph.channel_builder()
-                            .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(5))
                             .with_line_expansion(1.0f32)
                             .with_avg_filled()
                             .with_avg_rate()
@@ -82,11 +81,10 @@ fn build_graph<const level_1: usize,
     let base_actor_builder = graph
                             .actor_builder()
                             .with_avg_mcpu()
-                            .with_avg_work()
 //     .with_thread()  .with_actor()
                            // .with_work_percentile(Percentile::p80())
                            // .with_mcpu_percentile(Percentile::p80())
-                            .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
+                            .with_avg_work();
 
 
     let mut user_count:usize = 0;

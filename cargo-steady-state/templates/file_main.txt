@@ -6,9 +6,7 @@ use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
 
-
 {{test_only}}
-
 
 mod actor {
     {% for mod in actor_mods %}
@@ -32,7 +30,7 @@ fn main() {
 
     if !systemd_command {
         info!("Starting up");
-        let mut graph = build_graph(steady_state::GraphBuilder::for_production().build(opt.clone()) );
+        let mut graph = build_graph(steady_state::GraphBuilder::default().build(opt.clone()) );
         graph.start();
 
         {  //remove this block to run forever.
@@ -48,14 +46,14 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
     //this common root of the channel builder allows for common config of all channels
     let base_channel_builder = graph.channel_builder()
-        .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
         .with_type()
         .with_line_expansion(1.0f32);
+
     //this common root of the actor builder allows for common config of all actors
-    let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor
+    let base_actor_builder = graph.actor_builder()
         .with_mcpu_percentile(Percentile::p80())
-        .with_work_percentile(Percentile::p80())
-        .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
+        .with_work_percentile(Percentile::p80());
+
     //build channels
     {% for channel in channels %}
     let ({{channel[0].tx_prefix_name(channel)}}_{{channel[0].name}}_tx, {{channel[0].rx_prefix_name(channel)}}_{{channel[0].name}}_rx) = base_channel_builder

@@ -5,8 +5,6 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use crate::Args;
-
-
 use std::error::Error;
 {% for u in message_types_to_use -%}
 {{u}};
@@ -17,8 +15,6 @@ use std::error::Error;
    dummy: u8 {{note_for_the_user}}: replace this and put your fields here
 }
 {% endfor %}
-
-
 
 //if no internal state is required (recommended) feel free to remove this.
 #[derive(Default)]
@@ -139,7 +135,6 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
     Ok(())
 }
 
-
 #[cfg(test)]
 pub async fn run{%- if has_bundles -%}<{% endif -%}
     {%- for channel in rx_channels -%}
@@ -198,7 +193,6 @@ pub(crate) mod tests {
     use std::time::Duration;
     use steady_state::*;
     use super::*;
-
 
     #[async_std::test]
     pub(crate) async fn test_simple_process() {

@@ -905,9 +905,8 @@ impl SteadyContext {
         tx_mons: [TxMetaData; TX_LEN],
     ) -> LocalMonitor<RX_LEN, TX_LEN> {
         
-        //TODO: if the telemetry is disabled in the graph do NOT build these.
-        
-        let (send_rx, send_tx, state) = if steady_config::TELEMETRY_HISTORY || steady_config::TELEMETRY_SERVER {
+        let (send_rx, send_tx, state) = if (self.frame_rate_ms>0) 
+                     && (steady_config::TELEMETRY_HISTORY || steady_config::TELEMETRY_SERVER) {
             let mut rx_meta_data = Vec::new();
             let mut rx_inverse_local_idx = [0; RX_LEN];
             rx_mons.iter().enumerate().for_each(|(c, md)| {

@@ -247,6 +247,11 @@ impl ActorBuilder {
     ///
     /// A new instance of `ActorBuilder`.
     pub fn new(graph: &mut Graph) -> ActorBuilder {
+
+        //build default window
+        let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(graph.telemetry_production_rate_ms as u128
+                                                                                              , Duration::from_secs(1)
+                                                                                              , Duration::from_secs(10));
         ActorBuilder {
             actor_name: ActorName::new("",None),
             backplane: graph.backplane.clone(),
@@ -256,8 +261,8 @@ impl ActorBuilder {
             telemetry_tx: graph.all_telemetry_rx.clone(),
             channel_count: graph.channel_count.clone(),
             runtime_state: graph.runtime_state.clone(),
-            refresh_rate_in_bits: 6, // 1 << 6 == 64
-            window_bucket_in_bits: 5, // 1 << 5 == 32
+            refresh_rate_in_bits: refresh_in_bits, 
+            window_bucket_in_bits: window_in_bits, 
             oneshot_shutdown_vec: graph.oneshot_shutdown_vec.clone(),
             percentiles_mcpu: Vec::with_capacity(0),
             percentiles_work: Vec::with_capacity(0),
@@ -283,37 +288,37 @@ impl ActorBuilder {
     ///
     /// A new `ActorBuilder` instance with the specified compute refresh window configuration.
     pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
-        let result = self.clone();
-        // We must compute the refresh rate first before we do the window
-        let frames_per_refresh = refresh.as_micros() / (1000u128 * self.frame_rate_ms as u128);
-        let refresh_in_bits = (frames_per_refresh as f32).log2().ceil() as u8;
-        let refresh_in_micros = (1000u128 << refresh_in_bits) * self.frame_rate_ms as u128;
-        // Now compute the window based on our new bucket size
-        let buckets_per_window: f32 = window.as_micros() as f32 / refresh_in_micros as f32;
-        // Find the next largest power of 2
-        let window_in_bits = buckets_per_window.log2().ceil() as u8;
-        result.with_compute_refresh_window_bucket_bits(refresh_in_bits, window_in_bits)
-    }
-
-    /// Directly sets the compute refresh window bucket sizes in bits, providing fine-grained control over telemetry resolution.
-    ///
-    /// # Arguments
-    ///
-    /// * `refresh_bucket_in_bits` - The refresh rate in bits.
-    /// * `window_bucket_in_bits` - The window size in bits.
-    ///
-    /// # Returns
-    ///
-    /// A new `ActorBuilder` instance with the specified bucket sizes.
-    pub fn with_compute_refresh_window_bucket_bits(&self, refresh_bucket_in_bits: u8, window_bucket_in_bits: u8) -> Self {
         let mut result = self.clone();
-        result.refresh_rate_in_bits = refresh_bucket_in_bits;
-        result.window_bucket_in_bits = window_bucket_in_bits;
+        let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(self.frame_rate_ms as u128, refresh, window);
+        result.refresh_rate_in_bits = refresh_in_bits;
+        result.window_bucket_in_bits = window_in_bits;
         result
     }
 
+    /// Disables any metric collection
+    /// 
+    pub fn with_no_refresh_window(&self) -> Self {
+        let mut result = self.clone();
+        result.refresh_rate_in_bits = 0;
+        result.window_bucket_in_bits = 0;
+        result
+    }
 
-
+    pub(crate) fn internal_compute_refresh_window(frame_rate_ms: u128, refresh: Duration, window: Duration) -> (u8, u8) {
+        if frame_rate_ms>0 {
+            // We must compute the refresh rate first before we do the window
+            let frames_per_refresh = refresh.as_micros() / (1000u128 * frame_rate_ms);
+            let refresh_in_bits = (frames_per_refresh as f32).log2().ceil() as u8;
+            let refresh_in_micros = (1000u128 << refresh_in_bits) * frame_rate_ms;
+            // Now compute the window based on our new bucket size
+            let buckets_per_window: f32 = window.as_micros() as f32 / refresh_in_micros as f32;
+            // Find the next largest power of 2
+            let window_in_bits = buckets_per_window.log2().ceil() as u8;
+            (refresh_in_bits, window_in_bits)
+        } else {
+            (0,0)
+        }
+    }
 
 
     /// Configures the actor to monitor a specific CPU usage percentile for performance analysis.
@@ -409,45 +414,6 @@ impl ActorBuilder {
     pub fn with_work_trigger(&self, bound: Trigger<Work>, color: AlertColor) -> Self {
         let mut result = self.clone();
         result.trigger_work.push((bound, color));
-        result
-    }
-
-    /// Sets the floor for compute window size, ensuring performance metrics are based on a sufficiently large sample.
-    ///
-    /// # Arguments
-    ///
-    /// * `duration` - The minimum duration for the compute window.
-    ///
-    /// # Returns
-    ///
-    /// A new `ActorBuilder` instance with the specified compute window floor.
-    pub fn with_compute_window_floor(&self, duration: Duration) -> Self {
-        let result = self.clone();
-        let millis: u128 = duration.as_micros();
-        let frame_ms: u128 = 1000u128 * self.frame_rate_ms as u128;
-        let est_buckets = millis / frame_ms;
-        // Find the next largest power of 2
-        let window_bucket_in_bits = (est_buckets as f32).log2().ceil() as u8;
-        result.with_compute_window_bucket_bits(window_bucket_in_bits)
-    }
-
-    /// Directly sets the compute window size in bits, offering precise control over the performance metrics' temporal resolution.
-    ///
-    /// # Arguments
-    ///
-    /// * `window_bucket_in_bits` - The size of the window in bits.
-    ///
-    /// # Note
-    ///
-    /// The default window size is 1 second.
-    ///
-    /// # Returns
-    ///
-    /// A new `ActorBuilder` instance with the specified window size.
-    pub fn with_compute_window_bucket_bits(&self, window_bucket_in_bits: u8) -> Self {
-        assert!(window_bucket_in_bits <= 30);
-        let mut result = self.clone();
-        result.window_bucket_in_bits = window_bucket_in_bits;
         result
     }
 
@@ -1073,8 +1039,8 @@ mod test_actor_builder {
         let mut graph =  GraphBuilder::for_testing().build(());
         let builder = ActorBuilder::new(&mut graph);
         assert_eq!(builder.actor_name.name, "");
-        assert_eq!(builder.refresh_rate_in_bits, 6);
-        assert_eq!(builder.window_bucket_in_bits, 5);
+        assert_eq!(builder.refresh_rate_in_bits, 0);
+        assert_eq!(builder.window_bucket_in_bits, 0);
     }
 
 

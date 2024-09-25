@@ -28,7 +28,7 @@ use async_ringbuf::traits::Split;
 use futures_timer::Delay;
 use ringbuf::traits::Observer;
 use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
-use crate::actor_builder::{Percentile};
+use crate::actor_builder::{ActorBuilder, Percentile};
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
@@ -189,6 +189,11 @@ impl ChannelBuilder {
         noise_threshold: Instant,
         frame_rate_ms: u64,
     ) -> ChannelBuilder {
+
+        //build default window
+        let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(frame_rate_ms as u128
+                                                                                              , Duration::from_secs(1)
+                                                                                              , Duration::from_secs(10));        
         ChannelBuilder {
             noise_threshold,
             channel_count,
@@ -196,8 +201,8 @@ impl ChannelBuilder {
             labels: &[],
             display_labels: false,
             oneshot_shutdown_vec,
-            refresh_rate_in_bits: 6, // 1<<6 == 64
-            window_bucket_in_bits: 5, // 1<<5 == 32
+            refresh_rate_in_bits: refresh_in_bits, 
+            window_bucket_in_bits: window_in_bits, 
             line_expansion: f32::NAN, // use 1.0 as the default
             show_type: false,
             percentiles_filled: Vec::with_capacity(0),
@@ -228,29 +233,22 @@ impl ChannelBuilder {
     /// # Returns
     /// A modified instance of `ChannelBuilder` with computed refresh rate and window size.
     pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
-        let result = self.clone();
-        let frames_per_refresh = refresh.as_micros() / (1000u128 * self.frame_rate_ms as u128);
-        let refresh_in_bits = (frames_per_refresh as f32).log2().ceil() as u8;
-        let refresh_in_micros = (1000u128 << refresh_in_bits) * self.frame_rate_ms as u128;
-        let buckets_per_window: f32 = window.as_micros() as f32 / refresh_in_micros as f32;
-        let window_in_bits = (buckets_per_window).log2().ceil() as u8;
-        result.with_compute_refresh_window_bucket_bits(refresh_in_bits, window_in_bits)
-    }
-
-    /// Sets the refresh rate and window bucket size for the channel.
-    ///
-    /// # Parameters
-    /// - `refresh_bucket_in_bits`: Number of bits for the refresh rate.
-    /// - `window_bucket_in_bits`: Number of bits for the window bucket size.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with the specified refresh rate and window bucket size.
-    pub fn with_compute_refresh_window_bucket_bits(&self, refresh_bucket_in_bits: u8, window_bucket_in_bits: u8) -> Self {
-        let mut result = self.clone();
-        result.refresh_rate_in_bits = refresh_bucket_in_bits;
-        result.window_bucket_in_bits = window_bucket_in_bits;
+        let mut result = self.clone(); 
+        let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(self.frame_rate_ms as u128, refresh, window);
+        result.refresh_rate_in_bits = refresh_in_bits;
+        result.window_bucket_in_bits = window_in_bits;        
         result
     }
+
+    /// Disables any metric collection
+    ///
+    pub fn with_no_refresh_window(&self) -> Self {
+        let mut result = self.clone();
+        result.refresh_rate_in_bits = 0;
+        result.window_bucket_in_bits = 0;
+        result
+    }
+
 
     /// Builds a bundle of channels with the specified girth.
     ///

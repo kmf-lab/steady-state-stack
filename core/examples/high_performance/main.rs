@@ -39,14 +39,12 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
     //this common root of the channel builder allows for common config of all channels
     let base_channel_builder = graph.channel_builder()
-        .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10))
         .with_type()
         .with_line_expansion(0.002f32);//expecting a lot of records
     //this common root of the actor builder allows for common config of all actors
     let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor
         .with_mcpu_percentile(Percentile::p80())
-        .with_work_percentile(Percentile::p80())
-        .with_compute_refresh_window_floor(Duration::from_secs(1),Duration::from_secs(10));
+        .with_work_percentile(Percentile::p80());
     //build channels
 
     const PARALLEL:usize = 5;

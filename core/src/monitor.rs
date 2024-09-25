@@ -22,6 +22,7 @@ use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannelResponder};
+use crate::steady_config::CONSUMED_MESSAGES_BY_COLLECTOR;
 use crate::steady_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
@@ -368,7 +369,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Returns
     /// A future that resolves to `Ok(())` if the monitor stops, otherwise `Err(())`.
     pub fn wait_while_running(&self) -> impl Future<Output = Result<(), ()>> {
-        crate::graph_liveliness::WaitWhileRunningFuture::new(self.runtime_state.clone())
+        WaitWhileRunningFuture::new(self.runtime_state.clone())
     }
 
 
@@ -384,8 +385,23 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// This method holds the data if it is called more frequently than the collector can consume the data.
     /// It is designed for use in tight loops where telemetry data is collected frequently.
-    pub fn relay_stats_smartly(&mut self) {        
-        telemetry::setup::try_send_all_local_telemetry(self);
+    pub fn relay_stats_smartly(&mut self) {
+        let last_elapsed = self.last_telemetry_send.elapsed();
+        if last_elapsed.as_micros() as u64 * (CONSUMED_MESSAGES_BY_COLLECTOR as u64) >= (1000u64 * self.frame_rate_ms) {
+            setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
+            self.last_telemetry_send = Instant::now();
+        }
+    }
+    
+    /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
+    ///
+    /// This method ignores the last telemetry send time and may overload the telemetry if called too frequently.
+    /// It is designed for use in low-frequency telemetry collection scenarios, specifically cases
+    /// when we know the actor will do a blocking wait for a long time and we want relay what we have before that.
+    pub fn relay_stats(&mut self) {
+        let last_elapsed = self.last_telemetry_send.elapsed();
+        setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
+        self.last_telemetry_send = Instant::now();        
     }
 
     /// Asynchronously waits for a specified duration.

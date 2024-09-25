@@ -554,7 +554,8 @@ impl Graph {
         };
         let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown_rx));
         let now = Instant::now();
-
+        
+            
         SteadyContext {
             channel_count,
             ident: ActorIdentity::new(usize::MAX, name, None), //no Id this is for testing
@@ -569,13 +570,13 @@ impl Graph {
             last_periodic_wait: Default::default(),
             actor_start_time: now,
             node_tx_rx: None,
-            frame_rate_ms: self.telemetry_production_rate_ms,
+            frame_rate_ms: self.telemetry_production_rate_ms, //zero will disable telemetry
         }
     }
 
     /// Returns an `ActorBuilder` for constructing new actors.
     pub fn actor_builder(&mut self) -> ActorBuilder {
-        crate::ActorBuilder::new(self)
+        ActorBuilder::new(self)
     }
 
     /// Enables fail-fast behavior.
@@ -839,7 +840,11 @@ impl Graph {
             backplane: Arc::new(Mutex::new(backplane)),
             noise_threshold: Instant::now().sub(Duration::from_secs(steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64)),
             block_fail_fast,
-            telemetry_production_rate_ms,
+            telemetry_production_rate_ms: if telemetry_metric_features {
+                                                 telemetry_production_rate_ms
+                                             } else {
+                                                 0u64 //this zero prevents us from building telemetry
+                                             },
         };
 
         if telemetry_metric_features {
