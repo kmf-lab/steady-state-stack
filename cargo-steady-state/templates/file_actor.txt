@@ -39,7 +39,7 @@ impl {{ display_name|capitalize }}InternalState {
     }
 }
 
-#[cfg(not(test))]
+{% if is_on_graph_edge %}#[cfg(not(test))]{% endif %}
 pub async fn run{%- if has_bundles -%}<{% endif -%}
     {%- for channel in rx_channels -%}
         {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_RX_GIRTH:usize,{% endif -%}
@@ -135,6 +135,7 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
     Ok(())
 }
 
+{% if is_on_graph_edge %}
 #[cfg(test)]
 pub async fn run{%- if has_bundles -%}<{% endif -%}
     {%- for channel in rx_channels -%}
@@ -187,6 +188,9 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
     Ok(())
 
 }
+{% endif %}
+
+
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -198,22 +202,19 @@ pub(crate) mod tests {
     pub(crate) async fn test_simple_process() {
        let mut graph = GraphBuilder::for_testing().build(());
 
-       {{note_for_the_user}} you may need to use .build() or  .build_as_bundle::<_, SOME_VALUE>()
        {%- for channel in rx_channels %}
-       //let ({{channel[0].name}}_rx,test_{{channel[0].name}}_tx) = graph.channel_builder().with_capacity(4).build()
+       let (test_{{channel[0].name}}_tx,{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_as_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
        {% endfor -%}
 
-       {{note_for_the_user}} you may need to use .build() or  .build_as_bundle::<_, SOME_VALUE>()
        {%- for channel in tx_channels %}
-       //let (test_{{channel[0].name}}_rx,{{channel[0].name}}_tx) = graph.channel_builder().with_capacity(4).build()
+       let ({{channel[0].name}}_tx,test_{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_as_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
        {% endfor -%}
 
-        {{note_for_the_user}} uncomment to add your test
-        //graph.actor_builder()
-        //            .with_name("UnitTest")
-        //            .build_spawn( move |context|
-        //                    internal_behavior(context {%- for channel in rx_channels %},{{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %},{{channel[0].name}}_tx.clone(){%- endfor -%} )
-        //             );
+       graph.actor_builder()
+                    .with_name("UnitTest")
+                    .build_spawn( move |context|
+                            internal_behavior(context {%- for channel in rx_channels %},{{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %},{{channel[0].name}}_tx.clone(){%- endfor -%} )
+                     );
 
         graph.start(); //startup the graph
 

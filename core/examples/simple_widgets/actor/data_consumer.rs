@@ -136,7 +136,7 @@ mod consumer_tests {
         graph.request_stop();
 
         let test_data: Vec<ApprovedWidgets> = (0..BATCH_SIZE).map(|i| ApprovedWidgets { original_count: 0, approved_count: i as u64 }).collect();
-        approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
+        approved_widget_tx_out.testing_send_in_two_batches(test_data, Duration::from_millis(30), true).await;
 
         graph.block_until_stopped(Duration::from_secs(240));
 

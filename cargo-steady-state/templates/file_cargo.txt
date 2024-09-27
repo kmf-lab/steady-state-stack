@@ -16,4 +16,6 @@ log              = "0.4.22"
 futures          = "0.3.30"
 
 [dev-dependencies]
-async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only,
+async-std        = {  version = "1.12.0", features = ["attributes"] }
+futures-timer    = "3.0.3"
+

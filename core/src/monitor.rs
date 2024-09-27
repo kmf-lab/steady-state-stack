@@ -1331,32 +1331,25 @@ pub(crate) mod monitor_tests {
     // Test for send_slice_until_full
     #[test]
     fn test_send_slice_until_full() {
-        let (mut tx, _rx) = create_test_channel();
+        let (mut tx, rx) = create_test_channel();
         let mut context = test_steady_context();
         let tx = tx.clone();
+        let rx = rx.clone();
+
         let mut monitor = into_monitor!(context,[],[tx]);
 
         let slice = [1, 2, 3];
         if let Some(mut tx) = tx.try_lock() {
             let sent_count = monitor.send_slice_until_full(&mut tx, &slice);
             assert_eq!(sent_count, slice.len());
+            if let Some(mut rx) = rx.try_lock() {
+                assert_eq!(monitor.try_take(&mut rx), Some(1));
+                assert_eq!(monitor.try_peek(&mut rx), Some(&2));
+            }
+            
         };
     }
 
-    // Test for send_iter_until_full
-    #[test]
-    fn test_send_iter_until_full() {
-        let (mut tx, _rx) = create_test_channel();
-        let mut context = test_steady_context();
-        let tx = tx.clone();
-        let mut monitor = into_monitor!(context,[],[tx]);
-
-        let iter = vec![1, 2, 3].into_iter();
-        if let Some(mut tx) = tx.try_lock() {
-            let sent_count = monitor.send_iter_until_full(&mut tx, iter);
-            assert_eq!(sent_count, 3);
-        };
-    }
 
     // Test for try_send
     #[test]
@@ -1373,20 +1366,7 @@ pub(crate) mod monitor_tests {
     }
 
 
-    // Test for take_into_iter
-    #[test]
-    fn test_take_into_iter() {
-        let mut rx = create_rx(vec![1, 2, 3]);
-        let mut context = test_steady_context();
-        let mut monitor = into_monitor!(context,[rx],[]);
 
-        if let Some(mut rx) = rx.try_lock() {
-            let mut iter = monitor.take_into_iter(&mut rx);
-            assert_eq!(iter.next(), Some(1));
-            assert_eq!(iter.next(), Some(2));
-            assert_eq!(iter.next(), Some(3));
-        };
-    }
 
     // Test for call_async
     #[async_std::test]
@@ -1567,4 +1547,50 @@ pub(crate) mod monitor_tests {
             assert_eq!(rx.count[rxd.local_index], 0);
         }
     }
+
+
+    // Test for send_iter_until_full
+    #[test]
+    fn test_send_iter_until_full() {
+        let (mut tx, mut rx) = create_test_channel();
+        let mut context = test_steady_context();
+        let tx = tx.clone();
+        let rx = rx.clone();
+        let mut monitor = into_monitor!(context,[],[tx]);
+
+        let iter = vec![1, 2, 3].into_iter();
+        if let Some(mut tx) = tx.try_lock() {
+            let sent_count = monitor.send_iter_until_full(&mut tx, iter);
+            assert_eq!(sent_count, 3);
+            if let Some(mut rx) = rx.try_lock() {
+                let i = monitor.take_into_iter(&mut rx);
+                assert_eq!(i.collect::<Vec<i32>>(), vec![1, 2, 3]);
+            }
+        };
+    }
+
+    // Test for take_into_iter
+    #[test]
+    fn test_take_into_iter() {
+        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let mut context = test_steady_context();
+        let mut monitor = into_monitor!(context,[rx],[]);
+
+        if let Some(mut rx) = rx.try_lock() {
+            {
+                let mut iter = monitor.take_into_iter(&mut rx);
+                assert_eq!(iter.next(), Some(1));
+                assert_eq!(iter.next(), Some(2));
+                // we stop early to test if we can continue later
+            }
+            {//ensure we can take from where we left off
+                let mut iter = monitor.take_into_iter(&mut rx);
+                assert_eq!(iter.next(), Some(3));
+                assert_eq!(iter.next(), Some(4));
+            }
+        };
+    }
+
+
+
 }

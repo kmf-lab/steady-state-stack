@@ -76,7 +76,7 @@ pub(crate) mod hd_actor_tests {
 
         //add test data to the input channels
         let test_data:Vec<Tick> = (0..WAIT_AVAIL).map(|i| Tick { value: (i+1) as u128 }).collect();
-        ticks_tx_in.testing_send(test_data, Duration::from_millis(20), true).await;
+        ticks_tx_in.testing_send_in_two_batches(test_data, Duration::from_millis(20), true).await;
 
         assert_eq!(true, graph.block_until_stopped(Duration::from_secs(240)));
         assert_eq!(true, ticks_rx_out.testing_avail_units().await>0);

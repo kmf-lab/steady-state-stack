@@ -193,6 +193,7 @@ pub(crate) struct ActorTemplate {
     pub(crate) note_for_the_user: String,
     pub(crate) display_name: String,
     pub(crate) has_bundles: bool,
+    pub(crate) is_on_graph_edge: bool,
     pub(crate) rx_channels: Vec<Vec<Channel>>,
     pub(crate) tx_channels: Vec<Vec<Channel>>,
     pub(crate) rx_monitor_defs: Vec<String>,

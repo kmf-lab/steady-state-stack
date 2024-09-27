@@ -672,12 +672,16 @@ impl <T> LazySteadyTx<T> {
             lazy_channel,
         }
     }
+    
+    #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyTx<T> {
         nuclei::block_on(self.lazy_channel.get_tx_clone())
     }
 
     /// For testing simulates sending data to the actor in a controlled manner.
-    pub async fn testing_send(&self, data: Vec<T>, step_delay: Duration, close: bool) {
+    /// Warning this will send some and wait (block) for them to be consumed before sending more.
+    /// 
+    pub async fn testing_send_in_two_batches(&self, data: Vec<T>, step_delay: Duration, close: bool) {
         let tx = self.lazy_channel.get_tx_clone().await;
         let mut tx = tx.lock().await;
 
@@ -706,6 +710,19 @@ impl <T> LazySteadyTx<T> {
         }
     }
 
+    /// Simple send of all the data in the vec for testing
+    pub async fn testing_send_all(&self, data: Vec<T>, close: bool) {
+        let tx = self.lazy_channel.get_tx_clone().await;
+        let mut tx = tx.lock().await;
+        for d in data.into_iter() {
+            let _ =  tx.tx.push(d).await;     
+        }
+        if close {
+            tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
+        }        
+    }
+    
+    /// wait duration and then close and wait again
     pub async fn testing_close(&self, step_delay: Duration) {
         Delay::new(step_delay).await;
         let tx = self.lazy_channel.get_tx_clone().await;
@@ -731,6 +748,8 @@ impl <T> crate::channel_builder::LazySteadyRx<T> {
             lazy_channel,
         }
     }
+
+    #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyRx<T> {
         nuclei::block_on(self.lazy_channel.get_rx_clone())
     }

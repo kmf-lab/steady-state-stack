@@ -71,7 +71,7 @@ pub(crate) mod hd_actor_tests {
         graph.request_stop(); //let all actors close when inputs are closed
 
         let test_data:Vec<Tick> = (0..BATCH).map(|i| Tick { value: i as u128 }).collect();
-        ticks_tx_in.testing_send(test_data, Duration::from_millis(30), false).await;
+        ticks_tx_in.testing_send_in_two_batches(test_data, Duration::from_millis(30), false).await;
 
         let result_data = ticks_rx_out.testing_take().await;
         assert_eq!(result_data.len(), BATCH);

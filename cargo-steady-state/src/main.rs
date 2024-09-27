@@ -191,6 +191,7 @@ fn write_project_files(pm: ProjectModel
        let tx_monitor_defs = monitor_defs("tx",&actor.tx_channels);
 
        fs::write(actor_file_rs, templates::ActorTemplate {
+               is_on_graph_edge: actor.rx_channels.is_empty() || actor.tx_channels.is_empty(),
                note_for_the_user: format!("//TO{}: ","DO"), //do not change, this is not for you
                display_name: actor.display_name,
                has_bundles: actor.rx_channels.iter().any(|f| f.len()>1) || actor.tx_channels.iter().any(|f| f.len()>1),
@@ -575,7 +576,7 @@ mod tests {
         let build_me = PathBuf::from(test_name);
         let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
         ////
-        let mut output = Command::new("cargo")
+        let mut output_child = Command::new("cargo")
             .arg("build")
             .arg("--manifest-path")
             .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
@@ -584,8 +585,8 @@ mod tests {
             .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal
             .spawn()
             .expect("failed to execute process");
-        let output = output.wait().expect("failed to wait on child");
-
+        let output = output_child.wait().expect("failed to wait on child");
+           
         assert!(output.success());
     }
 

@@ -949,9 +949,11 @@ pub(crate) fn compute_labels<T: Counter>(
         if avg_per_sec_numer >= (10 * denominator) as u128 {
             let value = avg_per_sec_numer / denominator as u128;
 
-            if value >= 500000 {
+            if value >= 50000 {       //testing new value 500000 {
                 label_target.push_str(": ");
-                label_target.push_str(itoa::Buffer::new().format(value / 1000));
+                let mut b = itoa::Buffer::new(); //testing trim instead of /1000
+                let t = b.format(value);
+                label_target.push_str(&t[..t.len() - 3]);
                 label_target.push('k');
             } else {
                 label_target.push_str(": ");
@@ -1276,13 +1278,13 @@ pub(crate) mod stats_tests {
         computer.std_dev_rate.push(StdDev::two_and_a_half());
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg rate: 68395 per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
+        assert_eq!(display_label, "Avg rate: 68k per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
 
         computer.std_dev_rate.clear();
         computer.std_dev_rate.push(StdDev::one());
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg rate: 68395 per/sec\nrate StdDev: 12.182 per frame (3ms duration)\n");
+        assert_eq!(display_label, "Avg rate: 68k per/sec\nrate StdDev: 12.182 per frame (3ms duration)\n");
 
         // Define a trigger with a standard deviation condition
         assert!(computer.triggered_rate(&Trigger::StdDevsAbove(StdDev::one(), Rate::per_millis(80))), "Trigger should fire when standard deviation from the average filled is above the threshold");

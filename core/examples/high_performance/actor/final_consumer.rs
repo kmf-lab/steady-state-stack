@@ -113,7 +113,7 @@ pub(crate) mod hp_actor_tests {
 
         let test_data:Vec<TickCount> = (0..BATCH).map(|i| TickCount { count: i as u128 }).collect();
         ticks_tx_in.clone();
-        ticks_tx_in.testing_send(test_data, 0, true).await;
+        ticks_tx_in.testing_send_in_two_batches(test_data, 0, true).await;
         ticks_tx_in.testing_mark_closed(1).await;
         ticks_tx_in.testing_mark_closed(2).await;
 

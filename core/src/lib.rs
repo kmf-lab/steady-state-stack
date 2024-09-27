@@ -150,7 +150,7 @@ pub type LazySteadyTxBundle<T, const GIRTH: usize> = [LazySteadyTx<T>; GIRTH];
 
 pub trait LazySteadyTxBundleClone<T, const GIRTH: usize> {
     fn clone(&self) -> SteadyTxBundle<T, GIRTH>;
-    async fn testing_send(&self, data: Vec<T>, index:usize, close: bool);
+    async fn testing_send_in_two_batches(&self, data: Vec<T>, index:usize, close: bool);
     async fn testing_mark_closed(&self, index: usize);
 }
 
@@ -165,7 +165,7 @@ impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBu
         }
     }
 
-    async fn testing_send(&self, data: Vec<T>, index: usize, close: bool) {
+    async fn testing_send_in_two_batches(&self, data: Vec<T>, index: usize, close: bool) {
         if index >= GIRTH {
             panic!("Index out of bounds");
         }

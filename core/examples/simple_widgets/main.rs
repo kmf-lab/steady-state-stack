@@ -71,7 +71,6 @@ fn build_simple_widgets_graph(mut graph: Graph) -> (Graph, Arc<Mutex<InternalSta
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_channel_builder = graph.channel_builder()
-        .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10))
         .with_labels(&["widgets"], true)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p50())
                              , AlertColor::Red)
@@ -157,11 +156,9 @@ mod simple_widget_tests {
     use std::ops::DerefMut;
     use futures_timer::Delay;
     use isahc::{Body, Error, ReadResponseExt, Response};
-    use serial_test::serial;
     use super::*;
 
     // #[cfg(test)]
-    // #[serial]
     // #[async_std::test]
     // async fn test_simple_widget_graph() {
     //

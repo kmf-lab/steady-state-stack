@@ -59,7 +59,7 @@ pub(crate) mod actor_tests {
         graph.request_stop();
 
         let test_data:Vec<Tick> = (0..BATCH).map(|i| Tick { value: i as u128 }).collect();
-        ticks_tx_in.testing_send(test_data, Duration::from_millis(30),true).await;
+        ticks_tx_in.testing_send_in_two_batches(test_data, Duration::from_millis(30), true).await;
 
         assert_eq!(true,graph.block_until_stopped(Duration::from_secs(240)));
 

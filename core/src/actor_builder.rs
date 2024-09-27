@@ -232,7 +232,9 @@ impl<I> Clone for SteadyContextArchetype<I> {
 /// or it can take a Join wrapping an ActorTeam to run the Actors together.
 ///
 pub enum Threading<'a> {
+    /// Spawn a new thread for the actor now
     Spawn,
+    /// Join the actor to the team where a common spawn will be called later
     Join(&'a mut ActorTeam),
 }
 
