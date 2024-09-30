@@ -129,8 +129,6 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
       //    try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>  ie monitor.try_take(...
       //    try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T>  ie monitor.try_send(...
 
-     monitor.relay_stats_smartly();
-
     }
     Ok(())
 }
@@ -180,7 +178,6 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
 
                 {{note_for_the_user}} write responder code:: let responder = responder.respond_with(|message| {
 
-                monitor.relay_stats_smartly();
          }
 
     }

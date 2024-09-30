@@ -339,7 +339,7 @@ impl<T> Rx<T> {
     /// Suitable for scenarios requiring batch processing where a certain number of messages are needed before processing begins.
     #[inline]
     pub async fn wait_avail_units(&mut self, count: usize) -> bool {
-        self.shared_wait_avail_units(count).await;
+        self.shared_wait_avail_units_or_shutdown(count).await;
         false
     }
 
@@ -360,6 +360,7 @@ impl<T> Rx<T> {
     #[inline]
     pub(crate) fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
         CountingIterator::new(self.rx.pop_iter(), &self.take_count)
+       // self.rx.pop_iter()
     }
 
     #[inline]
@@ -411,18 +412,18 @@ impl<T> Rx<T> {
     }
 
     #[inline]
-    pub(crate) fn shared_is_empty(&self) -> bool {
+    pub(crate) fn shared_is_empty(&self) -> bool  {
         self.rx.is_empty()
     }
 
     #[inline]
-    pub(crate) fn shared_avail_units(&mut self) -> usize {
+    pub(crate) fn shared_avail_units(&mut self) -> usize {        
         self.rx.occupied_len()
     }
 
     
     #[inline]
-    pub(crate) async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
+    pub(crate) async fn shared_wait_avail_units_or_shutdown(&mut self, count: usize) -> bool {
         if self.rx.occupied_len() >= count {
             true
         } else {
@@ -433,6 +434,17 @@ impl<T> Rx<T> {
             } else {
                 false
             }
+        }
+    }
+
+    #[inline]
+    pub(crate) async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
+        if self.rx.occupied_len() >= count {
+            true
+        } else {
+                let mut operation = &mut self.rx.wait_occupied(count);
+                operation.await;
+                true    
         }
     }
 }
@@ -503,7 +515,7 @@ impl<T: Send + Sync> RxDef for SteadyRx<T> {
             if let Some(mut guard) = self.try_lock() {
                 let is_closed = guard.deref_mut().is_closed();
                 if !is_closed {
-                    let result = guard.deref_mut().shared_wait_avail_units(count).await;
+                    let result = guard.deref_mut().shared_wait_avail_units_or_shutdown(count).await;
                     if result {
                         (true, Some(guard.deref().id()))
                     } else {

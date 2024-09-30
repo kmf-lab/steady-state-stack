@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, LockResult};
-use std::sync::{RwLock, RwLockReadGuard};
+use parking_lot::{RwLock, RwLockReadGuard}; 
 use std::time::Duration;
 
 #[allow(unused_imports)]
@@ -100,7 +100,7 @@ pub(crate) async fn run<const GIRTH: usize>(
 
         let confirm_shutdown = &mut || {
             is_shutting_down = true;
-            is_all_empty_and_closed(dynamic_senders_vec.read())
+            is_all_empty_and_closed(Ok(dynamic_senders_vec.read()))
                 && locked_servers.mark_closed()
         };
 
@@ -156,49 +156,41 @@ pub(crate) async fn run<const GIRTH: usize>(
 
 
         let (nodes, to_pop) = {
-            match dynamic_senders_vec.read() {
-                Ok(guard) => {
-                    let dynamic_senders = guard.deref();
+            
+            let guard = dynamic_senders_vec.read();                      
+            let dynamic_senders = guard.deref();
 
-                    let structure_unchanged = dynamic_senders.len() == state.actor_count;
-                    if structure_unchanged {
-                        (None, collect_channel_data(&mut state, dynamic_senders))
-                    } else {
-                        all_actors_to_scan = None;
-                        rebuild_scan_requested = true;
+            let structure_unchanged = dynamic_senders.len() == state.actor_count;
+            if structure_unchanged {
+                (None, collect_channel_data(&mut state, dynamic_senders))
+            } else {
+                all_actors_to_scan = None;
+                rebuild_scan_requested = true;
 
-                        //when we are still building we will not report missing channel errors
-                        let is_building = ctrl.is_liveliness_in(&[GraphLivelinessState::Building], false);
+                //when we are still building we will not report missing channel errors
+                let is_building = ctrl.is_liveliness_in(&[GraphLivelinessState::Building]);
 
-                        if let Some(n) = gather_node_details(&mut state, dynamic_senders, is_building) {
-                            (Some(n), collect_channel_data(&mut state, dynamic_senders))
-                        } else {
-                            (None, Vec::new())
-                        }
-                    }
+                if let Some(n) = gather_node_details(&mut state, dynamic_senders, is_building) {
+                    (Some(n), collect_channel_data(&mut state, dynamic_senders))
+                } else {
+                    (None, Vec::new())
                 }
-                Err(_) => (None, Vec::new()),
             }
+           
         };
 
         if !to_pop.is_empty() {
-            match dynamic_senders_vec.write() {
-                Ok(mut guard) => {
-                    let dynamic_senders = guard.deref_mut();
-                    to_pop.iter().for_each(|ident| {
-                        #[cfg(debug_assertions)]
-                        trace!("swapping to new telemetry channels for {:?}", ident);
-                        dynamic_senders.iter_mut().for_each(|f| {
-                            if f.ident == *ident {
-                                f.telemetry_take.pop_front();
-                            }
-                        });
-                    });
-                }
-                Err(_) => {
-                    continue;
-                }
-            }
+            let mut guard = dynamic_senders_vec.write();       
+            let dynamic_senders = guard.deref_mut();
+            to_pop.iter().for_each(|ident| {
+                #[cfg(debug_assertions)]
+                trace!("swapping to new telemetry channels for {:?}", ident);
+                dynamic_senders.iter_mut().for_each(|f| {
+                    if f.ident == *ident {
+                        f.telemetry_take.pop_front();
+                    }
+                });
+            });        
         }
 
 
@@ -248,22 +240,21 @@ fn gather_valid_actor_telemetry_to_scan(
     version: u32,
     dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>,
 ) -> Option<Vec<Box<dyn RxDef>>> {
-    if let Ok(guard) = dynamic_senders_vec.read() {
-        let dynamic_senders = guard.deref();
-        let v: Vec<Box<dyn RxDef>> = dynamic_senders
-            .iter()
-            .filter(|f| f.ident.label.name != metrics_collector::NAME)
-            .flat_map(|f| f.telemetry_take.iter().filter_map(|g| g.actor_rx(version)))
-            .collect();
+    let guard = dynamic_senders_vec.read();
+    
+    let dynamic_senders = guard.deref();
+    let v: Vec<Box<dyn RxDef>> = dynamic_senders
+        .iter()
+        .filter(|f| f.ident.label.name != metrics_collector::NAME)
+        .flat_map(|f| f.telemetry_take.iter().filter_map(|g| g.actor_rx(version)))
+        .collect();
 
-        if !v.is_empty() {
-            Some(v)
-        } else {
-            None
-        }
+    if !v.is_empty() {
+        Some(v)
     } else {
         None
     }
+
 }
 
 /// Collects channel data from the state and dynamic senders.
@@ -486,7 +477,7 @@ mod tests {
     use super::*;
     use futures_util::stream::FuturesUnordered;
     use std::sync::Arc;
-    use std::sync::{RwLock};
+    use parking_lot::RwLock;
     use std::collections::VecDeque;
     use futures::executor::block_on;
 
@@ -548,7 +539,7 @@ mod tests {
                 ident: ActorIdentity::new(0, "test_actor", None ),
             }
         ]));
-        let result = is_all_empty_and_closed(dynamic_senders_vec.read());
+        let result = is_all_empty_and_closed(Ok(dynamic_senders_vec.read()));
         assert!(result);
     }
 

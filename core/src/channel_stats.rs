@@ -486,7 +486,21 @@ impl ChannelStatsComputer {
         display_label.push_str("Capacity: ");
         display_label.push_str(itoa::Buffer::new().format(self.capacity));
         display_label.push_str(" Total: ");
-        display_label.push_str(itoa::Buffer::new().format(take));
+        let mut b = itoa::Buffer::new();
+        let t = b.format(take);
+        let len = t.len();
+        let mut i = len % 3;
+        if i == 0 {
+            i = 3; // Start with a full group of 3 digits if the number length is a multiple of 3
+        }
+        // Push the first group (which could be less than 3 digits)
+        display_label.push_str(&t[..i]);
+        // Now loop through the rest of the string in chunks of 3
+        while i < len {
+            display_label.push(',');
+            display_label.push_str(&t[i..i + 3]);
+            i += 3;
+        }
         display_label.push('\n');
 
         // Set the default color in case we have no alerts.
@@ -949,15 +963,19 @@ pub(crate) fn compute_labels<T: Counter>(
         if avg_per_sec_numer >= (10 * denominator) as u128 {
             let value = avg_per_sec_numer / denominator as u128;
 
-            if value >= 50000 {       //testing new value 500000 {
-                label_target.push_str(": ");
-                let mut b = itoa::Buffer::new(); //testing trim instead of /1000
-                let t = b.format(value);
-                label_target.push_str(&t[..t.len() - 3]);
-                label_target.push('k');
+            label_target.push_str(": ");
+            let mut b = itoa::Buffer::new();
+            let t = b.format(value);
+            if value >= 9_999 {
+                if value >= 9_999_999 {
+                    label_target.push_str(&t[..t.len() - 6]);
+                    label_target.push('M');
+                } else {
+                    label_target.push_str(&t[..t.len() - 3]);
+                    label_target.push('K');
+                }
             } else {
-                label_target.push_str(": ");
-                label_target.push_str(itoa::Buffer::new().format(value));
+                label_target.push_str(t);
             }
             #[cfg(feature = "prometheus_metrics" )]
             {
@@ -1240,7 +1258,7 @@ pub(crate) mod stats_tests {
         }
 
         let display_label = compute_display_label(&mut computer);
-        assert_eq!(display_label, "Avg rate: 33333 per/sec\n");
+        assert_eq!(display_label, "Avg rate: 33K per/sec\n");
 
         // NOTE: our triggers are in fixed units so they do not need to change if we modify
         // the frame rate, refresh rate or window rate.
@@ -1278,13 +1296,13 @@ pub(crate) mod stats_tests {
         computer.std_dev_rate.push(StdDev::two_and_a_half());
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg rate: 68k per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
+        assert_eq!(display_label, "Avg rate: 68K per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
 
         computer.std_dev_rate.clear();
         computer.std_dev_rate.push(StdDev::one());
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg rate: 68k per/sec\nrate StdDev: 12.182 per frame (3ms duration)\n");
+        assert_eq!(display_label, "Avg rate: 68K per/sec\nrate StdDev: 12.182 per frame (3ms duration)\n");
 
         // Define a trigger with a standard deviation condition
         assert!(computer.triggered_rate(&Trigger::StdDevsAbove(StdDev::one(), Rate::per_millis(80))), "Trigger should fire when standard deviation from the average filled is above the threshold");

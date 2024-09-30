@@ -6,7 +6,7 @@ use std::any::Any;
 use std::error::Error;
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::RwLock;
+use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use core::default::Default;
@@ -670,19 +670,8 @@ fn build_actor_future<F, I>(
 {
 
     {
-       // trace!("register vote get write lock {:?}", builder_source.ident);
-
-        match builder_source.runtime_state.write() {
-            Ok(mut liveliness) => {
-                liveliness.register_voter(builder_source.ident);
-                 },
-            Err(e) => {
-                trace!("Internal error, unable to get liveliness read lock {}", e);
-            }
-        }
-
-
-
+        let mut liveliness = builder_source.runtime_state.write();
+        liveliness.register_voter(builder_source.ident);       
     }
 
     (builder_source.build_actor_exec)(SteadyContext {

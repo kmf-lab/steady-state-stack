@@ -96,12 +96,12 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
         let _clean = wait_for_all!(
-                                    ctrl.wait_avail_units(&mut rxg,1)
+                                    ctrl.wait_avail_units_or_shutdown(&mut rxg,1)
                                   );
 
         if let Some(msg) = ctrl.try_take(&mut rxg) {
             let rate = ctrl.frame_rate_ms;
-            let flush = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped], true);
+            let flush = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped]);
             process_msg(msg
                         , &mut metrics_state
                         , &mut history

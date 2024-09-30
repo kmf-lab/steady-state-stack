@@ -231,7 +231,7 @@ impl SideChannelResponder {
 #[cfg(test)]
 mod graph_testing_tests {
     use std::sync::atomic::AtomicUsize;
-    use std::sync::RwLock;
+    use parking_lot::RwLock;
     use std::time::Instant;
     use super::*;
     use async_std::test;
@@ -389,7 +389,7 @@ mod graph_testing_tests {
         let context = test_steady_context();
         let rx = create_rx(vec![1, 2, 3]);
         if let Some(mut rx) = rx.try_lock() {
-            let result = context.wait_avail_units(&mut rx, 3).await;
+            let result = context.wait_avail_units_or_shutdown(&mut rx, 3).await;
             assert!(result);
         };
     }

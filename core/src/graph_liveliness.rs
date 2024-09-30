@@ -4,8 +4,8 @@
 
 use crate::{abstract_executor, steady_config, SteadyContext, util};
 use std::ops::Sub;
-use std::sync::{Arc, RwLockWriteGuard};
-use std::sync::RwLock;
+use std::sync::{Arc};
+use parking_lot::{RwLock,RwLockWriteGuard};
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
 use std::process::exit;
@@ -113,15 +113,11 @@ impl Future for WaitWhileRunningFuture {
     fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
         let self_mut = self.get_mut();
 
-        match self_mut.shared_state.read() {
-            Ok(read_guard) => {
-                if read_guard.is_in_state(&[GraphLivelinessState::Running]) {
-                    Poll::Pending
-                } else {
-                    Poll::Ready(Ok(()))
-                }
-            }
-            Err(_) => Poll::Pending,
+        let read_guard = self_mut.shared_state.read();
+        if read_guard.is_in_state(&[GraphLivelinessState::Running]) {
+            Poll::Pending
+        } else {
+            Poll::Ready(Ok(()))
         }
     }
 }
@@ -223,12 +219,14 @@ impl GraphLiveliness {
             abstract_executor::block_on(async move {
                 let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
                 while let Some(f) = one_shots.pop() {
-                    //trace!("one shot shutdown for one actor");
                     f.send(()).expect("oops");
                 }
             });
+            //trace!("every actor has had one shot shutdown fired now");
         } else {
-            warn!("requesting shutdown but not running");
+            if self.is_in_state(&[GraphLivelinessState::Building]) {
+                warn!("request_stop should only be called after start");
+            }
         }
     }
 
@@ -663,39 +661,23 @@ impl Graph {
 
         trace!("start was called");
         // Everything has been scheduled and running so change the state
-        match self.runtime_state.write() {
-            Ok(mut state) => {
-                //actors all started upon spawn or team spawn when graph building
-                //here we wait to ensure each one of them have a thread and are running
-                state.wait_for_registrations(duration);
-                if !state.is_in_state(&[GraphLivelinessState::Running]) {
-                    error!("timeout on startup, graph is not in the running state");
-                    false
-                } else {
-                    true
-                }
-            }
-            Err(e) => {
-                error!("failed to start graph: {:?}", e);
-                false
-            }
+
+        let mut state = self.runtime_state.write();
+        //actors all started upon spawn or team spawn when graph building
+        //here we wait to ensure each one of them have a thread and are running
+        state.wait_for_registrations(duration);
+        if !state.is_in_state(&[GraphLivelinessState::Running]) {
+            error!("timeout on startup, graph is not in the running state");
+            false
+        } else {
+            true
         }
     }
 
     /// Stops the graph procedure requested.
     pub fn request_stop(&mut self) {
-
-        if self.runtime_state.read().expect("internal error").is_in_state(&[GraphLivelinessState::Building]) {
-            error!("request_stop should only be called after start");
-        }
-        match self.runtime_state.write() {
-            Ok(mut a) => {
-                a.request_shutdown();
-            }
-            Err(b) => {
-                error!("failed to request stop of graph: {:?}", b);
-            }
-        }
+        let mut a = self.runtime_state.write();
+        a.request_shutdown();
     }
 
     /// Blocks until the graph is stopped.
@@ -704,21 +686,18 @@ impl Graph {
     ///
     /// * `clean_shutdown_timeout` - The timeout duration for a clean shutdown.
     pub fn block_until_stopped(self, clean_shutdown_timeout: Duration) -> bool {
-        if let Some(wait_on) = match self.runtime_state.write() {
-            Ok(state) => {
-                if state.is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
-                    let (tx, rx) = oneshot::channel();
-                    let v = state.shutdown_one_shot_vec.clone();
-                    abstract_executor::block_on(async move {
-                        v.lock().await.push(tx);
-                    });
-                    Some(rx)
-                } else {
-                    None
-                }
-            }
-            Err(e) => {
-                error!("failed to request stop of graph: {:?}", e);
+
+
+        if let Some(wait_on) = {
+            let state = self.runtime_state.write();
+            if state.is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
+                let (tx, rx) = oneshot::channel();
+                let v = state.shutdown_one_shot_vec.clone();
+                abstract_executor::block_on(async move {
+                    v.lock().await.push(tx);
+                });
+                Some(rx)
+            } else {
                 None
             }
         } {
@@ -738,29 +717,17 @@ impl Graph {
         // If we are stopped we will return immediately
         loop {
             let is_stopped = {
-                match self.runtime_state.read() {
-                    Ok(state) => state.check_is_stopped(now, timeout),
-                    Err(e) => {
-                        error!("failed to read liveliness of graph: {:?}", e);
-                        None
-                    }
-                }
+                let state = self.runtime_state.read();
+                state.check_is_stopped(now, timeout)
             };
             if let Some(shutdown) = is_stopped {
-                match self.runtime_state.write() {
-                    Ok(mut state) => {
-                        state.state = shutdown;
+                let mut state = self.runtime_state.write();
+                state.state = shutdown;
 
-                        if state.state.eq(&GraphLivelinessState::StoppedUncleanly) {
-                            warn!("graph stopped uncleanly");
-                            Self::report_votes(&mut state);
-                            return false;
-                        }
-                    }
-                    Err(e) => {
-                        error!("failed to request stop of graph: {:?}", e);
-                        return false;
-                    }
+                if state.state.eq(&GraphLivelinessState::StoppedUncleanly) {
+                    warn!("graph stopped uncleanly");
+                    Self::report_votes(&mut state);
+                    return false;
                 }
                 return true;
             } else {

@@ -86,7 +86,7 @@ use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::sync::RwLock;
+use parking_lot::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use futures::lock::{Mutex};
 use std::ops::{DerefMut};
@@ -112,6 +112,28 @@ use steady_tx::{TxDef};
 use crate::actor_builder::NodeTxRx;
 use crate::graph_testing::{SideChannelResponder};
 use crate::yield_now::yield_now;
+
+/// Type alias for a thread-safe steady state (S) wrapped in an `Arc` and `Mutex`.
+///
+/// Holds state of actors so it is not lost between restarts.
+pub type SteadyState<S> = Arc<Mutex<Option<S>>>;
+
+pub fn new_state<S>() -> SteadyState<S> {
+    Arc::new(Mutex::new(None))
+}
+
+pub async fn steady_state<F,S>(steadystate: &mut SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
+where
+    S: Clone,
+    F: FnOnce() -> S {
+    let mut state_guard = steadystate.lock().await;
+    *state_guard = Some(match state_guard.take() {
+                            Some(s) => s.clone(),
+                            None => build_new_state()
+                        });
+    state_guard
+}
+
 /// Type alias for a thread-safe transmitter (Tx) wrapped in an `Arc` and `Mutex`.
 ///
 /// This type alias simplifies the usage of a transmitter that can be shared across multiple threads.
@@ -297,18 +319,12 @@ impl SteadyContext {
     ///
     /// # Parameters
     /// - `target`: A slice of `GraphLivelinessState`.
-    /// - `upon_posion`: The return value if the liveliness state is poisoned.
     ///
     /// # Returns
     /// `true` if the liveliness state matches any target state, otherwise `false`.
-    pub fn is_liveliness_in(&self, target: &[GraphLivelinessState], upon_poison: bool) -> bool {
-        match self.runtime_state.read() {
-            Ok(liveliness) => liveliness.is_in_state(target),
-            Err(e) => {
-                trace!("Internal error, unable to get liveliness read lock {}", e);
-                upon_poison
-            }
-        }
+    pub fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool {
+        let liveliness = self.runtime_state.read();
+        liveliness.is_in_state(target)       
     }
 
 
@@ -352,8 +368,41 @@ impl SteadyContext {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Send` and `Sync`.
+    /// 
     ///
     /// # Asynchronous
+    pub async fn wait_avail_units_or_shutdown_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        T: Send + Sync,
+    {
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+        let futures = this.iter_mut().map(|rx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = rx.shared_wait_avail_units_or_shutdown(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let futures: Vec<_> = futures.collect();
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+        result.load(Ordering::Relaxed)
+    }
+
     pub async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
@@ -385,6 +434,8 @@ impl SteadyContext {
         }
         result.load(Ordering::Relaxed)
     }
+    
+    
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
     ///
     /// # Parameters
@@ -399,6 +450,40 @@ impl SteadyContext {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
+    pub async fn wait_vacant_units_or_shutdown_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        T: Send + Sync,
+    {
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+
+        let futures = this.iter_mut().map(|tx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = tx.shared_wait_vacant_units_or_shutdown(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let futures: Vec<_> = futures.collect();
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+
     pub async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
@@ -774,6 +859,10 @@ impl SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
+    pub async fn wait_avail_units_or_shutdown<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+        this.shared_wait_avail_units_or_shutdown(count).await
+    }
+
     pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         this.shared_wait_avail_units(count).await
     }
@@ -785,10 +874,13 @@ impl SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
+    pub async fn wait_vacant_units_or_shutdown<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+        this.shared_wait_vacant_units_or_shutdown(count).await
+    }
+    
     pub async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         this.shared_wait_vacant_units(count).await
     }
-
 
     /// Returns a side channel responder if available.
     ///
@@ -808,16 +900,8 @@ impl SteadyContext {
     #[inline]
     pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
         loop {
-            //warn!("is_running here {:?}", self.ident);
-            let result = match self.runtime_state.read() {
-                Ok(liveliness) => {
-                    liveliness.is_running(self.ident, accept_fn)
-                },
-                Err(e) => {
-                    error!("Internal error on poisoned state: {}", e);
-                    Some(true) // Keep running as the default under error conditions
-                }
-            };
+            let liveliness = self.runtime_state.read();
+            let result = liveliness.is_running(self.ident, accept_fn);            
             if let Some(result) = result {
                 return result;
             } else {
@@ -833,16 +917,9 @@ impl SteadyContext {
     /// `true` if the request was successful, `false` otherwise.
     #[inline]
     pub fn request_graph_stop(&self) -> bool {
-        match self.runtime_state.write() {
-            Ok(mut liveliness) => {
-                liveliness.request_shutdown();
-                true
-            }
-            Err(e) => {
-                trace!("Internal error, unable to get liveliness write lock {}", e);
-                false //keep running as the default under error conditions
-            }
-        }
+        let mut liveliness = self.runtime_state.write();
+        liveliness.request_shutdown();
+        true        
     }
 
     /// Retrieves the actor's arguments, cast to the specified type.
@@ -1286,11 +1363,12 @@ pub enum Trigger<T>
 #[cfg(test)]
 mod lib_tests {
     use super::*;
-    use std::sync::{Arc, RwLock};
+    use std::sync::{Arc};
     use futures::channel::oneshot;
     use std::time::Instant;
-    use std::sync::atomic::{AtomicU32, AtomicUsize};
+    use std::sync::atomic::{AtomicUsize};
     use crate::channel_builder::ChannelBuilder;
+    use parking_lot::RwLock;
 
     // Helper method to build tx and rx arguments
     fn build_tx_rx() -> (oneshot::Sender<()>, oneshot::Receiver<()>) {
@@ -1397,7 +1475,7 @@ mod lib_tests {
     async fn test_wait_avail_units_bundle() {
         let context = test_steady_context();
         let mut rx_bundle = RxBundle::<i32>::new();
-        let fut = context.wait_avail_units_bundle(&mut rx_bundle, 1, 1);
+        let fut = context.wait_avail_units_or_shutdown_bundle(&mut rx_bundle, 1, 1);
         assert!(fut.await);
     }
 
@@ -1406,7 +1484,7 @@ mod lib_tests {
     async fn test_wait_vacant_units_bundle() {
         let context = test_steady_context();
         let mut tx_bundle = TxBundle::<i32>::new();
-        let fut = context.wait_vacant_units_bundle(&mut tx_bundle, 1, 1);
+        let fut = context.wait_vacant_units_or_shutdown_bundle(&mut tx_bundle, 1, 1);
         assert!(fut.await);
 
     }

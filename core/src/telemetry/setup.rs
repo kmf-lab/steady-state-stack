@@ -80,35 +80,27 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         actor_metadata: that.actor_metadata.clone(),
     };
 
-    let idx: Option<usize> = match that.all_telemetry_rx.read() {
-        Ok(guard) => {
+    let idx: Option<usize> = {
+            let guard = that.all_telemetry_rx.read();
             let shared_vec = guard.deref();
             shared_vec.iter().enumerate().find(|(_, x)| x.ident == that.ident).map(|(idx, _)| idx)
-        }
-        Err(_) => {
-            error!("internal error: unable to get read lock");
-            None
-        }
-    };
+        };
 
-    match that.all_telemetry_rx.write() {
-        Ok(mut guard) => {
-            let shared_vec = guard.deref_mut();
-            if let Some(idx) = idx {
-                shared_vec[idx].telemetry_take.push_back(Box::new(det));
-            } else {
-                let mut telemetry_take: VecDeque<Box<dyn RxTel>> = VecDeque::new();
-                telemetry_take.push_back(Box::new(det));
-                shared_vec.push(CollectorDetail {
-                    ident: that.ident,
-                    telemetry_take,
-                });
-            }
-        }
-        Err(_) => {
-            error!("internal error: failed to write to all_telemetry_rx");
+    {
+        let mut guard = that.all_telemetry_rx.write();
+        let shared_vec = guard.deref_mut();
+        if let Some(idx) = idx {
+            shared_vec[idx].telemetry_take.push_back(Box::new(det));
+        } else {
+            let mut telemetry_take: VecDeque<Box<dyn RxTel>> = VecDeque::new();
+            telemetry_take.push_back(Box::new(det));
+            shared_vec.push(CollectorDetail {
+                ident: that.ident,
+                telemetry_take,
+            });
         }
     }
+    
 
     let calls: [AtomicU16; 6] = Default::default();
     let telemetry_actor = Some(SteadyTelemetryActorSend {
@@ -213,20 +205,20 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                             if let Some(last_elapsed) = elapsed_micros {
                                 if last_elapsed < scale as u64 * this.frame_rate_ms {
                                     if scale >= 128 {
-                                        if let Ok(guard) = this.runtime_state.read() {
-                                            let state = guard.deref();
-                                            if !state.is_in_state(&[
-                                                GraphLivelinessState::StopRequested,
-                                                GraphLivelinessState::Stopped,
-                                                GraphLivelinessState::StoppedUncleanly,
-                                            ]) {
-                                                error!(
-                                                    "{:?} EXIT hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector has died and is not consuming messages",
-                                                    this.ident, scale, vacant_units, capacity
-                                                );
-                                                std::process::exit(-1);
-                                            }
+                                        let guard = this.runtime_state.read();
+                                        let state = guard.deref();
+                                        if !state.is_in_state(&[
+                                            GraphLivelinessState::StopRequested,
+                                            GraphLivelinessState::Stopped,
+                                            GraphLivelinessState::StoppedUncleanly,
+                                        ]) {
+                                            error!(
+                                                "{:?} EXIT hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector has died and is not consuming messages",
+                                                this.ident, scale, vacant_units, capacity
+                                            );
+                                            std::process::exit(-1);
                                         }
+                                      
                                     }
                                     return;
                                 }
@@ -263,7 +255,8 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                 let now = Instant::now();
                                 let dif = now.duration_since(actor_status.last_telemetry_error);
                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
-                                    if let Ok(guard) = this.runtime_state.read() {
+                                    let guard = this.runtime_state.read();
+                                    
                                         let state = guard.deref();
                                         if !state.is_in_state(&[
                                             GraphLivelinessState::StopRequested,
@@ -274,7 +267,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                                 this.ident, a, tx.is_full(), tx.tx.capacity());
                                             actor_status.last_telemetry_error = now;
                                         }
-                                    }
+                                   
                                 }
                                 false
                             }

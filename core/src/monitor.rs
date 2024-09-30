@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::ops::*;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
-use std::sync::RwLock;
+use parking_lot::RwLock;
 use futures::lock::Mutex;
 use log::*; // allowed for all modules
 use num_traits::{One, Zero};
@@ -272,22 +272,24 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Returns
     /// `true` if the monitor is running, otherwise `false`.
     #[inline]
-    pub fn is_running(&self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
+    pub fn is_running(&mut self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
         // in case we are in a tight loop and need to let other actors run on this thread.
         executor::block_on(yield_now::yield_now());
 
         loop {
-            //warn!("is_running here {:?}", self.ident);
-            let result = match self.runtime_state.read() {
-                Ok(liveliness) => {
-                    liveliness.is_running(self.ident, accept_fn)
-                },
-                Err(e) => {
-                    error!("Internal error on poisoned state: {}", e);
-                    Some(true) // Keep running as the default under error conditions
-                }
+            let result = {
+                let liveliness = self.runtime_state.read();
+                let ident = self.ident;
+                liveliness.is_running(ident, accept_fn)
             };
             if let Some(result) = result {
+                if !result {
+                    //stopping so clear out all the buffers
+                    self.relay_stats(); //testing mutable self and self flush of relay data.
+                } else {
+                    //if the frame rate dictates do a refresh
+                    self.relay_stats_smartly();
+                }
                 return result;
             } else {
                 //wait until we are in a running state
@@ -302,34 +304,21 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// `true` if the request was successful, otherwise `false`.
     #[inline]
     pub fn request_graph_stop(&self) -> bool {
-        match self.runtime_state.write() {
-            Ok(mut liveliness) => {
-                liveliness.request_shutdown();
-                true
-            }
-            Err(e) => {
-                trace!("internal error, unable to get liveliness write lock {}", e);
-                false // Keep running as the default under error conditions
-            }
-        }
+        let mut liveliness = self.runtime_state.write();
+        liveliness.request_shutdown();
+        true
     }
 
     /// Checks if the liveliness state matches any of the target states.
     ///
     /// # Parameters
     /// - `target`: A slice of `GraphLivelinessState`.
-    /// - `upon_posion`: The return value if the liveliness state is poisoned.
     ///
     /// # Returns
     /// `true` if the liveliness state matches any target state, otherwise `false`.
-    pub fn is_liveliness_in(&self, target: &[GraphLivelinessState], upon_posion: bool) -> bool {
-        match self.runtime_state.read() {
-            Ok(liveliness) => liveliness.is_in_state(target),
-            Err(e) => {
-                trace!("internal error, unable to get liveliness read lock {}", e);
-                upon_posion
-            }
-        }
+    pub fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool {
+        let liveliness = self.runtime_state.read();
+        liveliness.is_in_state(target)
     }
 
     /// Updates the instance ID for a transmitter channel.
@@ -513,9 +502,55 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    pub async fn wait_avail_units_or_shutdown_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
         where
             T: Send + Sync,
+    {
+        let _guard = self.start_profile(CALL_OTHER);
+
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+        let futures = this.iter_mut().map(|rx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = rx.shared_wait_avail_units_or_shutdown(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let mut futures: Vec<_> = futures.collect();
+
+        //this adds one extra feature as the last one
+        futures.push( async move {
+            let guard = &mut self.oneshot_shutdown.lock().await;
+            if !guard.is_terminated() {
+                let _ = guard.deref_mut().await;
+            }
+        }.boxed());
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, index, remaining) = select_all(futures).await;
+            if remaining.len() == index { //we had the last one finish
+                result.store(false, Ordering::Relaxed);
+                break;
+            }
+            futures = remaining;
+            count_down -= 1;
+            if count_down <= 1 {
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+    
+    pub async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        T: Send + Sync,
     {
         let _guard = self.start_profile(CALL_OTHER);
 
@@ -573,9 +608,55 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    pub async fn wait_vacant_units_or_shutdown_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
         where
             T: Send + Sync,
+    {
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+
+        let _guard = self.start_profile(CALL_OTHER);
+
+        let futures = this.iter_mut().map(|tx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = tx.shared_wait_vacant_units_or_shutdown(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }.boxed() // Box the future to make them the same type
+        });
+
+        let mut futures: Vec<_> = futures.collect();
+
+        //this adds one extra feature as the last one
+        futures.push( async move {
+            let guard = &mut self.oneshot_shutdown.lock().await;
+            if !guard.is_terminated() {
+                let _ = guard.deref_mut().await;
+            }
+        }.boxed());
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, index, remaining) = select_all(futures).await;
+            if remaining.len() == index { //we had the last one finish
+                result.store(false, Ordering::Relaxed);
+                break;
+            }
+            futures = remaining;
+            count_down -= 1;
+            if count_down <= 1 { //we may have 1 left for the shutdown
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+
+    pub async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        T: Send + Sync,
     {
         let mut count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
@@ -799,6 +880,11 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// `true` if the units are available, otherwise `false`.
     ///
     /// # Asynchronous
+    pub async fn wait_avail_units_or_shutdown<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+        let _guard = self.start_profile(CALL_OTHER);
+        this.shared_wait_avail_units_or_shutdown(count).await
+    }
+
     pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         this.shared_wait_avail_units(count).await
@@ -955,11 +1041,18 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `count`: The number of vacant units to wait for.
     ///
     /// # Asynchronous
+    pub async fn wait_vacant_units_or_shutdown<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+        let _guard = self.start_profile(CALL_WAIT);
+
+        this.shared_wait_vacant_units_or_shutdown(count).await
+    }
+
     pub async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
 
         this.shared_wait_vacant_units(count).await
     }
+    
 
     /// Asynchronously waits until the Tx channel is empty.
     ///
@@ -1056,7 +1149,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         DriftCountIterator::new( units
                                 , this.shared_take_into_iter()
                                 , iterator_count_drift )
-        //this.shared_take_into_iter()
+      //  this.shared_take_into_iter()
     }
     /// Retrieves the actor's arguments, cast to the specified type.
     ///
@@ -1146,7 +1239,8 @@ pub(crate) mod monitor_tests {
     use std::sync::Once;
     use std::time::Duration;
     use futures_timer::Delay;
-    use std::sync::{Arc, RwLock};
+    use std::sync::{Arc};
+    use parking_lot::RwLock;
     use futures::channel::oneshot;
     use std::time::Instant;
     use std::sync::atomic::{AtomicUsize};
@@ -1234,7 +1328,7 @@ pub(crate) mod monitor_tests {
     // Test for is_full
     #[test]
     fn test_is_full() {
-        let (mut tx, _rx) = create_test_channel::<String>();
+        let (mut tx, _rx) = create_test_channel::<String>(10);
         let context = test_steady_context();
         let tx = tx.clone();
         let mut monitor = into_monitor!(context,[],[tx]);
@@ -1247,21 +1341,21 @@ pub(crate) mod monitor_tests {
     // Test for vacant_units
     #[test]
     fn test_vacant_units() {
-        let (mut tx, _rx) = create_test_channel::<String>();
+        let (mut tx, _rx) = create_test_channel::<String>(13);
         let context = test_steady_context();
         let tx = tx.clone();
         let mut monitor = into_monitor!(context,[],[tx]);
 
         if let Some(mut tx) = tx.try_lock() {
             let vacant_units = monitor.vacant_units(&mut tx);
-            assert_eq!(vacant_units, 64); // Assuming only one unit can be vacant
+            assert_eq!(vacant_units, 13); // Assuming only one unit can be vacant
         };
     }
 
     // Test for wait_empty
     #[async_std::test]
     async fn test_wait_empty() {
-        let (mut tx, _rx) = create_test_channel::<String>();
+        let (mut tx, _rx) = create_test_channel::<String>(10);
         let tx  = tx.clone();
         let context = test_steady_context();
         let mut monitor = into_monitor!(context,[],[tx]);
@@ -1278,7 +1372,8 @@ pub(crate) mod monitor_tests {
     fn test_avail_units() {
         let mut rx = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
-        let mut monitor = into_monitor!(context,[rx],[]);
+        let mut monitor = context.into_monitor_internal([],[]);
+           // into_monitor!(context,[],[]);
 
         if let Some(mut rx) = rx.try_lock() {
             assert_eq!(monitor.avail_units(&mut rx), 3);
@@ -1331,7 +1426,7 @@ pub(crate) mod monitor_tests {
     // Test for send_slice_until_full
     #[test]
     fn test_send_slice_until_full() {
-        let (mut tx, rx) = create_test_channel();
+        let (mut tx, rx) = create_test_channel(10);
         let mut context = test_steady_context();
         let tx = tx.clone();
         let rx = rx.clone();
@@ -1354,7 +1449,7 @@ pub(crate) mod monitor_tests {
     // Test for try_send
     #[test]
     fn test_try_send() {
-        let (mut tx, _rx) = create_test_channel();
+        let (mut tx, _rx) = create_test_channel(10);
         let mut context = test_steady_context();
         let tx = tx.clone();
         let mut monitor = into_monitor!(context,[],[tx]);
@@ -1405,7 +1500,7 @@ pub(crate) mod monitor_tests {
 
     // Helper function to create a new Rx instance
     fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> Arc<Mutex<Rx<T>>> {
-        let (tx, rx) = create_test_channel();
+        let (tx, rx) = create_test_channel(10);
 
         let send = tx.clone();
         if let Some(ref mut send_guard) = send.try_lock() {
@@ -1416,12 +1511,12 @@ pub(crate) mod monitor_tests {
         rx.clone()
     }
 
-    fn create_test_channel<T: std::fmt::Debug>() -> (LazySteadyTx<T>, LazySteadyRx<T>) {
+    fn create_test_channel<T: Debug>(capacity: usize) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
         let builder = ChannelBuilder::new(
             Arc::new(Default::default()),
             Arc::new(Default::default()),
             Instant::now(),
-            40);
+            40).with_capacity(capacity);
 
         builder.build::<T>()
     }
@@ -1552,7 +1647,7 @@ pub(crate) mod monitor_tests {
     // Test for send_iter_until_full
     #[test]
     fn test_send_iter_until_full() {
-        let (mut tx, mut rx) = create_test_channel();
+        let (mut tx, mut rx) = create_test_channel(10);
         let mut context = test_steady_context();
         let tx = tx.clone();
         let rx = rx.clone();
@@ -1572,23 +1667,94 @@ pub(crate) mod monitor_tests {
     // Test for take_into_iter
     #[test]
     fn test_take_into_iter() {
-        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let data = vec![1, 2, 3, 4, 5];
+        let (tx1, rx1) = create_test_channel(5);
+
+        let tx = tx1.clone();
+        if let Some(ref mut send_guard) = tx.try_lock() {
+            for item in data {
+                let _ = send_guard.shared_try_send(item);
+            }
+        }
+        let mut rx = rx1.clone();
         let mut context = test_steady_context();
         let mut monitor = into_monitor!(context,[rx],[]);
 
         if let Some(mut rx) = rx.try_lock() {
             {
+                assert_eq!(5, rx.avail_units());
+
                 let mut iter = monitor.take_into_iter(&mut rx);
                 assert_eq!(iter.next(), Some(1));
                 assert_eq!(iter.next(), Some(2));
                 // we stop early to test if we can continue later
             }
             {//ensure we can take from where we left off
+                assert_eq!(3, rx.avail_units());
+
                 let mut iter = monitor.take_into_iter(&mut rx);
                 assert_eq!(iter.next(), Some(3));
                 assert_eq!(iter.next(), Some(4));
+
             }
         };
+
+        //we still have 1 from before
+        if let Some(ref mut send_guard) = tx.try_lock() {
+            for item in vec![6, 7, 8] {
+                let _ = send_guard.shared_try_send(item);
+            }
+        };
+        
+        
+        if let Some(mut rx) = rx.try_lock() {
+            {
+                assert_eq!(4, rx.avail_units());
+
+                let mut iter = monitor.take_into_iter(&mut rx);
+                assert_eq!(iter.next(), Some(5));
+                assert_eq!(iter.next(), Some(6));
+                // we stop early to test if we can continue later
+            }
+            {//ensure we can take from where we left off
+                assert_eq!(2, rx.avail_units());
+
+                let mut iter = monitor.take_into_iter(&mut rx);
+                assert_eq!(iter.next(), Some(7));
+                assert_eq!(iter.next(), Some(8));
+            }
+        };
+        if let Some(ref mut send_guard) = tx.try_lock() {
+            for item in vec![9, 10, 11, 12] {
+                let _ = send_guard.shared_try_send(item);
+            }
+        };
+        if let Some(mut rx) = rx.try_lock() {
+            {
+                assert_eq!(4, rx.avail_units());
+
+                let mut iter = monitor.take_into_iter(&mut rx);
+                assert_eq!(iter.next(), Some(9));
+                assert_eq!(iter.next(), Some(10));
+             //   drop(iter);
+                //inject new data while we have an iterator open
+                if let Some(ref mut send_guard) = tx.try_lock() {
+                    assert_eq!(1, send_guard.vacant_units());
+                    for item in vec![13, 14, 15] {
+                        
+                        //TODO: we are wrapping around the ring buffer on full and writing over old data !!!!
+                        match send_guard.shared_try_send(item) {
+                            Ok(()) => {},
+                            Err(t) => {println!("---------failed to send {}",t);}
+                        }
+                    }
+                    assert_eq!(0, send_guard.vacant_units());
+
+                };
+            }
+
+        };
+
     }
 
 

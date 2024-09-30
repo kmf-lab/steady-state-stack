@@ -33,8 +33,8 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
 
     while monitor.is_running(&mut || ticks_rx.is_closed_and_empty() && tick_counts_tx.mark_closed()) {
         let _clean = wait_for_all!(
-                                    monitor.wait_avail_units(&mut ticks_rx,100),
-                                    monitor.wait_vacant_units(&mut tick_counts_tx,1)
+                                    monitor.wait_avail_units_or_shutdown(&mut ticks_rx,100),
+                                    monitor.wait_vacant_units_or_shutdown(&mut tick_counts_tx,1)
                                    );
 
         let count = monitor.try_peek_slice(&mut ticks_rx, &mut buffer);

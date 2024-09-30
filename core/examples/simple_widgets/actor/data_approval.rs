@@ -40,9 +40,9 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<WidgetInventory>
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed() && feedback.mark_closed()) {
 
         let _clean = wait_for_all_or_proceed_upon!(monitor.wait_periodic(Duration::from_millis(300))
-                            ,monitor.wait_avail_units(&mut rx, BATCH_SIZE)
-                            ,monitor.wait_vacant_units(&mut tx, BATCH_SIZE)
-                            ,monitor.wait_vacant_units(&mut feedback, 1)
+                            ,monitor.wait_avail_units_or_shutdown(&mut rx, BATCH_SIZE)
+                            ,monitor.wait_vacant_units_or_shutdown(&mut tx, BATCH_SIZE)
+                            ,monitor.wait_vacant_units_or_shutdown(&mut feedback, 1)
         );
 
         let count = monitor.take_slice(&mut rx, &mut buffer);
@@ -91,8 +91,10 @@ pub(crate) mod approval_tests {
             .with_capacity(BATCH_SIZE).build();
         let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
             .with_capacity(BATCH_SIZE).build();
+
         let (feedback_tx_out,_feedback_rx_out) = graph.channel_builder()
             .with_capacity(BATCH_SIZE).build();
+
         graph.actor_builder()
             .with_name("UnitTest")
             .build_spawn( move |context| internal_behavior(context
@@ -101,16 +103,17 @@ pub(crate) mod approval_tests {
                                                            , feedback_tx_out.clone()) );
 
         graph.start();
-        graph.request_stop();
 
-        let test_data:Vec<WidgetInventory> = (0..BATCH_SIZE).map(|i| WidgetInventory { count: i as u64, _payload: 0 }).collect();
-        widget_inventory_tx_in.testing_send_in_two_batches(test_data, Duration::from_millis(30), true).await;
-
-        graph.block_until_stopped(Duration::from_secs(240));
-
-
-        //assert expected results
-        assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
+       //
+       let test_data:Vec<WidgetInventory> = (0..BATCH_SIZE).map(|i| WidgetInventory { count: i as u64, _payload: 0 }).collect();
+       widget_inventory_tx_in.testing_send_in_two_batches(test_data, Duration::from_millis(30), true).await;
+       //
+       graph.request_stop();
+       graph.block_until_stopped(Duration::from_secs(2));
+       //
+       //
+       //assert expected results
+       assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
     }
 
 
