@@ -214,7 +214,7 @@ impl<T> Tx<T> {
     /// # Example Usage
     /// Use this method to delay message sending until there's sufficient space, suitable for scenarios where message delivery must be paced or regulated.
     pub async fn wait_vacant_units(&mut self, count: usize) -> bool {
-        self.shared_wait_vacant_units_or_shutdown(count).await
+        self.shared_wait_shutdown_or_vacant_units(count).await
     }
 
     /// Asynchronously waits until the channel is empty.
@@ -278,7 +278,7 @@ impl<T> Tx<T> {
     }
 
     #[inline]
-    pub(crate) async fn shared_wait_vacant_units_or_shutdown(&mut self, count: usize) -> bool {
+    pub(crate) async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
         if self.tx.vacant_len() >= count {
             true
         } else {

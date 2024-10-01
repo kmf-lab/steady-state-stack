@@ -28,8 +28,8 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: Ste
 
         let _clean = wait_for_all_or_proceed_upon!(
              monitor.wait_periodic(Duration::from_millis(20))
-            ,monitor.wait_avail_units_or_shutdown(&mut rx,count)
-            ,monitor.wait_vacant_units_or_shutdown(&mut tx,count)
+            ,monitor.wait_shutdown_or_avail_units(&mut rx,count)
+            ,monitor.wait_shutdown_or_vacant_units(&mut tx,count)
         );
 
         let count = monitor.avail_units(&mut rx).min(monitor.vacant_units(&mut tx));

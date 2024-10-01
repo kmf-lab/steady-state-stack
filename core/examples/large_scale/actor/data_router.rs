@@ -34,8 +34,8 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext, one_of: us
        // info!("router a");
         let clean = wait_for_all_or_proceed_upon!(
             monitor.wait_periodic(Duration::from_millis(40)),
-            monitor.wait_avail_units_or_shutdown(&mut rx,2),
-            monitor.wait_vacant_units_or_shutdown_bundle(&mut tx,count/2,_tx_girth)
+            monitor.wait_shutdown_or_avail_units(&mut rx,2),
+            monitor.wait_shutdown_or_vacant_units_bundle(&mut tx,count/2,_tx_girth)
         );
        // info!("router b");
 

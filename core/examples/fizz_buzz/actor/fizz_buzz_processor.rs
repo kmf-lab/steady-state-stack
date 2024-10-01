@@ -86,7 +86,7 @@ async fn internal_behavior<const NUMBERS_RX_GIRTH:usize,>(context: SteadyContext
     while monitor.is_running(&mut ||
     numbers_rx.is_closed_and_empty() && fizzbuzz_messages_tx.mark_closed() && errors_tx.mark_closed()) {
 
-         let _clean = wait_for_all!(monitor.wait_avail_units_or_shutdown_bundle(&mut numbers_rx,1,1)    );
+         let _clean = wait_for_all!(monitor.wait_shutdown_or_avail_units_bundle(&mut numbers_rx,1,1)    );
 
 
      //TODO:  here are all the channels you can read from

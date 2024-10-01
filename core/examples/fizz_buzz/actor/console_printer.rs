@@ -72,7 +72,7 @@ async fn internal_behavior(context: SteadyContext
     fizzbuzz_messages_rx.is_closed_and_empty() && 
     print_signal_rx.is_closed_and_empty()) {
 
-         let _clean = wait_for_all!(monitor.wait_avail_units_or_shutdown(&mut print_signal_rx,1)    );
+         let _clean = wait_for_all!(monitor.wait_shutdown_or_avail_units(&mut print_signal_rx,1)    );
 
 
      //TODO:  here are all the channels you can read from

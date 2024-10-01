@@ -55,7 +55,7 @@ async fn internal_behavior<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
 
     let mut count: u128 = 0;
     while monitor.is_running(&mut || ticks_tx.mark_closed()) {
-         let _clean = wait_for_all!(monitor.wait_vacant_units_or_shutdown_bundle(&mut ticks_tx, batch, TICKS_TX_GIRTH)    );
+         let _clean = wait_for_all!(monitor.wait_shutdown_or_vacant_units_bundle(&mut ticks_tx, batch, TICKS_TX_GIRTH)    );
          for i in 0..TICKS_TX_GIRTH {
              let c = ticks_tx[i].vacant_units().min(BUFFER_SIZE);
              for n in 0..c {

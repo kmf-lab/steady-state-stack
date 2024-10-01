@@ -96,7 +96,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
         let _clean = wait_for_all!(
-                                    ctrl.wait_avail_units_or_shutdown(&mut rxg,1)
+                                    ctrl.wait_shutdown_or_avail_units(&mut rxg,1)
                                   );
 
         if let Some(msg) = ctrl.try_take(&mut rxg) {

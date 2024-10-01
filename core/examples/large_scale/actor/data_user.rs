@@ -19,7 +19,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>) -> Resu
     let mut _count = 0;
     while monitor.is_running(&mut || rx.is_closed_and_empty()) {
 
-        wait_for_all!(monitor.wait_avail_units_or_shutdown(&mut rx, 1));
+        wait_for_all!(monitor.wait_shutdown_or_avail_units(&mut rx, 1));
 
         while let Some(packet) = monitor.try_take(&mut rx) {
             assert_eq!(packet.data.len(), 62);
@@ -50,7 +50,7 @@ pub async fn run(context: SteadyContext
 
             let clean = wait_for_all!(
                   reponder.wait_available_units(1),
-                  monitor.wait_avail_units_or_shutdown(&mut rx, 1)
+                  monitor.wait_shutdown_or_avail_units(&mut rx, 1)
             );
 
             if clean  {

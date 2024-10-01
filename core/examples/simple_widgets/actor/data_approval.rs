@@ -40,9 +40,9 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<WidgetInventory>
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed() && feedback.mark_closed()) {
 
         let _clean = wait_for_all_or_proceed_upon!(monitor.wait_periodic(Duration::from_millis(300))
-                            ,monitor.wait_avail_units_or_shutdown(&mut rx, BATCH_SIZE)
-                            ,monitor.wait_vacant_units_or_shutdown(&mut tx, BATCH_SIZE)
-                            ,monitor.wait_vacant_units_or_shutdown(&mut feedback, 1)
+                            ,monitor.wait_shutdown_or_avail_units(&mut rx, BATCH_SIZE)
+                            ,monitor.wait_shutdown_or_vacant_units(&mut tx, BATCH_SIZE)
+                            ,monitor.wait_shutdown_or_vacant_units(&mut feedback, 1)
         );
 
         let count = monitor.take_slice(&mut rx, &mut buffer);

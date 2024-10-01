@@ -502,7 +502,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_avail_units_or_shutdown_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    pub async fn wait_shutdown_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
         where
             T: Send + Sync,
     {
@@ -513,7 +513,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let futures = this.iter_mut().map(|rx| {
             let local_r = result.clone();
             async move {
-                let bool_result = rx.shared_wait_avail_units_or_shutdown(avail_count).await;
+                let bool_result = rx.shared_wait_shutdown_or_avail_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -547,6 +547,53 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
         result.load(Ordering::Relaxed)
     }
+
+    pub async fn wait_closed_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        T: Send + Sync,
+    {
+        let _guard = self.start_profile(CALL_OTHER);
+
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+        let futures = this.iter_mut().map(|rx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = rx.shared_wait_closed_or_avail_units(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let mut futures: Vec<_> = futures.collect();
+
+        //this adds one extra feature as the last one
+        futures.push( async move {
+            let guard = &mut self.oneshot_shutdown.lock().await;
+            if !guard.is_terminated() {
+                let _ = guard.deref_mut().await;
+            }
+        }.boxed());
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, index, remaining) = select_all(futures).await;
+            if remaining.len() == index { //we had the last one finish
+                result.store(false, Ordering::Relaxed);
+                break;
+            }
+            futures = remaining;
+            count_down -= 1;
+            if count_down <= 1 {
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+
     
     pub async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
@@ -608,7 +655,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_vacant_units_or_shutdown_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    pub async fn wait_shutdown_or_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
         where
             T: Send + Sync,
     {
@@ -620,7 +667,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let futures = this.iter_mut().map(|tx| {
             let local_r = result.clone();
             async move {
-                let bool_result = tx.shared_wait_vacant_units_or_shutdown(avail_count).await;
+                let bool_result = tx.shared_wait_shutdown_or_vacant_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -880,9 +927,14 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// `true` if the units are available, otherwise `false`.
     ///
     /// # Asynchronous
-    pub async fn wait_avail_units_or_shutdown<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    pub async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
-        this.shared_wait_avail_units_or_shutdown(count).await
+        this.shared_wait_shutdown_or_avail_units(count).await
+    }
+
+    pub async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+        let _guard = self.start_profile(CALL_OTHER);
+        this.shared_wait_closed_or_avail_units(count).await
     }
 
     pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
@@ -1041,10 +1093,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `count`: The number of vacant units to wait for.
     ///
     /// # Asynchronous
-    pub async fn wait_vacant_units_or_shutdown<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+    pub async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
 
-        this.shared_wait_vacant_units_or_shutdown(count).await
+        this.shared_wait_shutdown_or_vacant_units(count).await
     }
 
     pub async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {

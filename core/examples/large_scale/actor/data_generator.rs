@@ -39,7 +39,7 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
 
         let _clean = wait_for_all!(
             monitor.wait_periodic(Duration::from_millis(500)),
-            monitor.wait_vacant_units_or_shutdown_bundle(&mut tx, limit, GIRTH)
+            monitor.wait_shutdown_or_vacant_units_bundle(&mut tx, limit, GIRTH)
         );
 
 
@@ -89,7 +89,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                // monitor.wait_periodic(Duration::from_millis(500))
                 responder.wait_available_units(1)
                 ,
-                monitor.wait_vacant_units_or_shutdown_bundle(&mut tx, 1, GIRTH)
+                monitor.wait_shutdown_or_vacant_units_bundle(&mut tx, 1, GIRTH)
             );
             let duration = now.elapsed();
             //info!("got a responder and we have room to write, clean: {} duration:{:?}",clean,duration);

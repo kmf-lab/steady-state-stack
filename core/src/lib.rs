@@ -371,7 +371,7 @@ impl SteadyContext {
     /// 
     ///
     /// # Asynchronous
-    pub async fn wait_avail_units_or_shutdown_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    pub async fn wait_shutdown_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
     {
@@ -380,7 +380,39 @@ impl SteadyContext {
         let futures = this.iter_mut().map(|rx| {
             let local_r = result.clone();
             async move {
-                let bool_result = rx.shared_wait_avail_units_or_shutdown(avail_count).await;
+                let bool_result = rx.shared_wait_shutdown_or_avail_units(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let futures: Vec<_> = futures.collect();
+        let mut futures = futures;
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, _index, remaining) = select_all(futures).await;
+            futures = remaining;
+            count_down -= 1;
+            if 0 == count_down {
+                break;
+            }
+        }
+        result.load(Ordering::Relaxed)
+    }
+
+    pub async fn wait_closed_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        T: Send + Sync,
+    {
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+        let futures = this.iter_mut().map(|rx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = rx.shared_wait_closed_or_avail_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -450,7 +482,7 @@ impl SteadyContext {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_vacant_units_or_shutdown_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    pub async fn wait_shutdown_or_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
     {
@@ -460,7 +492,7 @@ impl SteadyContext {
         let futures = this.iter_mut().map(|tx| {
             let local_r = result.clone();
             async move {
-                let bool_result = tx.shared_wait_vacant_units_or_shutdown(avail_count).await;
+                let bool_result = tx.shared_wait_shutdown_or_vacant_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -859,10 +891,14 @@ impl SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    pub async fn wait_avail_units_or_shutdown<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
-        this.shared_wait_avail_units_or_shutdown(count).await
+    pub async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+        this.shared_wait_shutdown_or_avail_units(count).await
     }
-
+    
+    pub async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+        this.shared_wait_closed_or_avail_units(count).await
+    }
+    
     pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         this.shared_wait_avail_units(count).await
     }
@@ -874,8 +910,8 @@ impl SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    pub async fn wait_vacant_units_or_shutdown<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
-        this.shared_wait_vacant_units_or_shutdown(count).await
+    pub async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+        this.shared_wait_shutdown_or_vacant_units(count).await
     }
     
     pub async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
@@ -1475,7 +1511,7 @@ mod lib_tests {
     async fn test_wait_avail_units_bundle() {
         let context = test_steady_context();
         let mut rx_bundle = RxBundle::<i32>::new();
-        let fut = context.wait_avail_units_or_shutdown_bundle(&mut rx_bundle, 1, 1);
+        let fut = context.wait_shutdown_or_avail_units_bundle(&mut rx_bundle, 1, 1);
         assert!(fut.await);
     }
 
@@ -1484,7 +1520,7 @@ mod lib_tests {
     async fn test_wait_vacant_units_bundle() {
         let context = test_steady_context();
         let mut tx_bundle = TxBundle::<i32>::new();
-        let fut = context.wait_vacant_units_or_shutdown_bundle(&mut tx_bundle, 1, 1);
+        let fut = context.wait_shutdown_or_vacant_units_bundle(&mut tx_bundle, 1, 1);
         assert!(fut.await);
 
     }
