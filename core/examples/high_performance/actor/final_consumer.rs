@@ -11,7 +11,6 @@ use crate::actor::tick_consumer::TickCount;
 
 
 const BATCH: usize = 1000;
-const TICK_COUNTS_RX_GIRTH: usize = 3;
 
 #[cfg(not(test))]
 pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext

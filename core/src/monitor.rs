@@ -548,6 +548,20 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         result.load(Ordering::Relaxed)
     }
 
+    /// Waits until a specified number of units are available in the Rx channel bundle.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `RxBundle<T>` instance.
+    /// - `avail_count`: The number of units to wait for availability.
+    /// - `ready_channels`: The number of ready channels to wait for.
+    ///
+    /// # Returns
+    /// `true` if the units are available, otherwise `false`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Send` and `Sync`.
+    ///
+    /// # Asynchronous
     pub async fn wait_closed_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
@@ -594,7 +608,20 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         result.load(Ordering::Relaxed)
     }
 
-    
+    /// Waits until a specified number of units are available in the Rx channel bundle.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `RxBundle<T>` instance.
+    /// - `avail_count`: The number of units to wait for availability.
+    /// - `ready_channels`: The number of ready channels to wait for.
+    ///
+    /// # Returns
+    /// `true` if the units are available, otherwise `false`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Send` and `Sync`.
+    ///
+    /// # Asynchronous
     pub async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
@@ -701,6 +728,21 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         result.load(Ordering::Relaxed)
     }
 
+
+    /// Waits until a specified number of units are vacant in the Tx channel bundle.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
+    /// - `avail_count`: The number of vacant units to wait for.
+    /// - `ready_channels`: The number of ready channels to wait for.
+    ///
+    /// # Returns
+    /// `true` if the units are vacant, otherwise `false`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Send` and `Sync`.
+    ///
+    /// # Asynchronous
     pub async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
@@ -940,6 +982,16 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         this.shared_wait_avail_units(count).await
+    }
+
+    pub async fn wait_shutdown(&self) -> bool {
+        let _guard = self.start_profile(CALL_OTHER);        
+        let one_shot = &self.oneshot_shutdown;
+        let mut guard = one_shot.lock().await;
+        if !guard.is_terminated() {
+            let _ = guard.deref_mut().await;
+        }
+        false        
     }
 
     /// Asynchronously peeks at the next available message in the channel without removing it.

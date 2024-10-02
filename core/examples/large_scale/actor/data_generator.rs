@@ -44,7 +44,7 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
 
 
         loop {
-            let route = thread_rng().gen::<u16>();
+            let route = thread_rng().random::<u16>();
             let packet = Packet {
                 route,
                 data: Bytes::from_static(&[0u8; 62]),
@@ -95,7 +95,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
             //info!("got a responder and we have room to write, clean: {} duration:{:?}",clean,duration);
 
            if clean {
-               let responder = responder.respond_with(|message| {
+               let _ok = responder.respond_with(|message| {
                    let msg: &Packet = message.downcast_ref::<Packet>().expect("error casting");
                    let index = compute_index(&mut tx, msg);
                    match monitor.try_send(&mut tx[index], msg.clone()) {

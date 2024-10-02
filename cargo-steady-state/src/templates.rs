@@ -199,7 +199,6 @@ pub(crate) struct ActorTemplate {
     pub(crate) rx_monitor_defs: Vec<String>,
     pub(crate) tx_monitor_defs: Vec<String>,
     pub(crate) full_driver_block: String,
-    pub(crate) full_process_example_block: String,
     pub(crate) message_types_to_use: Vec<String>,
     pub(crate) message_types_to_define: Vec<String>,
 

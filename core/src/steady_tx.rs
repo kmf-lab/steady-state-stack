@@ -296,7 +296,7 @@ impl<T> Tx<T> {
         if self.tx.vacant_len() >= count {
             true
         } else {
-            let mut operation = &mut self.tx.wait_vacant(count);
+            let operation = &mut self.tx.wait_vacant(count);
             operation.await;
             true
         }

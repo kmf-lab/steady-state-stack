@@ -390,7 +390,7 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
             if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&main_channel.from_node)) {
                 //find the channel in the tx_channels and mark it as a bundle
                 if let Some(x) = a.tx_channels.iter_mut().find(|f| f[0].name.eq(&main_channel.name)) {
-                    x.iter_mut().enumerate().for_each(|(i, actor_channel)| {
+                    x.iter_mut().for_each(|actor_channel| {
                         actor_channel.bundle_on_from.clone_from(&c[0].bundle_on_from);
                         actor_channel.is_unbundled = c.len() == 1;
                         

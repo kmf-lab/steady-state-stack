@@ -17,7 +17,6 @@ use log::*;
 use structopt::StructOpt;
 use crate::args::Args;
 use crate::templates::*;
-use num_traits::identities::One;
 
 #[derive(Default)]
 struct ProjectModel {
@@ -110,9 +109,9 @@ fn process_dot_file(dotfile: &str, name: &str) {
 }
 
 fn write_project_files(pm: ProjectModel
-                       , folder_base: &PathBuf
-                       , folder_src: &PathBuf
-                       , folder_actor: &PathBuf) -> Result<(), Box<dyn Error>> {
+                       , folder_base: &Path
+                       , folder_src: &Path
+                       , folder_actor: &Path) -> Result<(), Box<dyn Error>> {
 
    let cargo = folder_base.join("Cargo.toml");
    fs::write(cargo, templates::CargoTemplate { name: &pm.name }.render()?)?;
@@ -184,8 +183,7 @@ fn write_project_files(pm: ProjectModel
 
 
        let full_driver_block = build_driver_block(&actor);
-       let full_process_example_block = build_process_block(&actor);
-
+     
        //build monitor lists
        let rx_monitor_defs = monitor_defs("rx",&actor.rx_channels);
        let tx_monitor_defs = monitor_defs("tx",&actor.tx_channels);
@@ -200,7 +198,6 @@ fn write_project_files(pm: ProjectModel
                rx_monitor_defs,
                tx_monitor_defs,
                full_driver_block,
-               full_process_example_block,
                message_types_to_use: my_struct_use,
                message_types_to_define: my_struct_def,
        }.render()?)?;
@@ -208,106 +205,6 @@ fn write_project_files(pm: ProjectModel
    Ok(())
 }
 
-fn build_process_block(actor: &Actor) -> String {
-    let mut full_process_example_block = String::new();
-
-    actor.rx_channels.iter().for_each(|f| {
-        if f.len().is_one() {
-            //single
-            if f[0].copy {
-                if f[0].peek {
-                     //single copy peek                TODO: NEED URGENT SIMPLE EXAMPLE...
-                    full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.try_peek_slice(buffer,{}_rx);\n",f[0].name));
-                    full_process_example_block
-                        .push_str("//         also note you must take value after processing\n");
-                } else {
-                     //single copy
-                    full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.take_slice(buffer, {}_rx);\n",f[0].name));
-
-                }
-            } else if f[0].peek {
-                     //single owner peek
-                    full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.try_peek({}_rx);\n",f[0].name));
-                    full_process_example_block
-                        .push_str("//         also note you must take value after processing\n");
-                } else {
-                     //single owner
-                    full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.try_take({}_rx);\n",f[0].name));
-                }
-
-        } else if f[0].copy {
-                if f[0].peek {
-                    //multi copy peek
-                    full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.try_peek_slice(buffer,{}_rx);\n",f[0].name));
-                    full_process_example_block
-                        .push_str("//         also note you must take value after processing\n");
-                } else {
-                    //multi copy
-                    full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.take_slice({}_rx);\n",f[0].name));
-
-                }
-            } else if f[0].peek {
-                     //multi owner peek
-                    full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.try_peek_iter({}_rx);\n",f[0].name));
-                    full_process_example_block
-                        .push_str("//         also note you must take value after processing\n");
-
-                } else {
-                         full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.try_take({}_rx);\n",f[0].name));
-
-                     //multi
-                     // monitor.take_iter() //missing method.
-//                    full_process_example_block
-  //                      .push_str(&format!("//trythis:  monitor.take_iter({}_rx);\n",f[0].name));
-                }
-    });
-
-
-    // TODO: some examples for each field how to read and write.
-
-    actor.tx_channels.iter().for_each(|f| {
-        if f.len().is_one() {
-            //single
-            if f[0].copy {
-                 // monitor.try_send()
-                 full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.try_send({}_tx, copy );\n",f[0].name));
-
-            } else {
-                 // monitor.try_send()
-                full_process_example_block
-                        .push_str(&format!("//trythis:  monitor.try_send({}_tx, send owner);\n",f[0].name));
-
-            }
-        } else if f[0].copy {
-                if f[0].peek {
-                    //write multi copy peek
-
-                } else {
-                    // monitor.send_slice_until_full()
-
-                }
-            } else if f[0].peek {
-                    //write multi peek
-
-                } else {
-                    // monitor.send_iter_until_full()
-
-                }
-
-    });
-
-
-    full_process_example_block
-}
 
 fn build_driver_block(actor: &Actor) -> String {
 

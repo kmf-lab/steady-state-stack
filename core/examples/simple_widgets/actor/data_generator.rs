@@ -25,6 +25,7 @@ struct InternalState {
     count: u64
 }
 
+#[cfg(not(test))]
 pub async fn internal_behavior(context: SteadyContext
                                 , feedback: SteadyRx<ChangeRequest>
                                 , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
@@ -91,7 +92,7 @@ pub async fn run(context: SteadyContext
     let mut monitor = into_monitor!(context, [&rx], [&tx]);
     if let Some(responder) = monitor.sidechannel_responder() {
 
-        let mut _rx = rx.lock().await;
+        let _rx = rx.lock().await;
         let mut tx = tx.lock().await;
 
         while monitor.is_running(&mut || tx.mark_closed() ) {
@@ -113,7 +114,6 @@ mod generator_tests {
     use std::time::Duration;
     use async_std::test;
     use steady_state::*;
-    use crate::actor::data_generator::{internal_behavior, InternalState};
 
     #[test]
     async fn test_generator() {

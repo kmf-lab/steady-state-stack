@@ -338,12 +338,16 @@ impl ActorBuilder {
         result
     }
 
+    /// Name the actor for telemetry with an instance suffex for more clarity.
+    /// 
     pub fn with_name_and_suffix(&self, name: &'static str, suffex: usize) -> Self {
         let mut result = self.clone();
         result.actor_name = ActorName::new(name,Some(suffex));
         result
     }
 
+    /// Name the actor for use in telemetry
+    /// 
     pub fn with_name(&self, name: &'static str) -> Self {
         let mut result = self.clone();
         result.actor_name = ActorName::new(name,None);

@@ -125,13 +125,7 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
 #[cfg(test)]
 mod graph_tests {
-    use std::ops::DerefMut;
-    use std::time::Duration;
     use async_std::test;
-    use futures_timer::Delay;
-    use steady_state::Graph;
-    use crate::actor::tick_generator::Tick;
-
 
     // #[test]
     // async fn test_graph_one() {

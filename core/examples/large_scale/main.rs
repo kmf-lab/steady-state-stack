@@ -57,10 +57,10 @@ fn main() {
 }
 
 
-fn build_graph<const level_1: usize,
-               const level_2: usize,
-               const level_3: usize,
-               const level_4: usize
+fn build_graph<const LEVEL_1: usize,
+               const LEVEL_2: usize,
+               const LEVEL_3: usize,
+               const LEVEL_4: usize
              >(mut graph: Graph, spawn_a: bool, spawn_b: bool, large_scale_test: usize) -> Graph {
 
     //here are the parts of the channel they both have in common, this could be done
@@ -88,8 +88,8 @@ fn build_graph<const level_1: usize,
 
 
     let mut user_count:usize = 0;
-    let mut routerB_count:usize = 0;
-    let mut routerC_count:usize = 0;
+    let mut route_b_count:usize = 0;
+    let mut route_c_count:usize = 0;
 
     let mut actor_team = ActorTeam::default();
     let mut thread_top = if spawn_a {
@@ -99,7 +99,7 @@ fn build_graph<const level_1: usize,
     };
 
 
-    let (btx,brx) = base_channel_builder.build_as_bundle::<_, { level_1 }>();
+    let (btx,brx) = base_channel_builder.build_as_bundle::<_, { LEVEL_1 }>();
 
             base_actor_builder
                 .with_name("Generator")
@@ -111,51 +111,51 @@ fn build_graph<const level_1: usize,
                 );
 
 
-        for x in 0..level_1 {
+        for x in 0..LEVEL_1 {
 
             let local_rx = brx[x].clone();
-            let (btx,brx) = base_channel_builder.build_as_bundle::<_, { level_2 }>();
+            let (btx,brx) = base_channel_builder.build_as_bundle::<_, { LEVEL_2 }>();
                 base_actor_builder
                     .with_name_and_suffix("RouterA",x)
                     .build(
                            move |context| actor::data_router::run(context
-                                                  , level_1
-                                                  , local_rx.clone()
-                                                  , btx.clone()
+                                                                  , LEVEL_1
+                                                                  , local_rx.clone()
+                                                                  , btx.clone()
                            )
                           , &mut thread_top
                     );
 
 
-            for y in 0..level_2 {
+            for y in 0..LEVEL_2 {
 
                 let local_rx = brx[y].clone();
-                let (btx,brx) = base_channel_builder.build_as_bundle::<_, { level_3 }>();
+                let (btx,brx) = base_channel_builder.build_as_bundle::<_, { LEVEL_3 }>();
                 base_actor_builder
-                    .with_name_and_suffix("RouterB",routerB_count)
+                    .with_name_and_suffix("RouterB", route_b_count)
                     .build(move |context| actor::data_router::run(context
-                                                                        , level_1*level_2
-                                                                        , local_rx.clone()
-                                                                        , btx.clone()
+                                                                  , LEVEL_1 * LEVEL_2
+                                                                  , local_rx.clone()
+                                                                  , btx.clone()
                                      )
                                  , &mut thread_top
                     );
 
-                for z in 0..level_3 {
+                for z in 0..LEVEL_3 {
 
                     let local_rx = brx[z].clone();
-                    let (btx,brx) = base_channel_builder.build_as_bundle::<_, { level_4 }>();
+                    let (btx,brx) = base_channel_builder.build_as_bundle::<_, { LEVEL_4 }>();
                         base_actor_builder
-                            .with_name_and_suffix("RouterC",routerC_count)
+                            .with_name_and_suffix("RouterC", route_c_count)
                             .build(move |context| actor::data_router::run(context
-                                                                                , level_1*level_2*level_3
-                                                                                , local_rx.clone()
-                                                                                , btx.clone()
+                                                                          , LEVEL_1 * LEVEL_2 * LEVEL_3
+                                                                          , local_rx.clone()
+                                                                          , btx.clone()
                                           )
                                          , &mut thread_top
                             );
 
-                    if 1 == level_4 {
+                    if 1 == LEVEL_4 {
                         let mut actor_linedance_tream = ActorTeam::default();
                         if let Threading::Join(ref mut team) = thread_top {
                             team.transfer_back_to(&mut actor_linedance_tream);
@@ -179,7 +179,7 @@ fn build_graph<const level_1: usize,
 
                     } else {
 
-                        for f in 0..level_4 {
+                        for f in 0..LEVEL_4 {
                             let mut group_line = ActorTeam::default();
 
                             if let Threading::Join(ref mut team) = thread_top {
@@ -205,7 +205,7 @@ fn build_graph<const level_1: usize,
                                     );
 
                             let mut input_rx = filter_rx;
-                            let mut output_rx = {
+                            let output_rx = {
                                 //TODO: we need to profile this, also slow the frame rate
                                 let mut count = large_scale_test;
                                 loop {
@@ -252,9 +252,9 @@ fn build_graph<const level_1: usize,
 
                         }
                     }
-                    routerC_count+=1;
+                    route_c_count +=1;
                 }
-                routerB_count += 1;
+                route_b_count += 1;
             }
         }
     let _x = actor_team.spawn();
@@ -342,7 +342,7 @@ mod large_tests {
         match isahc::get("http://127.0.0.1:9100/metrics") {
             Ok(mut response) => {
                 assert_eq!(200, response.status().as_u16());
-                let body = response.text().expect("body text");
+                let _body = response.text().expect("body text");
                 //info!("metrics: {}", body); //TODO: add more checks
             }
             Err(e) => {
@@ -357,7 +357,7 @@ mod large_tests {
         match isahc::get("http://127.0.0.1:9100/graph.dot") {
             Ok(mut response) => {
                 assert_eq!(200, response.status().as_u16());
-                let body = response.text().expect("body text");
+                let _body = response.text().expect("body text");
                //  info!("metrics: {}", body); //TODO: add more checks
             }
             Err(e) => {

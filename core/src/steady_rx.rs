@@ -457,7 +457,7 @@ impl<T> Rx<T> {
         if self.rx.occupied_len() >= count {
             true
         } else {
-                let mut operation = &mut self.rx.wait_occupied(count);
+                let operation = &mut self.rx.wait_occupied(count);
                 operation.await;
                 true    
         }

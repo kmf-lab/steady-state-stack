@@ -52,7 +52,7 @@ fn main() {
                                                    , service_user);
 
     if !systemd_command {
-        let (mut graph, state) = build_simple_widgets_graph(GraphBuilder::for_production().build(opt.clone()));
+        let (mut graph, _state) = build_simple_widgets_graph(GraphBuilder::for_production().build(opt.clone()));
 
         graph.start();
         {  //remove this block to run forever.

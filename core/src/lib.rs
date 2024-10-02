@@ -92,10 +92,9 @@ use futures::lock::{Mutex};
 use std::ops::{DerefMut};
 use std::pin::Pin;
 use std::thread;
+#[allow(unused_imports)]
 use log::*;
 
-
-use actor_builder::ActorBuilder;
 use crate::monitor::{ActorMetaData, ChannelMetaData, RxMetaData, TxMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
@@ -118,6 +117,9 @@ use crate::yield_now::yield_now;
 /// Holds state of actors so it is not lost between restarts.
 pub type SteadyState<S> = Arc<Mutex<Option<S>>>;
 
+/// Create new SteadyState struct for holding state of actors across panics restarts.
+/// Should only be called in main when creating the actors
+///
 pub fn new_state<S>() -> SteadyState<S> {
     Arc::new(Mutex::new(None))
 }
@@ -403,6 +405,21 @@ impl SteadyContext {
         result.load(Ordering::Relaxed)
     }
 
+    /// Waits until a specified number of units are available in the Rx channel bundle.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `RxBundle<T>` instance.
+    /// - `avail_count`: The number of units to wait for availability.
+    /// - `ready_channels`: The number of ready channels to wait for.
+    ///
+    /// # Returns
+    /// `true` if the units are available, otherwise `false`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Send` and `Sync`.
+    ///
+    ///
+    /// # Asynchronous
     pub async fn wait_closed_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
@@ -435,6 +452,20 @@ impl SteadyContext {
         result.load(Ordering::Relaxed)
     }
 
+    /// Waits until a specified number of units are vacant in the Tx channel bundle.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
+    /// - `avail_count`: The number of vacant units to wait for.
+    /// - `ready_channels`: The number of ready channels to wait for.
+    ///
+    /// # Returns
+    /// `true` if the units are vacant, otherwise `false`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Send` and `Sync`.
+    ///
+    /// # Asynchronous
     pub async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
@@ -894,11 +925,25 @@ impl SteadyContext {
     pub async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         this.shared_wait_shutdown_or_avail_units(count).await
     }
-    
+
+    /// Waits until the specified number of available units are in the receiver.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available, `false` if the wait was interrupted.
     pub async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         this.shared_wait_closed_or_avail_units(count).await
     }
-    
+
+    /// Waits until the specified number of vacant units are in the transmitter.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available
     pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         this.shared_wait_avail_units(count).await
     }
@@ -913,9 +958,29 @@ impl SteadyContext {
     pub async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         this.shared_wait_shutdown_or_vacant_units(count).await
     }
-    
+
+    /// Waits until the specified number of vacant units are in the transmitter.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available
     pub async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         this.shared_wait_vacant_units(count).await
+    }
+
+    /// Waits until shutdown
+    /// 
+    /// # Returns
+    /// true
+    pub async fn wait_shutdown(&self) -> bool {
+        let one_shot = &self.oneshot_shutdown;
+        let mut guard = one_shot.lock().await;
+        if !guard.is_terminated() {
+            let _ = guard.deref_mut().await;
+        }
+        false
     }
 
     /// Returns a side channel responder if available.

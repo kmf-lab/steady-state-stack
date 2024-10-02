@@ -5,7 +5,6 @@
 //! by providing a robust way to test graphs.
 
 use std::any::Any;
-use std::backtrace::Backtrace;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::DerefMut;
@@ -208,7 +207,7 @@ impl SideChannelResponder {
             F: FnMut(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync>,
     {
         let mut guard = self.arc.lock().await;
-        let ((ref mut tx, ref mut rx),shutdown) = guard.deref_mut();
+        let ((ref mut tx, ref mut rx),_shutdown) = guard.deref_mut();
         if let Some(q) = rx.try_pop() {
             //NOTE: if a shutdown is called for and we are not able to push this message
             //      it will result in a timeout and error by design for testing. This will

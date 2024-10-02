@@ -12,6 +12,7 @@ pub async fn run(context: SteadyContext
     internal_behavior(context, rx).await
 }
 
+#[cfg(not(test))]
 async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>) -> Result<(), Box<dyn Error>> {
     let mut monitor = into_monitor!(context,[rx], []);
 

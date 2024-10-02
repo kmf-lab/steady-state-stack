@@ -591,9 +591,7 @@ pub(crate) struct ChannelBlock<T> where T: Counter {
 #[cfg(test)]
 mod test_actor_stats {
     use super::*;
-    use hdrhistogram::Histogram;
-    use std::sync::{Arc, RwLock};
-    use std::time::Duration;
+    use std::sync::Arc;
 
     fn create_mock_metadata() -> Arc<ActorMetaData> {
         Arc::new(ActorMetaData {

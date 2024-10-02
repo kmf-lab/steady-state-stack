@@ -223,11 +223,10 @@ impl GraphLiveliness {
                 }
             });
             //trace!("every actor has had one shot shutdown fired now");
-        } else {
-            if self.is_in_state(&[GraphLivelinessState::Building]) {
-                warn!("request_stop should only be called after start");
-            }
+        } else if self.is_in_state(&[GraphLivelinessState::Building]) {
+            warn!("request_stop should only be called after start");
         }
+        
     }
 
     /// Checks if the graph is stopped.
@@ -313,11 +312,10 @@ impl GraphLiveliness {
                     if in_favor && !vote.in_favor {
                         // Safe total where we know this can only be done once for each
                         self.vote_in_favor_total.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    } else {
-                        if vote.in_favor {
-                            error!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
-                        }
+                    } else if vote.in_favor {
+                        error!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
                     }
+                    
                     vote.in_favor = in_favor;
                     drop(vote);
                     Some(!in_favor) // Return the opposite to keep running when we vote no
@@ -428,7 +426,7 @@ impl GraphBuilder {
         panic!("should not call for_production in tests");
         #[cfg(not(test))]
       GraphBuilder {
-          block_fail_fast: false,
+          block_fail_fast: true,
           telemetry_metric_features: steady_config::TELEMETRY_SERVER,
           enable_io_driver: true,
           backplane: None,
@@ -608,7 +606,6 @@ impl Graph {
 
                 let backtrace_str = format!("{:#?}", backtrace);
 
-                let mut is_first_unknown_line = true;
                 for line in backtrace_str.lines() {
                     if line.contains("steady_state") || line.contains("Backtrace [") || line.contains("nuclei::proactor::") {
                         if !line.contains("graph_liveliness::<impl steady_state::Graph>::enable_fail_fast") {
@@ -619,12 +616,11 @@ impl Graph {
                             }
                         }
                     } else {
-                        if is_first_unknown_line || line.contains("::panicking::") || line.contains("::backtrace::") || line.contains("begin_unwind") {
+                       // if is_first_unknown_line || line.contains("::panicking::") || line.contains("::backtrace::") || line.contains("begin_unwind") {
                             writeln!(writer, "{}", line).unwrap();
-                        } else {
-                            writeln!(writer, "{}", line).unwrap();
-                        }
-                        is_first_unknown_line = false;
+                       // } else {
+                       //     writeln!(writer, "{}", line).unwrap();
+                       // }
                     }
                 }
             }

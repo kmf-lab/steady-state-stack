@@ -273,6 +273,14 @@ impl ChannelBuilder {
         )
     }
 
+    /// Build as a bundle fo channels. Consumes the builder. Makes use of Lazy version which will
+    /// postpone allocation until after the first clone() is called.
+    ///
+    /// # Parameters
+    /// - `GIRTH`: The number of channels in the bundle.
+    ///
+    /// # Returns
+    /// A tuple containing bundles of transmitters and receivers.
     pub fn build_as_bundle<T, const GIRTH: usize>(&self) -> (LazySteadyTxBundle<T, GIRTH>, LazySteadyRxBundle<T, GIRTH>) {
         let mut tx_vec = Vec::with_capacity(GIRTH);
         let mut rx_vec = Vec::with_capacity(GIRTH);
@@ -660,7 +668,9 @@ impl ChannelBuilder {
 
 
 
-
+/// Postpones the allocation of SteadyTx until the first time clone() is called.
+/// This is helpful to ensure the channel is near the active thread
+/// 
 #[derive(Debug)]
 pub struct LazySteadyTx<T> {
     lazy_channel: Arc<LazyChannel<T>>,
@@ -673,6 +683,8 @@ impl <T> LazySteadyTx<T> {
         }
     }
     
+    /// Lazy creation of SteadyTx in this clone() call. The same instance is cached for future calls.
+    /// This allows for channels to be created more near to their actors.
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyTx<T> {
         nuclei::block_on(self.lazy_channel.get_tx_clone())
@@ -742,13 +754,14 @@ impl <T> LazySteadyTx<T> {
 pub struct LazySteadyRx<T> {
     lazy_channel: Arc<LazyChannel<T>>,
 }
-impl <T> crate::channel_builder::LazySteadyRx<T> {
+impl <T> LazySteadyRx<T> {
     fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
-        crate::channel_builder::LazySteadyRx {
+        LazySteadyRx {
             lazy_channel,
         }
     }
 
+    /// Returns a clone of the SteadyRx which is the same one used going forward
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyRx<T> {
         nuclei::block_on(self.lazy_channel.get_rx_clone())
@@ -769,8 +782,6 @@ impl <T> crate::channel_builder::LazySteadyRx<T> {
         let limit = rx.capacity();
         rx.shared_take_into_iter().take(limit).collect()
     }
-
-
 
 }
 
