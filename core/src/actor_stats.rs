@@ -59,7 +59,6 @@ pub struct ActorStatsComputer {
 }
 
 impl ActorStatsComputer {
-    const PLACES_TENS: u64 = 1000u64;
 
     /// Computes the metrics and updates the provided labels.
     ///
@@ -80,11 +79,13 @@ impl ActorStatsComputer {
         dot_label: &mut String,
         metric_text: &mut String,
         mcpu: u64,
-        work: u64,
+        load: u64,
+        iteration_start: u128,
+        iteration_sum: u64,
         total_count_restarts: u32,
         bool_stop: bool
     ) -> (&'static str, &'static str) {
-        self.accumulate_data_frame(mcpu, work);
+        self.accumulate_data_frame(mcpu, load);
 
         #[cfg(feature = "prometheus_metrics")]
         metric_text.clear();
@@ -132,7 +133,7 @@ impl ActorStatsComputer {
         if let Some(ref current_work) = &self.current_work {
             let config = ComputeLabelsConfig::actor_config(self, (1, 1), 100, self.show_avg_work);
             let labels = ComputeLabelsLabels {
-                label: "work",
+                label: "load",
                 unit: "%",
                 prometheus_labels: &self.prometheus_labels
             };
@@ -140,7 +141,7 @@ impl ActorStatsComputer {
         }
 
         if let Some(ref current_mcpu) = &self.current_mcpu {
-            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 1024, self.show_avg_mcpu);
+            let config = ComputeLabelsConfig::actor_config(self, (1000, 1), 1024, self.show_avg_mcpu);
             let labels = ComputeLabelsLabels {
                 label: "mCPU",
                 unit: "",
@@ -162,7 +163,9 @@ impl ActorStatsComputer {
                 line_color = DOT_RED;
             }
         }
-        let line_width = "2";
+        let line_width = "3";
+
+        //println!("input mcpu {} work {} line_color {} ", mcpu, work, line_color);
 
         (line_color, line_width)
     }
@@ -268,7 +271,6 @@ impl ActorStatsComputer {
                     error!("unexpected, unable to record inflight {} err: {}", mcpu, e);
                 }
             }
-            let mcpu = mcpu * Self::PLACES_TENS;
             f.runner = f.runner.saturating_add(mcpu as u128);
             f.sum_of_squares = f.sum_of_squares.saturating_add((mcpu as u128).pow(2));
         });
@@ -279,7 +281,6 @@ impl ActorStatsComputer {
                     error!("unexpected, unable to record inflight {} err: {}", work, e);
                 }
             }
-            let work = work * Self::PLACES_TENS;
             f.runner = f.runner.saturating_add(work as u128);
             f.sum_of_squares = f.sum_of_squares.saturating_add((work as u128).pow(2));
         });
@@ -343,8 +344,12 @@ impl ActorStatsComputer {
     ///
     /// A boolean indicating if the alert level has been triggered.
     fn trigger_alert_level(&mut self, c1: &AlertColor) -> bool {
-        self.mcpu_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_mcpu(&f.0))
-            || self.work_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_work(&f.0))
+
+        //TODO: create vec for each color to avoid the filter here.
+
+        (self.mcpu_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_mcpu(&f.0)))
+         ||
+        (self.work_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_work(&f.0)))
     }
 
     /// Checks if a CPU utilization trigger has been activated.
@@ -359,26 +364,32 @@ impl ActorStatsComputer {
     fn triggered_mcpu(&self, rule: &Trigger<MCPU>) -> bool {
         match rule {
             Trigger::AvgBelow(mcpu) => {
-                let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                avg_rational(window_in_ms, &self.current_mcpu, mcpu.rational()).is_lt()
+                //println!("check below: {:?} {:?}", mcpu, self.current_mcpu);
+                let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let result = avg_rational(run_divisor, 1 , &self.current_mcpu, (mcpu.mcpu() as u64, 1)  ).is_lt();
+                //println!("check below result: {:?}", result);
+                result
             },
             Trigger::AvgAbove(mcpu) => {
-                let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                avg_rational(window_in_ms, &self.current_mcpu, mcpu.rational()).is_gt()
+               // println!("check above: {:?} {:?}", mcpu, self.current_mcpu);
+                let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let result = avg_rational(run_divisor, 1, &self.current_mcpu, (mcpu.mcpu() as u64,1)).is_gt();
+                //println!("check above result: {:?}", result);
+                result
             },
             Trigger::StdDevsBelow(std_devs, mcpu) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu, mcpu.rational()).is_lt()
+                stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu,(mcpu.mcpu() as u64,1)).is_lt()
             }
             Trigger::StdDevsAbove(std_devs, mcpu) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
-                stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu, mcpu.rational()).is_gt()
+                stddev_rational(self.mcpu_std_dev(), window_bits, std_devs, &self.current_mcpu, (mcpu.mcpu() as u64,1)).is_gt()
             }
             Trigger::PercentileAbove(percentile, mcpu) => {
-                percentile_rational(percentile, &self.current_mcpu, mcpu.rational()).is_gt()
+                percentile_rational(percentile, &self.current_mcpu, (mcpu.mcpu() as u64,1)).is_gt()
             }
             Trigger::PercentileBelow(percentile, mcpu) => {
-                percentile_rational(percentile, &self.current_mcpu, mcpu.rational()).is_lt()
+                percentile_rational(percentile, &self.current_mcpu,(mcpu.mcpu() as u64,1)).is_lt()
             }
         }
     }
@@ -395,12 +406,19 @@ impl ActorStatsComputer {
     fn triggered_work(&self, rule: &Trigger<Work>) -> bool {
         match rule {
             Trigger::AvgBelow(work) => {
-                let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                avg_rational(window_in_ms, &self.current_work, work.rational()).is_lt()
+               // println!("check below: {:?} {:?}", work, self.current_mcpu);
+                let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let result = avg_rational(run_divisor, 100, &self.current_work, work.rational()).is_lt();
+               // println!("check below result: {:?}", result);
+                result
+
             },
             Trigger::AvgAbove(work) => {
-                let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                avg_rational(window_in_ms, &self.current_work, work.rational()).is_gt()
+               // println!("check below: {:?} {:?}", work, self.current_mcpu);
+                let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let result = avg_rational(run_divisor, 100, &self.current_work, work.rational()).is_gt();
+               // println!("check below result: {:?}", result);
+                result
             },
             Trigger::StdDevsBelow(std_devs, work) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
@@ -488,9 +506,11 @@ pub(crate) fn time_label(total_ms: u128) -> String {
 /// # Returns
 ///
 /// A comparison ordering result.
-pub(crate) fn avg_rational<T: Counter>(window_in_ms: u128, current: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> cmp::Ordering {
+pub(crate) fn avg_rational<T: Counter>(run_divisor: u128, units: u128, current: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> cmp::Ordering {
     if let Some(current) = current {
-        (current.runner * rational.1 as u128).cmp(&(PLACES_TENS as u128 * window_in_ms * rational.0 as u128))
+        //println!("current.runner {} run_divisor {} rational.0 {} rational.1 {}", current.runner, run_divisor, rational.0, rational.1);
+        //println!("actual {} limit {} units {}", current.runner/(run_divisor),(units * rational.0 as u128)/(rational.1 as u128),units);
+        (current.runner * rational.1 as u128).cmp(&( units * run_divisor * rational.0 as u128))
     } else {
         cmp::Ordering::Equal // Unknown
     }
@@ -664,17 +684,17 @@ mod test_actor_stats {
             &mut metric_text,
             512,
             50,
+            0,
+            1,
             1,
             false,
         );
 
         assert_eq!(line_color, DOT_GREEN);
-        assert_eq!(line_width, "2");
+        assert_eq!(line_width, "3");
         assert!(dot_label.contains("test_actor"));
+
     }
-
-
-
 
 
     #[test]
@@ -693,4 +713,136 @@ mod test_actor_stats {
 
         assert_eq!(percentile_result, std::cmp::Ordering::Equal);
     }
+}
+
+#[cfg(test)]
+mod test_actor_stats_triggers {
+    use super::*;
+    use std::sync::Arc;
+
+    fn create_mock_metadata() -> Arc<ActorMetaData> {
+        Arc::new(ActorMetaData {
+            ident: ActorIdentity::new(1, "test_actor", None),
+            avg_mcpu: true,
+            avg_work: true,
+            percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
+            percentiles_work: vec![Percentile::p50(), Percentile::p90()],
+            std_dev_mcpu: vec![StdDev::new(1.0).expect("")],
+            std_dev_work: vec![StdDev::new(1.0).expect("")],
+            trigger_mcpu: vec![
+                (Trigger::AvgAbove(MCPU::m512()), AlertColor::Yellow),
+                (Trigger::AvgBelow(MCPU::m256()), AlertColor::Red),
+            ],
+            trigger_work: vec![
+                (Trigger::AvgAbove(Work::p50()), AlertColor::Orange),
+                (Trigger::AvgBelow(Work::p30()), AlertColor::Yellow),
+            ],
+            usage_review: false,
+            refresh_rate_in_bits: 2,
+            window_bucket_in_bits: 2,
+        })
+    }
+
+    #[test]
+    fn test_trigger_avg_above_mcpu() {
+        let metadata = create_mock_metadata();
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata.clone(), 1000);
+
+        // Need enough frames to fill the window and set current_mcpu
+        let total_frames = (1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits));
+        //println!("total_frames: {}", total_frames);
+
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(520, 40);
+        }
+        assert!(
+            actor_stats.trigger_alert_level(&AlertColor::Yellow),
+            "Expected avg above trigger to be activated for mcpu."
+        );
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(509, 40);
+        }
+        assert!(
+            !actor_stats.trigger_alert_level(&AlertColor::Yellow),
+            "Expected avg above trigger NOT to be activated for mcpu."
+        );
+    }
+
+    #[test]
+    fn test_trigger_avg_below_mcpu() {
+        let metadata = create_mock_metadata();
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata.clone(), 1000);
+
+        // Need enough frames to fill the window and set current_mcpu
+        let total_frames = (1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits));
+        //println!("total_frames: {}", total_frames);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(230, 40);
+        }
+        assert!(
+            actor_stats.trigger_alert_level(&AlertColor::Red),
+            "Expected avg below trigger to be activated for mcpu."
+        );
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(260, 40);
+        }
+        assert!(
+            !actor_stats.trigger_alert_level(&AlertColor::Red),
+            "Expected avg below trigger NOT to be activated for mcpu."
+        );
+    }
+
+    #[test]
+    fn test_trigger_avg_above_work() {
+        let metadata = create_mock_metadata();
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata.clone(), 1000);
+    
+        // Need enough frames to fill the window and set current_mcpu
+        let total_frames = (1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits));
+        //println!("total_frames: {}", total_frames);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(300, 55);
+        }
+        assert!(
+            actor_stats.trigger_alert_level(&AlertColor::Orange),
+            "Expected avg above trigger to be activated for work."
+        );
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(300, 45);
+        }
+        assert!(
+            !actor_stats.trigger_alert_level(&AlertColor::Orange),
+            "Expected avg above trigger NOT to be activated for work."
+        );
+    }
+
+    #[test]
+    fn test_trigger_avg_below_work() {
+        let metadata = create_mock_metadata();
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata.clone(), 1000);
+
+        // Need enough frames to fill the window and set current_mcpu
+        let total_frames = (1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits));
+        //println!("total_frames: {}", total_frames);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(300, 28);
+        }
+        assert!(
+            actor_stats.trigger_alert_level(&AlertColor::Yellow),
+            "Expected avg below trigger to be activated for work."
+        );
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(300, 32);
+        }
+        assert!(
+            !actor_stats.trigger_alert_level(&AlertColor::Yellow),
+            "Expected avg below trigger NOT to be activated for work."
+        );
+    }
+
+
 }

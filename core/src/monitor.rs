@@ -30,10 +30,12 @@ use crate::yield_now::yield_now;
 /// Represents the status of an actor.
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct ActorStatus {
-    pub(crate) total_count_restarts: u32, // always max so just pick the latest
-    pub(crate) bool_stop: bool, // always max so just pick the latest
-    pub(crate) await_total_ns: u64, // sum records together
-    pub(crate) unit_total_ns: u64, // sum records together
+    pub(crate) total_count_restarts: u32,
+    pub(crate) iteration_start: u128,
+    pub(crate) iteration_sum: u64,
+    pub(crate) bool_stop: bool,
+    pub(crate) await_total_ns: u64,
+    pub(crate) unit_total_ns: u64,
     pub(crate) thread_id: Option<ThreadId>,
     pub(crate) calls: [u16; 6],
 }
@@ -205,6 +207,7 @@ impl<const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
             if tel.state.is_some() || tel.send_tx.is_some() || tel.send_rx.is_some() {
                 send_all_local_telemetry_async(
                     self.ident,
+                    self.iteration_count,
                     tel.state.take(),
                     tel.send_tx.take(),
                     tel.send_rx.take(),
@@ -233,8 +236,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
     pub(crate) frame_rate_ms: u64,
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
-    #[cfg(test)]
-    pub(crate) test_count: HashMap<&'static str, usize>,
+    pub(crate) iteration_count: u128,
 }
 
 struct FinallyRollupProfileGuard<'a> {
@@ -283,13 +285,14 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 liveliness.is_running(ident, accept_fn)
             };
             if let Some(result) = result {
-                if !result {
-                    //stopping so clear out all the buffers
+                if (!result) || self.iteration_count.is_zero() {
+                    //stopping or starting so clear out all the buffers
                     self.relay_stats(); //testing mutable self and self flush of relay data.
                 } else {
                     //if the frame rate dictates do a refresh
                     self.relay_stats_smartly();
                 }
+                self.iteration_count += 1;
                 return result;
             } else {
                 //wait until we are in a running state
@@ -379,9 +382,17 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         if last_elapsed.as_micros() as u64 * (CONSUMED_MESSAGES_BY_COLLECTOR as u64) >= (1000u64 * self.frame_rate_ms) {
             setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
             self.last_telemetry_send = Instant::now();
+        } else {
+            //if this is our first iteration flush to get initial usage
+            //if the telemetry has no data flush to ensure we dump stale data
+            //TODO: if our time between iterations is slow also fire
+            if 0==self.iteration_count || setup::is_empty_local_telemetry(self) {
+                setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
+                self.last_telemetry_send = Instant::now();
+            }
         }
     }
-    
+
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     ///
     /// This method ignores the last telemetry send time and may overload the telemetry if called too frequently.
@@ -1027,8 +1038,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         match result {
             Some(result) => {
                 this.local_index = self.dynamic_event_count(this.local_index, this.channel_meta_data.id, 1);
-                #[cfg(test)]
-                self.test_count.entry("take_async").and_modify(|e| *e += 1).or_insert(1);
                 Some(result)
             }
             None => None,

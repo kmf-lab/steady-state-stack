@@ -31,6 +31,7 @@ pub struct SteadyTelemetryActorSend {
     pub(crate) tx: SteadyTx<ActorStatus>,
     pub(crate) last_telemetry_error: Instant,
     pub(crate) instant_start: Instant,
+    pub(crate) iteration_index_start: u128,
     pub(crate) instance_id: u32,
     pub(crate) bool_stop: bool,
     pub(crate) hot_profile_await_ns_unit: AtomicU64,
@@ -41,14 +42,15 @@ pub struct SteadyTelemetryActorSend {
 
 impl SteadyTelemetryActorSend {
     /// Resets the status of the telemetry actor send.
-    pub(crate) fn status_reset(&mut self) {
+    pub(crate) fn status_reset(&mut self, iteration_index: u128) {
         self.hot_profile_await_ns_unit = AtomicU64::new(0);
         self.instant_start = Instant::now();
         self.calls.iter().for_each(|f| f.store(0, Ordering::Relaxed));
+        self.iteration_index_start = iteration_index;
     }
 
     /// Generates a status message for the actor.
-    pub(crate) fn status_message(&self) -> ActorStatus {
+    pub(crate) fn status_message(&self, iteration_index: u128) -> ActorStatus {
         let total_ns = self.instant_start.elapsed().as_nanos() as u64;
 
         assert!(
@@ -65,6 +67,8 @@ impl SteadyTelemetryActorSend {
 
         ActorStatus {
             total_count_restarts: self.instance_id,
+            iteration_start: iteration_index,
+            iteration_sum: (iteration_index-self.iteration_index_start) as u64,
             bool_stop: self.bool_stop,
             await_total_ns: self.hot_profile_await_ns_unit.load(Ordering::Relaxed),
             unit_total_ns: total_ns,
@@ -144,8 +148,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             if let Some(mut act) = act.try_lock() {
                 act.deref_mut().rx_version.store(version, Ordering::SeqCst);
             } else {
-                error!("warning I should have been able to get this lock.");
-                exit(-1);
+                error!("Internal error, unable to store rx version");
             }
             Some(Box::new(act.clone()))
         } else {
@@ -158,8 +161,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let mut buffer = [ActorStatus::default(); steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
             let count = {
                 if let Some(mut guard) = act.try_lock() {
-                    let act = guard.deref_mut();
-                    act.shared_take_slice(&mut buffer)
+                    guard.deref_mut().shared_take_slice(&mut buffer)
                 } else {
                     0
                 }
@@ -169,6 +171,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let mut unit_total_ns: u64 = 0;
 
             let mut calls = [0u16; 6];
+            let mut iteration_count = 0;
             for status in buffer.iter().take(count) {
                 assert!(
                     status.unit_total_ns >= status.await_total_ns,
@@ -177,6 +180,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                     status.await_total_ns
                 );
 
+                iteration_count += status.iteration_sum;
                 await_total_ns += status.await_total_ns;
                 unit_total_ns += status.unit_total_ns;
 
@@ -185,10 +189,14 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 }
             }
 
+
+            //TODO: if never sent?? we need zero usage not 1024 so the unit_total_ns must be zero..
             if count > 0 {
                 let current_thread = thread::current();
 
                 Some(ActorStatus {
+                    iteration_start: buffer[0].iteration_start, //always the starting iterator count
+                    iteration_sum: iteration_count,
                     total_count_restarts: buffer[count - 1].total_count_restarts,
                     bool_stop: buffer[count - 1].bool_stop,
                     await_total_ns,

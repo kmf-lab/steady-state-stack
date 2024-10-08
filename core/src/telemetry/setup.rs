@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU16, AtomicU64};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
@@ -107,6 +107,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         tx: act_tuple.0.clone(), //TODO: may need LazySend...
         last_telemetry_error: start_now,
         instant_start: Instant::now(),
+        iteration_index_start: 0,
         hot_profile_await_ns_unit: AtomicU64::new(0),
         hot_profile: AtomicU64::new(0),
         hot_profile_concurrent: Default::default(),
@@ -174,6 +175,20 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
     }
 }
 
+pub(crate) fn is_empty_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
+    this: &mut LocalMonitor<RX_LEN, TX_LEN>) -> bool {
+    if let Some(ref mut actor_status) = this.telemetry.state {
+        if let Some(ref mut lock_guard) = actor_status.tx.try_lock() {
+            lock_guard.deref_mut().is_empty()
+        } else {
+            false
+        }
+    } else {
+        false
+    }
+}
+
+
 /// Tries to send all local telemetry for the given monitor.
 ///
 /// # Parameters
@@ -186,17 +201,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
             if let Some(ref mut actor_status) = this.telemetry.state {
                 let clear_status = {
                     if let Some(ref mut lock_guard) = actor_status.tx.try_lock() {
-                        let tx = lock_guard.deref_mut();
-                        //let _rx_version = tx.rx_version.load(Ordering::SeqCst);
-                        // if ChannelBuilder::UNSET == rx_version {
-                        //     let now = Instant::now();
-                        //     let dif = now.duration_since(actor_status.last_telemetry_error);
-                        //     if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
-                        //         actor_status.last_telemetry_error = now;
-                        //     }
-                        //     return;
-                        // }
-
+                        let tx = lock_guard.deref_mut();                       
                         let capacity = tx.capacity();
                         let vacant_units = tx.vacant_units();
                         if vacant_units >= (capacity >> 1) {
@@ -225,7 +230,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                             }
                         }
 
-                        let msg = actor_status.status_message();
+                        let msg = actor_status.status_message(this.iteration_count);
                         match tx.shared_try_send(msg) {
                             Ok(_) => {
                                 if let Some(ref mut send_tx) = this.telemetry.send_tx {
@@ -278,7 +283,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                     }
                 };
                 if clear_status {
-                    actor_status.status_reset();
+                    actor_status.status_reset(this.iteration_count);
                 }
             }
             if let Some(ref mut send_tx) = this.telemetry.send_tx {
@@ -369,13 +374,14 @@ pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_unit
 /// - `telemetry_send_rx`: The RX send telemetry.
 pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: usize>(
     ident: ActorIdentity,
+    iteration_count: u128,
     telemetry_state: Option<SteadyTelemetryActorSend>,
     telemetry_send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
     telemetry_send_rx: Option<SteadyTelemetrySend<RX_LEN>>,
 ) {
     abstract_executor::block_on(async move {
         if let Some(actor_status) = telemetry_state {
-            let mut status = actor_status.status_message();
+            let mut status = actor_status.status_message(iteration_count);
             if let Some(mut tx) = actor_status.tx.try_lock() {
                 let needs_to_be_closed = tx.make_closed.is_some();
                 if needs_to_be_closed {

@@ -194,6 +194,15 @@ impl<T> Tx<T> {
         self.shared_is_full()
     }
 
+    /// Checks if the channel is currently empty.
+    ///
+    /// # Returns
+    /// `true` if the channel is empty
+    ///    
+    pub fn is_empty(&self) -> bool {
+        self.shared_is_empty()
+    }
+
     /// Returns the number of vacant units in the channel.
     /// Indicates how many more messages the channel can accept before becoming full.
     ///
@@ -270,6 +279,11 @@ impl<T> Tx<T> {
     #[inline]
     fn shared_is_full(&self) -> bool {
         self.tx.is_full()
+    }
+
+    #[inline]
+    fn shared_is_empty(&self) -> bool {
+        self.tx.is_empty()
     }
 
     #[inline]

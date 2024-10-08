@@ -49,18 +49,23 @@ impl Node {
     /// * `actor_status` - The status of the actor.
     /// * `total_work_ns` - The total work in nanoseconds.
     pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus, total_work_ns: u128) {
-        let num = actor_status.await_total_ns;
+        let num = actor_status.await_total_ns; //TODO: should not be zero..
         let den = actor_status.unit_total_ns;
         assert!(den.ge(&num), "num: {} den: {}", num, den);
-        let mcpu = if den.is_zero() { 0 } else { 1024 - ((num * 1024) / den) };
-        let work = (100u64 * (actor_status.unit_total_ns - actor_status.await_total_ns)) / total_work_ns as u64;
+        let mcpu = if den.is_zero() || num.is_zero() || 0==actor_status.iteration_start { 0 } else { 1024 - ((num * 1024) / den) };
+        let load = if 0==total_work_ns || 0==actor_status.iteration_start {0} else {
+                          (100u64 * (actor_status.unit_total_ns - actor_status.await_total_ns)) 
+                         / total_work_ns as u64
+        };
 
         // Old strings for this actor are passed back in so they get cleared and re-used rather than reallocate
         let (color, pen_width) = self.stats_computer.compute(
             &mut self.display_label,
             &mut self.metric_text,
             mcpu,
-            work,
+            load,
+            actor_status.iteration_start,
+            actor_status.iteration_sum,
             actor_status.total_count_restarts,
             actor_status.bool_stop,
         );

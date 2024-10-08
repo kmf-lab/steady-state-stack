@@ -286,6 +286,7 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[Collecto
     let to_pop: Vec<ActorIdentity> = working
         .iter()
         .filter(|(has_data_in, f)| {
+            
             if let Some(act) = f.telemetry_take[0].consume_actor() {
                 let actor_id = f.ident.id;
                 if actor_id < state.actor_status.len() {

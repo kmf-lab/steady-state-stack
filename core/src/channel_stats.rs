@@ -582,11 +582,11 @@ impl ChannelStatsComputer {
         match rule {
             Trigger::AvgBelow(rate) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                actor_stats::avg_rational(window_in_ms, &self.current_rate, rate.rational_ms()).is_lt()
+                actor_stats::avg_rational(window_in_ms, PLACES_TENS as u128, &self.current_rate, rate.rational_ms()).is_lt()
             },
             Trigger::AvgAbove(rate) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                actor_stats::avg_rational(window_in_ms, &self.current_rate, rate.rational_ms()).is_gt()
+                actor_stats::avg_rational(window_in_ms, PLACES_TENS as u128,  &self.current_rate, rate.rational_ms()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, expected_rate) => {
                 actor_stats::stddev_rational(self.rate_std_dev(), self.window_bucket_in_bits + self.refresh_rate_in_bits, std_devs

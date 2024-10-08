@@ -1129,8 +1129,7 @@ impl SteadyContext {
             node_tx_rx: self.node_tx_rx.clone(),
             frame_rate_ms: self.frame_rate_ms,
             args: self.args,
-            #[cfg(test)]
-            test_count: HashMap::new(),
+            iteration_count: 0,
         }
     }
 }
