@@ -17,8 +17,8 @@ use std::error::Error;
 {% endfor %}
 
 //if no internal state is required (recommended) feel free to remove this.
-#[derive(Default)]
-struct {{ display_name|capitalize }}InternalState {
+#[derive(Default, Clone)]
+pub(crate) struct {{ display_name|capitalize }}InternalState {
      {% for channel in rx_channels -%}
         {% if channel[0].should_build_read_buffer() %}
             {{channel[0].name}}_buffer: [{{channel[0].message_type}}; {{channel[0].batch_read}}],
@@ -56,8 +56,8 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
     {%- for channel in tx_channels %}
         ,{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
-    ) -> Result<(),Box<dyn Error>> {
-  internal_behavior(context {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %},{{channel[0].name}}_tx{%- endfor -%} ).await
+   , state: SteadyState<{{ display_name|capitalize }}InternalState> ) -> Result<(),Box<dyn Error>> {
+  internal_behavior(context {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %},{{channel[0].name}}_tx{%- endfor -%}, state ).await
 }
 
 async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
@@ -76,17 +76,13 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
     {%- for channel in tx_channels %}
         ,{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
-    ) -> Result<(),Box<dyn Error>> {
+    , state: SteadyState<{{ display_name|capitalize }}InternalState> ) -> Result<(),Box<dyn Error>> {
 
     // here is how to access the CLI args if needed
     let cli_args = context.args::<Args>();
 
-    // here is how to initialize the internal state if needed
-    let mut state = if let Some(args) = cli_args {
-        {{ display_name|capitalize }}InternalState::new(args)
-    } else {
-        {{ display_name|capitalize }}InternalState::default()
-    };
+    let mut state_guard = steady_state(&state, || {{ display_name|capitalize }}InternalState::default()).await;
+    if let Some(mut state) = state_guard.as_mut() {
 
     // monitor consumes context and ensures all the traffic on the passed channels is monitored
     let mut monitor =  into_monitor!(context, [{% for def in rx_monitor_defs %}
@@ -129,6 +125,7 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
       //    try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>  ie monitor.try_take(...
       //    try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T>  ie monitor.try_send(...
 
+    }
     }
     Ok(())
 }

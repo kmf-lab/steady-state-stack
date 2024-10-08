@@ -124,7 +124,7 @@ pub fn new_state<S>() -> SteadyState<S> {
     Arc::new(Mutex::new(None))
 }
 
-pub async fn steady_state<F,S>(steadystate: &mut SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
+pub async fn steady_state<F,S>(steadystate: & SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
 where
     S: Clone,
     F: FnOnce() -> S {
