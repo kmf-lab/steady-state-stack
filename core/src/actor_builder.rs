@@ -799,16 +799,16 @@ impl MCPU {
     ///
     /// An `Option` containing the `MCPU` instance if the value is valid.
     pub fn new(value: u16) -> Option<Self> {
-        if value <= 1024 {
+        if value <= 1024 && value > 0 {
             Some(Self { mcpu: value })
         } else {
             None
         }
     }
 
-    /// Returns the rational representation of the MCPU.
-    pub fn rational(&self) -> (u64, u64) {
-        (self.mcpu as u64, 1024)
+    /// Returns the mCPU value
+    pub fn mcpu(&self) -> u16 {
+        self.mcpu
     }
 
     /// Returns an `MCPU` instance representing 16 MCPU.
@@ -959,7 +959,7 @@ mod tests {
     #[test]
     fn test_mcpu_new_valid() {
         assert_eq!(MCPU::new(512), Some(MCPU { mcpu: 512 }));
-        assert_eq!(MCPU::new(0), Some(MCPU { mcpu: 0 }));
+        assert_eq!(MCPU::new(0), None);
         assert_eq!(MCPU::new(1024), Some(MCPU { mcpu: 1024 }));
     }
 
@@ -971,7 +971,7 @@ mod tests {
     #[test]
     fn test_mcpu_rational() {
         let mcpu = MCPU::new(256).unwrap();
-        assert_eq!(mcpu.rational(), (256, 1024));
+        assert_eq!(mcpu.mcpu(), 256);
     }
 
     #[test]
