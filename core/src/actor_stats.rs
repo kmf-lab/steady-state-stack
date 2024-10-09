@@ -80,7 +80,7 @@ impl ActorStatsComputer {
         metric_text: &mut String,
         mcpu: u64,
         load: u64,
-        iteration_start: u128,
+        iteration_start: u64,
         iteration_sum: u64,
         total_count_restarts: u32,
         bool_stop: bool
@@ -373,9 +373,7 @@ impl ActorStatsComputer {
             Trigger::AvgAbove(mcpu) => {
                // println!("check above: {:?} {:?}", mcpu, self.current_mcpu);
                 let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                let result = avg_rational(run_divisor, 1, &self.current_mcpu, (mcpu.mcpu() as u64,1)).is_gt();
-                //println!("check above result: {:?}", result);
-                result
+                avg_rational(run_divisor, 1, &self.current_mcpu, (mcpu.mcpu() as u64,1)).is_gt()            
             },
             Trigger::StdDevsBelow(std_devs, mcpu) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;

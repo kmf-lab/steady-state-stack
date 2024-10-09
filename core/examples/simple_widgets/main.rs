@@ -109,9 +109,9 @@ fn build_simple_widgets_graph(mut graph: Graph) -> (Graph, Arc<Mutex<InternalSta
 
     let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor....
         .with_mcpu_percentile(Percentile::p80())
-        .with_work_percentile(Percentile::p80())
-        .with_avg_mcpu()
-        .with_avg_work()
+        .with_load_percentile(Percentile::p80())
+        .with_mcpu_avg()
+        .with_load_avg()
         .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m64()), AlertColor::Red)
         .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10));
 

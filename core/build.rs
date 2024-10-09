@@ -43,7 +43,11 @@ const TELEMETRY_SERVICE: bool = true;
 #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const TELEMETRY_SERVICE: bool = false;
 fn main() {
-
+    //all text here is blocked except for the warning messages starting with cargo:warning=
+    println!("cargo:warning=########### Community support needed ###########################");
+    println!("cargo:warning=Please Sponsor Steady_State: https://github.com/sponsors/kmf-lab");
+    println!("cargo:warning=################################################################");
+  
     let base_target_path: PathBuf = env::var("CARGO_TARGET_DIR").map_or_else(
         |_| PathBuf::from("target"), // Fallback to local target directory if CARGO_TARGET_DIR is not set
         PathBuf::from,

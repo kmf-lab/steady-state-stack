@@ -80,11 +80,11 @@ fn build_graph<const LEVEL_1: usize,
 
     let base_actor_builder = graph
                             .actor_builder()
-                            .with_avg_mcpu()
+                            .with_mcpu_avg()
 //     .with_thread()  .with_actor()
                            // .with_work_percentile(Percentile::p80())
                            // .with_mcpu_percentile(Percentile::p80())
-                            .with_avg_work();
+                            .with_load_avg();
 
 
     let mut user_count:usize = 0;

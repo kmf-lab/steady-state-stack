@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64};
 use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
@@ -151,8 +151,8 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
         #[cfg(feature = "telemetry_on_telemetry")]
             let bldr = bldr
             .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10))
-            .with_avg_mcpu()
-            .with_avg_work();
+            .with_mcpu_avg()
+            .with_load_avg();
 
         bldr.with_name(metrics_server::NAME).build_spawn(move |context| {
             metrics_server::run(context, rx.clone())
@@ -165,8 +165,8 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
         #[cfg(feature = "telemetry_on_telemetry")]
             let bldr = bldr
             .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10))
-            .with_avg_mcpu()
-            .with_avg_work();
+            .with_mcpu_avg()
+            .with_load_avg();
 
         bldr.with_name(metrics_collector::NAME).build_spawn(move |context| {
             let all_rx = all_tel_rx.clone();
@@ -374,7 +374,7 @@ pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_unit
 /// - `telemetry_send_rx`: The RX send telemetry.
 pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: usize>(
     ident: ActorIdentity,
-    iteration_count: u128,
+    iteration_count: u64,
     telemetry_state: Option<SteadyTelemetryActorSend>,
     telemetry_send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
     telemetry_send_rx: Option<SteadyTelemetrySend<RX_LEN>>,

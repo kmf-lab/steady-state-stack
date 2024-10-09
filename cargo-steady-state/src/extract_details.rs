@@ -400,7 +400,7 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
                             actor_channel.rebundle_index = main_channel.rebundle_index;
                         
                             // if bundled then we need to know the struct mod name
-                            actor_channel.bundle_struct_mod = c[0].from_mod.clone();  
+                            actor_channel.bundle_struct_mod.clone_from(&c[0].from_mod);  
                         }
                     });
                 }

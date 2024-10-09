@@ -1,6 +1,4 @@
 use std::any::type_name;
-#[cfg(test)]
-use std::collections::HashMap;
 use std::ops::*;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
@@ -31,7 +29,7 @@ use crate::yield_now::yield_now;
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct ActorStatus {
     pub(crate) total_count_restarts: u32,
-    pub(crate) iteration_start: u128,
+    pub(crate) iteration_start: u64,
     pub(crate) iteration_sum: u64,
     pub(crate) bool_stop: bool,
     pub(crate) await_total_ns: u64,
@@ -236,7 +234,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
     pub(crate) frame_rate_ms: u64,
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
-    pub(crate) iteration_count: u128,
+    pub(crate) iteration_count: u64,
 }
 
 struct FinallyRollupProfileGuard<'a> {

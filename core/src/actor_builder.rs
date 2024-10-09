@@ -43,13 +43,13 @@ pub struct ActorBuilder {
     usage_review: bool,
 
     percentiles_mcpu: Vec<Percentile>,
-    percentiles_work: Vec<Percentile>,
+    percentiles_load: Vec<Percentile>,
     std_dev_mcpu: Vec<StdDev>,
-    std_dev_work: Vec<StdDev>,
+    std_dev_load: Vec<StdDev>,
     trigger_mcpu: Vec<(Trigger<MCPU>, AlertColor)>,
-    trigger_work: Vec<(Trigger<Work>, AlertColor)>,
+    trigger_load: Vec<(Trigger<Work>, AlertColor)>,
     avg_mcpu: bool,
-    avg_work: bool,
+    avg_load: bool,
     frame_rate_ms: u64,
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     backplane: Arc<Mutex<Option<SideChannelHub>>>,
@@ -267,13 +267,13 @@ impl ActorBuilder {
             window_bucket_in_bits: window_in_bits, 
             oneshot_shutdown_vec: graph.oneshot_shutdown_vec.clone(),
             percentiles_mcpu: Vec::with_capacity(0),
-            percentiles_work: Vec::with_capacity(0),
+            percentiles_load: Vec::with_capacity(0),
             std_dev_mcpu: Vec::with_capacity(0),
-            std_dev_work: Vec::with_capacity(0),
+            std_dev_load: Vec::with_capacity(0),
             trigger_mcpu: Vec::with_capacity(0),
-            trigger_work: Vec::with_capacity(0),
+            trigger_load: Vec::with_capacity(0),
             avg_mcpu: false,
-            avg_work: false,
+            avg_load: false,
             frame_rate_ms: graph.telemetry_production_rate_ms,
             usage_review: false,
         }
@@ -363,9 +363,9 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the specified workload percentile configuration.
-    pub fn with_work_percentile(&self, config: Percentile) -> Self {
+    pub fn with_load_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
-        result.percentiles_work.push(config);
+        result.percentiles_load.push(config);
         result
     }
 
@@ -374,7 +374,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with average CPU monitoring enabled.
-    pub fn with_avg_mcpu(&self) -> Self {
+    pub fn with_mcpu_avg(&self) -> Self {
         let mut result = self.clone();
         result.avg_mcpu = true;
         result
@@ -385,9 +385,9 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with average workload monitoring enabled.
-    pub fn with_avg_work(&self) -> Self {
+    pub fn with_load_avg(&self) -> Self {
         let mut result = self.clone();
-        result.avg_work = true;
+        result.avg_load = true;
         result
     }
 
@@ -417,9 +417,9 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the specified workload trigger condition.
-    pub fn with_work_trigger(&self, bound: Trigger<Work>, color: AlertColor) -> Self {
+    pub fn with_load_trigger(&self, bound: Trigger<Work>, color: AlertColor) -> Self {
         let mut result = self.clone();
-        result.trigger_work.push((bound, color));
+        result.trigger_load.push((bound, color));
         result
     }
 
@@ -634,13 +634,13 @@ impl ActorBuilder {
         Arc::new(ActorMetaData {
             ident,
             avg_mcpu: self.avg_mcpu,
-            avg_work: self.avg_work,
+            avg_work: self.avg_load,
             percentiles_mcpu: self.percentiles_mcpu.clone(),
-            percentiles_work: self.percentiles_work.clone(),
+            percentiles_work: self.percentiles_load.clone(),
             std_dev_mcpu: self.std_dev_mcpu.clone(),
-            std_dev_work: self.std_dev_work.clone(),
+            std_dev_work: self.std_dev_load.clone(),
             trigger_mcpu: self.trigger_mcpu.clone(),
-            trigger_work: self.trigger_work.clone(),
+            trigger_work: self.trigger_load.clone(),
             usage_review: self.usage_review,
             refresh_rate_in_bits: self.refresh_rate_in_bits,
             window_bucket_in_bits: self.window_bucket_in_bits,

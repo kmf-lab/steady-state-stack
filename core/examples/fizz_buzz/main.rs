@@ -63,7 +63,7 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
     //this common root of the actor builder allows for common config of all actors
     let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor
         .with_mcpu_percentile(Percentile::p80())
-        .with_work_percentile(Percentile::p80());
+        .with_load_percentile(Percentile::p80());
     //build channels
     
     let (n_to_fizzbuzzprocessor_numbers_tx, fizzbuzzprocessor_numbers_rx) = base_channel_builder

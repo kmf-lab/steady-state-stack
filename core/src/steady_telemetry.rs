@@ -4,7 +4,6 @@ use std::thread;
 use std::sync::Arc;
 use futures_util::lock::Mutex;
 use log::error;
-use std::process::exit;
 use std::ops::DerefMut;
 use num_traits::Zero;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
@@ -31,7 +30,7 @@ pub struct SteadyTelemetryActorSend {
     pub(crate) tx: SteadyTx<ActorStatus>,
     pub(crate) last_telemetry_error: Instant,
     pub(crate) instant_start: Instant,
-    pub(crate) iteration_index_start: u128,
+    pub(crate) iteration_index_start: u64,
     pub(crate) instance_id: u32,
     pub(crate) bool_stop: bool,
     pub(crate) hot_profile_await_ns_unit: AtomicU64,
@@ -42,7 +41,7 @@ pub struct SteadyTelemetryActorSend {
 
 impl SteadyTelemetryActorSend {
     /// Resets the status of the telemetry actor send.
-    pub(crate) fn status_reset(&mut self, iteration_index: u128) {
+    pub(crate) fn status_reset(&mut self, iteration_index: u64) {
         self.hot_profile_await_ns_unit = AtomicU64::new(0);
         self.instant_start = Instant::now();
         self.calls.iter().for_each(|f| f.store(0, Ordering::Relaxed));
@@ -50,7 +49,7 @@ impl SteadyTelemetryActorSend {
     }
 
     /// Generates a status message for the actor.
-    pub(crate) fn status_message(&self, iteration_index: u128) -> ActorStatus {
+    pub(crate) fn status_message(&self, iteration_index: u64) -> ActorStatus {
         let total_ns = self.instant_start.elapsed().as_nanos() as u64;
 
         assert!(
