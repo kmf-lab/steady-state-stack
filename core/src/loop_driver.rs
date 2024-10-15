@@ -85,7 +85,7 @@ macro_rules! wait_for_any {
             use std::sync::Arc;
             use std::sync::atomic::{AtomicBool, Ordering};
 
-            let flag = Arc::new(AtomicBool::new(false));
+            let flag = Arc::new(AtomicBool::new(true));
             let mut futures_vec = Vec::new();
 
             $(

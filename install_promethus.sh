@@ -3,22 +3,22 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
+# Create a Prometheus user with no home directory and no login shell
+echo "Creating Prometheus user..."
+sudo useradd --no-create-home --shell /bin/false prometheus || true
+
 # Download the Prometheus tarball
 echo "Downloading Prometheus..."
-wget https://github.com/prometheus/prometheus/releases/download/v2.37.1/prometheus-2.37.1.linux-amd64.tar.gz
+wget https://github.com/prometheus/prometheus/releases/download/v2.54.1/prometheus-2.54.1.linux-amd64.tar.gz
 
 # Extract the downloaded tarball
 echo "Extracting Prometheus..."
-tar -xvf prometheus-2.37.1.linux-amd64.tar.gz
+tar -xvf prometheus-2.54.1.linux-amd64.tar.gz
 
 # Move the Prometheus binaries to /usr/local/bin
 echo "Moving Prometheus binaries to /usr/local/bin..."
-sudo mv prometheus-2.37.1.linux-amd64/prometheus /usr/local/bin/
-sudo mv prometheus-2.37.1.linux-amd64/promtool /usr/local/bin/
-
-# Create a Prometheus user with no home directory and no login shell
-echo "Creating Prometheus user..."
-sudo useradd --no-create-home --shell /bin/false prometheus
+sudo mv prometheus-2.54.1.linux-amd64/prometheus /usr/local/bin/
+sudo mv prometheus-2.54.1.linux-amd64/promtool /usr/local/bin/
 
 # Create the Prometheus data directory
 echo "Creating Prometheus data directory..."
@@ -63,20 +63,20 @@ sudo systemctl enable prometheus
 echo "Starting Prometheus service..."
 sudo systemctl start prometheus
 
-# Check the status of the Prometheus service
-sudo systemctl status prometheus
-
 # Create the Prometheus configuration file
 echo "Creating Prometheus configuration file..."
 echo "global:
-  scrape_interval: 15s
+  scrape_interval: 5s
 
 scrape_configs:
   - job_name: 'prometheus'
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['localhost:9100']
 " | sudo tee /etc/prometheus/prometheus.yml
 
 # Instructions for accessing Prometheus
 echo "Installation complete. You can access Prometheus in your browser at http://<your-server-ip>:9090"
+
+echo "Check the status of the Prometheus service:"
+echo "sudo systemctl status prometheus"
 

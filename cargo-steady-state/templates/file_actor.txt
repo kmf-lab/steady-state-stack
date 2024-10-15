@@ -85,10 +85,9 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
     if let Some(mut state) = state_guard.as_mut() {
 
     // monitor consumes context and ensures all the traffic on the passed channels is monitored
-    let mut monitor =  into_monitor!(context, [{% for def in rx_monitor_defs %}
-                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs %}
-                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]
-                           );
+    let mut monitor =  into_monitor!(context, [{%- for def in rx_monitor_defs -%}
+                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
+                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
 
    //every channel must be locked before use, if this actor should panic the lock will be released
    //and the replacement actor will lock them here again
@@ -150,11 +149,9 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
     ) -> Result<(),Box<dyn Error>> {
 
-
-    let mut monitor =  into_monitor!(context, [{% for def in rx_monitor_defs %}
-                            {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs %}
-                            {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]
-                               );
+    let mut monitor =  into_monitor!(context, [{% for def in rx_monitor_defs -%}
+                            {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
+                            {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
 
     if let Some(responder) = monitor.sidechannel_responder() {
 

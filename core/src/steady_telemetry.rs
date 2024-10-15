@@ -346,6 +346,26 @@ pub(crate) struct SteadyTelemetry<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) state: Option<SteadyTelemetryActorSend>,
 }
 
+impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
+    
+    /// Returns true if non zero channel data is waiting to be sent
+    pub(crate) fn is_dirty(&self) -> bool {        
+        if let Some(send_tx) = &self.send_tx {
+            send_tx.count.iter().any(|&x| x > 0)
+        } else {
+            if let Some(send_rx) = &self.send_rx {
+                send_rx.count.iter().any(|&x| x > 0)
+            } else {
+                if let Some(state) = &self.state {
+                    state.calls.iter().any(|x| x.load(Ordering::Relaxed) > 0)
+                } else {
+                    false
+                }
+            }
+        }        
+    }
+}
+
 //tests
 #[cfg(test)]
 mod tests {

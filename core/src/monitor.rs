@@ -12,9 +12,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::thread::ThreadId;
 use futures::channel::oneshot;
-use futures::FutureExt;
-use futures_util::select;
-
+use futures_util::{FutureExt, select};
 use crate::*;
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
@@ -383,7 +381,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         } else {
             //if this is our first iteration flush to get initial usage
             //if the telemetry has no data flush to ensure we dump stale data
-            //TODO: if our time between iterations is slow also fire
             if 0==self.iteration_count || setup::is_empty_local_telemetry(self) {
                 setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
                 self.last_telemetry_send = Instant::now();
@@ -980,17 +977,35 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Asynchronous
     pub async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
-        this.shared_wait_shutdown_or_avail_units(count).await
+        if count<=this.capacity() {
+            this.shared_wait_shutdown_or_avail_units(count).await
+        } else {
+            let capacity = this.capacity();
+            warn!("wait_shutdown_or_avail_units: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+            this.shared_wait_shutdown_or_avail_units(capacity).await
+        }
     }
 
     pub async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
-        this.shared_wait_closed_or_avail_units(count).await
+        if count<=this.capacity() {
+            this.shared_wait_closed_or_avail_units(count).await
+        } else {
+            let capacity = this.capacity();
+            warn!("wait_closed_or_avail_units: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+            this.shared_wait_closed_or_avail_units(capacity).await
+        }
     }
 
     pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
-        this.shared_wait_avail_units(count).await
+        if count<=this.capacity() {
+            this.shared_wait_avail_units(count).await
+        } else {
+            let capacity = this.capacity();
+            warn!("wait_avail_units: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+            this.shared_wait_avail_units(capacity).await
+        }
     }
 
     pub async fn wait_shutdown(&self) -> bool {
@@ -1155,13 +1170,45 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
 
+        let count = if count<=this.capacity() {
+            count
+        } else {
+            let capacity = this.capacity();
+            warn!("wait_shutdown_or_vacant_units: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+            capacity
+        };
+
+
+        let has_data = self.telemetry.is_dirty();
+        if has_data {
+            let remaining_micros = (1000i64 * self.frame_rate_ms as i64) - (self.last_telemetry_send.elapsed().as_micros() as i64 * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            if remaining_micros <= 0 {
+                return false;//need a relay now so return
+            } else {
+                //TODO: we have data to relay so we must return early if remaining micros
+                //TODO: add to other waits and async operations to total vales.
+                let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                let mut wat = this.shared_wait_shutdown_or_vacant_units(count);
+                
+                return select! {
+                    _ = dur.fuse() => false,
+                    x = wat.fuse() => x
+                };
+            }
+        }; //TODO: else normal
         this.shared_wait_shutdown_or_vacant_units(count).await
+
     }
 
     pub async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
-
-        this.shared_wait_vacant_units(count).await
+        if count<=this.capacity() {
+            this.shared_wait_vacant_units(count).await
+        } else {
+            let capacity = this.capacity();
+            warn!("wait_vacant_units: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+            this.shared_wait_vacant_units(capacity).await
+        }
     }
     
 

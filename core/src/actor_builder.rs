@@ -1028,7 +1028,6 @@ mod test_actor_builder {
     use crate::GraphBuilder;
     use super::*;
 
-
     #[test]
     fn test_actor_builder_creation() {
         let mut graph =  GraphBuilder::for_testing().build(());
@@ -1037,10 +1036,6 @@ mod test_actor_builder {
         assert_eq!(builder.refresh_rate_in_bits, 0);
         assert_eq!(builder.window_bucket_in_bits, 0);
     }
-
-
-
-
 
     #[test]
     fn test_work_new() {

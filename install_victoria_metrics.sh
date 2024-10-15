@@ -1,5 +1,10 @@
 #!/bin/bash
 
+
+# VictoriaMetrics installation script
+# TODO: not yet working, needs more attention
+
+
 # Exit immediately if a command exits with a non-zero status
 set -e
 
@@ -45,6 +50,27 @@ Group=victoria
 [Install]
 WantedBy=multi-user.target" | sudo tee /etc/systemd/system/victoriametrics.service
 
+echo "[Unit]
+Description=VictoriaMetrics Agent
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/vmagent -remoteWrite.url=http://localhost:8428/api/v1/write -scrape.config=/etc/vmagent.yml
+Restart=always
+User=victoria
+Group=victoria
+
+[Install]
+WantedBy=multi-user.target" | sudo tee /etc/systemd/system/vmagent.service
+
+echo "global:
+        scrape_interval: 15s
+
+      scrape_configs:
+        - job_name: 'victoriametrics'
+          static_configs:
+            - targets: ['localhost:9100']" | sudo tee /etc/vmagent.yml
+
 # Reload systemd to apply the new service
 echo "Reloading systemd..."
 sudo systemctl daemon-reload
@@ -59,7 +85,8 @@ sudo systemctl restart victoriametrics
 
 # Check the status of the VictoriaMetrics service
 sudo systemctl status victoriametrics
-
+sudo systemctl enable vmagent
+sudo systemctl start vmagent
 # Instructions for accessing VictoriaMetrics
 echo "Installation complete. You can access VictoriaMetrics in your browser at http://<your-server-ip>:8428"
 

@@ -25,6 +25,8 @@ struct ProjectModel {
     pub(crate) channels: Vec<Vec<Channel>>,
 }
 
+//TODO: code gen organize by flow. take actors and create them from inputs down to outputs???
+
 fn main() {
     let opt = Args::from_args();
 
@@ -39,11 +41,7 @@ fn main() {
     } else {
         eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &opt.loglevel);
     }
-
-
     process_dot_file(&opt.dotfile, &opt.name);
-
-
 }
 
 fn process_dot_file(dotfile: &str, name: &str) {

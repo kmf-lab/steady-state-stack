@@ -219,7 +219,8 @@ impl GraphLiveliness {
             abstract_executor::block_on(async move {
                 let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
                 while let Some(f) = one_shots.pop() {
-                    f.send(()).expect("oops");
+                    let _ignore = f.send(()); //May already been done but we don't care
+                    //Target actor may have already stopped so this is not an error
                 }
             });
             //trace!("every actor has had one shot shutdown fired now");

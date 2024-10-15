@@ -131,7 +131,7 @@ impl ActorStatsComputer {
         }
 
         if let Some(ref current_work) = &self.current_work {
-            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 100, self.show_avg_work);
+            let config = ComputeLabelsConfig::actor_config(self, (1000, 1), 100, self.show_avg_work);
             let labels = ComputeLabelsLabels {
                 label: "load",
                 unit: "%",
@@ -824,7 +824,7 @@ mod test_actor_stats_triggers {
         actor_stats.init(metadata.clone(), 1000);
 
         // Need enough frames to fill the window and set current_mcpu
-        let total_frames = (1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits));
+        let total_frames = 1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits);
         //println!("total_frames: {}", total_frames);
         for _ in 0..total_frames {
             actor_stats.accumulate_data_frame(300, 28);
