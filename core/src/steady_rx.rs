@@ -28,7 +28,7 @@ pub struct Rx<T> {
     pub(crate) last_checked_tx_instance: u32,
     pub(crate) tx_version: Arc<AtomicU32>,
     pub(crate) rx_version: Arc<AtomicU32>,
-
+    pub(crate) last_error_send: Instant,
     pub(crate) take_count: AtomicU32, // inc upon every take, For bad message detection
     pub(crate) cached_take_count: AtomicU32, // to find repeats, For bad message detection
     pub(crate) peek_repeats: AtomicUsize, // count of repeats, For bad message detection

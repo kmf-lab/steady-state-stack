@@ -46,7 +46,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
     )
         .with_labels(&["steady_state-telemetry"], false)
         .with_no_refresh_window()
-        .with_capacity(steady_config::REAL_CHANNEL_LENGTH_TO_COLLECTOR);
+        .with_capacity(REAL_CHANNEL_LENGTH_TO_COLLECTOR);
 
     let rx_tuple: (Option<SteadyTelemetrySend<RX_LEN>>, Option<SteadyTelemetryTake<RX_LEN>>) =
         if 0usize == RX_LEN {
@@ -140,7 +140,7 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
 
         let (tx, rx) = base
             .with_labels(&["steady_state-telemetry"], true)
-            .with_capacity(steady_config::REAL_CHANNEL_LENGTH_TO_FEATURE)
+            .with_capacity(REAL_CHANNEL_LENGTH_TO_FEATURE)
             .build();
 
         let outgoing = [tx.clone()]; //TODO: may need LazySend...

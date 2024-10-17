@@ -24,7 +24,7 @@ pub struct ActorStatsComputer {
     pub(crate) refresh_rate_in_bits: u8,
     pub(crate) window_bucket_in_bits: u8,
 
-    pub(crate) frame_rate_ms: u128, // Const at runtime but needed here for unit testing
+    pub(crate) frame_rate_ms: u64, // Const at runtime but needed here for unit testing
     pub(crate) time_label: String,
 
     /// Percentile values for CPU utilization.
@@ -196,10 +196,10 @@ impl ActorStatsComputer {
         self.mcpu_trigger.clone_from(&meta.trigger_mcpu);
         self.work_trigger.clone_from(&meta.trigger_work);
 
-        self.frame_rate_ms = frame_rate_ms as u128;
+        self.frame_rate_ms = frame_rate_ms;
         self.refresh_rate_in_bits = meta.refresh_rate_in_bits;
         self.window_bucket_in_bits = meta.window_bucket_in_bits;
-        self.time_label = time_label(self.frame_rate_ms << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits));
+        self.time_label = time_label((self.frame_rate_ms as u128)<< (meta.refresh_rate_in_bits + meta.window_bucket_in_bits));
 
         self.show_avg_mcpu = meta.avg_mcpu;
         self.show_avg_work = meta.avg_work;

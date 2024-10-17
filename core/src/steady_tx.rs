@@ -14,7 +14,7 @@ use async_ringbuf::producer::AsyncProducer;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::thread;
-use crate::{ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle};
+use crate::{steady_config, ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::monitor::{ChannelMetaData, TxMetaData};
 
@@ -367,7 +367,7 @@ impl<T> Tx<T> {
     }
 
     fn report_tx_full_warning(&mut self, ident: ActorIdentity) {
-        if self.last_error_send.elapsed().as_secs() > 10 {
+        if self.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             let type_name = type_name::<T>().split("::").last();
             warn!("{:?} tx full channel #{} {:?} cap:{:?} type:{:?} ",
                   ident, self.channel_meta_data.id, self.channel_meta_data.labels,

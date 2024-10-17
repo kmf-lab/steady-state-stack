@@ -9,6 +9,7 @@ use crate::telemetry::metrics_collector::*;
 use futures::io;
 use nuclei::*;
 use std::net::{TcpListener, TcpStream};
+use num_traits::Zero;
 
 // The name of the metrics server actor
 pub const NAME: &str = "metrics_server";
@@ -30,7 +31,7 @@ struct State {
 ///
 /// # Errors
 /// This function returns an error if the server fails to start or encounters a runtime error.
-pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> std::result::Result<(), Box<dyn Error>> {
+pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Result<(), Box<dyn Error>> {
     let addr = Some(format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port()));
     internal_behavior(context, rx, addr).await
 }
@@ -66,7 +67,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
         let state2 = state.clone();
         //TODO: this hack spawn block will go to spawn_local after nuclei is fixed.
         // if I use spawn_local this blocks all other work on my thread but I am not sure why.
-        nuclei::spawn(async move {
+        spawn(async move {
             let listener_new = Handle::<TcpListener>::bind(addr).expect("Unable to Bind"); //TODO: need better error.
             #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
             println!("Telemetry on http://{}", listener_new.get_ref().local_addr().expect("Unable to read local address"));
@@ -89,39 +90,26 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
                             }
                         }
                     } }
-                ;
             }
         }).detach();
     }
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
-        let _clean = wait_for_all!(
-                                    ctrl.wait_shutdown_or_avail_units(&mut rxg,1)
-                                  );
+        let _clean = wait_for_all!( ctrl.wait_shutdown_or_avail_units(&mut rxg,1) );
 
         if let Some(msg) = ctrl.try_take(&mut rxg) {
-            let rate = ctrl.frame_rate_ms;
-            let flush = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped]);
             process_msg(msg
                         , &mut metrics_state
                         , &mut history
                         , &mut frames
-                        , rate
-                        , flush
+                        , ctrl.frame_rate_ms
+                        , ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped])
                         , &rxg
                         , rankdir
                         , state.clone()).await;
-            #[cfg(feature = "telemetry_on_telemetry")]
-            ctrl.relay_stats_smartly();
         }
-
-        #[cfg(feature = "telemetry_on_telemetry")]
-        ctrl.relay_stats_smartly();
     }
-
     let _ = tcp_sender_tx.send(());
-
-
     Ok(())
 }
 
@@ -155,7 +143,6 @@ async fn process_msg(msg: DiagramData
 
             actor_status.iter().enumerate().for_each(|(i, status)| {
                 #[cfg(debug_assertions)]
-                if metrics_state.nodes.is_empty() { exit(-1); }
                 assert!(!metrics_state.nodes.is_empty());
                 metrics_state.nodes[i].compute_and_refresh(*status, total_work_ns);
             });
@@ -163,7 +150,6 @@ async fn process_msg(msg: DiagramData
         DiagramData::ChannelVolumeData(seq, total_take_send) => {
             total_take_send.iter().enumerate().for_each(|(i, (t, s))| {
                 #[cfg(debug_assertions)]
-                if metrics_state.edges.is_empty() { exit(-1); }
                 assert!(!metrics_state.edges.is_empty());
                 metrics_state.edges[i].compute_and_refresh(*s, *t);
             });
@@ -176,7 +162,7 @@ async fn process_msg(msg: DiagramData
                 history.mark_position();
             }
 
-            if rxg.is_empty() || frames.last_graph.elapsed().as_millis() > 2 * frame_rate_ms as u128 {
+            if rxg.is_empty() || frames.last_graph.elapsed().as_millis() >= frame_rate_ms as u128 {
                 build_dot(metrics_state, rankdir, &mut frames.active_graph);
                 let graph_bytes = frames.active_graph.to_vec();
                 build_metric(metrics_state, &mut frames.active_metric);

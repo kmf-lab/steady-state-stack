@@ -96,7 +96,7 @@ impl Edge {
     ///
     /// * `send` - The send value.
     /// * `take` - The take value.
-    pub(crate) fn compute_and_refresh(&mut self, send: i128, take: i128) {
+    pub(crate) fn compute_and_refresh(&mut self, send: i64, take: i64) {
         let (color, pen) = self.stats_computer.compute(
             &mut self.display_label,
             &mut self.metric_text,
@@ -378,8 +378,8 @@ fn define_unified_edges(local_state: &mut MetricState, node_name: ActorName, mdv
 
 /// Represents the frame history for a graph, including packed data and output paths.
 pub(crate) struct FrameHistory {
-    pub(crate) packed_sent_writer: PackedVecWriter<i128>,
-    pub(crate) packed_take_writer: PackedVecWriter<i128>,
+    pub(crate) packed_sent_writer: PackedVecWriter<i64>,
+    pub(crate) packed_take_writer: PackedVecWriter<i64>,
     pub(crate) history_buffer: BytesMut,
     pub(crate) guid: String,
     output_log_path: PathBuf,
@@ -500,11 +500,11 @@ impl FrameHistory {
     ///
     /// * `total_take_send` - The total take and send values.
     /// * `frame_rate_ms` - The frame rate in milliseconds.
-    pub fn apply_edge(&mut self, total_take_send: &[(i128, i128)], frame_rate_ms: u64) {
+    pub fn apply_edge(&mut self, total_take_send: &[(i64, i64)], frame_rate_ms: u64) {
         write_long_unsigned(REC_EDGE, &mut self.history_buffer); // Message type
 
-        let total_take: Vec<i128> = total_take_send.iter().map(|(t, _)| *t).collect();
-        let total_send: Vec<i128> = total_take_send.iter().map(|(_, s)| *s).collect();
+        let total_take: Vec<i64> = total_take_send.iter().map(|(t, _)| *t).collect();
+        let total_send: Vec<i64> = total_take_send.iter().map(|(_, s)| *s).collect();
 
         if (self.packed_sent_writer.delta_write_count() * frame_rate_ms as usize) < (10 * 60 * 1000) {
             self.packed_sent_writer.add_vec(&mut self.history_buffer, &total_send);

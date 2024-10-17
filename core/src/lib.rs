@@ -980,7 +980,7 @@ impl SteadyContext {
         if !guard.is_terminated() {
             let _ = guard.deref_mut().await;
         }
-        false
+        true
     }
 
     /// Returns a side channel responder if available.

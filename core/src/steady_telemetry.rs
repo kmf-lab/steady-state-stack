@@ -214,9 +214,9 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     #[inline]
     fn consume_take_into(
         &self,
-        take_send_source: &mut Vec<(i128, i128)>,
-        future_take: &mut Vec<i128>,
-        future_send: &mut Vec<i128>,
+        take_send_source: &mut Vec<(i64, i64)>,
+        future_take: &mut Vec<i64>,
+        future_send: &mut Vec<i64>,
     ) -> bool {
         if let Some(ref take) = &self.take {
             let mut buffer = [[0usize; RXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
@@ -242,8 +242,8 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             populated_slice.iter().for_each(|msg| {
                 take.details.iter().zip(msg.iter()).for_each(|(meta, val)| {
                     let limit = take_send_source[meta.id].1;
-                    let val = *val as i128;
-                    if i128::is_zero(&future_take[meta.id]) && val + take_send_source[meta.id].0 <= limit {
+                    let val = *val as i64;
+                    if i64::is_zero(&future_take[meta.id]) && val + take_send_source[meta.id].0 <= limit {
                         take_send_source[meta.id].0 += val;
                     } else {
                         future_take[meta.id] += val;
@@ -253,8 +253,8 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
 
             take.details.iter().for_each(|meta| {
                 let dif = take_send_source[meta.id].1 - take_send_source[meta.id].0;
-                if dif > (meta.capacity as i128) {
-                    let extra = dif - (meta.capacity as i128);
+                if dif > (meta.capacity as i64) {
+                    let extra = dif - (meta.capacity as i64);
                     future_send[meta.id] += extra;
                     take_send_source[meta.id].1 -= extra;
                 }
@@ -269,8 +269,8 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     #[inline]
     fn consume_send_into(
         &self,
-        take_send_target: &mut Vec<(i128, i128)>,
-        future_send: &mut Vec<i128>,
+        take_send_target: &mut Vec<(i64, i64)>,
+        future_send: &mut Vec<i64>,
     ) -> bool {
         if let Some(ref send) = &self.send {
             let mut buffer = [[0usize; TXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
@@ -291,7 +291,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 send.details.iter().zip(msg.iter()).for_each(|(meta, val)| {
                     take_send_target[meta.id].1 += future_send[meta.id];
                     future_send[meta.id] = 0;
-                    take_send_target[meta.id].1 += *val as i128;
+                    take_send_target[meta.id].1 += *val as i64;
                 });
             });
             count > 0

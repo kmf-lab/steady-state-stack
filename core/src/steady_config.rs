@@ -76,7 +76,7 @@ pub const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 20;
 
 /// Granularity of the frames for telemetry data collection.
 /// Larger values consume more memory but allow for faster capture rates and higher accuracy.
-pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 256;
+pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 128;
 
 /// Number of messages consumed by the collector.
 /// Larger values take up memory but allow faster capture rates.
@@ -84,7 +84,7 @@ pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECT
 
 /// Length of the channel for feature processing.
 /// Allows features to fall behind with minimal latency.
-pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 256;
+pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 64;
 
 #[cfg(test)]
 mod tests {

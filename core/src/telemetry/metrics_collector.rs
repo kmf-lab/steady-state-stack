@@ -40,7 +40,7 @@ pub enum DiagramData {
         )>,
     ),
     /// Channel volume data, containing tuples of (take, send) values.
-    ChannelVolumeData(u64, Box<[(i128, i128)]>),
+    ChannelVolumeData(u64, Box<[(i64, i64)]>),
     /// Node process data, containing the status of actors.
     NodeProcessData(u64, Box<[ActorStatus]>),
 }
@@ -49,11 +49,12 @@ pub enum DiagramData {
 #[derive(Default)]
 struct RawDiagramState {
     sequence: u64,
+    fill: u8,   // 0-new, 1-half, 2-full
     actor_count: usize,
     actor_status: Vec<ActorStatus>,
-    total_take_send: Vec<(i128, i128)>,
-    future_take: Vec<i128>, // These are for the next frame since we do not have the matching sent yet.
-    future_send: Vec<i128>, // These are for the next frame if we ended up with too many items.
+    total_take_send: Vec<(i64, i64)>,
+    future_take: Vec<i64>, // These are for the next frame since we do not have the matching sent yet.
+    future_send: Vec<i64>, // These are for the next frame if we ended up with too many items.
     error_map:HashMap<String,u32>
 }
 
@@ -126,9 +127,17 @@ pub(crate) async fn run<const GIRTH: usize>(
 
 
         if let Some(ref scan) = all_actors_to_scan {
+            
+            //NOTE: this value is half the data points needed to make up a frame by design so we are
+            //      only waiting on half the channel this means we will need to do this twice before
+            //      we can send a full frame of data. This is tracked in RawDiagramState::fill
+            let units_to_wait_upon = steady_config::CONSUMED_MESSAGES_BY_COLLECTOR;
             let mut futures_unordered = FuturesUnordered::new();
             if let Some(ref timelords) = timelords {
-                timelords.iter().for_each(|i| scan.get(*i).iter().for_each(|f| futures_unordered.push(f.wait_avail_units(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))));
+                timelords.iter().for_each(|i| scan.get(*i)
+                                                  .iter()
+                                                  .for_each(|f| futures_unordered.push(
+                                                            f.wait_avail_units(units_to_wait_upon))));
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
                     if full_frame_of_data {
                         break;
@@ -137,7 +146,7 @@ pub(crate) async fn run<const GIRTH: usize>(
                     }
                 }
             } else {
-                scan.iter().for_each(|f| futures_unordered.push(f.wait_avail_units(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR)));
+                scan.iter().for_each(|f| futures_unordered.push(f.wait_avail_units(units_to_wait_upon)));
                 let count = 5;
                 let mut timelord_collector = Vec::new();
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
@@ -198,10 +207,15 @@ pub(crate) async fn run<const GIRTH: usize>(
             send_structure_details(ident, &mut locked_servers, nodes).await;
         }
         let warn = !is_shutting_down && steady_config::TELEMETRY_SERVER;
-        let next_frame = send_data_details(ident, &mut locked_servers, &state, warn).await;
-        if next_frame {
-            state.sequence += 1;
-        }
+        
+        // we wait and fire only when we know we have a full frame which is two rounds of loading
+        if state.fill>=2 {
+            let next_frame = send_data_details(ident, &mut locked_servers, &state, warn).await;
+            if next_frame {
+                state.sequence += 1;
+                state.fill = 0;
+            }
+        } 
     }
     Ok(())
 }
@@ -259,6 +273,8 @@ fn gather_valid_actor_telemetry_to_scan(
 
 /// Collects channel data from the state and dynamic senders.
 fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[CollectorDetail]) -> Vec<ActorIdentity> {
+    
+    state.fill += 1;
     let working: Vec<(bool, &CollectorDetail)> = dynamic_senders
         .iter()
         .map(|f| {

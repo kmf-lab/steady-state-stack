@@ -51,9 +51,9 @@ pub struct ChannelStatsComputer {
     pub(crate) bucket_frames_count: usize, // When this bucket is full we add a new one
     pub(crate) refresh_rate_in_bits: u8,
     pub(crate) window_bucket_in_bits: u8,
-    pub(crate) frame_rate_ms: u128, // Const at runtime but needed here for unit testing
+    pub(crate) frame_rate_ms: u64, // Const at runtime but needed here for unit testing
     pub(crate) time_label: String,
-    pub(crate) prev_take: i128,
+    pub(crate) prev_take: i64,
     pub(crate) capacity: usize,
     pub(crate) build_filled_histogram: bool,
     pub(crate) build_rate_histogram: bool,
@@ -104,10 +104,10 @@ impl ChannelStatsComputer {
         }
         self.prometheus_labels.push('"');
 
-        self.frame_rate_ms = frame_rate_ms as u128;
+        self.frame_rate_ms = frame_rate_ms;
         self.refresh_rate_in_bits = meta.refresh_rate_in_bits;
         self.window_bucket_in_bits = meta.window_bucket_in_bits;
-        self.time_label = actor_stats::time_label(self.frame_rate_ms << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits));
+        self.time_label = actor_stats::time_label((self.frame_rate_ms as u128) << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits));
 
         self.display_labels = if meta.display_labels {
             Some(meta.labels.clone())
@@ -198,7 +198,7 @@ impl ChannelStatsComputer {
         } else {
             self.history_latency.push_back(ChannelBlock::default());
         }
-        self.prev_take = 0i128;
+        self.prev_take = 0i64;
     }
 
     /// Accumulates data frames for filled, rate, and latency.
@@ -246,7 +246,7 @@ impl ChannelStatsComputer {
 
             let latency_micros: u64 = if rate == 0 { 0u64 }
             else {
-                (filled * PLACES_TENS * self.frame_rate_ms as u64) / rate
+                (filled * PLACES_TENS * self.frame_rate_ms as u64) / rate  
             };
 
             f.runner = f.runner.saturating_add(latency_micros as u128);
@@ -382,7 +382,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A tuple containing the line color and line thickness.
-    pub(crate) fn compute(&mut self, display_label: &mut String, metric_text: &mut String, from_id: Option<ActorName>, send: i128, take: i128) -> (&'static str, &'static str) {
+    pub(crate) fn compute(&mut self, display_label: &mut String, metric_text: &mut String, from_id: Option<ActorName>, send: i64, take: i64) -> (&'static str, &'static str) {
         display_label.clear();
 
         if self.capacity == 0 {
@@ -398,8 +398,13 @@ impl ChannelStatsComputer {
 
         let inflight: u64 = (send - take) as u64;
         let consumed: u64 = (take - self.prev_take) as u64;
-        self.accumulate_data_frame(inflight, consumed);
+        self.accumulate_data_frame(inflight, consumed); 
+
+        //TODO: this is called 2x as often.
+
+
         self.prev_take = take;
+        //TODO: capture and print this to see the rate per frame, then check the caller here.
 
         ////////////////////////////////////////////////
         //  Build the labels
@@ -446,41 +451,17 @@ impl ChannelStatsComputer {
             display_label.push('\n');
         });
 
-
-
         // Does nothing if the value is None
         if let Some(ref current_rate) = self.current_rate {
-            let config = ComputeLabelsConfig::channel_config(self, (1000, self.frame_rate_ms as usize), u64::MAX, self.show_avg_rate);
-
-            let labels = ComputeLabelsLabels {
-                label: "rate",
-                unit: "per/sec",
-                prometheus_labels: &self.prometheus_labels
-            };
-
-            compute_labels(config, current_rate, labels, &self.std_dev_rate, &self.percentiles_rate, metric_text, display_label);
+            self.compute_rate_labels(display_label, metric_text, &current_rate);
         }
 
         if let Some(ref current_filled) = self.current_filled {
-            let config = ComputeLabelsConfig::channel_config(self, (100, self.capacity), u64::MAX, self.show_avg_filled);
-            let labels = ComputeLabelsLabels {
-                label: "filled",
-                unit: "%",
-                prometheus_labels: &self.prometheus_labels
-            };
-            // self.prometheus_labels
-            compute_labels(config, current_filled, labels, &self.std_dev_filled, &self.percentiles_filled, metric_text, display_label);
+            self.compute_filled_labels(display_label, metric_text, &current_filled);
         }
 
         if let Some(ref current_latency) = self.current_latency {
-            let config = ComputeLabelsConfig::channel_config(self, (1, 1), u64::MAX, self.show_avg_latency);
-            let labels = ComputeLabelsLabels {
-                label: "latency",
-                unit: "ms",
-                prometheus_labels: &self.prometheus_labels
-            };
-            // info!("compute labels inflight: {:?}",self.std_dev_inflight);
-            compute_labels(config, current_latency, labels, &self.std_dev_latency, &self.percentiles_latency, metric_text, display_label);
+            self.compute_latency_labels(display_label, metric_text, &current_latency);
         }
 
         display_label.push_str("Capacity: ");
@@ -582,11 +563,11 @@ impl ChannelStatsComputer {
         match rule {
             Trigger::AvgBelow(rate) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                actor_stats::avg_rational(window_in_ms, PLACES_TENS as u128, &self.current_rate, rate.rational_ms()).is_lt()
+                actor_stats::avg_rational(window_in_ms as u128, PLACES_TENS as u128, &self.current_rate, rate.rational_ms()).is_lt()
             },
             Trigger::AvgAbove(rate) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                actor_stats::avg_rational(window_in_ms, PLACES_TENS as u128,  &self.current_rate, rate.rational_ms()).is_gt()
+                actor_stats::avg_rational(window_in_ms as u128, PLACES_TENS as u128,  &self.current_rate, rate.rational_ms()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, expected_rate) => {
                 actor_stats::stddev_rational(self.rate_std_dev(), self.window_bucket_in_bits + self.refresh_rate_in_bits, std_devs
@@ -674,6 +655,44 @@ impl ChannelStatsComputer {
         } else {
             Ordering::Equal // Unknown
         }
+    }
+
+    pub(crate) fn compute_rate_labels(&self, target_telemetry_label: &mut String, target_metric: &mut String, current_rate: &&ChannelBlock<u64>) {
+        let config = ComputeLabelsConfig::channel_config(self
+                                                         , (1000, self.frame_rate_ms as usize)
+                                                         , u64::MAX
+                                                         , self.show_avg_rate);
+        let labels = ComputeLabelsLabels {
+            label: "rate",
+            unit: "per/sec",
+            prometheus_labels: &self.prometheus_labels
+        };
+        compute_labels(config, &current_rate
+                       , labels, &self.std_dev_rate
+                       , &self.percentiles_rate
+                       , target_metric, target_telemetry_label);
+
+    }
+
+    pub(crate) fn compute_filled_labels(&self, display_label: &mut String, metric_target: &mut String, current_filled: &&ChannelBlock<u16>) {
+        let config = ComputeLabelsConfig::channel_config(self, (100, self.capacity), u64::MAX, self.show_avg_filled);
+        let labels = ComputeLabelsLabels {
+            label: "filled",
+            unit: "%",
+            prometheus_labels: &self.prometheus_labels
+        };
+        compute_labels(config, &current_filled, labels, &self.std_dev_filled, &self.percentiles_filled, metric_target, display_label);
+    }
+
+    pub(crate) fn compute_latency_labels(&self, display_label: &mut String, metric_target: &mut String, current_latency: &&ChannelBlock<u64>) {
+        let config = ComputeLabelsConfig::channel_config(self, (1, 1), u64::MAX, self.show_avg_latency);
+        let labels = ComputeLabelsLabels {
+            label: "latency",
+            unit: "ms",
+            prometheus_labels: &self.prometheus_labels
+        };
+
+        compute_labels(config, &current_latency, labels, &self.std_dev_latency, &self.percentiles_latency, metric_target, display_label);
     }
 
     /// Milliseconds per second constant.
@@ -841,7 +860,7 @@ pub(crate) const PLACES_TENS: u64 = 1000u64;
 /// Struct for configuring the computation of labels.
 #[derive(Copy, Clone)]
 pub(crate) struct ComputeLabelsConfig {
-    frame_rate_ms: u128,
+    frame_rate_ms: u64,
     rational_adjust: (usize, usize),
     max_value: u64,
     window_in_bits: u8,
@@ -1133,6 +1152,7 @@ pub(crate) mod stats_tests {
                 f32 * 0.81f32) as u64;
             let consumed = 100;
             computer.accumulate_data_frame(filled, consumed);
+   
         }
 
         let display_label = compute_display_label(&mut computer);
@@ -1168,6 +1188,7 @@ pub(crate) mod stats_tests {
         for _ in 0..c {
             let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
             computer.accumulate_data_frame(value, 100);
+  
         }
 
         computer.std_dev_filled.push(StdDev::two_and_a_half());
@@ -1242,19 +1263,19 @@ pub(crate) mod stats_tests {
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
+        cmd.window_bucket_in_bits = 4;
+        cmd.refresh_rate_in_bits = 8;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
-        computer.frame_rate_ms = 3;
+        computer.init(&Arc::new(cmd), ActorName::new("1",None)
+                                    , ActorName::new("2",None)
+                                    , 30);
         computer.show_avg_rate = true;
-
         // We consume 100 messages every computer.frame_rate_ms which is 3 ms
         // So per ms we are consuming about 33.3 messages
-
         let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
         for _ in 0..c {
-            computer.accumulate_data_frame(0, 100); // Frame rate is 1ms so 1000 per second
+            computer.accumulate_data_frame(0, 1000);
+
         }
 
         let display_label = compute_display_label(&mut computer);
@@ -1266,6 +1287,40 @@ pub(crate) mod stats_tests {
         assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34))), "Trigger should not fire when the average is above");
         assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32))), "Trigger should not fire when the average is below");
         assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34))), "Trigger should fire when the average is below");
+
+
+        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        for _ in 0..c {
+            computer.accumulate_data_frame(0, 1_000_000);
+
+        }
+
+        let display_label = compute_display_label(&mut computer);
+        assert_eq!(display_label, "Avg rate: 33M per/sec\n");
+
+        // NOTE: our triggers are in fixed units so they do not need to change if we modify
+        // the frame rate, refresh rate or window rate.
+        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(32000))), "Trigger should fire when the average is above");
+        assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34000))), "Trigger should not fire when the average is above");
+        assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32000))), "Trigger should not fire when the average is below");
+        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34000))), "Trigger should fire when the average is below");
+
+        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        for _ in 0..c {
+            computer.accumulate_data_frame(0, 1_000_000_000);
+
+        }
+
+        let display_label = compute_display_label(&mut computer);
+        assert_eq!(display_label, "Avg rate: 33333M per/sec\n");
+
+        // NOTE: our triggers are in fixed units so they do not need to change if we modify
+        // the frame rate, refresh rate or window rate.
+        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(32_000_000))), "Trigger should fire when the average is above");
+        assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34_000_000))), "Trigger should not fire when the average is above");
+        assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32_000_000))), "Trigger should not fire when the average is below");
+        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34_000_000))), "Trigger should fire when the average is below");
+
     }
 
     #[test]
@@ -1291,6 +1346,7 @@ pub(crate) mod stats_tests {
         for _ in 0..c {
             let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
             computer.accumulate_data_frame(100, value);
+
         }
 
         computer.std_dev_rate.push(StdDev::two_and_a_half());
@@ -1338,6 +1394,7 @@ pub(crate) mod stats_tests {
         for _ in 0..c {
             let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
             computer.accumulate_data_frame(100, value);
+
         }
 
         let display_label = compute_display_label(&mut computer);
@@ -1355,13 +1412,13 @@ pub(crate) mod stats_tests {
         let mut display_label = String::new();
         let mut metrics = String::new();
         if let Some(ref current_rate) = computer.current_rate {
-            compute_rate_labels(&computer, &mut display_label, &mut metrics, &current_rate);
+            computer.compute_rate_labels( &mut display_label, &mut metrics, &current_rate);
         }
         if let Some(ref current_filled) = computer.current_filled {
-            compute_filled_labels(&computer, &mut display_label, &mut metrics, &current_filled);
+            computer.compute_filled_labels(&mut display_label, &mut metrics, &current_filled);
         }
         if let Some(ref current_latency) = computer.current_latency {
-            compute_latency_labels(&computer, &mut display_label, &mut metrics, &current_latency);
+            computer.compute_latency_labels(&mut display_label, &mut metrics, &current_latency);
         }
         display_label
     }
@@ -1392,6 +1449,7 @@ pub(crate) mod stats_tests {
             // 205 in flight and we consume 33 per 3ms frame 11 per ms, so 205/11 = 18.6ms
             let inflight_value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
             computer.accumulate_data_frame(inflight_value, 33);
+
         }
 
         let display_label = compute_display_label(&mut computer);
@@ -1405,36 +1463,8 @@ pub(crate) mod stats_tests {
         assert!(computer.triggered_latency(&Trigger::AvgBelow(Duration::from_millis(21))), "Trigger should fire when the average is above");
     }
 
-    fn compute_rate_labels(computer: &ChannelStatsComputer, target_telemetry_label: &mut String, target_metric: &mut String, current_rate: &&ChannelBlock<u64>) {
-        let config = ComputeLabelsConfig::channel_config(computer, (1000, computer.frame_rate_ms as usize), u64::MAX, computer.show_avg_rate);
-        let labels = ComputeLabelsLabels {
-            label: "rate",
-            unit: "per/sec",
-            prometheus_labels: &computer.prometheus_labels
-        };
-        compute_labels(config, &current_rate, labels, &computer.std_dev_rate, &computer.percentiles_rate, target_metric, target_telemetry_label);
-    }
 
-    fn compute_filled_labels(computer: &ChannelStatsComputer, display_label: &mut String, metric_target: &mut String, current_filled: &&ChannelBlock<u16>) {
-        let config = ComputeLabelsConfig::channel_config(computer, (100, computer.capacity), u64::MAX, computer.show_avg_filled);
-        let labels = ComputeLabelsLabels {
-            label: "filled",
-            unit: "%",
-            prometheus_labels: &computer.prometheus_labels
-        };
-        compute_labels(config, &current_filled, labels, &computer.std_dev_filled, &computer.percentiles_filled, metric_target, display_label);
-    }
 
-    fn compute_latency_labels(computer: &ChannelStatsComputer, display_label: &mut String, metric_target: &mut String, current_latency: &&ChannelBlock<u64>) {
-        let config = ComputeLabelsConfig::channel_config(computer, (1, 1), u64::MAX, computer.show_avg_latency);
-        let labels = ComputeLabelsLabels {
-            label: "latency",
-            unit: "ms",
-            prometheus_labels: &computer.prometheus_labels
-        };
-
-        compute_labels(config, &current_latency, labels, &computer.std_dev_latency, &computer.percentiles_latency, metric_target, display_label);
-    }
 
     #[test]
     pub(crate) fn latency_std_dev_trigger() {
@@ -1461,6 +1491,7 @@ pub(crate) mod stats_tests {
         for _ in 0..c {
             let consumed_value = normal.sample(&mut rng) as u64;
             computer.accumulate_data_frame(computer.capacity as u64 / 2, consumed_value);
+
         }
 
         computer.std_dev_latency.push(StdDev::two_and_a_half());
@@ -1495,6 +1526,7 @@ pub(crate) mod stats_tests {
         let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
         for _ in 0..c {
             computer.accumulate_data_frame((computer.capacity - 1) as u64, (5.0 * 1.2) as u64); // Simulating rate being consistently above a certain value
+
         }
 
         let display_label = compute_display_label(&mut computer);

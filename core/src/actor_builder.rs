@@ -316,7 +316,7 @@ impl ActorBuilder {
             let buckets_per_window: f32 = window.as_micros() as f32 / refresh_in_micros as f32;
             // Find the next largest power of 2
             let window_in_bits = buckets_per_window.log2().ceil() as u8;
-            (refresh_in_bits, window_in_bits)
+            (refresh_in_bits, window_in_bits) 
         } else {
             (0,0)
         }
