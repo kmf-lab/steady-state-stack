@@ -831,6 +831,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     where
         T: Copy
     {
+        if self.telemetry.is_dirty() {
+            //TODO: check our clock if we have dirty data waiting to be sent
+
+        }
         this.shared_peek_async_slice(wait_for_count, elems).await
     }
 
@@ -920,7 +924,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Asynchronous
     pub async fn peek_async_iter<'a, T>(&'a self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
         let _guard = self.start_profile(CALL_OTHER);
+        if self.telemetry.is_dirty() {
+            //TODO: check our clock if we have dirty data waiting to be sent
 
+        }
         this.shared_peek_async_iter(wait_for_count).await
     }
 
@@ -1101,6 +1108,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
     {
         let _guard = self.start_profile(CALL_OTHER);
+        if self.telemetry.is_dirty() {
+            //TODO: check our clock if we have dirty data waiting to be sent
+
+        }
         this.shared_peek_async().await
     }
 
@@ -1116,6 +1127,12 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Asynchronous
     pub async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
         let guard = self.start_profile(CALL_SINGLE_READ);
+
+        if self.telemetry.is_dirty() {
+            //TODO: check our clock if we have dirty data waiting to be sent
+            
+        }
+
 
         let result = this.shared_take_async().await; //Can return None if we are shutting down
         drop(guard);
@@ -1363,6 +1380,11 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
         let guard = self.start_profile(CALL_SINGLE_WRITE);
 
+        if self.telemetry.is_dirty() {
+            //TODO: check our clock if we have dirty data waiting to be sent
+
+        }
+        
         let result = this.shared_send_async(a, self.ident, saturation).await;
         drop(guard);
         match result {
