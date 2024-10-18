@@ -232,11 +232,12 @@ pub(crate) async fn run<const GIRTH: usize>(
                     let measured = i.elapsed().as_millis() as u64;
 
                     let margin = 1.max(1+(ctrl.frame_rate_ms>>1));
+                    
                     if measured > ctrl.frame_rate_ms+margin {
                         warn!("frame rate is far too slow {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?} other:{:?}"
                             , measured, ctrl.frame_rate_ms, state.sequence, state.fill, trigger, tcount);
                     }
-                    if measured < ctrl.frame_rate_ms-margin {
+                    if measured < ctrl.frame_rate_ms-margin && tcount>0{
                         warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
                             , measured, ctrl.frame_rate_ms, state.sequence, state.fill, trigger, tcount);
                     }
