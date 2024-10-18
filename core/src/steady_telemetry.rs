@@ -188,8 +188,6 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 }
             }
 
-
-            //TODO: if never sent?? we need zero usage not 1024 so the unit_total_ns must be zero..
             if count > 0 {
                 let current_thread = thread::current();
 

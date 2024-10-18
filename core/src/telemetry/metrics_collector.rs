@@ -3,12 +3,12 @@ use std::error::Error;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, LockResult};
 use parking_lot::{RwLock, RwLockReadGuard}; 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[allow(unused_imports)]
 use log::*; // Allow unused import
 
-use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
+use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxMetaData, RxTel};
 #[allow(unused_imports)]
 use crate::{steady_config, SendSaturation, SteadyContext, SteadyTxBundle, yield_now, into_monitor};
 
@@ -55,7 +55,8 @@ struct RawDiagramState {
     total_take_send: Vec<(i64, i64)>,
     future_take: Vec<i64>, // These are for the next frame since we do not have the matching sent yet.
     future_send: Vec<i64>, // These are for the next frame if we ended up with too many items.
-    error_map:HashMap<String,u32>
+    error_map:HashMap<String,u32>,
+    last_instant: Option<Instant> //for testing do not remove
 }
 
 /// Locks an optional `SteadyTx` and returns a future resolving to a `MutexGuard`.
@@ -87,8 +88,8 @@ pub(crate) async fn run<const GIRTH: usize>(
     // };
 
     let mut state = RawDiagramState::default();
-    let mut all_actors_to_scan: Option<Vec<Box<dyn RxDef>>> = None;
-    let mut timelords: Option<Vec<usize>> = None;
+    let mut all_actors_to_scan: Option<Vec<(usize, Box<dyn RxDef>)>> = None;
+    let mut timelords: Option<Vec<&Box<dyn RxDef>>> = None;
 
     let mut locked_servers = optional_servers.lock().await;
 
@@ -118,48 +119,64 @@ pub(crate) async fn run<const GIRTH: usize>(
         //warn!("all actors to scan {:?}",all_actors_to_scan);
 
         if all_actors_to_scan.is_none() || rebuild_scan_requested {
+            //flat map used so the index is not the channel id
             all_actors_to_scan = gather_valid_actor_telemetry_to_scan(instance_id, &dynamic_senders_vec);
-
-
             timelords = None;
+            state.fill=15;//force a frame push because we just defined new resources
             rebuild_scan_requested = false;
         }
 
 
+        let mut trigger = "none";
+        let mut tcount = 0;
         if let Some(ref scan) = all_actors_to_scan {
-            
+
             //NOTE: this value is half the data points needed to make up a frame by design so we are
             //      only waiting on half the channel this means we will need to do this twice before
             //      we can send a full frame of data. This is tracked in RawDiagramState::fill
-            let units_to_wait_upon = steady_config::CONSUMED_MESSAGES_BY_COLLECTOR;
             let mut futures_unordered = FuturesUnordered::new();
             if let Some(ref timelords) = timelords {
-                timelords.iter().for_each(|i| scan.get(*i)
-                                                  .iter()
-                                                  .for_each(|f| futures_unordered.push(
-                                                            f.wait_avail_units(units_to_wait_upon))));
+                trigger = "waiting for timelords";
+                tcount = timelords.len();
+                assert!(!timelords.is_empty(), "internal error, timelords should not be empty");
+
+                timelords.iter().for_each(|f|
+                    futures_unordered.push(f.wait_avail_units(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))
+                );
+
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
+                    trigger = "we did loop in timelords";
                     if full_frame_of_data {
+                        trigger = "found a full frame in timelords";
                         break;
                     } else if id.is_none() {
                         rebuild_scan_requested = true;
                     }
                 }
             } else {
-                scan.iter().for_each(|f| futures_unordered.push(f.wait_avail_units(units_to_wait_upon)));
-                let count = 5;
+                trigger = "selecting timelords";
+                // reminder: scan is flat mapped so the index is NOT the channel id
+                scan.iter().for_each(|f| futures_unordered.push(f.1.wait_avail_units(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))   );
+                let count = futures_unordered.len().min(5);
                 let mut timelord_collector = Vec::new();
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
                     if full_frame_of_data {
-                        timelord_collector.push(id.expect("internal error, every true has an index"));
+                        let id = id.expect("internal error, every true has an index");
+                        scan.iter().find(|f| f.0 == id)
+                                   .iter()
+                                   .for_each(|rx| timelord_collector.push(&rx.1));
+
                         if timelord_collector.len() >= count {
-                            break;
+                                trigger = "found count of full frames and new timelords list";
+                                break;
                         }
+
                     }
                 }
                 timelords = if timelord_collector.is_empty() { None } else { Some(timelord_collector) };
             }
         } else {
+            trigger = "no actors to scan";
             yield_now().await;
         }
 
@@ -173,7 +190,6 @@ pub(crate) async fn run<const GIRTH: usize>(
             if structure_unchanged {
                 (None, collect_channel_data(&mut state, dynamic_senders))
             } else {
-                all_actors_to_scan = None;
                 rebuild_scan_requested = true;
 
                 //when we are still building we will not report missing channel errors
@@ -210,10 +226,31 @@ pub(crate) async fn run<const GIRTH: usize>(
         
         // we wait and fire only when we know we have a full frame which is two rounds of loading
         if state.fill>=2 {
+            #[cfg(debug_assertions)]
+            { //only check this when debug is on.
+                if let Some(i) = state.last_instant {
+                    let measured = i.elapsed().as_millis() as u64;
+
+                    let margin = 1.max(1+(ctrl.frame_rate_ms>>1));
+                    if measured > ctrl.frame_rate_ms+margin {
+                        warn!("frame rate is far too slow {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?} other:{:?}"
+                            , measured, ctrl.frame_rate_ms, state.sequence, state.fill, trigger, tcount);
+                    }
+                    if measured < ctrl.frame_rate_ms-margin {
+                        warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
+                            , measured, ctrl.frame_rate_ms, state.sequence, state.fill, trigger, tcount);
+                    }
+                }
+            }
+
             let next_frame = send_data_details(ident, &mut locked_servers, &state, warn).await;
             if next_frame {
                 state.sequence += 1;
                 state.fill = 0;
+                #[cfg(debug_assertions)]
+                {
+                    state.last_instant = Some(Instant::now());
+                }
             }
         } 
     }
@@ -253,17 +290,19 @@ fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<'_, Vec<Collec
 fn gather_valid_actor_telemetry_to_scan(
     version: u32,
     dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>,
-) -> Option<Vec<Box<dyn RxDef>>> {
+) -> Option<Vec<(usize,Box<dyn RxDef>)>> {
     let guard = dynamic_senders_vec.read();
     
     let dynamic_senders = guard.deref();
-    let v: Vec<Box<dyn RxDef>> = dynamic_senders
+    let v: Vec<(usize, Box<dyn RxDef>)> = dynamic_senders
         .iter()
         .filter(|f| f.ident.label.name != metrics_collector::NAME)
         .flat_map(|f| f.telemetry_take.iter().filter_map(|g| g.actor_rx(version)))
+        .map(|f| (f.meta_data().0.id, f))
         .collect();
 
     if !v.is_empty() {
+        //due to flat map the channel id is not the index position
         Some(v)
     } else {
         None
@@ -433,7 +472,7 @@ async fn send_structure_details(
     }
 }
 
-/// Sends data details to the consumer.
+/// Sends data details to the consumer(s).
 async fn send_data_details(
     ident: ActorIdentity,
     consumer_vec: &mut [MutexGuard<'_, Tx<DiagramData>>],
@@ -471,10 +510,12 @@ async fn send_data_details(
 
         } else if warn {
             #[cfg(not(test))]
-            warn!(
-                "{:?} is accumulating frames since consumer is not keeping up, perhaps capacity of {:?} may need to be increased.",
-                ident, consumer.capacity()
-            );
+            {
+                warn!(
+                    "{:?} is accumulating frames since consumer of collected frames is not keeping up, perhaps capacity of {:?} may need to be increased.",
+                    ident, consumer.capacity()
+                );
+            }
 
         }
 

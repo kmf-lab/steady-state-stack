@@ -48,6 +48,7 @@ pub struct ActorBuilder {
     std_dev_load: Vec<StdDev>,
     trigger_mcpu: Vec<(Trigger<MCPU>, AlertColor)>,
     trigger_load: Vec<(Trigger<Work>, AlertColor)>,
+    thread_id: bool,
     avg_mcpu: bool,
     avg_load: bool,
     frame_rate_ms: u64,
@@ -272,6 +273,7 @@ impl ActorBuilder {
             std_dev_load: Vec::with_capacity(0),
             trigger_mcpu: Vec::with_capacity(0),
             trigger_load: Vec::with_capacity(0),
+            thread_id: false,
             avg_mcpu: false,
             avg_load: false,
             frame_rate_ms: graph.telemetry_production_rate_ms,
@@ -422,6 +424,13 @@ impl ActorBuilder {
         result.trigger_load.push((bound, color));
         result
     }
+    
+    // /// Show the thread on the telemetry
+    // pub fn with_thread(&self) -> Self {
+    //     let mut result = self.clone();
+    //     result.thread_id = true;
+    //     result
+    // }
 
     /// Completes the actor configuration and initiates its execution with the provided logic.
     ///

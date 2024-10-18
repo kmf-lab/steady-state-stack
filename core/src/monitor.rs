@@ -1022,45 +1022,45 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
-        if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
-                false //need a relay now so return
-            } else {
-                let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let mut wat = this.shared_wait_closed_or_avail_units(count);
-                select! {
-                            _ = dur.fuse() => false,
-                            x = wat.fuse() => x
-                        }
-            }
-        } else {
+        // if self.telemetry.is_dirty() {
+        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
+        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+        //     return if remaining_micros <= 0 {
+        //         false //need a relay now so return
+        //     } else {
+        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+        //         let mut wat = this.shared_wait_closed_or_avail_units(count);
+        //         select! {
+        //                     _ = dur.fuse() => false,
+        //                     x = wat.fuse() => x
+        //                 }
+        //     }
+        // } else {
             this.shared_wait_closed_or_avail_units(count).await
-        }
+        //}
     }
 
     pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
-        if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
-                false //need a relay now so return
-            } else {
-                let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let mut wat = this.shared_wait_avail_units(count);
-                select! {
-                            _ = dur.fuse() => false,
-                            x = wat.fuse() => x
-                        }
-            }
-        } else {
+        // if self.telemetry.is_dirty() {
+        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
+        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+        //     return if remaining_micros <= 0 {
+        //         false //need a relay now so return
+        //     } else {
+        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+        //         let mut wat = this.shared_wait_avail_units(count);
+        //         select! {
+        //                     _ = dur.fuse() => false,
+        //                     x = wat.fuse() => x
+        //                 }
+        //     }
+        // } else {
             this.shared_wait_avail_units(count).await
-        }
+        //}
 
     }
 
@@ -1068,23 +1068,23 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// returns true upon shutdown detection
     pub async fn wait_shutdown(&self) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
-        if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
-                false //need a relay now so return
-            } else {
-                let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let mut wat = self.internal_wait_shutdown();
-                select! {
-                            _ = dur.fuse() => false,
-                            x = wat.fuse() => x
-                        }
-            }
-        } else {
+        // if self.telemetry.is_dirty() {
+        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
+        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+        //     return if remaining_micros <= 0 {
+        //         false //need a relay now so return
+        //     } else {
+        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+        //         let mut wat = self.internal_wait_shutdown();
+        //         select! {
+        //                     _ = dur.fuse() => false,
+        //                     x = wat.fuse() => x
+        //                 }
+        //     }
+        // } else {
             self.internal_wait_shutdown().await
-        }
+        //}
     }
 
     async fn internal_wait_shutdown(&self) -> bool {
@@ -1274,23 +1274,23 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let _guard = self.start_profile(CALL_WAIT);
         let count = Self::validate_capacity_tx(this, count);
 
-        if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                                 - (self.last_telemetry_send.elapsed().as_micros() as i64
-                                     * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
-                        false //need a relay now so return
-                    } else {
-                        let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                        let mut wat = this.shared_wait_shutdown_or_vacant_units(count);
-                        select! {
-                            _ = dur.fuse() => false,
-                            x = wat.fuse() => x
-                        }
-                    }
-        } else {
+        // if self.telemetry.is_dirty() {
+        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+        //                          - (self.last_telemetry_send.elapsed().as_micros() as i64
+        //                              * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+        //     return if remaining_micros <= 0 {
+        //                 false //need a relay now so return
+        //             } else {
+        //                 let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+        //                 let mut wat = this.shared_wait_shutdown_or_vacant_units(count);
+        //                 select! {
+        //                     _ = dur.fuse() => false,
+        //                     x = wat.fuse() => x
+        //                 }
+        //             }
+        // } else {
             this.shared_wait_shutdown_or_vacant_units(count).await
-        }
+        //}
     }
 
 
@@ -1298,23 +1298,23 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let _guard = self.start_profile(CALL_WAIT);
         let count = Self::validate_capacity_tx(this, count);
 
-        if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
-                false //need a relay now so return
-            } else {
-                let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let mut wat = this.shared_wait_vacant_units(count);
-                select! {
-                            _ = dur.fuse() => false,
-                            x = wat.fuse() => x
-                        }
-            }
-        } else {
+        // if self.telemetry.is_dirty() {
+        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
+        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+        //     return if remaining_micros <= 0 {
+        //         false //need a relay now so return
+        //     } else {
+        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+        //         let mut wat = this.shared_wait_vacant_units(count);
+        //         select! {
+        //                     _ = dur.fuse() => false,
+        //                     x = wat.fuse() => x
+        //                 }
+        //     }
+        // } else {
             this.shared_wait_vacant_units(count).await
-        }
+        //}
     }
     
 
@@ -1326,23 +1326,23 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Asynchronous
     pub async fn wait_empty<T>(&self, this: &mut Tx<T>) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
-        if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
-                false //need a relay now so return
-            } else {
-                let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let mut wat = this.shared_wait_empty();
-                select! {
-                            _ = dur.fuse() => false,
-                            x = wat.fuse() => x
-                        }
-            }
-        } else {
+        // if self.telemetry.is_dirty() {
+        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
+        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+        //     return if remaining_micros <= 0 {
+        //         false //need a relay now so return
+        //     } else {
+        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+        //         let mut wat = this.shared_wait_empty();
+        //         select! {
+        //                     _ = dur.fuse() => false,
+        //                     x = wat.fuse() => x
+        //                 }
+        //     }
+        // } else {
             this.shared_wait_empty().await
-        }
+        //}
     }
 
     /// Asynchronously waits for a future to complete or a shutdown signal to be received.

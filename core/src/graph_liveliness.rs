@@ -483,14 +483,19 @@ impl GraphBuilder {
     /// consume the graph builder and build the graph for use
     ///
     pub fn build<A: Any + Send + Sync>(self, args: A) -> Graph {
-        Graph::internal_new(args
+        let g = Graph::internal_new(args
                 , self.block_fail_fast
                 , self.telemetry_metric_features
                 , self.backplane
                 , self.proactor_config
                 , self.enable_io_driver
                 , self.iouring_queue_length
-                , self.telemtry_production_rate_ms)
+                , self.telemtry_production_rate_ms);
+        if !crate::steady_config::DISABLE_DEBUG_FAIL_FAST {
+            #[cfg(debug_assertions)]
+            g.apply_fail_fast();
+        }
+        g
     }
 }
 
@@ -580,7 +585,7 @@ impl Graph {
     ///
     /// Runtime disable of fail-fast so we can unit test the recovery of panics
     /// where normally in a test condition we would want to fail fast.
-    pub fn enable_fail_fast(&self) {
+    fn apply_fail_fast(&self) {
         // Runtime disable of fail-fast so we can unit test the recovery of panics
         // where normally in a test condition we would want to fail fast
         if !self.block_fail_fast {
@@ -647,15 +652,7 @@ impl Graph {
     ///
     /// This should be done after building the graph.
     pub fn start_with_timeout(&mut self, duration:Duration) -> bool {
-        // error!("start called");
-
-        // If we are not in release mode we will enable fail-fast
-        // This is most helpful while new code is under development
-        if !crate::steady_config::DISABLE_DEBUG_FAIL_FAST {
-            #[cfg(debug_assertions)]
-            self.enable_fail_fast();
-        }
-
+   
         trace!("start was called");
         // Everything has been scheduled and running so change the state
 

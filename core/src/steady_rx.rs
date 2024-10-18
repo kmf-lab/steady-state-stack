@@ -496,7 +496,7 @@ where
 
 
 /// Trait defining the required methods for a receiver definition.
-pub trait RxDef: Debug + Send {
+pub trait RxDef: Debug + Send + Sync {
     /// Retrieves metadata associated with the receiver.
     ///
     /// # Returns
@@ -514,7 +514,7 @@ pub trait RxDef: Debug + Send {
 }
 
 impl<T: Send + Sync> RxDef for SteadyRx<T> {
-    fn meta_data(&self) -> RxMetaData {
+    fn meta_data(&self) -> RxMetaData {               
         loop {
             if let Some(guard) = self.try_lock() {
                 return RxMetaData(guard.deref().channel_meta_data.clone());
@@ -527,18 +527,11 @@ impl<T: Send + Sync> RxDef for SteadyRx<T> {
     #[inline]
     fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, (bool, Option<usize>)> {
         async move {
-            if let Some(mut guard) = self.try_lock() {
-                let is_closed = guard.deref_mut().is_closed();
-                if !is_closed {
-                    let result = guard.deref_mut().shared_wait_shutdown_or_avail_units(count).await;
-                    if result {
-                        (true, Some(guard.deref().id()))
-                    } else {
-                        (false, Some(guard.deref().id()))
-                    }
-                } else {
-                    (false, None)
-                }
+            let mut guard = self.lock().await;
+            let is_closed = guard.deref_mut().is_closed();
+            if !is_closed {
+                let result:bool = guard.deref_mut().shared_wait_shutdown_or_avail_units(count).await;
+                (result,  Some(guard.deref().id()))
             } else {
                 (false, None)
             }

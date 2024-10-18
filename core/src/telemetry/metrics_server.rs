@@ -162,7 +162,7 @@ async fn process_msg(msg: DiagramData
                 history.mark_position();
             }
 
-            if rxg.is_empty() || frames.last_graph.elapsed().as_millis() >= frame_rate_ms as u128 {
+            if rxg.is_empty() || frames.last_graph.elapsed().as_millis() >= 2 * frame_rate_ms as u128 {
                 build_dot(metrics_state, rankdir, &mut frames.active_graph);
                 let graph_bytes = frames.active_graph.to_vec();
                 build_metric(metrics_state, &mut frames.active_metric);
