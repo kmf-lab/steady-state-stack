@@ -67,7 +67,7 @@ impl SteadyTelemetryActorSend {
         ActorStatus {
             total_count_restarts: self.instance_id,
             iteration_start: iteration_index,
-            iteration_sum: (iteration_index-self.iteration_index_start) as u64,
+            iteration_sum: (iteration_index-self.iteration_index_start),
             bool_stop: self.bool_stop,
             await_total_ns: self.hot_profile_await_ns_unit.load(Ordering::Relaxed),
             unit_total_ns: total_ns,
@@ -350,17 +350,13 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
     pub(crate) fn is_dirty(&self) -> bool {        
         if let Some(send_tx) = &self.send_tx {
             send_tx.count.iter().any(|&x| x > 0)
-        } else {
-            if let Some(send_rx) = &self.send_rx {
+        } else if let Some(send_rx) = &self.send_rx {
                 send_rx.count.iter().any(|&x| x > 0)
-            } else {
-                if let Some(state) = &self.state {
+            } else if let Some(state) = &self.state {
                     state.calls.iter().any(|x| x.load(Ordering::Relaxed) > 0)
                 } else {
                     false
-                }
-            }
-        }        
+                } 
     }
 }
 

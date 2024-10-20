@@ -64,8 +64,6 @@ impl Node {
             &mut self.metric_text,
             mcpu,
             load,
-            actor_status.iteration_start,
-            actor_status.iteration_sum,
             actor_status.total_count_restarts,
             actor_status.bool_stop,
         );

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 #[allow(unused_imports)]
 use log::*; // Allow unused import
 
-use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxMetaData, RxTel};
+use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
 #[allow(unused_imports)]
 use crate::{steady_config, SendSaturation, SteadyContext, SteadyTxBundle, yield_now, into_monitor};
 
@@ -126,9 +126,8 @@ pub(crate) async fn run<const GIRTH: usize>(
             rebuild_scan_requested = false;
         }
 
-
-        let mut trigger = "none";
-        let mut tcount = 0;
+        let mut _trigger = "none";
+        let mut _tcount = 0;
         if let Some(ref scan) = all_actors_to_scan {
 
             //NOTE: this value is half the data points needed to make up a frame by design so we are
@@ -136,8 +135,8 @@ pub(crate) async fn run<const GIRTH: usize>(
             //      we can send a full frame of data. This is tracked in RawDiagramState::fill
             let mut futures_unordered = FuturesUnordered::new();
             if let Some(ref timelords) = timelords {
-                trigger = "waiting for timelords";
-                tcount = timelords.len();
+                _trigger = "waiting for timelords";
+                _tcount = timelords.len();
                 assert!(!timelords.is_empty(), "internal error, timelords should not be empty");
 
                 timelords.iter().for_each(|f|
@@ -145,16 +144,16 @@ pub(crate) async fn run<const GIRTH: usize>(
                 );
 
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
-                    trigger = "we did loop in timelords";
+                    _trigger = "we did loop in timelords";
                     if full_frame_of_data {
-                        trigger = "found a full frame in timelords";
+                        _trigger = "found a full frame in timelords";
                         break;
                     } else if id.is_none() {
                         rebuild_scan_requested = true;
                     }
                 }
             } else {
-                trigger = "selecting timelords";
+                _trigger = "selecting timelords";
                 // reminder: scan is flat mapped so the index is NOT the channel id
                 scan.iter().for_each(|f| futures_unordered.push(f.1.wait_avail_units(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))   );
                 let count = futures_unordered.len().min(5);
@@ -167,7 +166,7 @@ pub(crate) async fn run<const GIRTH: usize>(
                                    .for_each(|rx| timelord_collector.push(&rx.1));
 
                         if timelord_collector.len() >= count {
-                                trigger = "found count of full frames and new timelords list";
+                                _trigger = "found count of full frames and new timelords list";
                                 break;
                         }
 
@@ -176,7 +175,7 @@ pub(crate) async fn run<const GIRTH: usize>(
                 timelords = if timelord_collector.is_empty() { None } else { Some(timelord_collector) };
             }
         } else {
-            trigger = "no actors to scan";
+            _trigger = "no actors to scan";
             yield_now().await;
         }
 
@@ -235,11 +234,11 @@ pub(crate) async fn run<const GIRTH: usize>(
                     
                     if measured > ctrl.frame_rate_ms+margin {
                         warn!("frame rate is far too slow {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?} other:{:?}"
-                            , measured, ctrl.frame_rate_ms, state.sequence, state.fill, trigger, tcount);
+                            , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
                     }
-                    if measured < ctrl.frame_rate_ms-margin && tcount>0{
+                    if measured < ctrl.frame_rate_ms-margin && _tcount >0{
                         warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
-                            , measured, ctrl.frame_rate_ms, state.sequence, state.fill, trigger, tcount);
+                            , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
                     }
                 }
             }

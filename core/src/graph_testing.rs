@@ -214,9 +214,11 @@ impl SideChannelResponder {
             //      happen if the main test block is not consuming the answers to the questions
             //NOTE: this should never block on shutdown since above we immediately pull the answer
             match tx.push(f(q)).await {
-                Ok(_) => {true }
+                Ok(_) => {
+                    true
+                }
                 Err(e) => {
-                    error!("Error sending test implementation response: {:?}", e);
+                    error!("Error sending test implementation response: {:?} Identity: {:?}", e,self.identity);
                     false
                 }
             }

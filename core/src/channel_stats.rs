@@ -235,7 +235,7 @@ impl ChannelStatsComputer {
         self.history_latency.iter_mut().for_each(|f| {
             let latency_micros: u64 = if rate == 0 { 0u64 }
             else {
-                (filled * self.frame_rate_ms as u64) / rate
+                (filled * self.frame_rate_ms) / rate
             };
 
             if let Some(ref mut h) = &mut f.histogram {
@@ -246,7 +246,7 @@ impl ChannelStatsComputer {
 
             let latency_micros: u64 = if rate == 0 { 0u64 }
             else {
-                (filled * PLACES_TENS * self.frame_rate_ms as u64) / rate  
+                (filled * PLACES_TENS * self.frame_rate_ms) / rate  
             };
 
             f.runner = f.runner.saturating_add(latency_micros as u128);
@@ -667,7 +667,7 @@ impl ChannelStatsComputer {
             unit: "per/sec",
             prometheus_labels: &self.prometheus_labels
         };
-        compute_labels(config, &current_rate
+        compute_labels(config, current_rate
                        , labels, &self.std_dev_rate
                        , &self.percentiles_rate
                        , target_metric, target_telemetry_label);
@@ -681,7 +681,7 @@ impl ChannelStatsComputer {
             unit: "%",
             prometheus_labels: &self.prometheus_labels
         };
-        compute_labels(config, &current_filled, labels, &self.std_dev_filled, &self.percentiles_filled, metric_target, display_label);
+        compute_labels(config, current_filled, labels, &self.std_dev_filled, &self.percentiles_filled, metric_target, display_label);
     }
 
     pub(crate) fn compute_latency_labels(&self, display_label: &mut String, metric_target: &mut String, current_latency: &&ChannelBlock<u64>) {
@@ -692,7 +692,7 @@ impl ChannelStatsComputer {
             prometheus_labels: &self.prometheus_labels
         };
 
-        compute_labels(config, &current_latency, labels, &self.std_dev_latency, &self.percentiles_latency, metric_target, display_label);
+        compute_labels(config, current_latency, labels, &self.std_dev_latency, &self.percentiles_latency, metric_target, display_label);
     }
 
     /// Milliseconds per second constant.

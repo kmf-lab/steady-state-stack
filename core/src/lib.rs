@@ -124,6 +124,7 @@ pub fn new_state<S>() -> SteadyState<S> {
     Arc::new(Mutex::new(None))
 }
 
+/// Lock for use the SteadyState struct which holds state of an actor across panics restarts.
 pub async fn steady_state<F,S>(steadystate: & SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
 where
     S: Clone,
@@ -172,9 +173,16 @@ pub type RxBundle<'a, T> = Vec<MutexGuard<'a, Rx<T>>>;
 /// This type alias simplifies the usage of a bundle of transmitters that can be shared across multiple threads.
 pub type LazySteadyTxBundle<T, const GIRTH: usize> = [LazySteadyTx<T>; GIRTH];
 
+/// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
+/// This one is special because its clone will lazy create teh channels.
+/// 
 pub trait LazySteadyTxBundleClone<T, const GIRTH: usize> {
+    /// Clone the bundle of transmitters. But MORE. This is the lazy init of the channel as well.
     fn clone(&self) -> SteadyTxBundle<T, GIRTH>;
+    /// sends test data but this blocks until the first half is consumed
+    /// this may cause your test to block if those first messages are not consumed
     async fn testing_send_in_two_batches(&self, data: Vec<T>, index:usize, close: bool);
+    /// closes the tx channel when in the test code.
     async fn testing_mark_closed(&self, index: usize);
 }
 
@@ -223,7 +231,10 @@ impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBu
 /// This type alias simplifies the usage of a bundle of receivers that can be shared across multiple threads.
 pub type LazySteadyRxBundle<T, const GIRTH: usize> = [LazySteadyRx<T>; GIRTH];
 
+/// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
 pub trait LazySteadyRxBundleClone<T, const GIRTH: usize> {
+    /// Clone the bundle of receivers. But MORE. This is the lazy init of the channel as well.
+    /// Use it as a normal clone the lazy init happens as an implementation detail.
     fn clone(&self) -> SteadyRxBundle<T, GIRTH>;
 }
 
@@ -335,7 +346,7 @@ impl SteadyContext {
     /// # Returns
     /// A future that resolves to `Ok(())` if the monitor stops, otherwise `Err(())`.
     pub fn wait_while_running(&self) -> impl Future<Output = Result<(), ()>> {
-        crate::graph_liveliness::WaitWhileRunningFuture::new(self.runtime_state.clone())
+        WaitWhileRunningFuture::new(self.runtime_state.clone())
     }
 
     /// Update the transmission instance for the given channel.
@@ -547,6 +558,20 @@ impl SteadyContext {
         result.load(Ordering::Relaxed)
     }
 
+    /// Waits until a specified number of units are vacant in the Tx channel bundle.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
+    /// - `avail_count`: The number of vacant units to wait for.
+    /// - `ready_channels`: The number of ready channels to wait for.
+    ///
+    /// # Returns
+    /// `true` if the units are vacant, otherwise `false`.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Send` and `Sync`.
+    ///
+    /// # Asynchronous
     pub async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
@@ -1124,12 +1149,12 @@ impl SteadyContext {
             is_in_graph: self.is_in_graph,
             runtime_state: self.runtime_state,
             oneshot_shutdown: self.oneshot_shutdown,
-            last_perodic_wait: Default::default(),
+            last_periodic_wait: Default::default(),
             actor_start_time: self.actor_start_time,
             node_tx_rx: self.node_tx_rx.clone(),
             frame_rate_ms: self.frame_rate_ms,
             args: self.args,
-            iteration_count: 0,
+            is_running_iteration_count: 0,
         }
     }
 }

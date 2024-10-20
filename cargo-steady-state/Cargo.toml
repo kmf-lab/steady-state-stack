@@ -1,6 +1,6 @@
 [package]
 name = "cargo-steady-state" # This name is crucial for Cargo to recognize the subcommand.
-version = "0.0.27"
+version = "0.0.28"
 documentation = "https://docs.rs/cargo-steady-state/0.0.5/cargo-steady-state/"
 edition = "2021"
 description = "Code generator for steady_state projects based on a structured dot file."
@@ -11,11 +11,11 @@ repository = "https://github.com/kmf-lab/steady-state-stack"
 # Here, list your dependencies.
 structopt = "0.3.26"
 flexi_logger = "0.29.0"
-log = "0.4.21"
+log = "0.4.22"
 dot-parser = "0.3.0"
 askama = "0.12.1"
 structopt-derive = "0.4.18"
-num-traits = "0.2.18"
+num-traits = "0.2.19"
 
 
 

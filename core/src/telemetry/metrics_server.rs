@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::process::{exit};
 use bytes::BytesMut;
 #[allow(unused_imports)]
 use log::*;
@@ -9,7 +8,6 @@ use crate::telemetry::metrics_collector::*;
 use futures::io;
 use nuclei::*;
 use std::net::{TcpListener, TcpStream};
-use num_traits::Zero;
 
 // The name of the metrics server actor
 pub const NAME: &str = "metrics_server";

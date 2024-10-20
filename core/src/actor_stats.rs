@@ -80,8 +80,6 @@ impl ActorStatsComputer {
         metric_text: &mut String,
         mcpu: u64,
         load: u64,
-        iteration_start: u64,
-        iteration_sum: u64,
         total_count_restarts: u32,
         bool_stop: bool
     ) -> (&'static str, &'static str) {
@@ -366,9 +364,8 @@ impl ActorStatsComputer {
             Trigger::AvgBelow(mcpu) => {
                 //println!("check below: {:?} {:?}", mcpu, self.current_mcpu);
                 let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                let result = avg_rational(run_divisor, 1 , &self.current_mcpu, (mcpu.mcpu() as u64, 1)  ).is_lt();
-                //println!("check below result: {:?}", result);
-                result
+                avg_rational(run_divisor, 1 , &self.current_mcpu, (mcpu.mcpu() as u64, 1)  ).is_lt()
+               
             },
             Trigger::AvgAbove(mcpu) => {
                // println!("check above: {:?} {:?}", mcpu, self.current_mcpu);
@@ -406,17 +403,14 @@ impl ActorStatsComputer {
             Trigger::AvgBelow(work) => {
                // println!("check below: {:?} {:?}", work, self.current_mcpu);
                 let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                let result = avg_rational(run_divisor, 100, &self.current_work, work.rational()).is_lt();
-               // println!("check below result: {:?}", result);
-                result
+                avg_rational(run_divisor, 100, &self.current_work, work.rational()).is_lt()
 
             },
             Trigger::AvgAbove(work) => {
                // println!("check below: {:?} {:?}", work, self.current_mcpu);
                 let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                let result = avg_rational(run_divisor, 100, &self.current_work, work.rational()).is_gt();
-               // println!("check below result: {:?}", result);
-                result
+                avg_rational(run_divisor, 100, &self.current_work, work.rational()).is_gt()
+             
             },
             Trigger::StdDevsBelow(std_devs, work) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
@@ -682,8 +676,6 @@ mod test_actor_stats {
             &mut metric_text,
             512,
             50,
-            0,
-            1,
             1,
             false,
         );

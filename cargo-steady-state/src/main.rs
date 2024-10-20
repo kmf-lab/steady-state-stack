@@ -424,24 +424,32 @@ mod tests {
             eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &level);
         }
 
-        //ensure test_run folder exists
-        let working_path = PathBuf::from("test_run");
-        if let Err(e) = fs::create_dir_all(&working_path) {
-            error!("Failed to create test_run directory: {}", e);
-            return;
-        }
+        //ensure test_run folder exists and we are in the right place
+        
+        
+        
+
 
         let current_dir = env::current_dir().expect("Failed to get current directory");
 
         //move to our test_run folder to ensure we do not generate test code on top of our self
         let ok = current_dir.ends_with("test_run")
                  || match env::set_current_dir("test_run") {
-            Ok(_) => {
-                true
-            }
-            Err(e) => {
-                panic!("Failed to change directory to test_run: {}", e);
-            }
+                        Ok(_) => {
+                            true
+                        }
+                        Err(e) => {
+                            let working_path = PathBuf::from("test_run");
+                            if let Err(e) = fs::create_dir_all(&working_path) {
+                                error!("Failed to create test_run directory: {}", e);
+                                panic!("Failed to change directory to test_run: {}", e);
+                            }
+                            if let Err(e) = env::set_current_dir("test_run") {
+                                error!("Failed to change directory to test_run: {}", e);
+                                panic!("Failed to change directory to test_run: {}", e);
+                            }
+                            true
+                        }
         };
 
         if ok {

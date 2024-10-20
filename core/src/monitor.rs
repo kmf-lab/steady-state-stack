@@ -203,7 +203,7 @@ impl<const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
             if tel.state.is_some() || tel.send_tx.is_some() || tel.send_rx.is_some() {
                 send_all_local_telemetry_async(
                     self.ident,
-                    self.iteration_count,
+                    self.is_running_iteration_count,
                     tel.state.take(),
                     tel.send_tx.take(),
                     tel.send_rx.take(),
@@ -221,18 +221,18 @@ impl<const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
 /// - `TX_LEN`: The length of the transmitter array.
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) ident: ActorIdentity,
-    pub(crate) instance_id: u32,
+    pub(crate) instance_id: u32, // set for what reason??
     pub(crate) is_in_graph: bool,
     pub(crate) telemetry: SteadyTelemetry<RX_LEN, TX_LEN>,
     pub(crate) last_telemetry_send: Instant, // NOTE: we use mutable for counts so no need for Atomic here
-    pub(crate) last_perodic_wait: AtomicU64,
+    pub(crate) last_periodic_wait: AtomicU64,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
     pub(crate) actor_start_time: Instant, // never changed from context
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
     pub(crate) frame_rate_ms: u64,
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
-    pub(crate) iteration_count: u64,
+    pub(crate) is_running_iteration_count: u64,
 }
 
 struct FinallyRollupProfileGuard<'a> {
@@ -281,14 +281,14 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 liveliness.is_running(ident, accept_fn)
             };
             if let Some(result) = result {
-                if (!result) || self.iteration_count.is_zero() {
+                if (!result) || self.is_running_iteration_count.is_zero() {
                     //stopping or starting so clear out all the buffers
                     self.relay_stats(); //testing mutable self and self flush of relay data.
                 } else {
                     //if the frame rate dictates do a refresh
                     self.relay_stats_smartly();
                 }
-                self.iteration_count += 1;
+                self.is_running_iteration_count += 1;
                 return result;
             } else {
                 //wait until we are in a running state
@@ -381,7 +381,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         } else {
             //if this is our first iteration flush to get initial usage
             //if the telemetry has no data flush to ensure we dump stale data
-            if 0==self.iteration_count || setup::is_empty_local_telemetry(self) {
+            if 0==self.is_running_iteration_count || setup::is_empty_local_telemetry(self) {
                 setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
                 self.last_telemetry_send = Instant::now();
             }
@@ -455,7 +455,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     pub async fn wait_periodic(&self, duration_rate: Duration) -> bool {
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
-        let last = self.last_perodic_wait.load(Ordering::SeqCst);
+        let last = self.last_periodic_wait.load(Ordering::SeqCst);
         let remaining_duration = if last <= now_nanos {
             duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
         } else {
@@ -473,7 +473,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         } else {
             false
         };
-        self.last_perodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
+        self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
         result
     }
 
@@ -973,7 +973,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     fn validate_capacity_rx<T>(this: &mut Rx<T>, count: usize) -> usize {
-        let count = if count <= this.capacity() {
+        if count <= this.capacity() {
             count
         } else {
             let capacity = this.capacity();
@@ -982,8 +982,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 this.last_error_send = Instant::now();
             }
             capacity
-        };
-        count
+        }
     }
 
     /// Asynchronously waits until a specified number of units are available in the Rx channel.
@@ -1007,8 +1006,8 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             return if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
-                let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let mut wat = this.shared_wait_shutdown_or_avail_units(count);
+                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                let wat = this.shared_wait_shutdown_or_avail_units(count);
                 select! {
                             _ = dur.fuse() => false,
                             x = wat.fuse() => x
@@ -1019,48 +1018,68 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
 
+    /// Asynchronously waits until a specified number of units are available in the Rx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `count`: The number of units to wait for availability.
+    ///
+    /// # Returns
+    /// `true` if the units are available, otherwise `false` if closed channel.
+    ///
+    /// # Asynchronous
     pub async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
-        // if self.telemetry.is_dirty() {
-        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
-        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-        //     return if remaining_micros <= 0 {
-        //         false //need a relay now so return
-        //     } else {
-        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-        //         let mut wat = this.shared_wait_closed_or_avail_units(count);
-        //         select! {
-        //                     _ = dur.fuse() => false,
-        //                     x = wat.fuse() => x
-        //                 }
-        //     }
-        // } else {
+        if self.telemetry.is_dirty() {
+            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+                - (self.last_telemetry_send.elapsed().as_micros() as i64
+                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            return if remaining_micros <= 0 {
+                false //need a relay now so return
+            } else {
+                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                let wat = this.shared_wait_closed_or_avail_units(count);
+                select! {
+                            _ = dur.fuse() => false,
+                            x = wat.fuse() => x
+                        }
+            }
+        } else {
             this.shared_wait_closed_or_avail_units(count).await
-        //}
+        }
     }
 
+    /// Asynchronously waits until a specified number of units are available in the Rx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// - `count`: The number of units to wait for availability.
+    ///
+    /// # Returns
+    /// `true` if the units are available, otherwise `false` if pending telemetry data to send.
+    ///
+    /// # Asynchronous
     pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
-        // if self.telemetry.is_dirty() {
-        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
-        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-        //     return if remaining_micros <= 0 {
-        //         false //need a relay now so return
-        //     } else {
-        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-        //         let mut wat = this.shared_wait_avail_units(count);
-        //         select! {
-        //                     _ = dur.fuse() => false,
-        //                     x = wat.fuse() => x
-        //                 }
-        //     }
-        // } else {
+        if self.telemetry.is_dirty() {
+            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+                - (self.last_telemetry_send.elapsed().as_micros() as i64
+                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            return if remaining_micros <= 0 {
+                false //need a relay now so return
+            } else {
+                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                let wat = this.shared_wait_avail_units(count);
+                select! {
+                            _ = dur.fuse() => false,
+                            x = wat.fuse() => x
+                        }
+            }
+        } else {
             this.shared_wait_avail_units(count).await
-        //}
+        }
 
     }
 
@@ -1068,23 +1087,23 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// returns true upon shutdown detection
     pub async fn wait_shutdown(&self) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
-        // if self.telemetry.is_dirty() {
-        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
-        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-        //     return if remaining_micros <= 0 {
-        //         false //need a relay now so return
-        //     } else {
-        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-        //         let mut wat = self.internal_wait_shutdown();
-        //         select! {
-        //                     _ = dur.fuse() => false,
-        //                     x = wat.fuse() => x
-        //                 }
-        //     }
-        // } else {
+        if self.telemetry.is_dirty() {
+            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+                - (self.last_telemetry_send.elapsed().as_micros() as i64
+                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            return if remaining_micros <= 0 {
+                false //need a relay now so return
+            } else {
+                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                let wat = self.internal_wait_shutdown();
+                select! {
+                            _ = dur.fuse() => false,
+                            x = wat.fuse() => x
+                        }
+            }
+        } else {
             self.internal_wait_shutdown().await
-        //}
+        }
     }
 
     async fn internal_wait_shutdown(&self) -> bool {
@@ -1250,7 +1269,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 
     fn validate_capacity_tx<T>(this: &mut Tx<T>, count: usize) -> usize {
-        let count = if count <= this.capacity() {
+        if count <= this.capacity() {
             count
         } else {
             let capacity = this.capacity();
@@ -1259,8 +1278,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 this.last_error_send = Instant::now();
             }
             capacity
-        };
-        count
+        }
     }
 
     /// Asynchronously waits until at least a specified number of units are vacant in the Tx channel.
@@ -1274,47 +1292,53 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         let _guard = self.start_profile(CALL_WAIT);
         let count = Self::validate_capacity_tx(this, count);
 
-        // if self.telemetry.is_dirty() {
-        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-        //                          - (self.last_telemetry_send.elapsed().as_micros() as i64
-        //                              * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-        //     return if remaining_micros <= 0 {
-        //                 false //need a relay now so return
-        //             } else {
-        //                 let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-        //                 let mut wat = this.shared_wait_shutdown_or_vacant_units(count);
-        //                 select! {
-        //                     _ = dur.fuse() => false,
-        //                     x = wat.fuse() => x
-        //                 }
-        //             }
-        // } else {
+        if self.telemetry.is_dirty() {
+            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+                                 - (self.last_telemetry_send.elapsed().as_micros() as i64
+                                     * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            return if remaining_micros <= 0 {
+                        false //need a relay now so return
+                    } else {
+                        let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                        let wat = this.shared_wait_shutdown_or_vacant_units(count);
+                        select! {
+                            _ = dur.fuse() => false,
+                            x = wat.fuse() => x
+                        }
+                    }
+        } else {
             this.shared_wait_shutdown_or_vacant_units(count).await
-        //}
+        }
     }
 
-
+    /// Asynchronously waits until at least a specified number of units are vacant in the Tx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `count`: The number of vacant units to wait for.
+    ///
+    /// # Asynchronous
     pub async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
         let count = Self::validate_capacity_tx(this, count);
 
-        // if self.telemetry.is_dirty() {
-        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
-        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-        //     return if remaining_micros <= 0 {
-        //         false //need a relay now so return
-        //     } else {
-        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-        //         let mut wat = this.shared_wait_vacant_units(count);
-        //         select! {
-        //                     _ = dur.fuse() => false,
-        //                     x = wat.fuse() => x
-        //                 }
-        //     }
-        // } else {
+        if self.telemetry.is_dirty() {
+            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+                - (self.last_telemetry_send.elapsed().as_micros() as i64
+                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            return if remaining_micros <= 0 {
+                false //need a relay now so return
+            } else {
+                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                let wat = this.shared_wait_vacant_units(count);
+                select! {
+                            _ = dur.fuse() => false,
+                            x = wat.fuse() => x
+                        }
+            }
+        } else {
             this.shared_wait_vacant_units(count).await
-        //}
+        }
     }
     
 
@@ -1326,23 +1350,23 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// # Asynchronous
     pub async fn wait_empty<T>(&self, this: &mut Tx<T>) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
-        // if self.telemetry.is_dirty() {
-        //     let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-        //         - (self.last_telemetry_send.elapsed().as_micros() as i64
-        //         * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-        //     return if remaining_micros <= 0 {
-        //         false //need a relay now so return
-        //     } else {
-        //         let mut dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-        //         let mut wat = this.shared_wait_empty();
-        //         select! {
-        //                     _ = dur.fuse() => false,
-        //                     x = wat.fuse() => x
-        //                 }
-        //     }
-        // } else {
+        if self.telemetry.is_dirty() {
+            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+                - (self.last_telemetry_send.elapsed().as_micros() as i64
+                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            return if remaining_micros <= 0 {
+                false //need a relay now so return
+            } else {
+                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                let wat = this.shared_wait_empty();
+                select! {
+                            _ = dur.fuse() => false,
+                            x = wat.fuse() => x
+                        }
+            }
+        } else {
             this.shared_wait_empty().await
-        //}
+        }
     }
 
     /// Asynchronously waits for a future to complete or a shutdown signal to be received.

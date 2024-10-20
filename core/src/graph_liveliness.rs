@@ -160,7 +160,7 @@ impl GraphLiveliness {
         }
     }
 
-    pub fn register_voter(&mut self, ident: ActorIdentity) {
+    pub(crate) fn register_voter(&mut self, ident: ActorIdentity) {
             if ident.id >= self.registered_voters.len() {
                 self.registered_voters.resize(ident.id + 1, None);
             }
@@ -173,7 +173,7 @@ impl GraphLiveliness {
 
     }
 
-    pub fn wait_for_registrations(&mut self, timeout: Duration) {
+    pub(crate) fn wait_for_registrations(&mut self, timeout: Duration) {
         if self.actors_count.load(Ordering::SeqCst)>0 {
            //will rarely take the while loop since all the actors have had a while to start on threads
            //this is only done once on startup an is not async by design.
@@ -196,7 +196,10 @@ impl GraphLiveliness {
         self.building_to_running();
     }
 
-    /// Requests a shutdown of the graph.
+    /// Requests shutdown of the graph.
+    /// This call only returns when all listeners have been notified. They may delay in acting
+    /// on the request but they are aware.
+    /// 
     pub fn request_shutdown(&mut self) {
         if self.state.eq(&GraphLivelinessState::Running) {
             let voters = self.registered_voters.len();
@@ -342,16 +345,23 @@ impl GraphLiveliness {
 /// Represents the identity of an actor.
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash)]
 pub struct ActorIdentity {
-    pub id: usize,         //unique identifier
-    pub label: ActorName,  //for backplane
+    /// unique identifier for this actor
+    pub id: usize,      
+    /// immutable human-readable static name for this actor
+    pub label: ActorName,  
 }
+
+/// Represents the name of an actor with its unique and optional usize suffix
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ActorName {
-    pub name: &'static str,    //for backplane
-    pub suffix: Option<usize>, //for backplane
+    /// immutalbe static static name for this actor
+    pub name: &'static str,    
+    /// optional suffix for this actor to make it unique
+    pub suffix: Option<usize>, 
 }
 
 impl ActorIdentity {
+    /// create new ActorIdentity with unique ID, static name and optional suffix usize
     pub fn new(id: usize, name: &'static str, suffix: Option<usize>) -> Self {
         ActorIdentity {
             id,
@@ -363,6 +373,7 @@ impl ActorIdentity {
     }
 }
 impl ActorName {
+    /// create new ActorName with a static name and optional suffix usize
     pub fn new(name: &'static str, suffix: Option<usize>) -> Self {
         ActorName {
             name,
@@ -400,6 +411,8 @@ pub enum ProactorConfig {
     IoPoll,
 }
 
+/// all the preliminary setup for the graph
+/// 
 #[derive(Clone, Debug)]
 pub struct GraphBuilder {
     block_fail_fast: bool,
@@ -483,14 +496,7 @@ impl GraphBuilder {
     /// consume the graph builder and build the graph for use
     ///
     pub fn build<A: Any + Send + Sync>(self, args: A) -> Graph {
-        let g = Graph::internal_new(args
-                , self.block_fail_fast
-                , self.telemetry_metric_features
-                , self.backplane
-                , self.proactor_config
-                , self.enable_io_driver
-                , self.iouring_queue_length
-                , self.telemtry_production_rate_ms);
+        let g = Graph::internal_new(args, self);
         if !crate::steady_config::DISABLE_DEBUG_FAIL_FAST {
             #[cfg(debug_assertions)]
             g.apply_fail_fast();
@@ -757,17 +763,9 @@ impl Graph {
     /// # Returns
     ///
     /// A new `Graph` instance.
-    pub fn internal_new<A: Any + Send + Sync>(args: A
-                                              , block_fail_fast: bool
-                                              , telemetry_metric_features: bool
-                                              , backplane: Option<SideChannelHub>
-                                              , proactor_config: Option<ProactorConfig>
-                                              , enable_io_driver: bool
-                                              , iouring_queue_length: u32
-                                              , telemetry_production_rate_ms: u64
-                                            ) -> Graph {
+    pub fn internal_new<A: Any + Send + Sync>(args: A, builder: GraphBuilder) -> Graph {
 
-        let proactor_config =  if let Some(config) = proactor_config {
+        let proactor_config =  if let Some(config) = builder.proactor_config {
             config
         } else {
             ProactorConfig::InterruptDriven
@@ -776,12 +774,12 @@ impl Graph {
 
         //setup our threading and IO driver
         let nuclei_config = match proactor_config {
-            ProactorConfig::InterruptDriven => IoUringConfiguration::interrupt_driven(iouring_queue_length),
-            ProactorConfig::KernelPollDriven => IoUringConfiguration::kernel_poll_only(iouring_queue_length),
-            ProactorConfig::LowLatencyDriven => IoUringConfiguration::low_latency_driven(iouring_queue_length),
-            ProactorConfig::IoPoll => IoUringConfiguration::io_poll(iouring_queue_length),
+            ProactorConfig::InterruptDriven => IoUringConfiguration::interrupt_driven(builder.iouring_queue_length),
+            ProactorConfig::KernelPollDriven => IoUringConfiguration::kernel_poll_only(builder.iouring_queue_length),
+            ProactorConfig::LowLatencyDriven => IoUringConfiguration::low_latency_driven(builder.iouring_queue_length),
+            ProactorConfig::IoPoll => IoUringConfiguration::io_poll(builder.iouring_queue_length),
         };
-        abstract_executor::init(enable_io_driver, nuclei_config);
+        abstract_executor::init(builder.enable_io_driver, nuclei_config);
 
         let channel_count = Arc::new(AtomicUsize::new(0));
         let actor_count = Arc::new(AtomicUsize::new(0));
@@ -798,17 +796,17 @@ impl Graph {
                                         , actor_count.clone()) ) ),
             thread_lock: Arc::new(Mutex::new(())),
             oneshot_shutdown_vec,
-            backplane: Arc::new(Mutex::new(backplane)),
+            backplane: Arc::new(Mutex::new(builder.backplane)),
             noise_threshold: Instant::now().sub(Duration::from_secs(steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64)),
-            block_fail_fast,
-            telemetry_production_rate_ms: if telemetry_metric_features {
-                                                 telemetry_production_rate_ms
+            block_fail_fast: builder.block_fail_fast,
+            telemetry_production_rate_ms: if builder.telemetry_metric_features {
+                                                 builder.telemtry_production_rate_ms
                                              } else {
                                                  0u64 //this zero prevents us from building telemetry
                                              },
         };
 
-        if telemetry_metric_features {
+        if builder.telemetry_metric_features {
             telemetry::setup::build_telemetry_metric_features(&mut result);
         }
         result

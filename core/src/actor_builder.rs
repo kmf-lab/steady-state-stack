@@ -607,28 +607,7 @@ impl ActorBuilder {
         }
     }
 
-    /// Builds a oneshot channel for actor startup, used to synchronize actor initialization.
-    ///
-    /// # Arguments
-    ///
-    /// * `oneshot_startup_vec` - A shared vector of startup channels.
-    ///
-    /// # Returns
-    ///
-    /// A receiver for the startup oneshot channel.
-    fn build_startup_oneshot(oneshot_startup_vec: Arc<Mutex<Vec<Sender<()>>>>) -> Receiver<()> {
-        let (actor_startup_sender, actor_startup_receiver) = oneshot::channel();
-        // We do not normally expect this to not get the lock
-        if let Some(mut v) = oneshot_startup_vec.clone().try_lock() {
-            // Fast path
-            v.push(actor_startup_sender);
-        } else {
-            abstract_executor::block_on(async move {
-                oneshot_startup_vec.clone().lock().await.push(actor_startup_sender);
-            });
-        }
-        actor_startup_receiver
-    }
+    
 
     /// Constructs actor metadata for the given actor ID and name, encapsulating telemetry and trigger configurations.
     ///
@@ -697,7 +676,7 @@ fn build_actor_future<F, I>(
         oneshot_shutdown_vec: builder_source.oneshot_shutdown_vec,
         oneshot_shutdown: builder_source.oneshot_shutdown,
         node_tx_rx: builder_source.node_tx_rx,
-        instance_id: builder_source.instance_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        instance_id: builder_source.instance_id.fetch_add(1, Ordering::SeqCst),
         last_periodic_wait: Default::default(),
         is_in_graph: true,
         actor_start_time: Instant::now(),

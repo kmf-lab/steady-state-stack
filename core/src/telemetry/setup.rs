@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
 use num_traits::Zero;
-use crate::{abstract_executor, ActorIdentity, steady_config, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, SteadyContext, steady_tx_bundle};
+use crate::{abstract_executor, ActorIdentity, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, SteadyContext, steady_tx_bundle};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel};
@@ -230,7 +230,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                             }
                         }
 
-                        let msg = actor_status.status_message(this.iteration_count);
+                        let msg = actor_status.status_message(this.is_running_iteration_count);
                         match tx.shared_try_send(msg) {
                             Ok(_) => {
                                 if let Some(ref mut send_tx) = this.telemetry.send_tx {
@@ -283,7 +283,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                     }
                 };
                 if clear_status {
-                    actor_status.status_reset(this.iteration_count);
+                    actor_status.status_reset(this.is_running_iteration_count);
                 }
             }
             if let Some(ref mut send_tx) = this.telemetry.send_tx {
