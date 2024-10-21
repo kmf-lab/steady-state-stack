@@ -82,8 +82,7 @@ pub use steady_tx::TxBundleTrait;
 
 use std::any::{Any};
 use std::time::{Duration, Instant};
-#[cfg(test)]
-use std::collections::HashMap;
+
 use std::fmt::Debug;
 use std::sync::Arc;
 use parking_lot::RwLock;
@@ -179,11 +178,7 @@ pub type LazySteadyTxBundle<T, const GIRTH: usize> = [LazySteadyTx<T>; GIRTH];
 pub trait LazySteadyTxBundleClone<T, const GIRTH: usize> {
     /// Clone the bundle of transmitters. But MORE. This is the lazy init of the channel as well.
     fn clone(&self) -> SteadyTxBundle<T, GIRTH>;
-    /// sends test data but this blocks until the first half is consumed
-    /// this may cause your test to block if those first messages are not consumed
-    async fn testing_send_in_two_batches(&self, data: Vec<T>, index:usize, close: bool);
-    /// closes the tx channel when in the test code.
-    async fn testing_mark_closed(&self, index: usize);
+
 }
 
 impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBundle<T, GIRTH> {
@@ -195,33 +190,6 @@ impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBu
                 panic!("Internal error, bad length");
             }
         }
-    }
-
-    async fn testing_send_in_two_batches(&self, data: Vec<T>, index: usize, close: bool) {
-        if index >= GIRTH {
-            panic!("Index out of bounds");
-        }
-
-        let tx_clone:SteadyTx<T> = self[index].clone();
-
-        let mut tx = tx_clone.lock().await;
-        for d in data.into_iter() {
-            tx.shared_send_iter_until_full([d].into_iter());
-        }
-        if close {
-            tx.mark_closed();
-        };
-    }
-
-    async fn testing_mark_closed(&self, index: usize) {
-        if index >= GIRTH {
-            panic!("Index out of bounds");
-        }
-
-        let tx_clone:SteadyTx<T> = self[index].clone();
-        let mut tx = tx_clone.lock().await;
-        tx.mark_closed();
-
     }
 
 }

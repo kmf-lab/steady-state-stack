@@ -300,9 +300,7 @@ mod graph_testing_tests {
 
         // Simulates the startup of the actor where we typically lookup the responder once
         let responder_inside_actor = {
-            let (tx,rx) = oneshot::channel::<()>();
-            let r = Arc::new(Mutex::new(rx));
-
+            let (tx,_rx) = oneshot::channel::<()>();
             let node_tx_rx = hub.node_tx_rx(actor_name);
             if let Some(ref tr) = node_tx_rx {
                 Some(SideChannelResponder::new(tr.clone(), actor))

@@ -274,7 +274,7 @@ mod large_tests {
     use futures_util::future::join_all;
     use isahc::ReadResponseExt;
     use log::{error, info, trace};
-    use steady_state::{ActorName, Graph, GraphBuilder};
+    use steady_state::{ActorName, GraphBuilder};
     use crate::actor::data_generator::Packet;
     use crate::args::Args;
     use crate::build_graph;

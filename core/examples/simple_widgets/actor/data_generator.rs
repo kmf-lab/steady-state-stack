@@ -20,10 +20,6 @@ pub async fn run(context: SteadyContext
     internal_behavior(context, feedback, tx).await
 }
 
-#[derive(Default,Clone)]
-struct InternalState {
-    count: u64
-}
 
 #[cfg(not(test))]
 pub async fn internal_behavior(context: SteadyContext
@@ -96,7 +92,7 @@ pub async fn run(context: SteadyContext
         let mut tx = tx.lock().await;
 
         while monitor.is_running(&mut || tx.mark_closed() ) {
-            let responder = responder.respond_with(|message| {
+            let _responder = responder.respond_with(|message| {
                 let msg: &WidgetInventory = message.downcast_ref::<WidgetInventory>().expect("error casting");
                 match monitor.try_send(&mut tx, msg.clone()) {
                     Ok(()) => Box::new("ok".to_string()),
@@ -118,7 +114,7 @@ mod generator_tests {
     #[test]
     async fn test_generator() {
         // //1. build test graph, the input and output channels and our actor
-         let mut graph = GraphBuilder::for_testing().build(());
+        // let graph = GraphBuilder::for_testing().build(());
         //
         // let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
         //     .with_capacity(256).build();

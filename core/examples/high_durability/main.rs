@@ -5,7 +5,6 @@ use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
-use steady_state::actor_builder::ActorTeam;
 
 mod actor {
         pub mod final_consumer;
@@ -78,7 +77,7 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
     tickgenerator_to_tick_consumer_ticks_rx.iter()
          .zip(tick_consumern_to_finalconsumer_tick_counts_tx.iter()).enumerate()
-        .for_each(|(i, (tick_consumer_ticks_rx, tick_consumer_tick_counts_tx))| {
+        .for_each(|(_i, (tick_consumer_ticks_rx, tick_consumer_tick_counts_tx))| {
             {
                 let tick_consumer_ticks_rx = tick_consumer_ticks_rx.clone();
                 let tick_consumer_tick_counts_tx = tick_consumer_tick_counts_tx.clone();
@@ -123,13 +122,8 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
 #[cfg(test)]
 mod graph_tests {
-    use std::ops::DerefMut;
-    use std::time::Duration;
     use async_std::test;
-    use futures_timer::Delay;
-    use steady_state::{ActorName, Graph};
-    use crate::actor::tick_generator::Tick;
-    use crate::build_graph;
+
 
     // #[test]
     // async fn test_graph_one() {

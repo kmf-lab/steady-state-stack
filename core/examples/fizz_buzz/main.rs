@@ -163,7 +163,7 @@ mod graph_tests {
             let mut guard = graph.sidechannel_director().await;
             let g = guard.deref_mut();
             assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
-            if let Some(plane) = g {
+            if let Some(_plane) = g {
 
               //  write your test here, send messages to edge nodes and get responses
               //  let response = plane.node_call(Box::new(SOME_STRUCT), "SOME_NODE_NAME").await;

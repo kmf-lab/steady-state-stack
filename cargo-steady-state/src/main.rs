@@ -438,7 +438,7 @@ mod tests {
                         Ok(_) => {
                             true
                         }
-                        Err(e) => {
+                        Err(_) => {
                             let working_path = PathBuf::from("test_run");
                             if let Err(e) = fs::create_dir_all(&working_path) {
                                 error!("Failed to create test_run directory: {}", e);

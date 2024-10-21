@@ -72,7 +72,7 @@ async fn internal_behavior<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyCon
             let count = monitor.try_peek_slice(&mut tick_counts_rx[i], &mut buffer);
             if count > 0 {
                 my_max_count = buffer[count - 1].count.max(my_max_count);
-                for n in 0..count {
+                for _n in 0..count {
                     let _ = monitor.try_take(&mut tick_counts_rx[i]).expect("internal error");
                 }
             }
@@ -107,11 +107,12 @@ pub(crate) mod actor_tests {
         graph.request_stop();
 
         let test_data:Vec<TickCount> = (0..BATCH).map(|i| TickCount { count: i as u128 }).collect();
-        ticks_tx_in.clone();
-        ticks_tx_in.testing_send_in_two_batches(test_data, 0, true).await;
-        ticks_tx_in.testing_mark_closed(1).await;
-        ticks_tx_in.testing_mark_closed(2).await;
 
+        ticks_tx_in[0].testing_send_in_two_batches(test_data, Duration::from_millis(10), true).await;
+        ticks_tx_in[1].testing_close(Duration::from_millis(10)).await;
+        ticks_tx_in[2].testing_close(Duration::from_millis(10)).await;
+            
+        ticks_tx_in.clone();
         graph.block_until_stopped(Duration::from_secs(240));
 
     }

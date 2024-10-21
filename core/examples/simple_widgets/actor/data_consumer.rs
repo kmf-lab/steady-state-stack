@@ -1,6 +1,5 @@
 
 use std::error::Error;
-use std::ops::DerefMut;
 use std::sync::Arc;
 use futures_util::lock::Mutex;
 #[allow(unused_imports)]
@@ -50,7 +49,7 @@ pub(crate) async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Appro
         //example of high volume processing, we stay here until there is no more work BUT
         //we must also relay our telemetry data periodically
         while !rx.is_empty() {
-            let mut buf = state.buffer;;
+            let mut buf = state.buffer;
             let count = monitor.take_slice(&mut rx, &mut buf);
             for x in 0..count {
                 state.last_approval = Some(buf[x].to_owned());
@@ -71,7 +70,7 @@ pub(crate) async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Appro
 #[cfg(test)]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>
-                 , state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
+                 , _state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
     let mut monitor = into_monitor!(context,[rx],[]);
     let mut rx = rx.lock().await;
 
@@ -115,8 +114,6 @@ mod consumer_tests {
     use std::time::Duration;
     use super::*;
     use async_std::test;
-    use steady_state::Graph;
-
 
     #[test]
     pub(crate) async fn test_consumer() {

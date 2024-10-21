@@ -93,7 +93,6 @@ pub(crate) mod hp_actor_tests {
     use steady_state::*;
     use crate::actor::final_consumer::{BATCH, internal_behavior};
     use crate::actor::tick_consumer::TickCount;
-    use crate::actor::tick_generator::Tick;
 
     #[test]
     pub(crate) async fn test_simple_process() {
@@ -111,11 +110,11 @@ pub(crate) mod hp_actor_tests {
         graph.request_stop();
 
         let test_data:Vec<TickCount> = (0..BATCH).map(|i| TickCount { count: i as u128 }).collect();
-        ticks_tx_in.clone();
-        ticks_tx_in.testing_send_in_two_batches(test_data, 0, true).await;
-        ticks_tx_in.testing_mark_closed(1).await;
-        ticks_tx_in.testing_mark_closed(2).await;
 
+        ticks_tx_in[0].testing_send_in_two_batches(test_data, Duration::from_millis(10),true).await;
+        ticks_tx_in[1].testing_close(Duration::from_millis(10)).await;
+        ticks_tx_in[2].testing_close(Duration::from_millis(10)).await;
+        ticks_tx_in.clone();
         graph.block_until_stopped(Duration::from_secs(240));
 
     }

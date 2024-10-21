@@ -32,7 +32,7 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
         let mut tx = tx.lock().await;
 
         while monitor.is_running(&mut || tx.mark_closed() ) {
-            let responder = responder.respond_with(|message| {
+            let _responder = responder.respond_with(|message| {
                 let msg: &Tick = message.downcast_ref::<Tick>().expect("error casting");
                 match monitor.try_send(&mut tx[0], msg.clone()) {
                     Ok(()) => Box::new("ok".to_string()),

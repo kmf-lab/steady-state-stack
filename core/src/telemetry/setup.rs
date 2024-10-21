@@ -446,7 +446,6 @@ mod tests {
         }
     }
 
-    use super::*;
     use std::time::Duration;
     pub struct TelemetrySetup {
         channel_meta_data: Arc<ChannelMetaData>,

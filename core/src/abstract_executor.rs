@@ -165,8 +165,6 @@ pub(crate) fn block_on<F, T>(future: F) -> T
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
-    use std::task::{Waker, RawWaker, RawWakerVTable};
     use std::thread;
 
     // fn dummy_waker() -> Waker {

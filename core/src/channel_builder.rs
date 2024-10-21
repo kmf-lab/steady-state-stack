@@ -1245,10 +1245,8 @@ mod tests_inputs {
 #[cfg(test)]
 pub(crate) mod test_builder {
     use super::*;
-    use std::time::{Duration, Instant};
+    use std::time::{Instant};
     use crate::actor_builder::Percentile;
-    use crate::monitor::ChannelMetaData;
-    use futures::channel::oneshot;
 
     #[test]
     pub(crate) fn test_channel_builder_new() {

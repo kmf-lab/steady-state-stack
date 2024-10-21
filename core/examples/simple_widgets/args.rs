@@ -1,4 +1,4 @@
-use flexi_logger::LogSpecification;
+
 use structopt_derive::StructOpt;
 use steady_state::SystemdCommand;
 

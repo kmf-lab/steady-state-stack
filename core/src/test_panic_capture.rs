@@ -8,7 +8,6 @@ mod simple_graph_test {
     use crate::*;
     use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
     use std::time::Duration;
-    use crate::graph_testing::SideChannelHub;
 
     /// Tests the capture of panics within the graph.
     ///
@@ -30,7 +29,7 @@ mod simple_graph_test {
     /// ```
     /// this test should only be run manually, as it will panic by design
     
-    //#[async_std::test]
+    // #[async_std::test]
     async fn test_panic_graph() {
         if let Err(e) = init_logging("info") {
             eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);

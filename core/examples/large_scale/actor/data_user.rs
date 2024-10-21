@@ -89,11 +89,7 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 mod user_tests {
-    use std::time::Duration;
-    use super::*;
     use async_std::test;
-    use steady_state::Graph;
-
 
     // #[test]
     // pub(crate) async fn test_user() {

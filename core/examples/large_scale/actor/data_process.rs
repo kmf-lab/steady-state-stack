@@ -3,8 +3,8 @@ use std::time::Duration;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::{Rx, SteadyRx};
-use steady_state::{SteadyTx, Tx};
+use steady_state::{SteadyRx};
+use steady_state::{SteadyTx};
 use crate::actor::data_generator::Packet;
 
 pub async fn run(context: SteadyContext
@@ -54,10 +54,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: Ste
 
 #[cfg(test)]
 mod process_tests {
-    use std::time::Duration;
-    use super::*;
     use async_std::test;
-    use steady_state::Graph;
 
 
     // #[test]

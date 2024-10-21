@@ -71,8 +71,7 @@ mod tests {
     use std::task::{Context, Poll, Waker};
     use std::future::Future;
     use std::pin::Pin;
-    use std::sync::{Arc, Mutex};
-    use std::sync::mpsc::{sync_channel, SyncSender, Receiver};
+    use std::sync::{Arc};
 
     // A simple waker that does nothing, used for testing.
     fn noop_waker() -> Waker {

@@ -148,10 +148,8 @@ mod tests {
     use super::*;
     use futures::future::ready;
     use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-    use std::future::Future;
     use std::time::Duration;
     use futures::executor::block_on;
-    use futures::future::{join};
     use futures_timer::Delay;
 
     #[test]

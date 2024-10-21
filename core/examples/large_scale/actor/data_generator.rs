@@ -25,7 +25,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
                                     , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor =into_monitor!(context,[],tx);
+    let mut monitor = into_monitor!(context,[],tx);
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
 
@@ -91,7 +91,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                 ,
                 monitor.wait_shutdown_or_vacant_units_bundle(&mut tx, 1, GIRTH)
             );
-            let duration = now.elapsed();
+            let _duration = now.elapsed();
             //info!("got a responder and we have room to write, clean: {} duration:{:?}",clean,duration);
 
            if clean {
@@ -116,10 +116,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
 #[cfg(test)]
 mod generator_tests {
-    use std::time::Duration;
-    use super::*;
     use async_std::test;
-    use steady_state::Graph;
 
 
     // #[test]

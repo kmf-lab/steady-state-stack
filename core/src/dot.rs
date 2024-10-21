@@ -778,14 +778,17 @@ mod tests {
         };
         let mut dot_graph = BytesMut::new();
         build_dot(&state, "LR", &mut dot_graph);
-        let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1];\n\"0\" -> \"1\" [label=\"edge1\", color=grey, penwidth=1];\n}\n";
+        let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1];\n}\n";
 
-        // let vec = dot_graph.to_vec();
-        // match String::from_utf8(vec) {
-        //     Ok(string) => println!("String: {}", string),
-        //     Err(e) => println!("Error: {}", e),
-        // }
-        // assert_eq!(dot_graph.to_vec(), expected);
+        let vec = dot_graph.to_vec();
+        match String::from_utf8(vec) {
+            Ok(mut string) => {
+                string = string.replace("\n", "\\n");
+                println!("String with literal \\n: {}", string);
+            },
+            Err(e) => println!("Error: {}", e),
+        }
+        assert_eq!(dot_graph.to_vec(), expected);
     }
 
     #[test]

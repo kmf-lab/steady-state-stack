@@ -56,8 +56,6 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>
 #[cfg(test)]
 mod tests {
     use async_std::test;
-    use steady_state::*;
-    use crate::actor::ApprovedWidgets;
 
     // #[test]
     // async fn test_feedback() {

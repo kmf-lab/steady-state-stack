@@ -363,14 +363,9 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
 //tests
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
-    use std::time::Instant;
     use std::sync::Arc;
-    use futures_util::lock::Mutex;
-    use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-    use crate::steady_rx::Rx;
-    use crate::steady_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
-    use crate::steady_tx::Tx;
+    use crate::monitor::{ActorMetaData, RxTel};
+    use crate::steady_telemetry::{SteadyTelemetryRx};
 
     // #[test]
     // fn test_steady_telemetry_actor_send_status_reset() {

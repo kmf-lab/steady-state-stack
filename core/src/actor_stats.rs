@@ -740,7 +740,7 @@ mod test_actor_stats_triggers {
         actor_stats.init(metadata.clone(), 1000);
 
         // Need enough frames to fill the window and set current_mcpu
-        let total_frames = (1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits));
+        let total_frames = 1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits);
         //println!("total_frames: {}", total_frames);
 
         for _ in 0..total_frames {
@@ -766,7 +766,7 @@ mod test_actor_stats_triggers {
         actor_stats.init(metadata.clone(), 1000);
 
         // Need enough frames to fill the window and set current_mcpu
-        let total_frames = (1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits));
+        let total_frames = 1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits);
         //println!("total_frames: {}", total_frames);
         for _ in 0..total_frames {
             actor_stats.accumulate_data_frame(230, 40);
@@ -791,7 +791,7 @@ mod test_actor_stats_triggers {
         actor_stats.init(metadata.clone(), 1000);
     
         // Need enough frames to fill the window and set current_mcpu
-        let total_frames = (1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits));
+        let total_frames = 1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits);
         //println!("total_frames: {}", total_frames);
         for _ in 0..total_frames {
             actor_stats.accumulate_data_frame(300, 55);

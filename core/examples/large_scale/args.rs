@@ -1,5 +1,4 @@
 use structopt_derive::StructOpt;
-use steady_state::SystemdCommand;
 
 #[derive(StructOpt, Debug, PartialEq, Clone)]
 pub struct Args {

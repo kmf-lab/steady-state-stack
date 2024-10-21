@@ -1,4 +1,3 @@
-use flexi_logger::LogSpecification;
 use structopt_derive::StructOpt;
 
 #[derive(StructOpt, Debug, PartialEq, Clone)]

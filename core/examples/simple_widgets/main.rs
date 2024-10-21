@@ -1,5 +1,6 @@
 mod args;
 
+use steady_state::StdDev;
 use std::sync::Arc;
 use std::thread::sleep;
 use structopt::*;
@@ -19,7 +20,6 @@ mod actor {
     pub mod data_feedback;
 }
 #[cfg(test)]
-use crate::actor::*;
 use steady_state::*;
 use steady_state::actor_builder::{ActorTeam, MCPU, Percentile};
 use steady_state::channel_builder::Filled;
@@ -153,10 +153,10 @@ fn build_simple_widgets_graph(mut graph: Graph) -> (Graph, Arc<Mutex<InternalSta
 
 #[cfg(test)]
 mod simple_widget_tests {
-    use std::ops::DerefMut;
-    use futures_timer::Delay;
-    use isahc::{Body, Error, ReadResponseExt, Response};
-    use super::*;
+    // use std::ops::DerefMut;
+    // use futures_timer::Delay;
+    // use isahc::{Body, Error, ReadResponseExt, Response};
+    // use super::*;
 
     // #[cfg(test)]
     // #[async_std::test]
