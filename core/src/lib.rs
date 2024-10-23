@@ -317,25 +317,7 @@ impl SteadyContext {
         WaitWhileRunningFuture::new(self.runtime_state.clone())
     }
 
-    /// Update the transmission instance for the given channel.
-    pub(crate) fn update_tx_instance<T>(&self, target: &mut Tx<T>) {
-        target.tx_version.store(self.instance_id, Ordering::SeqCst);
-    }
-
-    /// Update the transmission instance for the given bundle of channels.
-    pub(crate) fn update_tx_instance_bundle<T>(&self, target: &mut TxBundle<T>) {
-        target.iter_mut().for_each(|tx| tx.tx_version.store(self.instance_id, Ordering::SeqCst));
-    }
-
-    /// Update the reception instance for the given channel.
-    pub(crate) fn update_rx_instance<T>(&self, target: &mut Rx<T>) {
-        target.rx_version.store(self.instance_id, Ordering::SeqCst);
-    }
-
-    /// Update the reception instance for the given bundle of channels.
-    pub(crate) fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
-        target.iter_mut().for_each(|rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
-    }
+ 
 
     /// Waits until a specified number of units are available in the Rx channel bundle.
     ///
@@ -1113,7 +1095,6 @@ impl SteadyContext {
             },
             last_telemetry_send: Instant::now(),
             ident: self.ident,
-            instance_id: self.instance_id,
             is_in_graph: self.is_in_graph,
             runtime_state: self.runtime_state,
             oneshot_shutdown: self.oneshot_shutdown,

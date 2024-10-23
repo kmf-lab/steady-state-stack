@@ -221,7 +221,6 @@ impl<const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
 /// - `TX_LEN`: The length of the transmitter array.
 pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) ident: ActorIdentity,
-    pub(crate) instance_id: u32, // set for what reason??
     pub(crate) is_in_graph: bool,
     pub(crate) telemetry: SteadyTelemetry<RX_LEN, TX_LEN>,
     pub(crate) last_telemetry_send: Instant, // NOTE: we use mutable for counts so no need for Atomic here
@@ -318,38 +317,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool {
         let liveliness = self.runtime_state.read();
         liveliness.is_in_state(target)
-    }
-
-    /// Updates the instance ID for a transmitter channel.
-    ///
-    /// # Parameters
-    /// - `target`: A mutable reference to a `Tx<T>` instance.
-    pub(crate) fn update_tx_instance<T>(&self, target: &mut Tx<T>) {
-        target.tx_version.store(self.instance_id, Ordering::SeqCst);
-    }
-
-    /// Updates the instance ID for a transmitter bundle.
-    ///
-    /// # Parameters
-    /// - `target`: A mutable reference to a `TxBundle<T>` instance.
-    pub(crate) fn update_tx_instance_bundle<T>(&self, target: &mut TxBundle<T>) {
-        target.iter_mut().for_each(|tx| tx.tx_version.store(self.instance_id, Ordering::SeqCst));
-    }
-
-    /// Updates the instance ID for a receiver channel.
-    ///
-    /// # Parameters
-    /// - `target`: A mutable reference to a `Rx<T>` instance.
-    pub(crate) fn update_rx_instance<T>(&self, target: &mut Rx<T>) {
-        target.rx_version.store(self.instance_id, Ordering::SeqCst);
-    }
-
-    /// Updates the instance ID for a receiver bundle.
-    ///
-    /// # Parameters
-    /// - `target`: A mutable reference to a `RxBundle<T>` instance.
-    pub(crate) fn update_rx_instance_bundle<T>(&self, target: &mut RxBundle<T>) {
-        target.iter_mut().for_each(|rx| rx.tx_version.store(self.instance_id, Ordering::SeqCst));
     }
 
     /// Waits while the actor is running.
@@ -1692,7 +1659,7 @@ pub(crate) mod monitor_tests {
     // Test for try_peek_iter
     #[test]
     fn test_try_peek_iter() {
-        let mut rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let rx = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
         let monitor = into_monitor!(context,[rx],[]);
 

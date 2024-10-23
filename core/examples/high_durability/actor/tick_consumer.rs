@@ -53,6 +53,7 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
 pub(crate) mod hd_actor_tests {
     use std::time::Duration;
     use async_std::test;
+    #[allow(unused_imports)]
     use log::*;
     use steady_state::*;
     use crate::actor::tick_consumer::{internal_behavior, WAIT_AVAIL};

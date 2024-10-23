@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use log::{error, trace, warn};
 use futures_util::{FutureExt, select};
 use std::any::type_name;
@@ -27,9 +26,6 @@ pub struct Tx<T> {
     pub(crate) last_error_send: Instant,
     pub(crate) make_closed: Option<oneshot::Sender<()>>,
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
-    pub(crate) last_checked_rx_instance: u32,
-    pub(crate) tx_version: Arc<AtomicU32>,
-    pub(crate) rx_version: Arc<AtomicU32>,
 }
 
 impl<T> Tx<T> {
@@ -40,27 +36,6 @@ impl<T> Tx<T> {
     /// A `usize` representing the channel's unique ID.
     pub fn id(&self) -> usize {
         self.channel_meta_data.id
-    }
-
-    /// Checks if the receiver instance has changed.
-    ///
-    /// # Returns
-    /// `true` if the receiver instance has changed, otherwise `false`.
-    pub fn rx_instance_changed(&mut self) -> bool {
-        let id = self.rx_version.load(Ordering::SeqCst);
-        if id == self.last_checked_rx_instance {
-            false
-        } else {
-            // After restart, you only get one chance to act on this once detected
-            self.last_checked_rx_instance = id;
-            true
-        }
-    }
-
-    /// Resets the receiver instance tracking to the current state.
-    pub fn rx_instance_reset(&mut self) {
-        let id = self.rx_version.load(Ordering::SeqCst);
-        self.last_checked_rx_instance = id;
     }
 
     /// Marks the channel as closed, indicating no more messages are expected.
@@ -472,11 +447,7 @@ pub trait TxBundleTrait {
     /// Marks all channels in the bundle as closed.
     fn mark_closed(&mut self) -> bool;
 
-    /// Checks if any receiver instances have changed.
-    fn rx_instance_changed(&mut self) -> bool;
 
-    /// Resets the receiver instance tracking for all channels in the bundle.
-    fn rx_instance_reset(&mut self);
 }
 
 impl<T> TxBundleTrait for TxBundle<'_, T> {
@@ -486,16 +457,4 @@ impl<T> TxBundleTrait for TxBundle<'_, T> {
         true  // always returns true, close request is never rejected by this method.
     }
 
-    fn rx_instance_changed(&mut self) -> bool {
-        if self.iter_mut().any(|f| f.rx_instance_changed()) {
-            self.iter_mut().for_each(|f| f.rx_instance_reset());
-            true
-        } else {
-            false
-        }
-    }
-
-    fn rx_instance_reset(&mut self) {
-        self.iter_mut().for_each(|f| f.rx_instance_reset());
-    }
 }

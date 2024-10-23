@@ -4,6 +4,7 @@ use steady_state::StdDev;
 use std::sync::Arc;
 use std::thread::sleep;
 use structopt::*;
+#[allow(unused_imports)]
 use log::*;
 use args::Args;
 use std::time::Duration;
@@ -14,8 +15,6 @@ mod actor {
     #[cfg(test)]
     pub use data_generator::WidgetInventory;
     pub mod data_approval;
-    #[cfg(test)]
-    pub use data_approval::ApprovedWidgets;
     pub mod data_consumer;
     pub mod data_feedback;
 }

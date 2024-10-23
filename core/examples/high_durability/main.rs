@@ -122,13 +122,12 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
 #[cfg(test)]
 mod graph_tests {
-    use async_std::test;
+    use steady_state::GraphBuilder;
 
-
-    // #[test]
-    // async fn test_graph_one() {
-    //
-    //         let graph = Graph::new_test(());
+    #[async_std::test]
+    async fn test_graph_one() {
+    
+             let graph = GraphBuilder::for_testing().build(());
     //         let mut graph = build_graph(graph);
     //         graph.start();
     //
@@ -151,7 +150,7 @@ mod graph_tests {
     //         drop(guard);
     //         graph.request_stop();
     //         graph.block_until_stopped(Duration::from_secs(3));
-    //
-    // }
+    
+    }
 }
 

@@ -125,13 +125,14 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
 #[cfg(test)]
 mod graph_tests {
-    use async_std::test;
+    use steady_state::GraphBuilder;
 
-    // #[test]
-    // async fn test_graph_one() {
-    //
-    //     let mut graph = Graph::new_test(());
-    //
+    #[async_std::test]
+     async fn test_graph_one() {
+
+        let graph = GraphBuilder::for_testing().build(());
+
+        //
     //     graph.start();
     //     let mut guard = graph.sidechannel_director().await;
     //     if let Some(plane) = guard.deref_mut() {
@@ -150,7 +151,7 @@ mod graph_tests {
     //     drop(guard);
     //     graph.request_stop();
     //     graph.block_until_stopped(Duration::from_secs(3));
-    //
-    // }
+    
+    }
 }
 

@@ -643,9 +643,6 @@ impl ChannelBuilder {
                 make_closed: Some(sender_is_closed),
                 last_error_send: noise_threshold,
                 oneshot_shutdown: receiver_tx,
-                rx_version: rx_version.clone(),
-                tx_version: tx_version.clone(),
-                last_checked_rx_instance: rx_version.load(Ordering::SeqCst),
             })),
             Arc::new(Mutex::new(Rx {
                 rx,

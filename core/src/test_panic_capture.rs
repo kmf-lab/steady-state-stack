@@ -29,7 +29,8 @@ mod simple_graph_test {
     /// ```
     /// this test should only be run manually, as it will panic by design
     
-    // #[async_std::test]
+    // #[async_std::test] 
+    #[allow(unused)]
     async fn test_panic_graph() {
         if let Err(e) = init_logging("info") {
             eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);

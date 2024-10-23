@@ -55,11 +55,12 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>
 
 #[cfg(test)]
 mod tests {
-    use async_std::test;
+    use steady_state::GraphBuilder;
 
-    // #[test]
-    // async fn test_feedback() {
-    //     //1. build test graph, the input and output channels and our actor
+    #[async_std::test]
+    async fn test_feedback() {
+        let graph = GraphBuilder::for_testing().build(());
+        
     //     let graph = Graph::new_test(());        let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
     //         .with_capacity(BATCH_SIZE).build();
     //
@@ -84,9 +85,9 @@ mod tests {
     //     //  println!("last approval: {:?}", &state.last_approval);
     //     //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
     //
-    //
-    //
-    // }
+    
+    
+    }
 
 
 

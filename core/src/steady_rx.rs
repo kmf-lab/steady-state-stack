@@ -681,3 +681,4 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
 }
 
 
+//TODO: need unit test on possible_bad_message

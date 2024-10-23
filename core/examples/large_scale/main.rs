@@ -2,6 +2,7 @@ mod args;
 
 use std::thread::sleep;
 use structopt::*;
+#[allow(unused_imports)]
 use log::*;
 use args::Args;
 use std::time::Duration;

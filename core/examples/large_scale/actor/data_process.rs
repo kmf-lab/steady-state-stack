@@ -54,38 +54,46 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: Ste
 
 #[cfg(test)]
 mod process_tests {
+    use std::time::Duration;
     use async_std::test;
+    use futures_timer::Delay;
+    use steady_state::GraphBuilder;
+    use crate::actor::data_generator::Packet;
+    use crate::actor::data_process::internal_behavior;
+
+    #[test]
+    pub(crate) async fn test_process() {
+
+        let mut graph = GraphBuilder::for_testing().build(());
+
+        let bash_size = 100;
+        let (approved_widget_in_tx, approved_widget_in_rx) = graph.channel_builder()
+            .with_capacity(bash_size).build();
+
+        let (approved_widget_out_tx, approved_widget_out_rx) = graph.channel_builder()
+            .with_capacity(bash_size).build();
+
+        graph.actor_builder()
+            .with_name("UnitTest")
+            .build_spawn(move |context| internal_behavior(context
+                                                          , approved_widget_in_rx.clone()
+                                                          , approved_widget_out_tx.clone() ));
+
+        graph.start();
+        
+        let test_data: Vec<Packet> = (0..bash_size).map(|i| Packet { route: i as u16, data: Default::default() }).collect();
+        let _sent = approved_widget_in_tx.testing_send_all(test_data,true);
+
+        Delay::new(Duration::from_secs(2)).await;
+
+        graph.request_stop();
+        graph.block_until_stopped(Duration::from_secs(2));
+
+        let took = approved_widget_out_rx.testing_take().await;
+        println!("took: {:?}", took);
 
 
-    // #[test]
-    // pub(crate) async fn test_process() {
-    //     //1. build test graph, the input and output channels and our actor
-    //     let mut graph = Graph::new_test(());
-    //
-    //     // let (approved_widget_tx_out, approved_widget_rx_out) = graph.channel_builder()
-    //     //     .with_capacity(BATCH_SIZE).build();
-    //     //
-    //     // let state = InternalState {
-    //     //     last_approval: None,
-    //     //     buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
-    //     // };
-    //
-    //     // graph.actor_builder()
-    //     //     .with_name("UnitTest")
-    //     //     .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state));
-    //     //
-    //     // // //2. add test data to the input channels
-    //     // let test_data: Vec<Packet> = (0..BATCH_SIZE).map(|i| Packet { original_count: 0, approved_count: i as u64 }).collect();
-    //     // approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
-    //
-    //     // //3. run graph until the actor detects the input is closed
-    //     graph.start_as_data_driven(Duration::from_secs(240));
-    //
-    //     //4. assert expected results
-    //     // TODO: not sure how to make this work.
-    //     //  println!("last approval: {:?}", &state.last_approval);
-    //     //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
-    // }
+    }
 
 
 }

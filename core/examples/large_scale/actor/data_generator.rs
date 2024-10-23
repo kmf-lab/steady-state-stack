@@ -116,38 +116,47 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
 #[cfg(test)]
 mod generator_tests {
-    use async_std::test;
+    use std::time::Duration;
+    use futures_timer::Delay;
+    use steady_state::*;
+    use crate::actor::data_generator::{internal_behavior, Packet};
+
+    #[async_std::test]
+    async fn test_generator() {
+
+        let mut graph = GraphBuilder::for_testing()
+                          .build(());
+        let expected_count = 100;
+        let (approved_widget_tx_out, approved_widget_rx_out) = graph.channel_builder()
+            .with_capacity(expected_count)
+            .build_as_bundle::<Packet, 4>();
+
+        graph.actor_builder()
+            .with_name("UnitTest")
+            .build_spawn(move |context| internal_behavior(context,approved_widget_tx_out.clone()));
+
+        graph.start();
+
+        Delay::new(Duration::from_secs(1)).await;
+
+        graph.request_stop();
+        graph.block_until_stopped(Duration::from_millis(3000));
+
+        
+        let count0 = approved_widget_rx_out[0].testing_avail_units().await;
+        let count1 = approved_widget_rx_out[1].testing_avail_units().await;
+        let count2 = approved_widget_rx_out[2].testing_avail_units().await;
+        let count3 = approved_widget_rx_out[3].testing_avail_units().await;
+        
+        println!("count0: {:?} count1: {:?} count2: {:?} count3: {:?}", count0, count1, count2, count3);
+
+        assert_eq!(expected_count, count0);
+        assert_eq!(expected_count, count1);
+        assert_eq!(expected_count, count2);
+        assert_eq!(expected_count, count3);
 
 
-    // #[test]
-    // pub(crate) async fn test_generator() {
-    //     //1. build test graph, the input and output channels and our actor
-    //     let mut graph = Graph::new_test(());
-    //
-    //     // let (approved_widget_tx_out, approved_widget_rx_out) = graph.channel_builder()
-    //     //     .with_capacity(BATCH_SIZE).build();
-    //     //
-    //     // let state = InternalState {
-    //     //     last_approval: None,
-    //     //     buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
-    //     // };
-    //
-    //     // graph.actor_builder()
-    //     //     .with_name("UnitTest")
-    //     //     .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state));
-    //     //
-    //     // // //2. add test data to the input channels
-    //     // let test_data: Vec<Packet> = (0..BATCH_SIZE).map(|i| Packet { original_count: 0, approved_count: i as u64 }).collect();
-    //     // approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
-    //
-    //     // //3. run graph until the actor detects the input is closed
-    //     graph.start_as_data_driven(Duration::from_secs(240));
-    //
-    //     //4. assert expected results
-    //     // TODO: not sure how to make this work.
-    //     //  println!("last approval: {:?}", &state.last_approval);
-    //     //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
-    // }
+    }
 
 
 }
