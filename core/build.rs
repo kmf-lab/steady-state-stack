@@ -55,9 +55,9 @@ fn main() {
 
     if TELEMETRY_SERVICE && USE_INTERNAL_VIZ {
         // To check on new versions go here:    https://github.com/mdaines/viz-js/releases
-        gzip_and_base64_encode_web_resource(&base_target_path
-                                            ,"static/telemetry/viz-lite.js"
-                                            ,&format!("https://unpkg.com/viz.js@{}/viz-lite.js", VIZ_VERSION));
+        gzip_encode_web_resource(&base_target_path
+                                 , "static/telemetry/viz-lite.js"
+                                 , &format!("https://unpkg.com/viz.js@{}/viz-lite.js", VIZ_VERSION));
     }
 
     if TELEMETRY_SERVICE {
@@ -72,24 +72,24 @@ fn main() {
         if let Err(e) = fs::write(folder_base.join("index.html"), IndexTemplate { script_source: source }.render().expect("unable to render")) {
             panic!("Error writing index.html {:?}", e);
         };
-        gzip_and_base64_encode(&base_target_path, "static/telemetry/index.html",false);
+        gzip_encode(&base_target_path, "static/telemetry/index.html", false);
 
         if let Err(e) = fs::write(folder_base.join("webworker.js"), WebWorkerTemplate { script_source: source }.render().expect("unable to render")) {
             panic!("Error writing webworker.js {:?}", e);
         };
-        gzip_and_base64_encode(&base_target_path, "static/telemetry/webworker.js",false);
+        gzip_encode(&base_target_path, "static/telemetry/webworker.js", false);
 
         //simple encode and copy to the destination when telemetry is enabled
-        gzip_and_base64_encode(&base_target_path, "static/telemetry/dot-viewer.js",true);
-        gzip_and_base64_encode(&base_target_path, "static/telemetry/dot-viewer.css",true);
-        base64_encode(&base_target_path, "static/telemetry/images/spinner.gif");
+        gzip_encode(&base_target_path, "static/telemetry/dot-viewer.js", true);
+        gzip_encode(&base_target_path, "static/telemetry/dot-viewer.css", true);
+        copy(&base_target_path, "static/telemetry/images/spinner.gif");
     }
 }
 
 
-fn base64_encode(target: &Path, file_path: &str) {
+fn copy(target: &Path, file_path: &str) {
 
-    let output_name = format!("{}.b64", file_path);
+    let output_name = format!("{}", file_path);
     let target_file = target.join(output_name);
     // Check if the output file already exists
     if Path::new(&target_file).exists() {
@@ -101,25 +101,20 @@ fn base64_encode(target: &Path, file_path: &str) {
     }
 
     // Open the output file for writing
+    //read the file
+    let mut file = File::open(file_path).expect("Failed to open file");
+    let mut body = Vec::new();
+    file.read_to_end(&mut body);
+    
     let mut output_file = File::create(target_file.clone()).expect("Failed to create output file");
-
-    // Run the base64 command, strange but the base64 crate is always broken
-    let base64_output = Command::new("base64")
-        .arg("-w")
-        .arg("0")
-        .arg(file_path)
-        .output()
-        .expect("Failed to execute base64 command");
-
-    // Write the base64 encoded data to the output file
-    output_file.write_all(&base64_output.stdout).expect("Failed to write to output file");
+    output_file.write_all(&body).expect("Failed to write to output file");
 
     println!("Processed and saved to {:?}", &target_file);
 }
 
-fn gzip_and_base64_encode_web_resource(target: &Path, file_path: &str, get_url: &str) {
-
-    let output_name = format!("{}.gz.b64", file_path);
+fn gzip_encode_web_resource(target: &Path, file_path: &str, get_url: &str) {
+    //  only for viz-lite
+    let output_name = format!("{}.gz", file_path);
     let target_file = target.join(output_name);
     // Check if the output file already exists
     if !Path::new(&target_file).exists() {
@@ -138,49 +133,34 @@ fn gzip_and_base64_encode_web_resource(target: &Path, file_path: &str, get_url: 
             }
         }
     }
-    gzip_and_base64_encode(target, file_path,true);
+    gzip_encode(target, file_path, true);
     //cleanup the downloaded file
     //only remove the file if it exists
     if Path::new(&file_path).exists() {
         fs::remove_file(file_path).expect("Failed to remove downloaded file");
     }
 }
-fn gzip_and_base64_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
+fn gzip_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
 
-    let output_name = format!("{}.gz.b64", file_path);
-    let target_file = target.join(output_name);
-    // Check if the output file already exists
-    if skip_if_exists && Path::new(&target_file).exists() {
-        println!("{:?} already exists, skipping", target_file);
-        return;
-    }
-    if let Some(parent_dir) = target_file.parent() {
+    let output_name_gz = format!("{}.gz", file_path);
+    let target_file_gz = target.join(output_name_gz);
+    
+    if let Some(parent_dir) = target_file_gz.parent() {
         fs::create_dir_all(parent_dir).expect("Failed to create output directory");
     }
-    // Open the output file for writing
-    let mut output_file = File::create(target_file.clone()).expect("Failed to create output file");
 
-    // Run the gzip command and pipe its output to the base64 command
-    let gzip_output = Command::new("gzip")
-        .arg("-c")
-        .arg(file_path)
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed to start gzip process")
-        .stdout
-        .expect("Failed to open gzip stdout");
+    if skip_if_exists && Path::new(&target_file_gz).exists() {
+        println!("{:?} already exists, skipping", target_file_gz);
+    } else {
+        let gzip_output = Command::new("gzip")
+            .arg("-c")
+            .arg(file_path)
+            .output()
+            .expect("Failed to start gzip process");        
+        let mut output_file_b64 = File::create(target_file_gz.clone()).expect("Failed to create output file");
+        output_file_b64.write_all(&gzip_output.stdout).expect("Failed to write to output file");
+        println!("Processed and saved to {:?}", &target_file_gz);
+    }
 
-    // Run the base64 command, strange but the base64 crate is always broken
-    let base64_output = Command::new("base64")
-        .arg("-w")
-        .arg("0")
-        .stdin(gzip_output)
-        .output()
-        .expect("Failed to execute base64 command");
-
-    // Write the base64 encoded data to the output file
-    output_file.write_all(&base64_output.stdout).expect("Failed to write to output file");
-
-    println!("Processed and saved to {:?}", &target_file);
 
 }

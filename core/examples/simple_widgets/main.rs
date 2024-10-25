@@ -38,20 +38,20 @@ fn main() {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::from_args();
 
-    if let Err(e) = init_logging(&opt.loglevel) {
+    if let Err(e) = steady_state::init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
     //TODO: 2025 add this as a feature to the code generator
     let service_executable_name = "simple_widgets";
     let service_user = "simple_widgets_user";
-    let systemd_command = SystemdBuilder::process_systemd_commands(  opt.systemd_action()
+    let systemd_command = steady_state::SystemdBuilder::process_systemd_commands(  opt.systemd_action()
                                                    , opt.to_cli_string(service_executable_name)
                                                    , service_executable_name
                                                    , service_user);
 
     if !systemd_command {
-        let (mut graph, _state) = build_simple_widgets_graph(GraphBuilder::for_production().build(opt.clone()));
+        let (mut graph, _state) = build_simple_widgets_graph(steady_state::GraphBuilder::for_production().build(opt.clone()));
 
         graph.start();
         {  //remove this block to run forever.
@@ -64,17 +64,17 @@ fn main() {
     }
 }
 
-fn build_simple_widgets_graph(mut graph: Graph) -> (Graph, Arc<Mutex<InternalState>>) {
+fn build_simple_widgets_graph(mut graph: steady_state::Graph) -> (steady_state::Graph, Arc<Mutex<InternalState>>) {
     let mut team = ActorTeam::new(&graph);
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
     let base_channel_builder = graph.channel_builder()
         .with_labels(&["widgets"], true)
-        .with_filled_trigger(Trigger::AvgAbove(Filled::p50())
-                             , AlertColor::Red)
-        .with_filled_trigger(Trigger::AvgAbove(Filled::p20())
-                             , AlertColor::Yellow)
+        .with_filled_trigger(steady_state::Trigger::AvgAbove(Filled::p50())
+                             , steady_state::AlertColor::Red)
+        .with_filled_trigger(steady_state::Trigger::AvgAbove(Filled::p20())
+                             , steady_state::AlertColor::Yellow)
         .with_type()
         .with_line_expansion(1.0f32);
 
@@ -111,7 +111,7 @@ fn build_simple_widgets_graph(mut graph: Graph) -> (Graph, Arc<Mutex<InternalSta
         .with_load_percentile(Percentile::p80())
         .with_mcpu_avg()
         .with_load_avg()
-        .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m64()), AlertColor::Red)
+        .with_mcpu_trigger(steady_state::Trigger::AvgAbove(MCPU::m64()), steady_state::AlertColor::Red)
         .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10));
 
     base_actor_builder.with_name("generator")

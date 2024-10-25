@@ -176,118 +176,70 @@ async fn process_msg(msg: DiagramData
     }
 }
 
-
 #[cfg(any(docsrs, feature = "telemetry_server_cdn", not(feature = "telemetry_server_builtin")))]
-const CONTENT_VIZ_LITE_B64: &str = "";
+const CONTENT_VIZ_LITE_GZ: &'static [u8] = &[];
 #[cfg(all(not(any(docsrs, feature = "telemetry_server_cdn")), feature = "telemetry_server_builtin"))]
-const CONTENT_VIZ_LITE_B64: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../target/static/telemetry/viz-lite.js.gz.b64") } else { "" };
+const CONTENT_VIZ_LITE_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/viz-lite.js.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_INDEX_HTML_B64: &str = "";
+const CONTENT_INDEX_HTML_B64: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_INDEX_HTML_B64: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../target/static/telemetry/index.html.gz.b64") } else { "" };
+const CONTENT_INDEX_HTML_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/index.html.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_DOT_VIEWER_JS_B64: &str = "";
+const CONTENT_DOT_VIEWER_JS_B64: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_DOT_VIEWER_JS_B64: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../target/static/telemetry/dot-viewer.js.gz.b64") } else { "" };
+const CONTENT_DOT_VIEWER_JS_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.js.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_DOT_VIEWER_CSS_B64: &str = "";
+const CONTENT_DOT_VIEWER_CSS_B64: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_DOT_VIEWER_CSS_B64: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../target/static/telemetry/dot-viewer.css.gz.b64") } else { "" };
+const CONTENT_DOT_VIEWER_CSS_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.css.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_WEBWORKER_JS_B64: &str = "";
+const CONTENT_WEBWORKER_JS_B64: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_WEBWORKER_JS_B64: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../target/static/telemetry/webworker.js.gz.b64") } else { "" };
+const CONTENT_WEBWORKER_JS_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/webworker.js.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_SPINNER_GIF_B64: &str = "";
+const CONTENT_SPINNER_GIF_B64: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_SPINNER_GIF_B64: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../target/static/telemetry/images/spinner.gif.b64") } else { "" };
+const CONTENT_SPINNER_GIF: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/images/spinner.gif") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_PREVIEW_ICON_SVG: &str = "";
+const CONTENT_PREVIEW_ICON_SVG: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_PREVIEW_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/preview-icon.svg") } else { "" };
+const CONTENT_PREVIEW_ICON_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../static/telemetry/images/preview-icon.svg") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_REFRESH_TIME_ICON_SVG: &str = "";
+const CONTENT_REFRESH_TIME_ICON_SVG: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_REFRESH_TIME_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/refresh-time-icon.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_USER_ICON_SVG: &str = "";
+const CONTENT_USER_ICON_SVG: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_USER_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/user-icon.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_ZOOM_IN_ICON_SVG: &str = "";
+const CONTENT_ZOOM_IN_ICON_SVG: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_IN_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-in-icon.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = "";
+const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-in-icon-disabled.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_ZOOM_OUT_ICON_SVG: &str = "";
+const CONTENT_ZOOM_OUT_ICON_SVG: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_OUT_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = "";
+const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &'static [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon-disabled.svg") } else { "" };
-
-
-/// Decodes a base64-encoded string into a byte vector.
-///
-/// # Parameters
-/// - `input`: The base64-encoded string to decode.
-///
-/// # Returns
-/// A Result containing a Vec<u8> with the decoded bytes or a String with an error message.
-fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
-    let mut output = Vec::with_capacity(input.len() * 3 / 4);
-    let mut buffer: u32 = 0;
-    let mut bits_collected: u8 = 0;
-
-    for c in input.chars() {
-        let value = match c {
-            'A'..='Z' => c as u32 - 'A' as u32,
-            'a'..='z' => c as u32 - 'a' as u32 + 26,
-            '0'..='9' => c as u32 - '0' as u32 + 52,
-            '+' => 62,
-            '/' => 63,
-            '=' => break,
-            x => return Err(format!("Invalid character {:?} in Base64 input.", x)),
-        };
-
-        buffer = (buffer << 6) | value;
-        bits_collected += 6;
-        if bits_collected == 24 {
-            output.push((buffer >> 16) as u8);
-            output.push((buffer >> 8) as u8);
-            output.push(buffer as u8);
-            buffer = 0;
-            bits_collected = 0;
-        }
-    }
-
-    if bits_collected == 8 {
-        output.push((buffer >> 4) as u8);
-    } else if bits_collected == 16 {
-        output.push((buffer >> 10) as u8);
-        output.push((buffer >> 2) as u8);
-    }
-
-    Ok(output)
-}
-
-
 
 async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>) -> io::Result<()> {
     let mut buffer = vec![0; 1024];
@@ -317,20 +269,12 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
             stream.write_all(&locked_state.doc).await?;
             return Ok(());
         } else if path.eq("/") || path.starts_with("/in") || path.starts_with("/de") { //index
-            if let Ok(data) = decode_base64(CONTENT_INDEX_HTML_B64) {
                 // Write the HTTP header
                 stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/html\r\nContent-Length: ").await?;
-                stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
+                stream.write_all(itoa::Buffer::new().format(CONTENT_INDEX_HTML_GZ.len()).as_bytes()).await?;
                 stream.write_all(b"\r\n\r\n").await?;
                 // Write the actual data
-                stream.write_all(&data).await?;
-            } else {
-                let content = b"Failed to decode CONTENT_INDEX_HTML_B64";
-                stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: ").await?;
-                stream.write_all(itoa::Buffer::new().format(content.len()).as_bytes()).await?;
-                stream.write_all(b"\r\n\r\n").await?;
-                stream.write_all(content).await?;
-            }
+                stream.write_all(&CONTENT_INDEX_HTML_GZ).await?;
             return Ok(());
         } else if path.starts_with("/im") && path.len().ge(&15) { // /images/*
             if path.as_bytes()[8].eq(&b'z') {
@@ -388,95 +332,55 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
                         stream.write_all(data).await?;
                     }
                 } else if path.len().ge(&22) {   //"/images/preview-icon.svg"
-                        let data = CONTENT_PREVIEW_ICON_SVG.as_bytes();
                         // Write the HTTP header
                         stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: ").await?;
-                        stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
+                        stream.write_all(itoa::Buffer::new().format(CONTENT_PREVIEW_ICON_GZ.len()).as_bytes()).await?;
                         stream.write_all(b"\r\n\r\n").await?;
                         // Write the actual data
-                        stream.write_all(data).await?;
+                        stream.write_all(CONTENT_PREVIEW_ICON_GZ).await?;
                     } else {                        //"/images/spinner.gif"
-                        if let Ok(data) = decode_base64(CONTENT_SPINNER_GIF_B64) {
-                            // Write the HTTP header
-                            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/gif\r\nContent-Length: ").await?;
-                            stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
-                            stream.write_all(b"\r\n\r\n").await?;
-                            // Write the actual data
-                            stream.write_all(&data).await?;
-                        } else {
-                            let content = b"Failed to decode CONTENT_SPINNER_GIF_B64";
-                            stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: ").await?;
-                            stream.write_all(itoa::Buffer::new().format(content.len()).as_bytes()).await?;
-                            stream.write_all(b"\r\n\r\n").await?;
-                            stream.write_all(content).await?;
-                        }
+                        // Write the HTTP header
+                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/gif\r\nContent-Length: ").await?;
+                        stream.write_all(itoa::Buffer::new().format(CONTENT_SPINNER_GIF.len()).as_bytes()).await?;
+                        stream.write_all(b"\r\n\r\n").await?;
+                        // Write the actual data
+                        stream.write_all(&CONTENT_SPINNER_GIF).await?;
                 }
 
             return Ok(());
         } else if path.starts_with("/we") {         //"/webworker.js"
-            if let Ok(data) = decode_base64(CONTENT_WEBWORKER_JS_B64) {
                 // Write the HTTP header
                 stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ").await?;
-                stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
+                stream.write_all(itoa::Buffer::new().format(CONTENT_WEBWORKER_JS_GZ.len()).as_bytes()).await?;
                 stream.write_all(b"\r\n\r\n").await?;
                 // Write the actual data
-                stream.write_all(&data).await?;
-            } else {
-                let content = b"Failed to decode CONTENT_WEBWORKER_JS_B64";
-                stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: ").await?;
-                stream.write_all(itoa::Buffer::new().format(content.len()).as_bytes()).await?;
-                stream.write_all(b"\r\n\r\n").await?;
-                stream.write_all(content).await?;
-            }
+                stream.write_all(&CONTENT_WEBWORKER_JS_GZ).await?; 
             return Ok(());
         } else if path.starts_with("/do") {
             if path.ends_with(".css") { //"/dot-viewer.css"
-                if let Ok(data) = decode_base64(CONTENT_DOT_VIEWER_CSS_B64) {
                     // Write the HTTP header
                     stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/css\r\nContent-Length: ").await?;
-                    stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
+                    stream.write_all(itoa::Buffer::new().format(CONTENT_DOT_VIEWER_CSS_GZ.len()).as_bytes()).await?;
                     stream.write_all(b"\r\n\r\n").await?;
                     // Write the actual data
-                    stream.write_all(&data).await?;
-                } else {
-                    let content = b"Failed to decode CONTENT_DOT_VIEWER_CSS_B64";
-                    stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: ").await?;
-                    stream.write_all(itoa::Buffer::new().format(content.len()).as_bytes()).await?;
-                    stream.write_all(b"\r\n\r\n").await?;
-                    stream.write_all(content).await?;
-                }
-            } else { //"/dot-viewer.js"
-                if let Ok(data) = decode_base64(CONTENT_DOT_VIEWER_JS_B64) {
+                    stream.write_all(&CONTENT_DOT_VIEWER_CSS_GZ).await?;
+              
+            } else { //"/dot-viewer.js"               
                     // Write the HTTP header
                     stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ").await?;
-                    stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
+                    stream.write_all(itoa::Buffer::new().format(CONTENT_DOT_VIEWER_JS_GZ.len()).as_bytes()).await?;
                     stream.write_all(b"\r\n\r\n").await?;
                     // Write the actual data
-                    stream.write_all(&data).await?;
-                } else {
-                    let content = b"Failed to decode CONTENT_DOT_VIEWER_JS_B64";
-                    stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: ").await?;
-                    stream.write_all(itoa::Buffer::new().format(content.len()).as_bytes()).await?;
-                    stream.write_all(b"\r\n\r\n").await?;
-                    stream.write_all(content).await?;
-                }
+                    stream.write_all(&CONTENT_DOT_VIEWER_JS_GZ).await?;               
             }
             return Ok(());
         } else if path.starts_with("/vi") {        //"/viz-lite.js"
-            if let Ok(data) = decode_base64(CONTENT_VIZ_LITE_B64) {
-                // Write the HTTP header
-                stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ").await?;
-                stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
-                stream.write_all(b"\r\n\r\n").await?;
-                // Write the actual data
-                stream.write_all(&data).await?;
-            } else {
-                let content = b"Failed to decode CONTENT_VIZ_LITE_B64";
-                stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: ").await?;
-                stream.write_all(itoa::Buffer::new().format(content.len()).as_bytes()).await?;
-                stream.write_all(b"\r\n\r\n").await?;
-                stream.write_all(content).await?;
-            }
+            // Write the HTTP header
+            stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ").await?;
+            stream.write_all(itoa::Buffer::new().format(CONTENT_VIZ_LITE_GZ.len()).as_bytes()).await?;
+            stream.write_all(b"\r\n\r\n").await?;
+            // Write the actual data
+            stream.write_all(&CONTENT_VIZ_LITE_GZ).await?;
             return Ok(());
         } else {
             stream.write_all("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".as_bytes()).await?;
@@ -495,13 +399,6 @@ mod meteric_server_tests {
     use crate::telemetry::metrics_server::{decode_base64};
     use async_std::test;
 
-    #[test]
-    async fn test_decode_base64() {
-        let input = "SGVsbG8gV29ybGQh";
-        let expected = b"Hello World!";
-        let result = decode_base64(input).unwrap();
-        assert_eq!(result, expected);
-    }
 
     // #[test]
     // pub(crate) async fn test_simple_process() {
