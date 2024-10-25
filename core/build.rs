@@ -11,7 +11,7 @@
 /// - proactor_nuclei: Use the nuclei based proactor io_uring async runtime (default)
 /// - praactor_tokio: Use the tokio based proactor io_uring async runtime
 
-use std::process::{Command, Stdio};
+use std::process::{Command};
 use std::{env, fs};
 use std::fs::{File};
 use std::io::{Read, Write};
@@ -104,7 +104,7 @@ fn copy(target: &Path, file_path: &str) {
     //read the file
     let mut file = File::open(file_path).expect("Failed to open file");
     let mut body = Vec::new();
-    file.read_to_end(&mut body);
+    let _= file.read_to_end(&mut body);
     
     let mut output_file = File::create(target_file.clone()).expect("Failed to create output file");
     output_file.write_all(&body).expect("Failed to write to output file");

@@ -396,7 +396,6 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
 
 #[cfg(test)]
 mod meteric_server_tests {
-    use crate::telemetry::metrics_server::{decode_base64};
     use async_std::test;
 
 
