@@ -89,8 +89,7 @@ fn main() {
 
 fn copy(target: &Path, file_path: &str) {
 
-    let output_name = format!("{}", file_path);
-    let target_file = target.join(output_name);
+    let target_file = target.join(file_path);
     // Check if the output file already exists
     if Path::new(&target_file).exists() {
         println!("{:?} already exists, skipping", target_file);

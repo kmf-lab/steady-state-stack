@@ -32,8 +32,16 @@ pub struct ActorStatus {
     pub(crate) bool_stop: bool,
     pub(crate) await_total_ns: u64,
     pub(crate) unit_total_ns: u64,
-    pub(crate) thread_id: Option<ThreadId>,
+    pub(crate) thread_info: Option<ThreadInfo>,
     pub(crate) calls: [u16; 6],
+}
+
+/// All the thread data to show for this actor
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ThreadInfo {
+    pub(crate) thread_id: ThreadId,
+    pub(crate) team_id:   usize,
+    //core??
 }
 
 pub(crate) const CALL_SINGLE_READ: usize = 0;
@@ -108,6 +116,7 @@ pub struct ActorMetaData {
     ///
     /// If `true`, the actor's usage is periodically reviewed.
     pub usage_review: bool,
+    
 }
 
 
@@ -232,6 +241,8 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) frame_rate_ms: u64,
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     pub(crate) is_running_iteration_count: u64,
+    pub(crate) show_thread_info: bool,
+    pub(crate) team_id: usize,
 }
 
 struct FinallyRollupProfileGuard<'a> {
@@ -1771,6 +1782,8 @@ pub(crate) mod monitor_tests {
             is_in_graph: true,
             actor_start_time: Instant::now(),
             frame_rate_ms: 1000,
+            team_id: 0,
+            show_thread_info: false,
         }
     }
 

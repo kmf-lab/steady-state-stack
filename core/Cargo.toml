@@ -94,18 +94,18 @@ structopt-derive = "0.4.18" # adds Args::from_args() to your structopt struct
 futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3.30"
 parking_lot      = "0.12.3"# TODO: review our lock usage and possible use of parking_lot
+tempfile         = "3.13.0"
 
 # we are adding core and thread tracking with these.
-libc            = "0.2.110" # for c style bindings
-affinity        = "0.1.2"  # for setting thread affinity
+#libc            = "0.2.110" # for c style bindings
+#affinity        = "0.1.2"  # for setting thread affinity
 
 # TODO: still in progess, this is for distributed instances across mutiple nodes
-stun-rs   = "0.1.8"
+#stun-rs   = "0.1.8"
 #rustdds   = "0.10.1"
-async-trait = "0.1.82"
-env_logger = "0.11.5"
-waker-fn = "1.2.0"
-tempfile = "3.12.0"
+#async-trait = "0.1.82"
+#env_logger = "0.11.5"
+#waker-fn = "1.2.0"
 
 
 # use rustdds::serialization::CDRSerializerAdapter; # we must remain ROS2 compatible

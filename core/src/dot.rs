@@ -66,7 +66,9 @@ impl Node {
             load,
             actor_status.total_count_restarts,
             actor_status.bool_stop,
+            actor_status.thread_info
         );
+        
         self.color = color;
         self.pen_width = pen_width;
     }

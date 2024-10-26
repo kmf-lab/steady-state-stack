@@ -1,12 +1,11 @@
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::time::Instant;
-use std::thread;
 use std::sync::Arc;
 use futures_util::lock::Mutex;
 use log::error;
 use std::ops::DerefMut;
 use num_traits::Zero;
-use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
+use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
 use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
 use crate::steady_rx::{Rx, RxDef};
 use crate::steady_tx::{ Tx};
@@ -49,7 +48,7 @@ impl SteadyTelemetryActorSend {
     }
 
     /// Generates a status message for the actor.
-    pub(crate) fn status_message(&self, iteration_index: u64) -> ActorStatus {
+    pub(crate) fn status_message(&self, iteration_index: u64, thread_info: Option<ThreadInfo>) -> ActorStatus {
         let total_ns = self.instant_start.elapsed().as_nanos() as u64;
 
         assert!(
@@ -62,8 +61,6 @@ impl SteadyTelemetryActorSend {
         let calls: Vec<u16> = self.calls.iter().map(|f| f.load(Ordering::Relaxed)).collect();
         let calls: [u16; 6] = calls.try_into().unwrap_or([0u16; 6]);
 
-        let current_thread = thread::current();
-
         ActorStatus {
             total_count_restarts: self.instance_id,
             iteration_start: iteration_index,
@@ -71,7 +68,7 @@ impl SteadyTelemetryActorSend {
             bool_stop: self.bool_stop,
             await_total_ns: self.hot_profile_await_ns_unit.load(Ordering::Relaxed),
             unit_total_ns: total_ns,
-            thread_id: Some(current_thread.id()),
+            thread_info,
             calls,
         }
     }
@@ -170,7 +167,8 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let mut unit_total_ns: u64 = 0;
 
             let mut calls = [0u16; 6];
-            let mut iteration_count = 0;
+            let mut iteration_sum = 0;
+            let mut thread_info: Option<ThreadInfo> = None;
             for status in buffer.iter().take(count) {
                 assert!(
                     status.unit_total_ns >= status.await_total_ns,
@@ -179,9 +177,10 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                     status.await_total_ns
                 );
 
-                iteration_count += status.iteration_sum;
+                iteration_sum += status.iteration_sum;
                 await_total_ns += status.await_total_ns;
                 unit_total_ns += status.unit_total_ns;
+                thread_info = status.thread_info;
 
                 for (i, call) in status.calls.iter().enumerate() {
                     calls[i] = calls[i].saturating_add(*call);
@@ -189,16 +188,14 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             }
 
             if count > 0 {
-                let current_thread = thread::current();
-
                 Some(ActorStatus {
                     iteration_start: buffer[0].iteration_start, //always the starting iterator count
-                    iteration_sum: iteration_count,
+                    iteration_sum,
                     total_count_restarts: buffer[count - 1].total_count_restarts,
                     bool_stop: buffer[count - 1].bool_stop,
                     await_total_ns,
                     unit_total_ns,
-                    thread_id: Some(current_thread.id()),
+                    thread_info,
                     calls,
                 })
             } else {
@@ -305,13 +302,13 @@ impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
         tx: Arc<Mutex<Tx<[usize; LENGTH]>>>,
         count: [usize; LENGTH],
         inverse_local_index: [usize; LENGTH],
-        start_now: Instant,
+        start_now: Instant
     ) -> SteadyTelemetrySend<LENGTH> {
         SteadyTelemetrySend {
             tx,
             count,
             last_telemetry_error: start_now,
-            inverse_local_index,
+            inverse_local_index
         }
     }
 

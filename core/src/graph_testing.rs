@@ -356,6 +356,8 @@ mod graph_testing_tests {
             is_in_graph: true,
             actor_start_time: Instant::now(),
             frame_rate_ms: 1000,
+            team_id: 0,
+            show_thread_info: false,
         }
     }
 

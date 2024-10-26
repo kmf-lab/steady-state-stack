@@ -89,10 +89,11 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 mod user_tests {
-    use async_std::test;
+    use steady_state::GraphBuilder;
 
-    // #[test]
-    // pub(crate) async fn test_user() {
+    #[async_std::test]
+    async fn test_user() {
+        let graph = GraphBuilder::for_testing().build(());
     //     //1. build test graph, the input and output channels and our actor
     //     let mut graph = Graph::new_test(());
     //
@@ -119,7 +120,7 @@ mod user_tests {
     //     // TODO: not sure how to make this work.
     //     //  println!("last approval: {:?}", &state.last_approval);
     //     //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
-    // }
+     }
 
 
 }

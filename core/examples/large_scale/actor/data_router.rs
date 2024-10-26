@@ -57,14 +57,11 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext, one_of: us
 
 #[cfg(test)]
 mod router_tests {
-    use async_std::test;
-    // use std::time::Duration;
-    // use super::*;
-    // use steady_state::Graph;
+    use steady_state::GraphBuilder;
 
-
-    // #[test]
-    // pub(crate) async fn test_router() {
+    #[async_std::test]
+    async fn test_router() {
+        let graph = GraphBuilder::for_testing().build(());
     //     //1. build test graph, the input and output channels and our actor
     //     let mut graph = Graph::new_test(());
     //
@@ -91,7 +88,7 @@ mod router_tests {
     //     // TODO: not sure how to make this work.
     //     //  println!("last approval: {:?}", &state.last_approval);
     //     //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
-    // }
+     }
 
 
 }

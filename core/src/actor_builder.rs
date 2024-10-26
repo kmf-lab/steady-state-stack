@@ -48,12 +48,13 @@ pub struct ActorBuilder {
     std_dev_load: Vec<StdDev>,
     trigger_mcpu: Vec<(Trigger<MCPU>, AlertColor)>,
     trigger_load: Vec<(Trigger<Work>, AlertColor)>,
-    thread_id: bool,
+    show_thread_info: bool,
     avg_mcpu: bool,
     avg_load: bool,
     frame_rate_ms: u64,
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     backplane: Arc<Mutex<Option<SideChannelHub>>>,
+    team_count: Arc<AtomicUsize>,
 }
 
 type FutureBuilderType = Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>, bool) + Send>;
@@ -63,15 +64,18 @@ type FutureBuilderType = Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<d
 pub struct ActorTeam {
     future_builder: VecDeque<FutureBuilderType>,
     thread_lock: Arc<Mutex<()>>,
+    team_id: usize,
 }
 
 impl ActorTeam {
     /// Creates a new instance of `ActorTeam`.
     pub fn new(graph: &Graph) -> Self {
         let lock = graph.thread_lock.clone();
+        let team_id = graph.team_count.fetch_add(1, Ordering::SeqCst);
         ActorTeam {
             future_builder: VecDeque::new(),
             thread_lock: lock,
+            team_id,
         }
     }
 
@@ -83,11 +87,12 @@ impl ActorTeam {
     {
         // trace!("add new actor to team {:?}", context_archetype.ident);
 
+        let team_id = self.team_id;
         self.future_builder.push_back({
             let context_archetype = context_archetype.clone();
             Box::new(move || {
                 let boxed_future: BoxFuture<'static, Result<(), Box<dyn Error>>> =
-                    Box::pin(build_actor_future(context_archetype.clone(), frame_rate_ms));
+                    Box::pin(build_actor_future(context_archetype.clone(), frame_rate_ms, team_id));
                 (boxed_future, false)
             }) as Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>, bool) + Send>
         });
@@ -209,6 +214,7 @@ struct SteadyContextArchetype<I> {
     oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
     node_tx_rx: Option<Arc<NodeTxRx>>,
     instance_id: Arc<AtomicU32>,
+    show_thread_info: bool
 }
 
 impl<I> Clone for SteadyContextArchetype<I> {
@@ -225,6 +231,7 @@ impl<I> Clone for SteadyContextArchetype<I> {
             oneshot_shutdown: self.oneshot_shutdown.clone(),
             node_tx_rx: self.node_tx_rx.clone(),
             instance_id: self.instance_id.clone(),
+            show_thread_info: self.show_thread_info,
         }
     }
 }
@@ -273,7 +280,8 @@ impl ActorBuilder {
             std_dev_load: Vec::with_capacity(0),
             trigger_mcpu: Vec::with_capacity(0),
             trigger_load: Vec::with_capacity(0),
-            thread_id: false,
+            team_count: graph.team_count.clone(),
+            show_thread_info: false,
             avg_mcpu: false,
             avg_load: false,
             frame_rate_ms: graph.telemetry_production_rate_ms,
@@ -425,12 +433,12 @@ impl ActorBuilder {
         result
     }
     
-    // /// Show the thread on the telemetry
-    // pub fn with_thread(&self) -> Self {
-    //     let mut result = self.clone();
-    //     result.thread_id = true;
-    //     result
-    // }
+    /// Show the thread on the telemetry
+    pub fn with_thread_info(&self) -> Self {
+        let mut result = self.clone();
+        result.show_thread_info = true;
+        result
+    }
 
     /// Completes the actor configuration and initiates its execution with the provided logic.
     ///
@@ -447,13 +455,14 @@ impl ActorBuilder {
             I: Fn(SteadyContext) -> F + 'static + Sync + Send,
             F: Future<Output = Result<(), Box<dyn Error>>> + Send + 'static,
     {
+        let team_id = self.team_count.clone().fetch_add(1, Ordering::SeqCst);
         let thread_lock = self.thread_lock.clone();
         let rate_ms = self.frame_rate_ms;
         let context_archetype = self.single_actor_exec_archetype(build_actor_exec);
-
+               
         abstract_executor::spawn_detached(thread_lock, Box::pin(async move {
             loop {
-                let future = build_actor_future(context_archetype.clone(), rate_ms);
+                let future = build_actor_future(context_archetype.clone(), rate_ms, team_id);
                 let result = catch_unwind(AssertUnwindSafe(|| launch_actor(future)));
                 match result {
                     Ok(_) => {
@@ -549,6 +558,7 @@ impl ActorBuilder {
         if steady_config::SHOW_ACTORS {
             info!(" Actor {:?} defined ", immutable_identity);
         }
+        
         let immutable_actor_metadata = self.build_actor_metadata(immutable_identity).clone();
 
         /////////////////////////////////////////////
@@ -604,6 +614,7 @@ impl ActorBuilder {
             node_tx_rx: immutable_node_tx_rx.clone(),
             build_actor_exec: Arc::new(build_actor_exec),
             instance_id: restart_counter,
+            show_thread_info: self.show_thread_info,
         }
     }
 
@@ -631,7 +642,7 @@ impl ActorBuilder {
             trigger_work: self.trigger_load.clone(),
             usage_review: self.usage_review,
             refresh_rate_in_bits: self.refresh_rate_in_bits,
-            window_bucket_in_bits: self.window_bucket_in_bits,
+            window_bucket_in_bits: self.window_bucket_in_bits
         })
     }
 }
@@ -655,6 +666,7 @@ impl ActorBuilder {
 fn build_actor_future<F, I>(
     builder_source: SteadyContextArchetype<I>,
     frame_rate_ms: u64,
+    team_id: usize,
 ) -> F
     where
         I: Fn(SteadyContext) -> F + 'static + Sync + Send,
@@ -665,6 +677,7 @@ fn build_actor_future<F, I>(
         let mut liveliness = builder_source.runtime_state.write();
         liveliness.register_voter(builder_source.ident);       
     }
+    
 
     (builder_source.build_actor_exec)(SteadyContext {
         runtime_state: builder_source.runtime_state,
@@ -680,7 +693,9 @@ fn build_actor_future<F, I>(
         last_periodic_wait: Default::default(),
         is_in_graph: true,
         actor_start_time: Instant::now(),
+        team_id,
         frame_rate_ms,
+        show_thread_info: builder_source.show_thread_info,
     })
 }
 

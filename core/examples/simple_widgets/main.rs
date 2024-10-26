@@ -19,7 +19,6 @@ mod actor {
     pub mod data_feedback;
 }
 #[cfg(test)]
-use steady_state::*;
 use steady_state::actor_builder::{ActorTeam, MCPU, Percentile};
 use steady_state::channel_builder::Filled;
 use crate::actor::data_consumer::InternalState;

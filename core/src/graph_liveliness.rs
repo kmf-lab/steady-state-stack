@@ -511,6 +511,7 @@ pub struct Graph {
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) actor_count: Arc<AtomicUsize>,
     pub(crate) thread_lock: Arc<Mutex<()>>,
+    pub(crate) team_count: Arc<AtomicUsize>,
 
     // Used by collector but could grow if we get new actors at runtime
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
@@ -579,6 +580,8 @@ impl Graph {
             actor_start_time: now,
             node_tx_rx: None,
             frame_rate_ms: self.telemetry_production_rate_ms, //zero will disable telemetry
+            team_id: 0,
+            show_thread_info: false,
         }
     }
 
@@ -804,6 +807,7 @@ impl Graph {
                                              } else {
                                                  0u64 //this zero prevents us from building telemetry
                                              },
+            team_count: Arc::new(AtomicUsize::new(1)),
         };
 
         if builder.telemetry_metric_features {

@@ -177,67 +177,67 @@ async fn process_msg(msg: DiagramData
 }
 
 #[cfg(any(docsrs, feature = "telemetry_server_cdn", not(feature = "telemetry_server_builtin")))]
-const CONTENT_VIZ_LITE_GZ: &'static [u8] = &[];
+const CONTENT_VIZ_LITE_GZ: & [u8] = &[];
 #[cfg(all(not(any(docsrs, feature = "telemetry_server_cdn")), feature = "telemetry_server_builtin"))]
-const CONTENT_VIZ_LITE_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/viz-lite.js.gz") } else { &[] };
+const CONTENT_VIZ_LITE_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/viz-lite.js.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_INDEX_HTML_B64: &'static [u8] = &[];
+const CONTENT_INDEX_HTML_B64: & [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_INDEX_HTML_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/index.html.gz") } else { &[] };
+const CONTENT_INDEX_HTML_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/index.html.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_DOT_VIEWER_JS_B64: &'static [u8] = &[];
+const CONTENT_DOT_VIEWER_JS_B64: & [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_DOT_VIEWER_JS_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.js.gz") } else { &[] };
+const CONTENT_DOT_VIEWER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.js.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_DOT_VIEWER_CSS_B64: &'static [u8] = &[];
+const CONTENT_DOT_VIEWER_CSS_B64: & [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_DOT_VIEWER_CSS_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.css.gz") } else { &[] };
+const CONTENT_DOT_VIEWER_CSS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.css.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_WEBWORKER_JS_B64: &'static [u8] = &[];
+const CONTENT_WEBWORKER_JS_B64: & [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_WEBWORKER_JS_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/webworker.js.gz") } else { &[] };
+const CONTENT_WEBWORKER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/webworker.js.gz") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_SPINNER_GIF_B64: &'static [u8] = &[];
+const CONTENT_SPINNER_GIF_B64: & [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_SPINNER_GIF: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/images/spinner.gif") } else { &[] };
+const CONTENT_SPINNER_GIF: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/images/spinner.gif") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_PREVIEW_ICON_SVG: &'static [u8] = &[];
+const CONTENT_PREVIEW_ICON_SVG: & [u8] = &[];
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_PREVIEW_ICON_GZ: &'static [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../static/telemetry/images/preview-icon.svg") } else { &[] };
+const CONTENT_PREVIEW_ICON_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../static/telemetry/images/preview-icon.svg") } else { &[] };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_REFRESH_TIME_ICON_SVG: &'static [u8] = &[];
+const CONTENT_REFRESH_TIME_ICON_SVG: &str = "";
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_REFRESH_TIME_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/refresh-time-icon.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_USER_ICON_SVG: &'static [u8] = &[];
+const CONTENT_USER_ICON_SVG: &str = "";
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_USER_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/user-icon.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_ZOOM_IN_ICON_SVG: &'static [u8] = &[];
+const CONTENT_ZOOM_IN_ICON_SVG: &str = "";
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_IN_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-in-icon.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &'static [u8] = &[];
+const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = "";
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-in-icon-disabled.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_ZOOM_OUT_ICON_SVG: &'static [u8] = &[];
+const CONTENT_ZOOM_OUT_ICON_SVG: &str = "";
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_OUT_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon.svg") } else { "" };
 
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
-const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &'static [u8] = &[];
+const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = "";
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon-disabled.svg") } else { "" };
 
@@ -274,7 +274,7 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
                 stream.write_all(itoa::Buffer::new().format(CONTENT_INDEX_HTML_GZ.len()).as_bytes()).await?;
                 stream.write_all(b"\r\n\r\n").await?;
                 // Write the actual data
-                stream.write_all(&CONTENT_INDEX_HTML_GZ).await?;
+                stream.write_all(CONTENT_INDEX_HTML_GZ).await?;
             return Ok(());
         } else if path.starts_with("/im") && path.len().ge(&15) { // /images/*
             if path.as_bytes()[8].eq(&b'z') {
@@ -344,7 +344,7 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
                         stream.write_all(itoa::Buffer::new().format(CONTENT_SPINNER_GIF.len()).as_bytes()).await?;
                         stream.write_all(b"\r\n\r\n").await?;
                         // Write the actual data
-                        stream.write_all(&CONTENT_SPINNER_GIF).await?;
+                        stream.write_all(CONTENT_SPINNER_GIF).await?;
                 }
 
             return Ok(());
@@ -354,7 +354,7 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
                 stream.write_all(itoa::Buffer::new().format(CONTENT_WEBWORKER_JS_GZ.len()).as_bytes()).await?;
                 stream.write_all(b"\r\n\r\n").await?;
                 // Write the actual data
-                stream.write_all(&CONTENT_WEBWORKER_JS_GZ).await?; 
+                stream.write_all(CONTENT_WEBWORKER_JS_GZ).await?; 
             return Ok(());
         } else if path.starts_with("/do") {
             if path.ends_with(".css") { //"/dot-viewer.css"
@@ -363,7 +363,7 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
                     stream.write_all(itoa::Buffer::new().format(CONTENT_DOT_VIEWER_CSS_GZ.len()).as_bytes()).await?;
                     stream.write_all(b"\r\n\r\n").await?;
                     // Write the actual data
-                    stream.write_all(&CONTENT_DOT_VIEWER_CSS_GZ).await?;
+                    stream.write_all(CONTENT_DOT_VIEWER_CSS_GZ).await?;
               
             } else { //"/dot-viewer.js"               
                     // Write the HTTP header
@@ -371,7 +371,7 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
                     stream.write_all(itoa::Buffer::new().format(CONTENT_DOT_VIEWER_JS_GZ.len()).as_bytes()).await?;
                     stream.write_all(b"\r\n\r\n").await?;
                     // Write the actual data
-                    stream.write_all(&CONTENT_DOT_VIEWER_JS_GZ).await?;               
+                    stream.write_all(CONTENT_DOT_VIEWER_JS_GZ).await?;               
             }
             return Ok(());
         } else if path.starts_with("/vi") {        //"/viz-lite.js"
@@ -380,7 +380,7 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
             stream.write_all(itoa::Buffer::new().format(CONTENT_VIZ_LITE_GZ.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
             // Write the actual data
-            stream.write_all(&CONTENT_VIZ_LITE_GZ).await?;
+            stream.write_all(CONTENT_VIZ_LITE_GZ).await?;
             return Ok(());
         } else {
             stream.write_all("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".as_bytes()).await?;
@@ -396,11 +396,11 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
 
 #[cfg(test)]
 mod meteric_server_tests {
-    use async_std::test;
+    use crate::GraphBuilder;
 
-
-    // #[test]
-    // pub(crate) async fn test_simple_process() {
+    #[async_std::test]
+    async fn test_simple() {
+        let graph = GraphBuilder::for_testing().build(());
     //     //1. build test graph, the input and output channels and our actor
     //     let mut graph = Graph::new_test(());
     //     let (tx_in, rx_in) = graph.channel_builder()
@@ -424,6 +424,6 @@ mod meteric_server_tests {
     //     //3. run graph until the actor detects the input is closed
     //     graph.start_as_data_driven(Duration::from_secs(240));
     //
-    // }
+     }
 
 }

@@ -6,6 +6,7 @@ use std::cmp;
 
 use crate::*;
 use crate::channel_stats::{compute_labels, ComputeLabelsConfig, ComputeLabelsLabels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW, PLACES_TENS};
+use crate::monitor::ThreadInfo;
 
 /// `ActorStatsComputer` computes and maintains statistics for an actor.
 #[derive(Default)]
@@ -74,6 +75,7 @@ impl ActorStatsComputer {
     /// # Returns
     ///
     /// A tuple containing the line color and line width.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute(
         &mut self,
         dot_label: &mut String,
@@ -81,7 +83,8 @@ impl ActorStatsComputer {
         mcpu: u64,
         load: u64,
         total_count_restarts: u32,
-        bool_stop: bool
+        bool_stop: bool,
+        thread_info: Option<ThreadInfo>
     ) -> (&'static str, &'static str) {
         self.accumulate_data_frame(mcpu, load);
 
@@ -101,6 +104,19 @@ impl ActorStatsComputer {
         }
 
         dot_label.push('\n');
+
+        if let Some(thread) = thread_info {    //new line for thread info
+            dot_label.push_str("team:");
+
+            let t = thread.team_id.to_string();
+            dot_label.push_str(&t);
+            dot_label.push_str(" thread:");
+
+            let t = format!("{:?}",thread.thread_id);
+            dot_label.push_str(&t);
+
+            dot_label.push('\n');
+        }
 
         if self.window_bucket_in_bits != 0 {
             dot_label.push_str("Window ");
@@ -678,6 +694,7 @@ mod test_actor_stats {
             50,
             1,
             false,
+            None
         );
 
         assert_eq!(line_color, DOT_GREEN);

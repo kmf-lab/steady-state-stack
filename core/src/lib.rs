@@ -292,6 +292,8 @@ pub struct SteadyContext {
     pub(crate) actor_start_time: Instant,
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
     pub(crate) frame_rate_ms: u64,
+    pub(crate) team_id: usize,
+    pub(crate) show_thread_info: bool
 }
 
 impl SteadyContext {
@@ -1103,6 +1105,8 @@ impl SteadyContext {
             node_tx_rx: self.node_tx_rx.clone(),
             frame_rate_ms: self.frame_rate_ms,
             args: self.args,
+            show_thread_info: self.show_thread_info,
+            team_id: self.team_id,
             is_running_iteration_count: 0,
         }
     }
@@ -1470,6 +1474,8 @@ mod lib_tests {
             is_in_graph: true,
             actor_start_time: Instant::now(),
             frame_rate_ms: 1000,
+            show_thread_info: false,
+            team_id: 0,
         }
     }
 

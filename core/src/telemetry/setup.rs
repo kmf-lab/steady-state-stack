@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, AtomicU64};
+use std::thread;
 use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
@@ -9,7 +10,7 @@ use num_traits::Zero;
 use crate::{abstract_executor, ActorIdentity, Graph, GraphLivelinessState, MONITOR_NOT, MONITOR_UNKNOWN, SendSaturation, SteadyContext, steady_tx_bundle};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
-use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel};
+use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel, ThreadInfo};
 use crate::steady_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -230,7 +231,18 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                             }
                         }
 
-                        let msg = actor_status.status_message(this.is_running_iteration_count);
+                        //TODO: we may need to only build this every N iterations to save time...
+                        let thread_info = if this.show_thread_info {
+                            let current_thread = thread::current(); //WARN: we trust this thread is ours.
+                            Some(ThreadInfo {
+                                thread_id: current_thread.id(),
+                                team_id: this.team_id
+                            })
+                        } else {
+                            None
+                        };
+
+                        let msg = actor_status.status_message(this.is_running_iteration_count, thread_info);
                         match tx.shared_try_send(msg) {
                             Ok(_) => {
                                 if let Some(ref mut send_tx) = this.telemetry.send_tx {
@@ -381,7 +393,8 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
 ) {
     abstract_executor::block_on(async move {
         if let Some(actor_status) = telemetry_state {
-            let mut status = actor_status.status_message(iteration_count);
+            
+            let mut status = actor_status.status_message(iteration_count, None);
             if let Some(mut tx) = actor_status.tx.try_lock() {
                 let needs_to_be_closed = tx.make_closed.is_some();
                 if needs_to_be_closed {
