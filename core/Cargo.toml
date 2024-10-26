@@ -29,8 +29,7 @@ codegen-units = 1 # only one codegen unit to reduce binary size
 panic = 'abort' # no unwinding
 strip = 'symbols' # strip symbols
 
-[lints.rust]
-unsafe_code = "forbid"
+
 
 [lints.clippy]
 enum_glob_use = "deny" # forbid use of enum glob imports
@@ -97,7 +96,7 @@ parking_lot      = "0.12.3"# TODO: review our lock usage and possible use of par
 tempfile         = "3.13.0"
 
 # we are adding core and thread tracking with these.
-#libc            = "0.2.110" # for c style bindings
+libc             = "0.2.161" # for c style bindings
 #affinity        = "0.1.2"  # for setting thread affinity
 
 # TODO: still in progess, this is for distributed instances across mutiple nodes

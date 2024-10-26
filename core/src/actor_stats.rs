@@ -114,6 +114,11 @@ impl ActorStatsComputer {
 
             let t = format!("{:?}",thread.thread_id);
             dot_label.push_str(&t);
+            
+            dot_label.push_str(" cpu:");
+            let t = format!("{:?}",thread.cpu);
+            dot_label.push_str(&t);
+
 
             dot_label.push('\n');
         }

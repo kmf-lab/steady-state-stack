@@ -68,6 +68,7 @@ pub use channel_builder::LazySteadyTx;
 pub use actor_builder::MCPU;
 pub use actor_builder::Work;
 pub use actor_builder::Percentile;
+pub use actor_builder::ActorTeam;
 pub use graph_liveliness::*;
 pub use install::serviced::*;
 pub use loop_driver::wrap_bool_future;

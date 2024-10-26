@@ -1771,6 +1771,7 @@ dependencies = [
  "isahc",
  "itoa",
  "lazy_static",
+ "libc",
  "log",
  "nuclei",
  "num-traits",
