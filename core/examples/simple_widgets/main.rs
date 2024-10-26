@@ -1,5 +1,5 @@
 mod args;
-
+use steady_state::{ActorTeam, Percentile, MCPU};
 use steady_state::StdDev;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -18,8 +18,7 @@ mod actor {
     pub mod data_consumer;
     pub mod data_feedback;
 }
-#[cfg(test)]
-use steady_state::actor_builder::{ActorTeam, MCPU, Percentile};
+
 use steady_state::channel_builder::Filled;
 use crate::actor::data_consumer::InternalState;
 
