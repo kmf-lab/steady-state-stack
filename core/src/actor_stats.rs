@@ -106,7 +106,8 @@ impl ActorStatsComputer {
         dot_label.push('\n');
 
         if let Some(thread) = thread_info {    //new line for thread info
-     
+
+            //this could be better looking but will require unstable features today Oct 2024.
             let t = format!("{:?}",thread.thread_id);
             dot_label.push_str(&t);
 
