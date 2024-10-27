@@ -53,8 +53,11 @@ telemetry_history = []
 # no need to enable unless you want to see the performance of the telemetry server
 telemetry_on_telemetry = []
 
-core_affinity = ["libc"] # for setting thread affinity
-core_display = ["libc"] # for setting thread affinity
+# lock teams and actors to specific cores
+core_affinity = ["libc"]
+
+# desplay which core the actor is running on
+core_display = ["libc"]
 
 # only set true if you want supervisors to restart actors while debug_assertions is on
 # no need to enable unless you want to see how supervisors work while testing
@@ -100,9 +103,6 @@ tempfile         = "3.13.0"
 version = "0.2.161"
 optional = true
 
-# we are adding core and thread tracking with these.
-#libc             = "0.2.161" # for c style bindings
-#affinity        = "0.1.2"  # for setting thread affinity
 
 # TODO: still in progess, this is for distributed instances across mutiple nodes
 #stun-rs   = "0.1.8"

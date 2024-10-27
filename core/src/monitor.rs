@@ -2032,10 +2032,9 @@ pub(crate) mod monitor_tests {
                     assert_eq!(1, send_guard.vacant_units());
                     for item in vec![13, 14, 15] {
                         
-                        //TODO: we are wrapping around the ring buffer on full and writing over old data !!!!
                         match send_guard.shared_try_send(item) {
                             Ok(()) => {},
-                            Err(t) => {println!("---------failed to send {}",t);}
+                            Err(_) => {}
                         }
                     }
                     assert_eq!(0, send_guard.vacant_units());

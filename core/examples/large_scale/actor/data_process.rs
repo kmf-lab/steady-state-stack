@@ -89,8 +89,8 @@ mod process_tests {
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(2));
 
-        let took = approved_widget_out_rx.testing_take().await;
-        println!("took: {:?}", took);
+        let _took = approved_widget_out_rx.testing_take().await;
+        //println!("took: {:?}", took);
 
 
     }

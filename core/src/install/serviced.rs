@@ -332,11 +332,11 @@ impl SystemdServiceManager {
 
         // Detect the current executable's path
         let current_exe = env::current_exe()?;
-        info!("Current executable path: {:?}", current_exe);
+        trace!("Current executable path: {:?}", current_exe);
 
         // Copy the executable to /usr/local/bin/
         fs::copy(&current_exe, Path::new(&self.service_executable))?;
-        info!("Copied the executable to: {}", self.service_executable);
+        trace!("Copied the executable to: {}", self.service_executable);
 
         let status = Command::new("id")
             .arg("-u")
@@ -351,9 +351,9 @@ impl SystemdServiceManager {
             Command::new(useradd_command)
                 .args(useradd_args)
                 .status()?;
-            info!("Created the service user '{}'", self.service_user);
+            trace!("Created the service user '{}'", self.service_user);
         } else {
-            info!("Service user '{}' already exists", self.service_user);
+            trace!("Service user '{}' already exists", self.service_user);
         }
 
         // Create the service file
@@ -363,22 +363,22 @@ impl SystemdServiceManager {
         Command::new("systemctl")
             .arg("daemon-reload")
             .status()?;
-        info!("Reloaded the systemd daemon");
+        trace!("Reloaded the systemd daemon");
 
         if self.on_boot {
             // Enable the service to start on boot
             Command::new("systemctl")
                 .args(["enable", &self.service_name])
                 .status()?;
-            info!("Enabled '{}' service to start on boot", self.service_name);
+            trace!("Enabled '{}' service to start on boot", self.service_name);
         }
 
         if start_now {
             Command::new("systemctl")
                 .args(["start", &self.service_name])
                 .status()?;
-            info!("Started '{}' service", self.service_name);
-            info!("To debug try: journalctl -u {}", self.service_name);
+            trace!("Started '{}' service", self.service_name);
+            trace!("To debug try: journalctl -u {}", self.service_name);
         }
 
         Ok(())

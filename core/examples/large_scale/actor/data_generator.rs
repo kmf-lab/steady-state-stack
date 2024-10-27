@@ -148,7 +148,7 @@ mod generator_tests {
         let count2 = approved_widget_rx_out[2].testing_avail_units().await;
         let count3 = approved_widget_rx_out[3].testing_avail_units().await;
         
-        println!("count0: {:?} count1: {:?} count2: {:?} count3: {:?}", count0, count1, count2, count3);
+        // println!("count0: {:?} count1: {:?} count2: {:?} count3: {:?}", count0, count1, count2, count3);
 
         assert_eq!(expected_count, count0);
         assert_eq!(expected_count, count1);
