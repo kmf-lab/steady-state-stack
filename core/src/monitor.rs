@@ -41,7 +41,8 @@ pub struct ActorStatus {
 pub struct ThreadInfo {
     pub(crate) thread_id: ThreadId,
     pub(crate) team_id:   usize,
-    pub(crate) cpu: i32,
+    #[cfg(feature = "core_display")]
+    pub(crate) core: i32,
 }
 
 pub(crate) const CALL_SINGLE_READ: usize = 0;

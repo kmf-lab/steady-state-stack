@@ -16,6 +16,10 @@ use crate::steady_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, Stead
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
 
+#[cfg(feature = "core_display")]
+use libc::sched_getcpu;
+
+
 /// Constructs telemetry channels for the given context and metadata.
 ///
 /// # Parameters
@@ -190,36 +194,14 @@ pub(crate) fn is_empty_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>
     }
 }
 
-extern crate libc;
-use std::ptr;
-
+#[cfg(feature = "core_display")]
 fn get_current_cpu() -> i32 {
     unsafe {
         libc::sched_getcpu() // This returns the CPU number the calling thread is running on
     }
 }
 
-fn pin_thread_to_core(core_id: usize) -> Result<(), String> {
-    let mut cpu_set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
-    unsafe {
-        libc::CPU_ZERO(&mut cpu_set);
-        libc::CPU_SET(core_id, &mut cpu_set);
 
-        let thread_id = libc::pthread_self();
-
-        // Set the thread affinity
-        let result = libc::pthread_setaffinity_np(
-            thread_id,
-            std::mem::size_of::<libc::cpu_set_t>(),
-            &cpu_set,
-        );
-
-        if result != 0 {
-            return Err(format!("Failed to set thread affinity: {}", result));
-        }
-    }
-    Ok(())
-}
 
 /// Tries to send all local telemetry for the given monitor.
 ///
@@ -266,12 +248,11 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         let thread_info = if this.show_thread_info {
                             let current_thread = thread::current(); //WARN: we trust this thread is ours.
 
-                            pin_thread_to_core(this.team_id);//TODO: hack
-                           
                             Some(ThreadInfo{
                                 thread_id: current_thread.id(),
                                 team_id: this.team_id,
-                                cpu: get_current_cpu(),
+                                #[cfg(feature = "core_display")]
+                                core: get_current_cpu(),
                             })
                         } else {
                             None

@@ -627,7 +627,6 @@ impl FrameHistory {
     /// A `Result` indicating success or failure.
     async fn all_to_file_async(mut h: Handle<File>, data: BytesMut) -> Result<(), std::io::Error> {
         h.write_all(data.as_ref()).await?;
-        // Handle::<File>::flush(&mut h).await?; // TODO: add this as shutdown?
         Ok(())
     }
 

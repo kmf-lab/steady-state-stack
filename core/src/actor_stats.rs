@@ -106,19 +106,17 @@ impl ActorStatsComputer {
         dot_label.push('\n');
 
         if let Some(thread) = thread_info {    //new line for thread info
-            dot_label.push_str("team:");
-
-            let t = thread.team_id.to_string();
-            dot_label.push_str(&t);
-            dot_label.push_str(" thread:");
-
+     
             let t = format!("{:?}",thread.thread_id);
             dot_label.push_str(&t);
-            
-            dot_label.push_str(" cpu:");
-            let t = format!("{:?}",thread.cpu);
-            dot_label.push_str(&t);
 
+            //rename this plus add switch.
+            #[cfg(feature = "core_display")]
+            {
+                dot_label.push_str(" Core:");
+                let t = format!("{:?}",thread.core);
+                dot_label.push_str(&t);
+            }
 
             dot_label.push('\n');
         }

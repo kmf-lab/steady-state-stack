@@ -93,7 +93,7 @@ mod user_tests {
 
     #[async_std::test]
     async fn test_user() {
-        let graph = GraphBuilder::for_testing().build(());
+        let _graph = GraphBuilder::for_testing().build(());
     //     //1. build test graph, the input and output channels and our actor
     //     let mut graph = Graph::new_test(());
     //

@@ -26,6 +26,11 @@ use crate::telemetry::metrics_collector::CollectorDetail;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+#[allow(unused_imports)]
+#[cfg(feature = "core_affinity")]
+use libc::pthread_setaffinity_np;
+
+
 /// The `ActorBuilder` struct is responsible for building and configuring actors.
 /// It contains various settings related to telemetry, triggers, and actor identification.
 #[derive(Clone)]
@@ -59,6 +64,29 @@ pub struct ActorBuilder {
 
 type FutureBuilderType = Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>, bool) + Send>;
 
+#[cfg(feature = "core_affinity")]
+fn pin_thread_to_core(core_id: usize) -> Result<(), String> {
+    let mut cpu_set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::CPU_ZERO(&mut cpu_set);
+        libc::CPU_SET(core_id, &mut cpu_set);
+
+        let thread_id = libc::pthread_self();
+
+        // Set the thread affinity
+        let result = libc::pthread_setaffinity_np(
+            thread_id,
+            std::mem::size_of::<libc::cpu_set_t>(),
+            &cpu_set,
+        );
+
+        if result != 0 {
+            return Err(format!("Failed to set thread affinity: {}", result));
+        }
+    }
+    Ok(())
+}
+
 /// The `ActorTeam` struct manages a collection of actors, facilitating their coordinated execution.
 #[derive(Default)]
 pub struct ActorTeam {
@@ -88,6 +116,7 @@ impl ActorTeam {
         // trace!("add new actor to team {:?}", context_archetype.ident);
 
         let team_id = self.team_id;
+
         self.future_builder.push_back({
             let context_archetype = context_archetype.clone();
             Box::new(move || {
@@ -130,6 +159,9 @@ impl ActorTeam {
         let super_task = {
             let count = count.clone();
             async move {
+                #[cfg(feature = "core_affinity")]
+                let _= pin_thread_to_core(self.team_id);
+
                 count.store(self.future_builder.len(),Ordering::SeqCst);
                 let _ = local_send.send(()); //may now return we have count and started
 
@@ -461,6 +493,9 @@ impl ActorBuilder {
         let context_archetype = self.single_actor_exec_archetype(build_actor_exec);
                
         abstract_executor::spawn_detached(thread_lock, Box::pin(async move {
+            #[cfg(feature = "core_affinity")]
+            let _= pin_thread_to_core(team_id);
+
             loop {
                 let future = build_actor_future(context_archetype.clone(), rate_ms, team_id);
                 let result = catch_unwind(AssertUnwindSafe(|| launch_actor(future)));

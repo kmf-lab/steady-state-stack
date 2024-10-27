@@ -59,7 +59,7 @@ mod tests {
 
     #[async_std::test]
     async fn test_feedback() {
-        let graph = GraphBuilder::for_testing().build(());
+        let _graph = GraphBuilder::for_testing().build(());
         
     //     let graph = Graph::new_test(());        let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
     //         .with_capacity(BATCH_SIZE).build();

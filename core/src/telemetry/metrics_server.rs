@@ -176,68 +176,94 @@ async fn process_msg(msg: DiagramData
     }
 }
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, feature = "telemetry_server_cdn", not(feature = "telemetry_server_builtin")))]
 const CONTENT_VIZ_LITE_GZ: & [u8] = &[];
+#[allow(dead_code)]
 #[cfg(all(not(any(docsrs, feature = "telemetry_server_cdn")), feature = "telemetry_server_builtin"))]
 const CONTENT_VIZ_LITE_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/viz-lite.js.gz") } else { &[] };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_INDEX_HTML_B64: & [u8] = &[];
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_INDEX_HTML_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/index.html.gz") } else { &[] };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_DOT_VIEWER_JS_B64: & [u8] = &[];
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_DOT_VIEWER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.js.gz") } else { &[] };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_DOT_VIEWER_CSS_B64: & [u8] = &[];
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_DOT_VIEWER_CSS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.css.gz") } else { &[] };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_WEBWORKER_JS_B64: & [u8] = &[];
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_WEBWORKER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/webworker.js.gz") } else { &[] };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_SPINNER_GIF_B64: & [u8] = &[];
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_SPINNER_GIF: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/images/spinner.gif") } else { &[] };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_PREVIEW_ICON_SVG: & [u8] = &[];
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_PREVIEW_ICON_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../static/telemetry/images/preview-icon.svg") } else { &[] };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_REFRESH_TIME_ICON_SVG: &str = "";
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_REFRESH_TIME_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/refresh-time-icon.svg") } else { "" };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_USER_ICON_SVG: &str = "";
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_USER_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/user-icon.svg") } else { "" };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_ZOOM_IN_ICON_SVG: &str = "";
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_IN_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-in-icon.svg") } else { "" };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = "";
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-in-icon-disabled.svg") } else { "" };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_ZOOM_OUT_ICON_SVG: &str = "";
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_OUT_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon.svg") } else { "" };
 
+#[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = "";
+#[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon-disabled.svg") } else { "" };
 
@@ -400,7 +426,7 @@ mod meteric_server_tests {
 
     #[async_std::test]
     async fn test_simple() {
-        let graph = GraphBuilder::for_testing().build(());
+        let _graph = GraphBuilder::for_testing().build(());
     //     //1. build test graph, the input and output channels and our actor
     //     let mut graph = Graph::new_test(());
     //     let (tx_in, rx_in) = graph.channel_builder()

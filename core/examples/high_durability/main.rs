@@ -127,7 +127,7 @@ mod graph_tests {
     #[async_std::test]
     async fn test_graph_one() {
     
-             let graph = GraphBuilder::for_testing().build(());
+             let _graph = GraphBuilder::for_testing().build(());
     //         let mut graph = build_graph(graph);
     //         graph.start();
     //

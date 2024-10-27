@@ -7,10 +7,7 @@ edition = "2021"
 description = "Framework for building long running low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses Erlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
 build = "build.rs" # assumes we have gzip and base64 installed, the base64 crate is very broken and must not be used.
-
 repository = "https://github.com/kmf-lab/steady-state-stack"
-
-
 include = ["templates/**", "src/**", "Cargo.toml", "README.md", "build.rs", "static/telemetry/**", "**/*.gz.b64"]
 exclude = ["**/*.txt", "**/*.sh", "notes/", "temp/", "target/**"]
 
@@ -30,13 +27,12 @@ panic = 'abort' # no unwinding
 strip = 'symbols' # strip symbols
 
 
-
 [lints.clippy]
 enum_glob_use = "deny" # forbid use of enum glob imports
 unwrap_used = "deny" # forbid use of unwrap
 
 [features]
-default = ["proactor_nuclei", "telemetry_server_builtin", "prometheus_metrics"]
+default = ["proactor_nuclei", "telemetry_server_builtin", "prometheus_metrics", "core_affinity"]
 # Use the nuclei async runtime (proactor_? exclusive one or the other) (default)
 proactor_nuclei = ["nuclei/async-exec", "nuclei/iouring"]
 # Use the tokio async runtime (proactor_? exclusive one or the other)
@@ -57,9 +53,13 @@ telemetry_history = []
 # no need to enable unless you want to see the performance of the telemetry server
 telemetry_on_telemetry = []
 
+core_affinity = ["libc"] # for setting thread affinity
+core_display = ["libc"] # for setting thread affinity
+
 # only set true if you want supervisors to restart actors while debug_assertions is on
 # no need to enable unless you want to see how supervisors work while testing
 restart_actors_when_debugging = []
+
 
 [package.metadata.docs.rs]
 features = ["proactor_nuclei"]
@@ -95,8 +95,13 @@ futures-util     = "0.3.30"
 parking_lot      = "0.12.3"# TODO: review our lock usage and possible use of parking_lot
 tempfile         = "3.13.0"
 
+
+[dependencies.libc]
+version = "0.2.161"
+optional = true
+
 # we are adding core and thread tracking with these.
-libc             = "0.2.161" # for c style bindings
+#libc             = "0.2.161" # for c style bindings
 #affinity        = "0.1.2"  # for setting thread affinity
 
 # TODO: still in progess, this is for distributed instances across mutiple nodes
