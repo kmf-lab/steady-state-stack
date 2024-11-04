@@ -1,6 +1,6 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.28" # prep for 0.1.0 version
+version = "0.0.29" # prep for 0.1.0 version
 documentation = "https://docs.rs/steady_state/0.0.21/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2021"
@@ -32,7 +32,7 @@ enum_glob_use = "deny" # forbid use of enum glob imports
 unwrap_used = "deny" # forbid use of unwrap
 
 [features]
-default = ["proactor_nuclei", "telemetry_server_builtin", "prometheus_metrics", "core_affinity"]
+default = ["proactor_nuclei", "telemetry_server_builtin", "prometheus_metrics", "core_display", "core_affinity" ]
 # Use the nuclei async runtime (proactor_? exclusive one or the other) (default)
 proactor_nuclei = ["nuclei/async-exec", "nuclei/iouring"]
 # Use the tokio async runtime (proactor_? exclusive one or the other)
@@ -97,6 +97,7 @@ futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3.30"
 parking_lot      = "0.12.3"# TODO: review our lock usage and possible use of parking_lot
 tempfile         = "3.13.0"
+num_cpus = "1.16.0"
 
 
 [dependencies.libc]

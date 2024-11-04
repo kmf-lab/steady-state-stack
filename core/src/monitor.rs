@@ -444,14 +444,14 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
         let _guard = self.start_profile(CALL_WAIT);
         let one_down = &mut self.oneshot_shutdown.lock().await;
-        let result = if !one_down.is_terminated() {
-            select! {
+      //  let result = if !one_down.is_terminated() { //TODO: is this needed?
+        let result =     select! {
                 _ = &mut one_down.deref_mut() => false,
                 _ = op.fuse() => true,
-            }
-        } else {
-            false
-        };
+            };
+      //  } else {
+      //      false
+      //  };
         self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
         result
     }

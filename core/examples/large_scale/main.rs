@@ -42,10 +42,11 @@ fn main() {
     if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
+    let large_scale = 45; //47-> 1056  40 ->888 // 13->400  // (24* (N+3)) TODO: run profiler and confirm threads needed !!
     let mut graph = build_graph::<3,2,2,2>(GraphBuilder::for_production()
         .with_telemtry_production_rate_ms(4000)
-        .build(opt.clone()),false,false,13); // (24* (N+3)) -> 400
-
+        .build(opt.clone()),false,false,large_scale); // (24* (N+3)) -> 400
+    
     graph.start();
 
     {   //remove this block to run forever.
@@ -73,7 +74,7 @@ fn build_graph<const LEVEL_1: usize,
                             //.with_filled_max()  //TODO: not yet implemented
                             //.with_filled_min()  //TODO: not yet implemented
                             .with_filled_standard_deviation(StdDev::one())
-                            .with_avg_latency()
+                            .with_avg_latency()        
         .with_filled_trigger(Trigger::AvgAbove(Filled::p20()),AlertColor::Yellow)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p30()),AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p40()),AlertColor::Red)
@@ -82,7 +83,7 @@ fn build_graph<const LEVEL_1: usize,
     let base_actor_builder = graph
                             .actor_builder()
                             .with_mcpu_avg()
-//     .with_thread()  .with_actor()
+                            .with_thread_info()
                            // .with_work_percentile(Percentile::p80())
                            // .with_mcpu_percentile(Percentile::p80())
                             .with_load_avg();
@@ -92,7 +93,7 @@ fn build_graph<const LEVEL_1: usize,
     let mut route_b_count:usize = 0;
     let mut route_c_count:usize = 0;
 
-    let mut actor_team = ActorTeam::default();
+    let mut actor_team = ActorTeam::new(&graph);
     let mut thread_top = if spawn_a {
         Threading::Spawn
     } else {
@@ -157,7 +158,7 @@ fn build_graph<const LEVEL_1: usize,
                             );
 
                     if 1 == LEVEL_4 {
-                        let mut actor_linedance_tream = ActorTeam::default();
+                        let mut actor_linedance_tream = ActorTeam::new(&graph);
                         if let Threading::Join(ref mut team) = thread_top {
                             team.transfer_back_to(&mut actor_linedance_tream);
                         }
@@ -181,7 +182,7 @@ fn build_graph<const LEVEL_1: usize,
                     } else {
 
                         for f in 0..LEVEL_4 {
-                            let mut group_line = ActorTeam::default();
+                            let mut group_line = ActorTeam::new(&graph  );
 
                             if let Threading::Join(ref mut team) = thread_top {
                                 team.transfer_back_to(&mut group_line);
@@ -412,7 +413,7 @@ mod large_tests {
         // Delay::new(Duration::from_secs(2)).await;
         graph.request_stop();
        // Delay::new(Duration::from_secs(5)).await; //this delay seems critical for testing but I am not sure why
-        graph.block_until_stopped(Duration::from_secs(8));
+        graph.block_until_stopped(Duration::from_secs(23));
 
     }
 }

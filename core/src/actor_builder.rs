@@ -62,16 +62,26 @@ pub struct ActorBuilder {
     team_count: Arc<AtomicUsize>,
 }
 
-type FutureBuilderType = Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>, bool) + Send>;
+type FutureBuilderType = Box<dyn FnMut(usize) -> (BoxFuture<'static, Result<(), Box<dyn Error>>>, bool) + Send>;
+
+#[cfg(feature = "core_affinity")]
+fn get_num_cores() -> usize {
+    unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) as usize }
+}
 
 #[cfg(feature = "core_affinity")]
 fn pin_thread_to_core(core_id: usize) -> Result<(), String> {
+    let num_cores = get_num_cores(); // Get the number of available cores
+    //println!("Number of cores: {:?} {:?}", num_cores, core_id);
+    let core_id = core_id % num_cores; // Adjust core_id to ensure it's within bounds
+
     let mut cpu_set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
     unsafe {
         libc::CPU_ZERO(&mut cpu_set);
         libc::CPU_SET(core_id, &mut cpu_set);
 
         let thread_id = libc::pthread_self();
+        //println!("Thread id: {:?}", thread_id);
 
         // Set the thread affinity
         let result = libc::pthread_setaffinity_np(
@@ -88,7 +98,6 @@ fn pin_thread_to_core(core_id: usize) -> Result<(), String> {
 }
 
 /// The `ActorTeam` struct manages a collection of actors, facilitating their coordinated execution.
-#[derive(Default)]
 pub struct ActorTeam {
     future_builder: VecDeque<FutureBuilderType>,
     thread_lock: Arc<Mutex<()>>,
@@ -97,13 +106,11 @@ pub struct ActorTeam {
 
 impl ActorTeam {
     /// Creates a new instance of `ActorTeam`.
-    pub fn new(graph: &Graph) -> Self {
-        let lock = graph.thread_lock.clone();
-        let team_id = graph.team_count.fetch_add(1, Ordering::SeqCst);
+    pub fn new(graph: &Graph) -> Self { //TODO: add this method to graph.
         ActorTeam {
             future_builder: VecDeque::new(),
-            thread_lock: lock,
-            team_id,
+            thread_lock: graph.thread_lock.clone(),
+            team_id: graph.team_count.fetch_add(1, Ordering::SeqCst),
         }
     }
 
@@ -115,15 +122,14 @@ impl ActorTeam {
     {
         // trace!("add new actor to team {:?}", context_archetype.ident);
 
-        let team_id = self.team_id;
 
         self.future_builder.push_back({
             let context_archetype = context_archetype.clone();
-            Box::new(move || {
+            Box::new(move |team_display_id| {
                 let boxed_future: BoxFuture<'static, Result<(), Box<dyn Error>>> =
-                    Box::pin(build_actor_future(context_archetype.clone(), frame_rate_ms, team_id));
+                    Box::pin(build_actor_future(context_archetype.clone(), frame_rate_ms, team_display_id));
                 (boxed_future, false)
-            }) as Box<dyn FnMut() -> (BoxFuture<'static, Result<(), Box<dyn Error>>>, bool) + Send>
+            }) as Box<dyn FnMut(usize) -> (BoxFuture<'static, Result<(), Box<dyn Error>>>, bool) + Send>
         });
     }
 
@@ -159,6 +165,7 @@ impl ActorTeam {
         let super_task = {
             let count = count.clone();
             async move {
+                //println!("spawn ActorTeam {:?}", self.team_id); //shoudl not all be zero.
                 #[cfg(feature = "core_affinity")]
                 let _= pin_thread_to_core(self.team_id);
 
@@ -168,7 +175,7 @@ impl ActorTeam {
                 let mut actor_future_vec = Vec::with_capacity(self.future_builder.len());
 
                 for f in &mut self.future_builder {
-                    let (future, _drive_io) = f();
+                    let (future, _drive_io) = f(self.team_id);
                     actor_future_vec.push(future);
                 }
 
@@ -182,7 +189,7 @@ impl ActorTeam {
                         if let Err(e) = result {
                             error!("Actor {:?} error {:?}", index, e); // TODO: need ident for index.
                             // Rebuild the single actor which failed
-                            actor_future_vec[index] = self.future_builder[index]().0;
+                            actor_future_vec[index] = self.future_builder[index](self.team_id).0;
                             true
                         } else {
                             trace!("working on group stop");
@@ -208,7 +215,7 @@ impl ActorTeam {
                             // We must rebuild all actors since we do not know what happened to the thread
                             // EVEN those finished will be restarted.
                             for f in &mut self.future_builder {
-                                let (future, _drive_io) = f();
+                                let (future, _drive_io) = f(self.team_id);
                                 actor_future_vec.push(future);
                             }
                             // Continue running

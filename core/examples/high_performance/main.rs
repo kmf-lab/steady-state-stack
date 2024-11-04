@@ -83,7 +83,7 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
          .zip(tick_consumern_to_finalconsumer_tick_counts_tx.iter()).enumerate()
         .for_each(|(_i, (tick_consumer_ticks_rx, tick_consumer_tick_counts_tx))| {
             {
-                let mut team =  ActorTeam::default();
+                let mut team =  ActorTeam::new(&graph);
 
                 let tick_consumer_ticks_rx = tick_consumer_ticks_rx.clone();
                 let tick_consumer_tick_counts_tx = tick_consumer_tick_counts_tx.clone();

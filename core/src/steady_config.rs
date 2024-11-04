@@ -76,7 +76,7 @@ pub const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 20;
 
 /// Granularity of the frames for telemetry data collection.
 /// Larger values consume more memory but allow for faster capture rates and higher accuracy.
-pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 128;
+pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 64; 
 
 /// Number of messages consumed by the collector.
 /// Larger values take up memory but allow faster capture rates.
