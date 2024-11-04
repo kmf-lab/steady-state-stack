@@ -424,17 +424,15 @@ impl<T> Rx<T> {
     
     #[inline]
     pub(crate) async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
-      //  if self.rx.occupied_len() >= count {
-      //      true
-      //  } else {
+
             let mut one_down = &mut self.oneshot_shutdown;
             if !one_down.is_terminated() {
                 let mut operation = &mut self.rx.wait_occupied(count);
                 select! { _ = one_down => false, _ = operation => true }
             } else {
-                false
+                self.rx.occupied_len() >= count
             }
-      //  }
+
     }
 
     #[inline]

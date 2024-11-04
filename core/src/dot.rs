@@ -664,29 +664,31 @@ mod tests {
     use bytes::BytesMut;
     use std::path::PathBuf;
 
-    // #[test]
-    // fn test_node_compute_and_refresh() {
-    //     let actor_status = ActorStatus {
-    //         await_total_ns: 100,
-    //         unit_total_ns: 200,
-    //         thread_id: None,
-    //         total_count_restarts: 1,
-    //         bool_stop: false,
-    //         calls: [0;6],
-    //     };
-    //     let total_work_ns = 1000u128;
-    //     let mut node = Node {
-    //         id: 1,
-    //         color: "grey",
-    //         pen_width: "1",
-    //         stats_computer: ActorStatsComputer::default(),
-    //         display_label: String::new(),
-    //         metric_text: String::new(),
-    //     };
-    //     node.compute_and_refresh(actor_status, total_work_ns);
-    //     assert_eq!(node.color, "grey");
-    //     assert_eq!(node.pen_width, "1");
-    // }
+    #[test]
+    fn test_node_compute_and_refresh() {
+        let actor_status = ActorStatus {
+            await_total_ns: 100,
+            unit_total_ns: 200,
+            total_count_restarts: 1,
+            iteration_start: 0,
+            iteration_sum: 0,
+            bool_stop: false,
+            calls: [0;6],
+            thread_info: None,
+        };
+        let total_work_ns = 1000u128;
+        let mut node = Node {
+            id: Some(ActorName::new("1",None)),
+            color: "grey",
+            pen_width: "1",
+            stats_computer: ActorStatsComputer::default(),
+            display_label: String::new(),
+            metric_text: String::new(),
+        };
+        node.compute_and_refresh(actor_status, total_work_ns);
+        assert_eq!(node.color, "grey");
+        assert_eq!(node.pen_width, "3");
+    }
 
     #[test]
     fn test_edge_compute_and_refresh() {
