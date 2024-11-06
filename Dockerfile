@@ -2,7 +2,7 @@
 
 
 # Start from the official Rust image to ensure we have the latest version of Rust and Cargo
-FROM rust:latest as builder
+FROM rust:1.82 as builder
 
 # Set the working directory inside the container
 WORKDIR /usr/src/myapp
