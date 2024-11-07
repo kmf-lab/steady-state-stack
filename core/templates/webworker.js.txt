@@ -1,10 +1,8 @@
 /*global Viz: false */
 
-const worker = this;
+this.importScripts('{{ script_source }}');
 
-worker.importScripts('{{ script_source }}');
-
-worker.onmessage = async message => {
+this.onmessage = async (message) => {
   const dotUrl = message.data;
   if (!dotUrl) return;
 
@@ -12,7 +10,7 @@ worker.onmessage = async message => {
     const response = await fetch(dotUrl);
     const dot = await response.text();
     const svg = Viz(dot, {format: 'svg', engine: 'dot'});
-    worker.postMessage(svg);
+    this.postMessage(svg);
   } catch (e) {
     console.log('dotUrl',dotUrl);
     console.error('Error:', e);
