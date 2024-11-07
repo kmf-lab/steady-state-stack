@@ -70,7 +70,6 @@ impl SystemdBuilder {
     /// * `service_executable_name` - The name of the service executable.
     /// * `service_user` - The user under which the service will run.
     ///
-
     pub fn new(service_executable_name: String, service_user: String) -> Self {
         SystemdBuilder {
             service_executable_folder: "/usr/local/bin".to_string(),
@@ -93,7 +92,6 @@ impl SystemdBuilder {
     /// * `name` - The name of the secret.
     /// * `absolute_file` - The absolute path to the secret file.
     ///
-
     pub fn with_secret(&self, name: String, absolute_file: String) -> Self {
         let mut result = self.clone();
         result.secrets.push(format!("{}:/{}", name, absolute_file));
@@ -106,7 +104,6 @@ impl SystemdBuilder {
     ///
     /// * `on_boot` - A boolean indicating whether the service should start on boot.
     ///
-
     pub fn with_on_boot(&self, on_boot: bool) -> Self {
         let mut result = self.clone();
         result.on_boot = on_boot;
@@ -119,7 +116,6 @@ impl SystemdBuilder {
     ///
     /// * `description` - The description of the service.
     ///
-
     pub fn with_description(&self, description: String) -> Self {
         let mut result = self.clone();
         result.description = description;
@@ -132,7 +128,6 @@ impl SystemdBuilder {
     ///
     /// * `after` - The service or target that this service should start after.
     ///
-
     pub fn with_after(&self, after: String) -> Self {
         let mut result = self.clone();
         result.after = after;
@@ -145,7 +140,6 @@ impl SystemdBuilder {
     ///
     /// * `wanted_by` - The target that wants this service.
     ///
-
     pub fn with_wanted_by(&self, wanted_by: String) -> Self {
         let mut result = self.clone();
         result.wanted_by = wanted_by;
@@ -158,7 +152,6 @@ impl SystemdBuilder {
     ///
     /// * `restart` - The restart policy for the service.
     ///
-
     pub fn with_restart(&self, restart: String) -> Self {
         let mut result = self.clone();
         result.restart = restart;
@@ -171,7 +164,6 @@ impl SystemdBuilder {
     ///
     /// * `service_user` - The user for the service.
     ///
-
     pub fn with_service_user(&self, service_user: String) -> Self {
         let mut result = self.clone();
         result.service_user = service_user;
@@ -184,7 +176,6 @@ impl SystemdBuilder {
     ///
     /// * `service_name` - The name of the service.
     ///
-
     pub fn with_service_name(&self, service_name: String) -> Self {
         let mut result = self.clone();
         result.service_name = service_name;
@@ -197,7 +188,6 @@ impl SystemdBuilder {
     ///
     /// * `service_file_default_folder` - The default folder for the service file.
     ///
-
     pub fn with_service_file_default_folder(&self, service_file_default_folder: String) -> Self {
         let mut result = self.clone();
         result.service_file_default_folder = service_file_default_folder;
@@ -210,7 +200,6 @@ impl SystemdBuilder {
     ///
     /// * `service_executable_folder` - The folder for the service executable.
     ///
-
     pub fn with_service_executable_folder(&self, service_executable_folder: String) -> Self {
         let mut result = self.clone();
         result.service_executable_folder = service_executable_folder;
@@ -219,7 +208,6 @@ impl SystemdBuilder {
 
     /// Builds and returns a `SystemdServiceManager`.
     ///
-
     pub fn build(self) -> SystemdServiceManager {
         SystemdServiceManager {
             service_file_name: format!("{}/{}.service", &self.service_file_default_folder, &self.service_name),
@@ -326,7 +314,6 @@ impl SystemdServiceManager {
     ///
     /// A `Result` indicating success or failure.
     ///
-
     pub fn install(&self, start_now: bool, start_string: String) -> Result<(), Box<dyn std::error::Error>> {
         self.check_platform_setup()?;
 
@@ -390,7 +377,6 @@ impl SystemdServiceManager {
     ///
     /// A `Result` indicating success or failure.
     ///
-
     pub fn uninstall(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.check_platform_setup()?;
 

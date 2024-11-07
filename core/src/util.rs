@@ -1,6 +1,6 @@
 
 use std::str::FromStr;
-use flexi_logger::{Logger, LogSpecBuilder};
+use flexi_logger::{Logger, LogSpecBuilder, WriteMode};
 
 use log::*;
 
@@ -60,6 +60,7 @@ fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>
 
         Logger::with(log_spec)
             .format(flexi_logger::colored_with_thread)
+            .write_mode(WriteMode::Async)
             .start()?;
 
         /////////////////////////////////////////////////////////////////////
@@ -95,7 +96,6 @@ fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>
 /// The `logger` module provides functionality for initializing the logging system used within
 /// the Steady State framework. It ensures that the logging system is initialized only once
 /// during the runtime of the application.
-
 pub mod logger {
     use lazy_static::lazy_static;
     use parking_lot::Once;
@@ -111,7 +111,6 @@ pub mod logger {
     /// that the logging system is initialized only once, even if this function is called multiple times.
     /// If the initialization fails, a warning message is printed.
     ///
-
     pub fn initialize() {
         INIT.call_once(|| {
             if let Err(e) = util::steady_logging_init("info") {

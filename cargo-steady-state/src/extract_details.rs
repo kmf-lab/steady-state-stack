@@ -184,7 +184,6 @@ fn extract_actor_driver_from_label(label: &str) -> Vec<ActorDriver> {
 
 /// will parse out strings like Event(xx:1||y:1) and Capacity(xx:1||y:1)
 /// where prefix is "Event" or "Capacity"
-
 fn parse_parts(part: &str, prefix: &str) -> Option<Vec<Vec<String>>> {
     part.strip_prefix(prefix)
         .and_then(|s| s.split_once('('))

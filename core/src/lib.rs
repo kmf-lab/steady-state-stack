@@ -241,10 +241,7 @@ pub fn steady_tx_bundle<T, const GIRTH: usize>(internal_array: [SteadyTx<T>; GIR
 ///
 /// # Returns
 /// - `SteadyTxBundle<T, GIRTH>`: A bundle of transmitters wrapped in an `Arc`.
-// pub fn steady_tx_lazy_bundle<T, const GIRTH: usize>(internal_array: [LazySteadyTx<T>; GIRTH]) -> LazySteadyTxBundle<T, GIRTH> {
-//     internal_array
-// }
-
+///
 /// Creates a bundle of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
 ///
 /// This function takes an array of receivers and wraps it in an `Arc` for shared ownership.
@@ -267,10 +264,7 @@ pub fn steady_rx_bundle<T, const GIRTH: usize>(internal_array: [SteadyRx<T>; GIR
 ///
 /// # Returns
 /// - `SteadyRxBundle<T, GIRTH>`: A bundle of receivers wrapped in an `Arc`.
-// pub fn steady_rx_lazy_bundle<T, const GIRTH: usize>(internal_array: [LazySteadyRx<T>; GIRTH]) -> LazySteadyRxBundle<T, GIRTH> {
-//     internal_array
-// }
-
+///
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
 pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -621,7 +615,7 @@ impl SteadyContext {
     ///
     /// # Returns
     /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
-    pub fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
+    pub fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
     {
         this.shared_try_peek()
     }
@@ -683,7 +677,7 @@ impl SteadyContext {
     /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
     ///
     /// # Asynchronous
-    pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
+    pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
     {
         this.shared_peek_async().await
     }

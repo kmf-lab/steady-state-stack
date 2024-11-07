@@ -16,6 +16,7 @@ use crate::steady_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, Stead
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
 
+#[allow(unused_imports)]
 #[cfg(feature = "core_display")]
 use libc::sched_getcpu;
 

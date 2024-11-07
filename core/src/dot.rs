@@ -7,6 +7,7 @@ use num_traits::Zero;
 use std::fmt::Write;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::PathBuf;
+use std::str::Split;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -17,7 +18,7 @@ use time::macros::format_description;
 use time::OffsetDateTime;
 
 use crate::actor_stats::ActorStatsComputer;
-use crate::ActorName;
+use crate::{ActorName};
 use crate::channel_stats::{ChannelStatsComputer};
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
@@ -120,7 +121,6 @@ pub(crate) fn build_metric(state: &MetricState, txt_metric: &mut BytesMut) {
     txt_metric.clear(); // Clear the buffer for reuse
 
     state.nodes.iter().filter(|n| {
-        // Only fully defined nodes, some may be in the process of being defined
         n.id.is_some()
     }).for_each(|node| {
         txt_metric.put_slice(node.metric_text.as_bytes());
@@ -128,14 +128,27 @@ pub(crate) fn build_metric(state: &MetricState, txt_metric: &mut BytesMut) {
 
     state.edges.iter()
         .filter(|e| e.from.is_some() && e.to.is_some())
-        // Filter on visibility labels
-        // TODO: new feature must also drop nodes if no edges are visible
-        // let show = e.ctl_labels.iter().any(|f| config::is_visible(f));
-        // let hide = e.ctl_labels.iter().any(|f| config::is_hidden(f));
-
         .for_each(|edge| {
             txt_metric.put_slice(edge.metric_text.as_bytes());
         });
+}
+
+#[derive(Clone)]
+pub(crate) struct Config {
+    pub(crate) rankdir: String
+    //pub(crate) labels  // labels and boolen on each Y/N  T/F ?
+    
+}
+
+impl Config {
+    pub(crate) fn apply_labels(&mut self, show: Option<Split<&str>>, hide: Option<Split<&str>>) -> bool {
+
+        //let labesl = b"hello,world";
+        
+
+
+        true  //return false if some show or hide labels are not found
+    }
 }
 
 /// Builds the DOT graph from the current state.
@@ -145,19 +158,17 @@ pub(crate) fn build_metric(state: &MetricState, txt_metric: &mut BytesMut) {
 /// * `state` - The current metric state.
 /// * `rankdir` - The rank direction for the DOT graph.
 /// * `dot_graph` - The buffer to store the DOT graph.
-pub(crate) fn build_dot(state: &MetricState, rankdir: &str, dot_graph: &mut BytesMut) {
-    // Only generate the graph if we have a fully valid graph.
-    // If we find any half edges then do not build and wait for later.
-    // if state.edges.iter()
-    //     .any(|e| (e.from == usize::MAX) ^ (e.to == usize::MAX)) {
-    //     return false;
-    // };
-
+pub(crate) fn build_dot(state: &MetricState, dot_graph: &mut BytesMut, config: &Config) {
     dot_graph.clear(); // Clear the buffer for reuse
 
     dot_graph.put_slice(b"digraph G {\nrankdir=");
-    dot_graph.put_slice(rankdir.as_bytes());
+    dot_graph.put_slice(config.rankdir.as_bytes());
     dot_graph.put_slice(b";\n");
+    //write a digraph comment
+    dot_graph.put_slice(b"/*\n"); // from config
+    dot_graph.put_slice(b"  This graph is a representation of the actors and channels in the system. let me tell you about your labels.\n");
+    dot_graph.put_slice(b"*/\n");
+    
     // Keep sidecars near with nodesep and ranksep spreads the rest out for label room.
     dot_graph.put_slice(b"graph [nodesep=.5, ranksep=2.5];\n");
     dot_graph.put_slice(b"node [margin=0.1];\n"); // Gap around text inside the circle
@@ -172,7 +183,6 @@ pub(crate) fn build_dot(state: &MetricState, rankdir: &str, dot_graph: &mut Byte
     }).for_each(|node| {
         dot_graph.put_slice(b"\"");
 
-
         if let Some(f) = node.id {
             dot_graph.put_slice(f.name.as_bytes());
             if let Some(s) = f.suffix {
@@ -181,7 +191,6 @@ pub(crate) fn build_dot(state: &MetricState, rankdir: &str, dot_graph: &mut Byte
         } else {
             dot_graph.put_slice(b"unknown");
         }
-
 
         dot_graph.put_slice(b"\" [label=\"");
         dot_graph.put_slice(node.display_label.as_bytes());
@@ -196,10 +205,18 @@ pub(crate) fn build_dot(state: &MetricState, rankdir: &str, dot_graph: &mut Byte
         .filter(|e| e.from.is_some() && e.to.is_some())
         // Filter on visibility labels
         // TODO: new feature must also drop nodes if no edges are visible
-        // let show = e.ctl_labels.iter().any(|f| config::is_visible(f));
-        // let hide = e.ctl_labels.iter().any(|f| config::is_hidden(f));
 
         .for_each(|edge| {
+
+            // we have a vec of labels
+            
+            //config.
+            
+            //let show = edge.ctl_labels.iter().any(|f| steady_config::is_visible(f));
+            //let hide = edge.ctl_labels.iter().any(|f| steady_config::is_hidden(f));
+
+
+
             dot_graph.put_slice(b"\"");
             if let Some(f) = edge.from {
                 dot_graph.put_slice(f.name.as_bytes());
@@ -780,7 +797,11 @@ mod tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        build_dot(&state, "LR", &mut dot_graph);
+        let config = Config {
+            rankdir: "LR".to_string()
+        };
+        
+        build_dot(&state, &mut dot_graph, &config);
         let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1];\n}\n";
 
         let vec = dot_graph.to_vec();

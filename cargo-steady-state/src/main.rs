@@ -220,9 +220,9 @@ fn build_driver_block(actor: &Actor) -> String {
             ActorDriver::EventDriven(t) => {
                 let mut each: Vec<String> = t.iter().map(|v| {
 
-                    let girth = if let Some(g) = actor.rx_channels.iter()
+                    let girth = actor.rx_channels.iter()
                             .find(|f| f[0].name == v[0])
-                            .map(|f| f.len()) { g } else { 1 };
+                            .map(|f| f.len()).unwrap_or(1);
 
                     //validate the name
                     if actor.rx_channels.iter().all(|f| f[0].name != v[0]) {
@@ -251,9 +251,9 @@ fn build_driver_block(actor: &Actor) -> String {
             ActorDriver::CapacityDriven(t) => {
                 let mut each: Vec<String> = t.iter().map(|v| {
 
-                    let girth = if let Some(g) = actor.tx_channels.iter()
+                    let girth = actor.tx_channels.iter()
                         .find(|f| f[0].name == v[0])
-                        .map(|f| f.len()) { g } else { 1 };
+                        .map(|f| f.len()).unwrap_or(1);
                     
                     //validate the name
                     if actor.tx_channels.iter().all(|f| f[0].name != v[0]) {

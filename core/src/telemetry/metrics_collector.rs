@@ -59,7 +59,7 @@ struct RawDiagramState {
     last_instant: Option<Instant> //for testing do not remove
 }
 
-/// Locks an optional `SteadyTx` and returns a future resolving to a `MutexGuard`.
+// Locks an optional `SteadyTx` and returns a future resolving to a `MutexGuard`.
 // #[allow(clippy::type_complexity)]
 // fn lock_if_some<'a, T: Send + 'a + Sync>(
 //     opt_lock: &'a Option<SteadyTx<T>>,

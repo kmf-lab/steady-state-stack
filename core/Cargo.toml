@@ -63,6 +63,9 @@ core_display = ["libc"]
 # no need to enable unless you want to see how supervisors work while testing
 restart_actors_when_debugging = []
 
+#ros2           = ["datachannel", "r2r"]
+zeromq-support = ["zmq"]
+webrtc         = ["dachannel"]
 
 [package.metadata.docs.rs]
 features = ["proactor_nuclei"]
@@ -70,15 +73,12 @@ no-default-features = true
 # Ensure 'telemetry_server_cdn' or 'telemetry_server_builtin' or 'prometheus_metrics' are not listed here since docs.rs does not support it
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
-
 [dependencies]
 nuclei           = { version = "0.4.4", optional = true } # foundational proactive runtime
 ringbuf          = "0.4.4"  # foundational bounded message passing
 async-ringbuf    = "0.3.1"  # foundational bounded message passing
 log              = "0.4.22"  # common logging traits
-                  # great logger but I would like to see a new crate using
-                  # nuclei with log to provide a more async friendly logger
-flexi_logger     = "0.29.0"  # default flexable logging implementation
+flexi_logger     = { version="0.29.6", features=["colors", "async"] }  # default flexable logging implementation
 futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
 hdrhistogram     = "7.5.4"  # for latency histograms
 bytes            = { version = "1.7.2", features = [] }
@@ -86,44 +86,40 @@ lazy_static      = "1.5.0"
 uuid             = { version = "1.10.0", features = ["v4"] }
 num-traits       = "0.2.19" # for num::Zero and other generic math traits
 itoa             = "1.0.11"
-time             = { version = "0.3.36", features = ["macros","formatting", "parsing"] }
+time             = { version = "0.3.36", features = ["macros", "formatting", "parsing"] }
 dirs             = "5.0.1"
 colored          = "2.1.0"
-
 structopt        = "0.3.26"  # CLI parse for type safe arguments
 structopt-derive = "0.4.18" # adds Args::from_args() to your structopt struct
-
 futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3.30"
-parking_lot      = "0.12.3"# TODO: review our lock usage and possible use of parking_lot
+parking_lot      = "0.12.3"
 tempfile         = "3.13.0"
-num_cpus = "1.16.0"
+num_cpus         = "1.16.0"
 
+# TODO: a procedural macro will be used to compile our IDL
+# TODO: ROS2 (DDS) feature
+# datachannel      = { version="0.13.1", optional=true}
+# r2r              = { version="0.9.2", optional=true}   # cargo install rosidl_generator_rs
+# cyclonedds
+# ros2-client
 
+#   Specialized Builder for remote actors ZQM, WebRTC, ROS2 etc.
+# TODO: ZeroMQ feature
+zmq = { version = "0.10", optional = true }
+#czmq =
+ # flatbuffers  or  MessagePack serde (simple case)
+# for WebRTC
+dachannel = { version = "0.2.1", optional = true }
+#webrtc = ""
+#webrtc-unreliable = ""
+# TODO: at some point Kafka and later MQTT would be great to add actors.
+# kafka= { version = "0.10.0", optional = true }
+# LibP2P ???
+# rust-libp2p
 [dependencies.libc]
 version = "0.2.161"
 optional = true
-
-
-# TODO: still in progess, this is for distributed instances across mutiple nodes
-#stun-rs   = "0.1.8"
-#rustdds   = "0.10.1"
-#async-trait = "0.1.82"
-#env_logger = "0.11.5"
-#waker-fn = "1.2.0"
-
-
-# use rustdds::serialization::CDRSerializerAdapter; # we must remain ROS2 compatible
-#Test servers:   "stun.l.google.com:19302" and "stun.ekiga.net:3478"
-#  https://ourcodeworld.com/articles/read/1536/list-of-free-functional-public-stun-servers-2021
-#
-# Provided actors will be able to communicate with each other across the internet
-# using the DDS protocol. To use an actor you should use the StunDDSBuilder where
-# you can set all the needed parameters. Then pass the build results into the
-# graph builder with the appropriate input and or output channels.
-# When this actor appers on the telemtry web clicking it should bring you to
-# the other end of the connection, ie the telemtry for the other node.
-
 
 
 #############################################
@@ -141,7 +137,7 @@ optional = true
 #kube-core    = "0.89.0"
 #kube-derive  = "0.89.0"
 #k8s-metrics  = "0.15.0"
-#serde        ="1.0.197" # for serialization and deserialization
+#serde        = "1.0.197" # for serialization and deserialization
 #serde_derive = "1.0.64" # for serialization and deserialization
 #serde_json   = "1.0.64" # for serialization and deserialization
 ###################################################
@@ -154,7 +150,6 @@ optional = true
 #dashmap          = "5.5.3"
 #signal-hook      = "0.3.17"
 
-
 # for future consideration
 # turbine = { git = "https://github.com/polyfractal/Turbine", branch = "main" }
 # disruptor        = "0.2.0"
@@ -166,7 +161,6 @@ tempfile         = "3.13.0"  # for testing
 regex            = "1.11.0" # future testing
 daachorse        = "1.0.0" # future testing
 xz2              = "0.1.7" # future testing
-
 
 [[example]]
 name = "simple_widgets"
@@ -187,6 +181,6 @@ path = "examples/high_durability/main.rs"
 [dev-dependencies]
 async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only,
 rand_distr       = "0.5.0-alpha.1" # for random number generation
-#testcontainers   = "0.15.0" # for integration testing, DO NOT upgrade to 0.16.0 since Tokio is not supported here
 rand             = "0.9.0-alpha.1" # for random number generation
 isahc            = "1.7.2"
+#testcontainers   = "0.15.0" # for integration testing, DO NOT upgrade to 0.16.0 since Tokio is not supported here

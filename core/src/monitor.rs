@@ -251,7 +251,7 @@ struct FinallyRollupProfileGuard<'a> {
     start: Instant,
 }
 
-impl<'a> Drop for FinallyRollupProfileGuard<'a> {
+impl Drop for FinallyRollupProfileGuard<'_> {
     fn drop(&mut self) {
         // this is ALWAYS run so we need to wait until our concurrent count is back down to zero
         if self.st.hot_profile_concurrent.fetch_sub(1, Ordering::SeqCst).is_one() {
@@ -874,7 +874,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Returns
     /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
-    pub fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
+    pub fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
     {
         this.shared_try_peek()
     }
@@ -982,7 +982,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
                 - (self.last_telemetry_send.elapsed().as_micros() as i64
                 * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
+            if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
@@ -1014,7 +1014,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
                 - (self.last_telemetry_send.elapsed().as_micros() as i64
                 * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
+            if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
@@ -1046,7 +1046,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
                 - (self.last_telemetry_send.elapsed().as_micros() as i64
                 * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
+            if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
@@ -1070,7 +1070,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
                 - (self.last_telemetry_send.elapsed().as_micros() as i64
                 * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
+            if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
@@ -1103,7 +1103,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
     ///
     /// # Asynchronous
-    pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&T>
+    pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
     {
         let _guard = self.start_profile(CALL_OTHER);
         if self.telemetry.is_dirty() {
@@ -1275,7 +1275,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
                                  - (self.last_telemetry_send.elapsed().as_micros() as i64
                                      * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
+            if remaining_micros <= 0 {
                         false //need a relay now so return
                     } else {
                         let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
@@ -1305,7 +1305,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
                 - (self.last_telemetry_send.elapsed().as_micros() as i64
                 * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
+            if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
@@ -1333,7 +1333,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
                 - (self.last_telemetry_send.elapsed().as_micros() as i64
                 * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            return if remaining_micros <= 0 {
+            if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));

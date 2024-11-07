@@ -477,7 +477,7 @@ impl<'a, I> CountingIterator<'a, I> {
     }
 }
 
-impl<'a, I> Iterator for CountingIterator<'a, I>
+impl<I> Iterator for CountingIterator<'_,I>
 where
     I: Iterator,
 {

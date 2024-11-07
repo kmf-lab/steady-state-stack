@@ -201,7 +201,7 @@ ENTRYPOINT ["/usr/local/bin/{project_name}"]
             let mut build_command = Command::new("docker");
 
             if self.use_buildx {
-                build_command.arg("buildx").arg("build").arg("--platform").arg(&format!("linux/{}", self.target_arch));
+                build_command.arg("buildx").arg("build").arg("--platform").arg(format!("linux/{}", self.target_arch));
             } else {
                 build_command.arg("build");
             }

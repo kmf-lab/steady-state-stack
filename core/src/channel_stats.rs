@@ -207,7 +207,6 @@ impl ChannelStatsComputer {
     ///
     /// * `filled` - The filled value.
     /// *
-
     pub(crate) fn accumulate_data_frame(&mut self, filled: u64, rate: u64) {
         self.history_filled.iter_mut().for_each(|f| {
             if let Some(ref mut h) = &mut f.histogram {

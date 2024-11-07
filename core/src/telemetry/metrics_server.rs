@@ -3,11 +3,12 @@ use bytes::BytesMut;
 #[allow(unused_imports)]
 use log::*;
 use crate::*;
-use crate::dot::{build_dot, DotGraphFrames, MetricState, FrameHistory, apply_node_def, build_metric};
+use crate::dot::{build_dot, DotGraphFrames, MetricState, FrameHistory, apply_node_def, build_metric, Config};
 use crate::telemetry::metrics_collector::*;
 use futures::io;
 use nuclei::*;
 use std::net::{TcpListener, TcpStream};
+use std::str::Split;
 
 // The name of the metrics server actor
 pub const NAME: &str = "metrics_server";
@@ -17,6 +18,9 @@ struct State {
     doc: Vec<u8>,
     metric: Vec<u8>,
 }
+
+
+
 
 /// Runs the metrics server, which listens for incoming telemetry data and serves it via HTTP.
 ///
@@ -41,8 +45,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
 
     let mut rxg = rx.lock().await;
     let mut metrics_state = MetricState::default();
-    let top_down = false;
-    let rankdir = if top_down { "TB" } else { "LR" };
+
     let mut frames = DotGraphFrames {
         active_metric: BytesMut::new(),
         last_graph: Instant::now(),
@@ -54,6 +57,13 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
         doc: Vec::new(),
         metric: Vec::new(),
     }));
+    let config = Arc::new(Mutex::new(Config {
+        rankdir: "LR".to_string()
+        
+        //TODO: context has our labels??? we must keep them here to flag our graph building.
+        //TODO: start with the use logic since it must be fast and work back.
+        
+    }));
 
     let mut history = FrameHistory::new(ctrl.frame_rate_ms);
 
@@ -63,6 +73,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
     //Only spin up server if addr is provided, this allows for unit testing where we cannot open that port.
     if let Some(addr) = addr {
         let state2 = state.clone();
+        let config2 = config.clone();
         //TODO: this hack spawn block will go to spawn_local after nuclei is fixed.
         // if I use spawn_local this blocks all other work on my thread but I am not sure why.
         spawn(async move {
@@ -81,7 +92,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
                           result = listener_new.accept().fuse() => {
                          match result {
                             Ok((stream, _peer_addr)) => {
-                                let _ = handle_request(stream,state2.clone()).await;
+                                let _ = handle_request(stream,state2.clone(),config2.clone()).await;
                             }
                             Err(e) => {
                                 error!("Error accepting connection: {}",e);
@@ -103,8 +114,8 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
                         , ctrl.frame_rate_ms
                         , ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped])
                         , &rxg
-                        , rankdir
-                        , state.clone()).await;
+                        , state.clone()
+                        , config.clone()).await;
         }
     }
     let _ = tcp_sender_tx.send(());
@@ -119,8 +130,8 @@ async fn process_msg(msg: DiagramData
                      , frame_rate_ms: u64
                      , flush_all: bool
                      , rxg: &MutexGuard<'_, Rx<DiagramData>>
-                     , rankdir: &str
                      , state: Arc<Mutex<State>>
+                     , config: Arc<Mutex<Config>>
 
 ) {
     match msg {
@@ -161,7 +172,11 @@ async fn process_msg(msg: DiagramData
             }
 
             if rxg.is_empty() || frames.last_graph.elapsed().as_millis() >= 2 * frame_rate_ms as u128 {
-                build_dot(metrics_state, rankdir, &mut frames.active_graph);
+
+                let config = config.lock().await;
+                build_dot(metrics_state, &mut frames.active_graph, &config);
+                drop(config);
+                
                 let graph_bytes = frames.active_graph.to_vec();
                 build_metric(metrics_state, &mut frames.active_metric);
                 let metric_bytes = frames.active_metric.to_vec();
@@ -267,7 +282,9 @@ const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = "";
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon-disabled.svg") } else { "" };
 
-async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>) -> io::Result<()> {
+async fn handle_request(mut stream: Handle<TcpStream>,
+                        state: Arc<Mutex<State>>,
+                        config: Arc<Mutex<Config>>) -> io::Result<()> {
     let mut buffer = vec![0; 1024];
     let _ = stream.read(&mut buffer).await?;
     let request = String::from_utf8_lossy(&buffer);
@@ -293,6 +310,39 @@ async fn handle_request(mut stream: Handle<TcpStream>, state: Arc<Mutex<State>>)
             stream.write_all(itoa::Buffer::new().format(locked_state.doc.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
             stream.write_all(&locked_state.doc).await?;
+            return Ok(());
+        } else if path.starts_with("/set?") {//example /set?rankdir=LR&show=label1,label2&hide=label3,label4            
+            let mut rankdir = "LR";
+            let mut show:Option<Split<&str>> = None;
+            let mut hide:Option<Split<&str>> = None;
+            let mut parts = path.split("?");
+            if let Some(_part) = parts.next() {
+                if let Some(part) = parts.next() {
+                    let parts = part.split("&");
+                    for part in parts {
+                        let mut parts = part.split("=");
+                        if let Some(key) = parts.next() {
+                            if let Some(value) = parts.next() {
+                                match key {
+                                    "rankdir" => rankdir = value,
+                                    "show" => show = Some(value.split(",")),
+                                    "hide" => hide = Some(value.split(",")),
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if rankdir.eq("LR") || rankdir.eq("TB") {
+                let mut c = config.lock().await;
+                c.rankdir = rankdir.to_string();
+                if c.apply_labels(show,hide) {
+                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").await?;
+                    return Ok(());
+                }
+            }
+            stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n").await?;
             return Ok(());
         } else if path.eq("/") || path.starts_with("/in") || path.starts_with("/de") { //index
                 // Write the HTTP header

@@ -9,7 +9,6 @@ use std::sync::Arc;
 ///
 /// * `$t:expr` - A list of futures to wait for.
 ///
-
 #[macro_export]
 macro_rules! wait_for_all {
     ($($t:expr),*) => {
@@ -32,7 +31,6 @@ macro_rules! wait_for_all {
 /// * `$first_future:expr` - The first future to wait for.
 /// * `$($rest_futures:expr),*` - The rest of the futures to wait for.
 ///
-
 #[macro_export]
 macro_rules! wait_for_all_or_proceed_upon {
     ($first_future:expr, $($rest_futures:expr),* $(,)?) => {

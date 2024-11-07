@@ -26,7 +26,7 @@ use askama::Template;
 /// - Define channels by their source and target node names
 /// - Use labels to specify channel capacity with `#` followed by the number and optionally the bundle flag with `*B`.
 ///   - Consume Pattern: Indicate how the actor consumes data with `>>` followed by the pattern (e.g., `TakeCopy`).
-///   Labels also contain a display name as name::DisplayName and the message struct type in angle brackets (e.g., `<Widget>`).
+///     Labels also contain a display name as name::DisplayName and the message struct type in angle brackets (e.g., `<Widget>`).
 ///
 /// Examples:
 /// ```
