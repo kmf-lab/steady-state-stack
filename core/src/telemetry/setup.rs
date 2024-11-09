@@ -12,7 +12,7 @@ use crate::{abstract_executor, ActorIdentity, Graph, GraphLivelinessState, MONIT
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{ChannelMetaData, find_my_index, LocalMonitor, RxTel, ThreadInfo};
-use crate::steady_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
+use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
 

@@ -362,7 +362,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
 mod tests {
     use std::sync::Arc;
     use crate::monitor::{ActorMetaData, RxTel};
-    use crate::steady_telemetry::{SteadyTelemetryRx};
+    use crate::monitor_telemetry::{SteadyTelemetryRx};
 
     // #[test]
     // fn test_steady_telemetry_actor_send_status_reset() {

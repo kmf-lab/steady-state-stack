@@ -476,11 +476,14 @@ async fn handle_request(mut stream: Handle<TcpStream>,
 
 #[cfg(test)]
 mod meteric_server_tests {
+    use std::time::Duration;
+    use futures_timer::Delay;
     use crate::GraphBuilder;
 
     #[async_std::test]
     async fn test_simple() {
-        let _graph = GraphBuilder::for_testing().build(());
+        let mut graph = GraphBuilder::for_testing().build(());
+        
     //     //1. build test graph, the input and output channels and our actor
     //     let mut graph = Graph::new_test(());
     //     let (tx_in, rx_in) = graph.channel_builder()
@@ -500,10 +503,12 @@ mod meteric_server_tests {
     //    // tx_in.testing_send(test_data, true).await;
     //
     //     tx_in.testing_close(Duration::from_millis(30)).await;
-    //
-    //     //3. run graph until the actor detects the input is closed
-    //     graph.start_as_data_driven(Duration::from_secs(240));
-    //
+  
+        graph.start(); 
+        Delay::new(Duration::from_millis(60)).await;
+        graph.request_stop();
+        graph.block_until_stopped(Duration::from_secs(15));
+    
      }
 
 }

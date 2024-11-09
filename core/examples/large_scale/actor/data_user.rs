@@ -88,13 +88,14 @@ pub async fn run(context: SteadyContext
 
 #[cfg(test)]
 mod user_tests {
+    use std::time::Duration;
+    use futures_timer::Delay;
     use steady_state::GraphBuilder;
 
     #[async_std::test]
     async fn test_user() {
-        let _graph = GraphBuilder::for_testing().build(());
-    //     //1. build test graph, the input and output channels and our actor
-    //     let mut graph = Graph::new_test(());
+        let mut graph = GraphBuilder::for_testing().build(());
+ 
     //
     //     // let (approved_widget_tx_out, approved_widget_rx_out) = graph.channel_builder()
     //     //     .with_capacity(BATCH_SIZE).build();
@@ -111,10 +112,12 @@ mod user_tests {
     //     // // //2. add test data to the input channels
     //     // let test_data: Vec<Packet> = (0..BATCH_SIZE).map(|i| Packet { original_count: 0, approved_count: i as u64 }).collect();
     //     // approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
-    //
-    //     // //3. run graph until the actor detects the input is closed
-    //     graph.start_as_data_driven(Duration::from_secs(240));
-    //
+        
+        graph.start();
+        Delay::new(Duration::from_millis(60)).await;
+        graph.request_stop();
+        graph.block_until_stopped(Duration::from_secs(15));
+        
     //     //4. assert expected results
     //     // TODO: not sure how to make this work.
     //     //  println!("last approval: {:?}", &state.last_approval);

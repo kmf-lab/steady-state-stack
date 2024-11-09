@@ -19,7 +19,7 @@ use crate::channel_builder::{Filled, Rate};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannelResponder};
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
-use crate::steady_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
+use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
 

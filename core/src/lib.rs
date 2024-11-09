@@ -29,7 +29,7 @@ mod graph_liveliness;
 mod loop_driver;
 mod abstract_executor;
 mod test_panic_capture;
-mod steady_telemetry;
+mod monitor_telemetry;
 /////////////////////////////////////////////////
 
     /// module for all monitor features
@@ -106,7 +106,7 @@ use futures_timer::Delay;
 use futures_util::future::{FusedFuture, select_all};
 use futures_util::lock::MutexGuard;
 use steady_rx::{RxDef};
-use steady_telemetry::SteadyTelemetry;
+use monitor_telemetry::SteadyTelemetry;
 use steady_tx::{TxDef};
 use crate::actor_builder::NodeTxRx;
 use crate::graph_testing::{SideChannelResponder};
@@ -1442,6 +1442,163 @@ mod lib_tests {
     use std::sync::atomic::{AtomicUsize};
     use crate::channel_builder::ChannelBuilder;
     use parking_lot::RwLock;
+    use futures::lock::Mutex;
+
+    #[test]
+    fn test_std_dev_valid_values() {
+        // Valid range: (0.0, 10.0)
+        assert_eq!(StdDev::new(0.1), Some(StdDev(0.1)));
+        assert_eq!(StdDev::new(1.0), Some(StdDev::one()));
+        assert_eq!(StdDev::new(1.5), Some(StdDev::one_and_a_half()));
+        assert_eq!(StdDev::new(2.0), Some(StdDev::two()));
+        assert_eq!(StdDev::new(2.5), Some(StdDev::two_and_a_half()));
+        assert_eq!(StdDev::new(3.0), Some(StdDev::three()));
+        assert_eq!(StdDev::new(4.0), Some(StdDev::four()));
+        assert_eq!(StdDev::new(5.0), Some(StdDev(5.0)));
+        assert_eq!(StdDev::new(9.9), Some(StdDev(9.9)));
+
+
+    }
+
+    #[test]
+    fn test_std_dev_invalid_values() {
+        // Invalid range: <= 0.0 or >= 10.0
+        assert_eq!(StdDev::new(0.0), None);
+        assert_eq!(StdDev::new(10.0), None);
+        assert_eq!(StdDev::new(10.1), None);
+        assert_eq!(StdDev::new(-1.0), None);
+    }
+
+    #[test]
+    fn test_std_dev_predefined_values() {
+        // Test predefined StdDev values
+        assert_eq!(StdDev::one(), StdDev(1.0));
+        assert_eq!(StdDev::one_and_a_half(), StdDev(1.5));
+        assert_eq!(StdDev::two(), StdDev(2.0));
+        assert_eq!(StdDev::two_and_a_half(), StdDev(2.5));
+        assert_eq!(StdDev::three(), StdDev(3.0));
+        assert_eq!(StdDev::four(), StdDev(4.0));
+    }
+
+    #[test]
+    fn test_std_dev_custom() {
+        // Valid custom value
+        assert_eq!(StdDev::custom(3.3), Some(StdDev(3.3)));
+        // Invalid custom value
+        assert_eq!(StdDev::custom(10.5), None);
+    }
+
+    #[test]
+    fn test_std_dev_value() {
+        // Test value retrieval
+        let std_dev = StdDev(2.5);
+        assert_eq!(std_dev.value(), 2.5);
+    }
+
+    #[test]
+    fn test_new_state() {
+        let state: SteadyState<i32> = new_state();
+        assert!(state.try_lock().is_some());
+        let guard = state.try_lock().unwrap();
+        assert!(guard.is_none());
+    }
+
+    #[async_std::test]
+    async fn test_steady_state_function() {
+        let state: SteadyState<i32> = new_state();
+        let guard = steady_state(&state, || 42).await;
+        assert_eq!(*guard, Some(42));
+    }
+
+    #[test]
+    fn test_init_logging() {
+        let result = init_logging("info");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_args_method() {
+        let context = test_steady_context();
+        let args = context.args::<()>();
+        assert!(args.is_some());
+    }
+
+    #[test]
+    fn test_identity_method() {
+        let context = test_steady_context();
+        let identity = context.identity();
+        assert_eq!(identity.id, 0);
+        assert_eq!(identity.label.name, "test_actor");
+    }
+
+    #[test]
+    fn test_request_graph_stop() {
+        let context = test_steady_context();
+        let result = context.request_graph_stop();
+        assert!(result);
+        let liveliness = context.runtime_state.read();
+        assert!(liveliness.is_in_state(&[GraphLivelinessState::StopRequested]));
+    }
+
+    #[test]
+    fn test_is_liveliness_in() {
+        let context = test_steady_context();
+        let result = context.is_liveliness_in(&[GraphLivelinessState::Running]);
+        assert!(result);
+    }
+
+    #[async_std::test]
+    async fn test_wait_shutdown() {
+        let context = test_steady_context();
+        // To ensure the test completes, we manually trigger the shutdown signal.
+        let mut shutdown_vec = context.oneshot_shutdown_vec.lock().await;
+        if let Some(sender) = shutdown_vec.pop() {
+            let _ = sender.send(());
+        }
+        let result = context.wait_shutdown().await;
+        assert!(result);
+    }
+
+    #[test]
+    fn test_sidechannel_responder() {
+        let context = test_steady_context();
+        let responder = context.sidechannel_responder();
+        assert!(responder.is_none());
+    }
+
+    #[async_std::test]
+    async fn test_send_async() {
+        let (tx, _rx) = create_test_channel::<i32>();
+        let mut context = test_steady_context();
+        let tx = tx.clone();
+        let guard = tx.try_lock();
+        if let Some(mut tx_guard) = guard {
+            let result = context
+                .send_async(&mut tx_guard, 42, SendSaturation::Warn)
+                .await;
+            assert!(result.is_ok());
+        }
+    }
+
+    #[async_std::test]
+    async fn test_wait_periodic() {
+        let context = test_steady_context();
+        // Ensure that the method returns by limiting the wait duration
+        let result = context.wait_periodic(Duration::from_millis(10)).await;
+        assert!(result);
+    }
+
+    #[test]
+    fn test_into_monitor_macro() {
+        // Prepare context and channels
+        let context = test_steady_context();
+        let (tx, rx) = create_test_channel::<i32>();
+        // Use the macro
+        let _monitor = into_monitor!(context, [rx.clone()], [tx.clone()]);
+        // Since we cannot directly test the internal state of the monitor,
+        // we ensure that the macro compiles and runs without errors
+        assert!(true);
+    }
 
     // Helper method to build tx and rx arguments
     fn build_tx_rx() -> (oneshot::Sender<()>, oneshot::Receiver<()>) {
@@ -1474,7 +1631,6 @@ mod lib_tests {
         }
     }
 
-    // Helper function to create a new Rx instance
     fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> Arc<Mutex<Rx<T>>> {
         let (tx, rx) = create_test_channel();
 
@@ -1485,6 +1641,18 @@ mod lib_tests {
             }
         }
         rx.clone()
+    }
+
+    fn create_tx<T: std::fmt::Debug>(data: Vec<T>) -> Arc<Mutex<Tx<T>>> {
+        let (tx, _rx) = create_test_channel();
+
+        let send = tx.clone();
+        if let Some(ref mut send_guard) = send.try_lock() {
+            for item in data {
+                let _ = send_guard.shared_try_send(item);
+            }
+        }
+        tx.clone()
     }
 
     fn create_test_channel<T: std::fmt::Debug>() -> (LazySteadyTx<T>, LazySteadyRx<T>) {
@@ -1554,6 +1722,15 @@ mod lib_tests {
         assert!(fut.await);
     }
 
+    // Test wait_avail_units_bundle method
+    #[async_std::test]
+    async fn test_wait_closed_or_avail_units_bundle() {
+        let context = test_steady_context();
+        let mut rx_bundle = RxBundle::<i32>::new();
+        let fut = context.wait_closed_or_avail_units_bundle(&mut rx_bundle, 1, 1);
+        assert!(fut.await);
+    }
+
     // Test wait_vacant_units_bundle method
     #[async_std::test]
     async fn test_wait_vacant_units_bundle() {
@@ -1563,6 +1740,70 @@ mod lib_tests {
         assert!(fut.await);
 
     }
+
+    #[async_std::test]
+    async fn test_wait_shutdown_or_avail_units() {
+        let context = test_steady_context();
+        let rx = create_rx::<i32>(vec![1, 2, 3]);
+        let guard = rx.try_lock();
+        if let Some(mut rx) = guard {
+            let result = context.wait_shutdown_or_avail_units(&mut rx, 2).await;
+            assert!(result); // Ensure it waits for units or shutdown
+        }
+    }
+
+    #[async_std::test]
+    async fn test_wait_closed_or_avail_units() {
+        let context = test_steady_context();
+        let rx = create_rx::<i32>(vec![1, 2, 3]);
+        let guard = rx.try_lock();
+        if let Some(mut rx) = guard {
+            let result = context.wait_closed_or_avail_units(&mut rx, 2).await;
+            assert!(result); // Ensure it waits for availability or closure
+        }
+    }
+
+    #[async_std::test]
+    async fn test_wait_avail_units() {
+        let context = test_steady_context();
+        let rx = create_rx::<i32>(vec![]);
+        let guard = rx.try_lock();
+        if let Some(mut rx) = guard {
+            let result = context.wait_avail_units(&mut rx, 1).await;
+            assert!(!result); // Ensure availability waiting works
+        }
+    }
+
+    #[async_std::test]
+    async fn test_wait_shutdown_or_vacant_units() {
+        let context = test_steady_context();
+        let tx = create_tx::<i32>(vec![]);
+        let guard = tx.try_lock();
+        if let Some(mut tx) = guard {
+            let result = context.wait_shutdown_or_vacant_units(&mut tx, 2).await;
+            assert!(result); // Should succeed if vacant units or shutdown occur
+        }
+    }
+
+    #[async_std::test]
+    async fn test_wait_vacant_units() {
+        let context = test_steady_context();
+        let tx = create_tx::<i32>(vec![]);
+        let guard = tx.try_lock();
+        if let Some(mut tx) = guard {
+            let result = context.wait_vacant_units(&mut tx, 1).await;
+            assert!(result); // Ensure it waits for vacancy correctly
+        }
+    }
+
+    #[async_std::test]
+    async fn test_wait_future_void() {
+        let context = test_steady_context();
+        let fut = async { /* Simulate a task */ };
+        let result = context.wait_future_void(Box::pin(fut.fuse())).await;
+        assert!(result); // Ensure it handles shutdown while waiting for a future
+    }
+
 
     // Test is_empty method
     #[test]
@@ -1720,6 +1961,7 @@ mod lib_tests {
 
 #[cfg(test)]
 mod enum_tests {
+    use crate::channel_builder::{ChannelBuilder, LazyChannel};
     use super::*;
 
     #[test]
@@ -1854,4 +2096,163 @@ mod enum_tests {
             _ => assert!(false, "Expected PercentileBelow"),
         }
     }
+
+    #[test]
+    fn test_lazy_steady_tx_bundle_clone() {
+        // Define a simple data type for the test
+        type TestType = i32;
+
+        let cb = ChannelBuilder::new(
+                    Arc::new(Default::default()),
+                    Arc::new(Default::default()),
+                    Instant::now(),
+                    40,
+        );
+
+        let lazy1 = Arc::new(LazyChannel::new(&cb));
+        let lazy2 = Arc::new(LazyChannel::new(&cb));
+        let lazy3 = Arc::new(LazyChannel::new(&cb));
+
+        // Create a LazySteadyTxBundle with a fixed size of 3
+        let tx1 = LazySteadyTx::<TestType>::new(lazy1.clone());
+        let tx2 = LazySteadyTx::<TestType>::new(lazy2.clone());
+        let tx3 = LazySteadyTx::<TestType>::new(lazy3.clone());
+        let lazy_bundle: LazySteadyTxBundle<TestType, 3> = [tx1, tx2, tx3];
+
+        // Clone the LazySteadyTxBundle
+        let cloned_bundle = lazy_bundle.clone();
+
+        assert_eq!(
+            Arc::as_ptr(&cloned_bundle[0]),
+            Arc::as_ptr(&lazy_bundle[0].clone())
+        );
+        assert_eq!(
+            Arc::as_ptr(&cloned_bundle[1]),
+            Arc::as_ptr(&lazy_bundle[1].clone())
+        );
+        assert_eq!(
+            Arc::as_ptr(&cloned_bundle[2]),
+            Arc::as_ptr(&lazy_bundle[2].clone())
+        );
+    }
+
+    #[test]
+    fn test_lazy_steady_rx_bundle_clone() {
+        // Define a simple data type for the test
+        type TestType = i32;
+
+        let cb = ChannelBuilder::new(
+            Arc::new(Default::default()),
+            Arc::new(Default::default()),
+            Instant::now(),
+            40,
+        );
+
+        let lazy1 = Arc::new(LazyChannel::new(&cb));
+        let lazy2 = Arc::new(LazyChannel::new(&cb));
+        let lazy3 = Arc::new(LazyChannel::new(&cb));
+
+        // Create a LazySteadyTxBundle with a fixed size of 3
+        let rx1 = LazySteadyRx::<TestType>::new(lazy1.clone());
+        let rx2 = LazySteadyRx::<TestType>::new(lazy2.clone());
+        let rx3 = LazySteadyRx::<TestType>::new(lazy3.clone());
+        let lazy_bundle: LazySteadyRxBundle<TestType, 3> = [rx1, rx2, rx3];
+
+        // Clone the LazySteadyTxBundle
+        let cloned_bundle = lazy_bundle.clone();
+
+        assert_eq!(
+            Arc::as_ptr(&cloned_bundle[0]),
+            Arc::as_ptr(&lazy_bundle[0].clone())
+        );
+        assert_eq!(
+            Arc::as_ptr(&cloned_bundle[1]),
+            Arc::as_ptr(&lazy_bundle[1].clone())
+        );
+        assert_eq!(
+            Arc::as_ptr(&cloned_bundle[2]),
+            Arc::as_ptr(&lazy_bundle[2].clone())
+        );
+    }
+
+
+    #[test]
+    fn test_alert_color_equality() {
+        assert_eq!(AlertColor::Yellow, AlertColor::Yellow);
+        assert_eq!(AlertColor::Orange, AlertColor::Orange);
+        assert_eq!(AlertColor::Red, AlertColor::Red);
+    }
+
+    #[test]
+    fn test_alert_color_inequality() {
+        assert_ne!(AlertColor::Yellow, AlertColor::Orange);
+        assert_ne!(AlertColor::Orange, AlertColor::Red);
+        assert_ne!(AlertColor::Red, AlertColor::Yellow);
+    }
+
+    #[test]
+    fn test_trigger_avg_above() {
+        let trigger = Trigger::AvgAbove(Duration::from_secs(1));
+        if let Trigger::AvgAbove(val) = trigger {
+            assert_eq!(val, Duration::from_secs(1));
+        } else {
+            panic!("Expected Trigger::AvgAbove");
+        }
+    }
+
+    #[test]
+    fn test_trigger_avg_below() {
+        let trigger = Trigger::AvgBelow(Duration::from_secs(2));
+        if let Trigger::AvgBelow(val) = trigger {
+            assert_eq!(val, Duration::from_secs(2));
+        } else {
+            panic!("Expected Trigger::AvgBelow");
+        }
+    }
+
+    #[test]
+    fn test_trigger_std_devs_above() {
+        let trigger = Trigger::StdDevsAbove(StdDev::two(), Duration::from_secs(3));
+        if let Trigger::StdDevsAbove(std_dev, val) = trigger {
+            assert_eq!(std_dev, StdDev::two());
+            assert_eq!(val, Duration::from_secs(3));
+        } else {
+            panic!("Expected Trigger::StdDevsAbove");
+        }
+    }
+
+    #[test]
+    fn test_trigger_std_devs_below() {
+        let trigger = Trigger::StdDevsBelow(StdDev::one(), Duration::from_secs(4));
+        if let Trigger::StdDevsBelow(std_dev, val) = trigger {
+            assert_eq!(std_dev, StdDev::one());
+            assert_eq!(val, Duration::from_secs(4));
+        } else {
+            panic!("Expected Trigger::StdDevsBelow");
+        }
+    }
+
+    #[test]
+    fn test_trigger_percentile_above() {
+        let trigger = Trigger::PercentileAbove(Percentile(90.0), Duration::from_secs(5));
+        if let Trigger::PercentileAbove(percentile, val) = trigger {
+            assert_eq!(percentile, Percentile(90.0));
+            assert_eq!(val, Duration::from_secs(5));
+        } else {
+            panic!("Expected Trigger::PercentileAbove");
+        }
+    }
+
+    #[test]
+    fn test_trigger_percentile_below() {
+        let trigger = Trigger::PercentileBelow(Percentile(10.0), Duration::from_secs(6));
+        if let Trigger::PercentileBelow(percentile, val) = trigger {
+            assert_eq!(percentile, Percentile(10.0));
+            assert_eq!(val, Duration::from_secs(6));
+        } else {
+            panic!("Expected Trigger::PercentileBelow");
+        }
+    }
+
+
 }

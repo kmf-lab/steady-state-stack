@@ -137,11 +137,6 @@ mod consumer_tests {
 
         graph.block_until_stopped(Duration::from_secs(240));
 
-        // assert expected results
-        // TODO: not sure how to make this work.
-        //  println!("last approval: {:?}", &state.last_approval);
-        //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
-
 
     }
 

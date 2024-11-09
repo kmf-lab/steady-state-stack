@@ -128,7 +128,6 @@ mod graph_tests {
     async fn test_graph_one() {
     
              let _graph = GraphBuilder::for_testing().build(());
-    //         let mut graph = build_graph(graph);
     //         graph.start();
     //
     //         let mut guard = graph.sidechannel_director().await;

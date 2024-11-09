@@ -675,7 +675,7 @@ pub struct LazySteadyTx<T> {
 }
 
 impl <T> LazySteadyTx<T> {
-    fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
+    pub(crate) fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
         LazySteadyTx {
             lazy_channel,
         }
@@ -753,7 +753,7 @@ pub struct LazySteadyRx<T> {
     lazy_channel: Arc<LazyChannel<T>>,
 }
 impl <T> LazySteadyRx<T> {
-    fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
+    pub(crate) fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
         LazySteadyRx {
             lazy_channel,
         }
@@ -790,7 +790,7 @@ pub(crate) struct LazyChannel<T> {
 }
 
 impl <T> LazyChannel<T> {
-    fn new(builder: &ChannelBuilder) -> Self {
+    pub(crate) fn new(builder: &ChannelBuilder) -> Self {
         LazyChannel {
             builder: builder.clone(),
             channel: Mutex::new(None),
