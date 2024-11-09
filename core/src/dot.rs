@@ -166,9 +166,9 @@ pub(crate) fn build_dot(state: &MetricState, dot_graph: &mut BytesMut, config: &
     dot_graph.put_slice(config.rankdir.as_bytes());
     dot_graph.put_slice(b";\n");
     //write a digraph comment
-    dot_graph.put_slice(b"/*\n"); // from config
-    dot_graph.put_slice(b"  This graph is a representation of the actors and channels in the system. let me tell you about your labels.\n");
-    dot_graph.put_slice(b"*/\n");
+    // dot_graph.put_slice(b"/*\n"); // from config, will break test_build_dot test
+    // dot_graph.put_slice(b"  This graph is a representation of the actors and channels in the system. let me tell you about your labels.\n");
+    // dot_graph.put_slice(b"*/\n");
     
     // Keep sidecars near with nodesep and ranksep spreads the rest out for label room.
     dot_graph.put_slice(b"graph [nodesep=.5, ranksep=2.5];\n");
@@ -806,13 +806,16 @@ mod tests {
         let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1];\n}\n";
 
         let vec = dot_graph.to_vec();
-        match String::from_utf8(vec) {
+        //println!("vec: {:?}", vec.clone());
+
+        match String::from_utf8(vec.clone()) {
             Ok(mut string) => {
                 string = string.replace("\n", "\\n");
-                println!("String with literal \\n: {}", string);
+                println!("String with literal \n{}", string);
             },
             Err(e) => println!("Error: {}", e),
         }
+        
         assert_eq!(dot_graph.to_vec(), expected, "dot_graph: {:?}\n vs {:?}", dot_graph, expected);
     }
 
