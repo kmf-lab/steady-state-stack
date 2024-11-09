@@ -284,7 +284,7 @@ const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SER
 
 async fn handle_request(mut stream: Handle<TcpStream>,
                         state: Arc<Mutex<State>>,
-                        config: Arc<Mutex<Config>>) -> io::Result<()> {
+                        _config: Arc<Mutex<Config>>) -> io::Result<()> {
     let mut buffer = vec![0; 1024];
     let _ = stream.read(&mut buffer).await?;
     let request = String::from_utf8_lossy(&buffer);
@@ -338,7 +338,7 @@ async fn handle_request(mut stream: Handle<TcpStream>,
                 }
             }
             if rankdir.eq("LR") || rankdir.eq("TB") {
-                let mut c = config.lock().await;
+                let mut c = _config.lock().await;
                 c.rankdir = rankdir.to_string();
                 // TODO: Labels feature
                 // if c.apply_labels(show,hide) {

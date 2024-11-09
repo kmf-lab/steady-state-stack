@@ -49,14 +49,14 @@ fi
 # cargo tree -i prost
 # cargo tree -i prost-build
 
-RUST_TEST_THREADS=48 cargo test --workspace --tests --examples -j 48 -- --nocapture
+RUST_BACKTRACE=1 RUST_TEST_THREADS=48 cargo test --workspace --tests --examples -j 48 -- --nocapture
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
     exit $exit_code
 fi
 
-cargo build --workspace --tests --examples -j 48
+RUST_BACKTRACE=1 cargo build --workspace --tests --examples -j 48
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
@@ -64,7 +64,7 @@ if [ $exit_code -ne 0 ]; then
 fi
 
 # micro release without builtin viz
-cargo build --release --workspace --examples --features "proactor_nuclei telemetry_server_cdn" -j 12
+RUST_BACKTRACE=1 cargo build --release --workspace --examples --features "proactor_nuclei telemetry_server_cdn" -j 12
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"

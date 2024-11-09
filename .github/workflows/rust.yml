@@ -19,6 +19,6 @@ jobs:
     - name: Clean
       run: cargo clean
     - name: Build
-      run: cargo build --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
+      run: RUST_BACKTRACE=1 cargo build --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
     - name: Run tests
-      run: cargo test --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
+      run: RUST_BACKTRACE=1 cargo test --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"

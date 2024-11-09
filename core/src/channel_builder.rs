@@ -1378,36 +1378,6 @@ pub(crate) mod test_builder {
         assert_eq!(new_builder.percentiles_latency.len(), 1);
     }
 
-    // #[test]
-    // fn test_channel_builder_with_rate_trigger() {
-    //     let builder = create_test_channel_builder();
-    //     let trigger = Trigger::default();
-    //     let color = AlertColor::default();
-    //     let new_builder = builder.with_rate_trigger(trigger, color);
-    //
-    //     assert_eq!(new_builder.trigger_rate.len(), 1);
-    // }
-    //
-    // #[test]
-    // fn test_channel_builder_with_filled_trigger() {
-    //     let builder = create_test_channel_builder();
-    //     let trigger = Trigger::default();
-    //     let color = AlertColor::default();
-    //     let new_builder = builder.with_filled_trigger(trigger, color);
-    //
-    //     assert_eq!(new_builder.trigger_filled.len(), 1);
-    // }
-    //
-    // #[test]
-    // fn test_channel_builder_with_latency_trigger() {
-    //     let builder = create_test_channel_builder();
-    //     let trigger = Trigger::default();
-    //     let color = AlertColor::default();
-    //     let new_builder = builder.with_latency_trigger(trigger, color);
-    //
-    //     assert_eq!(new_builder.trigger_latency.len(), 1);
-    // }
-
     #[test]
     pub(crate) fn test_channel_builder_to_meta_data() {
         let builder = create_test_channel_builder();

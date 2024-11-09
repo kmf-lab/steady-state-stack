@@ -813,7 +813,7 @@ mod tests {
             },
             Err(e) => println!("Error: {}", e),
         }
-        assert_eq!(dot_graph.to_vec(), expected);
+        assert_eq!(dot_graph.to_vec(), expected, "dot_graph: {:?}\n vs {:?}", dot_graph, expected);
     }
 
     #[test]
