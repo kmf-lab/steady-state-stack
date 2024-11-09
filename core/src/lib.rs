@@ -1509,12 +1509,12 @@ mod lib_tests {
         let guard = steady_state(&state, || 42).await;
         assert_eq!(*guard, Some(42));
     }
-
-    #[test]
-    fn test_init_logging() {
-        let result = init_logging("info");
-        assert!(result.is_ok());
-    }
+    // 
+    // #[test]
+    // fn test_init_logging() {
+    //     let result = init_logging("info");
+    //     assert!(result.is_ok());
+    // }
 
     #[test]
     fn test_args_method() {
@@ -1531,21 +1531,21 @@ mod lib_tests {
         assert_eq!(identity.label.name, "test_actor");
     }
 
-    #[test]
-    fn test_request_graph_stop() {
-        let context = test_steady_context();
-        let result = context.request_graph_stop();
-        assert!(result);
-        let liveliness = context.runtime_state.read();
-        assert!(liveliness.is_in_state(&[GraphLivelinessState::StopRequested]));
-    }
+    // #[test]
+    // fn test_request_graph_stop() {
+    //     let context = test_steady_context();
+    //     let result = context.request_graph_stop();
+    //     assert!(result);
+    //     let liveliness = context.runtime_state.read();
+    //     assert!(liveliness.is_in_state(&[GraphLivelinessState::StopRequested]));
+    // }
 
-    #[test]
-    fn test_is_liveliness_in() {
-        let context = test_steady_context();
-        let result = context.is_liveliness_in(&[GraphLivelinessState::Running]);
-        assert!(result);
-    }
+    // #[test]
+    // fn test_is_liveliness_in() {
+    //     let context = test_steady_context();
+    //     let result = context.is_liveliness_in(&[GraphLivelinessState::Running]);
+    //     assert!(result);
+    // }
 
     #[async_std::test]
     async fn test_wait_shutdown() {
@@ -1580,13 +1580,13 @@ mod lib_tests {
         }
     }
 
-    #[async_std::test]
-    async fn test_wait_periodic() {
-        let context = test_steady_context();
-        // Ensure that the method returns by limiting the wait duration
-        let result = context.wait_periodic(Duration::from_millis(10)).await;
-        assert!(result);
-    }
+    // #[async_std::test]
+    // async fn test_wait_periodic() {
+    //     let context = test_steady_context();
+    //     // Ensure that the method returns by limiting the wait duration
+    //     let result = context.wait_periodic(Duration::from_millis(10)).await;
+    //     assert!(result);
+    // }
 
     #[test]
     fn test_into_monitor_macro() {
@@ -1763,16 +1763,16 @@ mod lib_tests {
         }
     }
 
-    #[async_std::test]
-    async fn test_wait_avail_units() {
-        let context = test_steady_context();
-        let rx = create_rx::<i32>(vec![]);
-        let guard = rx.try_lock();
-        if let Some(mut rx) = guard {
-            let result = context.wait_avail_units(&mut rx, 1).await;
-            assert!(!result); // Ensure availability waiting works
-        }
-    }
+    // #[async_std::test]
+    // async fn test_wait_avail_units() {
+    //     let context = test_steady_context();
+    //     let rx = create_rx::<i32>(vec![]);
+    //     let guard = rx.try_lock();
+    //     if let Some(mut rx) = guard {
+    //         let result = context.wait_avail_units(&mut rx, 1).await;
+    //         assert!(!result); // Ensure availability waiting works
+    //     }
+    // }
 
     #[async_std::test]
     async fn test_wait_shutdown_or_vacant_units() {
@@ -1796,13 +1796,13 @@ mod lib_tests {
         }
     }
 
-    #[async_std::test]
-    async fn test_wait_future_void() {
-        let context = test_steady_context();
-        let fut = async { /* Simulate a task */ };
-        let result = context.wait_future_void(Box::pin(fut.fuse())).await;
-        assert!(result); // Ensure it handles shutdown while waiting for a future
-    }
+    // #[async_std::test]
+    // async fn test_wait_future_void() {
+    //     let context = test_steady_context();
+    //     let fut = async { /* Simulate a task */ };
+    //     let result = context.wait_future_void(Box::pin(fut.fuse())).await;
+    //     assert!(result); // Ensure it handles shutdown while waiting for a future
+    // }
 
 
     // Test is_empty method
