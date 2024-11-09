@@ -64,8 +64,8 @@ core_display = ["libc"]
 restart_actors_when_debugging = []
 
 #ros2           = ["datachannel", "r2r"]
-zeromq-support = ["zmq"]
-webrtc         = ["dachannel"]
+#zeromq-support = ["zmq"]
+#webrtc         = ["dachannel"]
 
 [package.metadata.docs.rs]
 features = ["proactor_nuclei"]
@@ -75,15 +75,15 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
 nuclei           = { version = "0.4.4", optional = true } # foundational proactive runtime
-ringbuf          = "0.4.4"  # foundational bounded message passing
+ringbuf          = "0.4.7"  # foundational bounded message passing
 async-ringbuf    = "0.3.1"  # foundational bounded message passing
 log              = "0.4.22"  # common logging traits
 flexi_logger     = { version="0.29.6", features=["colors", "async"] }  # default flexable logging implementation
 futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
 hdrhistogram     = "7.5.4"  # for latency histograms
-bytes            = { version = "1.7.2", features = [] }
+bytes            = { version = "1.8.0", features = [] }
 lazy_static      = "1.5.0"
-uuid             = { version = "1.10.0", features = ["v4"] }
+uuid             = { version = "1.11.0", features = ["v4"] }
 num-traits       = "0.2.19" # for num::Zero and other generic math traits
 itoa             = "1.0.11"
 time             = { version = "0.3.36", features = ["macros", "formatting", "parsing"] }
@@ -91,11 +91,35 @@ dirs             = "5.0.1"
 colored          = "2.1.0"
 structopt        = "0.3.26"  # CLI parse for type safe arguments
 structopt-derive = "0.4.18" # adds Args::from_args() to your structopt struct
-futures          = "0.3.30"  # for Select! Barrier etc and lock::Mutex
-futures-util     = "0.3.30"
+futures          = "0.3.31"  # for Select! Barrier etc and lock::Mutex
+futures-util     = "0.3.31"
 parking_lot      = "0.12.3"
-tempfile         = "3.13.0"
+tempfile         = "3.14.0"
 num_cpus         = "1.16.0"
+
+# Release Plan
+# 0.1.0 - one year aniversary (ETA 12/04/24) relase single machine
+#         All warning cleaned up
+#         60% coverage?
+# 0.2.0 - distributed features ready for use (ETA 06/04/25)
+#         Aeron, ZeroMQ, LibP2P
+#         History Replay
+#         Label Filtering
+# 1.0.0 - two year aniversary (ETA 12/04/25)
+#         Optimized thread scheduling (8,000K actors+)
+#         IOUring
+
+#  Roadmap for distributed actors (core of the 2.0 release)
+# 1. Core: Aeron
+# 2. Core: ZeroMQ
+# 3. Core: LibP2P
+# 4. Bridge: Kafka
+# 5. Bridge: MQTT
+# 6. WebRTC
+# 7. ROS2  (perhaps needs to be much earlier and deeper integration)
+
+
+
 
 # TODO: a procedural macro will be used to compile our IDL
 # TODO: ROS2 (DDS) feature
@@ -104,19 +128,23 @@ num_cpus         = "1.16.0"
 # cyclonedds
 # ros2-client
 
+# TODO: Aeron a the primary transport???
+#aeron = { version = "0.2.0", optional = true }
+
 #   Specialized Builder for remote actors ZQM, WebRTC, ROS2 etc.
 # TODO: ZeroMQ feature
-zmq = { version = "0.10", optional = true }
+#zmq = { version = "0.10", optional = true }
 #czmq =
  # flatbuffers  or  MessagePack serde (simple case)
 # for WebRTC
-dachannel = { version = "0.2.1", optional = true }
+#dachannel = { version = "0.2.1", optional = true }
 #webrtc = ""
 #webrtc-unreliable = ""
 # TODO: at some point Kafka and later MQTT would be great to add actors.
 # kafka= { version = "0.10.0", optional = true }
 # LibP2P ???
 # rust-libp2p
+
 [dependencies.libc]
 version = "0.2.161"
 optional = true
@@ -158,7 +186,7 @@ optional = true
 isahc            = "1.7.2"
 askama           = "0.12.1"
 tempfile         = "3.13.0"  # for testing
-regex            = "1.11.0" # future testing
+regex            = "1.11.1" # future testing
 daachorse        = "1.0.0" # future testing
 xz2              = "0.1.7" # future testing
 

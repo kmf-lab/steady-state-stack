@@ -8,7 +8,7 @@ use crate::telemetry::metrics_collector::*;
 use futures::io;
 use nuclei::*;
 use std::net::{TcpListener, TcpStream};
-use std::str::Split;
+
 
 // The name of the metrics server actor
 pub const NAME: &str = "metrics_server";
@@ -313,8 +313,8 @@ async fn handle_request(mut stream: Handle<TcpStream>,
             return Ok(());
         } else if path.starts_with("/set?") {//example /set?rankdir=LR&show=label1,label2&hide=label3,label4            
             let mut rankdir = "LR";
-            let mut show:Option<Split<&str>> = None;
-            let mut hide:Option<Split<&str>> = None;
+            //let mut show:Option<Split<&str>> = None; // TODO: Labels feature
+            //let mut hide:Option<Split<&str>> = None; // TODO: Labels feature
             let mut parts = path.split("?");
             if let Some(_part) = parts.next() {
                 if let Some(part) = parts.next() {
@@ -323,12 +323,15 @@ async fn handle_request(mut stream: Handle<TcpStream>,
                         let mut parts = part.split("=");
                         if let Some(key) = parts.next() {
                             if let Some(value) = parts.next() {
-                                match key {
-                                    "rankdir" => rankdir = value,
-                                    "show" => show = Some(value.split(",")),
-                                    "hide" => hide = Some(value.split(",")),
-                                    _ => {}
+                                if "rankdir"==key {
+                                    rankdir = value;
                                 }
+                                // match key {
+                                //     "rankdir" => rankdir = value,
+                                //     //"show" => show = Some(value.split(",")),// TODO: Labels feature
+                                //     //"hide" => hide = Some(value.split(",")),
+                                //     _ => {}
+                                // }
                             }
                         }
                     }
@@ -337,10 +340,11 @@ async fn handle_request(mut stream: Handle<TcpStream>,
             if rankdir.eq("LR") || rankdir.eq("TB") {
                 let mut c = config.lock().await;
                 c.rankdir = rankdir.to_string();
-                if c.apply_labels(show,hide) {
-                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").await?;
-                    return Ok(());
-                }
+                // TODO: Labels feature
+                // if c.apply_labels(show,hide) {
+                //     stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").await?;
+                //     return Ok(());
+                // }
             }
             stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n").await?;
             return Ok(());

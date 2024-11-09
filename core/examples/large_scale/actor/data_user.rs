@@ -32,7 +32,6 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>) -> Resu
             //    panic!("go");
             // }
         }
-        monitor.relay_stats_smartly();
     }
     Ok(())
 }

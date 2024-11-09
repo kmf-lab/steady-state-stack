@@ -22,8 +22,8 @@ pub async fn run(context: SteadyContext
 
 
 async fn internal_behavior(context: SteadyContext
-                                , feedback: SteadyRx<ChangeRequest>
-                                , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
+                            , feedback: SteadyRx<ChangeRequest>
+                            , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
 
     let gen_rate_micros = if let Some(a) = context.args::<crate::Args>() {
         a.gen_rate_micros
@@ -39,13 +39,14 @@ async fn internal_behavior(context: SteadyContext
     const MULTIPLIER:usize = 256;   //500_000 per second at 500 micros
 
     while monitor.is_running(&mut || tx.mark_closed() ) {
-        
-        
-        let _clean = wait_for_all!(monitor.wait_shutdown_or_vacant_units(&mut tx, MULTIPLIER));
-        
-        let mut wids = Vec::with_capacity(MULTIPLIER);
 
-        (0..=MULTIPLIER)
+        let _clean = wait_for_all!(monitor.wait_shutdown_or_vacant_units(&mut tx, MULTIPLIER));
+
+        let len_out = tx.vacant_units().min(MULTIPLIER);
+
+        let mut wids = Vec::with_capacity(len_out);
+
+        (0..=len_out)
             .for_each(|num|
             wids.push(
                 WidgetInventory {
@@ -53,15 +54,10 @@ async fn internal_behavior(context: SteadyContext
                     _payload: 42,
                 }));
 
-        count+= MULTIPLIER as u64;
+        count+= len_out as u64;
 
-        let sent = monitor.send_slice_until_full(&mut tx, &wids);
-        //iterator of sent until the end
-        let consume = wids.into_iter().skip(sent);
-        for send_me in consume {
-            let _ = monitor.send_async(&mut tx, send_me, SendSaturation::Warn).await;
-        }
-
+        let _sent = monitor.send_slice_until_full(&mut tx, &wids);
+ 
         if let Some(feedback) = monitor.try_take(&mut feedback) {
               trace!("data_generator feedback: {:?}", feedback);
         }
@@ -128,8 +124,9 @@ mod generator_tests {
        
         Delay::new(Duration::from_millis(500)).await;
         feedback_tx_out.testing_close(Duration::from_millis(10)).await;
+
         graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(1));
+        graph.block_until_stopped(Duration::from_secs(20));
 
         let t = approved_widget_rx_out.testing_take().await;
         assert_eq!(BATCH_SIZE, t.len());

@@ -7,7 +7,7 @@ use num_traits::Zero;
 use std::fmt::Write;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::PathBuf;
-use std::str::Split;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -140,16 +140,17 @@ pub(crate) struct Config {
     
 }
 
-impl Config {
-    pub(crate) fn apply_labels(&mut self, show: Option<Split<&str>>, hide: Option<Split<&str>>) -> bool {
-
-        //let labesl = b"hello,world";
-        
-
-
-        true  //return false if some show or hide labels are not found
-    }
-}
+// TODO: Labels feature
+// impl Config {
+//     pub(crate) fn apply_labels(&mut self, show: Option<Split<&str>>, hide: Option<Split<&str>>) -> bool {
+// 
+//         //let labesl = b"hello,world";
+//         
+// 
+// 
+//         true  //return false if some show or hide labels are not found
+//     }
+// }
 
 /// Builds the DOT graph from the current state.
 ///

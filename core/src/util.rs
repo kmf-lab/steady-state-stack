@@ -60,7 +60,7 @@ fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>
 
         Logger::with(log_spec)
             .format(flexi_logger::colored_with_thread)
-            .write_mode(WriteMode::Async)
+            .write_mode(WriteMode::Direct)
             .start()?;
 
         /////////////////////////////////////////////////////////////////////
