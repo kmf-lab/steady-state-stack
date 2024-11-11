@@ -36,3 +36,4 @@ target/**/*
 /notes
 
 tarpaulin-report.html
+/coverage/
