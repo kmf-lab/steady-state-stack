@@ -102,5 +102,4 @@ echo "Confirm that warnings you do not want published have been removed"
 echo "If this is confirmed by successful GitHub build YOU may now cd and run:   cargo publish"
 
 cargo llvm-cov
-
-#cargo llvm-cov --html --output-dir coverage/
+echo "cargo llvm-cov --html --output-dir coverage/"

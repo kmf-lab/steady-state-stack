@@ -1,7 +1,7 @@
 
 use std::cmp::Ordering;
 use std::collections::VecDeque;
-use std::process::exit;
+
 
 #[allow(unused_imports)]
 use log::*;
@@ -391,7 +391,10 @@ impl ChannelStatsComputer {
 
         // We are in a bad state just exit and give up
         #[cfg(debug_assertions)]
-        if take > send { error!("actor: {:?} take:{} is greater than send:{} ", from_id, take, send); exit(-1); }
+        if take > send { 
+            error!("actor: {:?} take:{} is greater than send:{} ", from_id, take, send);
+            std::process::exit(-1);
+        }
         assert!(send >= take, "internal error send {} must be greater or eq than take {}", send, take);
         // Compute the running totals
 

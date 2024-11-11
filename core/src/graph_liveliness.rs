@@ -8,7 +8,7 @@ use std::sync::{Arc};
 use parking_lot::{RwLock,RwLockWriteGuard};
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
-use std::process::exit;
+
 #[allow(unused_imports)]
 use log::{error, info, log_enabled, trace, warn};
 use std::any::Any;
@@ -18,7 +18,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
-use std::{io, thread};
+use std::{thread};
 use std::io::Write;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Sender};
@@ -601,13 +601,14 @@ impl Graph {
     ///
     /// Runtime disable of fail-fast so we can unit test the recovery of panics
     /// where normally in a test condition we would want to fail fast.
+    #[cfg(debug_assertions)]
     fn apply_fail_fast(&self) {
         // Runtime disable of fail-fast so we can unit test the recovery of panics
         // where normally in a test condition we would want to fail fast
         if !self.block_fail_fast {
             std::panic::set_hook(Box::new(|panic_info| {
-                Self::fail_fast_stack_trace(panic_info,&mut io::stderr());
-                exit(-1);
+                Self::fail_fast_stack_trace(panic_info,&mut std::io::stderr());
+                std::process::exit(-1);
             }));
         }
     }

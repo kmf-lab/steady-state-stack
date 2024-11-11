@@ -198,7 +198,8 @@ pub(crate) fn is_empty_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>
 #[cfg(feature = "core_display")]
 fn get_current_cpu() -> i32 {
     unsafe {
-        libc::sched_getcpu() // This returns the CPU number the calling thread is running on
+        // This returns the CPU number the calling thread is running on
+        libc::sched_getcpu()+1 // We add 1 to match one based display used by gnome et. all 
     }
 }
 

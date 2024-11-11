@@ -75,8 +75,9 @@ pub struct ChannelBuilder {
     /// This field defines the size of the window bucket used for metrics aggregation, ensuring it is a power of 2.
     window_bucket_in_bits: u8,
 
+    //TODO: add size to compute bps and make line expansion fixed.
     /// if not NAN Indicates line expansion enabled rate
-    ///
+    /// 
     line_expansion: f32,
 
     /// Indicates whether the type of the channel should be displayed.

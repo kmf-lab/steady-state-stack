@@ -114,9 +114,9 @@ num_cpus         = "1.16.0"
 #         IOUring
 
 #  Roadmap for distributed actors (core of the 2.0 release)
-# 1. Core: Aeron
-# 2. Core: ZeroMQ
-# 3. Core: LibP2P
+# 1. Core: Aeron       https://crates.io/crates/aeron
+# 2. Core: ZeroMQ      https://crates.io/crates/zmq
+# 3. Core: LibP2P      https://crates.io/crates/libp2p
 # 4. Bridge: Kafka
 # 5. Bridge: MQTT
 # 6. WebRTC

@@ -2,9 +2,9 @@ use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, LockResult};
-use parking_lot::{RwLock, RwLockReadGuard}; 
+use parking_lot::{RwLock, RwLockReadGuard};
+#[allow(unused_imports)]
 use std::time::{Duration, Instant};
-
 #[allow(unused_imports)]
 use log::*; // Allow unused import
 
@@ -56,6 +56,7 @@ struct RawDiagramState {
     future_take: Vec<i64>, // These are for the next frame since we do not have the matching sent yet.
     future_send: Vec<i64>, // These are for the next frame if we ended up with too many items.
     error_map:HashMap<String,u32>,
+    #[cfg(debug_assertions)]
     last_instant: Option<Instant> //for testing do not remove
 }
 
