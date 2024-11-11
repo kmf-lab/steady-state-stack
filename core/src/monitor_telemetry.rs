@@ -359,7 +359,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
 
 //tests
 #[cfg(test)]
-mod tests {
+mod monitor_telemetry_tests {
     use std::sync::Arc;
     use crate::monitor::{ActorMetaData, RxTel};
     use crate::monitor_telemetry::{SteadyTelemetryRx};

@@ -465,7 +465,14 @@ impl GraphBuilder {
             telemtry_production_rate_ms: 40,
         }
     }
-
+    
+    /// for internal testing of the panic recovery
+    #[cfg(test)]
+    pub(crate) fn with_block_fail_fast(&self) -> Self {
+        let mut result = self.clone();
+        result.block_fail_fast = true;
+        result
+    }
 
     /// set the iouring queue length
     /// this may be too short by default and when lots of IO is required may need to grow

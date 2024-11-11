@@ -46,8 +46,7 @@ pub mod install {
     pub mod serviced;
     /// module with support for creating local command line applications
     pub mod local_cli;
-    /// module with support for creating docker containers (may be deprecated)
-    pub mod container;
+
 }
     /// module for testing full graphs of actors
 pub mod graph_testing;

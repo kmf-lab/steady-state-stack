@@ -57,7 +57,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>
 mod tests {
     use std::time::Duration;
     use futures_timer::Delay;
-    use steady_state::{steady_state, GraphBuilder};
+    use steady_state::{GraphBuilder};
     use crate::actor::data_feedback::internal_behavior;
 
     #[async_std::test]

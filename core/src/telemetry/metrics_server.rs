@@ -476,34 +476,33 @@ async fn handle_request(mut stream: Handle<TcpStream>,
 
 #[cfg(test)]
 mod meteric_server_tests {
+    use std::sync::Arc;
     use std::time::Duration;
     use futures_timer::Delay;
-    use crate::GraphBuilder;
+    use crate::{ActorIdentity, GraphBuilder};
+    use crate::monitor::ActorMetaData;
+    use crate::telemetry::metrics_collector::DiagramData;
+    use crate::telemetry::metrics_server::internal_behavior;
 
-    #[async_std::test]
+    #[async_std::test]    
     async fn test_simple() {
         let mut graph = GraphBuilder::for_testing().build(());
-        
-    //     //1. build test graph, the input and output channels and our actor
-    //     let mut graph = Graph::new_test(());
-    //     let (tx_in, rx_in) = graph.channel_builder()
-    //         .with_capacity(10).build();
-    //     graph.actor_builder()
-    //         .with_name("UnitTest")
-    //         .build_spawn( move |context| internal_behavior(context, rx_in.clone(), None) );
-    //
-    //   // let d = DiagramData::NodeDef(0, ("".to_string(), "".to_string(), "".to_string()));
-    //   //  let e = DiagramData::NodeProcessData(0, vec![]);
-    //   //  let f = DiagramData::ChannelVolumeData(0, vec![]);
-    //
-    //
-    //
-    //     //2. add test data to the input channels
-    //    // let test_data:Vec<DiagramData> = (0..1).map(|i| DiagramData { seq: i, data: vec![]  }).collect();
-    //    // tx_in.testing_send(test_data, true).await;
-    //
-    //     tx_in.testing_close(Duration::from_millis(30)).await;
-  
+         
+         let (tx_in, rx_in) = graph.channel_builder()
+             .with_capacity(10).build();
+   
+        graph.actor_builder()
+            .with_name("UnitTest")
+            .build_spawn( move |context| internal_behavior(context, rx_in.clone(), None) );
+ 
+        let test_data:Vec<DiagramData> = (0..3).map(|i| DiagramData::NodeDef( i
+                 , Box::new((
+                    Arc::new(ActorMetaData{
+                        ident: ActorIdentity::new(i as usize, "test_actor", None ),
+                        ..Default::default() }), Box::new([]),Box::new([])
+                ) ) )).collect();
+        tx_in.testing_send_all(test_data, true).await;
+      
         graph.start(); 
         Delay::new(Duration::from_millis(60)).await;
         graph.request_stop();

@@ -303,7 +303,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Useful for determining if the channel is empty before attempting to consume messages.
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {        
         self.shared_is_empty()
     }
 
@@ -326,7 +326,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Enables monitoring of the current load or backlog of messages in the channel for adaptive processing strategies.
-    pub fn avail_units(&mut self) -> usize {
+    pub fn avail_units(&mut self) -> usize {        
         self.shared_avail_units()
     }
 
@@ -678,5 +678,10 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
     }
 }
 
-
-//TODO: need unit test on possible_bad_message
+// #[cfg(test)]
+// mod stady_rx_tests {
+//     use super::*;
+//     
+//     
+// 
+// }

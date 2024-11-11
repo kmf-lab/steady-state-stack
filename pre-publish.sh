@@ -1,6 +1,8 @@
 #!/bin/bash
 
 cargo update
+rustup default stable
+
 
 # Check if the output contains 'tokio'
 if echo "$(cargo tree -i tokio 2>&1)" | grep -q "did not match any packages"; then
@@ -99,5 +101,6 @@ tokei | tee cargo_tokei.txt
 echo "Confirm that warnings you do not want published have been removed"
 echo "If this is confirmed by successful GitHub build YOU may now cd and run:   cargo publish"
 
+cargo llvm-cov
 
-
+#cargo llvm-cov --html --output-dir coverage/

@@ -75,6 +75,14 @@ struct RawDiagramState {
 /// Runs the metrics collector actor, collecting telemetry data from all actors and consolidating it for sharing and logging.
 pub(crate) async fn run<const GIRTH: usize>(
     context: SteadyContext,
+    dynamic_senders_vec: Arc<RwLock<Vec<crate::telemetry::metrics_collector::CollectorDetail>>>,
+    optional_servers: SteadyTxBundle<DiagramData, GIRTH>,
+) -> Result<(), Box<dyn Error>> {
+    internal_behavior(context, dynamic_senders_vec, optional_servers).await
+}
+
+async fn internal_behavior<const GIRTH: usize>(
+    context: SteadyContext,
     dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>>,
     optional_servers: SteadyTxBundle<DiagramData, GIRTH>,
 ) -> Result<(), Box<dyn Error>> {
@@ -531,13 +539,14 @@ pub struct CollectorDetail {
 
 
 #[cfg(test)]
-mod tests {
+mod metric_collector_tests {
     use super::*;
     use futures_util::stream::FuturesUnordered;
     use std::sync::Arc;
     use parking_lot::RwLock;
     use std::collections::VecDeque;
     use futures::executor::block_on;
+    use crate::GraphBuilder;
 
     #[test]
     fn test_raw_diagram_state_default() {
@@ -551,19 +560,6 @@ mod tests {
         assert!(state.error_map.is_empty());
     }
 
-    // #[test]
-    // fn test_collect_channel_data() {
-    //     let mut state = RawDiagramState::default();
-    //     let dynamic_senders = vec![
-    //         CollectorDetail {
-    //             telemetry_take: VecDeque::new(),
-    //             ident: ActorIdentity { id: 0, name: "test_actor" },
-    //         }
-    //     ];
-    //     let to_pop = collect_channel_data(&mut state, &dynamic_senders);
-    //     assert!(to_pop.is_empty());
-    // }
-
     #[test]
     fn test_gather_valid_actor_telemetry_to_scan() {
         let dynamic_senders_vec = Arc::new(RwLock::new(vec![
@@ -575,19 +571,6 @@ mod tests {
         let result = gather_valid_actor_telemetry_to_scan(1, &dynamic_senders_vec);
         assert!(result.is_none());
     }
-
-    // #[test]
-    // fn test_gather_node_details() {
-    //     let mut state = RawDiagramState::default();
-    //     let dynamic_senders = vec![
-    //         CollectorDetail {
-    //             telemetry_take: VecDeque::new(),
-    //             ident: ActorIdentity { id: 0, name: "test_actor" },
-    //         }
-    //     ];
-    //     let result = gather_node_details(&mut state, &dynamic_senders);
-    //     assert!(result.is_none());
-    // }
 
     #[test]
     fn test_is_all_empty_and_closed() {
@@ -632,30 +615,31 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // #[test]
-    // fn test_confirm_shutdown() {
-    //     let dynamic_senders_vec = Arc::new(RwLock::new(vec![
-    //         CollectorDetail {
-    //             telemetry_take: VecDeque::new(),
-    //             ident: ActorIdentity { id: 0, name: "test_actor" },
-    //         }
-    //     ]));
-    //     let mut locked_servers = nuclei::block_on(SteadyTxBundle::<DiagramData, 1>::default().lock());
-    //     let result = is_all_empty_and_closed(dynamic_senders_vec.read());
-    //     assert!(result);
-    // }
+    #[async_std::test]
+    async fn test_actor() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>> = Arc::new(RwLock::new(Vec::new()));
+       // let mut optional_servers = graph.channel_builder().build_as_bundle();    
+        // let (tx_in, rx_in) = graph.channel_builder()
+        //     .with_capacity(10).build();
+            
+        // graph.actor_builder()
+        //      .with_name("UnitTest")
+        //      .build_spawn( move |context| internal_behavior(context
+        //                                                     , dynamic_senders_vec.clone()
+        //                                                     , optional_servers.clone()) );
 
-    // #[test]
-    // fn test_run() {
-    //     let context = SteadyContext::default();
-    //     let dynamic_senders_vec = Arc::new(RwLock::new(vec![
-    //         CollectorDetail {
-    //             telemetry_take: VecDeque::new(),
-    //             ident: ActorIdentity { id: 0, name: "test_actor" },
-    //         }
-    //     ]));
-    //     let optional_servers = SteadyTxBundle::<DiagramData, 1>::default();
-    //     let result = block_on(run(context, dynamic_senders_vec, optional_servers));
-    //     assert!(result.is_ok());
-    // }
+        // let test_data:Vec<DiagramData> = (0..1).map(|i| DiagramData::NodeDef( i
+        //                                                                       , Box::new((
+        //         Arc::new(ActorMetaData::default()), Box::new([]),Box::new([])
+        //     ) ) )).collect();
+        // tx_in.testing_send_all(test_data, true).await;
+
+        graph.start();
+        Delay::new(Duration::from_millis(60)).await;
+        graph.request_stop();
+        graph.block_until_stopped(Duration::from_secs(15));
+
+    }
+
 }

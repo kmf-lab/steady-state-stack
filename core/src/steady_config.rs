@@ -84,10 +84,10 @@ pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECT
 
 /// Length of the channel for feature processing.
 /// Allows features to fall behind with minimal latency.
-pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 64;
+pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 128;
 
 #[cfg(test)]
-mod tests {
+mod steady_config_tests {
     use super::*;
     use std::env;
 

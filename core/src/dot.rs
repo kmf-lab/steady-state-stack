@@ -675,12 +675,13 @@ impl FrameHistory {
 }
 
 #[cfg(test)]
-mod tests {
+mod dot_tests {
     use super::*;
     use crate::monitor::{ChannelMetaData};
     use std::sync::Arc;
     use bytes::BytesMut;
     use std::path::PathBuf;
+    use nuclei::block_on;
 
     #[test]
     fn test_node_compute_and_refresh() {
@@ -865,22 +866,27 @@ mod tests {
         assert_eq!(frame_history.buffer_bytes_count, frame_history.history_buffer.len());
     }
 
-    // #[test]
-    // fn test_frame_history_update() {
-    //     let mut frame_history = FrameHistory::new(1000);
-    //     frame_history.mark_position();
-    //     nuclei::block_on(frame_history.update(true));
-    //     assert_eq!(frame_history.history_buffer.len(), frame_history.buffer_bytes_count);
-    // }
 
-    // #[test]
-    // fn test_frame_history_truncate_file() {
-    //     let data = BytesMut::from("test data");
-    //     let path = PathBuf::from("test_truncate_file.dat");
-    //     nuclei::block_on(FrameHistory::truncate_file(path.clone(), data.clone()));
-    //     let result = std::fs::read_to_string(path).expect("Failed to read truncated file");
-    //     assert_eq!(result, "test data");
-    // }
+    #[test]
+    fn test_define_unified_edges() {
+        let mut metric_state = MetricState::default();
+        let node_name = ActorName::new("node1", None);
+        let channels = vec![Arc::new(ChannelMetaData::default())];
+
+        define_unified_edges(&mut metric_state, node_name, &channels, true, 1000);
+        assert_eq!(metric_state.edges.len(), 1);
+        assert!(metric_state.edges[0].to.is_some());
+    }
+
+    #[test]
+    fn test_frame_history_update() {
+        let mut frame_history = FrameHistory::new(1000);
+        frame_history.mark_position();
+
+        block_on(frame_history.update(true));
+
+        assert_eq!(frame_history.history_buffer.len(), 0);
+    }
 
     #[test]
     fn test_frame_history_all_to_file_async() {
@@ -906,3 +912,4 @@ mod tests {
     //     assert_eq!(result, "test data");
     // }
 }
+

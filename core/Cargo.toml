@@ -27,6 +27,9 @@ panic = 'abort' # no unwinding
 strip = 'symbols' # strip symbols
 
 
+
+
+
 [lints.clippy]
 enum_glob_use = "deny" # forbid use of enum glob imports
 unwrap_used = "deny" # forbid use of unwrap
