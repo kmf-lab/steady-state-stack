@@ -618,7 +618,7 @@ mod metric_collector_tests {
     #[async_std::test]
     async fn test_actor() {
         let mut graph = GraphBuilder::for_testing().build(());
-        let dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>> = Arc::new(RwLock::new(Vec::new()));
+        let _dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>> = Arc::new(RwLock::new(Vec::new()));
        // let mut optional_servers = graph.channel_builder().build_as_bundle();    
         // let (tx_in, rx_in) = graph.channel_builder()
         //     .with_capacity(10).build();

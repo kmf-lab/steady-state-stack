@@ -360,91 +360,10 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
 //tests
 #[cfg(test)]
 mod monitor_telemetry_tests {
-    use std::sync::Arc;
+use std::sync::{Arc};
     use crate::monitor::{ActorMetaData, RxTel};
     use crate::monitor_telemetry::{SteadyTelemetryRx};
 
-    // #[test]
-    // fn test_steady_telemetry_actor_send_status_reset() {
-    //     let mut actor_send = SteadyTelemetryActorSend {
-    //         tx: Tx::default(),
-    //         last_telemetry_error: Instant::now(),
-    //         instant_start: Instant::now(),
-    //         instance_id: 1,
-    //         bool_stop: false,
-    //         hot_profile_await_ns_unit: AtomicU64::new(100),
-    //         hot_profile: AtomicU64::new(1000),
-    //         hot_profile_concurrent: AtomicU16::new(10),
-    //         calls: Default::default(),
-    //     };
-    //
-    //     actor_send.status_reset();
-    //
-    //     assert_eq!(actor_send.hot_profile_await_ns_unit.load(Ordering::Relaxed), 0);
-    //     assert!(actor_send.instant_start.elapsed().as_secs() < 1);
-    //     for call in &actor_send.calls {
-    //         assert_eq!(call.load(Ordering::Relaxed), 0);
-    //     }
-    // }
-
-    // #[test]
-    // fn test_steady_telemetry_actor_send_status_message() {
-    //     let actor_send = SteadyTelemetryActorSend {
-    //         tx: Tx::default(),
-    //         last_telemetry_error: Instant::now(),
-    //         instant_start: Instant::now(),
-    //         instance_id: 1,
-    //         bool_stop: false,
-    //         hot_profile_await_ns_unit: AtomicU64::new(100),
-    //         hot_profile: AtomicU64::new(1000),
-    //         hot_profile_concurrent: AtomicU16::new(10),
-    //         calls: Default::default(),
-    //     };
-    //
-    //     let status = actor_send.status_message();
-    //
-    //     assert_eq!(status.total_count_restarts, 1);
-    //     assert_eq!(status.bool_stop, false);
-    //     assert!(status.unit_total_ns >= status.await_total_ns);
-    //     assert!(status.thread_id.is_some());
-    // }
-
-    // #[test]
-    // fn test_steady_telemetry_send_process_event() {
-    //     let tx = Arc::new(Mutex::new(Tx::<[usize; 4]>::default()));
-    //     let mut telemetry_send = SteadyTelemetrySend {
-    //         tx,
-    //         count: [0; 4],
-    //         last_telemetry_error: Instant::now(),
-    //         inverse_local_index: [0; 4],
-    //     };
-    //
-    //     let index = telemetry_send.process_event(2, 0, 5);
-    //     assert_eq!(index, 2);
-    //     assert_eq!(telemetry_send.count[2], 5);
-    //
-    //     let index = telemetry_send.process_event(0, 0, 3);
-    //     assert_eq!(index, 0);
-    //     assert_eq!(telemetry_send.count[0], 3);
-    //
-    //     let index = telemetry_send.process_event(1, 0, -1);
-    //     assert_eq!(index, 1);
-    //     assert_eq!(telemetry_send.count[1], 0);
-    // }
-
-    // #[test]
-    // fn test_steady_telemetry_rx_is_empty_and_closed() {
-    //     let rx = Arc::new(Mutex::new(Rx::<[usize; 4]>::default()));
-    //     let actor_metadata = Arc::new(ActorMetaData::default());
-    //     let telemetry_rx = SteadyTelemetryRx {
-    //         send: Some(SteadyTelemetryTake { rx: rx.clone(), details: vec![] }),
-    //         take: Some(SteadyTelemetryTake { rx: rx.clone(), details: vec![] }),
-    //         actor: None,
-    //         actor_metadata: actor_metadata.clone(),
-    //     };
-    //
-    //     assert!(telemetry_rx.is_empty_and_closed());
-    // }
 
     #[test]
     fn test_steady_telemetry_rx_actor_metadata() {
@@ -461,6 +380,7 @@ mod monitor_telemetry_tests {
         assert_eq!(Arc::strong_count(&metadata), 3);
     }
 
+ 
 
 }
 
