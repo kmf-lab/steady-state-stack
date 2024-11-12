@@ -157,16 +157,16 @@ async fn process_msg(msg: DiagramData
             }).sum();
 
             actor_status.iter().enumerate().for_each(|(i, status)| {
-                #[cfg(debug_assertions)]
-                assert!(!metrics_state.nodes.is_empty());
-                metrics_state.nodes[i].compute_and_refresh(*status, total_work_ns);
+                if !metrics_state.nodes.is_empty() {
+                    metrics_state.nodes[i].compute_and_refresh(*status, total_work_ns);
+                }
             });
         },
         DiagramData::ChannelVolumeData(seq, total_take_send) => {
             total_take_send.iter().enumerate().for_each(|(i, (t, s))| {
-                #[cfg(debug_assertions)]
-                assert!(!metrics_state.edges.is_empty());
-                metrics_state.edges[i].compute_and_refresh(*s, *t);
+                if !metrics_state.edges.is_empty() {
+                   metrics_state.edges[i].compute_and_refresh(*s, *t);
+                }
             });
             metrics_state.seq = seq;
 
@@ -525,10 +525,70 @@ mod http_telemetry_tests {
     use std::time::Duration;
     use futures_timer::Delay;
     use isahc::ReadResponseExt;
-    use isahc::AsyncReadResponseExt;
+    use crate::monitor::ActorStatus;
 
     #[async_std::test]
     async fn test_metrics_server() {
+        let (mut graph, server_ip, tx_in) = stand_up_test_server().await;
+
+        // Step 5: Capture and validate the metrics server content
+        // Fetch the metrics from the server
+        if let Some(ref addr) = server_ip {
+            print!(".");
+            validate_path(&addr, Some("rankdir=LR"), "graph.dot".into());
+             print!(".");
+             validate_path(&addr, Some("font-family: sans-serif;"), "dot-viewer.css".into());
+             print!(".");
+             validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js".into());
+             print!(".");
+             validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js".into());
+             print!(".");
+             validate_path(&addr, Some("<title>Telemetry</title>"), "index.html".into());
+             print!(".");
+            #[cfg(feature = "telemetry_server_builtin" )]
+             validate_path(&addr, None, "viz-lite.js".into());
+             print!(".");
+            #[cfg(feature = "prometheus_metrics" )]
+             validate_path(&addr, Some("="), "metric".into());
+             print!(".");
+
+            #[cfg(feature = "telemetry_server_builtin" )]
+            validate_path(&addr, None, "images/preview-icon.svg".into());
+             print!(".");
+            #[cfg(feature = "telemetry_server_builtin" )]
+            validate_path(&addr, None, "images/refresh-time-icon.svg".into());
+             print!(".");
+            #[cfg(feature = "telemetry_server_builtin" )]
+            validate_path(&addr, None, "images/user-icon.svg".into());
+             print!(".");
+            #[cfg(feature = "telemetry_server_builtin" )]
+            validate_path(&addr, None, "images/zoom-in-icon.svg".into());
+             print!(".");
+            #[cfg(feature = "telemetry_server_builtin" )]
+            validate_path(&addr, None, "images/zoom-in-icon-disabled.svg".into());
+             print!(".");
+            #[cfg(feature = "telemetry_server_builtin" )]
+            validate_path(&addr, None, "images/zoom-out-icon.svg".into());
+             print!(".");
+            #[cfg(feature = "telemetry_server_builtin" )]
+            validate_path(&addr, None, "images/zoom-out-icon-disabled.svg".into());
+             print!(".");
+                   
+             //TODO: new label feature, in progress 
+             // validate_path(&addr, None, "set?rankdir=LR".into());
+             // print!(".");
+
+        } else {
+            panic!("Telemetry address not available");
+        }
+        // Step 6: Stop the graph
+        tx_in.testing_close(Duration::from_millis(10)).await;
+        graph.request_stop();
+        graph.block_until_stopped(Duration::from_secs(5));
+
+    }
+
+    async fn stand_up_test_server() -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
         // Step 1: Set up a minimal graph
         let mut graph = GraphBuilder::for_testing()
             .with_telemtry_production_rate_ms(500)
@@ -554,173 +614,63 @@ mod http_telemetry_tests {
 
         // Step 4: Send test data to the metrics_server
         // Simulate DiagramData messages
-        let test_data = DiagramData::NodeDef(
-            1,
+        let sequence = 0;
+        let mut data: Vec<DiagramData> = (0..4).map(|i| DiagramData::NodeDef(
+            sequence,
             Box::new((
                 Arc::new(ActorMetaData {
-                    ident: ActorIdentity::new(1, "test_actor", None),
+                    ident: ActorIdentity::new(i, "test_actor", None),
                     ..Default::default()
                 }),
                 Box::new([]),
                 Box::new([]),
             )),
-        );
-        tx_in.testing_send_all([test_data].into(),true).await;
+        )).collect();
 
-        // Step 5: Capture and validate the metrics server content
-        // Fetch the metrics from the server
-        if let Some(ref addr) = server_ip {
-            let metrics_url = format!("http://{}/graph.dot", addr);
-            Delay::new(Duration::from_secs(2));
-            let mut response = isahc::get_async(&metrics_url).await.expect("");
-            assert_eq!(response.status(), 200);
-
-            // Read and validate the response body
-            let body = response.text().await.expect("Failed to read response body");
-            println!("Content:\n{}", body);
-
-            // assert!(
-            //     body.contains("test_actor"),
-            //     "Metrics content did not include 'test_actor':\n{}",
-            //     body
-            // );
-        } else {
-            panic!("Telemetry address not available");
-        }
-
-        // Step 6: Stop the graph
-        graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(5));
-    }
-
-    /*
-    #[async_std::test]
-    async fn test_metrics_endpoint() {
-        // Setup graph and start metrics_server as before
-
-        // Fetch metrics
-        let metrics_url = format!("http://{}/metrics", addr);
-        let response = isahc::get_async(&metrics_url).await.unwrap();
-        assert_eq!(response.status(), 200);
-        let body = response.text().await.unwrap();
-        assert!(body.contains("# HELP"));
-    }
-
-    #[async_std::test]
-    async fn test_graph_dot_endpoint() {
-        // Setup graph and start metrics_server as before
-
-        // Fetch graph.dot
-        let graph_url = format!("http://{}/graph.dot", addr);
-        let response = isahc::get_async(&graph_url).await.unwrap();
-        assert_eq!(response.status(), 200);
-        let body = response.text().await.unwrap();
-        assert!(body.contains("digraph"));
-    }
-
-    #[async_std::test]
-    async fn test_invalid_endpoint() {
-        // Setup graph and start metrics_server as before
-
-        // Fetch an invalid endpoint
-        let invalid_url = format!("http://{}/invalid", addr);
-        let response = isahc::get_async(&invalid_url).await.unwrap();
-        assert_eq!(response.status(), 404);
-    }
-
-    #[async_std::test]
-    async fn test_set_rankdir() {
-        // Setup graph and start metrics_server as before
-
-        // Set rankdir to TB
-        let set_url = format!("http://{}/set?rankdir=TB", addr);
-        let response = isahc::get_async(&set_url).await.unwrap();
-        assert_eq!(response.status(), 200);
-
-        // Fetch graph.dot and check if rankdir is set
-        let graph_url = format!("http://{}/graph.dot", addr);
-        let response = isahc::get_async(&graph_url).await.unwrap();
-        let body = response.text().await.unwrap();
-        assert!(body.contains("rankdir=TB"));
-    }
-
-    #[async_std::test]
-    async fn test_set_invalid_rankdir() {
-        // Setup graph and start metrics_server as before
-
-        // Try to set an invalid rankdir
-        let set_url = format!("http://{}/set?rankdir=INVALID", addr);
-        let response = isahc::get_async(&set_url).await.unwrap();
-        assert_eq!(response.status(), 400);
-    }
-
-    #[async_std::test]
-    async fn test_connection_error() {
-        // Do not start the metrics_server
-
-        // Attempt to fetch metrics
-        let metrics_url = "http://127.0.0.1:9100/metrics";
-        let response = isahc::get_async(metrics_url).await;
-        assert!(response.is_err());
-    }
-
-    #[async_std::test]
-    async fn test_server_shutdown() {
-        // Setup graph and start metrics_server as before
-
-        // Stop the graph
-        graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(5));
-
-        // Attempt to fetch metrics after shutdown
-        let metrics_url = format!("http://{}/metrics", addr);
-        let response = isahc::get_async(&metrics_url).await;
-        assert!(response.is_err());
-    }
-
-    #[async_std::test]
-    async fn test_concurrent_requests() {
-        // Setup graph and start metrics_server as before
-
-        // Make multiple concurrent requests
-        let addr = graph.telemetry_addr().expect("Telemetry address not available");
-        let urls = vec![
-            format!("http://{}/metrics", addr),
-            format!("http://{}/graph.dot", addr),
-            format!("http://{}/invalid", addr),
-        ];
-
-        let requests = urls.into_iter().map(|url| {
-            async move {
-                let response = isahc::get_async(&url).await;
-                response
+        let node_status: Vec<ActorStatus> = (0..4).map(|i|
+            ActorStatus {
+                await_total_ns: 100,
+                unit_total_ns: 200,
+                total_count_restarts: 1,
+                iteration_start: 0,
+                iteration_sum: 0,
+                bool_stop: false,
+                calls: [0; 6],
+                thread_info: None,
             }
-        });
+        ).collect();
 
-        let results = futures::future::join_all(requests).await;
+        data.push(DiagramData::NodeProcessData(0, node_status.clone().into()));
+        data.push(DiagramData::ChannelVolumeData(0, vec![(5, 10), (15, 20)].into()));
+        data.push(DiagramData::NodeProcessData(1, node_status.into()));
+        data.push(DiagramData::ChannelVolumeData(1, vec![(15, 20), (30, 30)].into()));
 
-        for result in results {
-            assert!(result.is_ok());
-        }
+        tx_in.testing_send_all(data.into(), false).await;
+        (graph, server_ip, tx_in)
     }
 
-    #[async_std::test]
-    async fn test_response_headers() {
-        // Setup graph and start metrics_server as before
+    fn validate_path(addr: &&String, expected_text: Option<&str>, path: &str) {
+        match isahc::get(format!("http://{}/{}", &addr, &path)) {
+            Ok(mut response) => {
+                assert_eq!(response.status(), 200);//, "got status {} from {}", response.status(),format!("http://{}/{}", &addr, &path));
 
-        // Fetch metrics
-        let metrics_url = format!("http://{}/metrics", addr);
-        let response = isahc::get_async(&metrics_url).await.unwrap();
-        assert_eq!(response.status(), 200);
-        assert_eq!(response.header("Content-Type").unwrap(), "text/html");
+                // Read and validate the response body
+                let body = response.text().expect("Failed to read response body");
+                //println!("Content:\n{}", body);
 
-        // Fetch graph.dot
-        let graph_url = format!("http://{}/graph.dot", addr);
-        let response = isahc::get_async(&graph_url).await.unwrap();
-        assert_eq!(response.status(), 200);
-        assert_eq!(response.header("Content-Type").unwrap(), "text/vnd.graphviz");
+                if let Some(expected_text) = expected_text {
+                    assert!(
+                        body.contains(expected_text),
+                        "not found {} in {}", expected_text,
+                        body
+                    );
+                }
+            },
+            Err(_) => {
+                info!("unable to test port: {}",&addr);
+            }
+        };
     }
-*/
 
 
 

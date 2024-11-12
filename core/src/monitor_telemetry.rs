@@ -93,7 +93,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         } else {
             true
         };
-
+    
         let a = if let Some(ref actor) = &self.actor {
             if let Some(mut rx) = actor.try_lock() {
                 rx.is_empty() && rx.is_closed()
@@ -103,7 +103,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         } else {
             true
         };
-
+    
         let t = if let Some(ref take) = &self.take {
             if let Some(mut rx) = take.rx.try_lock() {
                 rx.is_empty() && rx.is_closed()
@@ -113,7 +113,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         } else {
             true
         };
-
+    
         s & a & t
     }
 
