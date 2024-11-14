@@ -150,7 +150,7 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
             .with_capacity(REAL_CHANNEL_LENGTH_TO_FEATURE)
             .build();
 
-        let outgoing = [tx.clone()]; //TODO: may need LazySend...
+        let outgoing = [tx.clone()]; 
         let optional_servers = steady_tx_bundle(outgoing);
 
         let bldr = graph.actor_builder();

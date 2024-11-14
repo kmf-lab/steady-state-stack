@@ -1546,7 +1546,7 @@ pub(crate) mod monitor_tests {
     // Test for try_peek
     #[test]
     fn test_try_peek() {
-        let rx = create_rx(vec![1, 2, 3]);
+        let (tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
         let monitor = into_monitor!(context,[rx],[]);
 
@@ -1559,7 +1559,7 @@ pub(crate) mod monitor_tests {
     // Test for take_slice
     #[test]
     fn test_take_slice() {
-        let rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let (tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let mut slice = [0; 3];
         let context = test_steady_context();
         let mut monitor = into_monitor!(context,[rx],[]);
@@ -1574,7 +1574,7 @@ pub(crate) mod monitor_tests {
     // Test for try_peek_slice
     #[test]
     fn test_try_peek_slice() {
-        let rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let (tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let mut slice = [0; 3];
         let context = test_steady_context();
         let monitor = into_monitor!(context,[rx],[]);
@@ -1604,7 +1604,7 @@ pub(crate) mod monitor_tests {
     #[test]
     fn test_is_empty() {
         let context = test_steady_context();
-        let rx = create_rx::<String>(vec![]); // Creating an empty Rx
+        let (tx,rx) = create_rx::<String>(vec![]); // Creating an empty Rx
         let monitor = into_monitor!(context,[rx],[]);
 
         if let Some(mut rx) = rx.try_lock() {
@@ -1658,7 +1658,7 @@ pub(crate) mod monitor_tests {
     // Test avail_units method
     #[test]
     fn test_avail_units() {
-        let rx = create_rx(vec![1, 2, 3]);
+        let (tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
         let monitor = context.into_monitor_internal([],[]);
            // into_monitor!(context,[],[]);
@@ -1671,7 +1671,7 @@ pub(crate) mod monitor_tests {
     // Test for try_peek_iter
     #[test]
     fn test_try_peek_iter() {
-        let rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let (tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
         let monitor = into_monitor!(context,[rx],[]);
 
@@ -1686,7 +1686,7 @@ pub(crate) mod monitor_tests {
     // Test for peek_async_iter
     #[async_std::test]
     async fn test_peek_async_iter() {
-        let rx = create_rx(vec![1, 2, 3, 4, 5]);
+        let (tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
         let monitor = into_monitor!(context,[rx],[]);
 
@@ -1701,7 +1701,7 @@ pub(crate) mod monitor_tests {
     // Test for peek_async
     #[async_std::test]
     async fn test_peek_async() {
-        let rx = create_rx(vec![1, 2, 3]);
+        let (tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
         let monitor = into_monitor!(context,[rx],[]);
 
@@ -1789,7 +1789,7 @@ pub(crate) mod monitor_tests {
     }
 
     // Helper function to create a new Rx instance
-    fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> Arc<Mutex<Rx<T>>> {
+    fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> (Arc<Mutex<Tx<T>>>,Arc<Mutex<Rx<T>>>) {
         let (tx, rx) = create_test_channel(10);
 
         let send = tx.clone();
@@ -1798,7 +1798,7 @@ pub(crate) mod monitor_tests {
                 let _ = send_guard.shared_try_send(item);
             }
         }
-        rx.clone()
+        (tx.clone(),rx.clone())
     }
 
     fn create_test_channel<T: Debug>(capacity: usize) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
@@ -2045,6 +2045,478 @@ pub(crate) mod monitor_tests {
         };
 
     }
+
+    // Test for wait_shutdown_or_avail_units_bundle
+    #[async_std::test]
+    async fn test_wait_shutdown_or_avail_units_bundle() {
+        let context = test_steady_context();
+        let (tx1,rx1) = create_rx(vec![1, 2]);
+        let (tx2,rx2) = create_rx(vec![3, 4]);
+        
+        let mut monitor = into_monitor!(context, [rx1, rx2], []);
+        let mut rx_bundle = RxBundle::new();
+        if let Some(mut rx1) = rx1.try_lock() {
+            rx_bundle.push(rx1);
+        }
+        if let Some(mut rx2) = rx2.try_lock() {
+            rx_bundle.push(rx2);
+        }
+
+        let result = monitor
+            .wait_shutdown_or_avail_units_bundle(&mut rx_bundle, 2, 2)
+            .await;
+        assert!(result);
+    }
+
+    // Test for wait_closed_or_avail_units_bundle
+    #[async_std::test]
+    async fn test_wait_closed_or_avail_units_bundle() {
+        let context = test_steady_context();
+        let (tx1,rx1) = create_rx(vec![1, 2]);
+        let (tx2,rx2) = create_rx(vec![3, 4]);
+        let mut monitor = into_monitor!(context, [rx1, rx2], []);
+
+        let mut rx_bundle = RxBundle::new();
+        if let Some(mut rx1) = rx1.try_lock() {
+            rx_bundle.push(rx1);
+        }
+        if let Some(mut rx2) = rx2.try_lock() {
+            rx_bundle.push(rx2);
+        }
+
+        let result = monitor
+            .wait_closed_or_avail_units_bundle(&mut rx_bundle, 2, 2)
+            .await;
+        assert!(result);
+    }
+
+    // Test for wait_avail_units_bundle
+    #[async_std::test]
+    async fn test_wait_avail_units_bundle() {
+        let context = test_steady_context();
+        let (tx1,rx1) = create_rx(vec![1, 2]);
+        let (tx2,rx2) = create_rx(vec![3, 4]);
+        let mut monitor = into_monitor!(context, [rx1, rx2], []);
+
+        let mut rx_bundle = RxBundle::new();
+        if let Some(mut rx1) = rx1.try_lock() {
+            rx_bundle.push(rx1);
+        }
+        if let Some(mut rx2) = rx2.try_lock() {
+            rx_bundle.push(rx2);
+        }
+
+        let result = monitor.wait_avail_units_bundle(&mut rx_bundle, 2, 2).await;
+        assert!(result);
+    }
+
+    // Test for wait_shutdown_or_vacant_units_bundle
+    #[async_std::test]
+    async fn test_wait_shutdown_or_vacant_units_bundle() {
+        let (tx1, _rx1) = create_test_channel::<i32>(10);
+        let (tx2, _rx2) = create_test_channel::<i32>(10);
+        let context = test_steady_context();
+        
+        let tx1 =tx1.clone();
+        let tx2 =tx2.clone();
+        
+        let mut monitor = into_monitor!(context, [], [tx1, tx2]);
+
+        let mut tx_bundle = TxBundle::new();
+        if let Some(mut tx1) = tx1.try_lock() {
+            tx_bundle.push(tx1);
+        }
+        if let Some(mut tx2) = tx2.try_lock() {
+            tx_bundle.push(tx2);
+        }
+
+        let result = monitor
+            .wait_shutdown_or_vacant_units_bundle(&mut tx_bundle, 5, 2)
+            .await;
+        assert!(result);
+    }
+
+    // Test for wait_vacant_units_bundle
+    #[async_std::test]
+    async fn test_wait_vacant_units_bundle() {
+        let (tx1, _rx1) = create_test_channel::<i32>(10);
+        let (tx2, _rx2) = create_test_channel::<i32>(10);
+        let context = test_steady_context();
+        let tx1 =tx1.clone();
+        let tx2 =tx2.clone();
+        let mut monitor = into_monitor!(context, [], [tx1, tx2]);
+
+        let mut tx_bundle = TxBundle::new();
+        if let Some(mut tx1) = tx1.try_lock() {
+            tx_bundle.push(tx1);
+        }
+        if let Some(mut tx2) = tx2.try_lock() {
+            tx_bundle.push(tx2);
+        }
+
+        let result = monitor.wait_vacant_units_bundle(&mut tx_bundle, 5, 2).await;
+        assert!(result);
+    }
+
+    // Test for wait_shutdown
+    #[async_std::test]
+    async fn test_wait_shutdown() {
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context, [], []);
+
+        // Simulate shutdown
+        {
+            let mut liveliness = monitor.runtime_state.write();
+            liveliness.request_shutdown();
+        }
+
+        let result = monitor.wait_shutdown().await;
+        assert!(result);
+    }
+
+    // Test for wait_periodic
+    #[async_std::test]
+    async fn test_wait_periodic() {
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context, [], []);
+
+        let duration = Duration::from_millis(100);
+        let result = monitor.wait_periodic(duration).await;
+        assert!(result);
+    }
+
+    // Test for wait
+    #[async_std::test]
+    async fn test_wait() {
+        let context = test_steady_context();
+        let monitor = into_monitor!(context, [], []);
+
+        let duration = Duration::from_millis(100);
+        let start = Instant::now();
+        monitor.wait(duration).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed >= duration);
+    }
+
+    // Test for wait_shutdown_or_avail_units
+    #[async_std::test]
+    async fn test_wait_shutdown_or_avail_units() {
+        let (tx,rx) = create_rx::<i32>(vec![]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let result = monitor.wait_shutdown_or_avail_units(&mut rx, 1).await;
+            assert!(!result);
+        };
+    }
+
+    // Test for wait_closed_or_avail_units
+    #[async_std::test]
+    async fn test_wait_closed_or_avail_units() {
+        let (tx,rx) = create_rx::<i32>(vec![1]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let result = monitor.wait_closed_or_avail_units(&mut rx, 1).await;
+            assert!(result);
+        };
+    }
+
+    // Test for wait_avail_units
+    #[async_std::test]
+    async fn test_wait_avail_units() {
+        let (tx,rx) = create_rx::<i32>(vec![1, 2, 3]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let result = monitor.wait_avail_units(&mut rx, 3).await;
+            assert!(result);
+        };
+    }
+
+    // Test for send_async
+    #[async_std::test]
+    async fn test_send_async() {
+        let (tx, _rx) = create_test_channel::<i32>(10);
+        let context = test_steady_context();
+        let tx = tx.clone();
+        let mut monitor = into_monitor!(context, [], [tx]);
+
+        if let Some(mut tx) = tx.try_lock() {
+            let result = monitor.send_async(&mut tx, 42, SendSaturation::Warn).await;
+            assert!(result.is_ok());
+        };
+    }
+
+    // Test for args method
+    #[test]
+    fn test_args() {
+        let args = 42u32;
+        let context = test_steady_context_with_args(args);
+        let monitor = into_monitor!(context, [], []);
+
+        let retrieved_args: Option<&u32> = monitor.args();
+        assert_eq!(retrieved_args, Some(&42u32));
+    }
+
+    // Test for identity method
+    #[test]
+    fn test_identity() {
+        let context = test_steady_context();
+        let monitor = into_monitor!(context, [], []);
+
+        let identity = monitor.identity();
+        assert_eq!(identity.label.name, "test_actor");
+    }
+
+    // Helper function to create a test context with arguments
+    fn test_steady_context_with_args<A: Any + Send + Sync>(args: A) -> SteadyContext {
+        let (_tx, rx) = build_tx_rx();
+        SteadyContext {
+            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
+                Default::default(),
+                Default::default(),
+            ))),
+            channel_count: Arc::new(AtomicUsize::new(0)),
+            ident: ActorIdentity::new(0, "test_actor", None),
+            args: Arc::new(Box::new(args)),
+            all_telemetry_rx: Arc::new(RwLock::new(Vec::new())),
+            actor_metadata: Arc::new(ActorMetaData::default()),
+            oneshot_shutdown_vec: Arc::new(Mutex::new(Vec::new())),
+            oneshot_shutdown: Arc::new(Mutex::new(rx)),
+            node_tx_rx: None,
+            instance_id: 0,
+            last_periodic_wait: Default::default(),
+            is_in_graph: true,
+            actor_start_time: Instant::now(),
+            frame_rate_ms: 1000,
+            team_id: 0,
+            show_thread_info: false,
+        }
+    }
+ 
+    // Test for is_liveliness_in
+    #[test]
+    fn test_is_liveliness_in() {
+        let context = test_steady_context();
+        let monitor = into_monitor!(context, [], []);
+
+        // Initially, the liveliness state should be Building
+        assert!(monitor.is_liveliness_in(&[GraphLivelinessState::Building]));
+        
+    }
+
+    // Test for yield_now
+    #[async_std::test]
+    async fn test_yield_now() {
+        let context = test_steady_context();
+        let monitor = into_monitor!(context, [], []);
+
+        monitor.yield_now().await;
+        // If it didn't hang, the test passes
+        assert!(true);
+    }
+   
+  
+    // Test for wait_shutdown_or_avail_units with closed channel
+    #[async_std::test]
+    async fn test_wait_shutdown_or_avail_units_closed_channel() {
+        let (tx,rx) = create_rx::<i32>(vec![]);
+        let context = test_steady_context();
+        let rx = rx.clone();
+        let mut monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut tx) = tx.try_lock() {
+            tx.mark_closed();            
+        }
+
+        if let Some(mut rx) = rx.try_lock() {
+         
+            let result = monitor.wait_shutdown_or_avail_units(&mut rx, 1).await;
+            assert!(!result);
+        };
+    }
+
+    // Test for wait_shutdown_or_vacant_units with shutdown requested
+    #[async_std::test]
+    async fn test_wait_shutdown_or_vacant_units_shutdown() {
+        let (tx, _rx) = create_test_channel::<i32>(1);
+        let context = test_steady_context();
+        let tx = tx.clone();
+        let mut monitor = into_monitor!(context, [], [tx]);
+
+        // Request shutdown
+        {
+            let mut liveliness = monitor.runtime_state.write();
+            liveliness.request_shutdown();
+        }
+
+        if let Some(mut tx) = tx.try_lock() {
+            let result = monitor.wait_shutdown_or_vacant_units(&mut tx, 1).await;
+            assert!(result);
+        };
+    }
+
+    // Test for call_async with future that returns an error
+    #[async_std::test]
+    async fn test_call_async_with_error() {
+        let context = test_steady_context();
+        let monitor = into_monitor!(context, [], []);
+
+        let fut = async { Err::<i32, &str>("error") };
+        let result = monitor.call_async(fut).await;
+        assert_eq!(result, Some(Err("error")));
+    }
+ 
+    // Test for args method with String
+    #[test]
+    fn test_args_string() {
+        let args = "test_args".to_string();
+        let context = test_steady_context_with_args(args.clone());
+        let monitor = into_monitor!(context, [], []);
+
+        let retrieved_args: Option<&String> = monitor.args();
+        assert_eq!(retrieved_args, Some(&args));
+    }
+
+
+
+    // Test for take_slice with empty channel
+    #[test]
+    fn test_take_slice_empty_channel() {
+        let (tx,rx) = create_rx::<i32>(vec![]);
+        let mut slice = [0; 3];
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let count = monitor.take_slice(&mut rx, &mut slice);
+            assert_eq!(count, 0);
+        };
+    }
+
+    // Test for send_slice_until_full with full channel
+    #[test]
+    fn test_send_slice_until_full_full_channel() {
+        let (tx, _rx) = create_test_channel::<i32>(1);
+        let context = test_steady_context();
+        let tx = tx.clone();
+        let mut monitor = into_monitor!(context, [], [tx]);
+
+        if let Some(mut tx) = tx.try_lock() {
+            // Fill the channel
+            let _ = monitor.try_send(&mut tx, 1);
+
+            // Now the channel is full
+            let slice = [2, 3, 4];
+            let sent_count = monitor.send_slice_until_full(&mut tx, &slice);
+            assert_eq!(sent_count, 0);
+        };
+    }
+
+    // Test for take_into_iter with empty channel
+    #[test]
+    fn test_take_into_iter_empty_channel() {
+        let (tx,rx) = create_rx::<i32>(vec![]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let mut iter = monitor.take_into_iter(&mut rx);
+            assert_eq!(iter.next(), None);
+        };
+    }
+
+    // Test for try_peek_slice with empty channel
+    #[test]
+    fn test_try_peek_slice_empty_channel() {
+        let (tx,rx) = create_rx::<i32>(vec![]);
+        let mut slice = [0; 3];
+        let context = test_steady_context();
+        let monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let count = monitor.try_peek_slice(&mut rx, &mut slice);
+            assert_eq!(count, 0);
+        };
+    }
+
+    // Test for try_take with empty channel
+    #[test]
+    fn test_try_take_empty_channel() {
+        let (tx,rx) = create_rx::<i32>(vec![]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut rx) = rx.try_lock() {
+            let result = monitor.try_take(&mut rx);
+            assert_eq!(result, None);
+        };
+    }
+
+    // Test for is_empty when channel has elements
+    #[test]
+    fn test_is_empty_with_elements() {
+        let (tx,rx) = create_rx::<i32>(vec![1, 2, 3]);
+        let context = test_steady_context();
+        let monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut rx) = rx.try_lock() {
+            assert!(!monitor.is_empty(&mut rx));
+        };
+    }
+
+    // Test for is_full when channel is full
+    #[test]
+    fn test_is_full_when_full() {
+        let (tx, _rx) = create_test_channel::<i32>(1);
+        let context = test_steady_context();
+        let tx = tx.clone();
+        let mut monitor = into_monitor!(context, [], [tx]);
+
+        if let Some(mut tx) = tx.try_lock() {
+            // Fill the channel
+            let _ = monitor.try_send(&mut tx, 1);
+            assert!(monitor.is_full(&mut tx));
+        };
+    }
+
+
+    // Test for wait_closed_or_avail_units with closed channel
+    #[async_std::test]
+    async fn test_wait_closed_or_avail_units_closed_channel() {
+        let (tx,rx) = create_rx::<i32>(vec![]);
+        let context = test_steady_context();
+        let mut monitor = into_monitor!(context, [rx], []);
+
+        if let Some(mut tx) = tx.try_lock() {
+            tx.mark_closed();
+        }
+        if let Some(mut rx) = rx.try_lock() {         
+            let result = monitor.wait_closed_or_avail_units(&mut rx, 1).await;            
+            assert!(!result);
+        };
+    }
+
+    // Test for wait_shutdown with shutdown requested
+    #[async_std::test]
+    async fn test_wait_shutdown_with_shutdown() {
+        let context = test_steady_context();
+        let monitor = into_monitor!(context, [], []);
+
+        // Request shutdown
+        {
+            let mut liveliness = monitor.runtime_state.write();
+            liveliness.request_shutdown();
+        }
+
+        let result = monitor.wait_shutdown().await;
+        assert!(result);
+    }
+
 
 
 

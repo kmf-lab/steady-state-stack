@@ -103,7 +103,7 @@ num_cpus         = "1.16.0"
 # Release Plan
 # 0.1.0 - one year aniversary (ETA 12/04/24) relase single machine
 #         All warning cleaned up
-#         70% function test coverage
+#         74% function test coverage
 # 0.2.0 - distributed features ready for use (ETA 06/04/25)
 #         Aeron, ZeroMQ, LibP2P
 #         History Replay
@@ -112,6 +112,7 @@ num_cpus         = "1.16.0"
 # 1.0.0 - two year aniversary (ETA 12/04/25)
 #         Optimized thread scheduling (8,000K actors+)
 #         IOUring
+#         Web services
 
 #  Roadmap for distributed actors (core of the 2.0 release)
 # 1. Core: Aeron       https://crates.io/crates/aeron

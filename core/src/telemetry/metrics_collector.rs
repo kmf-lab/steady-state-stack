@@ -547,7 +547,8 @@ mod metric_collector_tests {
     use parking_lot::RwLock;
     use std::collections::VecDeque;
     use futures::executor::block_on;
-    use crate::GraphBuilder;
+    use crate::{steady_tx_bundle, GraphBuilder};
+    use crate::steady_config::REAL_CHANNEL_LENGTH_TO_FEATURE;
 
     #[test]
     fn test_raw_diagram_state_default() {
@@ -619,16 +620,20 @@ mod metric_collector_tests {
     #[async_std::test]
     async fn test_actor() {
         let mut graph = GraphBuilder::for_testing().build(());
-        let _dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>> = Arc::new(RwLock::new(Vec::new()));
-       // let mut optional_servers = graph.channel_builder().build_as_bundle();    
-        // let (tx_in, rx_in) = graph.channel_builder()
-        //     .with_capacity(10).build();
-            
-        // graph.actor_builder()
-        //      .with_name("UnitTest")
-        //      .build_spawn( move |context| internal_behavior(context
-        //                                                     , dynamic_senders_vec.clone()
-        //                                                     , optional_servers.clone()) );
+        let dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>> = Arc::new(RwLock::new(Vec::new()));
+     
+        let (tx, rx) = graph.channel_builder()
+            .with_labels(&["steady_state-telemetry"], true)
+            .with_capacity(REAL_CHANNEL_LENGTH_TO_FEATURE)
+            .build();
+
+        let optional_servers = steady_tx_bundle([tx.clone()]);
+              
+        graph.actor_builder()
+               .with_name("UnitTest")
+               .build_spawn( move |context| internal_behavior(context
+                                                              , dynamic_senders_vec.clone()
+                                                              , optional_servers.clone()) );
 
         // let test_data:Vec<DiagramData> = (0..1).map(|i| DiagramData::NodeDef( i
         //                                                                       , Box::new((

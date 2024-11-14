@@ -34,11 +34,31 @@ struct State {
 /// # Errors
 /// This function returns an error if the server fails to start or encounters a runtime error.
 pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Result<(), Box<dyn Error>> {
-    let addr = Some(format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port()));
-    internal_behavior(context, rx, addr).await
+    
+    //TODO: we could use this to turn of the server if desired.
+    let mut addr = Some(format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port()));
+
+    let opt_tcp:Arc<Option<Handle<TcpListener>>> = if let Some(ref addr) = addr {
+        //TODO: move this up if we can? so we can determine the port with :0 for testing.
+        if let Ok(h) = Handle::<TcpListener>::bind(addr) {
+            let local_addr = h.local_addr().expect("Unable to get local address");
+            //opt_addr.replace(format!("{}", local_addr));
+            Arc::new(Some(h))
+        } else {
+            error!("Unable to Bind to http://{}", addr);
+            Arc::new(None)
+        }
+    } else {
+        error!("Unable to Bind to http://{:?}", &addr);
+        Arc::new(None)
+    };
+
+    //NOTE: we unit test this internal_behavior with and without TcpListener
+    internal_behavior(context, rx, opt_tcp).await
 }
 
-async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, addr: Option<String>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, opt_tcp:Arc<Option<Handle<TcpListener>>>) -> Result<(), Box<dyn Error>> {
+
     let ctrl = context;
     #[cfg(feature = "telemetry_on_telemetry")]
     let mut ctrl = into_monitor!(ctrl, [rx], []);
@@ -71,42 +91,46 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, ad
     let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
 
     //Only spin up server if addr is provided, this allows for unit testing where we cannot open that port.
-    if let Some(addr) = addr {
+    let opt_tcp2 = opt_tcp.clone();
+    if opt_tcp2.is_some() {
+
         let state2 = state.clone();
         let config2 = config.clone();
+        
         //TODO: this hack spawn block will go to spawn_local after nuclei is fixed.
         // if I use spawn_local this blocks all other work on my thread but I am not sure why.
+
         spawn(async move {
-            let listener_new = if let Ok(a) = Handle::<TcpListener>::bind(&addr) {
-                a
-            } else {
-                error!("Unable to Bind to http://{}", &addr);
-                return Err::<(), String>("Unable to Bind to http://".into());
-            };
+            
+           if let Some(ref listener_new) = *opt_tcp2 {
+               let local_addr = listener_new.local_addr().expect("Unable to get local address");
 
-            #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
-            println!("Telemetry on http://{}", listener_new.get_ref().local_addr().expect("Unable to read local address"));
+               #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
+               println!("Telemetry on http://{}", local_addr);
 
-            #[cfg(feature = "prometheus_metrics")]
-            println!("Prometheus can scrape on on http://{}/metrics", listener_new.get_ref().local_addr().expect("Unable to read local address"));
+               #[cfg(feature = "prometheus_metrics")]
+               println!("Prometheus can scrape on on http://{}/metrics", listener_new.local_addr().expect("Unable to read local address"));
 
-            //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
-            //      for per/second metrics and many telemetry observers with slower refresh rates
-            loop {
-                let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
-                select! {  _ = shutdown.deref_mut() => {  break Ok(());  },
-                          result = listener_new.accept().fuse() => {
-                         match result {
-                            Ok((stream, _peer_addr)) => {
-                                let _ = handle_request(stream,state2.clone(),config2.clone()).await;
-                            }
-                            Err(e) => {
-                                error!("Error accepting connection: {}",e);
-                            }
-                        }
-                    } }
-            }
+               //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
+               //      for per/second metrics and many telemetry observers with slower refresh rates
+               loop {
+                   let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
+                   select! {  _ = shutdown.deref_mut() => {  break;  },
+                            result = listener_new.accept().fuse() => {
+                            match result {
+                               Ok((stream, _peer_addr)) => {
+                                   let _ = handle_request(stream,state2.clone(),config2.clone()).await;
+                               }
+                               Err(e) => {
+                                   error!("Error accepting connection: {}",e);
+                               }
+                           }
+                       } }
+               }
+           }
         }).detach();
+
+
     }
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
@@ -482,9 +506,11 @@ async fn handle_request(mut stream: Handle<TcpStream>,
 
 #[cfg(test)]
 mod meteric_server_tests {
+    use std::net::TcpListener;
     use std::sync::Arc;
     use std::time::Duration;
     use futures_timer::Delay;
+    use nuclei::Handle;
     use crate::{ActorIdentity, GraphBuilder};
     use crate::monitor::ActorMetaData;
     use crate::telemetry::metrics_collector::DiagramData;
@@ -496,10 +522,11 @@ mod meteric_server_tests {
          
          let (tx_in, rx_in) = graph.channel_builder()
              .with_capacity(10).build();
+
    
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context, rx_in.clone(), None) );
+            .build_spawn( move |context| internal_behavior(context, rx_in.clone(), Arc::new(None)) );
  
         let test_data:Vec<DiagramData> = (0..3).map(|i| DiagramData::NodeDef( i
                  , Box::new((
@@ -599,11 +626,26 @@ mod http_telemetry_tests {
         // Step 2: Start the metrics_server actor
         let server_ip = Some("127.0.0.1:9142".to_string());
         let (tx_in, rx_in) = graph.channel_builder().build();
-        let ip = server_ip.clone();
+
+        let opt_tcp:Arc<Option<Handle<TcpListener>>> = if let Some(ref addr) = server_ip {
+            //TODO: move this up if we can? so we can determine the port with :0 for testing.
+            if let Ok(h) = Handle::<TcpListener>::bind(addr) {
+                let local_addr = h.local_addr().expect("Unable to get local address");
+                //opt_addr.replace(format!("{}", local_addr));
+                Arc::new(Some(h))
+            } else {
+                error!("Unable to Bind to http://{}", addr);
+                Arc::new(None)
+            }
+        } else {
+            error!("Unable to Bind to http://{:?}", &server_ip);
+            Arc::new(None)
+        };
+
         graph.actor_builder()
             .with_name("metrics_server")
             .build_spawn(move |context| {
-                internal_behavior(context, rx_in.clone(), ip.clone())
+                internal_behavior(context, rx_in.clone(), opt_tcp.clone())
             });
 
         // Step 3: Start the graph
@@ -627,7 +669,7 @@ mod http_telemetry_tests {
             )),
         )).collect();
 
-        let node_status: Vec<ActorStatus> = (0..4).map(|i|
+        let node_status: Vec<ActorStatus> = (0..4).map(|_i|
             ActorStatus {
                 await_total_ns: 100,
                 unit_total_ns: 200,

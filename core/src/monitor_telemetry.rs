@@ -359,7 +359,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
 
 //tests
 #[cfg(test)]
-mod monitor_telemetry_tests {
+mod monitor_telemetry_old_tests {
 use std::sync::{Arc};
     use crate::monitor::{ActorMetaData, RxTel};
     use crate::monitor_telemetry::{SteadyTelemetryRx};
@@ -381,6 +381,199 @@ use std::sync::{Arc};
     }
 
  
+
+}
+
+// tests for the monitor telemetry module
+#[cfg(test)]
+mod monitor_telemetry_tests {
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+    use std::sync::atomic::{AtomicU16, AtomicU64};
+    use futures_util::lock::Mutex as FuturesMutex;
+    use crate::monitor::{
+        ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo,
+    };
+    use crate::monitor_telemetry::{
+        SteadyTelemetry, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend,
+        SteadyTelemetryTake,
+    };
+    use crate::{steady_config, SteadyTx};
+
+    // Helper function to create default ChannelMetaData
+    fn create_channel_meta(id: usize, capacity: usize) -> Arc<ChannelMetaData> {
+        Arc::new(ChannelMetaData {
+            id,
+            labels: vec![],
+            capacity,
+            display_labels: false,
+            line_expansion: 0.0,
+            show_type: None,
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            percentiles_filled: vec![],
+            percentiles_rate: vec![],
+            percentiles_latency: vec![],
+            std_dev_inflight: vec![],
+            std_dev_consumed: vec![],
+            std_dev_latency: vec![],
+            trigger_rate: vec![],
+            trigger_filled: vec![],
+            trigger_latency: vec![],
+            avg_filled: false,
+            avg_rate: false,
+            avg_latency: false,
+            min_filled: false,
+            max_filled: false,
+            connects_sidecar: false,
+            type_byte_count: 0,
+        })
+    }
+
+    #[test]
+    fn test_steady_telemetry_rx_is_empty_and_closed_all_none() {
+        let actor_metadata = Arc::new(ActorMetaData::default());
+        let telemetry_rx = SteadyTelemetryRx::<4, 4> {
+            send: None,
+            take: None,
+            actor: None,
+            actor_metadata: actor_metadata.clone(),
+        };
+
+        assert!(telemetry_rx.is_empty_and_closed());
+    }
+
+
+    #[test]
+    fn test_steady_telemetry_rx_actor_metadata_clone() {
+        let actor_metadata = Arc::new(ActorMetaData::default());
+        let telemetry_rx = SteadyTelemetryRx::<4, 4> {
+            send: None,
+            take: None,
+            actor: None,
+            actor_metadata: actor_metadata.clone(),
+        };
+
+        let metadata = telemetry_rx.actor_metadata();
+        assert_eq!(Arc::strong_count(&actor_metadata), 3);
+        assert_eq!(Arc::strong_count(&metadata), 3);
+    }
+
+  
+
+    #[test]
+    fn test_steady_telemetry_rx_tx_channel_id_vec_empty() {
+        let actor_metadata = Arc::new(ActorMetaData::default());
+        let telemetry_rx = SteadyTelemetryRx::<4, 4> {
+            send: None,
+            take: None,
+            actor: None,
+            actor_metadata,
+        };
+
+        let tx_channels = telemetry_rx.tx_channel_id_vec();
+        assert!(tx_channels.is_empty());
+    }
+
+
+
+    #[test]
+    fn test_steady_telemetry_rx_rx_channel_id_vec_empty() {
+        let actor_metadata = Arc::new(ActorMetaData::default());
+        let telemetry_rx = SteadyTelemetryRx::<4, 4> {
+            send: None,
+            take: None,
+            actor: None,
+            actor_metadata,
+        };
+
+        let rx_channels = telemetry_rx.rx_channel_id_vec();
+        assert!(rx_channels.is_empty());
+    }
+
+    
+
+    #[test]
+    fn test_steady_telemetry_is_dirty_all_none() {
+        let telemetry = SteadyTelemetry::<4, 4> {
+            send_tx: None,
+            send_rx: None,
+            state: None,
+        };
+
+        assert!(!telemetry.is_dirty());
+    }
+
+
+ 
+
+    #[test]
+    fn test_steady_telemetry_actor_rx_without_actor() {
+        let actor_metadata = Arc::new(ActorMetaData::default());
+        let telemetry_rx = SteadyTelemetryRx::<4, 4> {
+            send: None,
+            take: None,
+            actor: None,
+            actor_metadata,
+        };
+
+        let version = 1;
+        let actor_def = telemetry_rx.actor_rx(version);
+        assert!(actor_def.is_none());
+    }
+
+
+
+    #[test]
+    fn test_steady_telemetry_consume_actor_without_actor() {
+        let actor_metadata = Arc::new(ActorMetaData::default());
+        let telemetry_rx = SteadyTelemetryRx::<4, 4> {
+            send: None,
+            take: None,
+            actor: None,
+            actor_metadata,
+        };
+
+        let status = telemetry_rx.consume_actor();
+        assert!(status.is_none());
+    }
+
+ 
+
+    #[test]
+    fn test_steady_telemetry_consume_take_into_without_take() {
+        let telemetry_rx = SteadyTelemetryRx::<4, 4> {
+            send: None,
+            take: None,
+            actor: None,
+            actor_metadata: Arc::new(ActorMetaData::default()),
+        };
+
+        let mut take_send_source = vec![(0, 100)];
+        let mut future_take = vec![50];
+        let mut future_send = vec![0];
+
+        let result = telemetry_rx.consume_take_into(&mut take_send_source, &mut future_take, &mut future_send);
+        assert!(!result);
+    }
+
+
+    #[test]
+    fn test_steady_telemetry_consume_send_into_without_send() {
+        let telemetry_rx = SteadyTelemetryRx::<4, 4> {
+            send: None,
+            take: None,
+            actor: None,
+            actor_metadata: Arc::new(ActorMetaData::default()),
+        };
+
+        let mut take_send_target = vec![(0, 100)];
+        let mut future_send = vec![10];
+
+        let result = telemetry_rx.consume_send_into(&mut take_send_target, &mut future_send);
+        assert!(!result);
+    }
+
 
 }
 
