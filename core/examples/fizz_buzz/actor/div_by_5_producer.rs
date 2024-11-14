@@ -65,7 +65,7 @@ async fn internal_behavior(context: SteadyContext
     //the closure is called upon shutdown to determine if we need to postpone the shutdown for this actor
     while monitor.is_running(&mut ||numbers_tx.mark_closed()) {
 
-         let _clean = wait_for_all!(monitor.wait_periodic(Duration::from_millis(1000))    );
+         let _clean = await_for_all!(monitor.wait_periodic(Duration::from_millis(1000))    );
 
 
      //TODO:  here are all the channels you can read from

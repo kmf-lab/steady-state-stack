@@ -27,7 +27,7 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
     let mut buffer = [Tick::default(); BATCH];
 
     while monitor.is_running(&mut || ticks_rx.is_closed_and_empty() && ticks_tx.mark_closed()) {
-        let _clean = wait_for_all!(
+        let _clean = await_for_all!(
                                     monitor.wait_shutdown_or_avail_units(&mut ticks_rx,BATCH),
                                     monitor.wait_shutdown_or_vacant_units(&mut ticks_tx,BATCH)
                                    );

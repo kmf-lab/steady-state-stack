@@ -33,7 +33,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>
 
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
-        let _clean = wait_for_all!(   monitor.wait_shutdown_or_avail_units(&mut rx,1)
+        let _clean = await_for_all!(   monitor.wait_shutdown_or_avail_units(&mut rx,1)
                                      ,monitor.wait_shutdown_or_vacant_units(&mut tx,1)   );
 
         //in this example iterate once blocks/await until it has work to do

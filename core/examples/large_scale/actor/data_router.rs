@@ -32,7 +32,7 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext, one_of: us
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
        // info!("router a");
-        let _clean = wait_for_all_or_proceed_upon!(
+        let _clean = await_for_all_or_proceed_upon!(
             monitor.wait_periodic(Duration::from_millis(40)),
             monitor.wait_shutdown_or_avail_units(&mut rx,2),
             monitor.wait_shutdown_or_vacant_units_bundle(&mut tx,count/2,_tx_girth)

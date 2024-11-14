@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// * `$t:expr` - A list of futures to wait for.
 ///
 #[macro_export]
-macro_rules! wait_for_all {
+macro_rules! await_for_all {
     ($($t:expr),*) => {
         async {
             let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
@@ -32,7 +32,7 @@ macro_rules! wait_for_all {
 /// * `$($rest_futures:expr),*` - The rest of the futures to wait for.
 ///
 #[macro_export]
-macro_rules! wait_for_all_or_proceed_upon {
+macro_rules! await_for_all_or_proceed_upon {
     ($first_future:expr, $($rest_futures:expr),* $(,)?) => {
         async {
             use futures::future::FutureExt;
@@ -74,7 +74,7 @@ macro_rules! wait_for_all_or_proceed_upon {
 /// * `$($t:expr),*` - A list of futures to wait for.
 ///
 #[macro_export]
-macro_rules! wait_for_any {
+macro_rules! await_for_any {
     ($($t:expr),* $(,)?) => {
         async {
             use futures::future::FutureExt;
@@ -174,7 +174,7 @@ mod tests {
         let future2 = ready(true);
         let future3 = ready(true);
 
-        let result = wait_for_all!(future1, future2, future3);
+        let result = await_for_all!(future1, future2, future3);
         assert!(result);
     }
 
@@ -184,7 +184,7 @@ mod tests {
         let future2 = ready(false);
         let future3 = ready(true);
 
-        let result = wait_for_all!(future1, future2, future3);
+        let result = await_for_all!(future1, future2, future3);
         assert!(!result);
     }
 
@@ -200,7 +200,7 @@ mod tests {
             true
         };
 
-        let result = wait_for_all_or_proceed_upon!(future1, future2, future3);
+        let result = await_for_all_or_proceed_upon!(future1, future2, future3);
         assert!(result);
     }
 
@@ -213,7 +213,7 @@ mod tests {
         let future2 = ready(true);
         let future3 = ready(true);
 
-        let result = wait_for_all_or_proceed_upon!(future1, future2, future3);
+        let result = await_for_all_or_proceed_upon!(future1, future2, future3);
         assert!(result);
     }
 
@@ -226,7 +226,7 @@ mod tests {
         let future2 = ready(false);
         let future3 = ready(true);
 
-        let result = wait_for_all_or_proceed_upon!(future1, future2, future3);
+        let result = await_for_all_or_proceed_upon!(future1, future2, future3);
         assert!(!result);
     }
 }

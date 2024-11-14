@@ -25,14 +25,19 @@ pub async fn run(context: SteadyContext
 async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tick_counts_tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
     let _cli_args = context.args::<Args>();
 
+    // create the monitor for doing all channel work
     let mut monitor = into_monitor!(context, [ticks_rx],[tick_counts_tx]);
 
+    // lock the channels for use in this instance
     let mut ticks_rx = ticks_rx.lock().await;
     let mut tick_counts_tx = tick_counts_tx.lock().await;
     let mut buffer = [Tick::default(); 1000];
 
+    // start 'is running' loop so we detect shutdown an exit clean
     while monitor.is_running(&mut || ticks_rx.is_closed_and_empty() && tick_counts_tx.mark_closed()) {
-        let _clean = wait_for_all!(
+        
+        // async on any required conditions to ensure we are not spinning
+        let _clean = await_for_all!(
                                     monitor.wait_shutdown_or_avail_units(&mut ticks_rx,100),
                                     monitor.wait_shutdown_or_vacant_units(&mut tick_counts_tx,1)
                                    );

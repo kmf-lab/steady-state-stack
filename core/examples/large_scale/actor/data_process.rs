@@ -26,7 +26,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: Ste
 
     while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
-        let _clean = wait_for_all_or_proceed_upon!(
+        let _clean = await_for_all_or_proceed_upon!(
              monitor.wait_periodic(Duration::from_millis(20))
             ,monitor.wait_shutdown_or_avail_units(&mut rx,count)
             ,monitor.wait_shutdown_or_vacant_units(&mut tx,count)

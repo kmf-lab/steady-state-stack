@@ -65,7 +65,7 @@ async fn internal_behavior(context: SteadyContext
     while monitor.is_running(&mut ||
     errors_rx.is_closed_and_empty()) {
 
-         let _clean = wait_for_all!(monitor.wait_shutdown_or_avail_units(&mut errors_rx,1)    );
+         let _clean = await_for_all!(monitor.wait_shutdown_or_avail_units(&mut errors_rx,1)    );
 
 
      //TODO:  here are all the channels you can read from

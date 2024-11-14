@@ -134,7 +134,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
     }
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
-        let _clean = wait_for_all!( ctrl.wait_shutdown_or_avail_units(&mut rxg,1) );
+        let _clean = await_for_all!( ctrl.wait_shutdown_or_avail_units(&mut rxg,1) );
 
         if let Some(msg) = ctrl.try_take(&mut rxg) {
             process_msg(msg

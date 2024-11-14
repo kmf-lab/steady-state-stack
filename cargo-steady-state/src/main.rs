@@ -297,11 +297,11 @@ fn build_driver_block(actor: &Actor) -> String {
         //this block must be a wrapping select around the others
 
         if andy_drivers.is_empty() {
-            full_driver_block.push_str("    let _clean = wait_for_all!(");
+            full_driver_block.push_str("    let _clean = await_for_all!(");
             full_driver_block.push_str(&t);
             full_driver_block.push_str(");\n");
         } else {
-            full_driver_block.push_str("    let _clean = wait_for_all_or_proceed_upon!(");
+            full_driver_block.push_str("    let _clean = await_for_all_or_proceed_upon!(");
 
             full_driver_block.push_str(&t);
             full_driver_block.push('\n');
@@ -315,7 +315,7 @@ fn build_driver_block(actor: &Actor) -> String {
             full_driver_block.push_str("    );\n");
         }
     } else {
-        full_driver_block.push_str("    let _clean = wait_for_all!(");
+        full_driver_block.push_str("    let _clean = await_for_all!(");
         andy_drivers.iter().enumerate().for_each(|(i,t)| {
             if i>0 {
                 full_driver_block.push_str(",\n");
