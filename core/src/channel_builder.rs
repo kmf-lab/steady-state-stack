@@ -150,6 +150,12 @@ pub struct ChannelBuilder {
     /// If `true`, the channel is connected to a sidecar for additional processing or monitoring.
     connects_sidecar: bool,
 
+    /// Indicates whether the channel displays total count
+    ///
+    ///
+    show_total: bool,
+
+
     /// Indicates whether the maximum filled capacity should be monitored.
     ///
     /// If `true`, the maximum filled capacity is tracked for this channel.
@@ -221,6 +227,7 @@ impl ChannelBuilder {
             max_filled: false,
             min_filled: false,
             connects_sidecar: false,
+            show_total: true, //default to show total
             frame_rate_ms,
         }
     }
@@ -247,6 +254,14 @@ impl ChannelBuilder {
         let mut result = self.clone();
         result.refresh_rate_in_bits = 0;
         result.window_bucket_in_bits = 0;
+        result
+    }
+
+    /// Disables totals display
+    ///
+    pub fn with_no_totals(&self) -> Self {
+        let mut result = self.clone();
+        result.show_total = false;
         result
     }
 
@@ -583,6 +598,7 @@ impl ChannelBuilder {
             avg_rate: self.avg_rate,
             avg_latency: self.avg_latency,
             connects_sidecar: self.connects_sidecar,
+            show_total: self.show_total,
 
         }
     }

@@ -62,6 +62,7 @@ pub struct ChannelStatsComputer {
     pub(crate) current_rate: Option<ChannelBlock<u64>>,
     pub(crate) current_latency: Option<ChannelBlock<u64>>,
     pub(crate) prometheus_labels: String,
+    pub(crate) show_total: bool,
 }
 
 impl ChannelStatsComputer {
@@ -77,9 +78,7 @@ impl ChannelStatsComputer {
     pub(crate) fn init(&mut self, meta: &Arc<ChannelMetaData>, from_actor: ActorName, to_actor: ActorName, frame_rate_ms: u64) {
         assert!(meta.capacity > 0, "capacity must be greater than 0");
         self.capacity = meta.capacity;
-
-        //TODO: add other keys but we must be sure the values do not change with configurations.
-
+        self.show_total = meta.show_total;
         meta.labels.iter().for_each(|f| {
             self.prometheus_labels.push_str(f);
             self.prometheus_labels.push_str("=\"T\", ");
@@ -466,25 +465,27 @@ impl ChannelStatsComputer {
             self.compute_latency_labels(display_label, metric_text, &current_latency);
         }
 
-        display_label.push_str("Capacity: ");
-        display_label.push_str(itoa::Buffer::new().format(self.capacity));
-        display_label.push_str(" Total: ");
-        let mut b = itoa::Buffer::new();
-        let t = b.format(take);
-        let len = t.len();
-        let mut i = len % 3;
-        if i == 0 {
-            i = 3; // Start with a full group of 3 digits if the number length is a multiple of 3
+        if self.show_total {
+            display_label.push_str("Capacity: ");
+            display_label.push_str(itoa::Buffer::new().format(self.capacity));
+            display_label.push_str(" Total: ");
+            let mut b = itoa::Buffer::new();
+            let t = b.format(take);
+            let len = t.len();
+            let mut i = len % 3;
+            if i == 0 {
+                i = 3; // Start with a full group of 3 digits if the number length is a multiple of 3
+            }
+            // Push the first group (which could be less than 3 digits)
+            display_label.push_str(&t[..i]);
+            // Now loop through the rest of the string in chunks of 3
+            while i < len {
+                display_label.push(',');
+                display_label.push_str(&t[i..i + 3]);
+                i += 3;
+            }
+            display_label.push('\n');
         }
-        // Push the first group (which could be less than 3 digits)
-        display_label.push_str(&t[..i]);
-        // Now loop through the rest of the string in chunks of 3
-        while i < len {
-            display_label.push(',');
-            display_label.push_str(&t[i..i + 3]);
-            i += 3;
-        }
-        display_label.push('\n');
 
         // Set the default color in case we have no alerts.
         let mut line_color = DOT_GREY;

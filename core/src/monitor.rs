@@ -148,6 +148,7 @@ pub struct ChannelMetaData {
     pub(crate) max_filled: bool,
     pub(crate) connects_sidecar: bool,
     pub(crate) type_byte_count: usize,
+    pub(crate) show_total: bool,
 }
 
 /// Metadata for a transmitter channel.

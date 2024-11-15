@@ -427,6 +427,7 @@ mod monitor_telemetry_tests {
             max_filled: false,
             connects_sidecar: false,
             type_byte_count: 0,
+            show_total: true,
         })
     }
 

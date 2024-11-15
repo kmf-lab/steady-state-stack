@@ -35,7 +35,7 @@ struct State {
 /// This function returns an error if the server fails to start or encounters a runtime error.
 pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Result<(), Box<dyn Error>> {
     
-    //TODO: we could use this to turn of the server if desired.
+    //NOTE: we could use this to turn of the server if desired.
     let mut addr = Some(format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port()));
 
     let opt_tcp:Arc<Option<Handle<TcpListener>>> = if let Some(ref addr) = addr {
@@ -556,7 +556,7 @@ mod http_telemetry_tests {
 
     #[async_std::test]
     async fn test_metrics_server() {
-        let (mut graph, server_ip, tx_in) = stand_up_test_server().await;
+        let (mut graph, server_ip, tx_in) = stand_up_test_server("127.0.0.1:0").await;
 
         // Step 5: Capture and validate the metrics server content
         // Fetch the metrics from the server
@@ -615,7 +615,7 @@ mod http_telemetry_tests {
 
     }
 
-    async fn stand_up_test_server() -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
+    async fn stand_up_test_server(addr: &str) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
         // Step 1: Set up a minimal graph
         let mut graph = GraphBuilder::for_testing()
             .with_telemtry_production_rate_ms(500)
@@ -623,25 +623,25 @@ mod http_telemetry_tests {
             .with_telemetry_metric_features(false)
             .build(());
 
-        // Step 2: Start the metrics_server actor
-        let server_ip = Some("127.0.0.1:9142".to_string());
+        // Step 2: Start the metrics_server actor        
         let (tx_in, rx_in) = graph.channel_builder().build();
 
-        let opt_tcp:Arc<Option<Handle<TcpListener>>> = if let Some(ref addr) = server_ip {
+        if let Some(ref addr) = Some(addr.to_string()) {
             //TODO: move this up if we can? so we can determine the port with :0 for testing.
             if let Ok(h) = Handle::<TcpListener>::bind(addr) {
                 let local_addr = h.local_addr().expect("Unable to get local address");
-                //opt_addr.replace(format!("{}", local_addr));
-                Arc::new(Some(h))
+                let addr = format!("{}", local_addr).to_string();
+                println!("{}",&addr);                
+                launch_server(graph, Some(addr), tx_in, rx_in, Arc::new(Some(h))).await
             } else {
-                error!("Unable to Bind to http://{}", addr);
-                Arc::new(None)
+                panic!("Unable to Bind to http://{}", addr);
             }
         } else {
-            error!("Unable to Bind to http://{:?}", &server_ip);
-            Arc::new(None)
-        };
+            panic!("Unable to Bind to http://{:?}", &addr);
+        }        
+    }
 
+    async fn launch_server(mut graph: Graph, server_ip: Option<String>, tx_in: LazySteadyTx<DiagramData>, rx_in: LazySteadyRx<DiagramData>, opt_tcp: Arc<Option<Handle<TcpListener>>>) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
         graph.actor_builder()
             .with_name("metrics_server")
             .build_spawn(move |context| {
