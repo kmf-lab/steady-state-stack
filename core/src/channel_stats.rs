@@ -420,13 +420,13 @@ impl ChannelStatsComputer {
             metric_text.push_str(itoa::Buffer::new().format(inflight));
             metric_text.push('\n');
 
-            metric_text.push_str("send{");
+            metric_text.push_str("send_total{");
             metric_text.push_str(&self.prometheus_labels);
             metric_text.push_str("} ");
             metric_text.push_str(itoa::Buffer::new().format(send));
             metric_text.push('\n');
 
-            metric_text.push_str("take{");
+            metric_text.push_str("take_total{");
             metric_text.push_str(&self.prometheus_labels);
             metric_text.push_str("} ");
             metric_text.push_str(itoa::Buffer::new().format(take));
