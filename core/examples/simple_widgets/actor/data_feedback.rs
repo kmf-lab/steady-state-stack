@@ -19,34 +19,31 @@ pub struct FailureFeedback {
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
                  , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, rx, tx).await
+    internal_behavior(into_monitor!(context, [rx], [tx]), rx, tx).await
 }
 
-async fn internal_behavior(context: SteadyContext, rx: SteadyRx<FailureFeedback>, tx: SteadyTx<ChangeRequest>) -> Result<(), Box<dyn Error>> {
-    //trace!("running {:?} {:?}",context.id(),context.name());
-
-    let mut monitor = into_monitor!(context, [rx], [tx]);
+async fn internal_behavior<C: SteadyCommander>(mut cmd:C, rx: SteadyRx<FailureFeedback>, tx: SteadyTx<ChangeRequest>) -> Result<(), Box<dyn Error>> {
 
     let mut tx = tx.lock().await;
     let mut rx = rx.lock().await;
 
 
-    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
+    while cmd.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
-        let _clean = await_for_all!(   monitor.wait_shutdown_or_avail_units(&mut rx,1)
-                                     ,monitor.wait_shutdown_or_vacant_units(&mut tx,1)   );
+        let _clean = await_for_all!(   cmd.wait_shutdown_or_avail_units(&mut rx,1)
+                                     ,cmd.wait_shutdown_or_vacant_units(&mut tx,1)   );
 
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels
         //single pass of work, do not loop in here
-        if let Some(msg) = monitor.take_async(&mut rx).await {
+        if let Some(msg) = cmd.take_async(&mut rx).await {
             //we have a message to process
             //we do not care about the message we just need to send a change request
-            let _ = monitor.try_send(&mut tx,ChangeRequest {msg});
+            let _ = cmd.try_send(&mut tx, ChangeRequest {msg});
         }
 
         //we relay all our telemetry and return to the top to block for more work.
-        monitor.relay_stats_smartly();
+        cmd.relay_stats_smartly();
     }
     Ok(())
 }

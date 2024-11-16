@@ -13,7 +13,7 @@ use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
 use log::*;
-use futures_util::lock::{Mutex};
+use futures_util::lock::Mutex;
 use async_ringbuf::traits::Split;
 use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
@@ -23,6 +23,7 @@ use crate::{ActorIdentity, ActorName};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
 use crate::actor_builder::NodeTxRx;
+use crate::commander::SteadyCommander;
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
 /// or `Err` with a value of type `E`.

@@ -107,7 +107,7 @@ num_cpus         = "1.16.0"
 # 0.2.0 - distributed features ready for use (ETA 06/04/25)
 #         Aeron, ZeroMQ, LibP2P
 #         History Replay
-#         Label Filtering
+#         Label Filtering and await 'on what?' tracking
 #         80% function test coverage
 # 1.0.0 - two year aniversary (ETA 12/04/25)
 #         Optimized thread scheduling (8,000K actors+)

@@ -8,7 +8,7 @@ use crate::Args;
 
 
 use std::error::Error;
-
+use steady_state::commander::SteadyCommander;
 
 #[derive(Default)]
 pub(crate) struct PrintSignal {

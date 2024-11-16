@@ -59,7 +59,7 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Re
 
 async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, opt_tcp:Arc<Option<Handle<TcpListener>>>) -> Result<(), Box<dyn Error>> {
 
-    let ctrl = context;
+    let mut ctrl = context;
     #[cfg(feature = "telemetry_on_telemetry")]
     let mut ctrl = into_monitor!(ctrl, [rx], []);
 

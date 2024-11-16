@@ -546,12 +546,6 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     /// A `JoinAll` future that resolves when all receivers are locked.
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>>;
 
-    /// Retrieves a slice of receiver definitions.
-    ///
-    /// # Returns
-    /// A slice of receiver definitions.
-    fn def_slice(&self) -> [&dyn RxDef; GIRTH];
-
     /// Retrieves metadata for all receivers in the bundle.
     ///
     /// # Returns
@@ -574,14 +568,6 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
-    fn def_slice(&self) -> [&dyn RxDef; GIRTH] {
-        self.iter()
-            .map(|x| x as &dyn RxDef)
-            .collect::<Vec<&dyn RxDef>>()
-            .try_into()
-            .expect("Internal Error")
-    }
-
     fn meta_data(&self) -> [RxMetaData; GIRTH] {
         self.iter()
             .map(|x| x.meta_data())
@@ -596,15 +582,12 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
             async move {
                 let mut guard = rx.lock().await;
                 guard.wait_avail_units(avail_count).await;
-            }
-                .boxed()
+            }.boxed()
         });
 
-        let futures: Vec<_> = futures.collect();
-
         let mut count_down = ready_channels.min(GIRTH);
-        let mut futures = futures;
 
+        let mut futures: Vec<_> = futures.collect();
         while !futures.is_empty() {
             let (_result, _index, remaining) = select_all(futures).await;
             futures = remaining;

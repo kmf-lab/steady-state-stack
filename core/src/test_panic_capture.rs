@@ -3,6 +3,8 @@
 //! The test creates a minimal graph setup to verify that panics are correctly captured and handled,
 //! ensuring that the graph can restart actors as intended.
 
+use crate::commander::SteadyCommander;
+
 #[cfg(test)]
 mod simple_graph_test {
     use crate::*;
@@ -72,7 +74,7 @@ mod simple_graph_test {
     
         graph.actor_builder()
             .with_name("consumer")
-            .build_spawn(move |context| {
+            .build_spawn(move |mut context| {
                 let rx = rx.clone();
                 let count = consume_count.clone();
                 async move {

@@ -16,6 +16,7 @@ use futures_util::{FutureExt, select};
 use crate::*;
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
+use crate::commander::SteadyCommander;
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannelResponder};
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
@@ -270,90 +271,88 @@ impl Drop for FinallyRollupProfileGuard<'_> {
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 
-    //TODO: future feature to optimize threading, not yet implemented
-    //monitor.chain_channels([rx],tx); //any of the left channels may produce output on the right
 
-
-    /// Checks if the LocalMonitor is running.
+    /// Marks the start of a high-activity profile period for telemetry monitoring.
     ///
     /// # Parameters
-    /// - `accept_fn`: A mutable closure that returns a boolean.
-    ///
-    /// # Returns
-    /// `true` if the monitor is running, otherwise `false`.
-    #[inline]
-    pub fn is_running(&mut self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
-        // in case we are in a tight loop and need to let other actors run on this thread.
-        executor::block_on(yield_now::yield_now());
-
-        loop {
-            let result = {
-                let liveliness = self.runtime_state.read();
-                let ident = self.ident;
-                liveliness.is_running(ident, accept_fn)
-            };
-            if let Some(result) = result {
-                if (!result) || self.is_running_iteration_count.is_zero() {
-                    //stopping or starting so clear out all the buffers
-                    self.relay_stats(); //testing mutable self and self flush of relay data.
-                } else {
-                    //if the frame rate dictates do a refresh
-                    self.relay_stats_smartly();
-                }
-                self.is_running_iteration_count += 1;
-                return result;
-            } else {
-                //wait until we are in a running state
-                executor::block_on(Delay::new(Duration::from_millis(10)));
+    /// - `x`: The index representing the type of call being monitored.
+    pub(crate) fn start_profile(&self, x: usize) -> Option<FinallyRollupProfileGuard> {
+        if let Some(ref st) = self.telemetry.state {
+            let _ = st.calls[x].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+            // if you are the first then store otherwise we leave it as the oldest start
+            if st.hot_profile_concurrent.fetch_add(1, Ordering::SeqCst).is_zero() {
+                st.hot_profile.store(self.actor_start_time.elapsed().as_nanos() as u64, Ordering::Relaxed);
             }
+            Some(FinallyRollupProfileGuard { st, start: self.actor_start_time })
+        } else {
+            None
         }
     }
 
-    /// Requests a stop of the graph.
-    ///
-    /// # Returns
-    /// `true` if the request was successful, otherwise `false`.
-    #[inline]
-    pub fn request_graph_stop(&self) -> bool {
-        let mut liveliness = self.runtime_state.write();
-        liveliness.request_shutdown();
+    //TODO: check usage and add to the SteadyState
+    pub(crate) fn validate_capacity_rx<T>(this: &mut Rx<T>, count: usize) -> usize {
+        if count <= this.capacity() {
+            count
+        } else {
+            let capacity = this.capacity();
+            if this.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+                warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+                this.last_error_send = Instant::now();
+            }
+            capacity
+        }
+    }
+
+    //TODO: check usage and add to the SteadyState
+    pub(crate) fn validate_capacity_tx<T>(this: &mut Tx<T>, count: usize) -> usize {
+        if count <= this.capacity() {
+            count
+        } else {
+            let capacity = this.capacity();
+            if this.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+                warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+                this.last_error_send = Instant::now();
+            }
+            capacity
+        }
+    }
+
+    //TODO: check usage and add to the SteadyState
+    pub(crate) async fn internal_wait_shutdown(&self) -> bool {
+        let one_shot = &self.oneshot_shutdown;
+        let mut guard = one_shot.lock().await;
+        if !guard.is_terminated() {
+            let _ = guard.deref_mut().await;
+        }
         true
     }
 
-    /// Checks if the liveliness state matches any of the target states.
-    ///
-    /// # Parameters
-    /// - `target`: A slice of `GraphLivelinessState`.
-    ///
-    /// # Returns
-    /// `true` if the liveliness state matches any target state, otherwise `false`.
-    pub fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool {
-        let liveliness = self.runtime_state.read();
-        liveliness.is_in_state(target)
+    //TODO: check usage and add to the SteadyState
+    pub(crate) fn dynamic_event_count(&mut self
+                                      , local_index: usize //this.local_index
+                                      , id: usize //this.channel_meta_data.id
+                                      , count: isize) -> usize {
+        if let Some(ref mut tel) = self.telemetry.send_rx {
+            tel.process_event(local_index, id, count)
+        } else {
+            MONITOR_NOT
+        }
     }
 
-    /// Waits while the actor is running.
-    ///
-    /// # Returns
-    /// A future that resolves to `Ok(())` if the monitor stops, otherwise `Err(())`.
-    pub fn wait_while_running(&self) -> impl Future<Output = Result<(), ()>> {
-        WaitWhileRunningFuture::new(self.runtime_state.clone())
-    }
+}
+
+impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
 
 
-    /// Returns a side channel responder if available.
-    ///
-    /// # Returns
-    /// An `Option` containing a `SideChannelResponder` if available.
-    pub fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
-        self.node_tx_rx.as_ref().map(|tr| SideChannelResponder::new(tr.clone(), self.ident))
-    }
+    //TODO: future feature to optimize threading, not yet implemented
+    //monitor.chain_channels([rx],tx); //any of the left channels may produce output on the right
+
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     ///
     /// This method holds the data if it is called more frequently than the collector can consume the data.
     /// It is designed for use in tight loops where telemetry data is collected frequently.
-    pub fn relay_stats_smartly(&mut self) {
+    fn relay_stats_smartly(&mut self) {
         let last_elapsed = self.last_telemetry_send.elapsed();
         if last_elapsed.as_micros() as u64 * (REAL_CHANNEL_LENGTH_TO_COLLECTOR as u64) >= (1000u64 * self.frame_rate_ms) {
             setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
@@ -373,31 +372,12 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// This method ignores the last telemetry send time and may overload the telemetry if called too frequently.
     /// It is designed for use in low-frequency telemetry collection scenarios, specifically cases
     /// when we know the actor will do a blocking wait for a long time and we want relay what we have before that.
-    pub fn relay_stats(&mut self) {
+    fn relay_stats(&mut self) {
         let last_elapsed = self.last_telemetry_send.elapsed();
         setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
-        self.last_telemetry_send = Instant::now();        
+        self.last_telemetry_send = Instant::now();
     }
 
-    /// Asynchronously waits for a specified duration.
-    ///
-    /// # Parameters
-    /// - `duration`: The duration to wait.
-    ///
-    /// # Asynchronous
-    pub async fn wait(&self, duration: Duration) {
-        let _guard = self.start_profile(CALL_WAIT);
-
-        let one_down = &mut self.oneshot_shutdown.lock().await;
-        select! { _ = one_down.deref_mut() => {}, _ = Delay::new(duration).fuse() => {} }
-    }
-
-    /// Yields control so other actors may be able to make use of this thread.
-    /// Returns immediately if there is nothing scheduled to check.
-    pub async fn yield_now(&self) {
-        let _guard = self.start_profile(CALL_WAIT); // start timer to measure duration
-        yield_now().await;
-    }
 
     /// Periodically relays telemetry data at a specified rate.
     ///
@@ -409,69 +389,30 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// `false` if a shutdown signal was detected during the waiting period.
     ///
     /// # Asynchronous
-    pub async fn relay_stats_periodic(&mut self, duration_rate: Duration) -> bool {
+    async fn relay_stats_periodic(&mut self, duration_rate: Duration) -> bool {
         let result = self.wait_periodic(duration_rate).await;
         self.relay_stats_smartly();
         result
     }
-
-    /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
-    ///
-    /// This method helps maintain a consistent period between consecutive calls, even if the
-    /// execution time of the work performed in between calls fluctuates. It calculates the
-    /// remaining time until the next desired periodic interval and waits for that duration.
-    ///
-    /// If a shutdown signal is detected during the waiting period, the method returns early
-    /// with a value of `false`. Otherwise, it waits for the full duration and returns `true`.
-    ///
-    /// # Arguments
-    ///
-    /// * `duration_rate` - The desired duration between periodic calls.
-    ///
-    /// # Returns
-    ///
-    /// * `true` if the full waiting duration was completed without interruption.
-    /// * `false` if a shutdown signal was detected during the waiting period.
-    ///
-    pub async fn wait_periodic(&self, duration_rate: Duration) -> bool {
-        let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
-        let last = self.last_periodic_wait.load(Ordering::SeqCst);
-        let remaining_duration = if last <= now_nanos {
-            duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
-        } else {
-            duration_rate
-        };
-        let op = Delay::new(remaining_duration);
-
-        let _guard = self.start_profile(CALL_WAIT);
-        let one_down = &mut self.oneshot_shutdown.lock().await;
-      //  let result = if !one_down.is_terminated() { //TODO: is this needed?
-        let result =     select! {
-                _ = &mut one_down.deref_mut() => false,
-                _ = op.fuse() => true,
-            };
-      //  } else {
-      //      false
-      //  };
-        self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
-        result
-    }
-
-    /// Marks the start of a high-activity profile period for telemetry monitoring.
+    
+    /// Checks if the liveliness state matches any of the target states.
     ///
     /// # Parameters
-    /// - `x`: The index representing the type of call being monitored.
-    fn start_profile(&self, x: usize) -> Option<FinallyRollupProfileGuard> {
-        if let Some(ref st) = self.telemetry.state {
-            let _ = st.calls[x].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-            // if you are the first then store otherwise we leave it as the oldest start
-            if st.hot_profile_concurrent.fetch_add(1, Ordering::SeqCst).is_zero() {
-                st.hot_profile.store(self.actor_start_time.elapsed().as_nanos() as u64, Ordering::Relaxed);
-            }
-            Some(FinallyRollupProfileGuard { st, start: self.actor_start_time })
-        } else {
-            None
-        }
+    /// - `target`: A slice of `GraphLivelinessState`.
+    ///
+    /// # Returns
+    /// `true` if the liveliness state matches any target state, otherwise `false`.
+    fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool {
+        let liveliness = self.runtime_state.read();
+        liveliness.is_in_state(target)
+    }
+
+    /// Waits while the actor is running.
+    ///
+    /// # Returns
+    /// A future that resolves to `Ok(())` if the monitor stops, otherwise `Err(())`.
+    fn wait_while_running(&self) -> impl Future<Output = Result<(), ()>> {
+        WaitWhileRunningFuture::new(self.runtime_state.clone())
     }
 
     /// Waits until a specified number of units are available in the Rx channel bundle.
@@ -488,7 +429,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_shutdown_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    async fn wait_shutdown_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
         where
             T: Send + Sync,
     {
@@ -511,7 +452,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
         //this adds one extra feature as the last one
         futures.push( async move {
-            let guard = &mut self.oneshot_shutdown.lock().await;
+            let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
             if !guard.is_terminated() {
                 let _ = guard.deref_mut().await;
             }
@@ -548,7 +489,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_closed_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    async fn wait_closed_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
     {
@@ -571,7 +512,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
         //this adds one extra feature as the last one
         futures.push( async move {
-            let guard = &mut self.oneshot_shutdown.lock().await;
+            let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
             if !guard.is_terminated() {
                 let _ = guard.deref_mut().await;
             }
@@ -594,6 +535,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         result.load(Ordering::Relaxed)
     }
 
+
     /// Waits until a specified number of units are available in the Rx channel bundle.
     ///
     /// # Parameters
@@ -608,7 +550,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
     {
@@ -631,7 +573,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
         //this adds one extra feature as the last one
         futures.push( async move {
-            let guard = &mut self.oneshot_shutdown.lock().await;
+            let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
             if !guard.is_terminated() {
                 let _ = guard.deref_mut().await;
             }
@@ -654,6 +596,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         result.load(Ordering::Relaxed)
     }
 
+
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
     ///
     /// # Parameters
@@ -668,7 +611,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_shutdown_or_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    async fn wait_shutdown_or_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
         where
             T: Send + Sync,
     {
@@ -691,7 +634,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
         //this adds one extra feature as the last one
         futures.push( async move {
-            let guard = &mut self.oneshot_shutdown.lock().await;
+            let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
             if !guard.is_terminated() {
                 let _ = guard.deref_mut().await;
             }
@@ -714,7 +657,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         result.load(Ordering::Relaxed)
     }
 
-
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
     ///
     /// # Parameters
@@ -729,7 +671,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    pub async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+    async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
         T: Send + Sync,
     {
@@ -752,7 +694,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
         //this adds one extra feature as the last one
         futures.push( async move {
-            let guard = &mut self.oneshot_shutdown.lock().await;
+            let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
             if !guard.is_terminated() {
                 let _ = guard.deref_mut().await;
             }
@@ -775,6 +717,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         result.load(Ordering::Relaxed)
     }
 
+
     /// Attempts to peek at a slice of messages without removing them from the channel.
     ///
     /// # Parameters
@@ -786,12 +729,13 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    pub fn try_peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+    fn try_peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
     where
         T: Copy
     {
         this.shared_try_peek_slice(elems)
     }
+
 
     /// Asynchronously peeks at a slice of messages, waiting for a specified count to be available.
     ///
@@ -807,7 +751,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `T`: Must implement `Copy`.
     ///
     /// # Asynchronous
-    pub async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
+    async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
     where
         T: Copy
     {
@@ -829,7 +773,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    pub fn take_slice<T>(&mut self, this: &mut Rx<T>, slice: &mut [T]) -> usize
+    fn take_slice<T>(&mut self, this: &mut Rx<T>, slice: &mut [T]) -> usize
         where
             T: Copy,
     {
@@ -844,30 +788,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         done
     }
 
-
-    /// Attempts to take a single message from the channel without blocking.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
-    pub fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
-        if let Some(ref st) = self.telemetry.state {
-            let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
-        match this.shared_try_take() {
-            Some(msg) => {
-                this.local_index = self.dynamic_event_count(
-                    this.local_index,
-                    this.channel_meta_data.id,
-                    1);
-                Some(msg)
-            }
-            None => None,
-        }
-    }
-
     /// Attempts to peek at the next message in the channel without removing it.
     ///
     /// # Parameters
@@ -875,7 +795,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Returns
     /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
-    pub fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
+    fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
     {
         this.shared_try_peek()
     }
@@ -887,9 +807,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Returns
     /// An iterator over the messages in the channel.
-    pub fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
+    fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
         this.shared_try_peek_iter()
     }
+
 
     /// Asynchronously returns an iterator over the messages in the channel,
     /// waiting for a specified number of messages to be available.
@@ -902,7 +823,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// An iterator over the messages in the channel.
     ///
     /// # Asynchronous
-    pub async fn peek_async_iter<'a, T>(&'a self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
+    async fn peek_async_iter<'a, T>(&'a self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
         let _guard = self.start_profile(CALL_OTHER);
         if self.telemetry.is_dirty() {
             //TODO: check our clock if we have dirty data waiting to be sent
@@ -918,7 +839,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Returns
     /// `true` if the channel has no messages available, otherwise `false`.
-    pub fn is_empty<T>(&self, this: &mut Rx<T>) -> bool {
+    fn is_empty<T>(&self, this: &mut Rx<T>) -> bool {
         this.shared_is_empty()
     }
 
@@ -929,9 +850,193 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Returns
     /// A `usize` indicating the number of available messages.
-    pub fn avail_units<T>(&self, this: &mut Rx<T>) -> usize {
+    fn avail_units<T>(&self, this: &mut Rx<T>) -> usize {
         this.shared_avail_units()
     }
+
+    /// Asynchronously peeks at the next available message in the channel without removing it.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
+    ///
+    /// # Asynchronous
+    async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
+    {
+        let _guard = self.start_profile(CALL_OTHER);
+        if self.telemetry.is_dirty() {
+            //TODO: check our clock if we have dirty data waiting to be sent
+
+        }
+        this.shared_peek_async().await
+    }
+
+
+    /// Sends a slice of messages to the Tx channel until it is full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `slice`: A slice of messages to be sent.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
+    ///
+    /// # Type Constraints
+    /// - `T`: Must implement `Copy`.
+    fn send_slice_until_full<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
+        where
+            T: Copy,
+    {
+        if let Some(ref mut st) = self.telemetry.state {
+            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+
+        let done = this.shared_send_slice_until_full(slice);
+
+        this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
+            tel.process_event(this.local_index, this.channel_meta_data.id, done as isize)
+        } else {
+            MONITOR_NOT
+        };
+
+        done
+    }
+
+    /// Sends messages from an iterator to the Tx channel until it is full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `iter`: An iterator that yields messages of type `T`.
+    ///
+    /// # Returns
+    /// The number of messages successfully sent before the channel became full.
+    fn send_iter_until_full<T, I: Iterator<Item = T>>(&mut self, this: &mut Tx<T>, iter: I) -> usize {
+        if let Some(ref mut st) = self.telemetry.state {
+            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+
+        let done = this.shared_send_iter_until_full(iter);
+
+        this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
+            tel.process_event(this.local_index, this.channel_meta_data.id, done as isize)
+        } else {
+            MONITOR_NOT
+        };
+
+        done
+    }
+
+    /// Attempts to send a single message to the Tx channel without blocking.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `msg`: The message to be sent.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
+    fn try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T> {
+        if let Some(ref mut st) = self.telemetry.state {
+            let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+
+        match this.shared_try_send(msg) {
+            Ok(_) => {
+                this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
+                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
+                } else {
+                    MONITOR_NOT
+                };
+                Ok(())
+            }
+            Err(sensitive) => Err(sensitive),
+        }
+    }
+
+    /// Checks if the Tx channel is currently full.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Returns
+    /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
+    fn is_full<T>(&self, this: &mut Tx<T>) -> bool {
+        this.is_full()
+    }
+
+    /// Returns the number of vacant units in the Tx channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Returns
+    /// The number of messages that can still be sent before the channel is full.
+    fn vacant_units<T>(&self, this: &mut Tx<T>) -> usize {
+        this.shared_vacant_units()
+    }
+
+    /// Asynchronously waits until the Tx channel is empty.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    ///
+    /// # Asynchronous
+    async fn wait_empty<T>(&self, this: &mut Tx<T>) -> bool {
+        let _guard = self.start_profile(CALL_WAIT);
+        if self.telemetry.is_dirty() {
+            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
+                - (self.last_telemetry_send.elapsed().as_micros() as i64
+                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            if remaining_micros <= 0 {
+                false //need a relay now so return
+            } else {
+                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                let wat = this.shared_wait_empty();
+                select! {
+                            _ = dur.fuse() => false,
+                            x = wat.fuse() => x
+                        }
+            }
+        } else {
+            this.shared_wait_empty().await
+        }
+    }
+
+    /// Takes messages into an iterator.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An iterator over the taken messages.
+    fn take_into_iter<'a, T: Sync + Send>(& mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a
+    {
+        if let Some(ref st) = self.telemetry.state {
+            let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+
+        //we assume these will be consumed by the iterator but on drop we will
+        //confirm the exact number if it is too large or too small
+        let units = this.shared_avail_units();
+
+        this.local_index = if let Some(ref mut tel) = self.telemetry.send_rx {
+                                let drift = this.iterator_count_drift.load(Ordering::Relaxed);
+                                this.iterator_count_drift.store(0, Ordering::Relaxed);
+                                let idx = this.local_index;
+                                let id = this.channel_meta_data.id;
+                                tel.process_event(idx, id, units as isize + drift)
+                            } else {
+                                MONITOR_NOT
+                            };
+        // get the iterator from this RX so we can count each item there.
+        let iterator_count_drift = this.iterator_count_drift.clone();
+        DriftCountIterator::new( units
+                                , this.shared_take_into_iter()
+                                , iterator_count_drift )
+      //  this.shared_take_into_iter()
+    }
+
 
     /// Calls an asynchronous function and monitors its execution for telemetry.
     ///
@@ -942,26 +1047,187 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// The output of the asynchronous function `f`.
     ///
     /// # Asynchronous
-    pub async fn call_async<F>(&self, operation: F) -> Option<F::Output>
+    async fn call_async<F>(&self, operation: F) -> Option<F::Output>
         where
             F: Future,
     {
         let _guard = self.start_profile(CALL_OTHER);
 
-        let one_down = &mut self.oneshot_shutdown.lock().await;
+        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
         select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), }
     }
 
-    fn validate_capacity_rx<T>(this: &mut Rx<T>, count: usize) -> usize {
-        if count <= this.capacity() {
-            count
+    /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
+    ///
+    /// This method helps maintain a consistent period between consecutive calls, even if the
+    /// execution time of the work performed in between calls fluctuates. It calculates the
+    /// remaining time until the next desired periodic interval and waits for that duration.
+    ///
+    /// If a shutdown signal is detected during the waiting period, the method returns early
+    /// with a value of `false`. Otherwise, it waits for the full duration and returns `true`.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration_rate` - The desired duration between periodic calls.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the full waiting duration was completed without interruption.
+    /// * `false` if a shutdown signal was detected during the waiting period.
+    ///
+    async fn wait_periodic(&self, duration_rate: Duration) -> bool {
+        let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
+        let last = self.last_periodic_wait.load(Ordering::SeqCst);
+        let remaining_duration = if last <= now_nanos {
+            duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
         } else {
-            let capacity = this.capacity();
-            if this.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
-                warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
-                this.last_error_send = Instant::now();
+            duration_rate
+        };
+        let op = Delay::new(remaining_duration);
+
+        let _guard = self.start_profile(CALL_WAIT);
+        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
+      //  let result = if !one_down.is_terminated() { //TODO: is this needed?
+        let result =     select! {
+                _ = &mut one_down.deref_mut() => false,
+                _ = op.fuse() => true,
+            };
+      //  } else {
+      //      false
+      //  };
+        self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
+        result
+    }
+
+    /// Asynchronously waits for a specified duration.
+    ///
+    /// # Parameters
+    /// - `duration`: The duration to wait.
+    ///
+    /// # Asynchronous
+    async fn wait(&self, duration: Duration) {
+        let _guard = self.start_profile(CALL_WAIT);
+        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
+        select! { _ = one_down.deref_mut() => {}, _ = Delay::new(duration).fuse() => {} }
+    }
+
+    /// Yields control so other actors may be able to make use of this thread.
+    /// Returns immediately if there is nothing scheduled to check.
+    async fn yield_now(&self) {
+        let _guard = self.start_profile(CALL_WAIT); // start timer to measure duration
+        yield_now().await;
+    }
+
+
+    /// Asynchronously waits for a future to complete or a shutdown signal to be received.
+    ///
+    /// # Parameters
+    /// - `fut`: A pinned future to wait for completion.
+    ///
+    /// # Returns
+    /// `true` if the future completes before the shutdown signal, otherwise `false`.
+    ///
+    /// # Asynchronous
+    async fn wait_future_void(&self, mut fut: Pin<Box<dyn FusedFuture<Output = ()>>>) -> bool {
+        let _guard = self.start_profile(CALL_OTHER);
+        //TODO: should we add our dirty data check ?? not sure since we do not know what is called.
+        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
+        let mut one_fused = one_down.deref_mut().fuse();
+        if !one_fused.is_terminated() {
+            select! { _ = one_fused => false, _ = fut => true, }
+        } else {
+            false
+        }
+    }
+
+    /// Sends a message to the Tx channel asynchronously, waiting if necessary until space is available.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to a `Tx<T>` instance.
+    /// - `a`: The message to be sent.
+    /// - `saturation`: The saturation policy to use.
+    ///
+    /// # Returns
+    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
+    ///
+    /// # Asynchronous
+    async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
+        let guard = self.start_profile(CALL_SINGLE_WRITE);
+
+        if self.telemetry.is_dirty() {
+            //TODO: check our clock if we have dirty data waiting to be sent
+
+        }
+
+        let result = this.shared_send_async(a, self.ident, saturation).await;
+        drop(guard);
+        match result {
+            Ok(_) => {
+                this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
+                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
+                } else {
+                    MONITOR_NOT
+                };
+                Ok(())
             }
-            capacity
+            Err(sensitive) => {
+                error!("Unexpected error send_async telemetry: {:?} type: {}", self.ident, type_name::<T>());
+                Err(sensitive)
+            }
+        }
+    }
+
+
+    /// Attempts to take a single message from the channel without blocking.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
+    fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
+        if let Some(ref st) = self.telemetry.state {
+            let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+        match this.shared_try_take() {
+            Some(msg) => {
+                this.local_index = self.dynamic_event_count(
+                    this.local_index,
+                    this.channel_meta_data.id,
+                    1);
+                Some(msg)
+            }
+            None => None,
+        }
+    }
+
+    /// Asynchronously retrieves and removes a single message from the channel.
+    ///
+    /// # Parameters
+    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    ///
+    /// # Returns
+    /// An `Option<T>` which is `Some(T)` when a message becomes available.
+    /// None is ONLY returned if there is no data AND a shutdown was requested!
+    ///
+    /// # Asynchronous
+    async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
+        let guard = self.start_profile(CALL_SINGLE_READ);
+
+        if self.telemetry.is_dirty() {
+            //TODO: check our clock if we have dirty data waiting to be sent
+
+        }
+
+
+        let result = this.shared_take_async().await; //Can return None if we are shutting down
+        drop(guard);
+        match result {
+            Some(result) => {
+                this.local_index = self.dynamic_event_count(this.local_index, this.channel_meta_data.id, 1);
+                Some(result)
+            }
+            None => None,
         }
     }
 
@@ -975,7 +1241,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// `true` if the units are available, otherwise `false`.
     ///
     /// # Asynchronous
-    pub async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
 
@@ -1008,7 +1274,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// `true` if the units are available, otherwise `false` if closed channel.
     ///
     /// # Asynchronous
-    pub async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
         if self.telemetry.is_dirty() {
@@ -1040,7 +1306,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// `true` if the units are available, otherwise `false` if pending telemetry data to send.
     ///
     /// # Asynchronous
-    pub async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
         if self.telemetry.is_dirty() {
@@ -1063,203 +1329,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     }
 
-    /// uses opposite boolean as others since we are asking for shutdown 
-    /// returns true upon shutdown detection
-    pub async fn wait_shutdown(&self) -> bool {
-        let _guard = self.start_profile(CALL_OTHER);
-        if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
-            if remaining_micros <= 0 {
-                false //need a relay now so return
-            } else {
-                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let wat = self.internal_wait_shutdown();
-                select! {
-                            _ = dur.fuse() => false,
-                            x = wat.fuse() => x
-                        }
-            }
-        } else {
-            self.internal_wait_shutdown().await
-        }
-    }
 
-    async fn internal_wait_shutdown(&self) -> bool {
-        let one_shot = &self.oneshot_shutdown;
-        let mut guard = one_shot.lock().await;
-        if !guard.is_terminated() {
-            let _ = guard.deref_mut().await;
-        }
-        true
-    }
-
-    /// Asynchronously peeks at the next available message in the channel without removing it.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
-    ///
-    /// # Asynchronous
-    pub async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
-    {
-        let _guard = self.start_profile(CALL_OTHER);
-        if self.telemetry.is_dirty() {
-            //TODO: check our clock if we have dirty data waiting to be sent
-
-        }
-        this.shared_peek_async().await
-    }
-
-    /// Asynchronously retrieves and removes a single message from the channel.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// An `Option<T>` which is `Some(T)` when a message becomes available.
-    /// None is ONLY returned if there is no data AND a shutdown was requested!
-    ///
-    /// # Asynchronous
-    pub async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
-        let guard = self.start_profile(CALL_SINGLE_READ);
-
-        if self.telemetry.is_dirty() {
-            //TODO: check our clock if we have dirty data waiting to be sent
-            
-        }
-
-
-        let result = this.shared_take_async().await; //Can return None if we are shutting down
-        drop(guard);
-        match result {
-            Some(result) => {
-                this.local_index = self.dynamic_event_count(this.local_index, this.channel_meta_data.id, 1);
-                Some(result)
-            }
-            None => None,
-        }
-    }
-
-
-    /// Sends a slice of messages to the Tx channel until it is full.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    /// - `slice`: A slice of messages to be sent.
-    ///
-    /// # Returns
-    /// The number of messages successfully sent before the channel became full.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    pub fn send_slice_until_full<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
-        where
-            T: Copy,
-    {
-        if let Some(ref mut st) = self.telemetry.state {
-            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
-
-        let done = this.shared_send_slice_until_full(slice);
-
-        this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-            tel.process_event(this.local_index, this.channel_meta_data.id, done as isize)
-        } else {
-            MONITOR_NOT
-        };
-
-        done
-    }
-
-    /// Sends messages from an iterator to the Tx channel until it is full.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    /// - `iter`: An iterator that yields messages of type `T`.
-    ///
-    /// # Returns
-    /// The number of messages successfully sent before the channel became full.
-    pub fn send_iter_until_full<T, I: Iterator<Item = T>>(&mut self, this: &mut Tx<T>, iter: I) -> usize {
-        if let Some(ref mut st) = self.telemetry.state {
-            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
-
-        let done = this.shared_send_iter_until_full(iter);
-
-        this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-            tel.process_event(this.local_index, this.channel_meta_data.id, done as isize)
-        } else {
-            MONITOR_NOT
-        };
-
-        done
-    }
-
-    /// Attempts to send a single message to the Tx channel without blocking.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    /// - `msg`: The message to be sent.
-    ///
-    /// # Returns
-    /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
-    pub fn try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T> {
-        if let Some(ref mut st) = self.telemetry.state {
-            let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
-
-        match this.shared_try_send(msg) {
-            Ok(_) => {
-                this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
-                } else {
-                    MONITOR_NOT
-                };
-                Ok(())
-            }
-            Err(sensitive) => Err(sensitive),
-        }
-    }
-
-    /// Checks if the Tx channel is currently full.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    ///
-    /// # Returns
-    /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
-    pub fn is_full<T>(&self, this: &mut Tx<T>) -> bool {
-        this.is_full()
-    }
-
-    /// Returns the number of vacant units in the Tx channel.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    ///
-    /// # Returns
-    /// The number of messages that can still be sent before the channel is full.
-    pub fn vacant_units<T>(&self, this: &mut Tx<T>) -> usize {
-        this.shared_vacant_units()
-    }
-
-
-    fn validate_capacity_tx<T>(this: &mut Tx<T>, count: usize) -> usize {
-        if count <= this.capacity() {
-            count
-        } else {
-            let capacity = this.capacity();
-            if this.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
-                warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
-                this.last_error_send = Instant::now();
-            }
-            capacity
-        }
-    }
 
     /// Asynchronously waits until at least a specified number of units are vacant in the Tx channel.
     ///
@@ -1268,7 +1338,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `count`: The number of vacant units to wait for.
     ///
     /// # Asynchronous
-    pub async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+    async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
         let count = Self::validate_capacity_tx(this, count);
 
@@ -1298,7 +1368,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// - `count`: The number of vacant units to wait for.
     ///
     /// # Asynchronous
-    pub async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+    async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
         let count = Self::validate_capacity_tx(this, count);
 
@@ -1320,16 +1390,12 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             this.shared_wait_vacant_units(count).await
         }
     }
-    
 
-    /// Asynchronously waits until the Tx channel is empty.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    ///
-    /// # Asynchronous
-    pub async fn wait_empty<T>(&self, this: &mut Tx<T>) -> bool {
-        let _guard = self.start_profile(CALL_WAIT);
+
+    /// uses opposite boolean as others since we are asking for shutdown
+    /// returns true upon shutdown detection
+    async fn wait_shutdown(&self) -> bool {
+        let _guard = self.start_profile(CALL_OTHER);
         if self.telemetry.is_dirty() {
             let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
                 - (self.last_telemetry_send.elapsed().as_micros() as i64
@@ -1338,113 +1404,75 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
                 false //need a relay now so return
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let wat = this.shared_wait_empty();
+                let wat = self.internal_wait_shutdown();
                 select! {
                             _ = dur.fuse() => false,
                             x = wat.fuse() => x
                         }
             }
         } else {
-            this.shared_wait_empty().await
+            self.internal_wait_shutdown().await
         }
     }
 
-    /// Asynchronously waits for a future to complete or a shutdown signal to be received.
-    ///
-    /// # Parameters
-    /// - `fut`: A pinned future to wait for completion.
+    /// Returns a side channel responder if available.
     ///
     /// # Returns
-    /// `true` if the future completes before the shutdown signal, otherwise `false`.
-    ///
-    /// # Asynchronous
-    pub async fn wait_future_void(&self, mut fut: Pin<Box<dyn FusedFuture<Output = ()>>>) -> bool {
-        let _guard = self.start_profile(CALL_OTHER);
-        //TODO: should we add our dirty data check ?? not sure since we do not know what is called.
-        let one_down = &mut self.oneshot_shutdown.lock().await;
-        let mut one_fused = one_down.deref_mut().fuse();
-        if !one_fused.is_terminated() {
-            select! { _ = one_fused => false, _ = fut => true, }
-        } else {
-            false
-        }
+    /// An `Option` containing a `SideChannelResponder` if available.
+    fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
+        self.node_tx_rx.as_ref().map(|tr| SideChannelResponder::new(tr.clone(), self.ident))
     }
 
-    /// Sends a message to the Tx channel asynchronously, waiting if necessary until space is available.
+    /// Checks if the LocalMonitor is running.
     ///
     /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    /// - `a`: The message to be sent.
-    /// - `saturation`: The saturation policy to use.
+    /// - `accept_fn`: A mutable closure that returns a boolean.
     ///
     /// # Returns
-    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
-    ///
-    /// # Asynchronous
-    pub async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
-        let guard = self.start_profile(CALL_SINGLE_WRITE);
+    /// `true` if the monitor is running, otherwise `false`.
+    #[inline]
+    fn is_running(&mut self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
+        // in case we are in a tight loop and need to let other actors run on this thread.
+        executor::block_on(yield_now::yield_now());
 
-        if self.telemetry.is_dirty() {
-            //TODO: check our clock if we have dirty data waiting to be sent
-
-        }
-        
-        let result = this.shared_send_async(a, self.ident, saturation).await;
-        drop(guard);
-        match result {
-            Ok(_) => {
-                this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
+        loop {
+            let result = {
+                let liveliness = self.runtime_state.read();
+                let ident = self.ident;
+                liveliness.is_running(ident, accept_fn)
+            };
+            if let Some(result) = result {
+                if (!result) || self.is_running_iteration_count.is_zero() {
+                    //stopping or starting so clear out all the buffers
+                    self.relay_stats(); //testing mutable self and self flush of relay data.
                 } else {
-                    MONITOR_NOT
-                };
-                Ok(())
-            }
-            Err(sensitive) => {
-                error!("Unexpected error send_async telemetry: {:?} type: {}", self.ident, type_name::<T>());
-                Err(sensitive)
+                    //if the frame rate dictates do a refresh
+                    self.relay_stats_smartly();
+                }
+                self.is_running_iteration_count += 1;
+                return result;
+            } else {
+                //wait until we are in a running state
+                executor::block_on(Delay::new(Duration::from_millis(10)));
             }
         }
     }
 
-    /// Takes messages into an iterator.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
+    /// Requests a stop of the graph.
     ///
     /// # Returns
-    /// An iterator over the taken messages.
-    pub fn take_into_iter<'a, T: Sync + Send>(& mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a
-    {
-        if let Some(ref st) = self.telemetry.state {
-            let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
-
-        //we assume these will be consumed by the iterator but on drop we will
-        //confirm the exact number if it is too large or too small
-        let units = this.shared_avail_units();
-
-        this.local_index = if let Some(ref mut tel) = self.telemetry.send_rx {
-                                let drift = this.iterator_count_drift.load(Ordering::Relaxed);
-                                this.iterator_count_drift.store(0, Ordering::Relaxed);
-                                let idx = this.local_index;
-                                let id = this.channel_meta_data.id;
-                                tel.process_event(idx, id, units as isize + drift)
-                            } else {
-                                MONITOR_NOT
-                            };
-        // get the iterator from this RX so we can count each item there.
-        let iterator_count_drift = this.iterator_count_drift.clone();
-        DriftCountIterator::new( units
-                                , this.shared_take_into_iter()
-                                , iterator_count_drift )
-      //  this.shared_take_into_iter()
+    /// `true` if the request was successful, otherwise `false`.
+    #[inline]
+    fn request_graph_stop(&self) -> bool {
+        let mut liveliness = self.runtime_state.write();
+        liveliness.request_shutdown();
+        true
     }
     /// Retrieves the actor's arguments, cast to the specified type.
     ///
     /// # Returns
     /// An `Option<&A>` containing the arguments if available and of the correct type.
-    pub fn args<A: Any>(&self) -> Option<&A> {
+    fn args<A: Any>(&self) -> Option<&A> {
         self.args.downcast_ref::<A>()
     }
 
@@ -1452,20 +1480,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     ///
     /// # Returns
     /// An `ActorIdentity` representing the actor's identity.
-    pub fn identity(&self) -> ActorIdentity {
+    fn identity(&self) -> ActorIdentity {
         self.ident
     }
 
-    fn dynamic_event_count(&mut self
-                              , local_index: usize //this.local_index
-                              , id: usize //this.channel_meta_data.id
-                              , count: isize) -> usize {
-        if let Some(ref mut tel) = self.telemetry.send_rx {
-            tel.process_event(local_index, id, count)
-        } else {
-            MONITOR_NOT
-        }
-    }
 
 }
 

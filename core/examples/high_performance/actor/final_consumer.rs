@@ -7,6 +7,7 @@ use steady_state::*;
 use crate::Args;
 
 use std::error::Error;
+use steady_state::commander::SteadyCommander;
 use crate::actor::tick_consumer::TickCount;
 
 

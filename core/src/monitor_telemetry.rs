@@ -506,25 +506,6 @@ mod monitor_telemetry_tests {
     }
 
 
- 
-
-    #[test]
-    fn test_steady_telemetry_actor_rx_without_actor() {
-        let actor_metadata = Arc::new(ActorMetaData::default());
-        let telemetry_rx = SteadyTelemetryRx::<4, 4> {
-            send: None,
-            take: None,
-            actor: None,
-            actor_metadata,
-        };
-
-        let version = 1;
-        let actor_def = telemetry_rx.actor_rx(version);
-        assert!(actor_def.is_none());
-    }
-
-
-
     #[test]
     fn test_steady_telemetry_consume_actor_without_actor() {
         let actor_metadata = Arc::new(ActorMetaData::default());

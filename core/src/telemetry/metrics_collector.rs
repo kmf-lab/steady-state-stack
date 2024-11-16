@@ -10,7 +10,7 @@ use log::*; // Allow unused import
 
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
 #[allow(unused_imports)]
-use crate::{steady_config, SendSaturation, SteadyContext, SteadyTxBundle, yield_now, into_monitor};
+use crate::{into_monitor, steady_config, yield_now, SendSaturation, SteadyContext, SteadyTxBundle};
 
 use futures::future::*;
 use futures_timer::Delay;
@@ -20,6 +20,7 @@ use futures_util::stream::FuturesUnordered;
 use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
 use crate::GraphLivelinessState;
+use crate::commander::SteadyCommander;
 use crate::steady_rx::*;
 use crate::steady_tx::*;
 use crate::telemetry::metrics_collector;
@@ -89,7 +90,7 @@ async fn internal_behavior<const GIRTH: usize>(
 ) -> Result<(), Box<dyn Error>> {
     let ident = context.identity();
 
-    let ctrl = context;
+    let mut ctrl = context;
     // #[cfg(all(feature = "telemetry_on_telemetry", any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
     // let mut ctrl = {
     //     info!("should not happen");

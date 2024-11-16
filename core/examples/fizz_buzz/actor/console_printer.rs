@@ -8,6 +8,7 @@ use crate::Args;
 
 
 use std::error::Error;
+use steady_state::commander::SteadyCommander;
 use crate::actor::fizz_buzz_processor::FizzBuzzMessage;
 use crate::actor::timer_actor::PrintSignal;
 
