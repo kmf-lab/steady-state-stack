@@ -19,7 +19,7 @@ use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
 use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
-use crate::GraphLivelinessState;
+use crate::{GraphLivelinessState, SteadyRx};
 use crate::commander::SteadyCommander;
 use crate::steady_rx::*;
 use crate::steady_tx::*;
@@ -98,8 +98,8 @@ async fn internal_behavior<const GIRTH: usize>(
     // };
 
     let mut state = RawDiagramState::default();
-    let mut all_actors_to_scan: Option<Vec<(usize, Box<dyn RxDef>)>> = None;
-    let mut timelords: Option<Vec<&Box<dyn RxDef>>> = None;
+    let mut all_actors_to_scan: Option<Vec<(usize, Box<SteadyRx<ActorStatus>>)>> = None;
+    let mut timelords: Option<Vec<&Box<SteadyRx<ActorStatus>>>> = None;
 
     let mut locked_servers = optional_servers.lock().await;
 
@@ -300,11 +300,11 @@ fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<'_, Vec<Collec
 fn gather_valid_actor_telemetry_to_scan(
     version: u32,
     dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>,
-) -> Option<Vec<(usize,Box<dyn RxDef>)>> {
+) -> Option<Vec<(usize,Box<SteadyRx<ActorStatus>>)>> {
     let guard = dynamic_senders_vec.read();
     
     let dynamic_senders = guard.deref();
-    let v: Vec<(usize, Box<dyn RxDef>)> = dynamic_senders
+    let v: Vec<(usize, Box<SteadyRx<ActorStatus>>)> = dynamic_senders
         .iter()
         .filter(|f| f.ident.label.name != metrics_collector::NAME)
         .flat_map(|f| f.telemetry_take.iter().filter_map(|g| g.actor_rx(version)))

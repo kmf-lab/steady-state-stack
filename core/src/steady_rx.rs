@@ -563,7 +563,8 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     fn wait_avail_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
 }
 
-impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> {
+impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> { //TODO: test
+
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
@@ -597,6 +598,7 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
             }
         }
     }
+
 }
 
 /// Trait defining the required methods for a receiver bundle.
@@ -632,7 +634,7 @@ pub trait RxBundleTrait {
     fn tx_instance_reset(&mut self);
 }
 
-impl<T> RxBundleTrait for RxBundle<'_, T> {
+impl<T> RxBundleTrait for RxBundle<'_, T> { //TODO: test
 
     fn is_closed_and_empty(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed_and_empty())
@@ -661,10 +663,61 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
     }
 }
 
-// #[cfg(test)]
-// mod stady_rx_tests {
-//     use super::*;
-//     
-//     
-// 
-// }
+#[cfg(test)]
+mod rx_tests {
+    use crate::{GraphBuilder, SteadyTxBundle, SteadyTxBundleTrait, Tx};
+    use super::*;
+
+    #[async_std::test]
+    async fn test_bundle() {
+
+        let mut graph = GraphBuilder::for_testing().build(());
+        let channel_builder = graph.channel_builder();
+        let (lazy_tx_bundle, lazy_rx_bundle) = channel_builder.build_as_bundle::<String,3>();
+        let (steady_tx_bundle0, steady_rx_bundle0) = (lazy_tx_bundle[0].clone(), lazy_rx_bundle[0].clone());
+        let (steady_tx_bundle1, steady_rx_bundle1) = (lazy_tx_bundle[1].clone(), lazy_rx_bundle[1].clone());
+        let (steady_tx_bundle2, steady_rx_bundle2) = (lazy_tx_bundle[2].clone(), lazy_rx_bundle[2].clone());
+
+        let (steady_tx_bundle, steady_rx_bundle) = (  SteadyTxBundle::new([steady_tx_bundle0, steady_tx_bundle1, steady_tx_bundle2])
+                                                     , SteadyRxBundle::new([steady_rx_bundle0, steady_rx_bundle1, steady_rx_bundle2]));
+
+        let array_tx_meta_data = steady_tx_bundle.meta_data();
+        let array_rx_meta_data = steady_rx_bundle.meta_data();
+        assert_eq!(array_rx_meta_data[0].0.id,array_tx_meta_data[0].0.id);
+        assert_eq!(array_rx_meta_data[1].0.id,array_tx_meta_data[1].0.id);
+        assert_eq!(array_rx_meta_data[2].0.id,array_tx_meta_data[2].0.id);
+
+
+        let mut vec_tx_bundle = steady_tx_bundle.lock().await;
+        assert!(vec_tx_bundle[0].shared_try_send("0".to_string()).is_ok());
+        assert!(vec_tx_bundle[1].shared_try_send("1".to_string()).is_ok());
+        assert!(vec_tx_bundle[2].shared_try_send("2".to_string()).is_ok());
+
+        //if above 3 are not written this will hang
+        steady_rx_bundle.wait_avail_units(1, 3).await;
+
+        //confirm the channels count
+        let mut vec_rx_bundle = steady_rx_bundle.lock().await;
+        assert_eq!(3,vec_rx_bundle.len());
+
+        assert!(!RxBundleTrait::is_empty(&mut vec_rx_bundle));
+        assert!(!RxBundleTrait::is_closed(&mut vec_rx_bundle));
+        assert!(!RxBundleTrait::is_closed_and_empty(&mut vec_rx_bundle));
+
+        vec_tx_bundle[0].mark_closed();
+        vec_tx_bundle[1].mark_closed();
+        vec_tx_bundle[2].mark_closed();
+
+        assert!(RxBundleTrait::is_closed(&mut vec_rx_bundle));
+
+        assert!(vec_rx_bundle[0].shared_try_take().is_some());
+        assert!(vec_rx_bundle[1].shared_try_take().is_some());
+        assert!(vec_rx_bundle[2].shared_try_take().is_some());
+
+        assert!(RxBundleTrait::is_closed_and_empty(&mut vec_rx_bundle));
+        assert!(RxBundleTrait::is_empty(&mut vec_rx_bundle));
+
+
+
+    }
+}

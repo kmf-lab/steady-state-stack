@@ -139,7 +139,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         }
     }
 
-    fn actor_rx(&self, version: u32) -> Option<Box<dyn RxDef>> {
+    fn actor_rx(&self, version: u32) -> Option<Box<SteadyRx<ActorStatus>>> {
         if let Some(ref act) = &self.actor {
             if let Some(mut act) = act.try_lock() {
                 act.deref_mut().rx_version.store(version, Ordering::SeqCst);

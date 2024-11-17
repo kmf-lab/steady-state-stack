@@ -9,6 +9,7 @@ use crate::Args;
 
 use std::error::Error;
 use steady_state::commander::SteadyCommander;
+use steady_state::steady_rx::{RxBundleTrait, SteadyRxBundleTrait};
 use crate::actor::div_by_3_producer::NumberMessage;
 
 

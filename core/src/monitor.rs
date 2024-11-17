@@ -181,7 +181,7 @@ pub trait RxTel: Send + Sync {
     fn consume_send_into(&self, take_send_source: &mut Vec<(i64, i64)>, future_send: &mut Vec<i64>) -> bool;
 
     /// Returns an actor receiver definition for the specified version.
-    fn actor_rx(&self, version: u32) -> Option<Box<dyn RxDef>>;
+    fn actor_rx(&self, version: u32) -> Option<Box<SteadyRx<ActorStatus>>>;
 
     /// Checks if the telemetry is empty and closed.
     fn is_empty_and_closed(&self) -> bool;

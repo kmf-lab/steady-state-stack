@@ -8,6 +8,7 @@ use crate::Args;
 
 use std::error::Error;
 use steady_state::commander::SteadyCommander;
+use steady_state::steady_rx::{RxBundleTrait, SteadyRxBundleTrait};
 use crate::actor::tick_consumer::TickCount;
 
 #[cfg(not(test))]
