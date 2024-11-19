@@ -3,7 +3,6 @@
 //! The test creates a minimal graph setup to verify that panics are correctly captured and handled,
 //! ensuring that the graph can restart actors as intended.
 
-use crate::commander::SteadyCommander;
 
 #[cfg(test)]
 mod simple_graph_test {

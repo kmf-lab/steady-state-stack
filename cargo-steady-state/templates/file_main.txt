@@ -6,12 +6,9 @@ use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
 
-{{test_only}}
-
 mod actor {
     {% for mod in actor_mods %}
-        pub mod {{mod}};
-    {% endfor %}
+        pub mod {{mod}};{% endfor %}
 }
 
 fn main() {
@@ -65,20 +62,14 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
     {% for actor in actors %}
     {
      let state = new_state();
-    {%- for channel in actor.rx_channels %}{% if channel[0].has_bundle_index() -%}
-      {% if channel[0].needs_rx_single_clone() %}
-     let {{channel[0].rx_prefix_name(channel)}}_{{channel[0].name}}_rx = {{channel[0].rx_prefix_distributed_name()}}_{{channel[0].name}}_rx[{{channel[0].bundle_index()}}].clone();
-      {% endif %}
-    {%- else -%}{% if channel[0].restructured_bundle_rx(channel) %}
+    {%- for channel in actor.rx_channels %}{% if channel[0].has_bundle_index() -%}{%- if channel[0].needs_rx_single_clone() -%}
+     let {{channel[0].rx_prefix_name(channel)}}_{{channel[0].name}}_rx = {{channel[0].rx_prefix_distributed_name()}}_{{channel[0].name}}_rx[{{channel[0].bundle_index()}}].clone();{% endif %}{%- else -%}{% if channel[0].restructured_bundle_rx(channel) %}
      let {{actor.display_name|lowercase}}_{{channel[0].name}}_rx = steady_rx_bundle([{%- for ch in channel -%}{{ch.rx_prefix_distributed_name()}}_{{ch.name}}_rx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}].clone(){% endif -%}
                                                                                        {%- if loop.last -%}{%- else -%},{%- endif -%}{%- endfor -%}]);
-       {% endif -%}
-    {%- endif %}{% endfor -%}
-    {%- for channel in actor.tx_channels %}{% if channel[0].has_bundle_index() %}
+       {% endif -%}{%- endif %}{% endfor -%}{%- for channel in actor.tx_channels %}{% if channel[0].has_bundle_index() %}
       {% if channel[0].needs_tx_single_clone() %}
      let {{channel[0].tx_prefix_name(channel)}}_{{channel[0].name}}_tx = {{channel[0].tx_prefix_distributed_name()}}_{{channel[0].name}}_tx[{{channel[0].bundle_index()}}].clone();
-      {% endif %}
-    {% else -%}{%- if channel[0].restructured_bundle() %}
+      {% endif %}{% else -%}{%- if channel[0].restructured_bundle() %}
      let {{actor.display_name|lowercase}}_{{channel[0].name}}_tx = steady_tx_bundle([{%- for ch in channel -%}{{ch.tx_prefix_distributed_name()}}_{{ch.name}}_tx{% if ch.rebundle_index()>=0 %}[{{ch.rebundle_index()}}].clone(){% endif -%}
                                                                                        {%- if loop.last -%}{%- else -%},{%- endif -%}{%- endfor -%}]);
        {%- endif -%}
@@ -93,7 +84,6 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
     }{% endfor %}
     graph
 }
-
 #[cfg(test)]
 mod graph_tests {
     use async_std::test;

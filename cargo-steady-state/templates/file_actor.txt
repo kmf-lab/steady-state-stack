@@ -57,37 +57,30 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
         ,{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
    , state: SteadyState<{{ display_name|capitalize }}InternalState> ) -> Result<(),Box<dyn Error>> {
-  internal_behavior(context {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %},{{channel[0].name}}_tx{%- endfor -%}, state ).await
+
+  // here is how to access the CLI args if needed
+  let _cli_args = context.args::<Args>();
+  // monitor consumes context and ensures all the traffic on the passed channels is monitored
+  // monitor and context both implement SteadyCommander but context is used to avoid any monitoring
+  let mut monitor =  into_monitor!(context, [{%- for def in rx_monitor_defs -%}
+                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
+                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
+  internal_behavior(monitor {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx{%- endfor -%}, state).await
 }
 
-async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
+async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
     {%- for channel in rx_channels -%}
         {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_RX_GIRTH:usize,{% endif -%}
     {%- endfor -%}
     {%- for channel in tx_channels -%}
         {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_TX_GIRTH:usize,{% endif -%}
-    {%- endfor -%}
-  {%- if has_bundles -%}>{% endif -%}
-
-  (context: SteadyContext
-    {%- for channel in rx_channels %}
-        ,{{channel[0].name}}_rx: {% if channel.len()>1 %}SteadyRxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_RX_GIRTH>
+    {%- endfor -%}{%- if has_bundles -%}{% endif -%}>(mut cmd: C{%- for channel in rx_channels %},{{channel[0].name}}_rx: {% if channel.len()>1 %}SteadyRxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_RX_GIRTH>
                                   {%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
-    {%- for channel in tx_channels %}
-        ,{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
-                                  {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
-    , state: SteadyState<{{ display_name|capitalize }}InternalState> ) -> Result<(),Box<dyn Error>> {
-
-    // here is how to access the CLI args if needed
-    let cli_args = context.args::<Args>();
+    {%- for channel in tx_channels -%},{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
+                                  {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}, state: SteadyState<{{ display_name|capitalize }}InternalState> ) -> Result<(),Box<dyn Error>> {
 
     let mut state_guard = steady_state(&state, || {{ display_name|capitalize }}InternalState::default()).await;
     if let Some(mut state) = state_guard.as_mut() {
-
-    // monitor consumes context and ensures all the traffic on the passed channels is monitored
-    let mut monitor =  into_monitor!(context, [{%- for def in rx_monitor_defs -%}
-                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
-                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
 
    //every channel must be locked before use, if this actor should panic the lock will be released
    //and the replacement actor will lock them here again
@@ -97,16 +90,15 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
     let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.lock().await;
  {% endfor %}
 
-    //this is the main loop of the actor, will run until shutdown is requested.
-    //the closure is called upon shutdown to determine if we need to postpone the shutdown for this actor
-    while monitor.is_running(&mut ||{%- for channel in rx_channels %}
-    {{channel[0].name}}_rx.is_closed_and_empty()
-    {%- if loop.last %}{% else %} && {% endif -%}
- {% endfor %}{%- for channel in tx_channels %}
-    {%- if loop.first && !rx_channels.is_empty() %} && {% else %}{% endif -%}
-    {{channel[0].name}}_tx.mark_closed()
-    {%- if loop.last %}{% else %} && {% endif -%}
- {% endfor %}) {
+      //this is the main loop of the actor, will run until shutdown is requested.
+      //the closure is called upon shutdown to determine if we need to postpone the shutdown for this actor
+      while cmd.is_running(&mut ||{%- for channel in rx_channels %}
+        {{channel[0].name}}_rx.is_closed_and_empty()
+        {%- if loop.last %}{% else %} && {% endif -%}{% endfor %}{%- for channel in tx_channels %}
+        {%- if loop.first && !rx_channels.is_empty() %} && {% else %}{% endif -%}
+        {{channel[0].name}}_tx.mark_closed()
+        {%- if loop.last %}{% else %} && {% endif -%}
+   {% endfor %}) {
 
      {{full_driver_block}}
 
@@ -120,11 +112,11 @@ async fn internal_behavior{%- if has_bundles -%}<{% endif -%}
           let {{channel[0].name}}_tx_ref: &mut {% if 1==channel.len()%}Tx<{% else %}TxBundle<'_, {% endif -%}{{channel[0].message_type}}> = &mut {{channel[0].name}}_tx;
           {%- endfor %}
 
-     {{note_for_the_user}} to get started try calling the monitor.* methods:
-      //    try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>  ie monitor.try_take(...
-      //    try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T>  ie monitor.try_send(...
+     {{note_for_the_user}} to get started try calling the cmd.* methods:
+      //    try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>  ie cmd.try_take(...
+      //    try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T>  ie cmd.try_send(...
 
-    }
+      }
     }
     Ok(())
 }
@@ -175,13 +167,9 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
          }
 
     }
-
     Ok(())
 
-}
-{% endif %}
-
-
+}{% endif %}
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -200,11 +188,11 @@ pub(crate) mod tests {
        {%- for channel in tx_channels %}
        let ({{channel[0].name}}_tx,test_{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_as_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
        {% endfor -%}
-
+       let state = new_state();
        graph.actor_builder()
                     .with_name("UnitTest")
                     .build_spawn( move |context|
-                            internal_behavior(context {%- for channel in rx_channels %},{{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %},{{channel[0].name}}_tx.clone(){%- endfor -%} )
+                            internal_behavior(context {%- for channel in rx_channels %}, {{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx.clone(){%- endfor -%}, state)
                      );
 
         graph.start(); //startup the graph

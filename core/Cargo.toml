@@ -93,7 +93,7 @@ time             = { version = "0.3.36", features = ["macros", "formatting", "pa
 dirs             = "5.0.1"
 colored          = "2.1.0"
 structopt        = "0.3.26"  # CLI parse for type safe arguments
-structopt-derive = "0.4.18" # adds Args::from_args() to your structopt struct
+structopt-derive = "0.4.18"  # adds Args::from_args() to your structopt struct
 futures          = "0.3.31"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3.31"
 parking_lot      = "0.12.3"
@@ -103,12 +103,12 @@ num_cpus         = "1.16.0"
 # Release Plan
 # 0.1.0 - one year aniversary (ETA 12/04/24) relase single machine
 #         All warning cleaned up
-#         74% function test coverage
+#         80% function test coverage
 # 0.2.0 - distributed features ready for use (ETA 06/04/25)
 #         Aeron, ZeroMQ, LibP2P
 #         History Replay
 #         Label Filtering and await 'on what?' tracking
-#         80% function test coverage
+#         90% function test coverage
 # 1.0.0 - two year aniversary (ETA 12/04/25)
 #         Optimized thread scheduling (8,000K actors+)
 #         IOUring

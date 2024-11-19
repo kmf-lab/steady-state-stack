@@ -28,6 +28,7 @@ pub(crate) mod dot;
 mod graph_liveliness;
 mod loop_driver;
 mod abstract_executor;
+#[cfg(test)]
 mod test_panic_capture;
 mod monitor_telemetry;
 /////////////////////////////////////////////////
@@ -88,7 +89,7 @@ use std::time::{Duration, Instant};
 use std::fmt::Debug;
 use std::sync::Arc;
 use parking_lot::RwLock;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use futures::lock::Mutex;
 use std::ops::DerefMut;
 use std::pin::Pin;

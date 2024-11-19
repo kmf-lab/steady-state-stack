@@ -14,7 +14,6 @@ use crate::graph_liveliness::WaitWhileRunningFuture;
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
-use crate::steady_config::REAL_CHANNEL_LENGTH_TO_COLLECTOR;
 use crate::steady_rx::RxDef;
 use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
@@ -1244,13 +1243,11 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// `true` if the actor is running, `false` otherwise.
-    #[inline]
     fn is_running(&mut self, accept_fn: &mut dyn FnMut() -> bool) -> bool;
     /// Requests a graph stop for the actor.
     ///
     /// # Returns
     /// `true` if the request was successful, `false` otherwise.
-    #[inline]
     fn request_graph_stop(&self) -> bool;
     /// Retrieves the actor's arguments, cast to the specified type.
     ///

@@ -7,8 +7,8 @@ use std::ops::DerefMut;
 use num_traits::Zero;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
 use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
-use crate::steady_rx::{Rx, RxDef};
-use crate::steady_tx::{ Tx};
+use crate::steady_rx::{Rx};
+use crate::steady_tx::{Tx};
 
 /// Structure representing the receiver side of steady telemetry.
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {

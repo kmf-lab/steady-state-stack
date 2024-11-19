@@ -123,10 +123,10 @@ fn write_project_files(pm: ProjectModel
    let args_rs = folder_src.join("args.rs");
    fs::write(args_rs, templates::ArgsTemplate {}.render()?)?;
 
-    #[cfg(test)]
-        let test_only = "#[allow(unused)]";
-    #[cfg(not(test))]
-        let test_only = "";
+    // #[cfg(test)]
+    //     let test_only = "#[allow(unused)]";
+    // #[cfg(not(test))]
+    //     let test_only = "";
 
    let main_rs = folder_src.join("main.rs");
    let mut actor_mods:Vec<String> =  pm.actors.iter().map(|f| f.mod_name.clone()).collect();
@@ -134,8 +134,7 @@ fn write_project_files(pm: ProjectModel
    actor_mods.dedup();
 
    fs::write(main_rs, templates::MainTemplate {
-        project_name: pm.name.clone(),
-        test_only,
+        project_name: pm.name.clone(),        
         actor_mods,
         channels: &pm.channels,
         actors: &pm.actors,
@@ -212,10 +211,10 @@ fn build_driver_block(actor: &Actor) -> String {
     actor.driver.iter().for_each(|f| {
         match f {
             ActorDriver::AtLeastEvery(d) => {
-                at_least_every = Some(format!("monitor.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
+                at_least_every = Some(format!("cmd.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
             }
             ActorDriver::AtMostEvery(d) => {
-                andy_drivers.push(format!("monitor.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
+                andy_drivers.push(format!("cmd.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
             }
             ActorDriver::EventDriven(t) => {
                 let mut each: Vec<String> = t.iter().map(|v| {
@@ -232,7 +231,7 @@ fn build_driver_block(actor: &Actor) -> String {
                     //2 may want the default channels_count or this may be a single
                     //  we ensure girth is 1 to confirm this choice.
                     if v.len()==2 && 1==girth {
-                        format!("monitor.wait_closed_or_avail_units(&mut {}_rx,{})", v[0], v[1])
+                        format!("cmd.wait_closed_or_avail_units(&mut {}_rx,{})", v[0], v[1])
                     } else {
                         let channels_count = if girth>1 && v.len()>2 {
                             if let Some(p) = extract_percent(v[2].clone()) {
@@ -243,7 +242,7 @@ fn build_driver_block(actor: &Actor) -> String {
                         } else {
                             1 //if we got no girth assume 1 by default
                         };
-                        format!("monitor.wait_closed_or_avail_units_bundle(&mut {}_rx,{},{})", v[0], v[1], channels_count)
+                        format!("cmd.wait_closed_or_avail_units_bundle(&mut {}_rx,{},{})", v[0], v[1], channels_count)
                     }
                 }).collect();
                 andy_drivers.append(&mut each);
@@ -261,7 +260,7 @@ fn build_driver_block(actor: &Actor) -> String {
                     }
 
                     if v.len() == 2 && 1==girth {
-                        format!("monitor.wait_shutdown_or_vacant_units(&mut {}_tx,{})", v[0], v[1])
+                        format!("cmd.wait_shutdown_or_vacant_units(&mut {}_tx,{})", v[0], v[1])
                     } else {
                         let girth = actor.tx_channels
                             .iter()
@@ -277,14 +276,14 @@ fn build_driver_block(actor: &Actor) -> String {
                             warn!("Failed to find more than one channel in the bundle: {}", v[0]);
                             1 //if we got no girth assume 1 by default
                         };
-                        format!("monitor.wait_shutdown_or_vacant_units_bundle(&mut {}_tx,{},{})", v[0], v[1], channels_count)
+                        format!("cmd.wait_shutdown_or_vacant_units_bundle(&mut {}_tx,{},{})", v[0], v[1], channels_count)
                     }
                 }).collect();
                 andy_drivers.append(&mut each);
             }
             ActorDriver::Other(t) => {
                 let mut each: Vec<String> = t.iter().map(|name| {
-                    format!("monitor.call_async({}())", name) 
+                    format!("cmd.call_async({}())", name) 
                 }).collect();
                 andy_drivers.append(&mut each);
             }
