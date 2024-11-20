@@ -36,12 +36,11 @@ struct State {
 pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Result<(), Box<dyn Error>> {
     
     //NOTE: we could use this to turn of the server if desired.
-    let mut addr = Some(format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port()));
+    let addr = Some(format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port()));
 
     let opt_tcp:Arc<Option<Handle<TcpListener>>> = if let Some(ref addr) = addr {
-        //TODO: move this up if we can? so we can determine the port with :0 for testing.
         if let Ok(h) = Handle::<TcpListener>::bind(addr) {
-            let local_addr = h.local_addr().expect("Unable to get local address");
+            //let _local_addr = h.local_addr().expect("Unable to get local address");
             //opt_addr.replace(format!("{}", local_addr));
             Arc::new(Some(h))
         } else {
@@ -103,6 +102,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
         spawn(async move {
             
            if let Some(ref listener_new) = *opt_tcp2 {
+               #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
                let local_addr = listener_new.local_addr().expect("Unable to get local address");
 
                #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
@@ -506,11 +506,9 @@ async fn handle_request(mut stream: Handle<TcpStream>,
 
 #[cfg(test)]
 mod meteric_server_tests {
-    use std::net::TcpListener;
     use std::sync::Arc;
     use std::time::Duration;
     use futures_timer::Delay;
-    use nuclei::Handle;
     use crate::{ActorIdentity, GraphBuilder};
     use crate::monitor::ActorMetaData;
     use crate::telemetry::metrics_collector::DiagramData;

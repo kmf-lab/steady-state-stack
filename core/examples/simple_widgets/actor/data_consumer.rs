@@ -70,10 +70,11 @@ pub(crate) async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: Steady
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>
                  , _state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
-    let mut monitor = into_monitor!(context,[rx],[]);
+    let monitor = into_monitor!(context,[rx],[]);
     internal_behavior_test(monitor, rx, _state).await    
 }
 
+#[cfg(test)]
 async fn internal_behavior_test<T: SteadyCommander>(mut monitor: T
                                                     , rx: SteadyRx<ApprovedWidgets>
                                                     , _state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> 

@@ -665,7 +665,7 @@ impl<T> RxBundleTrait for RxBundle<'_, T> { //TODO: test
 
 #[cfg(test)]
 mod rx_tests {
-    use crate::{GraphBuilder, SteadyTxBundle, SteadyTxBundleTrait, Tx};
+    use crate::{GraphBuilder, SteadyTxBundle, SteadyTxBundleTrait};
     use super::*;
 
     #[async_std::test]

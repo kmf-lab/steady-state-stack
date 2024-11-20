@@ -55,8 +55,9 @@ pub mod graph_testing;
 pub mod steady_tx;
     /// module for all rx channel features
 pub mod steady_rx;
-
+    /// module to yield in our actor
 pub mod yield_now;
+    /// module for all commands for channels used by actors
 pub mod commander;
 
 pub use graph_testing::GraphTestResult;
@@ -89,28 +90,24 @@ use std::time::{Duration, Instant};
 use std::fmt::Debug;
 use std::sync::Arc;
 use parking_lot::RwLock;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use futures::lock::Mutex;
 use std::ops::DerefMut;
 use std::pin::Pin;
 #[allow(unused_imports)]
 use log::*;
 
-use crate::monitor::{ActorMetaData, ChannelMetaData, RxMetaData, TxMetaData};
+use crate::monitor::{ActorMetaData, ChannelMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
 use crate::util::steady_logging_init;
 use futures::*;
 use futures::channel::oneshot;
 use futures::select;
-use futures_timer::Delay;
-use futures_util::future::{select_all, FusedFuture};
+use futures_util::future::{FusedFuture};
 use futures_util::lock::MutexGuard;
-use steady_rx::RxDef;
 use monitor_telemetry::SteadyTelemetry;
-use steady_tx::TxDef;
 use crate::actor_builder::NodeTxRx;
-use crate::graph_testing::SideChannelResponder;
 use crate::yield_now::yield_now;
 
 /// Type alias for a thread-safe steady state (S) wrapped in an `Arc` and `Mutex`.

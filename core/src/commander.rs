@@ -1,3 +1,4 @@
+
 use std::future::Future;
 use std::time::{Duration, Instant};
 use std::pin::Pin;
@@ -812,6 +813,11 @@ impl SteadyCommander for SteadyContext {
 
 }
 
+
+/// NOTE this trait is passed into actors and actors are tied to a single thread. As a result
+///      we need not worry about these methods needing Send. We also know that T will come
+///      from other actors so we can assume that T is Send + Sync
+#[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
 

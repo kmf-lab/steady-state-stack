@@ -623,7 +623,7 @@ mod metric_collector_tests {
         let mut graph = GraphBuilder::for_testing().build(());
         let dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>> = Arc::new(RwLock::new(Vec::new()));
      
-        let (tx, rx) = graph.channel_builder()
+        let (tx, _rx) = graph.channel_builder()
             .with_labels(&["steady_state-telemetry"], true)
             .with_capacity(REAL_CHANNEL_LENGTH_TO_FEATURE)
             .build();

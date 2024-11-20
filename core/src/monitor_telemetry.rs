@@ -387,49 +387,44 @@ use std::sync::{Arc};
 // tests for the monitor telemetry module
 #[cfg(test)]
 mod monitor_telemetry_tests {
-    use std::sync::{Arc, Mutex};
-    use std::time::{Duration, Instant};
-    use std::sync::atomic::{AtomicU16, AtomicU64};
-    use futures_util::lock::Mutex as FuturesMutex;
+    use std::sync::{Arc};
     use crate::monitor::{
-        ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo,
+        ActorMetaData, RxTel, 
     };
     use crate::monitor_telemetry::{
-        SteadyTelemetry, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend,
-        SteadyTelemetryTake,
+        SteadyTelemetry, SteadyTelemetryRx,
     };
-    use crate::{steady_config, SteadyTx};
 
-    // Helper function to create default ChannelMetaData
-    fn create_channel_meta(id: usize, capacity: usize) -> Arc<ChannelMetaData> {
-        Arc::new(ChannelMetaData {
-            id,
-            labels: vec![],
-            capacity,
-            display_labels: false,
-            line_expansion: 0.0,
-            show_type: None,
-            refresh_rate_in_bits: 0,
-            window_bucket_in_bits: 0,
-            percentiles_filled: vec![],
-            percentiles_rate: vec![],
-            percentiles_latency: vec![],
-            std_dev_inflight: vec![],
-            std_dev_consumed: vec![],
-            std_dev_latency: vec![],
-            trigger_rate: vec![],
-            trigger_filled: vec![],
-            trigger_latency: vec![],
-            avg_filled: false,
-            avg_rate: false,
-            avg_latency: false,
-            min_filled: false,
-            max_filled: false,
-            connects_sidecar: false,
-            type_byte_count: 0,
-            show_total: true,
-        })
-    }
+    // // Helper function to create default ChannelMetaData
+    // fn create_channel_meta(id: usize, capacity: usize) -> Arc<ChannelMetaData> {
+    //     Arc::new(ChannelMetaData {
+    //         id,
+    //         labels: vec![],
+    //         capacity,
+    //         display_labels: false,
+    //         line_expansion: 0.0,
+    //         show_type: None,
+    //         refresh_rate_in_bits: 0,
+    //         window_bucket_in_bits: 0,
+    //         percentiles_filled: vec![],
+    //         percentiles_rate: vec![],
+    //         percentiles_latency: vec![],
+    //         std_dev_inflight: vec![],
+    //         std_dev_consumed: vec![],
+    //         std_dev_latency: vec![],
+    //         trigger_rate: vec![],
+    //         trigger_filled: vec![],
+    //         trigger_latency: vec![],
+    //         avg_filled: false,
+    //         avg_rate: false,
+    //         avg_latency: false,
+    //         min_filled: false,
+    //         max_filled: false,
+    //         connects_sidecar: false,
+    //         type_byte_count: 0,
+    //         show_total: true,
+    //     })
+    // }
 
     #[test]
     fn test_steady_telemetry_rx_is_empty_and_closed_all_none() {

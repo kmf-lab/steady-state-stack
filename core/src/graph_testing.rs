@@ -23,7 +23,6 @@ use crate::{ActorIdentity, ActorName};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
 use crate::actor_builder::NodeTxRx;
-use crate::commander::SteadyCommander;
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
 /// or `Err` with a value of type `E`.
@@ -239,7 +238,7 @@ mod graph_testing_tests {
     use async_std::test;
     use futures::channel::oneshot;
     use log::info;
-    use crate::{GraphLiveliness, LazySteadyRx, LazySteadyTx, Rx, SteadyContext};
+    use crate::{GraphLiveliness, LazySteadyRx, LazySteadyTx, Rx, SteadyCommander, SteadyContext};
     use crate::channel_builder::ChannelBuilder;
     use crate::monitor::ActorMetaData;
 
