@@ -75,29 +75,56 @@ macro_rules! await_for_all_or_proceed_upon {
 ///
 #[macro_export]
 macro_rules! await_for_any {
-    ($($t:expr),* $(,)?) => {
+    // Case: Single future
+    ($first:expr) => {{
         async {
             use futures::future::FutureExt;
             use futures::pin_mut;
-            use futures::future::select_all;
             use std::sync::Arc;
             use std::sync::atomic::{AtomicBool, Ordering};
 
             let flag = Arc::new(AtomicBool::new(true));
-            let mut futures_vec = Vec::new();
 
-            $(
-                futures_vec.push(wrap_bool_future(flag.clone(), $t).boxed());
-            )*
+            let fut_first = wrap_bool_future(flag.clone(), $first).fuse();
+            pin_mut!(fut_first);
 
-            // Wait for any of the futures to complete
-            let (res, _index, _remaining) = select_all(futures_vec).await;
-            res;  // This ensures the future has been awaited
+            futures::select! {
+                _ = fut_first => {},
+            }
 
             flag.load(Ordering::Relaxed)
         }.await
-    };
+    }};
+    // Case: Multiple futures
+    ($first:expr, $($rest:expr),+ $(,)?) => {{
+        async {
+            use futures::future::FutureExt;
+            use futures::pin_mut;
+            use std::sync::Arc;
+            use std::sync::atomic::{AtomicBool, Ordering};
+
+            let flag = Arc::new(AtomicBool::new(true));
+
+            let fut_first = wrap_bool_future(flag.clone(), $first).fuse();
+            pin_mut!(fut_first);
+
+            $(
+                let fut_rest = wrap_bool_future(flag.clone(), $rest).fuse();
+                pin_mut!(fut_rest);
+            )*
+
+            futures::select! {
+                _ = fut_first => {},
+                $(
+                    _ = fut_rest => {},
+                )*
+            }
+
+            flag.load(Ordering::Relaxed)
+        }.await
+    }};
 }
+
 
 
 /// Wraps a future that returns a boolean into one that updates a shared flag if it returns false.
@@ -126,8 +153,7 @@ macro_rules! await_for_any {
 /// ```
 pub fn wrap_bool_future<F>(flag: Arc<AtomicBool>, fut: F) -> impl Future<Output = ()>
     where
-        F: Future<Output = bool>,
-{
+        F: Future<Output = bool> ,{
     let flag = flag.clone();
     async move {
         match fut.await {

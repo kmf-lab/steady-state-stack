@@ -16,12 +16,11 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , tx: SteadyTxBundle<Packet,GIRTH>
                 ) -> Result<(),Box<dyn Error>> {
 
-    internal_behavior(context, one_of, rx, tx).await
+    internal_behavior(into_monitor!(context,[rx],tx), one_of, rx, tx).await
 }
 
-async fn internal_behavior<const GIRTH:usize>(context: SteadyContext, one_of: usize, rx: SteadyRx<Packet>, tx: SteadyTxBundle<Packet, { GIRTH }>) -> Result<(), Box<dyn Error>> {
-    //info!("running {:?} {:?}",context.id(),context.name());
-    let mut monitor = into_monitor!(context,[rx],tx);
+async fn internal_behavior<C:SteadyCommander, const GIRTH:usize>(mut cmd: C, one_of: usize, rx: SteadyRx<Packet>, tx: SteadyTxBundle<Packet, { GIRTH }>) -> Result<(), Box<dyn Error>> {
+    
 
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
@@ -29,24 +28,24 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext, one_of: us
     let count = rx.capacity().clone()/4;
     let _tx_girth = tx.len();
 
-    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
+    while cmd.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
        // info!("router a");
         let _clean = await_for_all_or_proceed_upon!(
-            monitor.wait_periodic(Duration::from_millis(40)),
-            monitor.wait_shutdown_or_avail_units(&mut rx,2),
-            monitor.wait_shutdown_or_vacant_units_bundle(&mut tx,count/2,_tx_girth)
+            cmd.wait_periodic(Duration::from_millis(40)),
+            cmd.wait_shutdown_or_avail_units(&mut rx,2),
+            cmd.wait_shutdown_or_vacant_units_bundle(&mut tx,count/2,_tx_girth)
         );
        // info!("router b");
 
-        let mut iter = monitor.take_into_iter(&mut rx);
+        let mut iter = cmd.take_into_iter(&mut rx);
         while let Some(t) = iter.next() {
             let index = (t.route as usize / one_of)  % tx.len();
 
          //   info!("name: {:?} one_of: {:?} block_size: {:?} route: {:?} index: {:?}", monitor.ident(), one_of, block_size, t.route, index);
 
-            if let Err(e) = monitor.try_send(&mut tx[index], t) {
-                  let _ = monitor.send_async(&mut tx[index], e, SendSaturation::IgnoreAndWait).await;
+            if let Err(e) = cmd.try_send(&mut tx[index], t) {
+                  let _ = cmd.send_async(&mut tx[index], e, SendSaturation::IgnoreAndWait).await;
                   break;
             }
         }

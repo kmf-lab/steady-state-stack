@@ -9,20 +9,19 @@ use crate::actor::data_generator::Packet;
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, rx).await
+    internal_behavior(into_monitor!(context,[rx], []), rx).await
 }
 
 #[cfg(not(test))]
-async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>) -> Result<(), Box<dyn Error>> {
-    let mut monitor = into_monitor!(context,[rx], []);
-
+async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>) -> Result<(), Box<dyn Error>> {
+    
     let mut rx = rx.lock().await;
     let mut _count = 0;
-    while monitor.is_running(&mut || rx.is_closed_and_empty()) {
+    while cmd.is_running(&mut || rx.is_closed_and_empty()) {
 
-        await_for_all!(monitor.wait_shutdown_or_avail_units(&mut rx, 1));
+        await_for_any!(cmd.wait_shutdown_or_avail_units(&mut rx, 1));
 
-        while let Some(packet) = monitor.try_take(&mut rx) {
+        while let Some(packet) = cmd.try_take(&mut rx) {
             assert_eq!(packet.data.len(), 62);
             _count += 1;
 
