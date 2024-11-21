@@ -324,7 +324,7 @@ async fn handle_request(mut stream: Handle<TcpStream>,
 
     #[cfg(feature = "prometheus_metrics")]
     if path.starts_with("/me") { //for prometheus /metrics
-        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ").await?;
+        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ").await?;
         let locked_state = state.lock().await;
         stream.write_all(itoa::Buffer::new().format(locked_state.metric.len()).as_bytes()).await?;
         stream.write_all(b"\r\n\r\n").await?;

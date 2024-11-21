@@ -76,7 +76,7 @@ macro_rules! await_for_all_or_proceed_upon {
 #[macro_export]
 macro_rules! await_for_any {
     // Case: Single future
-    ($first:expr) => {{
+    ($first:expr $(,)?) => {{
         async {
             use futures::future::FutureExt;
             use futures::pin_mut;
@@ -85,45 +85,131 @@ macro_rules! await_for_any {
 
             let flag = Arc::new(AtomicBool::new(true));
 
-            let fut_first = wrap_bool_future(flag.clone(), $first).fuse();
-            pin_mut!(fut_first);
+            let fut1 = wrap_bool_future(flag.clone(), $first).fuse();
+            pin_mut!(fut1);
 
-            futures::select! {
-                _ = fut_first => {},
-            }
+            fut1.await;
 
             flag.load(Ordering::Relaxed)
         }.await
     }};
-    // Case: Multiple futures
-    ($first:expr, $($rest:expr),+ $(,)?) => {{
+    // Case: Two futures
+    ($first:expr, $second:expr $(,)?) => {{
         async {
             use futures::future::FutureExt;
             use futures::pin_mut;
+            use futures::select;
             use std::sync::Arc;
             use std::sync::atomic::{AtomicBool, Ordering};
 
             let flag = Arc::new(AtomicBool::new(true));
 
-            let fut_first = wrap_bool_future(flag.clone(), $first).fuse();
-            pin_mut!(fut_first);
+            let fut1 = wrap_bool_future(flag.clone(), $first).fuse();
+            let fut2 = wrap_bool_future(flag.clone(), $second).fuse();
+            pin_mut!(fut1);
+            pin_mut!(fut2);
 
-            $(
-                let fut_rest = wrap_bool_future(flag.clone(), $rest).fuse();
-                pin_mut!(fut_rest);
-            )*
-
-            futures::select! {
-                _ = fut_first => {},
-                $(
-                    _ = fut_rest => {},
-                )*
+            select! {
+                _ = fut1 => {},
+                _ = fut2 => {},
             }
 
             flag.load(Ordering::Relaxed)
         }.await
     }};
+    // Case: Three futures
+    ($first:expr, $second:expr, $third:expr $(,)?) => {{
+        async {
+            use futures::future::FutureExt;
+            use futures::pin_mut;
+            use futures::select;
+            use std::sync::Arc;
+            use std::sync::atomic::{AtomicBool, Ordering};
+
+            let flag = Arc::new(AtomicBool::new(true));
+
+            let fut1 = wrap_bool_future(flag.clone(), $first).fuse();
+            let fut2 = wrap_bool_future(flag.clone(), $second).fuse();
+            let fut3 = wrap_bool_future(flag.clone(), $third).fuse();
+            pin_mut!(fut1);
+            pin_mut!(fut2);
+            pin_mut!(fut3);
+
+            select! {
+                _ = fut1 => {},
+                _ = fut2 => {},
+                _ = fut3 => {},
+            }
+
+            flag.load(Ordering::Relaxed)
+        }.await
+    }};
+     // Case: Four futures
+    ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
+        async {
+            use futures::future::FutureExt;
+            use futures::pin_mut;
+            use futures::select;
+            use std::sync::Arc;
+            use std::sync::atomic::{AtomicBool, Ordering};
+
+            let flag = Arc::new(AtomicBool::new(true));
+
+            let fut1 = wrap_bool_future(flag.clone(), $first).fuse();
+            let fut2 = wrap_bool_future(flag.clone(), $second).fuse();
+            let fut3 = wrap_bool_future(flag.clone(), $third).fuse();
+            let fut4 = wrap_bool_future(flag.clone(), $fourth).fuse();
+            pin_mut!(fut1);
+            pin_mut!(fut2);
+            pin_mut!(fut3);
+            pin_mut!(fut4);
+
+            select! {
+                _ = fut1 => {},
+                _ = fut2 => {},
+                _ = fut3 => {},
+                _ = fut4 => {},
+            }
+
+            flag.load(Ordering::Relaxed)
+        }.await
+    }};
+    // Case: Five futures
+    ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
+        async {
+            use futures::future::FutureExt;
+            use futures::pin_mut;
+            use futures::select;
+            use std::sync::Arc;
+            use std::sync::atomic::{AtomicBool, Ordering};
+
+            let flag = Arc::new(AtomicBool::new(true));
+
+            let fut1 = wrap_bool_future(flag.clone(), $first).fuse();
+            let fut2 = wrap_bool_future(flag.clone(), $second).fuse();
+            let fut3 = wrap_bool_future(flag.clone(), $third).fuse();
+            let fut4 = wrap_bool_future(flag.clone(), $fourth).fuse();
+            let fut5 = wrap_bool_future(flag.clone(), $fifth).fuse();
+            pin_mut!(fut1);
+            pin_mut!(fut2);
+            pin_mut!(fut3);
+            pin_mut!(fut4);
+            pin_mut!(fut5);
+
+            select! {
+                _ = fut1 => {},
+                _ = fut2 => {},
+                _ = fut3 => {},
+                _ = fut4 => {},
+                _ = fut5 => {},
+            }
+
+            flag.load(Ordering::Relaxed)
+        }.await
+    }};
+    // Add more cases as needed
 }
+
 
 
 
