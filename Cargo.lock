@@ -1956,6 +1956,7 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "parking_lot 0.12.3",
+ "pin-project",
  "rand",
  "rand_distr",
  "regex",

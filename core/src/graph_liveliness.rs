@@ -290,7 +290,7 @@ impl GraphLiveliness {
     /// # Returns
     ///
     /// Option `true` if the actor is running, `false` otherwise. None if the actor is building.
-    pub(crate) fn is_running(&self, ident: ActorIdentity, accept_fn: &mut dyn FnMut() -> bool) -> Option<bool> {
+    pub(crate) fn is_running<F: FnMut() -> bool>(&self, ident: ActorIdentity, mut accept_fn: F) -> Option<bool> {
         //warn!("is running called on {:?}", ident);
 
         match self.state {

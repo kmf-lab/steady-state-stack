@@ -72,7 +72,6 @@ pub use actor_builder::Percentile;
 pub use actor_builder::ActorTeam;
 pub use graph_liveliness::*;
 pub use install::serviced::*;
-pub use loop_driver::wrap_bool_future;
 pub use nuclei::spawn_local;
 pub use nuclei::spawn_blocking;
 pub use steady_rx::Rx;

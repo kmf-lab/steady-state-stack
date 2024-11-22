@@ -1034,7 +1034,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         DriftCountIterator::new( units
                                 , this.shared_take_into_iter()
                                 , iterator_count_drift )
-      //  this.shared_take_into_iter()
     }
 
 
@@ -1431,7 +1430,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// # Returns
     /// `true` if the monitor is running, otherwise `false`.
     #[inline]
-    fn is_running(&mut self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
+    fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
         // in case we are in a tight loop and need to let other actors run on this thread.
         executor::block_on(yield_now::yield_now());
 
@@ -1439,7 +1438,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             let result = {
                 let liveliness = self.runtime_state.read();
                 let ident = self.ident;
-                liveliness.is_running(ident, accept_fn)
+                liveliness.is_running(ident, &mut accept_fn)
             };
             if let Some(result) = result {
                 if (!result) || self.is_running_iteration_count.is_zero() {

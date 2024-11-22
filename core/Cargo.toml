@@ -99,6 +99,7 @@ futures-util     = "0.3.31"
 parking_lot      = "0.12.3"
 tempfile         = "3.14.0"
 num_cpus         = "1.16.0"
+pin-project      = "1.1.7"
 
 # Release Plan
 # 0.1.0 - one year aniversary (ETA 12/04/24) relase single machine

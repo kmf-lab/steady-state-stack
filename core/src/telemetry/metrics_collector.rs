@@ -34,7 +34,7 @@ pub enum DiagramData {
     #[allow(clippy::type_complexity)]
     NodeDef(
         u64,
-        Box<(
+        Box<(   //NOTE: this box is here so all the enums are the same size as they share a channel
             Arc<ActorMetaData>,
             Box<[Arc<ChannelMetaData>]>,
             Box<[Arc<ChannelMetaData>]>,
@@ -450,13 +450,11 @@ fn gather_node_details(
             let rx_vec = tt.rx_channel_id_vec();
             let tx_vec = tt.tx_channel_id_vec();
 
-            let dd = Box::new((
+            DiagramData::NodeDef(state.sequence, Box::new((
                 metadata.clone(),
                 rx_vec.into_boxed_slice(),
                 tx_vec.into_boxed_slice(),
-            ));
-
-            DiagramData::NodeDef(state.sequence, dd)
+            )))
         })
         .collect();
     state.actor_count = dynamic_senders.len();
@@ -508,7 +506,8 @@ async fn send_data_details(
                 }
 
                 if let Err(e) = consumer.shared_send_async(
-                    DiagramData::ChannelVolumeData(state.sequence, state.total_take_send.clone().into_boxed_slice()),
+                    DiagramData::ChannelVolumeData(state.sequence
+                                                   , state.total_take_send.clone().into_boxed_slice()),
                     ident,
                     SendSaturation::IgnoreInRelease,
                 )

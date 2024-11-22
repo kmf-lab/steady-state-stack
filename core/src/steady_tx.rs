@@ -294,7 +294,7 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>>;
 
     /// Retrieves a slice of transmission channel definitions.
-    fn def_slice(&self) -> [&dyn TxDef; GIRTH];
+   // fn def_slice(&self) -> [&dyn TxDef; GIRTH];
 
     /// Retrieves the metadata for all transmission channels in the bundle.
     fn meta_data(&self) -> [TxMetaData; GIRTH];
@@ -312,13 +312,13 @@ impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for Stead
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
-    fn def_slice(&self) -> [&dyn TxDef; GIRTH] {
-        self.iter()
-            .map(|x| x as &dyn TxDef)
-            .collect::<Vec<&dyn TxDef>>()
-            .try_into()
-            .expect("Internal Error")
-    }
+    // fn def_slice(&self) -> [&dyn TxDef; GIRTH] {
+    //     self.iter()
+    //         .map(|x| x as &dyn TxDef)
+    //         .collect::<Vec<&dyn TxDef>>()
+    //         .try_into()
+    //         .expect("Internal Error")
+    // }
 
     fn meta_data(&self) -> [TxMetaData; GIRTH] {
         self.iter()

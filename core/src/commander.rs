@@ -774,10 +774,10 @@ impl SteadyCommander for SteadyContext {
     /// # Returns
     /// `true` if the actor is running, `false` otherwise.
     #[inline]
-    fn is_running(&mut self, accept_fn: &mut dyn FnMut() -> bool) -> bool {
+    fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
         loop {
             let liveliness = self.runtime_state.read();
-            let result = liveliness.is_running(self.ident, accept_fn);
+            let result = liveliness.is_running(self.ident, &mut accept_fn);
             if let Some(result) = result {
                 return result;
             } else {
@@ -1249,7 +1249,7 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// `true` if the actor is running, `false` otherwise.
-    fn is_running(&mut self, accept_fn: &mut dyn FnMut() -> bool) -> bool;
+    fn is_running<F: FnMut() -> bool>(&mut self, accept_fn: F) -> bool;
     /// Requests a graph stop for the actor.
     ///
     /// # Returns
