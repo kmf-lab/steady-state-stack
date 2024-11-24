@@ -1,7 +1,6 @@
 
 use std::future::Future;
 use std::time::{Duration, Instant};
-use std::pin::Pin;
 use futures_util::future::{select_all, FusedFuture};
 use std::any::Any;
 use std::sync::Arc;
@@ -19,6 +18,8 @@ use crate::steady_rx::RxDef;
 use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
+use futures::stream::{FuturesUnordered, StreamExt};
+
 
 impl SteadyContext {
     /// Converts the context into a local monitor.
@@ -306,7 +307,7 @@ impl SteadyCommander for SteadyContext {
     /// # Asynchronous
     async fn wait_shutdown_or_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
-        T: Send + Sync,
+        T: Send,
     {
         let mut count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
@@ -351,9 +352,9 @@ impl SteadyCommander for SteadyContext {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+ /*   async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
-        T: Send + Sync,
+        T: Send,
     {
         let mut count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
@@ -384,6 +385,42 @@ impl SteadyCommander for SteadyContext {
 
         result.load(Ordering::Relaxed)
     }
+*/
+   //TODO: thinking about this..
+    async fn wait_vacant_units_bundle<T>(
+        &self,
+        this: &mut TxBundle<'_, T>,
+        avail_count: usize,
+        ready_channels: usize,
+    ) -> bool {
+        let count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+
+        let mut futures = FuturesUnordered::new();
+
+        for tx in this.iter_mut().take(count_down) {
+            let local_r = result.clone();
+            futures.push(async move {
+                let bool_result = tx.shared_wait_vacant_units(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            });
+        }
+
+        let mut completed = 0;
+        while let Some(_) = futures.next().await {
+            completed += 1;
+            if completed >= count_down {
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+
+
+
     /// Attempts to peek at a slice of messages without removing them from the channel.
     ///
     /// # Parameters
@@ -660,11 +697,14 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the future completed, `false` if a shutdown signal was received.
-    async fn wait_future_void(&self, mut fut: Pin<Box<dyn FusedFuture<Output=()>>>) -> bool {
+    async fn wait_future_void<F>(&self, fut: F) -> bool
+    where
+        F: FusedFuture<Output = ()> + 'static + Send + Sync {
+        let mut pinned_fut = Box::pin(fut);
         let one_down = &mut self.oneshot_shutdown.lock().await;
         let mut one_fused = one_down.deref_mut().fuse();
         if !one_fused.is_terminated() {
-            select! { _ = one_fused => false, _ = fut => true, }
+            select! { _ = one_fused => false, _ = pinned_fut => true, }
         } else {
             false
         }
@@ -935,7 +975,7 @@ pub trait SteadyCommander {
     /// # Asynchronous
     async fn wait_shutdown_or_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
-        T: Send + Sync,
+        T: Send,
     ;
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
     ///
@@ -953,7 +993,7 @@ pub trait SteadyCommander {
     /// # Asynchronous
     async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
-        T: Send + Sync,
+        T: Send,
     ;
     /// Attempts to peek at a slice of messages without removing them from the channel.
     ///
@@ -1169,7 +1209,9 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// `true` if the future completed, `false` if a shutdown signal was received.
-    async fn wait_future_void(&self, fut: Pin<Box<dyn FusedFuture<Output=()>>>) -> bool;
+    async fn wait_future_void<F>(&self, fut: F) -> bool
+            where
+                F: FusedFuture<Output = ()> + 'static + Send + Sync;
     /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
     ///
     /// # Parameters

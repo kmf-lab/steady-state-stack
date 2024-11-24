@@ -93,7 +93,6 @@ mod graph_tests {
     use crate::build_graph;
     use std::ops::DerefMut;
 
-
     #[test]
     async fn test_graph_one() {
 
@@ -109,10 +108,44 @@ mod graph_tests {
             assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
             if let Some(plane) = g {
 
-              //  write your test here, send messages to edge nodes and get responses
-              //  let response = plane.node_call(Box::new(SOME_STRUCT), "SOME_NODE_NAME").await;
-              //  if let Some(msg) = response {
-              //  }
+             //NOTE: to ensure the node_call is for the correct channel for a given actor unique types for each channel are required
+
+            {% for actor in actors -%}
+                {%- if actor.is_on_graph_edge() -%}
+                  {% for channel in actor.rx_channels %}
+                     {{note_for_the_user}}  Adjust as needed to inject test values into the graph
+                     //  let response = plane.call_actor(Box::new({{channel[0].message_type}}::default()), "{{actor.display_name}}").await;
+                     //  if let Some(msg) = response { // ok indicates the message was echoed
+                     //     //trace!("response: {:?} {:?}", msg.downcast_ref::<String>(),i);
+                     //     assert_eq!("ok", msg.downcast_ref::<String>().expect("bad type"));
+                     //  } else {
+                     //     error!("bad response from generator: {:?}", response);
+                     //    // panic!("bad response from generator: {:?}", response);
+                     //  }
+                  {%- endfor %}
+                {% endif -%}
+            {%- endfor %}
+
+              // {{note_for_the_user}}  if needed you may want to add a delay right here to allow the graph to process the message
+              Delay::new(Duration::from_millis(100)).await;
+
+             {% for actor in actors -%}
+                {%- if actor.is_on_graph_edge() -%}
+
+                  {% for channel in actor.tx_channels %}
+                     {{note_for_the_user}}  Adjust as needed to test the values produced by the graph
+                     //  let response = plane.call_actor(Box::new({{channel[0].message_type}}::default()), "{{actor.display_name}}").await;
+                     //  if let Some(msg) = response { // ok indicates the expected structure instance matched
+                     //     //trace!("response: {:?} {:?}", msg.downcast_ref::<String>(),i);
+                     //     assert_eq!("ok", msg.downcast_ref::<String>().expect("bad type"));
+                     //  } else {
+                     //     error!("bad response from generator: {:?}", response);
+                     //    // panic!("bad response from generator: {:?}", response);
+                     //  }
+
+                  {%- endfor %}
+                {% endif -%}
+             {%- endfor %}
 
             }
             drop(guard);

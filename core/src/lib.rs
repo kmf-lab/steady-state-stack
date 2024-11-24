@@ -92,7 +92,6 @@ use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 use futures::lock::Mutex;
 use std::ops::DerefMut;
-use std::pin::Pin;
 #[allow(unused_imports)]
 use log::*;
 

@@ -9,34 +9,20 @@ use std::error::Error;
 {% for u in message_types_to_use -%}
 {{u}};
 {% endfor %}
-
 {% for st in message_types_to_define -%}
 {{st}} {
-   dummy: u8 {{note_for_the_user}}: replace this and put your fields here
+   dummy: u8 {{note_for_the_user}} remove dummy and put your channel message fields here
 }
 {% endfor %}
-
 //if no internal state is required (recommended) feel free to remove this.
 #[derive(Default, Clone)]
 pub(crate) struct {{ display_name|capitalize }}InternalState {
-     {% for channel in rx_channels -%}
-        {% if channel[0].should_build_read_buffer() %}
+     {%- for channel in rx_channels -%}{% if channel[0].should_build_read_buffer() %}
             {{channel[0].name}}_buffer: [{{channel[0].message_type}}; {{channel[0].batch_read}}],
-        {% endif -%}
-     {%- endfor %}
-     {% for channel in tx_channels -%}
-         {% if channel[0].should_build_write_buffer() %}
+        {% endif %}{% endfor %}
+     {%- for channel in tx_channels -%}{% if channel[0].should_build_write_buffer() %}
             {{channel[0].name}}_buffer: [{{channel[0].message_type}}; {{channel[0].batch_write}}],
-         {% endif %}
-     {% endfor %}
-}
-impl {{ display_name|capitalize }}InternalState {
-    fn new(cli_args: &Args) -> Self {
-        Self {
-           //{{note_for_the_user}}: add custom arg based init here
-           ..Default::default()
-        }
-    }
+{% endif %}{% endfor %}
 }
 
 {% if is_on_graph_edge %}#[cfg(not(test))]{% endif %}
@@ -48,51 +34,51 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
         {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_TX_GIRTH:usize,{% endif -%}
     {%- endfor -%}
   {%- if has_bundles -%}>{% endif -%}
-
   (context: SteadyContext
     {%- for channel in rx_channels %}
         ,{{channel[0].name}}_rx: {% if channel.len()>1 %}SteadyRxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_RX_GIRTH>
-                                  {%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
+                                  {%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor %}
     {%- for channel in tx_channels %}
         ,{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
-   , state: SteadyState<{{ display_name|capitalize }}InternalState> ) -> Result<(),Box<dyn Error>> {
+   , state: SteadyState<{{ display_name|capitalize }}InternalState>
+    ) -> Result<(),Box<dyn Error>> {
 
-  // here is how to access the CLI args if needed
+  // if needed CLI Args can be pulled into state from _cli_args
   let _cli_args = context.args::<Args>();
-  // monitor consumes context and ensures all the traffic on the passed channels is monitored
-  // monitor and context both implement SteadyCommander but context is used to avoid any monitoring
-  let mut monitor =  into_monitor!(context, [{%- for def in rx_monitor_defs -%}
+  // monitor consumes context and ensures all the traffic on the chosen channels is monitored
+  // monitor and context both implement SteadyCommander. SteadyContext is used to avoid monitoring
+  let cmd =  into_monitor!(context, [{%- for def in rx_monitor_defs -%}
                         {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
                         {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
-  internal_behavior(monitor {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx{%- endfor -%}, state).await
+  internal_behavior(cmd {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx{%- endfor -%}, state).await
 }
 
 async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
     {%- for channel in rx_channels -%}
-        {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_RX_GIRTH:usize,{% endif -%}
-    {%- endfor -%}
+        {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_RX_GIRTH:usize
+,{% endif -%}{%- endfor -%}
     {%- for channel in tx_channels -%}
-        {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_TX_GIRTH:usize,{% endif -%}
-    {%- endfor -%}{%- if has_bundles -%}{% endif -%}>(mut cmd: C{%- for channel in rx_channels %},{{channel[0].name}}_rx: {% if channel.len()>1 %}SteadyRxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_RX_GIRTH>
-                                  {%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
-    {%- for channel in tx_channels -%},{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
-                                  {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}, state: SteadyState<{{ display_name|capitalize }}InternalState> ) -> Result<(),Box<dyn Error>> {
+        {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_TX_GIRTH:usize
+,{% endif -%}
+    {%- endfor -%}{%- if has_bundles -%}{% endif -%}>(mut cmd: C{%- for channel in rx_channels %},{{channel[0].name}}_rx: {% if channel.len()>1 %}SteadyRxBundle<{{channel[0].message_type}}
+, {{channel[0].name|uppercase}}_RX_GIRTH>{%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
+    {%- for channel in tx_channels -%},{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}
+, {{channel[0].name|uppercase}}_TX_GIRTH>{%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
+, state: SteadyState<{{ display_name|capitalize }}InternalState>
+ ) -> Result<(),Box<dyn Error>> {
 
     let mut state_guard = steady_state(&state, || {{ display_name|capitalize }}InternalState::default()).await;
     if let Some(mut state) = state_guard.as_mut() {
 
-   //every channel must be locked before use, if this actor should panic the lock will be released
-   //and the replacement actor will lock them here again
- {% for channel in rx_channels %}
-    let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;
- {% endfor %}{% for channel in tx_channels %}
-    let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.lock().await;
- {% endfor %}
+   //every read and write channel must be locked for this instance use, this is outside before the loop
+ {%- for channel in rx_channels %}
+   let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;{% endfor %}{% for channel in tx_channels %}
+   let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.lock().await;{% endfor %}
 
-      //this is the main loop of the actor, will run until shutdown is requested.
-      //the closure is called upon shutdown to determine if we need to postpone the shutdown for this actor
-      while cmd.is_running(&mut ||{%- for channel in rx_channels %}
+   //this is the main loop of the actor, will run until shutdown is requested.
+   //the closure is called upon shutdown to determine if we need to postpone the shutdown
+   while cmd.is_running(&mut || {%- for channel in rx_channels -%}
         {{channel[0].name}}_rx.is_closed_and_empty()
         {%- if loop.last %}{% else %} && {% endif -%}{% endfor %}{%- for channel in tx_channels %}
         {%- if loop.first && !rx_channels.is_empty() %} && {% else %}{% endif -%}
@@ -100,21 +86,58 @@ async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
         {%- if loop.last %}{% else %} && {% endif -%}
    {% endfor %}) {
 
+     // our loop avoids spinning by using await here on multiple criteria. clean is false if await
+     // returned early due to a shutdown request or closed channel.
      {{full_driver_block}}
 
-     {{note_for_the_user}} here are all the channels you can read from
-          {%- for channel in rx_channels %}
-          let {{channel[0].name}}_rx_ref: &mut {% if 1==channel.len()%}Rx<{% else %}RxBundle<'_, {% endif -%}{{channel[0].message_type}}> = &mut {{channel[0].name}}_rx;
-          {%- endfor %}
-
-     {{note_for_the_user}} here are all the channels you can write to
-          {%- for channel in tx_channels %}
-          let {{channel[0].name}}_tx_ref: &mut {% if 1==channel.len()%}Tx<{% else %}TxBundle<'_, {% endif -%}{{channel[0].message_type}}> = &mut {{channel[0].name}}_tx;
-          {%- endfor %}
-
-     {{note_for_the_user}} to get started try calling the cmd.* methods:
-      //    try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>  ie cmd.try_take(...
-      //    try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T>  ie cmd.try_send(...
+ {%- for channel in rx_channels %}
+  {% if 1==channel.len() %}
+          {{note_for_the_user}} here is an example reading from {{channel[0].name}}_rx
+          match cmd.try_take(&mut {{channel[0].name}}_rx) {
+              Some(rec) => {
+                  trace!("got rec: {:?}", rec);
+              }
+              None => {
+                  if clean {
+                     //this could be an error if we expected a value
+                  }
+              }
+          }
+  {% else %}
+         {{note_for_the_user}} here is an example reading from one of the {{channel[0].name}}_rx bundle of {{channel.len()}}
+         match cmd.try_take(&mut {{channel[0].name}}_rx[0]) {
+             Some(rec) => {
+                 trace!("got rec: {:?}", rec);
+             }
+             None => {
+                 if clean {
+                    //this could be an error if we expected a value
+                 }
+             }
+         }
+  {% endif -%}
+{%- endfor %}
+{%- for channel in tx_channels %}
+  {% if 1==channel.len() %}
+        {{note_for_the_user}} here is an example writing to {{channel[0].name}}_tx
+        match cmd.try_send(&mut {{channel[0].name}}_tx, {{channel[0].message_type}}::default() ) {
+            Ok(()) => {
+            },
+            Err(msg) => { //in the above await we should have confirmed space is available
+                trace!("error sending: {:?}", msg)
+            },
+        }
+  {% else %}
+        {{note_for_the_user}} here is an example writing to one of the {{channel[0].name}}_tx bundle of {{channel.len()}}
+        match cmd.try_send(&mut {{channel[0].name}}_tx[0], {{channel[0].message_type}}::default() ) {
+            Ok(()) => {
+            },
+            Err(msg) => { //in the above await we should have confirmed space is available
+                trace!("error sending: {:?}", msg)
+            },
+        }
+  {% endif -%}
+{%- endfor %}
 
       }
     }
@@ -140,20 +163,16 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
         ,{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
     ) -> Result<(),Box<dyn Error>> {
-
-    let mut monitor =  into_monitor!(context, [{% for def in rx_monitor_defs -%}
+    let mut cmd =  into_monitor!(context, [{% for def in rx_monitor_defs -%}
                             {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
                             {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
-
-    if let Some(responder) = monitor.sidechannel_responder() {
-
-         {% for channel in rx_channels %}
-            let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;
-         {% endfor %}{% for channel in tx_channels %}
-            let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.lock().await;
-         {% endfor %}
-
-         while monitor.is_running(&mut ||{%- for channel in rx_channels %}
+    if let Some(responder) = cmd.sidechannel_responder() {
+         {%- for channel in rx_channels %}
+         let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;
+         {%- endfor %}{% for channel in tx_channels %}
+         let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.lock().await;
+         {%- endfor %}
+         while cmd.is_running(&mut ||{%- for channel in rx_channels %}
              {{channel[0].name}}_rx.is_closed_and_empty()
              {%- if loop.last %}{% else %} && {% endif -%}
           {% endfor %}{%- for channel in tx_channels %}
@@ -161,14 +180,28 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
              {{channel[0].name}}_tx.mark_closed()
              {%- if loop.last %}{% else %} && {% endif -%}
           {% endfor %}) {
+             {%- for channel in tx_channels -%}
+                 {%- if 1==channel.len() %}
+                 // in main use graph.sidechannel_director node_call(msg,"{{display_name}}")
+                 let _did_echo = responder.echo_responder(cmd,{{channel[0].name}}_tx).await;
+                 {%- else %}
+                 // in main use graph.sidechannel_director node_call(msg,"{{display_name}}")
+                 let _did_echo = responder.echo_responder_bundle(cmd,{{channel[0].name}}_tx).await;
+                 {%- endif %}
+             {%- endfor %}
 
-                {{note_for_the_user}} write responder code:: let responder = responder.respond_with(|message| {
-
+             {%- for channel in rx_channels -%}
+                {%- if 1==channel.len() %}
+                // in main use graph.sidechannel_director node_call(msg,"{{display_name}}")
+                let _did_check = responder.equals_responder(cmd,{{channel[0].name}}_tx).await;
+                {%- else %}
+                // in main use graph.sidechannel_director node_call(msg,"{{display_name}}")
+                let _did_check = responder.equals_responder_bundle(cmd,{{channel[0].name}}_tx).await;
+                {%- endif %}
+             {%- endfor %}
          }
-
     }
     Ok(())
-
 }{% endif %}
 
 #[cfg(test)]
@@ -180,11 +213,9 @@ pub(crate) mod tests {
     #[async_std::test]
     pub(crate) async fn test_simple_process() {
        let mut graph = GraphBuilder::for_testing().build(());
-
        {%- for channel in rx_channels %}
        let (test_{{channel[0].name}}_tx,{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_as_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
        {% endfor -%}
-
        {%- for channel in tx_channels %}
        let ({{channel[0].name}}_tx,test_{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_as_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
        {% endfor -%}
@@ -197,14 +228,29 @@ pub(crate) mod tests {
 
         graph.start(); //startup the graph
 
-        {{note_for_the_user}} add your test values here
+        {%- for channel in rx_channels %}
+           {%- if 1==channel.len() %}
+                {{note_for_the_user}} adjust this vec content to make a valid test
+                test_{{channel[0].name}}_tx.testing_send_all(vec![{{channel[0].message_type}}::default()],true).await;
+            {%- else %}
+                {{note_for_the_user}} adjust this vec content to make a valid test, further this is only one in the bundle
+                test_{{channel[0].name}}_tx[0].testing_send_all(vec![{{channel[0].message_type}}::default()],true).await;
+             {%- endif %}
 
-        graph.request_stop(); //our actor has no input so it immediately stops upon this request
+        {% endfor %}
+        graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(15));
 
-        {{note_for_the_user}} confirm values on the output channels
-        //    assert_eq!(XX_rx_out[0].testing_avail_units().await, 1);
+        {%- for channel in tx_channels %}
+            {%- if 1==channel.len() %}
+                {{note_for_the_user}} confirm values on the output channels
+                //    assert_eq!(test_{{channel[0].name}}_rx.testing_avail_units().await, 1); // check expected count
+                let results_{{channel[0].name}}_vec = test_{{channel[0].name}}_rx.testing_take().await;
+            {%- else %}
+                {{note_for_the_user}} confirm values on the output channels, further this is only one in the bundle
+                //    assert_eq!(test_{{channel[0].name}}_rx[0].testing_avail_units().await, 1); // check expected count
+                let results_{{channel[0].name}}_vec = test_{{channel[0].name}}_rx[0].testing_take().await;
+            {%- endif %}
+        {% endfor -%}
     }
-
-
 }

@@ -58,7 +58,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd:C
         if let Some(feedback) = cmd.try_take(&mut feedback) {
               trace!("data_generator feedback: {:?}", feedback);
         }
-
+        
         //this is an example of a telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
         let _clean = cmd.relay_stats_periodic(std::time::Duration::from_micros(gen_rate_micros)).await;

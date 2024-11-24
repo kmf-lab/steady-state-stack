@@ -613,7 +613,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// # Asynchronous
     async fn wait_shutdown_or_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
         where
-            T: Send + Sync,
+            T: Send,
     {
         let mut count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
@@ -673,7 +673,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// # Asynchronous
     async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
     where
-        T: Send + Sync,
+        T: Send,
     {
         let mut count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
@@ -1127,13 +1127,16 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// `true` if the future completes before the shutdown signal, otherwise `false`.
     ///
     /// # Asynchronous
-    async fn wait_future_void(&self, mut fut: Pin<Box<dyn FusedFuture<Output = ()>>>) -> bool {
+    async fn wait_future_void<F>(&self, fut: F) -> bool
+    where
+        F: FusedFuture<Output = ()> + 'static + Send + Sync {
+        let mut pinned_fut = Box::pin(fut);
         let _guard = self.start_profile(CALL_OTHER);
         //TODO: should we add our dirty data check ?? not sure since we do not know what is called.
         let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
         let mut one_fused = one_down.deref_mut().fuse();
         if !one_fused.is_terminated() {
-            select! { _ = one_fused => false, _ = fut => true, }
+            select! { _ = one_fused => false, _ = pinned_fut => true, }
         } else {
             false
         }

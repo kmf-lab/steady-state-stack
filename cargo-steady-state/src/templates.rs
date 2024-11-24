@@ -155,6 +155,15 @@ pub(crate) struct Actor {
     pub(crate) driver: Vec<ActorDriver>,
 }
 
+impl Actor {
+   pub(crate) fn is_on_graph_edge(&self) -> bool {
+        self.rx_channels.is_empty() || self.tx_channels.is_empty()
+    }
+}
+
+
+
+
 
 #[derive(Template)]
 #[template(path = "file_cargo.txt")]
@@ -180,6 +189,7 @@ pub(crate) struct ArgsTemplate {
 #[derive(Template)]
 #[template(path = "file_main.txt")]
 pub(crate) struct MainTemplate<'a> {
+    pub(crate) note_for_the_user: String,
     pub(crate) project_name: String,
     pub(crate) actors: &'a Vec<Actor>,
     pub(crate) actor_mods: Vec<String>,

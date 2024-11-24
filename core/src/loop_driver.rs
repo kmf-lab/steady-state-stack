@@ -1,6 +1,3 @@
-use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 /// This macro waits for all the provided futures to complete.
 /// It returns a boolean indicating if all futures returned true.
@@ -166,7 +163,6 @@ macro_rules! await_for_any {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use futures::future::ready;
     use std::time::Duration;
     use futures_timer::Delay;

@@ -36,7 +36,6 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                     Err(m) => Box::new(m),
                 }
             }).await;
-            monitor.relay_stats_smartly();
         }
     }
     Ok(())

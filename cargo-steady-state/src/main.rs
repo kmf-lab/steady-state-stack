@@ -134,7 +134,8 @@ fn write_project_files(pm: ProjectModel
    actor_mods.dedup();
 
    fs::write(main_rs, templates::MainTemplate {
-        project_name: pm.name.clone(),        
+       note_for_the_user: format!("//TO{}: ","DO"), //do not change, this is not for you
+       project_name: pm.name.clone(),        
         actor_mods,
         channels: &pm.channels,
         actors: &pm.actors,
@@ -186,7 +187,7 @@ fn write_project_files(pm: ProjectModel
        let tx_monitor_defs = monitor_defs("tx",&actor.tx_channels);
 
        fs::write(actor_file_rs, templates::ActorTemplate {
-               is_on_graph_edge: actor.rx_channels.is_empty() || actor.tx_channels.is_empty(),
+               is_on_graph_edge: actor.is_on_graph_edge(),
                note_for_the_user: format!("//TO{}: ","DO"), //do not change, this is not for you
                display_name: actor.display_name,
                has_bundles: actor.rx_channels.iter().any(|f| f.len()>1) || actor.tx_channels.iter().any(|f| f.len()>1),
@@ -296,11 +297,11 @@ fn build_driver_block(actor: &Actor) -> String {
         //this block must be a wrapping select around the others
 
         if andy_drivers.is_empty() {
-            full_driver_block.push_str("    let _clean = await_for_all!(");
+            full_driver_block.push_str("    let clean = await_for_all!(");
             full_driver_block.push_str(&t);
             full_driver_block.push_str(");\n");
         } else {
-            full_driver_block.push_str("    let _clean = await_for_all_or_proceed_upon!(");
+            full_driver_block.push_str("    let clean = await_for_all_or_proceed_upon!(");
 
             full_driver_block.push_str(&t);
             full_driver_block.push('\n');
@@ -314,7 +315,7 @@ fn build_driver_block(actor: &Actor) -> String {
             full_driver_block.push_str("    );\n");
         }
     } else {
-        full_driver_block.push_str("    let _clean = await_for_all!(");
+        full_driver_block.push_str("    let clean = await_for_all!(");
         andy_drivers.iter().enumerate().for_each(|(i,t)| {
             if i>0 {
                 full_driver_block.push_str(",\n");
@@ -387,8 +388,8 @@ fn monitor_defs(direction: &str, channels: &[Vec<Channel>]) -> Vec<String> {
 
 fn derive_block(copy: bool) -> &'static str {
     match copy {
-        true =>  "#[derive(Default,Clone,Copy)]\n",
-        false => "#[derive(Default)]\n",
+        true =>  "#[derive(Default,Clone,Copy,Debug)]\n",
+        false => "#[derive(Default,Debug)]\n",
     }
 }
 

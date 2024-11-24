@@ -322,7 +322,7 @@ mod large_tests {
                          data: Bytes::from_static(&[0u8; 62]),
                      };
                      //trace!("send test packet {}",i);
-                     let response = plane.node_call(Box::new(to_send), ActorName::new("Generator",None)).await;
+                     let response = plane.call_actor(Box::new(to_send), ActorName::new("Generator", None)).await;
                      if let Some(r) = response {
                             //trace!("generator response: {:?}", r.downcast_ref::<String>());
                             assert_eq!("ok", r.downcast_ref::<String>().expect("bad type"));
@@ -386,7 +386,7 @@ mod large_tests {
                     };
                     let name = ActorName::new("User", Some(i));
                     // trace!("sent: {:?}",name);
-                    let fut = plane.node_call(Box::new(expected_message), name);
+                    let fut = plane.call_actor(Box::new(expected_message), name);
                     tasks.push(async move {
                         match fut.await {
                             Some(r) => {

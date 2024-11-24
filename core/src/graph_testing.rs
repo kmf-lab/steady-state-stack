@@ -17,9 +17,9 @@ use futures_util::lock::Mutex;
 use async_ringbuf::traits::Split;
 use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
-use futures_util::select;
+use futures_util::{select};
 use ringbuf::consumer::Consumer;
-use crate::{ActorIdentity, ActorName};
+use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyCommander, Tx, TxBundle};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
 use crate::actor_builder::NodeTxRx;
@@ -124,7 +124,7 @@ impl SideChannelHub {
     ///
     /// An `Option` containing the response message if the operation is successful.
     ///
-    pub async fn node_call(&self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Option<Box<dyn Any + Send + Sync>> {
+    pub async fn call_actor(&self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Option<Box<dyn Any + Send + Sync>> {
 
         if let Some(sc) = self.backplane.get(&id) {
             let mut sc_guard = sc.lock().await;
@@ -192,6 +192,187 @@ impl SideChannelResponder {
         }
     }
 
+    /// An async function that listens for a message and echoes it back on the provided outgoing channel.
+    ///
+    /// # Parameters
+    /// - `cmd`: A mutable reference to the SteadyCommander handling command operations.
+    /// - `target_tx`: A mutable reference to the outgoing channel to send the echoed message.
+    ///
+    /// # Returns
+    /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
+    pub async fn echo_responder<M: 'static + Clone + Debug + Send, C: SteadyCommander>(
+        &self,
+        cmd: &mut C,
+        target_tx: &mut Tx<M>,
+    ) -> bool {
+        if self.should_apply::<M>().await {
+            if cmd.wait_vacant_units(target_tx, 1).await {
+                self.respond_with(|message| {
+                    // Attempt to downcast to the expected message type
+                    let msg = message.downcast_ref::<M>().expect("error casting");
+                    // Try sending the message to the target channel
+                    match cmd.try_send(target_tx, msg.clone()) {
+                        Ok(()) => Box::new("ok".to_string()),
+                        Err(m) => Box::new(format!("Failed to send message: {:?}", m)),
+                    }
+                }).await
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    /// An async function that listens for a message and echoes it to all outgoing channels in a bundle.
+    ///
+    /// # Parameters
+    /// - `cmd`: A mutable reference to the SteadyCommander handling command operations.
+    /// - `target_tx_bundle`: A mutable reference to the bundle of outgoing channels to send the echoed message.
+    ///
+    /// # Returns
+    /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
+    pub async fn echo_responder_bundle<M: 'static + Clone + Debug + Send, C: SteadyCommander>(
+        &self,
+        cmd: &mut C,
+        target_tx_bundle: &mut TxBundle<'_,M>,
+    ) -> bool {
+        if self.should_apply::<M>().await {
+            let girth = target_tx_bundle.len();
+            for x in 0..girth {
+                if !cmd.wait_vacant_units(&mut target_tx_bundle[x], 1).await {
+                    return false;
+                };
+            }
+            self.respond_with(|message| {
+                let msg = message.downcast_ref::<M>().expect("error casting");
+                let total: usize = (0..girth)
+                    .filter(|&c| {
+                        cmd.try_send(&mut target_tx_bundle[c], msg.clone()).is_ok()
+                    })
+                    .count();
+    
+                if total == girth {
+                    Box::new("ok".to_string())
+                } else {
+                    let failure = format!("failed to echo to {:?} channels", girth - total);
+                    Box::new(failure)
+                }
+            }).await 
+        } 
+        else 
+        { false }
+    }
+
+    /// An async function that listens for a message and verifies it matches an incoming message on a channel.
+    ///
+    /// # Parameters
+    /// - `cmd`: A mutable reference to the SteadyCommander handling command operations.
+    /// - `source_rx`: A mutable reference to the incoming channel to read the message from.
+    ///
+    /// # Returns
+    /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
+    pub async fn equals_responder<M: 'static + Clone + Debug + Send + Eq, C: SteadyCommander>(
+        &self,
+        cmd: &mut C,
+        source_rx: &mut Rx<M>,
+    ) -> bool {
+        if self.should_apply::<M>().await {
+            if cmd.wait_avail_units(source_rx, 1).await {
+                self.respond_with(|message| {
+                    // Attempt to downcast to the expected message type
+                    let msg: &M = message.downcast_ref::<M>().expect("error casting");
+
+                    match cmd.try_take(source_rx) {
+                        Some(measured) => {
+                            if measured.eq(msg) {
+                                Box::new("ok".to_string())
+                            } else {
+                                let failure = format!("no match {:?} {:?}", msg, measured);
+                                Box::new(failure)
+                            }
+                        }
+                        None => {
+                            Box::new("no message".to_string())
+                        }
+                    }
+                }).await
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    /// An async function that verifies a message matches all incoming messages from a bundle of channels.
+    ///
+    /// # Parameters
+    /// - `cmd`: A mutable reference to the SteadyCommander handling command operations.
+    /// - `source_rx`: A mutable reference to the bundle of incoming channels to read messages from.
+    ///
+    /// # Returns
+    /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
+    pub async fn equals_responder_bundle<M: 'static + Clone + Debug + Send + Eq, C: SteadyCommander>(
+        &self,
+        cmd: &mut C,
+        source_rx: &mut RxBundle<'_, M>,
+    ) -> bool {
+        if self.should_apply::<M>().await {
+            let girth = source_rx.len();
+            for x in 0..girth {
+                if !cmd.wait_avail_units(&mut source_rx[x], 1).await {
+                    return false;
+                };
+            }
+            self.respond_with(|message| {
+                let msg: &M = message.downcast_ref::<M>().expect("error casting");
+                let total = (0..girth)
+                    .filter_map(|c| cmd.try_take(&mut source_rx[c]))
+                    .filter(|m| m.eq(msg))
+                    .count();
+
+                if girth == total {
+                    Box::new("ok".to_string())
+                } else {
+                    let failure = format!("match failure {:?} of {:?}", msg, girth - total);
+                    Box::new(failure)
+                }
+            }).await
+        } else {
+            false
+        }
+    }
+
+    /// Checks if the next message in the queue matches the expected type without consuming it.
+    ///
+    /// # Type Parameters
+    /// - `M`: The expected message type.
+    ///
+    /// # Returns
+    /// - `true` if the next message matches the expected type.
+    /// - `false` otherwise.
+    pub async fn should_apply<M>(&self) -> bool
+    where
+        M: 'static + Send,
+    {
+        let mut guard = self.arc.lock().await;
+        let ((_, ref mut rx), _) = guard.deref_mut();
+
+        // Attempt to peek at the next message
+        if let Some(q) = rx.try_peek() {
+            // Check if the message can be downcast to the expected type
+            if q.is::<M>() {
+                true
+            } else {
+                false
+            }
+        } else {
+            // No message available to peek at
+            false
+        }
+    }
+    
     /// Responds to messages from the side channel using the provided function.
     ///
     /// # Arguments
@@ -321,7 +502,7 @@ mod graph_testing_tests {
         // Simulates the main test block which makes a call and awaits for the response.
         //test code will call to the actor and only return after above actor responds
         let msg = Box::new(42) as Box<dyn Any + Send + Sync>;
-        let result = hub.node_call(msg, actor_name).await;
+        let result = hub.call_actor(msg, actor_name).await;
 
          assert!(result.is_some(), "Should receive a response");
          let r = result.unwrap();
