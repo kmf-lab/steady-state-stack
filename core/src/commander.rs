@@ -1,7 +1,7 @@
 
 use std::future::Future;
 use std::time::{Duration, Instant};
-use futures_util::future::{select_all, FusedFuture};
+use futures_util::future::{FusedFuture};
 use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -1046,7 +1046,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
                                 MONITOR_NOT
                             };
         // get the iterator from this RX so we can count each item there.
-        let iterator_count_drift = this.iterator_count_drift.clone();
+        let iterator_count_drift = this.iterator_count_drift.clone(); //Arc
         DriftCountIterator::new( units
                                 , this.shared_take_into_iter()
                                 , iterator_count_drift )
