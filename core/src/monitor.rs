@@ -745,7 +745,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// - `elems`: A mutable slice to store the peeked messages.
     ///
     /// # Returns
-    /// The number of messages peeked and stored in `elems`.
+    /// The number of messages peeked and stored in `elems`. this can be less than wait_for_count.
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
@@ -755,11 +755,17 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     where
         T: Copy
     {
-        if self.telemetry.is_dirty() {
-            //TODO: check our clock if we have dirty data waiting to be sent
-
-        }
-        this.shared_peek_async_slice(wait_for_count, elems).await
+        let timeout = if self.telemetry.is_dirty() {
+            let remaining_micros = self.telemetry_remaining_micros();
+            if remaining_micros <= 0 {
+                Some(Duration::from_micros(0)) //immediate timeout
+            } else {
+                Some(Duration::from_micros(remaining_micros as u64))
+            }
+        } else {
+            None
+        };
+        this.shared_peek_async_slice_timeout(wait_for_count, elems, timeout).await
     }
 
     /// Retrieves and removes a slice of messages from the channel.
@@ -825,11 +831,17 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// # Asynchronous
     async fn peek_async_iter<'a, T>(&'a self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
         let _guard = self.start_profile(CALL_OTHER);
-        if self.telemetry.is_dirty() {
-            //TODO: check our clock if we have dirty data waiting to be sent
-
-        }
-        this.shared_peek_async_iter(wait_for_count).await
+        let timeout = if self.telemetry.is_dirty() {
+            let remaining_micros = self.telemetry_remaining_micros();
+            if remaining_micros <= 0 {
+                Some(Duration::from_micros(0))
+            } else {
+                Some(Duration::from_micros(remaining_micros as u64))
+            }
+        } else {
+            None
+        };
+        this.shared_peek_async_iter_timeout(wait_for_count, timeout).await
     }
 
     /// Checks if the channel is currently empty.
@@ -866,11 +878,17 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
     {
         let _guard = self.start_profile(CALL_OTHER);
-        if self.telemetry.is_dirty() {
-            //TODO: check our clock if we have dirty data waiting to be sent
-
-        }
-        this.shared_peek_async().await
+        let timeout = if self.telemetry.is_dirty() {
+            let remaining_micros = self.telemetry_remaining_micros();
+            if remaining_micros <= 0 { 
+                Some(Duration::from_millis(0)) //immediate timeout
+            } else {
+                Some(Duration::from_micros(remaining_micros as u64))
+            }
+        } else {
+            None //no timeout
+        };
+        this.shared_peek_async_timeout(timeout).await
     }
 
 
@@ -985,9 +1003,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     async fn wait_empty<T>(&self, this: &mut Tx<T>) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
         if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
@@ -1034,6 +1050,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         DriftCountIterator::new( units
                                 , this.shared_take_into_iter()
                                 , iterator_count_drift )
+
+
     }
 
 
@@ -1082,18 +1100,14 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         } else {
             duration_rate
         };
-        let op = Delay::new(remaining_duration);
+        let waiter = Delay::new(remaining_duration);
 
         let _guard = self.start_profile(CALL_WAIT);
         let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
-      //  let result = if !one_down.is_terminated() { //TODO: is this needed?
-        let result =     select! {
+        let result = select! {
                 _ = &mut one_down.deref_mut() => false,
-                _ = op.fuse() => true,
+                _ = waiter.fuse() => true,
             };
-      //  } else {
-      //      false
-      //  };
         self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
         result
     }
@@ -1156,12 +1170,18 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
         let guard = self.start_profile(CALL_SINGLE_WRITE);
 
-        if self.telemetry.is_dirty() {
-            //TODO: check our clock if we have dirty data waiting to be sent
-
-        }
-
-        let result = this.shared_send_async(a, self.ident, saturation).await;
+        let timeout = if self.telemetry.is_dirty() {
+            let remaining_micros = self.telemetry_remaining_micros();
+            if remaining_micros <= 0 {
+                Some(Duration::from_micros(0))
+            } else {
+                Some(Duration::from_micros(remaining_micros as u64))
+            }
+        } else {
+            None
+        };
+        
+        let result = this.shared_send_async_timeout(a, self.ident, saturation, timeout).await; 
         drop(guard);
         match result {
             Ok(_) => {
@@ -1216,13 +1236,18 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
         let guard = self.start_profile(CALL_SINGLE_READ);
 
-        if self.telemetry.is_dirty() {
-            //TODO: check our clock if we have dirty data waiting to be sent
+        let timeout = if self.telemetry.is_dirty() {
+            let remaining_micros = self.telemetry_remaining_micros();
+            if remaining_micros <= 0 {
+                Some(Duration::from_micros(0)) //stop now
+            } else {
+                Some(Duration::from_micros(remaining_micros as u64)) //stop at remaining time
+            }
+        } else {
+            None //do not use the timeout 
+        };
 
-        }
-
-
-        let result = this.shared_take_async().await; //Can return None if we are shutting down
+        let result = this.shared_take_async_timeout(timeout).await; //Can return None if we are shutting down
         drop(guard);
         match result {
             Some(result) => {
@@ -1248,9 +1273,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let count = Self::validate_capacity_rx(this, count);
 
         if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
@@ -1280,9 +1303,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
         if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
@@ -1312,9 +1333,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
         if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
@@ -1345,9 +1364,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let count = Self::validate_capacity_tx(this, count);
 
         if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                                 - (self.last_telemetry_send.elapsed().as_micros() as i64
-                                     * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
                         false //need a relay now so return
                     } else {
@@ -1375,9 +1392,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let count = Self::validate_capacity_tx(this, count);
 
         if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
@@ -1399,9 +1414,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     async fn wait_shutdown(&self) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         if self.telemetry.is_dirty() {
-            let remaining_micros = (1000i64 * self.frame_rate_ms as i64)
-                - (self.last_telemetry_send.elapsed().as_micros() as i64
-                * CONSUMED_MESSAGES_BY_COLLECTOR as i64);
+            let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
                 false //need a relay now so return
             } else {
@@ -1485,10 +1498,14 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     fn identity(&self) -> ActorIdentity {
         self.ident
     }
-
-
 }
 
+impl<const RX_LEN: usize, const TX_LEN: usize> LocalMonitor<RX_LEN, TX_LEN> {
+    fn telemetry_remaining_micros(&self) -> i64 {
+       (1000i64 * self.frame_rate_ms as i64) - (self.last_telemetry_send.elapsed().as_micros() as i64
+       * CONSUMED_MESSAGES_BY_COLLECTOR as i64)
+    }
+}
 pub(crate) struct DriftCountIterator<I> {
     iter: I,
     expected_count: usize,
@@ -1497,19 +1514,19 @@ pub(crate) struct DriftCountIterator<I> {
 }
 
 impl<I> DriftCountIterator<I>
-    where I: Iterator + Send {
-
+where
+    I: Iterator + Send,
+{
     pub fn new(
         expected_count: usize,
         iter: I,
         iterator_count_drift: Arc<AtomicIsize>,
-    ) -> Self
-    {
+    ) -> Self {
         DriftCountIterator {
             iter,
             expected_count,
             actual_count: 0,
-            iterator_count_drift
+            iterator_count_drift,
         }
     }
 }
@@ -1517,22 +1534,23 @@ impl<I> DriftCountIterator<I>
 impl<I> Drop for DriftCountIterator<I> {
     fn drop(&mut self) {
         let drift = self.actual_count as isize - self.expected_count as isize;
-        if !drift.is_zero() {
-            self.iterator_count_drift.fetch_add(drift,Ordering::Relaxed);
+        if drift != 0 {
+            self.iterator_count_drift.fetch_add(drift, Ordering::Relaxed);
         }
     }
 }
 
 impl<I> Iterator for DriftCountIterator<I>
-    where
-        I: Iterator, {
+where
+    I: Iterator,
+{
     type Item = I::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.iter.next();
         if item.is_some() {
             self.actual_count += 1;
-        };
+        }
         item
     }
 }

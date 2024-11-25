@@ -169,35 +169,38 @@ impl SteadyCommander for SteadyContext {
     ///
     ///
     /// # Asynchronous
-    async fn wait_shutdown_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send + Sync,
-    {
-        let mut count_down = ready_channels.min(this.len());
+    async fn wait_shutdown_or_avail_units_bundle<T>(
+        &self,
+        this: &mut RxBundle<'_, T>,
+        avail_count: usize,
+        ready_channels: usize,
+    ) -> bool {
+        let count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
-        let futures = this.iter_mut().map(|rx| {
+
+        let mut futures = FuturesUnordered::new();
+
+        // Push futures into the FuturesUnordered collection
+        for rx in this.iter_mut().take(count_down) {
             let local_r = result.clone();
-            async move {
+            futures.push(async move {
                 let bool_result = rx.shared_wait_shutdown_or_avail_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
-            }
-                .boxed() // Box the future to make them the same type
-        });
+            });
+        }
 
-        let futures: Vec<_> = futures.collect();
-        let mut futures = futures;
+        let mut completed = 0;
 
-        while !futures.is_empty() {
-            // Wait for the first future to complete
-            let (_result, _index, remaining) = select_all(futures).await;
-            futures = remaining;
-            count_down -= 1;
-            if 0 == count_down {
+        // Poll futures concurrently
+        while let Some(_) = futures.next().await {
+            completed += 1;
+            if completed >= count_down {
                 break;
             }
         }
+
         result.load(Ordering::Relaxed)
     }
     /// Waits until a specified number of units are available in the Rx channel bundle.
@@ -215,37 +218,41 @@ impl SteadyCommander for SteadyContext {
     ///
     ///
     /// # Asynchronous
-    async fn wait_closed_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send + Sync,
-    {
-        let mut count_down = ready_channels.min(this.len());
+    async fn wait_closed_or_avail_units_bundle<T>(
+        &self,
+        this: &mut RxBundle<'_, T>,
+        avail_count: usize,
+        ready_channels: usize,
+    ) -> bool {
+        let count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
-        let futures = this.iter_mut().map(|rx| {
+
+        let mut futures = FuturesUnordered::new();
+
+        // Push futures into the FuturesUnordered collection
+        for rx in this.iter_mut().take(count_down) {
             let local_r = result.clone();
-            async move {
+            futures.push(async move {
                 let bool_result = rx.shared_wait_closed_or_avail_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
-            }
-                .boxed() // Box the future to make them the same type
-        });
+            });
+        }
 
-        let futures: Vec<_> = futures.collect();
-        let mut futures = futures;
+        let mut completed = 0;
 
-        while !futures.is_empty() {
-            // Wait for the first future to complete
-            let (_result, _index, remaining) = select_all(futures).await;
-            futures = remaining;
-            count_down -= 1;
-            if 0 == count_down {
+        // Poll futures concurrently
+        while let Some(_) = futures.next().await {
+            completed += 1;
+            if completed >= count_down {
                 break;
             }
         }
+
         result.load(Ordering::Relaxed)
     }
+    
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
     ///
     /// # Parameters
@@ -260,37 +267,42 @@ impl SteadyCommander for SteadyContext {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send + Sync,
-    {
-        let mut count_down = ready_channels.min(this.len());
+    async fn wait_avail_units_bundle<T>(
+        &self,
+        this: &mut RxBundle<'_, T>,
+        avail_count: usize,
+        ready_channels: usize,
+    ) -> bool {
+        let count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
-        let futures = this.iter_mut().map(|rx| {
+
+        let mut futures = FuturesUnordered::new();
+
+        // Push futures into the FuturesUnordered collection
+        for rx in this.iter_mut().take(count_down) {
             let local_r = result.clone();
-            async move {
+            futures.push(async move {
                 let bool_result = rx.shared_wait_avail_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
-            }
-                .boxed() // Box the future to make them the same type
-        });
+            });
+        }
 
-        let futures: Vec<_> = futures.collect();
-        let mut futures = futures;
+        let mut completed = 0;
 
-        while !futures.is_empty() {
-            // Wait for the first future to complete
-            let (_result, _index, remaining) = select_all(futures).await;
-            futures = remaining;
-            count_down -= 1;
-            if 0 == count_down {
+        // Poll futures concurrently
+        while let Some(_) = futures.next().await {
+            completed += 1;
+            if completed >= count_down {
                 break;
             }
         }
+
         result.load(Ordering::Relaxed)
     }
+    
+    
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
     ///
     /// # Parameters
@@ -305,39 +317,43 @@ impl SteadyCommander for SteadyContext {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    async fn wait_shutdown_or_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send,
+    async fn wait_shutdown_or_vacant_units_bundle<T>(
+        &self,
+        this: &mut TxBundle<'_, T>,
+        avail_count: usize,
+        ready_channels: usize,
+    ) -> bool
     {
-        let mut count_down = ready_channels.min(this.len());
+        let count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
 
-        let futures = this.iter_mut().map(|tx| {
+        let mut futures = FuturesUnordered::new();
+
+        // Push futures into the FuturesUnordered collection
+        for tx in this.iter_mut().take(count_down) {
             let local_r = result.clone();
-            async move {
+            futures.push(async move {
                 let bool_result = tx.shared_wait_shutdown_or_vacant_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
-            }
-                .boxed() // Box the future to make them the same type
-        });
+            });
+        }
 
-        let futures: Vec<_> = futures.collect();
-        let mut futures = futures;
+        let mut completed = 0;
 
-        while !futures.is_empty() {
-            // Wait for the first future to complete
-            let (_result, _index, remaining) = select_all(futures).await;
-            futures = remaining;
-            count_down -= 1;
-            if 0 == count_down {
+        // Poll futures concurrently
+        while let Some(_) = futures.next().await {
+            completed += 1;
+            if completed >= count_down {
                 break;
             }
         }
 
         result.load(Ordering::Relaxed)
     }
+    
+    
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
     ///
     /// # Parameters
@@ -352,41 +368,6 @@ impl SteadyCommander for SteadyContext {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
- /*   async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send,
-    {
-        let mut count_down = ready_channels.min(this.len());
-        let result = Arc::new(AtomicBool::new(true));
-
-        let futures = this.iter_mut().map(|tx| {
-            let local_r = result.clone();
-            async move {
-                let bool_result = tx.shared_wait_vacant_units(avail_count).await;
-                if !bool_result {
-                    local_r.store(false, Ordering::Relaxed);
-                }
-            }
-                .boxed() // Box the future to make them the same type
-        });
-
-        let futures: Vec<_> = futures.collect();
-        let mut futures = futures;
-
-        while !futures.is_empty() {
-            // Wait for the first future to complete
-            let (_result, _index, remaining) = select_all(futures).await;
-            futures = remaining;
-            count_down -= 1;
-            if 0 == count_down {
-                break;
-            }
-        }
-
-        result.load(Ordering::Relaxed)
-    }
-*/
-   //TODO: thinking about this..
     async fn wait_vacant_units_bundle<T>(
         &self,
         this: &mut TxBundle<'_, T>,

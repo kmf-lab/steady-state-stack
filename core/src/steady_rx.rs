@@ -11,6 +11,7 @@ use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
+use futures_timer::Delay;
 use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
 use crate::{RxBundle, SteadyRx, SteadyRxBundle};
@@ -143,12 +144,12 @@ impl <T> Rx<T> {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
             let mut operation = &mut self.rx.wait_occupied(1);
-            select! { _ = one_down => {}, _ = operation => {}, };
+            select! { _ = one_down => {}
+                    , _ = operation => {}
+                    , };
         }
         let result = self.rx.first();
-
         if result.is_some() {
-
             let take_count = self.take_count.load(Ordering::Relaxed);
             let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
             if !cached_take_count == take_count {
@@ -162,6 +163,41 @@ impl <T> Rx<T> {
         }
         result
     }
+
+    #[inline]
+    pub(crate) async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<&T> {
+        let mut one_down = &mut self.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(1);
+            if let Some(timeout) = timeout {
+                let mut timeout = Delay::new(timeout).fuse();
+                select! { _ = one_down => {}
+                        , _ = operation => {}
+                        , _ = timeout => {}
+                };
+            } else {
+                select! { _ = one_down => {}
+                        , _ = operation => {}
+                };
+            }
+        }
+        let result = self.rx.first();
+        if result.is_some() {
+            let take_count = self.take_count.load(Ordering::Relaxed);
+            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
+            if !cached_take_count == take_count {
+                self.peek_repeats.store(0, Ordering::Relaxed);
+                self.cached_take_count.store(take_count, Ordering::Relaxed);
+            } else {
+                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
+            }
+        } else {
+            self.peek_repeats.store(0, Ordering::Relaxed);
+        }
+        result
+    }
+    
+    
 
     #[inline]
     pub(crate) fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
@@ -190,7 +226,30 @@ impl <T> Rx<T> {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
             let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-            select! { _ = one_down => {}, _ = operation => {}, };
+            select! { _ = one_down => {}
+                    , _ = operation => {}
+                    , };
+        }
+        self.shared_try_peek_slice(elems)
+    }
+
+    #[inline]
+    pub(crate) async fn shared_peek_async_slice_timeout(&mut self, wait_for_count: usize, elems: &mut [T], timeout: Option<Duration>) -> usize
+    where T: Copy {
+        let mut one_down = &mut self.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
+            if let Some(timeout) = timeout {
+                let mut timeout = Delay::new(timeout).fuse();
+                select! { _ = one_down => {}
+                        , _ = operation => {}
+                        , _ = timeout => {}
+                }
+            } else {
+                select! { _ = one_down => {}
+                        , _ = operation => {}
+                }
+            }            
         }
         self.shared_try_peek_slice(elems)
     }
@@ -402,11 +461,59 @@ impl<T> Rx<T> {
     }
 
     #[inline]
+    pub(crate) async fn shared_take_async_timeout(&mut self, timeout: Option<Duration> ) -> Option<T> {
+        let mut one_down = &mut self.oneshot_shutdown;
+        let result = if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.pop();            
+            if let Some(timeout) = timeout {
+                let mut timeout = Delay::new(timeout).fuse();
+                select! { _ = one_down  => self.rx.try_pop()
+                        , p = operation => p
+                        , _ = timeout   => self.rx.try_pop()
+                }
+            } else {
+                select! { _ = one_down  => self.rx.try_pop()
+                        , p = operation => p 
+                }
+            }            
+        } else {
+            self.rx.try_pop()
+        };
+        if result.is_some() {
+            self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
+        }
+        result
+    }
+    
+
+    #[inline]
     pub(crate) async fn shared_peek_async_iter(&mut self, wait_for_count: usize) -> impl Iterator<Item = &T> {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
             let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-            select! { _ = one_down => {}, _ = operation => {}, };
+            select! { _ = one_down => {}
+                    , _ = operation => {}
+                    , };
+        }
+        self.rx.iter()
+    }
+
+    #[inline]
+    pub(crate) async fn shared_peek_async_iter_timeout(&mut self, wait_for_count: usize, timeout: Option<Duration>) -> impl Iterator<Item = &T> {
+        let mut one_down = &mut self.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
+            if let Some(timeout) = timeout {
+                let mut timeout = Delay::new(timeout).fuse();
+                select! { _ = one_down => {}
+                        , _ = operation => {}
+                        , _ = timeout => {}
+                };
+            } else {
+                select! { _ = one_down => {}
+                        , _ = operation => {}                        
+                };
+            }
         }
         self.rx.iter()
     }

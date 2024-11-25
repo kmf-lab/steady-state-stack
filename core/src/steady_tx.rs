@@ -3,7 +3,7 @@ use log::{error, trace, warn};
 use futures_util::{FutureExt, select};
 use std::any::type_name;
 use std::backtrace::Backtrace;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use futures::channel::oneshot;
 use futures_util::lock::{MutexLockFuture};
 use ringbuf::traits::Observer;
@@ -13,6 +13,8 @@ use async_ringbuf::producer::AsyncProducer;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::thread;
+use futures::pin_mut;
+use futures_timer::Delay;
 use crate::{steady_config, ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::monitor::{ChannelMetaData, TxMetaData};
@@ -213,6 +215,68 @@ impl<T> Tx<T> {
         }
     }
 
+
+
+    #[inline]
+    pub(crate) async fn shared_send_async_timeout(&mut self, msg: T, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<(), T> {
+        if self.make_closed.is_none() {
+            warn!("Send called after channel marked closed");
+        }
+
+        match self.tx.try_push(msg) {
+            Ok(_) => Ok(()),
+            Err(msg) => {
+                match saturation {
+                    SendSaturation::IgnoreAndWait => {
+                    }
+                    SendSaturation::IgnoreAndErr => {
+                        return Err(msg);
+                    }
+                    SendSaturation::Warn => {
+                        self.report_tx_full_warning(ident);
+                    }
+                    SendSaturation::IgnoreInRelease => {
+                        #[cfg(debug_assertions)]
+                        {
+                            self.report_tx_full_warning(ident);
+                        }
+                    }
+                }                
+                if let Some(timeout) = timeout {
+                    let has_room = self.tx.wait_vacant(1).fuse();
+                    pin_mut!(has_room);
+                    let mut timeout_future = Delay::new(timeout).fuse();
+                    select! {
+                        _ = has_room => {
+                            let result = self.tx.push(msg).await;
+                            match result {
+                                Ok(_) => Ok(()),
+                                Err(t) => {
+                                    error!("channel is closed");
+                                    Err(t)
+                                }
+                            }
+                        },
+                        _ = timeout_future => Err(msg),
+                    }
+                } else {
+                    //NOTE: may block here on shutdown if graph is built poorly
+                    match self.tx.push(msg).await {
+                        Ok(_) => Ok(()),
+                        Err(t) => {
+                            error!("channel is closed");
+                            Err(t)
+                        }
+                    }
+                }
+
+                
+               
+            }
+        }
+    }
+
+
     #[inline]
     pub(crate) async fn shared_send_async(&mut self, msg: T, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), T> {
         if self.make_closed.is_none() {
@@ -223,7 +287,8 @@ impl<T> Tx<T> {
             Ok(_) => Ok(()),
             Err(msg) => {
                 match saturation {
-                    SendSaturation::IgnoreAndWait => {}
+                    SendSaturation::IgnoreAndWait => {
+                    }
                     SendSaturation::IgnoreAndErr => {
                         return Err(msg);
                     }
@@ -237,8 +302,6 @@ impl<T> Tx<T> {
                         }
                     }
                 }
-
-
                 //NOTE: may block here on shutdown if graph is built poorly
                 match self.tx.push(msg).await {
                     Ok(_) => Ok(()),
@@ -250,6 +313,7 @@ impl<T> Tx<T> {
             }
         }
     }
+    
 
     fn report_tx_full_warning(&mut self, ident: ActorIdentity) {
         if self.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
