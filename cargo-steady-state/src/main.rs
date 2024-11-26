@@ -388,8 +388,8 @@ fn monitor_defs(direction: &str, channels: &[Vec<Channel>]) -> Vec<String> {
 
 fn derive_block(copy: bool) -> &'static str {
     match copy {
-        true =>  "#[derive(Default,Clone,Copy,Debug)]\n",
-        false => "#[derive(Default,Debug)]\n",
+        true =>  "#[derive(Default,Clone,Debug,Eq,PartialEq,Copy)]\n",
+        false => "#[derive(Default,Clone,Debug,Eq,PartialEq)]\n",
     }
 }
 
@@ -404,32 +404,22 @@ mod tests {
     use log::{error, info, LevelFilter};
     use crate::process_dot_file;
 
-
     fn build_and_parse(test_name: &str, graph_dot: &str, clean: bool, show_logs: bool)  {
-
         let level = "warn";
         if let Ok(s) = LevelFilter::from_str(&level) {
             let mut builder = LogSpecBuilder::new();
             builder.default(s); // Set the default level
             let log_spec = builder.build();
-
             //turn on for debug
             if show_logs {
                 Logger::with(log_spec)
                     .format(flexi_logger::colored_with_thread)
                     .start().expect("Logger did not start");
             }
-
         } else {
             eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &level);
         }
-
         //ensure test_run folder exists and we are in the right place
-        
-        
-        
-
-
         let current_dir = env::current_dir().expect("Failed to get current directory");
 
         //move to our test_run folder to ensure we do not generate test code on top of our self
@@ -469,18 +459,35 @@ mod tests {
             process_dot_file(&dot_file, test_name);
             fs::remove_file(&dot_file).expect("Failed to remove dot file");
 
+            do_compile_build(test_name);
             do_compile_test(test_name);
-
         }
-
     }
 
-    fn do_compile_test(test_name: &str) {
+    fn do_compile_build(test_name: &str) {
         let build_me = PathBuf::from(test_name);
         let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
         ////
         let mut output_child = Command::new("cargo")
             .arg("build")
+            .arg("--manifest-path")
+            .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
+            .current_dir(build_me_absolute.clone())
+            .stdout(Stdio::inherit()) // This line ensures that stdout from the command is printed directly to the terminal
+            .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal
+            .spawn()
+            .expect("failed to execute process");
+        let output = output_child.wait().expect("failed to wait on child");
+
+        assert!(output.success());
+    }
+    
+    fn do_compile_test(test_name: &str) {
+        let build_me = PathBuf::from(test_name);
+        let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
+        ////
+        let mut output_child = Command::new("cargo")
+            .arg("test")
             .arg("--manifest-path")
             .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
             .current_dir(build_me_absolute.clone())

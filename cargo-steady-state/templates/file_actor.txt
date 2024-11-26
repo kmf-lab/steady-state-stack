@@ -11,7 +11,7 @@ use std::error::Error;
 {% endfor %}
 {% for st in message_types_to_define -%}
 {{st}} {
-   dummy: u8 {{note_for_the_user}} remove dummy and put your channel message fields here
+   _dummy: u8 {{note_for_the_user}} remove dummy and put your channel message fields here
 }
 {% endfor %}
 //if no internal state is required (recommended) feel free to remove this.
@@ -162,6 +162,7 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
     {%- for channel in tx_channels %}
         ,{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
+    , state: SteadyState<{{ display_name|capitalize }}InternalState>
     ) -> Result<(),Box<dyn Error>> {
     let mut cmd =  into_monitor!(context, [{% for def in rx_monitor_defs -%}
                             {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
@@ -183,20 +184,20 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
              {%- for channel in tx_channels -%}
                  {%- if 1==channel.len() %}
                  // in main use graph.sidechannel_director node_call(msg,"{{display_name}}")
-                 let _did_echo = responder.echo_responder(cmd,{{channel[0].name}}_tx).await;
+                 let _did_echo = responder.echo_responder(&mut cmd,&mut {{channel[0].name}}_tx).await;
                  {%- else %}
                  // in main use graph.sidechannel_director node_call(msg,"{{display_name}}")
-                 let _did_echo = responder.echo_responder_bundle(cmd,{{channel[0].name}}_tx).await;
+                 let _did_echo = responder.echo_responder_bundle(&mut cmd,&mut {{channel[0].name}}_tx).await;
                  {%- endif %}
              {%- endfor %}
 
              {%- for channel in rx_channels -%}
                 {%- if 1==channel.len() %}
                 // in main use graph.sidechannel_director node_call(msg,"{{display_name}}")
-                let _did_check = responder.equals_responder(cmd,{{channel[0].name}}_tx).await;
+                let _did_check = responder.equals_responder(&mut cmd,&mut {{channel[0].name}}_rx).await;
                 {%- else %}
                 // in main use graph.sidechannel_director node_call(msg,"{{display_name}}")
-                let _did_check = responder.equals_responder_bundle(cmd,{{channel[0].name}}_tx).await;
+                let _did_check = responder.equals_responder_bundle(&mut cmd,&mut {{channel[0].name}}_rx).await;
                 {%- endif %}
              {%- endfor %}
          }
@@ -223,33 +224,33 @@ pub(crate) mod tests {
        graph.actor_builder()
                     .with_name("UnitTest")
                     .build_spawn( move |context|
-                            internal_behavior(context {%- for channel in rx_channels %}, {{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx.clone(){%- endfor -%}, state)
+                            internal_behavior(context {%- for channel in rx_channels %}, {{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx.clone(){%- endfor -%}, state.clone())
                      );
 
-        graph.start(); //startup the graph
+       graph.start(); //startup the graph
 
         {%- for channel in rx_channels %}
            {%- if 1==channel.len() %}
-                {{note_for_the_user}} adjust this vec content to make a valid test
-                test_{{channel[0].name}}_tx.testing_send_all(vec![{{channel[0].message_type}}::default()],true).await;
-            {%- else %}
-                {{note_for_the_user}} adjust this vec content to make a valid test, further this is only one in the bundle
-                test_{{channel[0].name}}_tx[0].testing_send_all(vec![{{channel[0].message_type}}::default()],true).await;
-             {%- endif %}
+       {{note_for_the_user}} adjust this vec content to make a valid test
+       test_{{channel[0].name}}_tx.testing_send_all(vec![{{channel[0].message_type}}::default()],true).await;
+           {%- else %}
+       {{note_for_the_user}} adjust this vec content to make a valid test, further this is only one in the bundle
+       test_{{channel[0].name}}_tx[0].testing_send_all(vec![{{channel[0].message_type}}::default()],true).await;
+           {%- endif %}
 
         {% endfor %}
-        graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(15));
+       graph.request_stop();
+       graph.block_until_stopped(Duration::from_secs(15));
 
         {%- for channel in tx_channels %}
             {%- if 1==channel.len() %}
-                {{note_for_the_user}} confirm values on the output channels
-                //    assert_eq!(test_{{channel[0].name}}_rx.testing_avail_units().await, 1); // check expected count
-                let results_{{channel[0].name}}_vec = test_{{channel[0].name}}_rx.testing_take().await;
+       {{note_for_the_user}} confirm values on the output channels
+       //    assert_eq!(test_{{channel[0].name}}_rx.testing_avail_units().await, 1); // check expected count
+       let results_{{channel[0].name}}_vec = test_{{channel[0].name}}_rx.testing_take().await;
             {%- else %}
-                {{note_for_the_user}} confirm values on the output channels, further this is only one in the bundle
-                //    assert_eq!(test_{{channel[0].name}}_rx[0].testing_avail_units().await, 1); // check expected count
-                let results_{{channel[0].name}}_vec = test_{{channel[0].name}}_rx[0].testing_take().await;
+       {{note_for_the_user}} confirm values on the output channels, further this is only one in the bundle
+       //    assert_eq!(test_{{channel[0].name}}_rx[0].testing_avail_units().await, 1); // check expected count
+       let results_{{channel[0].name}}_vec = test_{{channel[0].name}}_rx[0].testing_take().await;
             {%- endif %}
         {% endfor -%}
     }

@@ -92,6 +92,7 @@ mod graph_tests {
     use crate::args::Args;
     use crate::build_graph;
     use std::ops::DerefMut;
+    use futures_timer::Delay;
 
     #[test]
     async fn test_graph_one() {

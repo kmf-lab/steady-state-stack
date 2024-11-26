@@ -462,7 +462,7 @@ impl GraphBuilder {
             backplane: Some(SideChannelHub::default()),
             proactor_config: Some(ProactorConfig::InterruptDriven),
             iouring_queue_length: 1<<5,
-            telemtry_production_rate_ms: 40,
+            telemtry_production_rate_ms: 40, //default
         }
     }
     
@@ -488,7 +488,11 @@ impl GraphBuilder {
     ///
     pub fn with_telemtry_production_rate_ms(&self, ms: u64) -> Self {
         let mut result = self.clone();
-        result.telemtry_production_rate_ms = ms;
+        if ms>=40 { //40ms is the minimum
+            result.telemtry_production_rate_ms = ms;
+        } else {
+            warn!("telemetry production rate must be at least 40ms, setting to 40ms");
+        }
         result
     }
 

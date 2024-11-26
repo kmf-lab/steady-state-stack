@@ -400,13 +400,8 @@ impl ChannelStatsComputer {
         let inflight: u64 = (send - take) as u64;
         let consumed: u64 = (take - self.prev_take) as u64;
         self.accumulate_data_frame(inflight, consumed); 
-
-        //TODO: this is called 2x as often.
-
-
         self.prev_take = take;
-        //TODO: capture and print this to see the rate per frame, then check the caller here.
-
+    
         ////////////////////////////////////////////////
         //  Build the labels
         ////////////////////////////////////////////////
