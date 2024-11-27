@@ -4,115 +4,69 @@ use log::*;
 #[allow(unused_imports)]
 use std::time::Duration;
 use steady_state::*;
-use crate::Args;
-
-
 use std::error::Error;
-use steady_state::commander::SteadyCommander;
+use crate::actor::fizz_buzz_processor;
 
-#[derive(Default,Clone,Copy)]
+#[derive(Default, Clone, Copy, PartialOrd, PartialEq, Debug)]
 pub(crate) struct NumberMessage {
-   dummy: u8 //TODO: : replace this and put your fields here
+   pub(crate) value: u64
 }
 
 
-
-
-//if no internal state is required (recommended) feel free to remove this.
-#[derive(Default)]
-struct Divby3producerInternalState {
-     
-     
-     
-}
-impl Divby3producerInternalState {
-    fn new(cli_args: &Args) -> Self {
-        Self {
-           ////TODO: : add custom arg based init here
-           ..Default::default()
-        }
-    }
-}
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
         ,numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
-  internal_behavior(context,numbers_tx).await
+  internal_behavior(into_monitor!(context, [],[numbers_tx]),numbers_tx).await
 }
 
-async fn internal_behavior(context: SteadyContext
+const BATCH_SIZE: usize = 4000;
+const STEP_SIZE: u64 = 3;
+
+async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         ,numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
 
-    // here is how to access the CLI args if needed
-    let cli_args = context.args::<Args>();
-
-    // here is how to initialize the internal state if needed
-    let mut state = if let Some(args) = cli_args {
-        Divby3producerInternalState::new(args)
-    } else {
-        Divby3producerInternalState::default()
-    };
-
-    // monitor consumes context and ensures all the traffic on the passed channels is monitored
-    let mut monitor =  into_monitor!(context, [],[
-                        numbers_tx]
-                           );
-
-   //every channel must be locked before use, if this actor should panic the lock will be released
-   //and the replacement actor will lock them here again
- 
     let mut numbers_tx = numbers_tx.lock().await;
- 
 
-    //this is the main loop of the actor, will run until shutdown is requested.
-    //the closure is called upon shutdown to determine if we need to postpone the shutdown for this actor
-    while monitor.is_running(&mut ||numbers_tx.mark_closed()) {
-
-         let _clean = await_for_all!(monitor.wait_periodic(Duration::from_millis(1000))    );
+    let mut buffer:[NumberMessage; BATCH_SIZE] = [NumberMessage::default(); BATCH_SIZE];
+    let mut index:u64 = 0;
 
 
-     //TODO:  here are all the channels you can read from
+    while cmd.is_running(&mut || index>=fizz_buzz_processor::STOP_VALUE && numbers_tx.mark_closed()) {
+        let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units(&mut numbers_tx, BATCH_SIZE>>1));
 
-     //TODO:  here are all the channels you can write to
-          let numbers_tx_ref: &mut Tx<NumberMessage> = &mut numbers_tx;
-
-     //TODO:  to get started try calling the monitor.* methods:
-      //    try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>  ie monitor.try_take(...
-      //    try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T>  ie monitor.try_send(...
-
-     monitor.relay_stats_smartly();
-
+        let mut i = 0;
+        let limit = BATCH_SIZE.min(cmd.vacant_units(&mut numbers_tx));
+        loop {
+                        index = index + STEP_SIZE;
+                        buffer[i] = NumberMessage{value:index};
+                        i = i + 1;
+                        if i >= limit || index == fizz_buzz_processor::STOP_VALUE {
+                            if index == fizz_buzz_processor::STOP_VALUE {
+                                cmd.request_graph_stop();
+                            }
+                            break;
+                        }
+        }
+        let _sent_count = cmd.send_slice_until_full(&mut numbers_tx, &buffer[0..i]); //TOOD: zero length? test?
     }
+    cmd.request_graph_stop();
     Ok(())
 }
-
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-        ,numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
-
-
-    let mut monitor =  into_monitor!(context, [],[
-                            numbers_tx]
-                               );
-
-    if let Some(responder) = monitor.sidechannel_responder() {
-
-         
-            let mut numbers_tx = numbers_tx.lock().await;
-         
-
-         while monitor.is_running(&mut ||numbers_tx.mark_closed()) {
-
-                //TODO:  write responder code:: let responder = responder.respond_with(|message| {
-
-                monitor.relay_stats_smartly();
-         }
-
+                 ,numbers_tx: SteadyTx<NumberMessage>
+) -> Result<(),Box<dyn Error>> {
+    let mut cmd =  into_monitor!(context, [],[numbers_tx]);
+    if let Some(responder) = cmd.sidechannel_responder() {
+        let mut numbers_tx = numbers_tx.lock().await;
+        while cmd.is_running(&mut ||numbers_tx.mark_closed()) {
+            // in main use graph.sidechannel_director node_call(msg,"DivBy3Producer")
+            let _did_echo = responder.echo_responder(&mut cmd,&mut numbers_tx).await;
+        }
     }
-
     Ok(())
-
 }
 
 #[cfg(test)]
@@ -120,30 +74,35 @@ pub(crate) mod tests {
     use std::time::Duration;
     use steady_state::*;
     use super::*;
-
+    use futures_timer::Delay;
 
     #[async_std::test]
-    pub(crate) async fn test_simple_process() {
-       let mut graph = GraphBuilder::for_testing().build(());
+    async fn test_simple_process() {
+       let mut graph = GraphBuilder::for_testing()
+           .with_telemetry_metric_features(false)
+           .build(());
 
-       //TODO:  you may need to use .build() or  .build_as_bundle::<_, SOME_VALUE>()//TODO:  you may need to use .build() or  .build_as_bundle::<_, SOME_VALUE>()
-       //let (test_numbers_rx,numbers_tx) = graph.channel_builder().with_capacity(4).build()
-       //TODO:  uncomment to add your test
-        //graph.actor_builder()
-        //            .with_name("UnitTest")
-        //            .build_spawn( move |context|
-        //                    internal_behavior(context,numbers_tx.clone())
-        //             );
+       let (numbers_tx, test_numbers_rx) = graph.channel_builder()
+                   .with_capacity(50000)
+                   .build();
+
+        graph.actor_builder()
+                    .with_name("UnitTest")
+                    .build_spawn( move |context|
+                            internal_behavior(context, numbers_tx.clone())
+                     );
 
         graph.start(); //startup the graph
-
-        //TODO:  add your test values here
-
+        Delay::new(Duration::from_millis(40)).await;
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
-        graph.block_until_stopped(Duration::from_secs(15));
+        graph.block_until_stopped(Duration::from_secs(1));
 
-        //TODO:  confirm values on the output channels
-        //    assert_eq!(XX_rx_out[0].testing_avail_units().await, 1);
+        let vec = test_numbers_rx.testing_take().await;
+         
+        assert_eq!(vec[0].value, 3,"vec: {:?}",vec);
+        assert_eq!(vec[1].value, 6,"vec: {:?}",vec);
+        assert_eq!(vec[2].value, 9,"vec: {:?}",vec);
+
     }
 
 

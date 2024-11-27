@@ -44,7 +44,7 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
 
 
         loop {
-            let route = thread_rng().random::<u16>();
+            let route = thread_rng().gen::<u16>();
             let packet = Packet {
                 route,
                 data: Bytes::from_static(&[0u8; 62]),

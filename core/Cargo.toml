@@ -88,7 +88,7 @@ bytes            = { version = "1.8.0", features = [] }
 lazy_static      = "1.5.0"
 uuid             = { version = "1.11.0", features = ["v4"] }
 num-traits       = "0.2.19" # for num::Zero and other generic math traits
-itoa             = "1.0.11"
+itoa             = "1.0.14"
 time             = { version = "0.3.36", features = ["macros", "formatting", "parsing"] }
 dirs             = "5.0.1"
 colored          = "2.1.0"
@@ -101,10 +101,11 @@ tempfile         = "3.14.0"
 num_cpus         = "1.16.0"
 pin-project      = "1.1.7"
 
+
 # Release Plan
 # 0.1.0 - one year aniversary (ETA 12/04/24) relase single machine
 #         All warning cleaned up
-#         80% function test coverage
+#         75% function test coverage
 # 0.2.0 - distributed features ready for use (ETA 06/04/25)
 #         Aeron, ZeroMQ, LibP2P
 #         History Replay
@@ -212,9 +213,10 @@ path = "examples/high_performance/main.rs"
 name = "high_durability"
 path = "examples/high_durability/main.rs"
 
+
 [dev-dependencies]
-async-std        = {  version = "1.12.0", features = ["attributes"] }  # for async unit testing only,
-rand_distr       = "0.5.0-alpha.1" # for random number generation
-rand             = "0.9.0-alpha.1" # for random number generation
+async-std        = {  version = "1.13.0", features = ["attributes"] }  # for async unit testing only,
+rand_distr       = "0.4.3" # for random number generation
+rand             = "0.8.5" # for random number generation
 isahc            = "1.7.2"
 #testcontainers   = "0.15.0" # for integration testing, DO NOT upgrade to 0.16.0 since Tokio is not supported here

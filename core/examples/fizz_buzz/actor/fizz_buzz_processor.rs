@@ -1,186 +1,229 @@
-
+use std::cmp::{PartialEq, PartialOrd};
 #[allow(unused_imports)]
 use log::*;
 #[allow(unused_imports)]
 use std::time::Duration;
 use steady_state::*;
-use crate::Args;
-
-
 use std::error::Error;
-use steady_state::commander::SteadyCommander;
-use steady_state::steady_rx::{RxBundleTrait, SteadyRxBundleTrait};
+use futures::lock::{Mutex, MutexGuard};
+use futures::SinkExt;
 use crate::actor::div_by_3_producer::NumberMessage;
 
-
-#[derive(Default)]
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct ErrorMessage {
-   dummy: u8 //TODO: : replace this and put your fields here
-}
-#[derive(Default)]
-pub(crate) struct FizzBuzzMessage {
-   dummy: u8 //TODO: : replace this and put your fields here
+   pub(crate) text: String
 }
 
-
-
-
-//if no internal state is required (recommended) feel free to remove this.
-#[derive(Default)]
-struct FizzbuzzprocessorInternalState {
-     
-     
-     
-     
+#[derive(Copy, Clone, Default, Debug, PartialOrd, Eq, PartialEq)]
+#[repr(u64)] // Pack everything into 8 bytes
+pub(crate) enum FizzBuzzMessage {
+    #[default]
+    FizzBuzz = 15,         // Discriminant is 15
+    Fizz = 3,              // Discriminant is 3
+    Buzz = 5,              // Discriminant is 5
+    Value(u64),            // Store u64 directly, use the fact that FizzBuzz/Fizz/Buzz only occupy small values
 }
-impl FizzbuzzprocessorInternalState {
-    fn new(cli_args: &Args) -> Self {
-        Self {
-           ////TODO: : add custom arg based init here
-           ..Default::default()
+
+const BATCH_SIZE: usize = 7000;
+
+#[derive(Copy,Clone)]
+pub(crate) struct RuntimeState {
+    value: u64,
+    i_three: Option<NumberMessage>,
+    i_five: Option<NumberMessage>,
+    buffer: [FizzBuzzMessage; BATCH_SIZE],
+}
+
+impl RuntimeState {
+    pub(crate) fn new(value: i32) -> Self {
+        RuntimeState {
+            value: value as u64,
+            i_three: None,
+            i_five: None,
+            buffer: [FizzBuzzMessage::default(); BATCH_SIZE]
         }
     }
 }
 
-#[cfg(not(test))]
+pub(crate) const STOP_VALUE: u64        = 1_200_000_000_000;
+pub(crate) const PANIC_COUNTDOWN: usize =     6_000_000_000;
+
 pub async fn run<const NUMBERS_RX_GIRTH:usize,>(context: SteadyContext
-        ,numbers_rx: SteadyRxBundle<NumberMessage, NUMBERS_RX_GIRTH>
-        ,fizzbuzz_messages_tx: SteadyTx<FizzBuzzMessage>
-        ,errors_tx: SteadyTx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
-  internal_behavior(context,numbers_rx,fizzbuzz_messages_tx,errors_tx).await
+                                                , numbers_rx: SteadyRxBundle<NumberMessage, NUMBERS_RX_GIRTH>
+                                                , fizzbuzz_messages_tx: SteadyTx<FizzBuzzMessage>
+                                                , errors_tx: SteadyTx<ErrorMessage>, state: SteadyState<RuntimeState>) -> Result<(),Box<dyn Error>> {
+
+  internal_behavior(into_monitor!(context, numbers_rx,[fizzbuzz_messages_tx, errors_tx])
+                    ,STOP_VALUE,numbers_rx,fizzbuzz_messages_tx,errors_tx, state).await
 }
 
-async fn internal_behavior<const NUMBERS_RX_GIRTH:usize,>(context: SteadyContext
-        ,numbers_rx: SteadyRxBundle<NumberMessage, NUMBERS_RX_GIRTH>
-        ,fizzbuzz_messages_tx: SteadyTx<FizzBuzzMessage>
-        ,errors_tx: SteadyTx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
 
-    // here is how to access the CLI args if needed
-    let cli_args = context.args::<Args>();
+async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
+    mut cmd: C,
+    stop_value: u64,
+    numbers_rx: SteadyRxBundle<NumberMessage, NUMBERS_RX_GIRTH>,
+    fizzbuzz_messages_tx: SteadyTx<FizzBuzzMessage>,
+    errors_tx: SteadyTx<ErrorMessage>,
+    state: SteadyState<RuntimeState>,
+) -> Result<(), Box<dyn Error>> {
+    let mut state_guard = steady_state(&state, || RuntimeState::new(1)).await;
+    if let Some(mut state) = state_guard.as_mut() {
+        let mut numbers_rx = numbers_rx.lock().await;
+        let mut fizzbuzz_messages_tx = fizzbuzz_messages_tx.lock().await;
+        let mut errors_tx = errors_tx.lock().await;
 
-    // here is how to initialize the internal state if needed
-    let mut state = if let Some(args) = cli_args {
-        FizzbuzzprocessorInternalState::new(args)
+        if state.value > 1 {
+            let _ = cmd
+                .send_async(
+                    &mut errors_tx,
+                    ErrorMessage {
+                        text: format!("at value: {}", state.value),
+                    },
+                    SendSaturation::IgnoreAndWait,
+                )
+                .await;
+        }
+
+        let (threes_rx, fives_rx) = numbers_rx.split_at_mut(1);
+        let mut panic_countdown = PANIC_COUNTDOWN as isize;
+
+        let c1 = threes_rx[0].capacity() >> 1;
+        let c2 = fives_rx[0].capacity() >> 1;
+
+        let vacant_block = BATCH_SIZE.min(fizzbuzz_messages_tx.capacity());
+
+        while cmd.is_running(&mut || {
+            state.value == stop_value
+                && threes_rx[0].is_closed_and_empty()
+                && fives_rx[0].is_closed_and_empty()
+                && fizzbuzz_messages_tx.mark_closed()
+                && errors_tx.mark_closed()
+        }) {
+            let _clean = await_for_all!(
+                cmd.wait_closed_or_avail_units(&mut threes_rx[0], c1),
+                cmd.wait_closed_or_avail_units(&mut fives_rx[0], c2),
+                cmd.wait_vacant_units(&mut fizzbuzz_messages_tx, vacant_block)
+            );
+
+            let start_value = state.value;
+            let remaining = stop_value - state.value;
+            let batch_size = BATCH_SIZE.min(remaining as usize);
+
+            // Step 1: Fill the buffer with consecutive numbers
+            for i in 0..batch_size {
+                state.buffer[i] = FizzBuzzMessage::Value(start_value + i as u64);
+            }
+
+            // Step 2: Use iterators from channels to replace values with Fizz, Buzz, or FizzBuzz
+            {
+                let mut iter_threes = cmd.take_into_iter(&mut threes_rx[0]);
+
+                if state.i_three.is_none() {
+                    state.i_three = iter_threes.next();
+                }
+
+                while let Some(t) = state.i_three {
+                    if t.value < start_value + batch_size as u64 {
+                        state.buffer[(t.value - start_value) as usize] = FizzBuzzMessage::Fizz;
+                        state.i_three = iter_threes.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            {
+                let mut iter_fives = cmd.take_into_iter(&mut fives_rx[0]);
+
+                if state.i_five.is_none() {
+                    state.i_five = iter_fives.next();
+                }
+
+                while let Some(f) = state.i_five {
+                    if f.value < start_value + batch_size as u64 {
+                        let index = (f.value - start_value) as usize;
+                        state.buffer[index] = match state.buffer[index] {
+                            FizzBuzzMessage::Fizz => FizzBuzzMessage::FizzBuzz,
+                            _ => FizzBuzzMessage::Buzz,
+                        };
+                        state.i_five = iter_fives.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            let buffer_count = batch_size;
+            state.value += buffer_count as u64;
+
+            // Step 3: Send the buffer slice
+            let _done = cmd.send_slice_until_full(&mut fizzbuzz_messages_tx, &state.buffer[0..buffer_count]);
+
+            if state.value == stop_value {
+                cmd.request_graph_stop();
+            }
+
+            panic_countdown -= buffer_count as isize;
+            if panic_countdown <= 0 {
+                panic!("planned periodic panic");
+            }
+        }
     } else {
-        FizzbuzzprocessorInternalState::default()
-    };
-
-    // monitor consumes context and ensures all the traffic on the passed channels is monitored
-    let mut monitor =  into_monitor!(context, [
-                        numbers_rx[0],
-                        numbers_rx[1]],[
-                        fizzbuzz_messages_tx,
-                        errors_tx]
-                           );
-
-   //every channel must be locked before use, if this actor should panic the lock will be released
-   //and the replacement actor will lock them here again
- 
-    let mut numbers_rx = numbers_rx.lock().await;
- 
-    let mut fizzbuzz_messages_tx = fizzbuzz_messages_tx.lock().await;
- 
-    let mut errors_tx = errors_tx.lock().await;
- 
-
-    //this is the main loop of the actor, will run until shutdown is requested.
-    //the closure is called upon shutdown to determine if we need to postpone the shutdown for this actor
-    while monitor.is_running(&mut ||
-    numbers_rx.is_closed_and_empty() && fizzbuzz_messages_tx.mark_closed() && errors_tx.mark_closed()) {
-
-         let _clean = await_for_all!(monitor.wait_shutdown_or_avail_units_bundle(&mut numbers_rx,1,1)    );
-
-
-     //TODO:  here are all the channels you can read from
-          let numbers_rx_ref: &mut RxBundle<'_, NumberMessage> = &mut numbers_rx;
-
-     //TODO:  here are all the channels you can write to
-          let fizzbuzz_messages_tx_ref: &mut Tx<FizzBuzzMessage> = &mut fizzbuzz_messages_tx;
-          let errors_tx_ref: &mut Tx<ErrorMessage> = &mut errors_tx;
-
-     //TODO:  to get started try calling the monitor.* methods:
-      //    try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>  ie monitor.try_take(...
-      //    try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T>  ie monitor.try_send(...
-
-     monitor.relay_stats_smartly();
-
+        warn!("missing state, unable to start actor");
     }
+
     Ok(())
 }
 
 
-#[cfg(test)]
-pub async fn run<const NUMBERS_RX_GIRTH:usize,>(context: SteadyContext
-        ,numbers_rx: SteadyRxBundle<NumberMessage, NUMBERS_RX_GIRTH>
-        ,fizzbuzz_messages_tx: SteadyTx<FizzBuzzMessage>
-        ,errors_tx: SteadyTx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
-
-
-    let mut monitor =  into_monitor!(context, [
-                            numbers_rx[0],
-                            numbers_rx[1]],[
-                            fizzbuzz_messages_tx,
-                            errors_tx]
-                               );
-
-    if let Some(responder) = monitor.sidechannel_responder() {
-
-         
-            let mut numbers_rx = numbers_rx.lock().await;
-         
-            let mut fizzbuzz_messages_tx = fizzbuzz_messages_tx.lock().await;
-         
-            let mut errors_tx = errors_tx.lock().await;
-         
-
-         while monitor.is_running(&mut ||
-             numbers_rx.is_closed_and_empty() && fizzbuzz_messages_tx.mark_closed() && errors_tx.mark_closed()) {
-
-                //TODO:  write responder code:: let responder = responder.respond_with(|message| {
-
-                monitor.relay_stats_smartly();
-         }
-
-    }
-
-    Ok(())
-
-}
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::time::Duration;
     use steady_state::*;
     use super::*;
 
-
     #[async_std::test]
-    pub(crate) async fn test_simple_process() {
-       let mut graph = GraphBuilder::for_testing().build(());
+    async fn test_simple_process() {
+       let mut graph = GraphBuilder::for_testing().with_telemetry_metric_features(false).build(());
 
-       //TODO:  you may need to use .build() or  .build_as_bundle::<_, SOME_VALUE>()
-       //let (numbers_rx,test_numbers_tx) = graph.channel_builder().with_capacity(4).build()
-       //TODO:  you may need to use .build() or  .build_as_bundle::<_, SOME_VALUE>()
-       //let (test_fizzbuzz_messages_rx,fizzbuzz_messages_tx) = graph.channel_builder().with_capacity(4).build()
-       
-       //let (test_errors_rx,errors_tx) = graph.channel_builder().with_capacity(4).build()
-       //TODO:  uncomment to add your test
-        //graph.actor_builder()
-        //            .with_name("UnitTest")
-        //            .build_spawn( move |context|
-        //                    internal_behavior(context,numbers_rx.clone(),fizzbuzz_messages_tx.clone(),errors_tx.clone())
-        //             );
+       let (test_numbers_tx,numbers_rx) = graph.channel_builder().with_capacity(1000).build_as_bundle::<_,2>();
+       let (fizzbuzz_messages_tx,test_fizzbuzz_messages_rx) = graph.channel_builder().with_capacity(1000).build();
+       let (errors_tx,test_errors_tx) = graph.channel_builder().with_capacity(4).build();
+
+       let value = new_state();
+        graph.actor_builder()
+                   .with_name("UnitTest")
+                   .build_spawn( move |context|
+                           internal_behavior(context, 15, numbers_rx.clone(), fizzbuzz_messages_tx.clone(), errors_tx.clone(), value.clone())
+                    );
 
         graph.start(); //startup the graph
 
-        //TODO:  add your test values here
+        test_numbers_tx[0].testing_send_all(vec![NumberMessage{value: 3}
+                                                     ,NumberMessage{value: 6}
+                                                     ,NumberMessage{value: 9}
+                                                     ,NumberMessage{value: 12}
+                                                     ,NumberMessage{value: 15}]
+                                        ,true).await;
+
+        test_numbers_tx[1].testing_send_all(vec![NumberMessage{value: 5}
+                                                     ,NumberMessage{value: 10}
+                                                     ,NumberMessage{value: 15}]
+                                        ,true).await;
+
+
 
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(15));
 
-        //TODO:  confirm values on the output channels
-        //    assert_eq!(XX_rx_out[0].testing_avail_units().await, 1);
-    }
+         let vec = test_fizzbuzz_messages_rx.testing_take().await;
+         assert_eq!(14, vec.len());
+         assert_eq!(FizzBuzzMessage::Value(1), vec[0]);
+         assert_eq!(FizzBuzzMessage::Value(2), vec[1]);
+         assert_eq!(FizzBuzzMessage::Fizz, vec[2]);
+         assert_eq!(FizzBuzzMessage::Value(4), vec[3]);
+         assert_eq!(FizzBuzzMessage::Buzz, vec[4]);
 
+    }
 
 }
