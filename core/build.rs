@@ -163,3 +163,73 @@ fn gzip_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
 
 
 }
+
+/*
+//our goal is to spin up 1 per pod
+fn build_aeron() {
+    // Step 1: Check for required tools
+    check_required_tools();
+
+    // Step 2: Clone the Aeron C++ Media Driver repository
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let aeron_dir = Path::new(&out_dir).join("aeron-driver-native");
+
+    if !aeron_dir.exists() {
+        println!("Cloning Aeron C++ Media Driver...");
+        let status = Command::new("git")
+            .args(&["clone", "--depth", "1", "--branch", "1.39.0", "https://github.com/real-logic/aeron.git", aeron_dir.to_str().unwrap()])
+            .status()
+            .expect("Failed to clone Aeron repository");
+        if !status.success() {
+            panic!("Failed to clone Aeron repository");
+        }
+    }
+
+    // Step 3: Build the C++ Media Driver
+    println!("Building Aeron C++ Media Driver...");
+    let build_dir = aeron_dir.join("aeron-driver-native/build");
+
+    if !build_dir.exists() {
+        std::fs::create_dir_all(&build_dir).unwrap();
+    }
+
+    let status = Command::new("cmake")
+        .current_dir(&build_dir)
+        .args(&["..", "-DBUILD_SHARED_LIBS=ON"])
+        .status()
+        .expect("Failed to run cmake");
+    if !status.success() {
+        panic!("CMake configuration failed");
+    }
+
+    let status = Command::new("cmake")
+        .current_dir(&build_dir)
+        .args(&["--build", "."])
+        .status()
+        .expect("Failed to build Aeron Media Driver");
+    if !status.success() {
+        panic!("Failed to build Aeron Media Driver");
+    }
+
+    // Step 4: Link the built library
+    println!("cargo:rustc-link-search=native={}", build_dir.display());
+    println!("cargo:rustc-link-lib=aeron_driver");
+    println!("cargo:rerun-if-changed=build.rs");
+
+    println!("Aeron C++ Media Driver built and linked successfully!");
+}
+
+fn check_required_tools() {
+    let required_tools = [
+        ("git", "Git is required to clone the Aeron repository. Install it via your package manager (e.g., `sudo apt install git`, `brew install git`, etc.)."),
+        ("cmake", "CMake is required to build the Aeron Media Driver. Install it via your package manager (e.g., `sudo apt install cmake`, `brew install cmake`, etc.)."),
+        ("gcc", "A C++ compiler is required to build the Aeron Media Driver. Install GCC or Clang via your package manager (e.g., `sudo apt install g++`, `brew install gcc`, etc.)."),
+    ];
+
+    for (tool, advice) in &required_tools {
+        if Command::new(tool).arg("--version").output().is_err() {
+            panic!("Error: `{}` is not installed. {}", tool, advice);
+        }
+    }
+}
+*/

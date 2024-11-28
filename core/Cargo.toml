@@ -1,6 +1,6 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.0.30" # prep for 0.1.0 version
+version = "0.0.31" # prep for 0.1.0 version
 documentation = "https://docs.rs/steady_state/0.0.21/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2021"
@@ -101,11 +101,30 @@ tempfile         = "3.14.0"
 num_cpus         = "1.16.0"
 pin-project      = "1.1.7"
 
+#aeron            = "0.2.0"
 
 # Release Plan
 # 0.1.0 - one year aniversary (ETA 12/04/24) relase single machine
-#         All warning cleaned up
 #         75% function test coverage
+#      Transparency
+#          Built in visual telemetry at 25fps (just open a browser)
+#          Prometheus Metrics for channels and actors
+#          Graphiz copatible .dot file for new project generation
+#          Metrics with Avg, StdDev, and Percentiles
+#          Color alert triggers for CPU and Message rates
+#      Effeciency
+#          High thoughput ringbuffer channels not blocking either end
+#          Batch processing for channel messages
+#          Work driven async actors without polling
+#          Core affinity optimization and NUMA-friendly channels
+#          Thread teaming to map actor graphs to available cores
+#      Reliability
+#          Erlang style panic recovery with durable state
+#          Non blocking async ringbuffers
+#          Clean deterministic orderly shutdown
+#          Peek and 'Take after process' for lossless messaging
+#          Unit testing for both Actors and Graphs
+#
 # 0.2.0 - distributed features ready for use (ETA 06/04/25)
 #         Aeron, ZeroMQ, LibP2P
 #         History Replay
@@ -135,8 +154,7 @@ pin-project      = "1.1.7"
 # cyclonedds
 # ros2-client
 
-# TODO: Aeron a the primary transport???
-#aeron = { version = "0.2.0", optional = true }
+
 
 #   Specialized Builder for remote actors ZQM, WebRTC, ROS2 etc.
 # TODO: ZeroMQ feature

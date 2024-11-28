@@ -546,7 +546,9 @@ mod metric_collector_tests {
     use std::sync::Arc;
     use parking_lot::RwLock;
     use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use futures::executor::block_on;
+    use isahc::ReadResponseExt;
     use crate::{steady_tx_bundle, GraphBuilder};
     use crate::steady_config::REAL_CHANNEL_LENGTH_TO_FEATURE;
 
@@ -619,33 +621,117 @@ mod metric_collector_tests {
 
     #[async_std::test]
     async fn test_actor() {
-        let mut graph = GraphBuilder::for_testing().build(());
-        let dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>> = Arc::new(RwLock::new(Vec::new()));
-     
-        let (tx, _rx) = graph.channel_builder()
-            .with_labels(&["steady_state-telemetry"], true)
-            .with_capacity(REAL_CHANNEL_LENGTH_TO_FEATURE)
-            .build();
+        use isahc::AsyncReadResponseExt;
 
-        let optional_servers = steady_tx_bundle([tx.clone()]);
-              
-        graph.actor_builder()
-               .with_name("UnitTest")
-               .build_spawn( move |context| internal_behavior(context
-                                                              , dynamic_senders_vec.clone()
-                                                              , optional_servers.clone()) );
+        //only run this locally where we can open the default port
+        if !std::env::var("GITHUB_ACTIONS").is_ok() {
+            // Smallest possible graph
+            // It is not recommended to inline actors this way, but it is possible.
+            let gen_count = Arc::new(AtomicUsize::new(0));
 
-        // let test_data:Vec<DiagramData> = (0..1).map(|i| DiagramData::NodeDef( i
-        //                                                                       , Box::new((
-        //         Arc::new(ActorMetaData::default()), Box::new([]),Box::new([])
-        //     ) ) )).collect();
-        // tx_in.testing_send_all(test_data, true).await;
+            // Special test graph which does NOT fail fast but instead shows the prod behavior of restarting actors.
+            let mut graph = GraphBuilder::for_testing()
+                .with_telemtry_production_rate_ms(40)
+                .with_iouring_queue_length(8)
+                .with_telemetry_metric_features(true)
+                .build(());
 
-        graph.start();
-        Delay::new(Duration::from_millis(60)).await;
-        graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(15));
 
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(300)
+                .with_no_refresh_window()
+                .build();
+
+
+            graph.actor_builder()
+                .with_no_refresh_window()
+                .with_name("generator")
+                .build_spawn(move |mut context| {
+                    let tx = tx.clone();
+                    let count = gen_count.clone();
+                    async move {
+                        let mut tx = tx.lock().await;
+                        while context.is_running(&mut || tx.mark_closed()) {
+                            let x = count.fetch_add(1, Ordering::SeqCst);
+                            //info!("attempted sent: {:?}", count.load(Ordering::SeqCst));
+
+                            if x >= 10 {
+                                context.request_graph_stop();
+                                continue;
+                            }
+                            let _ = context.send_async(&mut tx, x.to_string(), SendSaturation::IgnoreAndWait).await;
+                        }
+                        Ok(())
+                    }
+                });
+
+            let consume_count = Arc::new(AtomicUsize::new(0));
+            let check_count = consume_count.clone();
+
+            graph.actor_builder()
+                .with_name("consumer")
+                .build_spawn(move |mut context| {
+                    let rx = rx.clone();
+                    let count = consume_count.clone();
+                    async move {
+                        let mut rx = rx.lock().await;
+                        while context.is_running(&mut || rx.is_closed() && rx.is_empty()) {
+                            if let Some(_packet) = rx.shared_try_take() {
+                                count.fetch_add(1, Ordering::SeqCst);
+                                // info!("received: {:?}", count.load(Ordering::SeqCst));
+                            }
+                        }
+                        Ok(())
+                    }
+                });
+
+            graph.start();
+
+            //// now confirm we can see the telemetry collected into metrics_collector
+            //wait for one page of telemetry
+            Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms() * 40)).await;
+
+            //hit the telemetry site and validate if it returns
+            // this test will only work if the feature is on
+            // hit 127.0.0.1:9100/metrics using isahc
+            match isahc::get_async("http://127.0.0.1:9100/metrics").await {
+                Ok(mut response) => {
+                    assert_eq!(200, response.status().as_u16());
+                   // warn!("ok metrics");
+                    let body = response.text().await;
+                    info!("metrics: {:?}", body); //TODO: add more checks
+                }
+                Err(e) => {
+                    warn!("failed to get metrics: {:?}", e);
+                    // //this is only an error if the feature is not on
+                    // #[cfg(feature = "prometheus_metrics")]
+                    // {
+                    //     panic!("failed to get metrics: {:?}", e);
+                    // }
+                }
+            };
+            match isahc::get_async("http://127.0.0.1:9100/graph.dot").await {
+                Ok(mut response) => {
+                    assert_eq!(200, response.status().as_u16());
+                    warn!("ok graph");
+
+                    //let body = response.text().await;
+                    //info!("graph: {}", body); //TODO: add more checks
+                }
+                Err(e) => {
+                    warn!("failed to get metrics: {:?}", e);
+                    // //this is only an error if the feature is not on
+                    #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
+                    {
+                        //panic!("failed to get metrics: {:?}", e);
+                    }
+                }
+            };
+
+
+            graph.request_stop();
+            assert_eq!(true,graph.block_until_stopped(Duration::from_secs(3)));
+        }
     }
 
 }

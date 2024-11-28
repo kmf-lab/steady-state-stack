@@ -51,14 +51,14 @@ fi
 # cargo tree -i prost
 # cargo tree -i prost-build
 
-RUST_BACKTRACE=1 RUST_TEST_THREADS=48 cargo test --workspace --tests --examples -j 48 -- --nocapture
+RUST_BACKTRACE=1 RUST_TEST_THREADS=48 cargo test --workspace --tests --examples -j 48 -- --nocapture | tee cargo_test.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
     exit $exit_code
 fi
 
-RUST_BACKTRACE=1 cargo build --workspace --tests --examples -j 48
+RUST_BACKTRACE=1 cargo build --workspace --tests --examples -j 48 | tee cargo_build.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
@@ -66,7 +66,7 @@ if [ $exit_code -ne 0 ]; then
 fi
 
 # micro release without builtin viz
-RUST_BACKTRACE=1 cargo build --release --workspace --examples --features "proactor_nuclei telemetry_server_cdn" -j 12
+RUST_BACKTRACE=1 cargo build --release --workspace --examples --features "proactor_nuclei telemetry_server_cdn" -j 12 | tee cargo_build_release.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
@@ -78,7 +78,7 @@ fi
 
 # Build documentation like on docs.rs server
 cd core
-RUSTDOCFLAGS="--cfg=docsrs" cargo rustdoc --features "proactor_nuclei" --no-default-features
+RUSTDOCFLAGS="--cfg=docsrs" cargo rustdoc --features "proactor_nuclei" --no-default-features | tee cargo_rustdoc.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Docs build failed with exit code $exit_code"

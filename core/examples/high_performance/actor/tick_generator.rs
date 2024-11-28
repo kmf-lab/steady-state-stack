@@ -99,8 +99,7 @@ pub(crate) mod actor_tests {
 
         graph.start(); //startup the graph
   
-        //TODO: we need to revisit the channels when we have metric OFF to ensure we do not fail.
-        Delay::new(Duration::from_millis(60)).await; //if too long telemetry will back up
+        Delay::new(Duration::from_millis(40)).await; //if too long telemetry will back up
         
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(15));
