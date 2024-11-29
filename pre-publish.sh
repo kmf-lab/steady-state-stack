@@ -94,6 +94,8 @@ cargo outdated | tee cargo_outdated.txt
 echo "cargo audit"
 cargo audit | tee cargo_audit.txt
 
+cargo llvm-cov
+echo "cargo llvm-cov --html --output-dir coverage/"
 
 echo "cargo tree"
 tokei | tee cargo_tokei.txt
@@ -101,5 +103,4 @@ tokei | tee cargo_tokei.txt
 echo "Confirm that warnings you do not want published have been removed"
 echo "If this is confirmed by successful GitHub build YOU may now cd and run:   cargo publish"
 
-cargo llvm-cov
-echo "cargo llvm-cov --html --output-dir coverage/"
+
