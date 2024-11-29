@@ -219,45 +219,83 @@ fn extract_channel_name(label_text: &str, from_node: &str, to_node: &str) -> Str
     }
 }
 
+fn extract_trailing_number(label: &str) -> (&str, Option<usize>) {
+    // Find where the numeric portion starts, if any
+    let mut numeric_start = None;
 
+    for (i, c) in label.char_indices().rev() {
+        if c.is_ascii_digit() {
+            numeric_start = Some(i);
+        } else if numeric_start.is_some() {
+            // If a non-digit is encountered after digits, stop the search
+            break;
+        }
+    }
+
+    if let Some(start) = numeric_start {
+        // Ensure the numeric portion is valid
+        if let Ok(number) = label[start..].parse::<usize>() {
+            return (&label[..start], Some(number));
+        }
+    }
+    (label, None) // No numeric portion found
+}
 
 /////////////////////////
 ////////////////////////
 pub(crate) fn extract_project_model(name: &str, dot_graph: Graph<(String, String)>) -> Result<ProjectModel, Box<dyn Error>> {
 
     let empty = "".to_string();
+    let nodes:Vec<(&str,Option<usize>,&str)> = dot_graph.nodes.set.iter()
+        .filter(|node| !node.0.starts_with("__")) //removes comment nodes
+        .map(|node| (node.0, node.1.attr.elems.iter()
+                              .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
+        )
+        )
+        .map(|(a,b)| {
+                let (name, instance) = extract_trailing_number(a);
+                (name, instance, b.as_str())
+            }
+        )
+        .collect();
     // Iterate over nodes to populate actors
-    let nodes:Vec<(&str,&str)> = dot_graph.nodes.set.iter()
-                            .map(|node| (node.0, node.1.attr.elems.iter()
-                                              .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
-                                         )
-                                )
-                            .map(|(a,b)| (a.as_str(),b.as_str()))
-                            .filter(|(a,_b)| !a.starts_with("__"))
-                            .collect();
 
-
-    let edges:Vec<(&str,&str,&str)> = dot_graph.edges.set.iter()
+    let edges:Vec<(&str,Option<usize>,&str,Option<usize>,&str)> = dot_graph.edges.set.iter()
+        .filter(|edge| !edge.from.starts_with("__") && !edge.to.starts_with("__")) //removes comment edges
         .map(|edge| (&edge.from, &edge.to, edge.attr.elems
             .iter()
             .find_map(|(key, value)| if "label".eq(key) { Some(value) } else { None }).unwrap_or(&empty)
         ))
-        .map(|(a,b,c)| (a.as_str(),b.as_str(),c.as_str()))
+        .map(|(a,b,c)| {
+            let (a_name, a_instance) = extract_trailing_number(a);
+            let (b_name, b_instance) = extract_trailing_number(b);
+            (a_name, a_instance, b_name, b_instance, c.as_str())
+        }
+        )
         .collect();
 
 
     build_pm(ProjectModel { name: name.to_string(), ..Default::default() }, nodes, edges)
 }
 
-fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(&str, &str, &str)>) -> Result<ProjectModel, Box<dyn Error>> {
+fn unified_name(name: &str, instance: Option<usize>) -> String {
+    if let Some(instance) = instance {
+        format!("{}{}", name, instance)
+    } else {
+        name.to_string()
+    }
+}
+
+fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, mut edges: Vec<(&str, Option<usize>, &str, Option<usize>, &str)>) -> Result<ProjectModel, Box<dyn Error>> {
 
     nodes.sort(); //to ensure we get the same results on each run
-    for (id, label_text) in nodes {
-        let mod_name = extract_module_name(id, label_text);
+    for (node_name, node_suffix, label_text) in nodes {
+        let mod_name = extract_module_name(node_name, label_text);
 
         // Create an Actor instance based on extracted details
         let actor = Actor {
-            display_name: id.to_string(),  // Assuming the display_name is the node id
+            display_name: node_name.to_string(),
+            display_suffix: node_suffix,
             mod_name,
             rx_channels: Vec::new(),  // Populated later based on edges
             tx_channels: Vec::new(),  // Populated later based on edges
@@ -268,17 +306,23 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
 
     edges.sort(); //to ensure we get the same results on each run
     // Iterate over edges to populate channels
-    for (from, to, label_text) in edges {
+    for (from_name, from_id, to_name, to_id, label_text) in edges {
         //do not include the documentation notes
-        if !from.starts_with("__") && !to.starts_with("__") {
-            let type_name = extract_type_name_from_edge_label(label_text, from, to);
+      //  if !from_name.starts_with("__") && !to_name.starts_with("__") { //not needed since we filter earlier now (still testing)
+            let type_name = extract_type_name_from_edge_label(label_text, from_name, to_name);
             let capacity = extract_capacity_from_edge_label(label_text, 8);  // Assuming 8 as default if not specified
 
-            let name = extract_channel_name(label_text, from, to);
+            let name = extract_channel_name(label_text, &unified_name(from_name,from_id), &unified_name(to_name,to_id));
             let consume_pattern = extract_consume_pattern_from_label(label_text);
 
-            if let Some(mod_name) = pm.actors.iter().filter(|f| f.display_name.eq(from)).map(|a| a.mod_name.clone()).next() {
-                let to_mod = pm.actors.iter().filter(|f| f.display_name.eq(to)).map(|a| a.mod_name.clone()).next().unwrap_or("unknown".into());
+            //we only want the mod name so no need to check the specific suffix because anyone will do
+            if let Some(mod_name) = pm.actors.iter().filter(|f| f.display_name.eq(from_name) /*&& f.display_suffix.eq(&from_id)*/ )
+                                                    .map(|a| a.mod_name.clone()).next() {
+                let to_mod = pm.actors.iter().filter(|f| f.display_name.eq(to_name) /*&& f.display_suffix.eq(&to_id)*/ )
+                                        .map(|a| a.mod_name.clone()).next().unwrap_or("unknown".into());
+
+                let mod_name = if mod_name.trim().len()==0 { "unknown".to_string() } else { mod_name };
+                let to_mod = if to_mod.trim().len()==0 { "unknown".to_string() } else { to_mod };
 
                 // Create a Channel instance based on extracted details
                 let mut channel = Channel {
@@ -294,14 +338,14 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
                     bundle_index: -1,
                     rebundle_index: -1,
                     bundle_struct_mod: "".to_string(), //only for bundles
-                    to_node: to.into(),
-                    from_node: from.into(),
+                    to_node: unified_name(to_name,to_id),
+                    from_node: unified_name(from_name,from_id),
                     bundle_on_from: RefCell::new(true),
                     is_unbundled: false,
                 };
 
                 // Find the actor with the same id as the from node and add the channel to its tx_channels
-                if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(from)) {
+                if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(from_name) && f.display_suffix.eq(&from_id) ) {
                     //we found the actor which is the source of this channel
 
                     //review this actor and see if it has some batched write size
@@ -317,7 +361,7 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
                     roll_up_bundle(&mut a.tx_channels, insert_me_tx_channel,  false, |_t, _v| true);
 
                 }
-                if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(to)) {
+                if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(to_name) && f.display_suffix.eq(&to_id) ) {
                     //we found the actor which is the source of this channel
 
                     //review this actor and see if it has some batched write size
@@ -347,9 +391,9 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, &str)>, mut edges: Vec<(
                 roll_up_bundle(&mut pm.channels, channel, false,|t, v| v.iter().all(|g| g.from_node.eq(&t.from_node)));
                 //after that point we may reassemble the targets into new bundles.
             } else {
-                error!("Failed to find actor with id: {}", from);
+                error!("Failed to find actor: {} {:?}", from_name, from_id);
             }
-        }
+      //  }
     }
     //now that all bundle_on_from are detected look at the remaining channels to find any
     //that are bundles on the 'to' side and move them to the new group
@@ -704,8 +748,8 @@ mod additional_tests {
     #[test]
     fn test_build_pm() {
         let pm = ProjectModel::default();
-        let nodes = vec![("node1", "label1"), ("node2", "label2")];
-        let edges = vec![("node1", "node2", "edge_label")];
+        let nodes = vec![("node", Some(1), "label1"), ("node", Some(2), "label2")];
+        let edges = vec![("node", Some(1), "node", Some(2), "edge_label")];
 
         let result = build_pm(pm, nodes, edges).unwrap();
         assert_eq!(result.actors.len(), 2);
@@ -715,7 +759,7 @@ mod additional_tests {
     #[test]
     fn test_build_pm_empty_edges() {
         let pm = ProjectModel::default();
-        let nodes = vec![("node1", "label1"), ("node2", "label2")];
+        let nodes = vec![("node", Some(1), "label"), ("node2", Some(2), "label2")];
         let edges = vec![];
 
         let result = build_pm(pm, nodes, edges).unwrap();

@@ -74,7 +74,9 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                                                                                        {%- if loop.last -%}{%- else -%},{%- endif -%}{%- endfor -%}]);
        {%- endif -%}
     {%- endif %}{% endfor %}
-     base_actor_builder.with_name("{{actor.display_name}}")
+     {% if actor.display_suffix.is_some() -%}
+     base_actor_builder.with_name_and_suffix("{{actor.display_name}}",{{actor.display_suffix.expect("")}})
+     {%- else %}base_actor_builder.with_name("{{actor.display_name}}"){% endif %}
                  .build_spawn( move |context| actor::{{actor.mod_name}}::run(context
                                           {%- for channel in actor.rx_channels %}
                                             , {% if channel[0].restructured_bundle() %}{{actor.display_name|lowercase}}{% else %}{{channel[0].rx_prefix_name(channel)}}{% endif %}_{{channel[0].name}}_rx.clone(){% endfor -%}

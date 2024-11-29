@@ -149,6 +149,7 @@ impl Channel {
 
 pub(crate) struct Actor {
     pub(crate) display_name: String,
+    pub(crate) display_suffix: Option<usize>,
     pub(crate) mod_name: String,
     pub(crate) rx_channels: Vec<Vec<Channel>>,
     pub(crate) tx_channels: Vec<Vec<Channel>>,
