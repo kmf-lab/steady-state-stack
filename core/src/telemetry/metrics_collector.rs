@@ -548,9 +548,7 @@ mod metric_collector_tests {
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use futures::executor::block_on;
-    use isahc::ReadResponseExt;
-    use crate::{steady_tx_bundle, GraphBuilder};
-    use crate::steady_config::REAL_CHANNEL_LENGTH_TO_FEATURE;
+    use crate::{GraphBuilder};
 
     #[test]
     fn test_raw_diagram_state_default() {
@@ -666,7 +664,7 @@ mod metric_collector_tests {
                 });
 
             let consume_count = Arc::new(AtomicUsize::new(0));
-            let check_count = consume_count.clone();
+            //let check_count = consume_count.clone();
 
             graph.actor_builder()
                 .with_name("consumer")
@@ -711,7 +709,7 @@ mod metric_collector_tests {
                 }
             };
             match isahc::get_async("http://127.0.0.1:9100/graph.dot").await {
-                Ok(mut response) => {
+                Ok(response) => {
                     assert_eq!(200, response.status().as_u16());
                     warn!("ok graph");
 

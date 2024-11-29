@@ -147,6 +147,22 @@ impl SteadyCommander for SteadyContext {
         let liveliness = self.runtime_state.read();
         liveliness.is_in_state(target)
     }
+    
+    /// Convenience methods for checking the liveliness state of the actor.
+    fn is_liveliness_building(&self) -> bool {
+        self.is_liveliness_in(&vec![ GraphLivelinessState::Building ])
+    }
+    /// Convenience methods for checking the liveliness state of the actor.
+    fn is_liveliness_running(&self) -> bool {
+        self.is_liveliness_in(&vec![ GraphLivelinessState::Running ])
+    }
+    /// Convenience methods for checking the liveliness state of the actor.
+    fn is_liveliness_stop_requested(&self) -> bool {
+        self.is_liveliness_in(&vec![ GraphLivelinessState::StopRequested ])
+    }
+
+
+
     /// Waits while the actor is running.
     ///
     /// # Returns
@@ -879,6 +895,12 @@ pub trait SteadyCommander {
     /// # Returns
     /// `true` if the liveliness state matches any target state, otherwise `false`.
     fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool;
+    /// Convenience methods for checking the liveliness state of the actor.
+    fn is_liveliness_building(&self) -> bool;
+    /// Convenience methods for checking the liveliness state of the actor.
+    fn is_liveliness_running(&self) -> bool;
+    /// Convenience methods for checking the liveliness state of the actor.
+    fn is_liveliness_stop_requested(&self) -> bool;
     /// Waits while the actor is running.
     ///
     /// # Returns
