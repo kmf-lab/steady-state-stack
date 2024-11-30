@@ -8,7 +8,7 @@ use crate::telemetry::metrics_collector::*;
 use futures::io;
 use nuclei::*;
 use std::net::{TcpListener, TcpStream};
-
+use futures::channel::oneshot::Receiver;
 
 // The name of the metrics server actor
 pub const NAME: &str = "metrics_server";
@@ -90,50 +90,29 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
     let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
 
     //Only spin up server if addr is provided, this allows for unit testing where we cannot open that port.
-    let opt_tcp2 = opt_tcp.clone();
-    if opt_tcp2.is_some() {
+    if opt_tcp.is_some() {
 
         let state2 = state.clone();
         let config2 = config.clone();
-        
-        //TODO: this hack spawn block will go to spawn_local after nuclei is fixed.
-        // if I use spawn_local this blocks all other work on my thread but I am not sure why.
 
+        //NOTE: this is probably a mistake this loop could be its own actor.
         spawn(async move {
-            
-           if let Some(ref listener_new) = *opt_tcp2 {
+           if let Some(ref listener_new) = *opt_tcp {
                #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
                let local_addr = listener_new.local_addr().expect("Unable to get local address");
-
                #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
                println!("Telemetry on http://{}", local_addr);
-
                #[cfg(feature = "prometheus_metrics")]
                println!("Prometheus can scrape on on http://{}/metrics", listener_new.local_addr().expect("Unable to read local address"));
 
-               //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
-               //      for per/second metrics and many telemetry observers with slower refresh rates
-               loop {
-                   let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
-                   select! {  _ = shutdown.deref_mut() => {  break;  },
-                            result = listener_new.accept().fuse() => {
-                            match result {
-                               Ok((stream, _peer_addr)) => {
-                                   let _ = handle_request(stream,state2.clone(),config2.clone()).await;
-                               }
-                               Err(e) => {
-                                   error!("Error accepting connection: {}",e);
-                               }
-                           }
-                       } }
-               }
+               //loops and blocks for new connections and shutdown
+               handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
            }
         }).detach();
-
-
     }
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
+        //TODO: merge the above connection loop into this wait so we only have 1 thread and 1 loop.
         let _clean = await_for_all!( ctrl.wait_shutdown_or_avail_units(&mut rxg,1) );
 
         if let Some(msg) = ctrl.try_take(&mut rxg) {
@@ -150,6 +129,25 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
     }
     let _ = tcp_sender_tx.send(());
     Ok(())
+}
+
+async fn handle_new_requests(tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<()>>>, state: Arc<Mutex<State>>, config: Arc<Mutex<Config>>, listener_new: &Handle<TcpListener>) {
+    //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
+    //      for per/second metrics and many telemetry observers with slower refresh rates
+    loop {
+        let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
+        select! {  _ = shutdown.deref_mut() => {  break;  },
+                            result = listener_new.accept().fuse() => {
+                                        match result {
+                                           Ok((stream, _peer_addr)) => {
+                                               let _ = handle_request(stream,state.clone(),config.clone()).await;
+                                           }
+                                           Err(e) => {
+                                               error!("Error accepting connection: {}",e);
+                                           }
+                                       }
+                       } }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

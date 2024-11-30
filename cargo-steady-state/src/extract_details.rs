@@ -358,7 +358,9 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, m
                     });
 
                     let insert_me_tx_channel = channel.clone();
-                    roll_up_bundle(&mut a.tx_channels, insert_me_tx_channel,  false, |_t, _v| true);
+                    roll_up_bundle(&mut a.tx_channels, insert_me_tx_channel,  false, |t, v|
+                        true );
+                        //v.iter().all(|g| g.from_node.eq(&t.from_node) && g.from_mod.eq(&t.from_mod) )); // ***
 
                 }
                 if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(to_name) && f.display_suffix.eq(&to_id) ) {
@@ -384,7 +386,9 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, m
                         .unwrap_or(0);
                     insert_me_rx_channel.rebundle_index = rx_counter_index as isize; //for building dynamic bundle if needed
 
-                    roll_up_bundle(&mut a.rx_channels, insert_me_rx_channel, false,|_t, _v| true);
+                    roll_up_bundle(&mut a.rx_channels, insert_me_rx_channel, false,|t, v|
+                        true );
+                    //v.iter().all(|g| g.to_node.eq(&t.to_node) && g.to_mod.eq(&t.to_mod)));
                 }
                 // these are rolled up to define each bundle at the top of main
                 // at that point all channels are gathered by name and source node
@@ -407,7 +411,7 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, m
         } else if let Some(local) = main_channel.pop() {
             //take each single and see if we can roll them up based on to_node
             roll_up_bundle(&mut new_main_channels, local, true, |t, v| {
-                let do_add_to_group = v.iter().all(|g| g.to_node.eq(&t.to_node));                
+                let do_add_to_group = v.iter().all(|g| g.to_node.eq(&t.to_node));
                 if do_add_to_group && !v.is_empty() {
                     //success we found a to_node bundle so mark the members as such
                     t.bundle_on_from.replace(false);
@@ -429,11 +433,14 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, m
     pm.channels.iter().for_each(|c| {
         //walk the channels in this group
         for main_channel in c {
+            //println!("checking main channel {}", main_channel.name);
            //find the actor that has this channel in its tx_channels
             if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(&main_channel.from_node)) {
                 //find the channel in the tx_channels and mark it as a bundle
                 if let Some(x) = a.tx_channels.iter_mut().find(|f| f[0].name.eq(&main_channel.name)) {
                     x.iter_mut().for_each(|actor_channel| {
+
+                       // println!(" c len is {}", c.len());
                         actor_channel.bundle_on_from.clone_from(&c[0].bundle_on_from);
                         actor_channel.is_unbundled = c.len() == 1;
                         
@@ -507,8 +514,20 @@ fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, in
                 x.iter_mut().for_each(|f| f.bundle_index = -1 );
             }
         } else {
-            insert_me.bundle_index = 0;            
+            insert_me.bundle_index = 0;
+            if collection.is_empty() {
+                // only needed for circular references pointing to self
+                if insert_me.from_mod.eq(&insert_me.to_mod) {
+                    let (an,ai) = extract_trailing_number(&insert_me.from_node);
+                    let (bn,bi) = extract_trailing_number(&insert_me.to_node);
+                    if an.eq(bn) {
+                        insert_me.is_unbundled = true;
+                    }
+                }
+            }
             collection.push(vec![insert_me]);
+
+
         }
 
 
@@ -818,31 +837,6 @@ mod additional_tests {
         roll_up_bundle(&mut channels, channel, false, |_t, _v| true);
         assert_eq!(channels.len(), 1);
     }
-
-    // #[test]
-    // fn test_roll_up_bundle_invalid_predicate() {
-    //     let mut channels = vec![];
-    //     let channel = Channel {
-    //         name: "channel_name".to_string(),
-    //         from_mod: "from_mod".to_string(),
-    //         to_mod: "to_mod".to_string(),
-    //         batch_read: 1,
-    //         batch_write: 1,
-    //         message_type: "message_type".to_string(),
-    //         peek: false,
-    //         copy: false,
-    //         capacity: 10,
-    //         bundle_index: -1,
-    //         rebundle_index: -1,
-    //         to_node: "to_node".to_string(),
-    //         from_node: "from_node".to_string(),
-    //         bundle_on_from: RefCell::new(true),
-    //         is_unbundled: false,
-    //     };
-    //
-    //     roll_up_bundle(&mut channels, channel, |_t, _v| false);
-    //     assert_eq!(channels.len(), 0);
-    // }
 
 
 

@@ -70,6 +70,7 @@ pub use actor_builder::MCPU;
 pub use actor_builder::Work;
 pub use actor_builder::Percentile;
 pub use actor_builder::ActorTeam;
+pub use actor_builder::Threading;
 pub use graph_liveliness::*;
 pub use install::serviced::*;
 pub use nuclei::spawn_local;
@@ -123,11 +124,10 @@ pub fn new_state<S>() -> SteadyState<S> {
 /// Lock for use the SteadyState struct which holds state of an actor across panics restarts.
 pub async fn steady_state<F,S>(steadystate: & SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
 where
-    S: Clone,
     F: FnOnce() -> S {
     let mut state_guard = steadystate.lock().await;
     *state_guard = Some(match state_guard.take() {
-                            Some(s) => s.clone(),
+                            Some(s) => s,
                             None => build_new_state()
                         });
     state_guard

@@ -147,6 +147,7 @@ fn write_project_files(pm: ProjectModel
        //need list of unique message types, do we dedup here??
        let mut my_struct_use:Vec<String> = actor.rx_channels
             .iter()
+            .filter(|f| !f[0].from_mod.eq(&f[0].to_mod))//if to and from same place then its not use it will be define later
             .map(|f| format!("use crate::actor::{}::{}",if f[0].from_mod.len()==0 { "UNKNOWN" } else {&f[0].from_mod}, f[0].message_type))
             .collect();
 
@@ -166,9 +167,11 @@ fn write_project_files(pm: ProjectModel
                }
               } )
            .filter(|f| actor.rx_channels.iter().all(|g| {
-                       //if we have no rx on this actor returns true
+                       //if we have no rx on this actor returns true, nothing to check
                        //if ALL the actor rx to not equal this actor tx type
                        !g[0].message_type.eq(&f[0].message_type)
+                       //unless channel is coming from the same place, ie a loopback
+                          || g[0].from_mod.eq(&f[0].from_mod)
                     }
            ))
            .map(|f| format!("{}pub(crate) struct {}", derive_block(f[0].copy), f[0].message_type))
@@ -189,6 +192,7 @@ fn write_project_files(pm: ProjectModel
        fs::write(actor_file_rs, templates::ActorTemplate {
                is_on_graph_edge: actor.is_on_graph_edge(),
                note_for_the_user: format!("//TO{}: ","DO"), //do not change, this is not for you
+               //this is for me as an actor so the name does not require suffix
                display_name: actor.display_name,
                has_bundles: actor.rx_channels.iter().any(|f| f.len()>1) || actor.tx_channels.iter().any(|f| f.len()>1),
                rx_channels: actor.rx_channels,
@@ -401,10 +405,10 @@ mod tests {
     use std::process::{Command, Stdio};
     use std::str::FromStr;
     use flexi_logger::{Logger, LogSpecBuilder};
-    use log::{error, info, LevelFilter};
+    use log::{error, info, trace, LevelFilter};
     use crate::process_dot_file;
 
-    fn build_and_parse(test_name: &str, graph_dot: &str, clean: bool, show_logs: bool)  {
+    fn build_and_parse(test_name: &str, graph_dot: &str, clean: bool, show_logs: bool, live_test: bool)  {
         let level = "warn";
         if let Ok(s) = LevelFilter::from_str(&level) {
             let mut builder = LogSpecBuilder::new();
@@ -412,9 +416,18 @@ mod tests {
             let log_spec = builder.build();
             //turn on for debug
             if show_logs {
-                Logger::with(log_spec)
+                let result= Logger::with(log_spec)
                     .format(flexi_logger::colored_with_thread)
-                    .start().expect("Logger did not start");
+                    .start();
+                match result {
+                    Ok(_) => {
+                        trace!("Logger initialized at level: {:?}", &level);
+                    }
+                    Err(e) => {
+                        //just go one with the tests this happens from time to time due to what we are doing.
+                        eprint!("Logger initialization failed: {:?}", e);
+                    }
+                }
             }
         } else {
             eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &level);
@@ -459,12 +472,14 @@ mod tests {
             process_dot_file(&dot_file, test_name);
             fs::remove_file(&dot_file).expect("Failed to remove dot file");
 
-            do_compile_build(test_name);
-            do_compile_test(test_name);
+            do_cargo_build_of_generated_code(test_name);
+            if live_test { //this will require open ports so we do not always run it
+                do_cargo_test_of_generated_code(test_name);
+            }
         }
     }
 
-    fn do_compile_build(test_name: &str) {
+    fn do_cargo_build_of_generated_code(test_name: &str) {
         let build_me = PathBuf::from(test_name);
         let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
         ////
@@ -482,7 +497,7 @@ mod tests {
         assert!(output.success());
     }
     
-    fn do_compile_test(test_name: &str) {
+    fn do_cargo_test_of_generated_code(test_name: &str) {
         let build_me = PathBuf::from(test_name);
         let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
         ////
@@ -541,9 +556,8 @@ digraph PRODUCT {
 }
         "#;
 
-        if !std::env::var("GITHUB_ACTIONS").is_ok() {
-            build_and_parse("fizz_buzz", g, false, false);
-        }
+       build_and_parse("fizz_buzz", g, false, false,!std::env::var("GITHUB_ACTIONS").is_ok());
+
     }
 
 
@@ -574,9 +588,8 @@ digraph PRODUCT {
 }
         "#;
 
-        if !std::env::var("GITHUB_ACTIONS").is_ok() {
-            build_and_parse("unnamed1", g, false, false);
-        }
+     build_and_parse("unnamed1", g, false, false,!std::env::var("GITHUB_ACTIONS").is_ok());
+
     }
 
     #[test]
@@ -615,10 +628,38 @@ digraph PBFTDemo {
 
         "#;
 
-        if !std::env::var("GITHUB_ACTIONS").is_ok() {
-            build_and_parse("pbft_demo", g, false, true);
-        }
+       build_and_parse("pbft_demo", g, false, true, !std::env::var("GITHUB_ACTIONS").is_ok());
+
     }
+
+
+    #[test]
+    fn test_circle_project() {
+        let g = r#"
+            digraph Circle {
+
+            rankdir=TB;
+
+            Handler1 [label="Does Work\nmod::handler\nAtLeastEvery(10ms) && OnEvent(token:1)"];
+            Handler2 [label="Does Work\nmod::handler\nAtLeastEvery(10ms) && OnEvent(token:1)"];
+            Handler3 [label="Does Work\nmod::handler\nAtLeastEvery(10ms) && OnEvent(token:1)"];
+            __Token [label="Token is a ........"];
+
+            Handler1 -> Handler2 [label="name::token <Token> >>PeekCopy #10"];
+            Handler2 -> Handler3 [label="name::token <Token> >>PeekCopy #10"];
+            Handler3 -> Handler1 [label="name::token <Token> >>PeekCopy #10"];
+            Handler3 -> __Token [label="Circle go burr"];
+
+            }
+        "#;
+
+       build_and_parse("circle", g, false, true, !std::env::var("GITHUB_ACTIONS").is_ok());
+
+    }
+
+
+
+
 }
 
 

@@ -1,0 +1,13 @@
+digraph Circle {
+
+rankdir=TB;
+
+Handler1 [label="Does Work\nmod::handler\nAtLeastEvery(50ms) && OnEvent(token:1)"];
+Handler2 [label="Does Work\nmod::handler\nAtLeastEvery(50ms) && OnEvent(token:1)"];
+Handler3 [label="Does Work\nmod::handler\nAtLeastEvery(50ms) && OnEvent(token:1)"];
+
+Handler1 -> Handler2 [label="name::token <Token> >>PeekCopy #10"];
+Handler2 -> Handler3 [label="name::token <Token> >>PeekCopy #10"];
+Handler3 -> Handler1 [label="name::token <Token> >>PeekCopy #10"];
+
+}

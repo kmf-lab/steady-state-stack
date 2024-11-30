@@ -134,9 +134,12 @@ impl Channel {
             self.rebundle_index>=0
     }
 
-    pub fn restructured_bundle(&self) -> bool { self.rebundle_index>=0 }
-    pub fn rebundle_index(&self) -> isize { self.rebundle_index }
-
+    pub fn restructured_bundle(&self) -> bool {
+        self.rebundle_index>=0 && !self.is_unbundled
+    }
+    pub fn rebundle_index(&self) -> isize { 
+        self.rebundle_index
+    }
 
     pub fn should_build_read_buffer(&self) -> bool {
         self.batch_read > 1 && self.copy
@@ -159,7 +162,16 @@ pub(crate) struct Actor {
 impl Actor {
    pub(crate) fn is_on_graph_edge(&self) -> bool {
         self.rx_channels.is_empty() || self.tx_channels.is_empty()
-    }
+   }
+    
+   pub(crate) fn formal_name(&self) -> String {
+        if let Some(suffix) = self.display_suffix {
+            format!("{}{}", self.display_name, suffix)
+        } else {
+            self.display_name.clone()
+        }
+   } 
+    
 }
 
 

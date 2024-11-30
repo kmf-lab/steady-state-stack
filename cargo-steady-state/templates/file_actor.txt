@@ -15,7 +15,7 @@ use std::error::Error;
 }
 {% endfor %}
 //if no internal state is required (recommended) feel free to remove this.
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub(crate) struct {{ display_name|capitalize }}InternalState {
      {%- for channel in rx_channels -%}{% if channel[0].should_build_read_buffer() %}
             {{channel[0].name}}_buffer: [{{channel[0].message_type}}; {{channel[0].batch_read}}],
