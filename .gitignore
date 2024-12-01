@@ -22,7 +22,8 @@ core/cargo_audit.txt
 core/cargo_bloat.txt
 core/cargo_outdated.txt
 core/cargo_tokei.txt
-
+aeron-driver-native/
+coverage/
 
 **/*.b64
 **/viz-lite.js
@@ -36,4 +37,4 @@ target/**/*
 /notes
 
 tarpaulin-report.html
-/coverage/
+
