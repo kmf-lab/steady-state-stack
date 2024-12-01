@@ -355,7 +355,7 @@ checksum = "325918d6fe32f23b19878fe4b34794ae41fc19ddbe53b10571a4874d44ffd39b"
 
 [[package]]
 name = "cargo-steady-state"
-version = "0.0.31"
+version = "0.0.32"
 dependencies = [
  "askama",
  "dot-parser",
@@ -1933,7 +1933,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "steady_state"
-version = "0.0.31"
+version = "0.0.32"
 dependencies = [
  "askama",
  "async-ringbuf",
