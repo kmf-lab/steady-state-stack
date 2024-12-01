@@ -656,12 +656,159 @@ digraph PBFTDemo {
        build_and_parse("circle", g, false, true, !std::env::var("GITHUB_ACTIONS").is_ok());
 
     }
-
-
-
-
 }
 
+#[cfg(test)]
+mod more_tests {
+    use super::*;
+    use crate::templates::{Actor, ActorDriver, Channel};
+    use std::time::Duration;
+    use std::cell::RefCell;
+    use crate::extract_percent;
+
+    #[test]
+    fn test_extract_percent() {
+        assert_eq!(extract_percent("50%".to_string()), Some(0.5));
+        assert_eq!(extract_percent("100%".to_string()), Some(1.0));
+        assert_eq!(extract_percent("0%".to_string()), Some(0.0));
+        assert_eq!(extract_percent("75.5%".to_string()), Some(0.755));
+        assert_eq!(extract_percent("0.25".to_string()), Some(0.25));
+        assert_eq!(extract_percent("invalid".to_string()), None);
+        assert_eq!(extract_percent("".to_string()), None);
+        assert_eq!(extract_percent("110%".to_string()), Some(1.1));
+    }
+
+    #[test]
+    fn test_build_driver_block_with_at_least_every() {
+        let actor = Actor {
+            display_name: "TestActor".to_string(),
+            display_suffix: None,
+            mod_name: "test_actor".to_string(),
+            rx_channels: vec![],
+            tx_channels: vec![],
+            driver: vec![ActorDriver::AtLeastEvery(Duration::from_secs(5))],
+        };
+
+        let result = build_driver_block(&actor);
+        let expected = "cmd.wait_periodic(Duration::from_millis(5000))";
+        assert!(result.contains(expected));
+    }
+
+    #[test]
+    fn test_build_driver_block_with_event_driven() {
+        let actor = Actor {
+            display_name: "TestActor".to_string(),
+            display_suffix: None,
+            mod_name: "test_actor".to_string(),
+            rx_channels: vec![vec![Channel {
+                name: "input".to_string(),
+                from_mod: "source_mod".to_string(),
+                to_mod: "test_actor".to_string(),
+                batch_read: 1,
+                batch_write: 1,
+                message_type: "InputMessage".to_string(),
+                peek: false,
+                copy: false,
+                capacity: 10,
+                bundle_index: -1,
+                rebundle_index: -1,
+                bundle_struct_mod: "".to_string(),
+                to_node: "TestActor".to_string(),
+                from_node: "SourceActor".to_string(),
+                bundle_on_from: RefCell::new(true),
+                is_unbundled: true,
+            }]],
+            tx_channels: vec![],
+            driver: vec![ActorDriver::EventDriven(vec![vec!["input".to_string(), "1".to_string()]])],
+        };
+
+        let result = build_driver_block(&actor);
+        let expected = "cmd.wait_closed_or_avail_units(&mut input_rx,1)";
+        assert!(result.contains(expected));
+    }
+
+    #[test]
+    fn test_monitor_defs_single_channel() {
+        let channels = vec![vec![Channel {
+            name: "test_channel".to_string(),
+            from_mod: "from_mod".to_string(),
+            to_mod: "to_mod".to_string(),
+            batch_read: 1,
+            batch_write: 1,
+            message_type: "TestMessage".to_string(),
+            peek: false,
+            copy: false,
+            capacity: 10,
+            bundle_index: -1,
+            rebundle_index: -1,
+            bundle_struct_mod: "".to_string(),
+            to_node: "ToNode".to_string(),
+            from_node: "FromNode".to_string(),
+            bundle_on_from: RefCell::new(true),
+            is_unbundled: true,
+        }]];
+
+        let result = monitor_defs("rx", &channels);
+        assert_eq!(result, vec!["test_channel_rx".to_string()]);
+    }
+
+    #[test]
+    fn test_monitor_defs_bundled_channels() {
+        let channels = vec![
+            vec![
+                Channel {
+                    name: "test_channel".to_string(),
+                    from_mod: "from_mod".to_string(),
+                    to_mod: "to_mod".to_string(),
+                    batch_read: 1,
+                    batch_write: 1,
+                    message_type: "TestMessage".to_string(),
+                    peek: false,
+                    copy: false,
+                    capacity: 10,
+                    bundle_index: 0,
+                    rebundle_index: -1,
+                    bundle_struct_mod: "".to_string(),
+                    to_node: "ToNode".to_string(),
+                    from_node: "FromNode".to_string(),
+                    bundle_on_from: RefCell::new(true),
+                    is_unbundled: false,
+                },
+                Channel {
+                    name: "test_channel".to_string(),
+                    from_mod: "from_mod".to_string(),
+                    to_mod: "to_mod".to_string(),
+                    batch_read: 1,
+                    batch_write: 1,
+                    message_type: "TestMessage".to_string(),
+                    peek: false,
+                    copy: false,
+                    capacity: 10,
+                    bundle_index: 1,
+                    rebundle_index: -1,
+                    bundle_struct_mod: "".to_string(),
+                    to_node: "ToNode".to_string(),
+                    from_node: "FromNode".to_string(),
+                    bundle_on_from: RefCell::new(true),
+                    is_unbundled: false,
+                },
+            ],
+        ];
+
+        let result = monitor_defs("tx", &channels);
+        // Since DISABLE is false, it should generate individual channel names
+        assert_eq!(result, vec!["test_channel_tx[0]".to_string(), "test_channel_tx[1]".to_string()]);
+    }
+
+    #[test]
+    fn test_derive_block() {
+        let copy_true = derive_block(true);
+        assert_eq!(copy_true, "#[derive(Default,Clone,Debug,Eq,PartialEq,Copy)]\n");
+
+        let copy_false = derive_block(false);
+        assert_eq!(copy_false, "#[derive(Default,Clone,Debug,Eq,PartialEq)]\n");
+    }
+}
 
 
 

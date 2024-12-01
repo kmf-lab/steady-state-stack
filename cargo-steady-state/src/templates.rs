@@ -225,3 +225,272 @@ pub(crate) struct ActorTemplate {
     pub(crate) message_types_to_define: Vec<String>,
 
 }
+
+#[cfg(test)]
+mod additional_tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::time::Duration;
+
+    impl Default for Channel {
+        fn default() -> Self {
+            Channel {
+                name: String::new(),
+                from_mod: String::new(),
+                to_mod: String::new(),
+                bundle_struct_mod: String::new(),
+                message_type: String::new(),
+                peek: false,
+                copy: false,
+                batch_read: 1,
+                to_node: String::new(),
+                from_node: String::new(),
+                is_unbundled: true,
+                batch_write: 1,
+                capacity: 0,
+                bundle_index: -1,
+                rebundle_index: -1,
+                bundle_on_from: RefCell::new(true),
+            }
+        }
+    }
+
+    impl Default for Actor {
+        fn default() -> Self {
+            Actor {
+                display_name: String::new(),
+                display_suffix: None,
+                mod_name: String::new(),
+                rx_channels: vec![],
+                tx_channels: vec![],
+                driver: vec![],
+            }
+        }
+    }
+
+    #[test]
+    fn test_channel_needs_tx_single_clone() {
+        let channel = Channel {
+            is_unbundled: true,
+            ..Default::default()
+        };
+        assert_eq!(channel.needs_tx_single_clone(), false);
+
+        let channel = Channel {
+            is_unbundled: false,
+            ..Default::default()
+        };
+        assert_eq!(channel.needs_tx_single_clone(), true);
+    }
+
+    #[test]
+    fn test_channel_needs_rx_single_clone() {
+        let channel = Channel {
+            is_unbundled: true,
+            ..Default::default()
+        };
+        assert_eq!(channel.needs_rx_single_clone(), false);
+
+        let channel = Channel {
+            is_unbundled: false,
+            ..Default::default()
+        };
+        assert_eq!(channel.needs_rx_single_clone(), true);
+    }
+
+    #[test]
+    fn test_channel_has_bundle_index() {
+        let channel = Channel {
+            bundle_index: -1,
+            ..Default::default()
+        };
+        assert_eq!(channel.has_bundle_index(), false);
+
+        let channel = Channel {
+            bundle_index: 0,
+            ..Default::default()
+        };
+        assert_eq!(channel.has_bundle_index(), true);
+    }
+
+    #[test]
+    fn test_channel_bundle_index() {
+        let channel = Channel {
+            bundle_index: 5,
+            ..Default::default()
+        };
+        assert_eq!(channel.bundle_index(), 5);
+    }
+
+    #[test]
+    fn test_channel_tx_prefix_name() {
+        let channel = Channel {
+            from_node: "FromNode".to_string(),
+            bundle_on_from: RefCell::new(true),
+            ..Default::default()
+        };
+        let channels = vec![channel.clone()];
+        assert_eq!(channel.tx_prefix_name(&channels), "fromnode");
+
+        // let channel = Channel {
+        //     to_node: "ToNode".to_string(),
+        //     bundle_on_from: RefCell::new(false),
+        //     ..Default::default()
+        // };
+        // let channels = vec![channel.clone()];
+        // assert_eq!(channel.tx_prefix_name(&channels), "n_to_tonode");
+    }
+
+    #[test]
+    fn test_channel_rx_prefix_name() {
+        let channel = Channel {
+            to_node: "ToNode".to_string(),
+            bundle_on_from: RefCell::new(false),
+            ..Default::default()
+        };
+        let channels = vec![channel.clone()];
+        assert_eq!(channel.rx_prefix_name(&channels), "tonode");
+
+        // let channel = Channel {
+        //     from_node: "FromNode".to_string(),
+        //     to_mod: "ToMod".to_string(),
+        //     bundle_on_from: RefCell::new(true),
+        //     ..Default::default()
+        // };
+        // let channels = vec![channel.clone()];
+        // assert_eq!(channel.rx_prefix_name(&channels), "fromnode_to_tomod");
+    }
+
+    #[test]
+    fn test_channel_restructured_bundle_rx() {
+        let channel = Channel {
+            rebundle_index: 1,
+            bundle_on_from: RefCell::new(true),
+            ..Default::default()
+        };
+        let channels = vec![channel.clone()];
+        assert_eq!(channel.restructured_bundle_rx(&channels), true);
+
+        let channel = Channel {
+            rebundle_index: -1,
+            bundle_on_from: RefCell::new(true),
+            ..Default::default()
+        };
+        let channels = vec![channel.clone()];
+        assert_eq!(channel.restructured_bundle_rx(&channels), false);
+    }
+
+    #[test]
+    fn test_channel_restructured_bundle() {
+        let channel = Channel {
+            rebundle_index: 1,
+            is_unbundled: false,
+            ..Default::default()
+        };
+        assert_eq!(channel.restructured_bundle(), true);
+
+        let channel = Channel {
+            rebundle_index: -1,
+            is_unbundled: false,
+            ..Default::default()
+        };
+        assert_eq!(channel.restructured_bundle(), false);
+
+        let channel = Channel {
+            rebundle_index: 1,
+            is_unbundled: true,
+            ..Default::default()
+        };
+        assert_eq!(channel.restructured_bundle(), false);
+    }
+
+    #[test]
+    fn test_channel_should_build_read_buffer() {
+        let channel = Channel {
+            batch_read: 1,
+            copy: true,
+            ..Default::default()
+        };
+        assert_eq!(channel.should_build_read_buffer(), false);
+
+        let channel = Channel {
+            batch_read: 2,
+            copy: true,
+            ..Default::default()
+        };
+        assert_eq!(channel.should_build_read_buffer(), true);
+
+        let channel = Channel {
+            batch_read: 2,
+            copy: false,
+            ..Default::default()
+        };
+        assert_eq!(channel.should_build_read_buffer(), false);
+    }
+
+    #[test]
+    fn test_channel_should_build_write_buffer() {
+        let channel = Channel {
+            batch_write: 1,
+            copy: true,
+            ..Default::default()
+        };
+        assert_eq!(channel.should_build_write_buffer(), false);
+
+        let channel = Channel {
+            batch_write: 2,
+            copy: true,
+            ..Default::default()
+        };
+        assert_eq!(channel.should_build_write_buffer(), true);
+
+        let channel = Channel {
+            batch_write: 2,
+            copy: false,
+            ..Default::default()
+        };
+        assert_eq!(channel.should_build_write_buffer(), false);
+    }
+
+    #[test]
+    fn test_actor_is_on_graph_edge() {
+        let actor = Actor {
+            rx_channels: vec![],
+            tx_channels: vec![vec![]],
+            ..Default::default()
+        };
+        assert_eq!(actor.is_on_graph_edge(), true);
+
+        let actor = Actor {
+            rx_channels: vec![vec![]],
+            tx_channels: vec![],
+            ..Default::default()
+        };
+        assert_eq!(actor.is_on_graph_edge(), true);
+
+        let actor = Actor {
+            rx_channels: vec![vec![]],
+            tx_channels: vec![vec![]],
+            ..Default::default()
+        };
+        assert_eq!(actor.is_on_graph_edge(), false);
+    }
+
+    #[test]
+    fn test_actor_formal_name() {
+        let actor = Actor {
+            display_name: "ActorName".to_string(),
+            display_suffix: Some(1),
+            ..Default::default()
+        };
+        assert_eq!(actor.formal_name(), "ActorName1");
+
+        let actor = Actor {
+            display_name: "ActorName".to_string(),
+            display_suffix: None,
+            ..Default::default()
+        };
+        assert_eq!(actor.formal_name(), "ActorName");
+    }
+}
+
