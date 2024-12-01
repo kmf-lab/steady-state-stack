@@ -13,7 +13,7 @@ mod actor {
 
 fn main() {
     let opt = Args::from_args();
-    if let Err(e) = steady_state::init_logging(&opt.loglevel) {
+    if let Err(e) = init_logging(&opt.loglevel) {
         //do not use logger to report logger could not start
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
@@ -27,7 +27,7 @@ fn main() {
 
     if !systemd_command {
         info!("Starting up");
-        let mut graph = build_graph(steady_state::GraphBuilder::default().build(opt.clone()) );
+        let mut graph = build_graph(GraphBuilder::default().build(opt.clone()) );
         graph.start();
 
         {  //remove this block to run forever.
@@ -39,7 +39,7 @@ fn main() {
     }
 }
 
-fn build_graph(mut graph: Graph) -> steady_state::Graph {
+fn build_graph(mut graph: Graph) -> Graph {
 
     //this common root of the channel builder allows for common config of all channels
     let base_channel_builder = graph.channel_builder()

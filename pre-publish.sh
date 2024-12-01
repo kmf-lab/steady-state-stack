@@ -94,6 +94,9 @@ cargo outdated | tee cargo_outdated.txt
 echo "cargo audit"
 cargo audit | tee cargo_audit.txt
 
+echo "install current cargo-steady-state"
+cargo install --path cargo-steady-state
+
 cargo llvm-cov
 echo "cargo llvm-cov --html --output-dir coverage/"
 

@@ -408,81 +408,83 @@ mod tests {
     use log::{error, info, trace, LevelFilter};
     use crate::process_dot_file;
 
-    fn build_and_parse(test_name: &str, graph_dot: &str, clean: bool, show_logs: bool, live_test: bool)  {
-        let level = "warn";
-        if let Ok(s) = LevelFilter::from_str(&level) {
-            let mut builder = LogSpecBuilder::new();
-            builder.default(s); // Set the default level
-            let log_spec = builder.build();
-            //turn on for debug
-            if show_logs {
-                let result= Logger::with(log_spec)
-                    .format(flexi_logger::colored_with_thread)
-                    .start();
-                match result {
-                    Ok(_) => {
-                        trace!("Logger initialized at level: {:?}", &level);
-                    }
-                    Err(e) => {
-                        //just go one with the tests this happens from time to time due to what we are doing.
-                        eprint!("Logger initialization failed: {:?}", e);
-                    }
-                }
-            }
-        } else {
-            eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &level);
-        }
-        //ensure test_run folder exists and we are in the right place
-        let current_dir = env::current_dir().expect("Failed to get current directory");
+    fn build_and_parse(test_name: &str, graph_dot: &str, clean: bool, show_logs: bool, live_test: bool) {
+        if live_test { //this will require open ports and drive access so we do not always run it
 
-        //move to our test_run folder to ensure we do not generate test code on top of our self
-        let ok = current_dir.ends_with("test_run")
-                 || match env::set_current_dir("test_run") {
+            let level = "warn";
+            if let Ok(s) = LevelFilter::from_str(&level) {
+                let mut builder = LogSpecBuilder::new();
+                builder.default(s); // Set the default level
+                let log_spec = builder.build();
+                //turn on for debug
+                if show_logs {
+                    let result = Logger::with(log_spec)
+                        .format(flexi_logger::colored_with_thread)
+                        .start();
+                    match result {
                         Ok(_) => {
-                            true
+                            trace!("Logger initialized at level: {:?}", &level);
                         }
-                        Err(_) => {
-                            let working_path = PathBuf::from("test_run");
-                            if let Err(e) = fs::create_dir_all(&working_path) {
-                                error!("Failed to create test_run directory: {}", e);
-                                panic!("Failed to change directory to test_run: {}", e);
-                            }
-                            if let Err(e) = env::set_current_dir("test_run") {
-                                error!("Failed to change directory to test_run: {}", e);
-                                panic!("Failed to change directory to test_run: {}", e);
-                            }
-                            true
+                        Err(e) => {
+                            //just go one with the tests this happens from time to time due to what we are doing.
+                            eprint!("Logger initialization failed: {:?}", e);
                         }
-        };
-
-        if ok {
-            if live_test { //this will require open ports so we do not always run it
-
-                let current_dir = env::current_dir().expect("Failed to get current directory");
-                println!("Current working directory is: {:?}", current_dir);
-                if clean {
-                    //NOTE: must delete the unnamed1 folder if it exists
-                    if let Err(e) = fs::remove_dir_all(test_name) {
-                        error!("Failed to remove test_run/{} directory: {}",test_name, e);
-                    } else {
-                        info!("Removed test_run/{} directory",test_name);
                     }
                 }
-                // write graph_dot into a temp file
-                let dot_file = format!("{}.dot", test_name);
-                fs::write(&dot_file, graph_dot).expect("Failed to write dot file");
-                process_dot_file(&dot_file, test_name);
-                fs::remove_file(&dot_file).expect("Failed to remove dot file");
-
-                do_cargo_build_of_generated_code(test_name);
-                do_cargo_test_of_generated_code(test_name);
+            } else {
+                eprint!("Warning: Logger initialization failed with bad level: {:?}. There will be no logging.", &level);
+            }
+            //ensure test_run folder exists and we are in the right place
+            let current_dir = env::current_dir().expect("Failed to get current directory");
+    
+            //move to our test_run folder to ensure we do not generate test code on top of our self
+            let ok = current_dir.ends_with("test_run")
+                || match env::set_current_dir("test_run") {
+                Ok(_) => {
+                    true
+                }
+                Err(_) => {
+                    let working_path = PathBuf::from("test_run");
+                    if let Err(e) = fs::create_dir_all(&working_path) {
+                        error!("Failed to create test_run directory: {}", e);
+                        panic!("Failed to change directory to test_run: {}", e);
+                    }
+                    if let Err(e) = env::set_current_dir("test_run") {
+                        error!("Failed to change directory to test_run: {}", e);
+                        panic!("Failed to change directory to test_run: {}", e);
+                    }
+                    true
+                }
+            };
+    
+            if ok {
+          
+                    let current_dir = env::current_dir().expect("Failed to get current directory");
+                    println!("Current working directory is: {:?}", current_dir);
+                    if clean {
+                        //NOTE: must delete the unnamed1 folder if it exists
+                        if let Err(e) = fs::remove_dir_all(test_name) {
+                            error!("Failed to remove test_run/{} directory: {}",test_name, e);
+                        } else {
+                            info!("Removed test_run/{} directory",test_name);
+                        }
+                    }
+                    // write graph_dot into a temp file
+                    let dot_file = format!("{}.dot", test_name);
+                    fs::write(&dot_file, graph_dot).expect("Failed to write dot file");
+                    process_dot_file(&dot_file, test_name);
+                    fs::remove_file(&dot_file).expect("Failed to remove dot file");
+    
+                    do_cargo_build_of_generated_code(test_name);
+                    do_cargo_test_of_generated_code(test_name);
+                
             }
         }
-    }
+}
 
-    fn do_cargo_build_of_generated_code(test_name: &str) {
-        let build_me = PathBuf::from(test_name);
-        let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
+fn do_cargo_build_of_generated_code(test_name: &str) {
+    let build_me = PathBuf::from(test_name);
+    let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
         ////
         let mut output_child = Command::new("cargo")
             .arg("build")

@@ -149,7 +149,7 @@ impl ActorStatsComputer {
         }
 
         if let Some(ref current_work) = &self.current_work {
-            let config = ComputeLabelsConfig::actor_config(self, (1000, 1), 100, self.show_avg_work);
+            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 100, self.show_avg_work);
             let labels = ComputeLabelsLabels {
                 label: "load",
                 unit: "%",
@@ -159,7 +159,7 @@ impl ActorStatsComputer {
         }
 
         if let Some(ref current_mcpu) = &self.current_mcpu {
-            let config = ComputeLabelsConfig::actor_config(self, (1000, 1), 1024, self.show_avg_mcpu);
+            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 1024, self.show_avg_mcpu);
             let labels = ComputeLabelsLabels {
                 label: "mCPU",
                 unit: "",
@@ -722,7 +722,7 @@ mod test_actor_stats {
             (512, 1024),
         );
 
-        assert_eq!(percentile_result, std::cmp::Ordering::Equal);
+        assert_eq!(percentile_result, cmp::Ordering::Equal);
     }
 }
 

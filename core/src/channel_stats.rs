@@ -1065,7 +1065,7 @@ pub(crate) fn compute_labels<T: Counter>(
             let value = ((config.rational_adjust.0 as f32 * h.value_at_percentile(p.percentile()).min(config.max_value) as f32)
                 / config.rational_adjust.1 as f32) as usize;
 
-            label_target.push_str(itoa::Buffer::new().format(value));
+            label_target.push_str(Buffer::new().format(value));
 
             #[cfg(feature = "prometheus_metrics" )]
             {
