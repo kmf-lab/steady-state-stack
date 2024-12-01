@@ -456,24 +456,25 @@ mod tests {
         };
 
         if ok {
-            let current_dir = env::current_dir().expect("Failed to get current directory");
-            println!("Current working directory is: {:?}", current_dir);
-            if clean {
-                //NOTE: must delete the unnamed1 folder if it exists
-                if let Err(e) = fs::remove_dir_all(test_name) {
-                    error!("Failed to remove test_run/{} directory: {}",test_name, e);
-                } else {
-                    info!("Removed test_run/{} directory",test_name);
-                }
-            }
-            // write graph_dot into a temp file
-            let dot_file = format!("{}.dot", test_name);
-            fs::write(&dot_file, graph_dot).expect("Failed to write dot file");
-            process_dot_file(&dot_file, test_name);
-            fs::remove_file(&dot_file).expect("Failed to remove dot file");
-
-            do_cargo_build_of_generated_code(test_name);
             if live_test { //this will require open ports so we do not always run it
+
+                let current_dir = env::current_dir().expect("Failed to get current directory");
+                println!("Current working directory is: {:?}", current_dir);
+                if clean {
+                    //NOTE: must delete the unnamed1 folder if it exists
+                    if let Err(e) = fs::remove_dir_all(test_name) {
+                        error!("Failed to remove test_run/{} directory: {}",test_name, e);
+                    } else {
+                        info!("Removed test_run/{} directory",test_name);
+                    }
+                }
+                // write graph_dot into a temp file
+                let dot_file = format!("{}.dot", test_name);
+                fs::write(&dot_file, graph_dot).expect("Failed to write dot file");
+                process_dot_file(&dot_file, test_name);
+                fs::remove_file(&dot_file).expect("Failed to remove dot file");
+
+                do_cargo_build_of_generated_code(test_name);
                 do_cargo_test_of_generated_code(test_name);
             }
         }
