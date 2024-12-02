@@ -1,3 +1,5 @@
+## Watch our intro to Steady_State
+[![Introduction to #RustLang crate steady_state.](watch_on_twitter.jpg)](https://twitter.com/NathanTippy/status/1863433128674812398)
 
 # Our Targeted Values and Goals
 
