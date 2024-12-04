@@ -26,10 +26,6 @@ codegen-units = 1 # only one codegen unit to reduce binary size
 panic = 'abort' # no unwinding
 strip = 'symbols' # strip symbols
 
-
-
-
-
 [lints.clippy]
 enum_glob_use = "deny" # forbid use of enum glob imports
 unwrap_used = "deny" # forbid use of unwrap
@@ -51,20 +47,28 @@ telemetry_server_builtin = [] # (telemetry_server_? exclusive one or the other) 
 # 2. where you run your app the browser user will have internet access
 telemetry_server_cdn = [] # (telemetry_server_? exclusive one or the other)
 
+# will require "git gcc cmake make" on your build server
+aeron_driver_systemd = ["aeron"] # build systemd installer for media driver
+aeron_driver_sidecar = ["aeron"] # build k8s sidecar yaml for media driver
+# does not require any build tools on your build server
+aeron_driver_external = ["aeron"] # assume an external aeron driver
+
 # records history files usefull for replay of the telemetry offline after the fact
 telemetry_history = []
-# no need to enable unless you want to see the performance of the telemetry server
-telemetry_on_telemetry = []
 
 # lock teams and actors to specific cores
 core_affinity = ["libc"]
-
 # desplay which core the actor is running on
 core_display = ["libc"]
+
+# tick_generator = ["libc"] # TODO: new stuff
 
 # only set true if you want supervisors to restart actors while debug_assertions is on
 # no need to enable unless you want to see how supervisors work while testing
 restart_actors_when_debugging = []
+# no need to enable unless you want to see the performance of the telemetry server
+telemetry_on_telemetry = []
+
 
 #ros2           = ["datachannel", "r2r"]
 #zeromq-support = ["zmq"]
@@ -100,11 +104,11 @@ parking_lot      = "0.12.3"
 tempfile         = "3.14.0"
 num_cpus         = "1.16.0"
 pin-project      = "1.1.7"
+aeron            = { version="0.2.0", optional=true }
 
-#aeron            = "0.2.0"
 
 # Release Plan
-# 0.1.0 - one year aniversary (ETA 12/04/24) relase single machine
+# 0.1.0 - one year aniversary (12/04/24) relase single machine
 #         75% function test coverage
 #      Transparency
 #          Built in visual telemetry at 25fps (just open a browser)
@@ -126,7 +130,7 @@ pin-project      = "1.1.7"
 #          Unit testing for both Actors and Graphs
 #
 # 0.2.0 - distributed features ready for use (ETA 06/04/25)
-#         Aeron, ZeroMQ, LibP2P
+#         Aeron,    ZeroMQ, LibP2P
 #         History Replay
 #         Label Filtering and await 'on what?' tracking
 #         90% function test coverage

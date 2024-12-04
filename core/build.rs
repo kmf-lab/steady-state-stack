@@ -33,6 +33,17 @@ pub(crate) struct WebWorkerTemplate<'a> {
 
 const VIZ_VERSION:&str = "1.8.2";
 
+#[cfg(not(feature = "aeron_driver_systemd"))]
+const AERON_DRIVER_SYSTEMD:bool = false;
+#[cfg(feature = "aeron_driver_systemd")]
+const AERON_DRIVER_SYSTEMD:bool = true;
+
+#[cfg(not(feature = "aeron_driver_sidecar"))]
+const AERON_DRIVER_SIDECAR:bool = false;
+#[cfg(feature = "aeron_driver_sidecar")]
+const AERON_DRIVER_SIDECAR:bool = true;
+
+
 #[cfg(not(feature = "telemetry_server_builtin"))]
 const USE_INTERNAL_VIZ:bool = false;
 #[cfg(feature = "telemetry_server_builtin")]
@@ -83,6 +94,21 @@ fn main() {
         gzip_encode(&base_target_path, "static/telemetry/dot-viewer.js", true);
         gzip_encode(&base_target_path, "static/telemetry/dot-viewer.css", true);
         copy(&base_target_path, "static/telemetry/images/spinner.gif");
+    }
+    
+    if AERON_DRIVER_SYSTEMD || AERON_DRIVER_SIDECAR {
+        build_aeron();
+        
+        if AERON_DRIVER_SYSTEMD {
+            //build_aeron_systemd();
+        }
+        if AERON_DRIVER_SIDECAR {
+            //build_aeron_sidecar();
+        } else {
+            //normal k8s yaml
+        }
+    } else {
+        //normal k8s yaml
     }
 }
 
@@ -164,71 +190,67 @@ fn gzip_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
 
 }
 
-/*
-// New Feature Flags
-//     aeron_driver_systemd - put aeron in systemd for CLI or other services
-//     aeron_driver_sidecar - put aeron in a sidecar for k8s or other services
-//                            requires new K8s deployment yaml
-//     aeron_driver_external - assume it is available externally
-//     deployment also rethought for each app slice
-//     new remote actor will take N channels in or out and the inverse is at the other end.
 
 fn build_aeron() {
-    // Step 1: Check for required tools
-    check_required_tools();
+    
+    //skip the build if we are in github actions
+    if !env::var("GITHUB_ACTIONS").is_ok() {
+        let version = "1.39.0";
+        let out_dir = "target";
+        let aeron_dir = Path::new(&out_dir).join("aeron-driver-native");
 
-    // Step 2: Clone the Aeron C++ Media Driver repository
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let aeron_dir = Path::new(&out_dir).join("aeron-driver-native");
-
-    if !aeron_dir.exists() {
-        println!("Cloning Aeron C++ Media Driver...");
-        let status = Command::new("git")
-            .args(&["clone", "--depth", "1", "--branch", "1.39.0", "https://github.com/real-logic/aeron.git", aeron_dir.to_str().unwrap()])
-            .status()
-            .expect("Failed to clone Aeron repository");
-        if !status.success() {
-            panic!("Failed to clone Aeron repository");
+        if !aeron_dir.exists() {
+            println!("cargo:warning=Cloning Aeron C++ Media Driver...");
+            let status = Command::new("git")
+                .args(&["clone", "--depth", "1", "--branch", version, "https://github.com/real-logic/aeron.git", aeron_dir.to_str().unwrap()])
+                .status()
+                .expect("Failed to clone Aeron repository");
+            if !status.success() {
+                panic!("Failed to clone Aeron repository");
+            }
         }
+
+        // check if the binary is already present and skip the build
+        // target/aeron-driver-native/build/aeronmd
+        if Path::new(&aeron_dir.join("build/aeronmd")).exists() {
+            println!("cargo:warning=Aeron C++ Media Driver already built, skipping build");
+            return;
+        }
+
+        println!("cargo:warning=Building Aeron C++ Media Driver...");
+        let build_dir = aeron_dir.join("build");
+
+        if !build_dir.exists() {
+            fs::create_dir_all(&build_dir).unwrap();
+        }
+
+        // Configure CMake with minimal settings for the Media Driver
+        let status = Command::new("cmake")
+            .current_dir(&build_dir)
+            .args(&[
+                "..",
+                "-DBUILD_SHARED_LIBS=ON", // Enable shared libraries
+                "-DAERON_ENABLE_JAVA=OFF", // Disable Java components
+            ])
+            .status()
+            .expect("Failed to run cmake");
+        if !status.success() {
+            panic!("CMake configuration failed");
+        }
+
+        // Build only the Aeron Media Driver
+        let status = Command::new("cmake")
+            .current_dir(&build_dir)
+            .args(&["--build", ".", "--target", "aeronmd"])
+            .status()
+            .expect("Failed to build Aeron Media Driver");
+        if !status.success() {
+            panic!("cargo:warning=Failed to build Aeron Media Driver");
+        }
+
+        println!("cargo:rustc-link-search=native={}", build_dir.display());
+        println!("cargo:rerun-if-changed=build.rs");
+
+        println!("cargo:warning=Aeron C++ Media Driver built successfully!");
     }
-
-    // Step 3: Build the C++ Media Driver
-    println!("Building Aeron C++ Media Driver...");
-    let build_dir = aeron_dir.join("build");
-
-    if !build_dir.exists() {
-        std::fs::create_dir_all(&build_dir).unwrap();
-    }
-
-    // Configure CMake with minimal settings for the Media Driver
-    let status = Command::new("cmake")
-        .current_dir(&build_dir)
-        .args(&[
-            "..",
-            "-DBUILD_SHARED_LIBS=ON", // Enable shared libraries
-            "-DAERON_ENABLE_JAVA=OFF", // Disable Java components
-        ])
-        .status()
-        .expect("Failed to run cmake");
-    if !status.success() {
-        panic!("CMake configuration failed");
-    }
-
-    // Build only the Aeron Media Driver
-    let status = Command::new("cmake")
-        .current_dir(&build_dir)
-        .args(&["--build", ".", "--target", "aeronmd"])
-        .status()
-        .expect("Failed to build Aeron Media Driver");
-    if !status.success() {
-        panic!("Failed to build Aeron Media Driver");
-    }
-
-    // Step 4: Link the built library
-    println!("cargo:rustc-link-search=native={}", build_dir.display());
-    println!("cargo:rerun-if-changed=build.rs");
-
-    println!("Aeron C++ Media Driver built successfully!");
 }
-
-*/
