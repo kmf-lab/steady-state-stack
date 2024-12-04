@@ -1,3 +1,5 @@
+## Watch our intro to cargo-steady-state
+[![Code Gen Demo.](gen-example.jpg)](https://twitter.com/NathanTippy/status/1863432559893287149)
 
 ## install cargo-steady-state
 
