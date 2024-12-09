@@ -18,7 +18,6 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use askama::Template;
 
-
 #[derive(Template)]
 #[template(path = "index.html.txt")]
 pub(crate) struct IndexTemplate<'a> {
@@ -93,16 +92,17 @@ fn main() {
         //simple encode and copy to the destination when telemetry is enabled
         gzip_encode(&base_target_path, "static/telemetry/dot-viewer.js", true);
         gzip_encode(&base_target_path, "static/telemetry/dot-viewer.css", true);
-        copy(&base_target_path, "static/telemetry/images/spinner.gif");
+        let file_path = "static/telemetry/images/spinner.gif";
+        simple_copy(Path::new(file_path), &base_target_path.join(file_path));
     }
     
     if AERON_DRIVER_SYSTEMD || AERON_DRIVER_SIDECAR {
         build_aeron();
-        
-        if AERON_DRIVER_SYSTEMD {
-            //build_aeron_systemd();
-        }
+     
         if AERON_DRIVER_SIDECAR {
+            let working = base_target_path.join("k8s");
+            fs::create_dir_all(&working).expect("Failed to create output directory");
+
             //build_aeron_sidecar();
         } else {
             //normal k8s yaml
@@ -113,13 +113,12 @@ fn main() {
 }
 
 
-fn copy(target: &Path, file_path: &str) {
 
-    let target_file = target.join(file_path);
+fn simple_copy(source_file: &Path, target_file: &PathBuf) -> bool {
     // Check if the output file already exists
     if Path::new(&target_file).exists() {
         println!("{:?} already exists, skipping", target_file);
-        return;
+        return true;
     }
     if let Some(parent_dir) = target_file.parent() {
         fs::create_dir_all(parent_dir).expect("Failed to create output directory");
@@ -127,14 +126,15 @@ fn copy(target: &Path, file_path: &str) {
 
     // Open the output file for writing
     //read the file
-    let mut file = File::open(file_path).expect("Failed to open file");
+    let mut file = File::open(source_file).expect("Failed to open file");
     let mut body = Vec::new();
-    let _= file.read_to_end(&mut body);
-    
+    let _ = file.read_to_end(&mut body);
+
     let mut output_file = File::create(target_file.clone()).expect("Failed to create output file");
     output_file.write_all(&body).expect("Failed to write to output file");
 
     println!("Processed and saved to {:?}", &target_file);
+    false
 }
 
 fn gzip_encode_web_resource(target: &Path, file_path: &str, get_url: &str) {
@@ -171,7 +171,7 @@ fn gzip_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
     let target_file_gz = target.join(output_name_gz);
     
     if let Some(parent_dir) = target_file_gz.parent() {
-        fs::create_dir_all(parent_dir).expect("Failed to create output directory");
+        fs::create_dir_all(&parent_dir).expect(&format!("Failed to create output directory {:?}",&parent_dir));
     }
 
     if skip_if_exists && Path::new(&target_file_gz).exists() {
@@ -190,67 +190,37 @@ fn gzip_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
 
 }
 
-
 fn build_aeron() {
-    
-    //skip the build if we are in github actions
-    if !env::var("GITHUB_ACTIONS").is_ok() {
-        let version = "1.39.0";
-        let out_dir = "target";
-        let aeron_dir = Path::new(&out_dir).join("aeron-driver-native");
-
-        if !aeron_dir.exists() {
-            println!("cargo:warning=Cloning Aeron C++ Media Driver...");
-            let status = Command::new("git")
-                .args(&["clone", "--depth", "1", "--branch", version, "https://github.com/real-logic/aeron.git", aeron_dir.to_str().unwrap()])
-                .status()
-                .expect("Failed to clone Aeron repository");
-            if !status.success() {
-                panic!("Failed to clone Aeron repository");
-            }
-        }
-
-        // check if the binary is already present and skip the build
-        // target/aeron-driver-native/build/aeronmd
-        if Path::new(&aeron_dir.join("build/aeronmd")).exists() {
-            println!("cargo:warning=Aeron C++ Media Driver already built, skipping build");
-            return;
-        }
-
-        println!("cargo:warning=Building Aeron C++ Media Driver...");
-        let build_dir = aeron_dir.join("build");
-
-        if !build_dir.exists() {
-            fs::create_dir_all(&build_dir).unwrap();
-        }
-
-        // Configure CMake with minimal settings for the Media Driver
-        let status = Command::new("cmake")
-            .current_dir(&build_dir)
-            .args(&[
-                "..",
-                "-DBUILD_SHARED_LIBS=ON", // Enable shared libraries
-                "-DAERON_ENABLE_JAVA=OFF", // Disable Java components
-            ])
-            .status()
-            .expect("Failed to run cmake");
-        if !status.success() {
-            panic!("CMake configuration failed");
-        }
-
-        // Build only the Aeron Media Driver
-        let status = Command::new("cmake")
-            .current_dir(&build_dir)
-            .args(&["--build", ".", "--target", "aeronmd"])
-            .status()
-            .expect("Failed to build Aeron Media Driver");
-        if !status.success() {
-            panic!("cargo:warning=Failed to build Aeron Media Driver");
-        }
-
-        println!("cargo:rustc-link-search=native={}", build_dir.display());
-        println!("cargo:rerun-if-changed=build.rs");
-
-        println!("cargo:warning=Aeron C++ Media Driver built successfully!");
+    // Skip the build if we are in GitHub Actions
+    if env::var("GITHUB_ACTIONS").is_ok() {
+        println!("cargo:warning=Skipping Aeron build in GitHub Actions.");
+        return;
     }
+
+    // Ensure Docker is installed and available
+    if !is_docker_available() {
+        panic!("Error: Docker is not installed or not available in the PATH. Please install Docker to build Aeron.");
+    }
+
+
+    // Build the Docker image
+    println!("cargo:warning=Building Docker image for Aeron...");
+    let status = Command::new("docker")
+        .args(&["build", "-t", "aeron-alpine", "-f", "Dockerfile.aeronmd_alpine", "."])
+        .status()
+        .expect("Failed to execute Docker build command");
+    if !status.success() {
+        panic!("Error: Failed to build Docker image for Aeron.");
+    }
+
+    println!("cargo:warning=Aeron C++ Media Driver built successfully!");
+}
+
+// Helper function to check if Docker is available
+fn is_docker_available() -> bool {
+    Command::new("docker")
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
 }

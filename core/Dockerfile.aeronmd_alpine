@@ -1,0 +1,51 @@
+# Stage 1: Build Stage
+FROM alpine:3.18 AS builder
+
+ENV AERON_VERSION=1.39.0
+ENV AERON_SRC=/opt/aeron
+ENV BUILD_DIR=/build
+
+# Install build-time dependencies, including kernel headers
+RUN apk add --no-cache \
+    git \
+    cmake \
+    make \
+    gcc \
+    g++ \
+    musl-dev \
+    linux-headers \
+    libuuid \
+    libbsd \
+    zlib-dev \
+    openjdk11 \
+    python3 \
+    file \
+    && mkdir -p $BUILD_DIR
+
+# Clone and build Aeron
+RUN git clone --depth 1 --branch $AERON_VERSION https://github.com/real-logic/aeron.git $AERON_SRC
+
+WORKDIR $AERON_SRC
+RUN cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DAERON_ENABLE_JAVA=OFF && \
+    cmake --build $BUILD_DIR --target aeronmd && \
+    # Strip binaries to minimize size
+    strip $BUILD_DIR/binaries/aeronmd
+
+# Stage 2: Runtime Image
+FROM alpine:3.18
+
+# Copy aeronmd and its required shared libraries
+COPY --from=builder /build /build
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    musl \
+    libuuid \
+    libbsd \
+    zlib
+
+# Use aeronmd as the default command
+CMD ["sh"]
+
+#  docker build -t aeron-alpine -f Dockerfile.aeronmd_alpine .
+#  docker run --rm -it --network=host aeron-alpine /build/binaries/aeronmd

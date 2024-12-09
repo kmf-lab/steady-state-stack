@@ -1,0 +1,59 @@
+# Stage 1: Build Stage
+FROM debian:bullseye-slim AS builder
+
+ENV AERON_VERSION=1.39.0
+ENV AERON_SRC=/opt/aeron
+ENV BUILD_DIR=/build
+
+# Install only build-time dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    cmake \
+    make \
+    gcc \
+    g++ \
+    libc-dev \
+    libuuid1 \
+    libbsd0 \
+    uuid-dev \
+    libbsd-dev \
+    zlib1g-dev \
+    openjdk-11-jdk-headless \
+    python3 \
+    python3-dev \
+    file \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone the Aeron source repository
+RUN git clone --depth 1 --branch $AERON_VERSION https://github.com/real-logic/aeron.git $AERON_SRC
+
+# Build aeronmd
+WORKDIR $AERON_SRC
+RUN mkdir -p $BUILD_DIR && \
+    cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DAERON_ENABLE_JAVA=OFF && \
+    cmake --build $BUILD_DIR --target aeronmd && \
+    # Strip binaries to minimize size
+    strip $BUILD_DIR/binaries/aeronmd
+
+# Stage 2: Runtime Image
+FROM debian:bullseye-slim
+
+# Copy aeronmd and its required shared libraries
+COPY --from=builder /build /build
+
+# Update library cache
+RUN ldconfig
+
+# Final image size optimization: Remove unnecessary components
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libc6 \
+    libuuid1 \
+    libbsd0 \
+    zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+# Default command to run aeronmd  /build/binaries/aeronmd
+CMD ["sh"]
+
+#  docker build -t aeron-debian -f Dockerfile.aeronmd_debian .
+#  docker run --rm -it --network=host aeron-debian /build/binaries/aeronmd
