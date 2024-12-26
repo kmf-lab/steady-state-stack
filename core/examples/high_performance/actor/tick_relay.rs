@@ -14,23 +14,22 @@ const BATCH:usize = 2000;
 pub async fn run(context: SteadyContext
                     ,ticks_rx: SteadyRx<Tick>
                     ,ticks_tx: SteadyTx<Tick>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, ticks_rx, ticks_tx).await
+    internal_behavior(into_monitor!(context, [ticks_rx],[ticks_tx]), ticks_rx, ticks_tx).await
 }
 
-async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<CMD: SteadyCommander>(mut context: CMD, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {
     let _cli_args = context.args::<Args>();
-    let mut monitor = into_monitor!(context, [ticks_rx],[ticks_tx]);
     let mut ticks_rx_lock = ticks_rx.lock().await;
     let mut ticks_tx_lock = ticks_tx.lock().await;
     let mut buffer = [Tick::default(); BATCH];
 
-    while monitor.is_running(&mut || ticks_rx_lock.is_closed_and_empty() && ticks_tx_lock.mark_closed()) {
+    while context.is_running(&mut || ticks_rx_lock.is_closed_and_empty() && ticks_tx_lock.mark_closed()) {
         let _clean = await_for_all!(
-                                monitor.wait_shutdown_or_avail_units(&mut ticks_rx_lock,BATCH),
-                                monitor.wait_shutdown_or_vacant_units(&mut ticks_tx_lock,BATCH)
+                                context.wait_shutdown_or_avail_units(&mut ticks_rx_lock,BATCH),
+                                context.wait_shutdown_or_vacant_units(&mut ticks_tx_lock,BATCH)
                                );
-        let count = monitor.take_slice(&mut ticks_rx_lock, &mut buffer);
-        monitor.send_slice_until_full(&mut ticks_tx_lock, &buffer[0..count]);
+        let count = context.take_slice(&mut ticks_rx_lock, &mut buffer);
+        context.send_slice_until_full(&mut ticks_tx_lock, &buffer[0..count]);
     }
     Ok(())
 }

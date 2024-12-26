@@ -78,14 +78,16 @@ pub(crate) mod hd_actor_tests {
             .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );
 
 
-        graph.start_with_timeout(Duration::from_secs(3)); //startup the graph
-        graph.request_stop();
+        graph.start_with_timeout(Duration::from_secs(7)); //startup the graph
 
         //add test data to the input channels
         let test_data:Vec<Tick> = (0..WAIT_AVAIL).map(|i| Tick { value: (i+1) as u128 }).collect();
-        ticks_tx_in.testing_send_in_two_batches(test_data, Duration::from_millis(20), true).await;
+        ticks_tx_in.testing_send_all(test_data,true).await;
+        
+        graph.request_stop();
 
-        assert_eq!(true, graph.block_until_stopped(Duration::from_secs(240)));
+
+        assert_eq!(true, graph.block_until_stopped(Duration::from_secs(12)));
         assert_eq!(true, ticks_rx_out.testing_avail_units().await>0);
         assert_eq!(WAIT_AVAIL as u128, ticks_rx_out.testing_take().await.last().expect("count").count);
 

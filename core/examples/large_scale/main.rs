@@ -412,8 +412,8 @@ mod large_tests {
         // //to open your browser to http://0.0.0.0:9100 and observe where the data is stuck.
         // Delay::new(Duration::from_secs(2)).await;
         graph.request_stop();
-       // Delay::new(Duration::from_secs(5)).await; //this delay seems critical for testing but I am not sure why
-        graph.block_until_stopped(Duration::from_secs(52));
+       // Delay::new(Duration::from_secs(5)).await; 
+        graph.block_until_stopped(Duration::from_secs(21));
 
     }
 }

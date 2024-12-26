@@ -49,7 +49,21 @@ pub mod install {
     pub mod local_cli;
 
 }
-    /// module for testing full graphs of actors
+
+// pub mod distributed {
+//     /// module for sending data over Aeron
+//     pub mod aeron_sender;
+//     /// module for receiving data over Aeron
+//     pub mod aeron_receiver;
+//     /// timing and common work for aeron
+//     pub mod nanosec_util;
+//     /// enums for making new aeron connection strings
+//     pub mod aeron_channel;
+//     /// new channels for serialized data
+//     pub mod aqueduct;
+// }
+
+/// module for testing full graphs of actors
 pub mod graph_testing;
     /// module for all tx channel features
 pub mod steady_tx;
@@ -59,6 +73,7 @@ pub mod steady_rx;
 pub mod yield_now;
     /// module for all commands for channels used by actors
 pub mod commander;
+
 
 pub use graph_testing::GraphTestResult;
 pub use monitor::LocalMonitor;
@@ -82,6 +97,7 @@ pub use steady_tx::SteadyTxBundleTrait;
 pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
 pub use commander::SteadyCommander;
+
 
 
 use std::any::Any;
@@ -285,6 +301,29 @@ pub struct SteadyContext {
     pub(crate) frame_rate_ms: u64,
     pub(crate) team_id: usize,
     pub(crate) show_thread_info: bool
+}
+
+impl Clone for SteadyContext {
+    fn clone(&self) -> Self {
+        SteadyContext {
+            ident: self.ident.clone(),
+            instance_id: self.instance_id,
+            is_in_graph: self.is_in_graph,
+            channel_count: self.channel_count.clone(),
+            all_telemetry_rx: self.all_telemetry_rx.clone(),
+            runtime_state: self.runtime_state.clone(),
+            args: self.args.clone(),
+            actor_metadata: self.actor_metadata.clone(),
+            oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
+            oneshot_shutdown: self.oneshot_shutdown.clone(),
+            last_periodic_wait: Default::default(),
+            actor_start_time: Instant::now(),
+            node_tx_rx: self.node_tx_rx.clone(),
+            frame_rate_ms: self.frame_rate_ms,
+            team_id: self.team_id,
+            show_thread_info: self.show_thread_info
+        }
+    }
 }
 
 /// Macro takes a SteadyContext and a list of Rx and Tx channels
@@ -680,7 +719,7 @@ mod lib_tests {
     fn test_new_state() {
         let state: SteadyState<i32> = new_state();
         assert!(state.try_lock().is_some());
-        let guard = state.try_lock().unwrap();
+        let guard = state.try_lock().expect("iternal error");
         assert!(guard.is_none());
     }
 

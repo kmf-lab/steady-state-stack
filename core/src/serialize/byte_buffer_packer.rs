@@ -231,7 +231,7 @@ mod tests {
         let mut buffer = buffer.freeze();
         let restored_vec = reader.restore_vec(&mut buffer);
 
-        assert_eq!(restored_vec.unwrap(), new_vec);
+        assert_eq!(restored_vec.expect("iternal error"), new_vec);
     }
 
     #[test]
@@ -254,7 +254,7 @@ mod tests {
         let mut buffer = buffer.freeze();
         let restored_vec = reader.restore_vec(&mut buffer);
 
-        assert_eq!(restored_vec.unwrap(), new_vec);
+        assert_eq!(restored_vec.expect("iternal error"), new_vec);
     }
 
     #[test]
@@ -277,7 +277,7 @@ mod tests {
         let mut buffer = buffer.freeze().clone();
         let restored_vec = reader.restore_vec(&mut buffer);
 
-        assert_eq!(restored_vec.unwrap(), new_vec);
+        assert_eq!(restored_vec.expect("iternal error"), new_vec);
     }
 
     // Add more tests to cover different scenarios

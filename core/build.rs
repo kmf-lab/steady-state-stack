@@ -32,16 +32,17 @@ pub(crate) struct WebWorkerTemplate<'a> {
 
 const VIZ_VERSION:&str = "1.8.2";
 
-#[cfg(not(feature = "aeron_driver_systemd"))]
+
+// #[cfg(feature = "aeron_driver_systemd")]
+// const AERON_DRIVER_SYSTEMD:bool = true;
+// #[cfg(not(feature = "aeron_driver_systemd"))]
 const AERON_DRIVER_SYSTEMD:bool = false;
-#[cfg(feature = "aeron_driver_systemd")]
-const AERON_DRIVER_SYSTEMD:bool = true;
 
-#[cfg(not(feature = "aeron_driver_sidecar"))]
+
+// #[cfg(feature = "aeron_driver_sidecar")]
+// const AERON_DRIVER_SIDECAR:bool = true;
+// #[cfg(not(feature = "aeron_driver_sidecar"))]
 const AERON_DRIVER_SIDECAR:bool = false;
-#[cfg(feature = "aeron_driver_sidecar")]
-const AERON_DRIVER_SIDECAR:bool = true;
-
 
 #[cfg(not(feature = "telemetry_server_builtin"))]
 const USE_INTERNAL_VIZ:bool = false;

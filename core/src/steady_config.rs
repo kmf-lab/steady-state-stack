@@ -20,6 +20,22 @@ pub const TELEMETRY_SERVER: bool = false;
 pub const SHOW_ACTORS: bool = false; //if we want to see each actor ID logged upon creation
 pub const BACKPLANE_CAPACITY: usize = 16; //for test messages
 
+// #[cfg(any(
+//     feature = "aeron_driver_systemd",
+//     feature = "aeron_driver_sidecar",
+//     feature = "aeron_driver_external"
+// ))]
+// pub const AERON_USED: bool = true;
+//
+// #[cfg(not(any(
+//     feature = "aeron_driver_systemd",
+//     feature = "aeron_driver_sidecar",
+//     feature = "aeron_driver_external"
+// )))]
+// pub const AERON_USED: bool = false;
+
+
+
 /// Indicates whether telemetry history is enabled.
 /// This is determined by the presence of the `telemetry_history` feature.
 #[cfg(feature = "telemetry_history")]

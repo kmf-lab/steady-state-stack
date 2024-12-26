@@ -1,5 +1,5 @@
 mod args;
-use steady_state::{ActorTeam, Percentile, MCPU};
+use steady_state::{Percentile, MCPU};
 use steady_state::StdDev;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -63,7 +63,6 @@ fn main() {
 }
 
 fn build_simple_widgets_graph(mut graph: steady_state::Graph) -> (steady_state::Graph, Arc<Mutex<InternalState>>) {
-    let mut team = ActorTeam::new(&graph);
 
     //here are the parts of the channel they both have in common, this could be done
     // in place for each but we are showing here how you can do this for more complex projects.
@@ -113,37 +112,36 @@ fn build_simple_widgets_graph(mut graph: steady_state::Graph) -> (steady_state::
         .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10));
 
     base_actor_builder.with_name("generator")
-        .build_join(move |context| actor::data_generator::run(context
+        .build_spawn(move |context| actor::data_generator::run(context
                                                               , change_rx.clone()
                                                               , generator_tx.clone())
-                      , &mut team
+                     
         );
 
     base_actor_builder.with_name("approval")
-        .build_join(move |context| actor::data_approval::run(context
+        .build_spawn(move |context| actor::data_approval::run(context
                                                              , generator_rx.clone()
                                                              , consumer_tx.clone()
                                                              , failure_tx.clone())
-                    , &mut team
+                  
         );
 
     base_actor_builder.with_name("feedback")
-        .build_join(move |context| actor::data_feedback::run(context
+        .build_spawn(move |context| actor::data_feedback::run(context
                                                              , failure_rx.clone()
                                                              , change_tx.clone())
-                    , &mut team
+                 
         );
 
     let state = Arc::new(Mutex::new(InternalState::new()));
 
     let actor_state = state.clone();
     base_actor_builder.with_name("consumer")
-        .build_join(move |context| actor::data_consumer::run(context
+        .build_spawn(move |context| actor::data_consumer::run(context
                                                              , consumer_rx.clone(),
                                                              actor_state.clone())
-                    , &mut team
+                 
         );
-    team.spawn();
 
     (graph,state)
 }

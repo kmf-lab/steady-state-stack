@@ -667,7 +667,7 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     ///
     /// # Returns
     /// A future that resolves when the specified conditions are met.
-    fn wait_avail_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
+    fn wait_avail_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()>;
 }
 
 impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> { //TODO: test

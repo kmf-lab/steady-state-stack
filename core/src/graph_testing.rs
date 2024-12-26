@@ -494,7 +494,7 @@ mod graph_testing_tests {
         //this is our simulated actor to respond to our node_call below
         nuclei::spawn_local(async move {
             responder_inside_actor.expect("should exist").respond_with(|msg| {
-                let received_msg = msg.downcast_ref::<i32>().unwrap();
+                let received_msg = msg.downcast_ref::<i32>().expect("iternal error");
                 Box::new(received_msg * 2) as Box<dyn Any + Send + Sync>
             }).await;
         }).detach();
@@ -505,8 +505,8 @@ mod graph_testing_tests {
         let result = hub.call_actor(msg, actor_name).await;
 
          assert!(result.is_some(), "Should receive a response");
-         let r = result.unwrap();
-         let response = r.downcast_ref::<i32>().unwrap();
+         let r = result.expect("iternal error");
+         let response = r.downcast_ref::<i32>().expect("iternal error");
          assert_eq!(*response, 84, "Response should match the expected value");
     }
 

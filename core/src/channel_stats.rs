@@ -1178,7 +1178,7 @@ pub(crate) mod stats_tests {
 
         let mean = computer.capacity as f64 * 0.81; // Mean value just above test
         let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).unwrap();
+        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
@@ -1231,7 +1231,7 @@ pub(crate) mod stats_tests {
 
         let mean = computer.capacity as f64 * 0.13;
         let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).unwrap();
+        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
@@ -1336,7 +1336,7 @@ pub(crate) mod stats_tests {
 
         let mean = computer.capacity as f64 * 0.81; // Mean value just above test
         let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).unwrap();
+        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
@@ -1384,7 +1384,7 @@ pub(crate) mod stats_tests {
 
         let mean = computer.capacity as f64 * 0.13;
         let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).unwrap();
+        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
@@ -1438,7 +1438,7 @@ pub(crate) mod stats_tests {
 
         let mean = computer.capacity as f64 * 0.81; // Mean value just above test
         let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).unwrap();
+        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
@@ -1480,7 +1480,7 @@ pub(crate) mod stats_tests {
         computer.show_avg_latency = true;
         let mean = 5.0; // Mean rate
         let std_dev = 1.0; // Standard deviation
-        let normal = Normal::new(mean, std_dev).unwrap();
+        let normal = Normal::new(mean, std_dev).expect("iternal error");
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 

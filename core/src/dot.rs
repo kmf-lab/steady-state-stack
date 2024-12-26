@@ -849,7 +849,7 @@ mod dot_tests {
     fn test_frame_history_build_history_path() {
         let mut frame_history = FrameHistory::new(1000);
         let path = frame_history.build_history_path();
-        assert!(path.to_str().unwrap().contains(&frame_history.guid));
+        assert!(path.to_str().expect("iternal error").contains(&frame_history.guid));
     }
 
     // #[test]

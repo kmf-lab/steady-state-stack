@@ -66,11 +66,14 @@ pub(crate) mod hp_actor_tests {
     #[test]
     pub(crate) async fn test_simple_process() {
         // build test graph, the input and output channels and our actor
-        let mut graph = GraphBuilder::for_testing().build(());
+        let mut graph = GraphBuilder::for_testing()
+                                      .build(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
-            .with_capacity(WAIT_AVAIL).build();
+            .with_capacity(WAIT_AVAIL)
+            .build();
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
-            .with_capacity(WAIT_AVAIL).build();
+            .with_capacity(WAIT_AVAIL)
+            .build();
         graph.actor_builder()
             .with_name("UnitTest")
             .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );
@@ -79,8 +82,9 @@ pub(crate) mod hp_actor_tests {
         graph.request_stop();
 
         let test_data:Vec<Tick> = (0..WAIT_AVAIL).map(|i| Tick { value: i as u128 }).collect();
-        ticks_tx_in.testing_send_in_two_batches(test_data, Duration::from_millis(30), true).await;
-
+        
+        ticks_tx_in.testing_send_all(test_data,true).await;
+        
         graph.block_until_stopped(Duration::from_secs(240));
 
         // assert expected results

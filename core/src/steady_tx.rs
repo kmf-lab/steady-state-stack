@@ -211,7 +211,7 @@ impl<T> Tx<T> {
             let mut operation = &mut self.tx.wait_vacant(usize::from(self.tx.capacity()));
             select! { _ = one_down => false, _ = operation => true, }
         } else {
-            false
+            self.tx.capacity().get() == self.tx.vacant_len()
         }
     }
 
@@ -365,7 +365,7 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     /// # Parameters
     /// - `avail_count`: The number of vacant units to wait for.
     /// - `ready_channels`: The number of channels that should have the vacant units.
-    fn wait_vacant_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()> + Send;
+    fn wait_vacant_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()>;
 }
 
 impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyTxBundle<T, GIRTH> {

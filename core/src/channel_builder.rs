@@ -618,15 +618,9 @@ impl ChannelBuilder {
         (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))
     }
 
-    /// Builds eager and returns a pair of transmitter and receiver with the current configuration.
-    /// For most cases the build() should be used as its lazy and build on the actor thread.
-    /// This method is here mostly for testing a normal eager build.
-    ///
-    /// # Returns
-    /// A tuple containing the transmitter (`SteadyTx<T>`) and receiver (`SteadyRx<T>`).
-    pub fn eager_build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
+    pub(crate) fn eager_build_internal<T>(&self) -> (Tx<T>, Rx<T>) {
 
-        let type_byte_count = std::mem::size_of::<T>();
+        let type_byte_count = size_of::<T>();
         let type_string_name = std::any::type_name::<T>();
         let channel_meta_data = Arc::new(self.to_meta_data(type_string_name, type_byte_count));
         let (sender_tx, receiver_tx) = oneshot::channel();
@@ -653,15 +647,15 @@ impl ChannelBuilder {
         let rb = AsyncRb::<ChannelBacking<T>>::new(self.capacity);
         let (tx, rx) = rb.split();
         (
-            Arc::new(Mutex::new(Tx {
+            Tx {
                 tx,
                 channel_meta_data: channel_meta_data.clone(),
                 local_index: MONITOR_UNKNOWN,
                 make_closed: Some(sender_is_closed),
                 last_error_send: noise_threshold,
                 oneshot_shutdown: receiver_tx,
-            })),
-            Arc::new(Mutex::new(Rx {
+            },
+            Rx {
                 rx,
                 channel_meta_data,
                 local_index: MONITOR_UNKNOWN,
@@ -675,7 +669,21 @@ impl ChannelBuilder {
                 cached_take_count: AtomicU32::new(0),
                 peek_repeats: AtomicUsize::new(0),
                 iterator_count_drift: Arc::new(AtomicIsize::new(0)),
-            })),
+            },
+        )
+    }
+    
+    /// Builds eager and returns a pair of transmitter and receiver with the current configuration.
+    /// For most cases the build() should be used as its lazy and build on the actor thread.
+    /// This method is here mostly for testing a normal eager build.
+    ///
+    /// # Returns
+    /// A tuple containing the transmitter (`SteadyTx<T>`) and receiver (`SteadyRx<T>`).
+    pub fn eager_build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
+        let (tx, rx) = self.eager_build_internal();
+        (
+            Arc::new(Mutex::new(tx)),
+            Arc::new(Mutex::new(rx)),
         )
     }
 }
@@ -705,37 +713,6 @@ impl <T> LazySteadyTx<T> {
         nuclei::block_on(self.lazy_channel.get_tx_clone())
     }
 
-    /// For testing simulates sending data to the actor in a controlled manner.
-    /// Warning this will send some and wait (block) for them to be consumed before sending more.
-    /// 
-    pub async fn testing_send_in_two_batches(&self, data: Vec<T>, step_delay: Duration, close: bool) {
-        let tx = self.lazy_channel.get_tx_clone().await;
-        let mut tx = tx.lock().await;
-
-        let mut trigger:isize = (data.len()/2) as isize;
-        //split data into two vec of equal length
-        for d in data.into_iter() {
-            let _ =  tx.tx.push(d).await;
-            trigger -= 1;
-            if 0==trigger {
-                loop { //ensure all this was processed before moving on for repeatable tests.
-                    Delay::new(step_delay).await;
-                    if tx.tx.is_empty() {
-                        break;
-                    }
-                }
-            }
-        }
-        if close {
-            tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
-        }
-        loop { //ensure all this was processed before moving on for repeatable tests.
-            Delay::new(step_delay).await;
-            if tx.tx.is_empty() {
-                break;
-            }
-        }
-    }
 
     /// Simple send of all the data in the vec for testing
     pub async fn testing_send_all(&self, data: Vec<T>, close: bool) {
@@ -802,14 +779,14 @@ impl <T> LazySteadyRx<T> {
 
 #[derive(Debug)]
 pub(crate) struct LazyChannel<T> {
-    builder: ChannelBuilder,
+    builder: Mutex<Option<ChannelBuilder>>,
     channel: Mutex<Option<(SteadyTx<T>, SteadyRx<T>)>>,
 }
 
 impl <T> LazyChannel<T> {
     pub(crate) fn new(builder: &ChannelBuilder) -> Self {
         LazyChannel {
-            builder: builder.clone(),
+            builder: Mutex::new(Some(builder.clone())),
             channel: Mutex::new(None),
         }
     }
@@ -817,7 +794,9 @@ impl <T> LazyChannel<T> {
     pub(crate) async fn get_tx_clone(&self) -> SteadyTx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
-            *channel = Some(self.builder.eager_build());
+            let mut b = self.builder.lock().await.take()
+                            .expect("internal error, only done once");            
+            *channel = Some(b.eager_build());
         }
         channel.as_ref().expect("internal error").0.clone()
     }
@@ -825,7 +804,9 @@ impl <T> LazyChannel<T> {
     pub(crate) async fn get_rx_clone(&self) -> SteadyRx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
-            *channel = Some(self.builder.eager_build());
+            let mut b = self.builder.lock().await.take()
+                            .expect("internal error, only done once");
+            *channel = Some(b.eager_build());
         }
         channel.as_ref().expect("internal error").1.clone()
     }

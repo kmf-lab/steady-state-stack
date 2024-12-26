@@ -155,10 +155,19 @@ pub struct ChannelMetaData {
 /// Metadata for a transmitter channel.
 #[derive(Debug)]
 pub struct TxMetaData(pub(crate) Arc<ChannelMetaData>);
+/// supports the macro as an easy way to get the metadata
+impl TxMetaData {
+    pub fn meta_data(self: Self) -> TxMetaData {self}
+}
 
 /// Metadata for a receiver channel.
 #[derive(Debug)]
 pub struct RxMetaData(pub(crate) Arc<ChannelMetaData>);
+/// supports the macro as an easy way to get the metadata
+impl RxMetaData {
+    pub fn meta_data(self: Self) -> RxMetaData {self}
+}
+
 
 /// Trait for telemetry receiver.
 pub trait RxTel: Send + Sync {
@@ -1018,7 +1027,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         if self.telemetry.is_dirty() {
             let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
-                false //need a relay now so return
+                this.shared_vacant_units()==this.capacity()
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
                 let wat = this.shared_wait_empty();
@@ -1702,6 +1711,10 @@ pub(crate) mod monitor_tests {
 
         if let Some(mut tx) = tx.try_lock() {
             let empty = monitor.wait_empty(&mut tx).await;
+            println!("Empty: {}", empty);
+            println!("Vacant units: {}", monitor.vacant_units(&mut tx));
+            println!("Capacity: {}", tx.capacity());
+                
             assert!(empty);
         };
     }

@@ -114,12 +114,12 @@ mod tests {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
         assert_eq!(cli_builder.path, "/some/path");
         assert!(!cli_builder.system_wide);
-        assert_eq!(cli_builder.install_dir, dirs::home_dir().unwrap().join(".local/bin"));
+        assert_eq!(cli_builder.install_dir, dirs::home_dir().expect("iternal error").join(".local/bin"));
     }
 
     #[test]
     fn test_with_custom_location_not_in_path() {
-        let temp_dir = tempdir().unwrap();
+        let temp_dir = tempdir().expect("iternal error");
         let custom_path = temp_dir.path().join("custom_bin_not_in_path");
 
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true)
@@ -131,15 +131,15 @@ mod tests {
 
     #[test]
     fn test_build_creates_executable_in_install_dir() {
-        let temp_dir = tempdir().unwrap();
+        let temp_dir = tempdir().expect("iternal error");
         let custom_install_dir = temp_dir.path().join("bin");
-        fs::create_dir_all(&custom_install_dir).unwrap();
+        fs::create_dir_all(&custom_install_dir).expect("iternal error");
 
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false)
             .with_custom_location(custom_install_dir.clone());
 
         let exe_path = custom_install_dir.join("test_exe");
-        fs::File::create(&exe_path).unwrap();
+        fs::File::create(&exe_path).expect("iternal error");
 
         let result = cli_builder.build();
         assert!(result.is_ok());
@@ -147,7 +147,7 @@ mod tests {
         let installed_exe = custom_install_dir.join("test_exe");
         assert!(installed_exe.exists());
 
-        let metadata = fs::metadata(&installed_exe).unwrap();
+        let metadata = fs::metadata(&installed_exe).expect("iternal error");
         assert!(metadata.permissions().mode() & 0o777 >= 0o644);
 
     }
@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn test_default_installation_directory_user_local() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
-        let expected_dir = dirs::home_dir().unwrap().join(".local/bin");
+        let expected_dir = dirs::home_dir().expect("iternal error").join(".local/bin");
         assert_eq!(cli_builder.install_dir, expected_dir);
     }
 }

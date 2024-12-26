@@ -855,7 +855,7 @@ mod graph_liveliness_tests {
         Graph::fail_fast_stack_trace(&panic_info, &mut buffer);
 
         // Convert the buffer to a string to check the output
-        let output = String::from_utf8(buffer).unwrap();
+        let output = String::from_utf8(buffer).expect("iternal error");
         assert!(output.contains("Test Panic Info"));
     }
 

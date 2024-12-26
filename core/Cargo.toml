@@ -30,8 +30,9 @@ strip = 'symbols' # strip symbols
 enum_glob_use = "deny" # forbid use of enum glob imports
 unwrap_used = "deny" # forbid use of unwrap
 
+
 [features]
-default = ["proactor_nuclei", "telemetry_server_builtin", "prometheus_metrics", "core_display", "core_affinity" ]
+default = ["proactor_nuclei", "telemetry_server_builtin", "prometheus_metrics", "core_display", "core_affinity"] 
 # Use the nuclei async runtime (proactor_? exclusive one or the other) (default)
 proactor_nuclei = ["nuclei/async-exec", "nuclei/iouring"]
 # Use the tokio async runtime (proactor_? exclusive one or the other)
@@ -48,10 +49,10 @@ telemetry_server_builtin = [] # (telemetry_server_? exclusive one or the other) 
 telemetry_server_cdn = [] # (telemetry_server_? exclusive one or the other)
 
 # will require "git gcc cmake make" on your build server
-aeron_driver_systemd = ["aeron"] # build systemd installer for media driver
-aeron_driver_sidecar = ["aeron"] # build k8s sidecar yaml for media driver
+aeron_driver_systemd = [] # build systemd installer for media driver
+##aeron_driver_sidecar = ["aeron"] # build k8s sidecar yaml for media driver
 # does not require any build tools on your build server
-aeron_driver_external = ["aeron"] # assume an external aeron driver
+##aeron_driver_external = ["aeron"] # assume an external aeron driver
 
 # records history files usefull for replay of the telemetry offline after the fact
 telemetry_history = []
@@ -104,7 +105,9 @@ parking_lot      = "0.12.3"
 tempfile         = "3.14.0"
 num_cpus         = "1.16.0"
 pin-project      = "1.1.7"
-aeron            = { version="0.2.0", optional=true }
+#aeron            = { path = "../../aeron-rs", version="0.1.6", optional=true }
+
+#steady_state     = { path = "../../../core", features = ["proactor_nuclei", "prometheus_metrics"], default-features = false }
 
 
 # Release Plan

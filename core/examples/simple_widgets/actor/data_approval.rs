@@ -105,7 +105,7 @@ pub(crate) mod approval_tests {
 
        //
        let test_data:Vec<WidgetInventory> = (0..BATCH_SIZE).map(|i| WidgetInventory { count: i as u64, _payload: 0 }).collect();
-       widget_inventory_tx_in.testing_send_in_two_batches(test_data, Duration::from_millis(30), true).await;
+       widget_inventory_tx_in.testing_send_all(test_data, true).await;
        //
        graph.request_stop();
        graph.block_until_stopped(Duration::from_secs(2));

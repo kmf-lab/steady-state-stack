@@ -671,8 +671,8 @@ mod test_actor_stats {
 
         actor_stats.accumulate_data_frame(512, 50);
 
-        let mcpu_histogram = actor_stats.history_mcpu.front().unwrap().histogram.as_ref().unwrap();
-        let work_histogram = actor_stats.history_work.front().unwrap().histogram.as_ref().unwrap();
+        let mcpu_histogram = actor_stats.history_mcpu.front().expect("iternal error").histogram.as_ref().expect("iternal error");
+        let work_histogram = actor_stats.history_work.front().expect("iternal error").histogram.as_ref().expect("iternal error");
 
         assert_eq!(mcpu_histogram.value_at_quantile(0.5), 543);
         assert_eq!(work_histogram.value_at_quantile(0.5), 51);

@@ -536,7 +536,7 @@ mod tests {
 
         let result = telemetry_setup.validate();
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), "Refresh rate must be greater than zero.");
+        assert_eq!(result.err().expect("iternal error"), "Refresh rate must be greater than zero.");
     }
 
     #[test]
@@ -547,7 +547,7 @@ mod tests {
 
         let result = telemetry_setup.validate();
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), "Window size must be greater than zero.");
+        assert_eq!(result.err().expect("iternal error"), "Window size must be greater than zero.");
     }
 
     #[test]
