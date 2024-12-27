@@ -48,4 +48,8 @@ if id -u "$SERVICE_USER" &>/dev/null; then
     echo "Deleted the service user '$SERVICE_USER'."
 fi
 
+# Remove IPC directory
+rm -fr /dev/shm/aeron-root
+
+
 echo "$SERVICE_NAME service uninstalled successfully."

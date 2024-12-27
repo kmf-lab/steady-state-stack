@@ -41,15 +41,31 @@ fi
 
 echo "Installing $SERVICE_NAME service..."
 
+# Create service group if it doesn't exist
+if ! getent group "$SERVICE_USER" >/dev/null; then
+    groupadd --system "$SERVICE_USER"
+fi
+
 # Create service user if it doesn't exist
 if ! id -u "$SERVICE_USER" &>/dev/null; then
-    useradd -r -s /usr/sbin/nologin "$SERVICE_USER"
+    useradd -r -s /usr/sbin/nologin -g "$SERVICE_USER" "$SERVICE_USER"
     # service user must be allowed to run docker
     sudo usermod -aG docker "$SERVICE_USER"
+
     echo "Created service user '$SERVICE_USER'."
 else
     echo "Service user '$SERVICE_USER' already exists."
 fi
+
+
+# Get UID and GID of the user
+USER_ID=$(id -u $SERVICE_USER 2>/dev/null)
+GROUP_ID=$(id -g $SERVICE_USER 2>/dev/null)
+
+# ensure our IPC directory is setup
+mkdir -p /dev/shm/aeron-default
+chown -R ${USER_ID}:${GROUP_ID} /dev/shm/aeron-default
+chmod -R 2770 /dev/shm/aeron-default
 
 # Create the systemd service file
 cat > "$SERVICE_FILE" <<EOF
@@ -58,7 +74,7 @@ Description=$DESCRIPTION
 After=$AFTER
 
 [Service]
-ExecStart=/usr/bin/docker run --rm --network=$NETWORK_MODE --name $SERVICE_NAME $DOCKER_IMAGE $DOCKER_CMD
+ExecStart=/usr/bin/docker run --rm --network=$NETWORK_MODE --cap-add=SYS_ADMIN -u ${USER_ID}:${GROUP_ID} -v /dev/shm:/dev/shm --name $SERVICE_NAME $DOCKER_IMAGE $DOCKER_CMD
 User=$SERVICE_USER
 Restart=$RESTART_POLICY
 ExecStop=/usr/bin/docker stop $SERVICE_NAME

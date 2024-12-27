@@ -5,6 +5,12 @@ ENV AERON_VERSION=1.39.0
 ENV AERON_SRC=/opt/aeron
 ENV BUILD_DIR=/build
 
+# Set service user variables
+ARG SERVICE_USER=aeronmd
+ENV SERVICE_USER=${SERVICE_USER}
+ARG SERVICE_UID=1001
+ARG SERVICE_GID=1001
+
 # Install only build-time dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -23,6 +29,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     file \
     && rm -rf /var/lib/apt/lists/*
+
+# Add a group and user with specific UID and GID
+RUN groupadd --gid "$SERVICE_GID" "$SERVICE_USER" && \
+    useradd --uid "$SERVICE_UID" --gid "$SERVICE_GID" --shell /usr/sbin/nologin --system "$SERVICE_USER"
+
+# Create and set permissions for shared memory directory
+#RUN mkdir -p /dev/shm/aeron-root && \
+#    chown -R "$SERVICE_USER:$SERVICE_USER" /dev/shm/aeron-root && \
+#    chmod -R 2770 /dev/shm/aeron-root
 
 # Clone the Aeron source repository
 RUN git clone --depth 1 --branch $AERON_VERSION https://github.com/real-logic/aeron.git $AERON_SRC
@@ -51,6 +66,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libbsd0 \
     zlib1g \
     && rm -rf /var/lib/apt/lists/*
+
+# Switch to the service user
+#USER aeronmd
 
 # Default command to run aeronmd  /build/binaries/aeronmd
 CMD ["sh"]

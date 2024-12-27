@@ -5,6 +5,22 @@ ENV AERON_VERSION=1.39.0
 ENV AERON_SRC=/opt/aeron
 ENV BUILD_DIR=/build
 
+# Set service user variables
+ARG SERVICE_USER=aeronmd
+ENV SERVICE_USER=${SERVICE_USER}
+ARG SERVICE_UID=1001
+ARG SERVICE_GID=1001
+
+# Add a group and user with specific UID and GID
+RUN apk add --no-cache shadow
+RUN addgroup -g "$SERVICE_GID" "$SERVICE_USER" && \
+    adduser -u "$SERVICE_UID" -G "$SERVICE_USER" -s /sbin/nologin -D "$SERVICE_USER"
+
+# Create and set permissions for shared memory directory
+#RUN mkdir -p /dev/shm/aeron-root && \
+#    chown -R "$SERVICE_USER:$SERVICE_USER" /dev/shm/aeron-root && \
+#    chmod -R 2770 /dev/shm/aeron-root
+
 # Install build-time dependencies, including kernel headers
 RUN apk add --no-cache \
     git \
@@ -43,6 +59,9 @@ RUN apk add --no-cache \
     libuuid \
     libbsd \
     zlib
+
+# Switch to the service user
+#USER aeronmd
 
 # Use aeronmd as the default command
 CMD ["sh"]
