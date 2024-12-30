@@ -1,25 +1,10 @@
 # Stage 1: Build Stage
 FROM alpine:3.18 AS builder
 
-ENV AERON_VERSION=1.39.0
+ENV AERON_VERSION=1.46.7
+   #old  1.39.0
 ENV AERON_SRC=/opt/aeron
 ENV BUILD_DIR=/build
-
-# Set service user variables
-ARG SERVICE_USER=aeronmd
-ENV SERVICE_USER=${SERVICE_USER}
-ARG SERVICE_UID=1001
-ARG SERVICE_GID=1001
-
-# Add a group and user with specific UID and GID
-RUN apk add --no-cache shadow
-RUN addgroup -g "$SERVICE_GID" "$SERVICE_USER" && \
-    adduser -u "$SERVICE_UID" -G "$SERVICE_USER" -s /sbin/nologin -D "$SERVICE_USER"
-
-# Create and set permissions for shared memory directory
-#RUN mkdir -p /dev/shm/aeron-root && \
-#    chown -R "$SERVICE_USER:$SERVICE_USER" /dev/shm/aeron-root && \
-#    chmod -R 2770 /dev/shm/aeron-root
 
 # Install build-time dependencies, including kernel headers
 RUN apk add --no-cache \
@@ -42,10 +27,14 @@ RUN apk add --no-cache \
 RUN git clone --depth 1 --branch $AERON_VERSION https://github.com/real-logic/aeron.git $AERON_SRC
 
 WORKDIR $AERON_SRC
+
 RUN cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DAERON_ENABLE_JAVA=OFF && \
     cmake --build $BUILD_DIR --target aeronmd && \
-    # Strip binaries to minimize size
     strip $BUILD_DIR/binaries/aeronmd
+
+# for deep debug use this block instead of the previous
+# RUN cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Debug -DAERON_ENABLE_JAVA=OFF && \
+#    cmake --build $BUILD_DIR --target aeronmd
 
 # Stage 2: Runtime Image
 FROM alpine:3.18
@@ -60,11 +49,13 @@ RUN apk add --no-cache \
     libbsd \
     zlib
 
-# Switch to the service user
-#USER aeronmd
+# Set Aeron environment variables to get verbose logging:
+ENV AERON_EVENT=admin,cmd,unmap,frame
+ENV AERON_DIR=/dev/shm/aeron-default
+ENV AERON_PRINT_CONFIGURATION=true
 
-# Use aeronmd as the default command
 CMD ["sh"]
 
-#  docker build -t aeron-alpine -f Dockerfile.aeronmd_alpine .
-#  docker run --rm -it --network=host aeron-alpine /build/binaries/aeronmd
+# docker build -t aeron-alpine -f Dockerfile.aeronmd_alpine .
+# docker run --rm -it --network=host aeron-alpine /build/binaries/aeronmd
+# docker run --rm --ipc=host --network=host --shm-size=512m --cap-add=SYS_ADMIN -u $(id -u $SERVICE_USER 2>/dev/null):$(id -g $SERVICE_USER 2>/dev/null) --name aeronmd aeron-alpine cat /proc/mounts

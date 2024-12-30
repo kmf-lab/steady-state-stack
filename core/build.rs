@@ -207,7 +207,7 @@ fn build_aeron() {
     // Build the Docker image
     println!("cargo:warning=Building Docker image for Aeron...");
     let status = Command::new("docker")
-        .args(&["build", "-t", "aeron-alpine", "-f", "Dockerfile.aeronmd_alpine", "."])
+        .args(&["build", "-t", "aeron-alpine", "-f", "aeron_media_driver/Dockerfile.aeronmd_alpine", "."])
         .status()
         .expect("Failed to execute Docker build command");
     if !status.success() {

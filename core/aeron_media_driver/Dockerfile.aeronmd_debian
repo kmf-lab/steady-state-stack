@@ -1,15 +1,10 @@
 # Stage 1: Build Stage
 FROM debian:bullseye-slim AS builder
 
-ENV AERON_VERSION=1.39.0
+ENV AERON_VERSION=1.46.7
+   #old  1.39.0
 ENV AERON_SRC=/opt/aeron
 ENV BUILD_DIR=/build
-
-# Set service user variables
-ARG SERVICE_USER=aeronmd
-ENV SERVICE_USER=${SERVICE_USER}
-ARG SERVICE_UID=1001
-ARG SERVICE_GID=1001
 
 # Install only build-time dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,27 +23,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-dev \
     file \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Add a group and user with specific UID and GID
-RUN groupadd --gid "$SERVICE_GID" "$SERVICE_USER" && \
-    useradd --uid "$SERVICE_UID" --gid "$SERVICE_GID" --shell /usr/sbin/nologin --system "$SERVICE_USER"
-
-# Create and set permissions for shared memory directory
-#RUN mkdir -p /dev/shm/aeron-root && \
-#    chown -R "$SERVICE_USER:$SERVICE_USER" /dev/shm/aeron-root && \
-#    chmod -R 2770 /dev/shm/aeron-root
+# Upgrade CMake to the latest version (manual download and install)
+RUN wget -qO- https://github.com/Kitware/CMake/releases/download/v3.27.6/cmake-3.27.6-linux-x86_64.tar.gz | tar --strip-components=1 -xz -C /usr/local
 
 # Clone the Aeron source repository
 RUN git clone --depth 1 --branch $AERON_VERSION https://github.com/real-logic/aeron.git $AERON_SRC
 
 # Build aeronmd
 WORKDIR $AERON_SRC
+
+
 RUN mkdir -p $BUILD_DIR && \
     cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DAERON_ENABLE_JAVA=OFF && \
     cmake --build $BUILD_DIR --target aeronmd && \
-    # Strip binaries to minimize size
     strip $BUILD_DIR/binaries/aeronmd
+
+# for deep debug use this block instead of the previous
+#RUN mkdir -p $BUILD_DIR && \
+#    cmake -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Debug -DAERON_ENABLE_JAVA=OFF && \
+#    cmake --build $BUILD_DIR --target aeronmd
+
 
 # Stage 2: Runtime Image
 FROM debian:bullseye-slim
@@ -67,11 +64,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
-# Switch to the service user
-#USER aeronmd
+# Set Aeron environment variables to get verbose logging:
+ENV AERON_EVENT=admin,cmd,unmap,frame
+ENV AERON_DIR=/dev/shm/aeron-default
+ENV AERON_PRINT_CONFIGURATION=true
 
-# Default command to run aeronmd  /build/binaries/aeronmd
 CMD ["sh"]
 
 #  docker build -t aeron-debian -f Dockerfile.aeronmd_debian .
 #  docker run --rm -it --network=host aeron-debian /build/binaries/aeronmd
+#  docker run --rm --ipc=host --network=host --shm-size=512m --cap-add=SYS_ADMIN -u $SERVICE_USER 2>/dev/null):$(id -g $SERVICE_USER 2>/dev/null) --name aeronmd aeron-debian ls /dev/shm -hal

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
+# Install the Aeron Media Driver as a systemd service
 
 set -euo pipefail
 
 SERVICE_NAME="aeronmd"
-SERVICE_USER="aeronmd"
+SERVICE_USER=${1:-$(whoami)} # Takes the first argument or defaults to the current user
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-DOCKER_IMAGE="aeron-alpine"
+DOCKER_OS="alpine" # alpine is smaller and recommended, but debian is also available
+DOCKER_FILE="Dockerfile.aeronmd_${DOCKER_OS}"
+DOCKER_IMAGE="aeron-${DOCKER_OS}"
 DOCKER_CMD="/build/binaries/aeronmd"
 DESCRIPTION="steady_state:${SERVICE_NAME}"
 AFTER="docker.service"
@@ -25,7 +28,7 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # optional: should already be built earlier.
-docker build -t "$DOCKER_IMAGE" -f ../../Dockerfile.aeronmd_alpine .
+docker build -t "$DOCKER_IMAGE" -f $DOCKER_FILE .
 
 # Ensure script is run as root
 if [[ $EUID -ne 0 ]]; then
@@ -57,25 +60,21 @@ else
     echo "Service user '$SERVICE_USER' already exists."
 fi
 
-
 # Get UID and GID of the user
 USER_ID=$(id -u $SERVICE_USER 2>/dev/null)
 GROUP_ID=$(id -g $SERVICE_USER 2>/dev/null)
 
-# ensure our IPC directory is setup
-mkdir -p /dev/shm/aeron-default
-chown -R ${USER_ID}:${GROUP_ID} /dev/shm/aeron-default
-chmod -R 2770 /dev/shm/aeron-default
-
-# Create the systemd service file
+# Create the systemd service file   --shm-size=2g
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=$DESCRIPTION
 After=$AFTER
 
 [Service]
-ExecStart=/usr/bin/docker run --rm --network=$NETWORK_MODE --cap-add=SYS_ADMIN -u ${USER_ID}:${GROUP_ID} -v /dev/shm:/dev/shm --name $SERVICE_NAME $DOCKER_IMAGE $DOCKER_CMD
+ExecStart=/usr/bin/docker run --rm --ipc=host --network=$NETWORK_MODE --shm-size=512m --cap-add=SYS_ADMIN -v /dev/shm:/dev/shm -u ${USER_ID}:${GROUP_ID} --name $SERVICE_NAME $DOCKER_IMAGE $DOCKER_CMD
 User=$SERVICE_USER
+Group=$SERVICE_USER
+UMask=0002
 Restart=$RESTART_POLICY
 ExecStop=/usr/bin/docker stop $SERVICE_NAME
 
@@ -96,3 +95,13 @@ systemctl start "$SERVICE_NAME"
 
 echo "$SERVICE_NAME service installed and started successfully."
 echo "Use 'systemctl status $SERVICE_NAME' to check its status."
+echo "Use 'journalctl -u $SERVICE_NAME -n 50 -f' to tail its logs."
+
+
+
+#The C Media Driver supports a subset of configuration options which are relevant for the Driver, i.e.:
+# aeron.event.log.filename (or as AERON_EVENT_LOG_FILENAME env variable): System property for the file to which the log is appended. If not set then STDOUT will be used. Logging to file is significantly more efficient than logging to STDOUT.
+# aeron.event.log (or as AERON_EVENT_LOG env variable): System property containing a comma separated list of Driver event codes. These are also special events: all for all possible events and admin for administration events.
+# aeron.event.log.disable (or as AERON_EVENT_LOG_DISABLE env variable): System property containing a comma separated list of Driver events to exclude.
+
+# More details at:  https://github.com/real-logic/aeron/wiki

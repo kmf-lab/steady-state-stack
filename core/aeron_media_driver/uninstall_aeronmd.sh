@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# Uninstall the Aeron Media Driver as a systemd service
 
 set -euo pipefail
 
 SERVICE_NAME="aeronmd"
-SERVICE_USER="aeronmd"
+SERVICE_USER=${1:-$(whoami)} # Takes the first argument or defaults to the current user
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 DOCKER_CONTAINER_NAME="${SERVICE_NAME}" # Matches the container name in the service file
 
@@ -42,14 +43,8 @@ if docker ps -q --filter "name=${DOCKER_CONTAINER_NAME}" | grep -q .; then
     echo "Stopped Docker container $DOCKER_CONTAINER_NAME."
 fi
 
-# Remove the service user
-if id -u "$SERVICE_USER" &>/dev/null; then
-    userdel "$SERVICE_USER"
-    echo "Deleted the service user '$SERVICE_USER'."
-fi
-
 # Remove IPC directory
 rm -fr /dev/shm/aeron-root
-
+rm -fr /dev/shm/aeron-default
 
 echo "$SERVICE_NAME service uninstalled successfully."
