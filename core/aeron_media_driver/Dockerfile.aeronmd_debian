@@ -2,7 +2,6 @@
 FROM debian:bullseye-slim AS builder
 
 ENV AERON_VERSION=1.46.7
-   #old  1.39.0
 ENV AERON_SRC=/opt/aeron
 ENV BUILD_DIR=/build
 

@@ -1,0 +1,41 @@
+digraph ActorSystem {
+    // Actor nodes
+    node [shape=ellipse, color=blue];
+Actor_A [label="Actor A"];
+Actor_B [label="Actor B"];
+Actor_C [label="Actor C"];
+Actor_D [label="Actor D"];
+
+// ROS nodes for each actor
+    node [shape=box, color=green];
+ROS_Node_A [label="ROS Node A"];
+ROS_Node_B [label="ROS Node B"];
+ROS_Node_C [label="ROS Node C"];
+ROS_Node_D [label="ROS Node D"];
+
+// Orchestration node
+    Orchestration [shape=hexagon, color=red, label="ROS Orchestration Node"];
+
+// P2P Datachannel connections between actors
+    Actor_A -> Actor_B [label="datachannel P2P"];
+Actor_B -> Actor_C [label="datachannel P2P"];
+Actor_C -> Actor_D [label="datachannel P2P"];
+Actor_D -> Actor_A [label="datachannel P2P"];
+
+// ROS Control and Status flow
+    Orchestration -> ROS_Node_A [label="Control"];
+Orchestration -> ROS_Node_B [label="Control"];
+Orchestration -> ROS_Node_C [label="Control"];
+Orchestration -> ROS_Node_D [label="Control"];
+
+ROS_Node_A -> Orchestration [label="Status/Errors"];
+ROS_Node_B -> Orchestration [label="Status/Errors"];
+ROS_Node_C -> Orchestration [label="Status/Errors"];
+ROS_Node_D -> Orchestration [label="Status/Errors"];
+
+// Linking ROS nodes with their respective actors
+    ROS_Node_A -> Actor_A [label="Monitors"];
+ROS_Node_B -> Actor_B [label="Monitors"];
+ROS_Node_C -> Actor_C [label="Monitors"];
+ROS_Node_D -> Actor_D [label="Monitors"];
+}

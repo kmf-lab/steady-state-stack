@@ -1253,7 +1253,7 @@ pub trait SteadyCommander {
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
     async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool;
-    /// Waits until the specified number of vacant units are in the transmitter.
+    /// Waits until the specified number of available units are in the transmitter.
     ///
     /// # Parameters
     /// - `count`: The number of units to wait for.

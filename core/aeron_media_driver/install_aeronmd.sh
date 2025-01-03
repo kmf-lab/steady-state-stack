@@ -14,7 +14,6 @@ DESCRIPTION="steady_state:${SERVICE_NAME}"
 AFTER="docker.service"
 WANTED_BY="multi-user.target"
 RESTART_POLICY="always"
-NETWORK_MODE="host"
 
 # Ensure systemd and required commands are available
 if ! command -v systemctl &> /dev/null; then
@@ -71,7 +70,7 @@ Description=$DESCRIPTION
 After=$AFTER
 
 [Service]
-ExecStart=/usr/bin/docker run --rm --ipc=host --network=$NETWORK_MODE --shm-size=512m --cap-add=SYS_ADMIN -v /dev/shm:/dev/shm -u ${USER_ID}:${GROUP_ID} --name $SERVICE_NAME $DOCKER_IMAGE $DOCKER_CMD
+ExecStart=/usr/bin/docker run --rm --ipc=host --network=host --shm-size=512m --cap-add=SYS_ADMIN -v /dev/shm:/dev/shm -u ${USER_ID}:${GROUP_ID} --name $SERVICE_NAME $DOCKER_IMAGE $DOCKER_CMD
 User=$SERVICE_USER
 Group=$SERVICE_USER
 UMask=0002

@@ -50,18 +50,20 @@ pub mod install {
 
 }
 
-// pub mod distributed {
-//     /// module for sending data over Aeron
-//     pub mod aeron_sender;
-//     /// module for receiving data over Aeron
-//     pub mod aeron_receiver;
-//     /// timing and common work for aeron
-//     pub mod nanosec_util;
-//     /// enums for making new aeron connection strings
-//     pub mod aeron_channel;
-//     /// new channels for serialized data
-//     pub mod aqueduct;
-// }
+pub mod distributed {
+    /// module for sending data over Aeron
+    pub mod aeron_sender;
+    /// module for receiving data over Aeron
+    pub mod aeron_receiver;
+    /// timing and common work for aeron
+    pub mod nanosec_util;
+    /// enums for making new aeron connection strings
+    pub mod aeron_channel;
+    /// new channels for serialized data
+    pub mod aqueduct;
+    /// new channels for serialized data
+    pub mod distributed;
+}
 
 /// module for testing full graphs of actors
 pub mod graph_testing;

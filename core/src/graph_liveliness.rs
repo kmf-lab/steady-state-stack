@@ -2,7 +2,7 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{abstract_executor, steady_config, SteadyContext, util};
+use crate::{abstract_executor, steady_config, SteadyContext, util, Threading, new_state};
 use std::ops::Sub;
 use std::sync::{Arc};
 use parking_lot::{RwLock,RwLockWriteGuard};
@@ -25,9 +25,14 @@ use futures::channel::oneshot::{Sender};
 
 use futures_util::lock::{MutexGuard, MutexLockFuture};
 use nuclei::config::IoUringConfiguration;
+use steady_state_aeron::aeron::Aeron;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
+use crate::distributed::aeron_channel::aeron_utils::aeron_context;
+use crate::distributed::{aeron_receiver, aeron_sender};
+use crate::distributed::aqueduct::{LazyAqueduct, LazyAqueductRx, LazyAqueductTx, SteadyAqueductRx, SteadyAqueductTx};
+use crate::distributed::distributed::Distributed;
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -532,10 +537,88 @@ pub struct Graph {
     pub(crate) noise_threshold: Instant,
     pub(crate) block_fail_fast: bool,
     pub(crate) telemetry_production_rate_ms: u64,
+    pub(crate) aeron: Option<Arc<Mutex<Aeron>>>, //None by default
 }
 
 impl Graph {
+    pub fn build_distributed_tx(&mut self
+                                       , distribution: Distributed
+                                       , name: &'static str
+                                       , rx: SteadyAqueductRx
+                                       , threading: &mut Threading) {
+        
+        match distribution {
+            Distributed::Aeron(channel,stream_id) => {
 
+                if self.aeron.is_none() { //lazy load, we only support one
+                    self.aeron = aeron_context();
+                }
+
+                if let Some(aeron) = &self.aeron {
+                    let state = new_state();
+                    let aeron = aeron.clone();
+                    
+                    self.actor_builder()
+                        .with_name(name)
+                        .build(move |context| 
+                                   aeron_sender::run(context
+                                                     , rx.clone()
+                                                     , channel.clone()
+                                                     , stream_id
+                                                     , aeron.clone()
+                                                     , state.clone())
+                               , threading)
+
+                }
+            }
+            _ => {
+                panic!("unsupported distribution type");
+            }            
+        }
+    }
+
+    pub fn build_distributed_rx(&mut self
+                                , distribution: Distributed
+                                , name: &'static str
+                                , tx: SteadyAqueductTx                                
+                                , threading: &mut Threading) {
+
+        match distribution {
+            Distributed::Aeron(channel,stream_id) => {
+
+                if self.aeron.is_none() { //lazy load, we only support one
+                    self.aeron = aeron_context();
+                }
+                
+                if let Some(ref aeron) = self.aeron {
+                    let state = new_state();
+                    let aeron = aeron.clone();
+
+                    self.actor_builder()
+                        .with_name(name)
+                        .build(move |context|
+                                   aeron_receiver::run(context
+                                                       , tx.clone()
+                                                       , channel.clone()
+                                                       , stream_id
+                                                       , aeron.clone()
+                                                       , state.clone())
+                               , threading);
+
+                }
+            }
+            _ => {
+                panic!("unsupported distribution type");
+            }
+        }
+    }
+
+
+
+    pub(crate) fn build_aqueduct(&self, control_builder: &ChannelBuilder, payload_builder: &ChannelBuilder) -> ( LazyAqueductTx, LazyAqueductRx,) {
+        let to_aeron   = Arc::new(LazyAqueduct::new(&control_builder, &payload_builder));
+        (LazyAqueductTx::new(to_aeron.clone()),LazyAqueductRx::new(to_aeron.clone()))
+    }
 
     /// Returns the telemetry production rate in milliseconds.
     pub fn telemetry_production_rate_ms(&self) -> u64 {
@@ -820,6 +903,7 @@ impl Graph {
                                                  0u64 //this zero prevents us from building telemetry
                                              },
             team_count: Arc::new(AtomicUsize::new(1)),
+            aeron: None,
         };
 
         if builder.telemetry_metric_features {

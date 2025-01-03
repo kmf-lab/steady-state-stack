@@ -1,0 +1,62 @@
+digraph ModularTransportGraph {
+    // Producer Node - Machine 1
+    subgraph cluster_producer_node {
+label="Producer Node";
+style=filled;
+color=lightgrey;
+
+Producer [label="Producer Actor\n(Creates Widget)", shape=ellipse, style=filled, color=lightblue];
+
+ZMQ_CODEC_Encode_Serde [label="(1) ZMQ_CODEC_Encode (Serde)\n(Encode for ZMQ)", shape=ellipse, color=yellow];
+ZMQ_CODEC_Encode_FlatBuffer [label="(3) ZMQ_CODEC_Encode (FlatBuffer)\n(Encode for ZMQ)", shape=ellipse, color=yellow];
+
+ZMQ_Network_Send [label="(2) ZMQ_Network_Send\n(Shared ZMQ Send)", shape=ellipse, color=gold];
+WebRTC_Network_Send [label="(4) WebRTC_Network_Send\n(Optional Transport for Encoded Data)", shape=ellipse, color=cyan];
+
+ROS_Combined_Send [label="(5) ROS_Combined_Send\n(Encode & Publish ROS2)", shape=ellipse, color=orange];
+}
+
+// Receiver Node - Machine 2
+    subgraph cluster_receiver_node {
+label="Receiver Node";
+style=filled;
+color=lightgrey;
+
+ZMQ_Network_Receive [label="(2) ZMQ_Network_Receive\n(Shared ZMQ Receive)", shape=ellipse, color=gold];
+
+ZMQ_CODEC_Decode_Serde [label="(1) ZMQ_CODEC_Decode (Serde)\n(Decode ZMQ)", shape=ellipse, color=yellow];
+ZMQ_CODEC_Decode_FlatBuffer [label="(3) ZMQ_CODEC_Decode (FlatBuffer)\n(Decode ZMQ)", shape=ellipse, color=yellow];
+
+WebRTC_Network_Receive [label="(4) WebRTC_Network_Receive\n(Optional Transport for Encoded Data)", shape=ellipse, color=cyan];
+
+ROS_Combined_Receive [label="(5) ROS_Combined_Receive\n(Subscribe & Decode ROS2)", shape=ellipse, color=orange];
+
+Consumer [label="Consumer Actor\n(Process Widget)", shape=ellipse, style=filled, color=lightcoral];
+}
+
+// Data Flow Edges
+    Producer -> ZMQ_CODEC_Encode_Serde [label="Widget"];
+Producer -> ZMQ_CODEC_Encode_FlatBuffer [label="Widget"];
+Producer -> ROS_Combined_Send [label="Widget"];
+
+ZMQ_CODEC_Encode_Serde -> ZMQ_Network_Send [label="Encoded (Serde)"];
+ZMQ_CODEC_Encode_Serde -> WebRTC_Network_Send [label="Encoded (Serde)"];
+ZMQ_CODEC_Encode_FlatBuffer -> ZMQ_Network_Send [label="Encoded (FlatBuffer)"];
+ZMQ_CODEC_Encode_FlatBuffer -> WebRTC_Network_Send [label="Encoded (FlatBuffer)"];
+ROS_Combined_Send -> ROS_Combined_Receive [label="Network Data (ROS2 Widget)"];
+ROS_Combined_Send -> WebRTC_Network_Send [label="Encoded (ROS2)"];
+
+ZMQ_Network_Send -> ZMQ_Network_Receive [label="ZMQ Network"];
+WebRTC_Network_Send -> WebRTC_Network_Receive [label="WebRTC Network"];
+
+ZMQ_Network_Receive -> ZMQ_CODEC_Decode_Serde [label="Received (Serde)"];
+ZMQ_Network_Receive -> ZMQ_CODEC_Decode_FlatBuffer [label="Received (FlatBuffer)"];
+WebRTC_Network_Receive -> ZMQ_CODEC_Decode_Serde [label="Received (Serde via WebRTC)"];
+WebRTC_Network_Receive -> ZMQ_CODEC_Decode_FlatBuffer [label="Received (FlatBuffer via WebRTC)"];
+WebRTC_Network_Receive -> ROS_Combined_Receive [label="Received (ROS2 via WebRTC)"];
+
+ZMQ_CODEC_Decode_Serde -> Consumer [label="Widget (from ZMQ Serde)"];
+ZMQ_CODEC_Decode_FlatBuffer -> Consumer [label="Widget (from ZMQ FlatBuffer)"];
+ROS_Combined_Receive -> Consumer [label="Widget (from ROS2)"];
+}
+

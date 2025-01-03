@@ -546,13 +546,13 @@ impl<T> Rx<T> {
     pub(crate) async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool {
         if self.rx.occupied_len() >= count {
             true
-        } else {
+        } else {//we always return true if we have count regardless of the shutdown status
             let mut one_closed = &mut self.is_closed;
             if !one_closed.is_terminated() {
                 let mut operation = &mut self.rx.wait_occupied(count);
-                select! { _ = one_closed => false, _ = operation => true }
+                select! { _ = one_closed => self.rx.occupied_len() >= count, _ = operation => true }
             } else {
-                false
+                self.rx.occupied_len() >= count // if closed, we can still take
             }
         }
     }
