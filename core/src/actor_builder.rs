@@ -130,13 +130,6 @@ impl FutureBuilderType {
         build_actor_context(&self.fun, self.frame_rate_ms, team_display_id)
     }
     
-    fn call(&mut self, team_display_id: usize) -> ( ActorRuntime, SteadyContext, bool) {
-        (
-            self.register(),
-            self.context(team_display_id),
-            false,
-        )
-    }
 }
 
 
@@ -207,7 +200,8 @@ impl ActorTeam {
                 count_task.store(double_vec.len(),Ordering::SeqCst);
                 let _ = local_send.send(()); //may now return we have count and started
 
-                let triplet_vec:Vec<(ActorRuntime, SteadyContext, bool)> = self.future_builder.iter().zip(double_vec)
+                let triplet_vec:Vec<(ActorRuntime, SteadyContext, bool)> = self.future_builder.iter()
+                    .zip(double_vec)
                     .map(|(f,(e,b))| (e,f.context(team_id),b)) 
                     .collect();
                 
@@ -227,15 +221,14 @@ impl ActorTeam {
                     match result {
                         // The closure ran without panicking, so we got (Result<..., ...>, index, leftover)
                         Ok((actor_result, index, mut leftover_futures)) => {
-
+                            let (ref fun, ctx, _drive_io) = &triplet_vec[index];
                             // Check if the actor_result was Err(...)
                             if let Err(e) = actor_result {
                                 error!("Actor at index {index} got error: {e:?}");
-                                // // Rebuild just that one actor
-                                let (ref fun, ctx, _drive_io) = &triplet_vec[index];
+                                // // Rebuild just that one actor                                
                                 let ctx = ctx.clone();
                                 // Insert a new pinned future
-                                leftover_futures.insert(index,          Self::build_async_fun(fun, ctx)                        );
+                                leftover_futures.insert(index,  Self::build_async_fun(fun, ctx)                        );
                                 // We continue the loop
                                 continue;
                             }
@@ -243,6 +236,8 @@ impl ActorTeam {
                             // If actor_result was Ok(...), that actor finished successfully,
                             // so remove it from the vector. If none left, break:
                             let _ = leftover_futures.remove(index);
+                            // this actor is done and must not be part of the shutdown vote anymore
+                            exit_actor_registration(&self.future_builder[index].fun);
                             if leftover_futures.is_empty() {
                                 break;
                             }
@@ -574,6 +569,8 @@ impl ActorBuilder {
                                        }
                              } )) {
                        Ok(_) => {
+                           //do not ask about shutdown, as we have already left
+                           exit_actor_registration(&context_archetype);
                            // trace!("Actor {:?} finished ", name);
                            break; // Exit the loop we are all done
                        }
@@ -834,15 +831,15 @@ impl<T: ?Sized> NonSendWrapper<T> {
 /// # Returns
 ///
 /// A future representing the actor's execution.
-fn build_actor_future(
-    builder_source: &SteadyContextArchetype<DynCall>,
-    frame_rate_ms: u64,
-    team_id: usize,
-) -> (NonSendWrapper<DynCall>,SteadyContext) {
-    let context = build_actor_context(&builder_source, frame_rate_ms, team_id);
-    let fun = build_actor_registration(&builder_source);
-    (fun, context)
-}
+// fn build_actor_future(
+//     builder_source: &SteadyContextArchetype<DynCall>,
+//     frame_rate_ms: u64,
+//     team_id: usize,
+// ) -> (NonSendWrapper<DynCall>,SteadyContext) {
+//     let context = build_actor_context(&builder_source, frame_rate_ms, team_id);
+//     let fun = build_actor_registration(&builder_source);
+//     (fun, context)
+// }
 
 fn build_actor_registration(
     builder_source: &SteadyContextArchetype<DynCall>
@@ -851,6 +848,11 @@ fn build_actor_registration(
     builder_source.build_actor_exec.clone()
 }
 
+fn exit_actor_registration(
+    builder_source: &SteadyContextArchetype<DynCall>
+) {
+    builder_source.runtime_state.write().remove_voter(builder_source.ident);  
+}
 
 
 

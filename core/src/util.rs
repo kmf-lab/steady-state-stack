@@ -1,6 +1,6 @@
 
 use std::str::FromStr;
-use flexi_logger::{Logger, LogSpecBuilder, WriteMode};
+use flexi_logger::{Logger, LogSpecBuilder, WriteMode, LoggerHandle};
 
 use log::*;
 
@@ -52,13 +52,13 @@ fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>
     /// Be cautious to never log any personally identifiable information (PII) or credentials. It is
     /// the responsibility of the developer to ensure that sensitive data is not exposed in the logs.
     ///
-    pub fn steady_logging_init(level: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn steady_logging_init(level: &str) -> Result<LoggerHandle, Box<dyn std::error::Error>> {
 
         let mut builder = LogSpecBuilder::new();
         builder.default(LevelFilter::from_str(level)?); // Set the default level
         let log_spec = builder.build();
 
-        Logger::with(log_spec)
+        let result = Logger::with(log_spec)
             .format(flexi_logger::colored_with_thread)
             .write_mode(WriteMode::Direct)
             .start()?;
@@ -84,7 +84,7 @@ fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>
             info!("Info: key event occurred");
             //Rationale: Info messages are for general, important but not urgent information. They should convey key events or state changes in the application.
         }
-        Ok(())
+        Ok(result)
     }
 
 ////////////////////////////////////////////
@@ -97,12 +97,13 @@ fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>
 /// the Steady State framework. It ensures that the logging system is initialized only once
 /// during the runtime of the application.
 pub mod logger {
+    use std::sync::Mutex;
+    use flexi_logger::{LogSpecBuilder, LoggerHandle};
     use lazy_static::lazy_static;
-    use parking_lot::Once;
     use crate::util;
 
     lazy_static! {
-        static ref INIT: Once = Once::new();
+        static ref LOGGER_HANDLE: Mutex<Option<LoggerHandle>> = Mutex::new(None);
     }
 
     /// Initializes the logger.
@@ -110,12 +111,59 @@ pub mod logger {
     /// This function initializes the logging system for the Steady State framework. It ensures
     /// that the logging system is initialized only once, even if this function is called multiple times.
     /// If the initialization fails, a warning message is printed.
-    ///
     pub fn initialize() {
-        INIT.call_once(|| {
-            if let Err(e) = util::steady_logging_init("info") {
-                print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
+        let mut logger_handle = LOGGER_HANDLE.lock().expect("internal error");
+        if logger_handle.is_none() {
+            match util::steady_logging_init("info") {
+                Ok(handle) => {
+                    *logger_handle = Some(handle);
+                }
+                Err(e) => {
+                    print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
+                }
             }
-        });
+        }
+    }
+
+    /// Initializes the logger.
+    ///
+    /// This function initializes the logging system for the Steady State framework. It ensures
+    /// that the logging system is initialized only once, even if this function is called multiple times.
+    /// If the initialization fails, a warning message is printed.
+    pub fn initialize_with_level(level: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let mut logger_handle = LOGGER_HANDLE.lock().expect("internal error");
+        if logger_handle.is_none() {
+            match util::steady_logging_init(level) {
+                Ok(handle) => {
+                    *logger_handle = Some(handle);
+                    Ok(())
+                }
+                Err(e) => {
+                    print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
+                    Err(e)
+                }
+            }
+        } else {
+            if let Some(handle) = logger_handle.as_ref() {                
+                match level.parse() {
+                    Ok(level) => {
+                        handle.set_new_spec(
+                            LogSpecBuilder::new()
+                                .default(level)
+                                .build()
+                        );
+                        // println!("Logger level updated to: {:?}", level);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        print!("Warning: Logger level change to {} failed.",level);
+                        Err(e.into())
+                    }                    
+                }
+            } else {
+                print!("Warning: Logger level change to {} failed.",level);
+                Err("Logger level change failed.".into())
+            }
+        }
     }
 }

@@ -29,6 +29,8 @@ use futures_timer::Delay;
 use ringbuf::traits::Observer;
 use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
+use crate::distributed::aqueduct;
+use crate::distributed::aqueduct::{LazyAqueduct, LazyAqueductRx, LazyAqueductTx};
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
@@ -177,6 +179,16 @@ pub struct ChannelBuilder {
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
 }
 
+impl ChannelBuilder {
+    
+    /// Simplified aqueduct builder using a shared builder for control and payload 
+    /// for advanced custom channel configuration see aqueduct::build_aqueduct
+    pub(crate) fn build_aqueduct(&self, control_channel_length: usize, payload_channel_bytes: usize) -> (LazyAqueductTx, LazyAqueductRx,) {
+        let control_builder = self.with_capacity(control_channel_length);
+        let payload_builder = self.with_capacity(payload_channel_bytes);
+        aqueduct::build_aqueduct(&control_builder, &payload_builder)
+    }
+}
 
 const DEFAULT_CAPACITY: usize = 64;
 impl ChannelBuilder {

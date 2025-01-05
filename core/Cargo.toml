@@ -48,12 +48,6 @@ telemetry_server_builtin = [] # (telemetry_server_? exclusive one or the other) 
 # 2. where you run your app the browser user will have internet access
 telemetry_server_cdn = [] # (telemetry_server_? exclusive one or the other)
 
-# will require "git gcc cmake make" on your build server
-aeron_driver_systemd = ["steady_state_aeron"] # build systemd installer for media driver
-aeron_driver_sidecar = ["steady_state_aeron"] # build k8s sidecar yaml for media driver
-# does not require any build tools on your build server
-aeron_driver_external = ["steady_state_aeron"] # assume an external aeron driver
-
 # records history files usefull for replay of the telemetry offline after the fact
 telemetry_history = []
 
@@ -108,9 +102,9 @@ pin-project      = "1.1.7"
 
 
 # fork of aeron-rs with just the fixes we need until they get merged into the mainline
-steady_state_aeron     = { version="0.1.6-kmf1", optional=true }
+steady_state_aeron     = { version="0.1.6-kmf1" }
 # for local testing
-#steady_state_aeron    = { path = "../../aeron-rs", version="0.1.6-kmf1", optional=true }
+#steady_state_aeron    = { path = "../../aeron-rs", version="0.1.6-kmf1" }
 
 
 

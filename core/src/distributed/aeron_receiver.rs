@@ -1,16 +1,17 @@
 
 use std::error::Error;
 use std::slice;
-use futures_timer::Delay;
-use steady_state_aeron::aeron::Aeron;
+use num_traits::Zero;
+use steady_state_aeron::aeron::*;
+use steady_state_aeron::concurrent::logbuffer::frame_descriptor;
 use crate::*;
-use crate::{await_for_all, into_monitor, steady_state, SendSaturation, SteadyCommander, SteadyContext, SteadyRxBundle, SteadyState, SteadyTx, SteadyTxBundle};
+use crate::{ into_monitor, steady_state, SteadyCommander, SteadyContext, SteadyState, SteadyTx, SteadyTxBundle};
 use crate::distributed::aeron_channel::Channel;
-use crate::distributed::aqueduct::{AquaductRxMetaData, AquaductTxDef, AquaductTxMetaData, AqueductMetadata, SteadyAqueductTx};
+use crate::distributed::aqueduct::{AquaductTxDef, AquaductTxMetaData, AqueductFragment, FragmentDirection, FragmentType, SteadyAqueductTx};
 
 #[derive(Default)]
 pub(crate) struct FragmentState {
-    pub(crate) total_bytes: u128,
+    pub(crate) arrival: Option<Instant>,
     pub(crate) sub_reg_id: Option<i64>,
 }
 
@@ -64,23 +65,12 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
     let mut state_guard = steady_state(&state, || FragmentState::default()).await;
     if let Some(mut state) = state_guard.as_mut() {
 
-        #[cfg(any(
-            feature = "aeron_driver_systemd",
-            feature = "aeron_driver_sidecar",
-            feature = "aeron_driver_external"
-        ))]
-        {
             use steady_state_aeron::concurrent::atomic_buffer::AtomicBuffer;
             use steady_state_aeron::concurrent::logbuffer::header::Header;
             use steady_state_aeron::image::ControlledPollAction;
             use steady_state_aeron::utils::types::Index;
-            use crate::distributed::nanosec_util::precise_sleep;
-            use crate::distributed::aeron_channel::aeron_utils::aeron_context;
 
-           // Delay::new(Duration::from_secs(3)).await; //LET the sender start up first.
-
-
-            warn!("Receiver register publication: {:?} {:?}",aeron_channel.cstring(), stream_id);
+            // trace!("Receiver register publication: {:?} {:?}",aeron_channel.cstring(), stream_id);
 
             if state.sub_reg_id.is_none() {
                 //only add publication once if not already set
@@ -98,8 +88,6 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                
             }
             let mut tx_lock = tx.lock().await;
-            //wait for media driver to be ready, normally 2 seconds at best so we can sleep
-            Delay::new(Duration::from_millis(200)).await; 
             
             let subscription = match state.sub_reg_id {
                 Some(a) => {
@@ -145,14 +133,9 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
             let duration = start.elapsed();
             warn!("Receiver connected in: {:?} {:?} {:?}", duration, subscription.channel(), subscription.stream_id());
             while cmd.is_running(&mut || tx_lock.mark_closed()) {
-                //TODO: only if we are using nano-ticks
-                //await_for_all!(cmd.wait_shutdown_or_vacant_units(&mut tx_lock.control_channel, 1));
 
-                //TODO: only if we are not using nano-ticks
-                await_for_all!(cmd.wait_periodic(Duration::from_micros(100)),
+                await_for_all!(cmd.wait_periodic(Duration::from_micros(20)),
                                cmd.wait_shutdown_or_vacant_units(&mut tx_lock.control_channel, 1));
-
-
 
                 //TODO: we need to avoid poill if we have no images!!
                 // let channel_status = subscription.channel_status();
@@ -164,14 +147,20 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
 
                 //NOTE: this is called once on every Image starting with a different Image each time around
                 subscription.controlled_poll( &mut |buffer: &AtomicBuffer, offset: Index, length: Index, header: &Header| {
-           
+                    //NOTE: index is i32 so the current implementation limits us to 2GB messages !!
+                    if state.arrival.is_none() {
+                        state.arrival = Some(Instant::now());
+                    }
+
+                    let ctrl_room = cmd.vacant_units(&mut tx_lock.control_channel);
                     let room = cmd.vacant_units(&mut tx_lock.payload_channel);
-                    let abort = room < length as usize;
+                    let abort = room < length as usize && ctrl_room > 1;
                     if abort { //back off until we have room.
-                        warn!("aborting due to lack of room: {} < {}", room, length);
+                        warn!("aborting due to lack of room: {} < {}, try again later", room, length);
                         Ok(ControlledPollAction::ABORT)
                     } else {
-                        warn!("we have room: {} >= {}", room, length);
+
+                        //trace!("we have room: {} >= {}", room, length);
                         let incoming_slice: &[u8] = unsafe {
                             slice::from_raw_parts_mut(buffer.buffer().offset(offset as isize)
                                                       , length as usize)
@@ -179,59 +168,103 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                         // we already checked so this better work
                         let bytes_consumed = cmd.send_slice_until_full(&mut tx_lock.payload_channel
                                                                        , incoming_slice);
-                        assert_eq!(bytes_consumed, length as usize);
-                        assert_eq!(stream_id, header.stream_id());
-                        
-                        //for this image we need to hold state until we see the end and then drop the meta data
-                        
-                        //TODO: stop here and write the sender code to ensure:
-                        // timestamp and use of stream id and session id.
-                        
-                        //assert this is expected to match
-                        let _s = header.session_id(); // different publishers all on this stream
-                        let _f = header.flags();       // end or beginning of data frame (mutiple per publisher)
-                        //     header.reserved_value() // we could use this for time??
-                        // we have no need to worry about Image since we have stream and session
-                        // could we use reserved_value for timestamp to detect latencies?
-                        warn!("Fragment: {} {} {} {} {} bytes: {}"
-                              , header.stream_id()
-                              , header.session_id()
-                              , header.flags()
-                              , header.term_id()
-                              , header.term_offset()
-                              , bytes_consumed);
-                        
-                        let ok = cmd.try_send(&mut tx_lock.control_channel, AqueductMetadata { bytes_count: bytes_consumed, bonus: 0 });
-                        if let Err(e) = ok {
-                            warn!("Error sending metadata: {:?}", e);
-                        }
+                        debug_assert_eq!(bytes_consumed, length as usize);
+                        debug_assert_eq!(stream_id, header.stream_id());
+
+                        let is_begin:bool = !(header.flags() & frame_descriptor::BEGIN_FRAG).is_zero();
+                        let is_end:bool   = !(header.flags() & frame_descriptor::END_FRAG).is_zero();
+                        let frame_type: FragmentType = if is_begin {
+                                                       if is_end {
+                                                           FragmentType::UnFragmented
+                                                       } else {
+                                                           FragmentType::Begin
+                                                       }
+                                                    } else {
+                                                        if is_end {
+                                                            FragmentType::End
+                                                        } else {
+                                                            FragmentType::Middle
+                                                        }
+                                                    };
+
+                        let ok = cmd.try_send(
+                            &mut tx_lock.control_channel,
+                            AqueductFragment::new(frame_type, stream_id, FragmentDirection::Incoming(header.session_id(), state.arrival.take().unwrap_or(Instant::now()) ), length, None)
+                        );
+                        debug_assert_eq!(true, ok.is_ok()); //should not fail since we checked for room at the top before we started.
+
                         // Continue processing next fragments in this poll call.
                         Ok(ControlledPollAction::CONTINUE)
-
                     }
-
-
                 }, 1 as i32);
-
-
-
-                // if tx has space avail && poll does nothing then we should sleep
-                // if cmd.vacant_units(&mut tx_lock.control_channel) >= 1 {
-                //     //if there is space then we must have stopped due to no poll data therefore sleep
-                //     //this is not async but does not consume CPU, it can do something else at this time
-                //     //you may want to consider pinning or not pinning this to a core
-                //     //you probably should NOT team this actor with others since they must wait for this (can we detect this?)
-                //      precise_sleep(100_000); //wait 100 microseconds (100_000 nanoseconds)
-                // }
-
             }
-            warn!("We just exited the receiver");
-        }
-
         Ok(())
     } else {
         Err("Failed to get state guard".into())
     }
 }
 
+
+#[cfg(test)]
+pub(crate) mod aeron_media_driver_tests {
+    use std::net::{IpAddr, Ipv4Addr};
+    use futures_timer::Delay;
+    use super::*;
+    use crate::distributed::aeron_channel::{MediaType};
+    use crate::distributed::distributed::{DistributionBuilder};
+
+    #[async_std::test]
+    async fn test_bytes_process() {
+
+        let mut graph = GraphBuilder::for_testing()
+            .with_telemetry_metric_features(false)
+            .build(());
+
+        let channel_builder = graph.channel_builder();
+        let (to_aeron_tx,to_aeron_rx) = channel_builder.build_aqueduct(3
+                                                                       ,30);
+        let (from_aeron_tx,from_aeron_rx) = channel_builder.build_aqueduct(3
+                                                                           ,30);
+
+        let distribution = DistributionBuilder::aeron()
+            .with_media_type(MediaType::Udp)
+            .point_to_point(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
+                            , 40125)
+            .build(1);
+
+        graph.build_aqueduct_distributor(distribution.clone()
+                                         , "SenderTest"
+                                         , to_aeron_rx.clone()
+                                         , &mut Threading::Spawn);
+
+        graph.build_aqueduct_collector(distribution.clone()
+                                       , "ReceiverTest"
+                                       , from_aeron_tx.clone()
+                                       , &mut Threading::Spawn); //must not be same thread
+
+
+        to_aeron_tx.testing_send_frame(&[1,2,3,4,5]).await;
+        to_aeron_tx.testing_send_frame(&[6,7,8,9,10]).await;
+        to_aeron_tx.testing_close().await;
+
+        graph.start(); //startup the graph
+
+        //we must wait long enough for both actors to connect
+        //not sure why this needs to take so long but 14 sec seems to be smallest
+        Delay::new(Duration::from_secs(20)).await;
+
+        graph.request_stop();
+        //we wait up to the timeout for clean shutdown which is transmission of all the data
+        graph.block_until_stopped(Duration::from_secs(16));
+
+        let mut data = [0u8; 5];
+        let result = from_aeron_rx.testing_take_frame(&mut data[0..5]).await;
+        assert_eq!(5, result);
+        assert_eq!([1,2,3,4,5], data);
+        let result = from_aeron_rx.testing_take_frame(&mut data[0..5]).await;
+        assert_eq!(5, result);
+        assert_eq!([6,7,8,9,10], data);
+
+    }
+}
 

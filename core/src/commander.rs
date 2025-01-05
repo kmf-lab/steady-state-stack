@@ -19,7 +19,7 @@ use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
 use futures::stream::{FuturesUnordered, StreamExt};
-
+use crate::util::logger;
 
 impl SteadyContext {
     /// Converts the context into a local monitor.
@@ -118,6 +118,11 @@ impl SteadyContext {
 
 
 impl SteadyCommander for SteadyContext {
+
+    /// Initializes the logger with the specified log level.
+    fn loglevel(&self, loglevel: &str) {
+        let _ = logger::initialize_with_level(loglevel);
+    }
 
     /// No op, and only relays stats upon the LocalMonitor instance
     fn relay_stats_smartly(&mut self) {
@@ -857,6 +862,8 @@ impl SteadyCommander for SteadyContext {
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
+    /// set log level for the entire application
+    fn loglevel(&self, loglevel: &str);
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     /// NOTE: This does NOTHING unless called on the LocalMonitor instance

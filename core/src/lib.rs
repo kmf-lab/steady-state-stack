@@ -55,8 +55,6 @@ pub mod distributed {
     pub mod aeron_sender;
     /// module for receiving data over Aeron
     pub mod aeron_receiver;
-    /// timing and common work for aeron
-    pub mod nanosec_util;
     /// enums for making new aeron connection strings
     pub mod aeron_channel;
     /// new channels for serialized data
@@ -117,7 +115,7 @@ use log::*;
 use crate::monitor::{ActorMetaData, ChannelMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
-use crate::util::steady_logging_init;
+use crate::util::{logger};
 use futures::*;
 use futures::channel::oneshot;
 use futures::select;
@@ -282,7 +280,7 @@ pub fn steady_rx_bundle<T, const GIRTH: usize>(internal_array: [SteadyRx<T>; GIR
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
 pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
-    steady_logging_init(loglevel)
+    logger::initialize_with_level(loglevel)
 }
 
 /// Context for managing actor state and interactions within the Steady framework.

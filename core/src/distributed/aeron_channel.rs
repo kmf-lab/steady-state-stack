@@ -3,11 +3,7 @@ use std::ffi::CString;
 use std::fmt::Debug;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, UdpSocket};
 
-#[cfg(any(
-    feature = "aeron_driver_systemd",
-    feature = "aeron_driver_sidecar",
-    feature = "aeron_driver_external"
-))]
+
 pub(crate) mod aeron_utils {
     use std::ffi::CString;
     use std::sync::Arc;
@@ -304,7 +300,7 @@ mod aeron_channel_tests {
 
         let connection = channel.cstring();
         assert_eq!(
-            connection.to_str().unwrap(),
+            connection.to_str().expect("valid string"),
             "aeron:udp?endpoint=127.0.0.1:40123"
         );
     }
@@ -325,7 +321,7 @@ mod aeron_channel_tests {
 
         let connection = channel.cstring();
         assert_eq!(
-            connection.to_str().unwrap(),
+            connection.to_str().expect("valid string"),
             "aeron:udp?endpoint=[::1]40123"
         );
     }
@@ -345,7 +341,7 @@ mod aeron_channel_tests {
         };
 
         let connection = channel.cstring();
-        assert_eq!(connection.to_str().unwrap(), "aeron:ipc");
+        assert_eq!(connection.to_str().expect("valid string"), "aeron:ipc");
     }
 
     #[test]
@@ -374,7 +370,7 @@ mod aeron_channel_tests {
 
         let connection = channel.cstring();
         assert_eq!(
-            connection.to_str().unwrap(),
+            connection.to_str().expect("valid string"),
             "aeron:udp?endpoint=0.0.0.0:40456|control=224.0.1.1:40457|control-mode=manual|ttl=4"
         );
     }
@@ -402,7 +398,7 @@ mod aeron_channel_tests {
 
         let connection = channel.cstring();
         assert_eq!(
-            connection.to_str().unwrap(),
+            connection.to_str().expect("valid string"),
             "aeron:udp?endpoint=127.0.0.1:40123|interface=192.168.1.5:40123|reliable=true"
         );
     }
@@ -423,7 +419,7 @@ mod aeron_channel_tests {
 
         let connection = channel.cstring();
         assert_eq!(
-            connection.to_str().unwrap(),
+            connection.to_str().expect("valid string"),
             "aeron-spy:aeron:udp?endpoint=127.0.0.1:40123"
         );
     }
@@ -444,7 +440,7 @@ mod aeron_channel_tests {
 
         let connection = channel.cstring();
         assert_eq!(
-            connection.to_str().unwrap(),
+            connection.to_str().expect("valid string"),
             "aeron-spy:aeron:ipc"
         );
     }
@@ -475,7 +471,7 @@ mod aeron_channel_tests {
 
         let connection = channel.cstring();
         assert_eq!(
-            connection.to_str().unwrap(),
+            connection.to_str().expect("valid string"),
             "aeron-spy:aeron:udp?endpoint=0.0.0.0:40456|control=224.0.1.1:40457|control-mode=manual|ttl=4"
         );
     }

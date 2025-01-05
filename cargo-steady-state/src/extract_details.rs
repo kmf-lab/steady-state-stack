@@ -358,9 +358,8 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, m
                     });
 
                     let insert_me_tx_channel = channel.clone();
-                    roll_up_bundle(&mut a.tx_channels, insert_me_tx_channel,  false, |t, v|
-                        true );
-                        //v.iter().all(|g| g.from_node.eq(&t.from_node) && g.from_mod.eq(&t.from_mod) )); // ***
+                    roll_up_bundle(&mut a.tx_channels, insert_me_tx_channel,  false, |_t, _v|
+                        true );                        
 
                 }
                 if let Some(a) = pm.actors.iter_mut().find(|f| f.display_name.eq(to_name) && f.display_suffix.eq(&to_id) ) {

@@ -559,43 +559,43 @@ mod http_telemetry_tests {
             // Fetch the metrics from the server
             if let Some(ref addr) = server_ip {
                 print!(".");
-                validate_path(&addr, Some("rankdir=LR"), "graph.dot".into());
+                validate_path(&addr, Some("rankdir=LR"), "graph.dot");
                 print!(".");
-                validate_path(&addr, Some("font-family: sans-serif;"), "dot-viewer.css".into());
+                validate_path(&addr, Some("font-family: sans-serif;"), "dot-viewer.css");
                 print!(".");
-                validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js".into());
+                validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js");
                 print!(".");
-                validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js".into());
+                validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");
                 print!(".");
-                validate_path(&addr, Some("<title>Telemetry</title>"), "index.html".into());
+                validate_path(&addr, Some("<title>Telemetry</title>"), "index.html");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "viz-lite.js".into());
+                validate_path(&addr, None, "viz-lite.js");
                 print!(".");
                 #[cfg(feature = "prometheus_metrics")]
-                validate_path(&addr, Some("="), "metric".into());
+                validate_path(&addr, Some("="), "metric");
                 print!(".");
 
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "images/preview-icon.svg".into());
+                validate_path(&addr, None, "images/preview-icon.svg");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "images/refresh-time-icon.svg".into());
+                validate_path(&addr, None, "images/refresh-time-icon.svg");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "images/user-icon.svg".into());
+                validate_path(&addr, None, "images/user-icon.svg");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "images/zoom-in-icon.svg".into());
+                validate_path(&addr, None, "images/zoom-in-icon.svg");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "images/zoom-in-icon-disabled.svg".into());
+                validate_path(&addr, None, "images/zoom-in-icon-disabled.svg");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "images/zoom-out-icon.svg".into());
+                validate_path(&addr, None, "images/zoom-out-icon.svg");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "images/zoom-out-icon-disabled.svg".into());
+                validate_path(&addr, None, "images/zoom-out-icon-disabled.svg");
                 print!(".");
 
                 //TODO: new label feature, in progress 

@@ -32,18 +32,6 @@ pub(crate) struct WebWorkerTemplate<'a> {
 
 const VIZ_VERSION:&str = "1.8.2";
 
-
-// #[cfg(feature = "aeron_driver_systemd")]
-// const AERON_DRIVER_SYSTEMD:bool = true;
-// #[cfg(not(feature = "aeron_driver_systemd"))]
-const AERON_DRIVER_SYSTEMD:bool = false;
-
-
-// #[cfg(feature = "aeron_driver_sidecar")]
-// const AERON_DRIVER_SIDECAR:bool = true;
-// #[cfg(not(feature = "aeron_driver_sidecar"))]
-const AERON_DRIVER_SIDECAR:bool = false;
-
 #[cfg(not(feature = "telemetry_server_builtin"))]
 const USE_INTERNAL_VIZ:bool = false;
 #[cfg(feature = "telemetry_server_builtin")]
@@ -97,20 +85,7 @@ fn main() {
         simple_copy(Path::new(file_path), &base_target_path.join(file_path));
     }
     
-    if AERON_DRIVER_SYSTEMD || AERON_DRIVER_SIDECAR {
-        build_aeron();
-     
-        if AERON_DRIVER_SIDECAR {
-            let working = base_target_path.join("k8s");
-            fs::create_dir_all(&working).expect("Failed to create output directory");
 
-            //build_aeron_sidecar();
-        } else {
-            //normal k8s yaml
-        }
-    } else {
-        //normal k8s yaml
-    }
 }
 
 
@@ -188,40 +163,5 @@ fn gzip_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
         println!("Processed and saved to {:?}", &target_file_gz);
     }
 
-
 }
 
-fn build_aeron() {
-    // Skip the build if we are in GitHub Actions
-    if env::var("GITHUB_ACTIONS").is_ok() {
-        println!("cargo:warning=Skipping Aeron build in GitHub Actions.");
-        return;
-    }
-
-    // Ensure Docker is installed and available
-    if !is_docker_available() {
-        panic!("Error: Docker is not installed or not available in the PATH. Please install Docker to build Aeron.");
-    }
-
-
-    // Build the Docker image
-    println!("cargo:warning=Building Docker image for Aeron...");
-    let status = Command::new("docker")
-        .args(&["build", "-t", "aeron-alpine", "-f", "aeron_media_driver/Dockerfile.aeronmd_alpine", "."])
-        .status()
-        .expect("Failed to execute Docker build command");
-    if !status.success() {
-        panic!("Error: Failed to build Docker image for Aeron.");
-    }
-
-    println!("cargo:warning=Aeron C++ Media Driver built successfully!");
-}
-
-// Helper function to check if Docker is available
-fn is_docker_available() -> bool {
-    Command::new("docker")
-        .arg("--version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}

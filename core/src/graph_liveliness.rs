@@ -29,13 +29,14 @@ use steady_state_aeron::aeron::Aeron;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
-use crate::distributed::aeron_channel::aeron_utils::aeron_context;
 use crate::distributed::{aeron_receiver, aeron_sender};
+use crate::distributed::aeron_channel::aeron_utils::aeron_context;
 use crate::distributed::aqueduct::{LazyAqueduct, LazyAqueductRx, LazyAqueductTx, SteadyAqueductRx, SteadyAqueductTx};
 use crate::distributed::distributed::Distributed;
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
+use crate::util::logger;
 
 /// Represents the state of graph liveliness in the Steady State framework.
 ///
@@ -78,9 +79,16 @@ pub struct ShutdownVote {
     pub(crate) in_favor: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum VoterStatus {
+    None,
+    Registered(ActorIdentity),
+    Dead(ActorIdentity),
+}
+
 /// Manages the liveliness state of the graph and handles the shutdown voting process.
 pub struct GraphLiveliness {
-    pub(crate) registered_voters: Vec<Option<ActorIdentity>>,
+    pub(crate) registered_voters: Vec<VoterStatus>,
     pub(crate) state: GraphLivelinessState,
     pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>,
     pub(crate) vote_in_favor_total: AtomicUsize,
@@ -165,16 +173,23 @@ impl GraphLiveliness {
         }
     }
 
+    /// This actor had a normal Ok(()) exit and must not be asked about the shutdown
+    pub(crate) fn remove_voter(&mut self, ident: ActorIdentity) {
+        if self.registered_voters[ident.id].eq(&VoterStatus::Registered(ident)) {
+            self.registered_voters[ident.id] = VoterStatus::Dead(ident);
+        }
+    }
+
     pub(crate) fn register_voter(&mut self, ident: ActorIdentity) {
             if ident.id >= self.registered_voters.len() {
-                self.registered_voters.resize(ident.id + 1, None);
+                self.registered_voters.resize(ident.id + 1, VoterStatus::None);
             }
             trace!("register voter {:?} of expected count: {:?}",ident,self.actors_count.load(Ordering::SeqCst));
 
-            if self.registered_voters[ident.id].is_none() {
+            if self.registered_voters[ident.id].eq(&VoterStatus::None) {
                 self.registered_voter_count.fetch_add(1, Ordering::SeqCst);
             }
-            self.registered_voters[ident.id] = Some(ident);
+            self.registered_voters[ident.id] = VoterStatus::Registered(ident);
 
     }
 
@@ -218,7 +233,9 @@ impl GraphLiveliness {
                 }))
                 .collect();
             self.votes = Arc::new(votes.into_boxed_slice());
-            self.vote_in_favor_total.store(0, std::sync::atomic::Ordering::SeqCst); // Redundant but safe for clarity
+            self.vote_in_favor_total.store(0, Ordering::SeqCst); // Redundant but safe for clarity
+
+            self.vote_for_the_dead();
 
             // Trigger all actors to vote now
             self.state = GraphLivelinessState::StopRequested;
@@ -236,6 +253,27 @@ impl GraphLiveliness {
             warn!("request_stop should only be called after start");
         }
         
+    }
+
+    /// ensure all stopped actors are in favor of shutdown
+    pub(crate) fn vote_for_the_dead(&mut self) {
+        // Find all dead voters and vote for them
+        for (i, voter) in self.registered_voters.iter().enumerate() {
+            if let VoterStatus::Dead(ident) = voter {
+                let my_ballot = &self.votes[i];
+                if let Some(mut vote) = my_ballot.try_lock() {
+                    //we can only vote once as a dead actor
+                    if !vote.in_favor {
+                        assert_eq!(vote.id, i);
+                        vote.ident = Some(*ident); // Signature it is me
+                        vote.in_favor = true; // The dead are in favor of shutdown
+                        self.vote_in_favor_total.fetch_add(1, Ordering::SeqCst);
+                    }
+                } else {
+                    error!("voting integrity error, someone else has my ballot {:?} in_favor of shutdown", ident);
+                }
+            }
+        }
     }
 
     /// Checks if the graph is stopped.
@@ -541,11 +579,16 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub fn build_distributed_tx(&mut self
-                                       , distribution: Distributed
-                                       , name: &'static str
-                                       , rx: SteadyAqueductRx
-                                       , threading: &mut Threading) {
+
+    pub fn loglevel(&self, loglevel: &str) {
+        let _ = logger::initialize_with_level(loglevel);
+    }
+
+    pub fn build_aqueduct_distributor(&mut self
+                                      , distribution: Distributed
+                                      , name: &'static str
+                                      , rx: SteadyAqueductRx
+                                      , threading: &mut Threading) {
         
         match distribution {
             Distributed::Aeron(channel,stream_id) => {
@@ -577,11 +620,11 @@ impl Graph {
         }
     }
 
-    pub fn build_distributed_rx(&mut self
-                                , distribution: Distributed
-                                , name: &'static str
-                                , tx: SteadyAqueductTx                                
-                                , threading: &mut Threading) {
+    pub fn build_aqueduct_collector(&mut self
+                                    , distribution: Distributed
+                                    , name: &'static str
+                                    , tx: SteadyAqueductTx
+                                    , threading: &mut Threading) {
 
         match distribution {
             Distributed::Aeron(channel,stream_id) => {
@@ -611,13 +654,6 @@ impl Graph {
                 panic!("unsupported distribution type");
             }
         }
-    }
-
-
-
-    pub(crate) fn build_aqueduct(&self, control_builder: &ChannelBuilder, payload_builder: &ChannelBuilder) -> ( LazyAqueductTx, LazyAqueductRx,) {
-        let to_aeron   = Arc::new(LazyAqueduct::new(&control_builder, &payload_builder));
-        (LazyAqueductTx::new(to_aeron.clone()),LazyAqueductRx::new(to_aeron.clone()))
     }
 
     /// Returns the telemetry production rate in milliseconds.
@@ -828,8 +864,12 @@ impl Graph {
                     return false;
                 }
                 return true;
-            } else {
+            } else {                
                 thread::sleep(Duration::from_millis(self.telemetry_production_rate_ms));
+                //in case any actors just returned Ok(()) without normal is_running call
+                //those need be set to approved votes for the shutdown
+                let mut state = self.runtime_state.write();
+                state.vote_for_the_dead();
             }
         }
     }

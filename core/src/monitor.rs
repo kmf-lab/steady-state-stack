@@ -352,6 +352,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
 
+    /// set loglevel for the application
+    fn loglevel(&self, loglevel: &str) {
+        let _ = logger::initialize_with_level(loglevel);
+    }
 
     //TODO: future feature to optimize threading, not yet implemented
     //monitor.chain_channels([rx],tx); //any of the left channels may produce output on the right
