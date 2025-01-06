@@ -5,7 +5,7 @@ use num_traits::Zero;
 use steady_state_aeron::aeron::*;
 use steady_state_aeron::concurrent::logbuffer::frame_descriptor;
 use crate::*;
-use crate::{ into_monitor, steady_state, SteadyCommander, SteadyContext, SteadyState, SteadyTx, SteadyTxBundle};
+use crate::{ into_monitor, steady_state, SteadyCommander, SteadyContext, SteadyState, SteadyTxBundle};
 use crate::distributed::aeron_channel::Channel;
 use crate::distributed::aqueduct::{AquaductTxDef, AquaductTxMetaData, AqueductFragment, FragmentDirection, FragmentType, SteadyAqueductTx};
 
@@ -22,7 +22,7 @@ pub(crate) struct FragmentState {
 pub async fn run(context: SteadyContext
                  , tx: SteadyAqueductTx
                  , aeron_connect: Channel
-                 , stream_id: i32
+                 , stream_id: Box<[i32]>
                  , aeron: Arc<Mutex<Aeron>>
                  , state: SteadyState<FragmentState>) -> Result<(), Box<dyn Error>> {
 
@@ -54,16 +54,16 @@ Fragment management:
  */
 
 
-pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
+async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                                                      , tx: SteadyAqueductTx
                                                      , aeron_channel: Channel
-                                                     , stream_id: i32
-                                                     , mut aeron:Arc<Mutex<Aeron>>
+                                                     , stream_id: Box<[i32]>
+                                                     , aeron:Arc<Mutex<Aeron>>
                                                      , state: SteadyState<FragmentState>) -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
     let mut state_guard = steady_state(&state, || FragmentState::default()).await;
-    if let Some(mut state) = state_guard.as_mut() {
+    if let Some(state) = state_guard.as_mut() {
 
             use steady_state_aeron::concurrent::atomic_buffer::AtomicBuffer;
             use steady_state_aeron::concurrent::logbuffer::header::Header;
@@ -76,7 +76,7 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                 //only add publication once if not already set
                     let reg = {
                         let mut locked_aeron = aeron.lock().await;
-                        locked_aeron.add_subscription(aeron_channel.cstring(), stream_id)
+                        locked_aeron.add_subscription(aeron_channel.cstring(), stream_id[0])
                     };
                     match reg {
                         Ok(reg_id) => { state.sub_reg_id = Some(reg_id); }
@@ -134,8 +134,13 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
             warn!("Receiver connected in: {:?} {:?} {:?}", duration, subscription.channel(), subscription.stream_id());
             while cmd.is_running(&mut || tx_lock.mark_closed()) {
 
+                
+                
+                
                 await_for_all!(cmd.wait_periodic(Duration::from_micros(20)),
-                               cmd.wait_shutdown_or_vacant_units(&mut tx_lock.control_channel, 1));
+                               cmd.wait_shutdown_or_vacant_units(&mut tx_lock.control_channel, 1)
+                
+                );
 
                 //TODO: we need to avoid poill if we have no images!!
                 // let channel_status = subscription.channel_status();
@@ -169,7 +174,6 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                         let bytes_consumed = cmd.send_slice_until_full(&mut tx_lock.payload_channel
                                                                        , incoming_slice);
                         debug_assert_eq!(bytes_consumed, length as usize);
-                        debug_assert_eq!(stream_id, header.stream_id());
 
                         let is_begin:bool = !(header.flags() & frame_descriptor::BEGIN_FRAG).is_zero();
                         let is_end:bool   = !(header.flags() & frame_descriptor::END_FRAG).is_zero();
@@ -189,9 +193,9 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
 
                         let ok = cmd.try_send(
                             &mut tx_lock.control_channel,
-                            AqueductFragment::new(frame_type, stream_id, FragmentDirection::Incoming(header.session_id(), state.arrival.take().unwrap_or(Instant::now()) ), length, None)
+                            AqueductFragment::new(frame_type, stream_id[0], FragmentDirection::Incoming(header.session_id(), state.arrival.take().unwrap_or(Instant::now()) ), length)
                         );
-                        debug_assert_eq!(true, ok.is_ok()); //should not fail since we checked for room at the top before we started.
+                        debug_assert!(ok.is_ok()); //should not fail since we checked for room at the top before we started.
 
                         // Continue processing next fragments in this poll call.
                         Ok(ControlledPollAction::CONTINUE)
@@ -230,15 +234,20 @@ pub(crate) mod aeron_media_driver_tests {
             .with_media_type(MediaType::Udp)
             .point_to_point(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
                             , 40125)
-            .build(1);
+            .build();
+
+        let stream_ids_boxed: Box<[i32]> = vec![1].into_boxed_slice();//we must not collide with the other test
+
 
         graph.build_aqueduct_distributor(distribution.clone()
                                          , "SenderTest"
+                                         , stream_ids_boxed.clone()
                                          , to_aeron_rx.clone()
                                          , &mut Threading::Spawn);
 
         graph.build_aqueduct_collector(distribution.clone()
                                        , "ReceiverTest"
+                                       , stream_ids_boxed.clone()
                                        , from_aeron_tx.clone()
                                        , &mut Threading::Spawn); //must not be same thread
 

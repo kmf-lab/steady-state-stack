@@ -2100,6 +2100,7 @@ dependencies = [
  "structopt-derive",
  "tempfile",
  "time",
+ "tokio",
  "uuid",
  "xz2",
 ]

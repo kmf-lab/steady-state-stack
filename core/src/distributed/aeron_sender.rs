@@ -4,51 +4,50 @@ use futures_timer::Delay;
 use num_traits::Zero;
 use ringbuf::consumer::Consumer;
 use steady_state_aeron::aeron::Aeron;
-use crate::{into_monitor, steady_state, SteadyCommander, SteadyContext, SteadyRx, SteadyState};
-use crate::distributed::aqueduct::{AquaductRxDef, AquaductRxMetaData, FragmentType, SteadyAqueductRx, SteadyAqueductTx};
+use steady_state_aeron::concurrent::logbuffer::term_appender::OnReservedValueSupplier;
+use steady_state_aeron::exclusive_publication::ExclusivePublication;
+use crate::{into_monitor, steady_state, SteadyCommander, SteadyContext, SteadyState};
+use crate::distributed::aqueduct::{AquaductRxDef, AquaductRxMetaData, FragmentType, SteadyAqueductRx};
 use crate::*;
 use crate::distributed::aeron_channel::Channel;
 
 #[derive(Default)]
 pub(crate) struct FragmentState {
     pub(crate) pub_reg_id: Option<i64>,    
-    pub(crate) total_bytes: u128,
 }
 
-pub async fn run(context: SteadyContext, rx: SteadyAqueductRx, aeron_connect: Channel, stream_id: i32
+pub async fn run(context: SteadyContext, rx: SteadyAqueductRx, aeron_connect: Channel, stream_id: Box<[i32]>
                  , aeron:Arc<Mutex<Aeron>>, state: SteadyState<FragmentState>) -> Result<(), Box<dyn Error>> {
     let md:AquaductRxMetaData = rx.meta_data();
     internal_behavior(into_monitor!(context, [md.control,md.payload], []), rx, aeron_connect, stream_id, aeron, state).await
 }
 
 
-
-pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
+async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                                                      , rx: SteadyAqueductRx
                                                      , aeron_channel: Channel
-                                                     , stream_id: i32
-                                                     ,  mut aeron:Arc<Mutex<Aeron>>
+                                                     , stream_id: Box<[i32]>
+                                                     , mut aeron:Arc<Mutex<Aeron>>
                                                      , state: SteadyState<FragmentState>
   ) -> Result<(), Box<dyn Error>> {
 
     let start = Instant::now();
 
     let mut state_guard = steady_state(&state, || FragmentState::default()).await;
-    if let Some(mut state) = state_guard.as_mut() {
-      
+    if let Some(state) = state_guard.as_mut() {
+
+          //send in array of stream ids so we can use ordinal
+
+            let stream_id = stream_id[0];
+
+
             use steady_state_aeron::concurrent::atomic_buffer::*;
             use steady_state_aeron::utils::types::Index;
             if state.pub_reg_id.is_none() {
                 //only add publication once if not already set
                 //trace!("Sender register publication: {:?} {:?}",aeron_channel.cstring(), stream_id);
-                let reg = {
-                    let mut locked_aeron = aeron.lock().await;
-                    locked_aeron.add_exclusive_publication(aeron_channel.cstring(), stream_id)
-                };
-                match reg {
-                    Ok(reg_id) => {
-                        state.pub_reg_id = Some(reg_id);
-                    }
+                match aeron.lock().await.add_exclusive_publication(aeron_channel.cstring(), stream_id) {
+                    Ok(reg_id) => state.pub_reg_id = Some(reg_id),
                     Err(e) => {
                         warn!("Unable to add publication: {:?}, Check if Media Driver is running.",e);
                         return Err(e.into());
@@ -57,74 +56,48 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
             }
             let mut rx_lock = rx.lock().await;
 
-            let mut publication = match state.pub_reg_id {
-                Some(p) => {
-                    // trace!("Looking for publication {} {:?} {:?}",p, aeron_channel.cstring(), stream_id);
-                    loop {
-                        let publication = {
-                            let mut locked_aeron = aeron.lock().await;
-                            locked_aeron.find_exclusive_publication(p)
-                        };
-                        //NOTE: this creates an "image" so the receiver can read this "image" and start to read data
-                         match publication { //NOTE: switch to  find_exclusive_publication when we can
-                                Err(e) => {
-                                   if e.to_string().contains("Awaiting") || e.to_string().contains("not ready") {
-                                       yield_now::yield_now().await; //ok  we can retry again but should yeild until we can get the publication
-                                       if cmd.is_liveliness_stop_requested() {
-                                           //trace!("stop detected before finding publication");
-                                           return Ok(()); //we are done, shutdown happened before we could start up.
-                                       }
-                                   } else {
-                                       warn!("Error finding publication: {:?}", e);
-                                       return Err(e.into());
-                                   }
-                                },
-                                Ok(publ) => {
-                                       //trace!("publication found");
-                                       break publ
-                                }
-                           }
-                    }
-                },
-                None => {
-                    return Err("publication registration id not available, check media driver".into());
+            let publication_id = match state.pub_reg_id {
+                Some(p) => p,
+                None => return Err("publication registration id not available, check media driver".into())
+            };
+
+            let publication = {
+                let (publ, result) = lookup_publication(&mut cmd, &mut aeron, publication_id).await;
+                if let Some(p) = publ {
+                    p
+                } else {
+                    return result;
                 }
             };
             let mut publication = publication.lock().expect("internal");
 
-            let duration = start.elapsed();
-            warn!("Sender connected to Aeron publication in {:?}", duration);
-            //TODO: we should detect if we break out of is_running loop and report a warning
 
+            //////////////////////////////////////////////////////////////////////////////
+
+            let duration = start.elapsed();
+            warn!("Sender connected to Aeron publication(s) {:?} in {:?}", stream_id, duration);
             while cmd.is_running(&mut || rx_lock.is_closed_and_empty()) {
                 //warn!("waiting for rx message");
                 let clean = await_for_all!(cmd.wait_closed_or_avail_units(&mut rx_lock.control_channel, 1));
                 if clean {
-
                     let to_read = if let Some(aquaduct_frame) = cmd.take_async(&mut rx_lock.control_channel).await {
                         if aquaduct_frame.length.is_zero() {
                             warn!("actor sent zero length message to be sent, this should be avoided for performance reasons.");
                         }
-                        
-                        
-                        let _ = aquaduct_frame.option;
-                        //TODO: let _ = aqueduct_frame.message_id  should be optional for send !!
-                        
-                        
                         //TODO: in this early iteration we only support full unfragmented blocks for send
-                        assert_eq!(aquaduct_frame.fragment_type, FragmentType::UnFragmented); 
-                        aquaduct_frame.length
-                        
+                        assert_eq!(aquaduct_frame.fragment_type, FragmentType::UnFragmented);
+
+                        aquaduct_frame.length as usize
                     } else {
                         0 //this case may happen during shutdown and we ignore it with if to_read>0
-                    } as usize;
+                    };
 
                     if to_read > 0 { //only send if we actually have some bytes?
 
                         //our channel must be large enough for the message so we can assume its all ready to go
                         //this is all the data in the channel but we only want those bytes which
                         //belong to our message
-                        let (mut a, mut b) = rx_lock.payload_channel.rx.as_mut_slices();
+                        let (a, b) = rx_lock.payload_channel.rx.as_mut_slices();
                         let a_len = to_read.min(a.len());
                         let remaining_read = to_read - a_len;
 
@@ -135,7 +108,7 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                             //rare: we are going over the edge so we are forced to copy the data
                             //NOTE: with patch to exclusive_publication we could avoid this copy
                             let aligned_buffer = AlignedBuffer::with_capacity(to_read as Index);
-                            let mut buf = AtomicBuffer::from_aligned(&aligned_buffer);
+                            let buf = AtomicBuffer::from_aligned(&aligned_buffer);
                             buf.put_bytes(0, &mut a[0..a_len]);
                             let b_len = remaining_read.min(b.len());
                             let extended_read = remaining_read - b_len;
@@ -147,7 +120,13 @@ pub async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
 
                         //trace!("Sending {:?} bytes", to_send.as_slice());
                         loop {
-                            match publication.offer_part(to_send, 0, to_send.capacity()) {
+                            const APP_ID:i64 = 8675309;
+                            //TODO: need to use this field to hash payload with our private key.
+                            let f:OnReservedValueSupplier = |_buf,_start,_len| {APP_ID};
+                            //TODO: in the reader if this value does not match expected set the Result Err so we know 
+                            let offer_response = publication.offer_opt(to_send, 0, to_send.capacity(), f);
+
+                            match offer_response {
                                 Ok(value) => {
                                     warn!("Published {:?} {}", to_send.as_slice(), value);
                                     break;
@@ -193,6 +172,30 @@ Err("State not available".into())
     }
 }
 
+async fn lookup_publication<CMD: SteadyCommander>(cmd: &mut CMD, aeron: &mut Arc<Mutex<Aeron>>, id: i64) ->
+         (Option< Arc<std::sync::Mutex<ExclusivePublication>> >, Result<(), Box<dyn Error>>) {
+    loop {
+        //NOTE: this creates an "image" so the receiver can read this "image" and start to read data
+        match aeron.lock().await.find_exclusive_publication(id) { //NOTE: switch to  find_exclusive_publication when we can
+            Err(e) => {
+                if e.to_string().contains("Awaiting") || e.to_string().contains("not ready") {
+                    yield_now::yield_now().await; //ok  we can retry again but should yeild until we can get the publication
+                    if cmd.is_liveliness_stop_requested() {
+                        //trace!("stop detected before finding publication");
+                        //we are done, shutdown happened before we could start up.
+                        break (None,Ok(()));
+                    }
+                } else {
+                    warn!("Error finding publication: {:?}", e);
+                    break (None,Err(e.into()));
+                }
+            },
+            Ok(publication) => {
+                break (Some(publication),Ok(()));
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 pub(crate) mod aeron_tests {
@@ -200,7 +203,7 @@ pub(crate) mod aeron_tests {
     use futures_timer::Delay;
     use super::*;
     use crate::distributed::aeron_channel::{MediaType};
-    use crate::distributed::aqueduct::AqueductFragment;
+    use crate::distributed::aqueduct::{AqueductFragment, IncomingMessage, SteadyAqueductTx};
     use crate::distributed::distributed::{DistributionBuilder};
 
     //TODO: Send mb of data so we can time it and check (head tail neither both)
@@ -217,6 +220,13 @@ pub(crate) mod aeron_tests {
         //TODO: AqueductFrame seems differnet in and out we must re-think this.
         
         let mut tx = tx.lock().await;
+
+       // await_for_all!(context.wait_vacant_messages(&mut tx, 2, 1000));
+
+
+        // TODO: context.aqueduct_send(&mut tx, stream_id, &[1,2,3]))
+
+
         let len = context.send_slice_until_full(&mut tx.payload_channel, &[1,2,3]);
         let _ = context.try_send(&mut tx.control_channel, AqueductFragment::simple_outgoing(0, 3));
 
@@ -245,11 +255,13 @@ pub(crate) mod aeron_tests {
         // check apis for copy or peek into vec operations.
         
         let mut rx = rx.lock().await;
-        
+
+    //    await_for_all!(context.wait_closed_or_avail_messages(&mut rx, 2));
+
         //need a method signature for this pattern
-        rx.defragment(&mut context);
-        let frames = rx.take_stream_arrival(1);
-        
+        //rx.defragment(&mut context);
+        //let frames = rx.take_stream_arrival(1);
+    //    let _:Vec<IncomingMessage> = context.aqueduct_take(&mut rx, 1); //by arrival is the default?
         
         await_for_all!(context.wait_closed_or_avail_units(&mut rx.control_channel, 2));
 
@@ -284,15 +296,19 @@ pub(crate) mod aeron_tests {
             .with_media_type(MediaType::Udp)
             .point_to_point(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
                             , 40123)
-            .build(7);//we must not collide with the other test
+            .build();
+        
+        let stream_id = vec![7].into_boxed_slice();//we must not collide with the other test
         
         graph.build_aqueduct_distributor(distribution.clone()
                                          , "SenderTest"
+                                         , stream_id.clone()
                                          , to_aeron_rx.clone()
                                          , &mut Threading::Spawn);
         
         graph.build_aqueduct_collector(distribution.clone()
                                        , "ReceiverTest"
+                                       , stream_id.clone()
                                        , from_aeron_tx.clone()
                                        , &mut Threading::Spawn); //must not be same thread
 

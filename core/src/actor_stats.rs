@@ -650,8 +650,8 @@ mod test_actor_stats {
 
         assert_eq!(actor_stats.ident.id, 1);
         assert_eq!(actor_stats.ident.label.name, "test_actor");
-        assert_eq!(actor_stats.show_avg_mcpu, true);
-        assert_eq!(actor_stats.show_avg_work, true);
+        assert!(actor_stats.show_avg_mcpu);
+        assert!(actor_stats.show_avg_work);
         assert_eq!(actor_stats.percentiles_mcpu.len(), 2);
         assert_eq!(actor_stats.percentiles_work.len(), 2);
         assert_eq!(actor_stats.std_dev_mcpu.len(), 1);

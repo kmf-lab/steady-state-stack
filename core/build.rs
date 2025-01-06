@@ -147,7 +147,7 @@ fn gzip_encode(target: &Path, file_path: &str, skip_if_exists:bool) {
     let target_file_gz = target.join(output_name_gz);
     
     if let Some(parent_dir) = target_file_gz.parent() {
-        fs::create_dir_all(&parent_dir).expect(&format!("Failed to create output directory {:?}",&parent_dir));
+        fs::create_dir_all(parent_dir).unwrap_or_else(|_| panic!("Failed to create output directory {:?}",&parent_dir));
     }
 
     if skip_if_exists && Path::new(&target_file_gz).exists() {

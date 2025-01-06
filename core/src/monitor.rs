@@ -157,7 +157,7 @@ pub struct ChannelMetaData {
 pub struct TxMetaData(pub(crate) Arc<ChannelMetaData>);
 /// supports the macro as an easy way to get the metadata
 impl TxMetaData {
-    pub fn meta_data(self: Self) -> TxMetaData {self}
+    pub fn meta_data(self) -> TxMetaData {self}
 }
 
 /// Metadata for a receiver channel.
@@ -165,7 +165,7 @@ impl TxMetaData {
 pub struct RxMetaData(pub(crate) Arc<ChannelMetaData>);
 /// supports the macro as an easy way to get the metadata
 impl RxMetaData {
-    pub fn meta_data(self: Self) -> RxMetaData {self}
+    pub fn meta_data(self) -> RxMetaData {self}
 }
 
 
@@ -422,23 +422,15 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_building(&self) -> bool {
-        self.is_liveliness_in(&vec![ GraphLivelinessState::Building ])
+        self.is_liveliness_in(&[ GraphLivelinessState::Building ])
     }
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_running(&self) -> bool {
-        self.is_liveliness_in(&vec![ GraphLivelinessState::Running ])
+        self.is_liveliness_in(&[ GraphLivelinessState::Running ])
     }
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_stop_requested(&self) -> bool {
-        self.is_liveliness_in(&vec![ GraphLivelinessState::StopRequested ])
-    }
-    
-    /// Waits while the actor is running.
-    ///
-    /// # Returns
-    /// A future that resolves to `Ok(())` if the monitor stops, otherwise `Err(())`.
-    fn wait_while_running(&self) -> impl Future<Output = Result<(), ()>> {
-        WaitWhileRunningFuture::new(self.runtime_state.clone())
+        self.is_liveliness_in(&[ GraphLivelinessState::StopRequested ])
     }
 
     /// Waits until a specified number of units are available in the Rx channel bundle.
@@ -1652,19 +1644,6 @@ pub(crate) mod monitor_tests {
     }
 
 
-
-    // Test wait_while_running method
-    #[async_std::test]
-    async fn test_wait_while_running() {
-        let context = test_steady_context();
-        let monitor = into_monitor!(context,[],[]);
-
-        let fut = monitor.wait_while_running();
-        assert_eq!(fut.await, Ok(()));
-
-    }
-
-
     // Test is_empty method
     #[test]
     fn test_is_empty() {
@@ -2060,7 +2039,7 @@ pub(crate) mod monitor_tests {
 
         //we still have 1 from before
         if let Some(ref mut send_guard) = tx.try_lock() {
-            for item in vec![6, 7, 8] {
+            for item in [6, 7, 8] {
                 let _ = send_guard.shared_try_send(item);
             }
         };
@@ -2084,7 +2063,7 @@ pub(crate) mod monitor_tests {
             }
         };
         if let Some(ref mut send_guard) = tx.try_lock() {
-            for item in vec![9, 10, 11, 12] {
+            for item in [9, 10, 11, 12] {
                 let _ = send_guard.shared_try_send(item);
             }
         };

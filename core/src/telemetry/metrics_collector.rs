@@ -728,7 +728,7 @@ mod metric_collector_tests {
 
 
             graph.request_stop();
-            assert_eq!(true,graph.block_until_stopped(Duration::from_secs(3)));
+            assert!(graph.block_until_stopped(Duration::from_secs(3)));
         }
     }
 

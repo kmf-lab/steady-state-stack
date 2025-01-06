@@ -26,7 +26,6 @@ use futures::channel::oneshot;
 use log::*;
 use async_ringbuf::traits::Split;
 use futures_timer::Delay;
-use ringbuf::traits::Observer;
 use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
 use crate::distributed::aqueduct;
@@ -806,7 +805,7 @@ impl <T> LazyChannel<T> {
     pub(crate) async fn get_tx_clone(&self) -> SteadyTx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
-            let mut b = self.builder.lock().await.take()
+            let b = self.builder.lock().await.take()
                             .expect("internal error, only done once");            
             *channel = Some(b.eager_build());
         }
@@ -816,7 +815,7 @@ impl <T> LazyChannel<T> {
     pub(crate) async fn get_rx_clone(&self) -> SteadyRx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
-            let mut b = self.builder.lock().await.take()
+            let b = self.builder.lock().await.take()
                             .expect("internal error, only done once");
             *channel = Some(b.eager_build());
         }

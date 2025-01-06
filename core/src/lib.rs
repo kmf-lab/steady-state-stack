@@ -303,6 +303,8 @@ pub struct SteadyContext {
     pub(crate) show_thread_info: bool
 }
 
+
+
 impl Clone for SteadyContext {
     fn clone(&self) -> Self {
         SteadyContext {
@@ -922,16 +924,6 @@ mod lib_tests {
         };
     }
 
-
-
-    // Test wait_while_running method
-    #[async_std::test]
-    async fn test_wait_while_running() {
-        let context = test_steady_context();
-        let fut = context.wait_while_running();
-        assert_eq!(fut.await, Ok(()));
-
-    }
 
     // Test wait_avail_units_bundle method
     #[async_std::test]

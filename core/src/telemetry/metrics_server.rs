@@ -552,7 +552,7 @@ mod http_telemetry_tests {
 
     #[async_std::test]
     async fn test_metrics_server() {
-        if !std::env::var("GITHUB_ACTIONS").is_ok() {
+        if std::env::var("GITHUB_ACTIONS").is_err() {
             let (mut graph, server_ip, tx_in) = stand_up_test_server("127.0.0.1:0").await;
 
             // Step 5: Capture and validate the metrics server content
@@ -684,7 +684,7 @@ mod http_telemetry_tests {
         data.push(DiagramData::NodeProcessData(1, node_status.into()));
         data.push(DiagramData::ChannelVolumeData(1, vec![(15, 20), (30, 30)].into()));
 
-        tx_in.testing_send_all(data.into(), false).await;
+        tx_in.testing_send_all(data, false).await;
         (graph, server_ip, tx_in)
     }
 

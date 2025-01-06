@@ -3,6 +3,7 @@ use dot_parser::canonical::Graph;
 use std::error::Error;
 use std::time::Duration;
 use log::{error, warn};
+use num_traits::Zero;
 use crate::ProjectModel;
 use crate::templates::{Actor, ActorDriver, Channel, ConsumePattern};
 
@@ -321,8 +322,8 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, m
                 let to_mod = pm.actors.iter().filter(|f| f.display_name.eq(to_name) /*&& f.display_suffix.eq(&to_id)*/ )
                                         .map(|a| a.mod_name.clone()).next().unwrap_or("unknown".into());
 
-                let mod_name = if mod_name.trim().len()==0 { "unknown".to_string() } else { mod_name };
-                let to_mod = if to_mod.trim().len()==0 { "unknown".to_string() } else { to_mod };
+                let mod_name = if mod_name.trim().len().is_zero() { "unknown".to_string() } else { mod_name };
+                let to_mod = if to_mod.trim().len().is_zero() { "unknown".to_string() } else { to_mod };
 
                 // Create a Channel instance based on extracted details
                 let mut channel = Channel {
@@ -385,7 +386,7 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, m
                         .unwrap_or(0);
                     insert_me_rx_channel.rebundle_index = rx_counter_index as isize; //for building dynamic bundle if needed
 
-                    roll_up_bundle(&mut a.rx_channels, insert_me_rx_channel, false,|t, v|
+                    roll_up_bundle(&mut a.rx_channels, insert_me_rx_channel, false,|_t, _v|
                         true );
                     //v.iter().all(|g| g.to_node.eq(&t.to_node) && g.to_mod.eq(&t.to_mod)));
                 }
@@ -517,8 +518,8 @@ fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, in
             if collection.is_empty() {
                 // only needed for circular references pointing to self
                 if insert_me.from_mod.eq(&insert_me.to_mod) {
-                    let (an,ai) = extract_trailing_number(&insert_me.from_node);
-                    let (bn,bi) = extract_trailing_number(&insert_me.to_node);
+                    let (an,_ai) = extract_trailing_number(&insert_me.from_node);
+                    let (bn,_bi) = extract_trailing_number(&insert_me.to_node);
                     if an.eq(bn) {
                         insert_me.is_unbundled = true;
                     }

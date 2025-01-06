@@ -74,6 +74,7 @@ ExecStart=/usr/bin/docker run --rm --ipc=host --network=host --shm-size=512m --c
 User=$SERVICE_USER
 Group=$SERVICE_USER
 UMask=0002
+Nice=-10
 Restart=$RESTART_POLICY
 ExecStop=/usr/bin/docker stop $SERVICE_NAME
 

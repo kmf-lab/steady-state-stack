@@ -8,12 +8,9 @@ use std::future::Future;
 use std::thread;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::thread::sleep;
 use std::time::Duration;
-use futures_timer::Delay;
-use futures_util::lock::Mutex;
 use lazy_static::lazy_static;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 #[allow(unused_imports)]
@@ -109,35 +106,7 @@ pub(crate) fn init(enable_driver: bool, nuclei_config: IoUringConfiguration) {
     });
 }
 
-/// Spawns a future as a detached task.
-///
-/// This function spawns an asynchronous task that runs the given future. The task is detached,
-/// meaning it runs independently and its result is not awaited.
-///
-/// # Arguments
-///
-/// * `future` - The future to run as a detached task.
-///
-pub(crate) fn spawn_detached<F, T>(thread_lock: Arc<Mutex<()>>, future: F)
-    where
-        F: Future<Output = T> + Send + 'static,
-        T: Send + 'static,
-{
 
-    nuclei::block_on(async move {
-       let _guard = thread_lock.lock().await;
-       match nuclei::spawn_more_threads(1).await {
-           Ok(c) => {if c>=12 {info!("Threads: {}",c);} }
-           Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
-       }
-
-       nuclei::spawn(future).detach();
-       //TODO: this is needed or we end up waiting?
-       Delay::new(Duration::from_millis(10)).await;
-
-    });
-
-}
 
 /// Blocks the current thread until the given future resolves.
 ///

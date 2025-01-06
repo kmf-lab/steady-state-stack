@@ -10,7 +10,6 @@ use futures_timer::Delay;
 use std::thread;
 use std::ops::DerefMut;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, LocalMonitor, Rx, RxBundle, SendSaturation, SteadyContext, Tx, TxBundle};
-use crate::graph_liveliness::WaitWhileRunningFuture;
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
@@ -155,26 +154,17 @@ impl SteadyCommander for SteadyContext {
     
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_building(&self) -> bool {
-        self.is_liveliness_in(&vec![ GraphLivelinessState::Building ])
+        self.is_liveliness_in(&[ GraphLivelinessState::Building ])
     }
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_running(&self) -> bool {
-        self.is_liveliness_in(&vec![ GraphLivelinessState::Running ])
+        self.is_liveliness_in(&[ GraphLivelinessState::Running ])
     }
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_stop_requested(&self) -> bool {
-        self.is_liveliness_in(&vec![ GraphLivelinessState::StopRequested ])
+        self.is_liveliness_in(&[ GraphLivelinessState::StopRequested ])
     }
 
-
-
-    /// Waits while the actor is running.
-    ///
-    /// # Returns
-    /// A future that resolves to `Ok(())` if the monitor stops, otherwise `Err(())`.
-    fn wait_while_running(&self) -> impl Future<Output=Result<(), ()>> {
-        WaitWhileRunningFuture::new(self.runtime_state.clone())
-    }
     /// Waits until a specified number of units are available in the Rx channel bundle.
     ///
     /// # Parameters
@@ -908,11 +898,16 @@ pub trait SteadyCommander {
     fn is_liveliness_running(&self) -> bool;
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_stop_requested(&self) -> bool;
-    /// Waits while the actor is running.
-    ///
-    /// # Returns
-    /// A future that resolves to `Ok(())` if the monitor stops, otherwise `Err(())`.
-    fn wait_while_running(&self) -> impl Future<Output=Result<(), ()>>;
+    
+
+
+    // impl SteadyContext {
+    //     pub(crate) fn wait_vacant_messages(&self, p0: &mut MutexGuard<AqueductTx>, p1: i32, p2: i32) -> _ {
+    //         todo!()
+    //     }
+    // }
+    
+    
     /// Waits until a specified number of units are available in the Rx channel bundle.
     ///
     /// # Parameters
@@ -1005,6 +1000,84 @@ pub trait SteadyCommander {
     where
         T: Send,
     ;
+
+    /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
+    ///
+    /// This method helps maintain a consistent period between consecutive calls, even if the
+    /// execution time of the work performed in between calls fluctuates. It calculates the
+    /// remaining time until the next desired periodic interval and waits for that duration.
+    ///
+    /// If a shutdown signal is detected during the waiting period, the method returns early
+    /// with a value of `false`. Otherwise, it waits for the full duration and returns `true`.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration_rate` - The desired duration between periodic calls.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the full waiting duration was completed without interruption.
+    /// * `false` if a shutdown signal was detected during the waiting period.
+    ///
+    async fn wait_periodic(&self, duration_rate: Duration) -> bool;
+
+    /// Waits for a future to complete or until a shutdown signal is received.
+    ///
+    /// # Parameters
+    /// - `fut`: The future to wait for.
+    ///
+    /// # Returns
+    /// `true` if the future completed, `false` if a shutdown signal was received.
+    async fn wait_future_void<F>(&self, fut: F) -> bool
+    where
+        F: FusedFuture<Output = ()> + 'static + Send + Sync;
+
+    /// Waits until the specified number of available units are in the receiver.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available, `false` if the wait was interrupted.
+    async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool;
+    /// Waits until the specified number of available units are in the receiver.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available, `false` if the wait was interrupted.
+    async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool;
+    /// Waits until the specified number of available units are in the transmitter.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available
+    async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool;
+    /// Waits until the specified number of vacant units are in the transmitter.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available, `false` if the wait was interrupted.
+    async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool;
+    /// Waits until the specified number of vacant units are in the transmitter.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available
+    async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool;
+    /// Waits until shutdown
+    ///
+    /// # Returns
+    /// true
+    async fn wait_shutdown(&self) -> bool;
+    
     /// Attempts to peek at a slice of messages without removing them from the channel.
     ///
     /// # Parameters
@@ -1183,45 +1256,7 @@ pub trait SteadyCommander {
     where
         F: Future,
     ;
-    /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
-    ///
-    /// This method helps maintain a consistent period between consecutive calls, even if the
-    /// execution time of the work performed in between calls fluctuates. It calculates the
-    /// remaining time until the next desired periodic interval and waits for that duration.
-    ///
-    /// If a shutdown signal is detected during the waiting period, the method returns early
-    /// with a value of `false`. Otherwise, it waits for the full duration and returns `true`.
-    ///
-    /// # Arguments
-    ///
-    /// * `duration_rate` - The desired duration between periodic calls.
-    ///
-    /// # Returns
-    ///
-    /// * `true` if the full waiting duration was completed without interruption.
-    /// * `false` if a shutdown signal was detected during the waiting period.
-    ///
-    async fn wait_periodic(&self, duration_rate: Duration) -> bool;
-    /// Asynchronously waits for a specified duration.
-    ///
-    /// # Parameters
-    /// - `duration`: The duration to wait.
-    ///
-    /// # Asynchronous
-    async fn wait(&self, duration: Duration);
-    /// Yield so other actors may be able to make use of this thread. Returns
-    /// immediately if there is nothing scheduled to check.
-    async fn yield_now(&self);
-    /// Waits for a future to complete or until a shutdown signal is received.
-    ///
-    /// # Parameters
-    /// - `fut`: The future to wait for.
-    ///
-    /// # Returns
-    /// `true` if the future completed, `false` if a shutdown signal was received.
-    async fn wait_future_void<F>(&self, fut: F) -> bool
-            where
-                F: FusedFuture<Output = ()> + 'static + Send + Sync;
+
     /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
     ///
     /// # Parameters
@@ -1244,51 +1279,20 @@ pub trait SteadyCommander {
     /// # Returns
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
     async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T>;
-    /// Waits until the specified number of available units are in the receiver.
+    
+    /// Asynchronously waits for a specified duration.
     ///
     /// # Parameters
-    /// - `count`: The number of units to wait for.
+    /// - `duration`: The duration to wait.
     ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool;
-    /// Waits until the specified number of available units are in the receiver.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool;
-    /// Waits until the specified number of available units are in the transmitter.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available
-    async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool;
-    /// Waits until the specified number of vacant units are in the transmitter.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool;
-    /// Waits until the specified number of vacant units are in the transmitter.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available
-    async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool;
-    /// Waits until shutdown
-    ///
-    /// # Returns
-    /// true
-    async fn wait_shutdown(&self) -> bool;
+    /// # Asynchronous
+    async fn wait(&self, duration: Duration);
+
+    /// Yield so other actors may be able to make use of this thread. Returns
+    /// immediately if there is nothing scheduled to check.
+    async fn yield_now(&self);
+    
+
     /// Returns a side channel responder if available.
     ///
     /// # Returns

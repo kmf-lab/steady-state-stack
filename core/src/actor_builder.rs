@@ -16,7 +16,7 @@ use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::lock::{Mutex, MutexGuard};
 use log::*;
-use futures_util::future::{BoxFuture, select_all};
+use futures_util::future::select_all;
 
 
 use crate::{abstract_executor, ActorName, AlertColor, Graph, Metric, StdDev, steady_config, SteadyContext, Trigger};
@@ -1224,7 +1224,7 @@ mod test_actor_builder {
         assert_eq!(builder.refresh_rate_in_bits, 0);
         assert_eq!(builder.window_bucket_in_bits, 0);
         builder.build(|c| async move {             
-            assert_eq!(true, c.is_liveliness_in(&vec![ GraphLivelinessState::Building ]));            
+            assert!(c.is_liveliness_in(&vec![ GraphLivelinessState::Building ]));            
             Ok(()) }, &mut Threading::Spawn);
     }
 
@@ -1237,7 +1237,7 @@ mod test_actor_builder {
         assert_eq!(builder.window_bucket_in_bits, 0);
         let mut t = ActorTeam::new(&graph);
         builder.build(|c| async move {
-            assert_eq!(true, c.is_liveliness_in(&vec![ GraphLivelinessState::Building ]));
+            assert!(c.is_liveliness_in(&vec![ GraphLivelinessState::Building ]));
             Ok(()) }, &mut Threading::Join(&mut t));
     }
 

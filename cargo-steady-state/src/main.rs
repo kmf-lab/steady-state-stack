@@ -148,7 +148,7 @@ fn write_project_files(pm: ProjectModel
        let mut my_struct_use:Vec<String> = actor.rx_channels
             .iter()
             .filter(|f| !f[0].from_mod.eq(&f[0].to_mod))//if to and from same place then its not use it will be define later
-            .map(|f| format!("use crate::actor::{}::{}",if f[0].from_mod.len()==0 { "UNKNOWN" } else {&f[0].from_mod}, f[0].message_type))
+            .map(|f| format!("use crate::actor::{}::{}",if f[0].from_mod.is_empty() { "UNKNOWN" } else {&f[0].from_mod}, f[0].message_type))
             .collect();
 
        //NOTE: if we use a struct of the same name we assume it is the same and
@@ -156,7 +156,7 @@ fn write_project_files(pm: ProjectModel
        let mut my_struct_def:Vec<String> = actor.tx_channels
            .iter()
            .filter(|f| {
-               if f[0].bundle_struct_mod.len()>0 && !actor.mod_name.eq(&f[0].bundle_struct_mod) &&
+               if !f[0].bundle_struct_mod.is_empty() && !actor.mod_name.eq(&f[0].bundle_struct_mod) &&
                   !f[0].is_unbundled {
                    my_struct_use.push(format!("use crate::actor::{}::{}",
                                               &f[0].bundle_struct_mod,

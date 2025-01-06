@@ -452,9 +452,9 @@ mod graph_testing_tests {
 
         let (_tx,rx) = oneshot::channel();
 
-        hub.register_node(actor.label.clone(), 10, rx );
+        hub.register_node(actor.label, 10, rx );
 
-        let node = hub.node_tx_rx(actor.label.clone());
+        let node = hub.node_tx_rx(actor.label);
         assert!(node.is_some(), "Node should be registered and retrievable");
     }
 
@@ -472,7 +472,7 @@ mod graph_testing_tests {
         info!("custom debug {:?}",text);
 
         let (_tx,rx) = oneshot::channel();
-        assert_eq!(true, hub.register_node(actor_name.clone(), 10, rx));
+        assert!(hub.register_node(actor_name.clone(), 10, rx));
         
         // do not run as it will confuse the build due to log of error.
         // let (_tx,rx) = oneshot::channel();

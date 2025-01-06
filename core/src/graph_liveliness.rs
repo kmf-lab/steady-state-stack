@@ -14,10 +14,8 @@ use log::{error, info, log_enabled, trace, warn};
 use std::any::Any;
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::fmt::Debug;
-use std::future::Future;
-use std::pin::Pin;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task::{Context, Poll};
 use std::{thread};
 use std::io::Write;
 use futures::channel::oneshot;
@@ -97,43 +95,7 @@ pub struct GraphLiveliness {
     pub(crate) actors_count: Arc<AtomicUsize>,
 }
 
-/// A future that waits while the graph is running.
-pub(crate) struct WaitWhileRunningFuture {
-    shared_state: Arc<RwLock<GraphLiveliness>>,
-}
 
-impl WaitWhileRunningFuture {
-    /// Creates a new `WaitWhileRunningFuture`.
-    pub(crate) fn new(shared_state: Arc<RwLock<GraphLiveliness>>) -> Self {
-        Self { shared_state }
-    }
-}
-
-impl Future for WaitWhileRunningFuture {
-    type Output = Result<(), ()>;
-
-    /// Polls the future to determine if the graph is still running.
-    ///
-    /// # Arguments
-    ///
-    /// * `self` - A pinned reference to the future.
-    /// * `cx` - The task context used for waking up the task.
-    ///
-    /// # Returns
-    ///
-    /// * `Poll::Pending` - If the graph is still running.
-    /// * `Poll::Ready(Ok(()))` - If the graph is no longer running.
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let self_mut = self.get_mut();
-
-        let read_guard = self_mut.shared_state.read();
-        if read_guard.is_in_state(&[GraphLivelinessState::Running]) {
-            Poll::Pending
-        } else {
-            Poll::Ready(Ok(()))
-        }
-    }
-}
 
 impl GraphLiveliness {
     /// Creates a new `GraphLiveliness` instance.
@@ -587,11 +549,12 @@ impl Graph {
     pub fn build_aqueduct_distributor(&mut self
                                       , distribution: Distributed
                                       , name: &'static str
+                                      , streams: Box<[i32]>
                                       , rx: SteadyAqueductRx
                                       , threading: &mut Threading) {
         
         match distribution {
-            Distributed::Aeron(channel,stream_id) => {
+            Distributed::Aeron(channel) => {
 
                 if self.aeron.is_none() { //lazy load, we only support one
                     self.aeron = aeron_context();
@@ -600,14 +563,15 @@ impl Graph {
                 if let Some(aeron) = &self.aeron {
                     let state = new_state();
                     let aeron = aeron.clone();
-                    
+
+
                     self.actor_builder()
                         .with_name(name)
                         .build(move |context| 
                                    aeron_sender::run(context
                                                      , rx.clone()
-                                                     , channel.clone()
-                                                     , stream_id
+                                                     , channel
+                                                     , streams.clone()
                                                      , aeron.clone()
                                                      , state.clone())
                                , threading)
@@ -623,11 +587,12 @@ impl Graph {
     pub fn build_aqueduct_collector(&mut self
                                     , distribution: Distributed
                                     , name: &'static str
+                                    , streams: Box<[i32]>
                                     , tx: SteadyAqueductTx
                                     , threading: &mut Threading) {
 
         match distribution {
-            Distributed::Aeron(channel,stream_id) => {
+            Distributed::Aeron(channel) => {
 
                 if self.aeron.is_none() { //lazy load, we only support one
                     self.aeron = aeron_context();
@@ -642,8 +607,8 @@ impl Graph {
                         .build(move |context|
                                    aeron_receiver::run(context
                                                        , tx.clone()
-                                                       , channel.clone()
-                                                       , stream_id
+                                                       , channel
+                                                       , streams.clone()
                                                        , aeron.clone()
                                                        , state.clone())
                                , threading);

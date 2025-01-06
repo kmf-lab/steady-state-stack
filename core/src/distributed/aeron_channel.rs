@@ -1,7 +1,7 @@
 
 use std::ffi::CString;
 use std::fmt::Debug;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, UdpSocket};
+use std::net::{IpAddr, UdpSocket};
 
 
 pub(crate) mod aeron_utils {
@@ -64,83 +64,188 @@ pub(crate) mod aeron_utils {
     }
 }
 
+/// Specifies the type of media transport for an Aeron channel.
+///
+/// Aeron supports different kinds of communication, depending on the use case.
+/// Each type is represented by this enum.
+///
+/// # Variants
+/// - `Udp`: Standard UDP channel for unicast or multicast communication.
+/// - `Ipc`: Inter-Process Communication channel for processes on the same machine.
+/// - `SpyUdp`: Observes traffic on a UDP channel without sending or receiving.
+/// - `SpyIpc`: Observes traffic on an IPC channel without sending or receiving.
 #[derive(Debug, Clone, Copy)]
 pub enum MediaType {
-    /// Standard UDP channel: `aeron:udp?…`
+    /// Standard UDP channel: used for point-to-point or multicast communication.
+    /// Example: `aeron:udp?endpoint=127.0.0.1:40456`
     Udp,
-    /// IPC channel: `aeron:ipc`
+    /// IPC channel: used for high-speed communication between processes on the same host.
+    /// Example: `aeron:ipc`
     Ipc,
-    /// Spy on a UDP channel: `aeron-spy:aeron:udp?…`
+    /// Spy on an existing UDP channel: monitors traffic without participating.
+    /// Example: `aeron-spy:aeron:udp?endpoint=127.0.0.1:40456`
     SpyUdp,
-    /// Spy on an IPC channel: `aeron-spy:aeron:ipc?…`
+    /// Spy on an existing IPC channel: monitors IPC traffic without participating.
+    /// Example: `aeron-spy:aeron:ipc`
     SpyIpc,
 }
 
+/// Specifies how control messages are handled in multicast communication.
+///
+/// Control messages in multicast are used to coordinate the distribution of data.
+/// The mode determines whether control is handled automatically or manually.
 #[derive(Debug, Clone, Copy)]
 pub enum ControlMode {
+    /// Control messages are managed automatically by Aeron.
+    /// This is the most common mode and is easier to use for most applications.
     Dynamic,
+    /// The user must manage control messages manually.
+    /// This mode provides more fine-grained control over the multicast setup.
     Manual,
 }
 
+/// Represents an endpoint in Aeron communication, consisting of an IP address and port.
+///
+/// An endpoint is the destination or source of data in a channel. For example, when
+/// sending or receiving data, the endpoint specifies the IP address and port where
+/// the communication will take place.
+///
+/// # Fields
+/// - `ip`: The IP address of the endpoint.
+/// - `port`: The port number associated with the endpoint.
 #[derive(Debug, Clone, Copy)]
 pub struct Endpoint {
+    /// The IP address of the endpoint (e.g., `127.0.0.1` or `192.168.1.100`).
     pub ip: IpAddr,
+    /// The port number for communication (e.g., `40456`).
     pub port: u16,
 }
 
+/// Represents a network interface for binding UDP traffic.
+///
+/// The interface is used to specify which network card or IP address to use when
+/// sending or receiving UDP traffic. This is particularly useful when a machine
+/// has multiple network interfaces.
 #[derive(Debug, Clone, Copy)]
 pub struct Interface {
+    /// The IP address of the network interface.
+    /// For example, `192.168.1.1` can be used to bind to a specific interface.
     pub ip: IpAddr,
+    /// The port number for the interface. Set to `0` for default binding.
     pub port: u16,
 }
 
+/// Configuration for multicast communication, including control messages and Time-to-Live (TTL).
+///
+/// Multicast is a method of sending data to multiple receivers at once. This struct
+/// provides configuration options for multicast channels.
+///
+/// # Fields
+/// - `control`: The control endpoint that manages the multicast session.
+/// - `ttl`: The Time-to-Live (TTL) value, which specifies how far multicast packets can travel.
+///
+/// # Notes on TTL
+/// TTL is measured in "hops." Each hop represents a router or device that forwards
+/// the multicast packet. A TTL of `0` means the packet will not leave the host.
+/// A TTL of `1` limits the packet to the local network. Higher values allow the
+/// packet to travel further across routers.
 #[derive(Debug, Clone, Copy)]
 pub struct MulticastConfig {
+    /// The control endpoint used to manage the multicast group.
     pub control: Endpoint,
+    /// Time-to-Live in hops. This determines how many routers the multicast packet can pass through.
+    /// For example:
+    /// - `Some(0)`: Stays on the local machine.
+    /// - `Some(1)`: Stays within the local subnet.
+    /// - `Some(5)`: Can pass through up to 5 routers.
     pub ttl: Option<u8>,
 }
 
+/// Configuration for a point-to-point communication channel.
+///
+/// Point-to-point channels can use either unicast UDP or IPC. This struct
+/// provides additional configuration options for binding the channel to
+/// a specific interface and setting reliability.
+///
+/// # Fields
+/// - `interface`: An optional network interface for binding.
+/// - `reliable`: An optional setting for reliable communication.
 #[derive(Debug, Clone, Copy)]
 pub struct PointServiceConfig {
+    /// Optional network interface for binding the channel.
     pub interface: Option<Interface>,
+    /// Optional setting for reliable communication.
+    /// - `Some(true)`: Ensures reliable communication with retransmissions.
+    /// - `Some(false)`: Uses best-effort communication without retransmissions.
     pub reliable: Option<bool>,
 }
 
+/// Specifies the reliability configuration for a channel.
+///
+/// Reliability determines whether lost packets are retransmitted.
+///
+/// # Variants
+/// - `Reliable`: Ensures reliable communication with retransmissions.
+/// - `Unreliable`: Best-effort communication without retransmissions.
 #[derive(Debug, Clone, Copy)]
 pub enum ReliableConfig {
+    /// Ensures reliable communication. Lost packets are retransmitted.
     Reliable,
+    /// Best-effort communication. Packets may be lost if the network drops them.
     Unreliable,
 }
 
-
-/// Represents all channel forms in Aeron:
-/// - Point-to-point unicast or IPC
-/// - Multicast
-/// - Spy (implicitly handled by using MediaType::{SpyUdp, SpyIpc})
+/// Represents all forms of Aeron channels.
+///
+/// Channels define the communication path for data. Aeron supports:
+/// - Point-to-point communication (unicast or IPC)
+/// - Multicast communication
+/// - Spy channels for monitoring traffic
+///
+/// # Variants
+/// - `PointToPoint`: Used for unicast or IPC communication.
+/// - `Multicast`: Used for multicast communication.
 #[derive(Debug, Clone, Copy)]
 pub enum Channel {
-    /// Unicast or IPC channel
+    /// Represents a point-to-point unicast or IPC channel.
+    ///
+    /// # Fields
+    /// - `media_type`: The type of media transport (`MediaType`).
+    /// - `endpoint`: The target endpoint for communication.
+    /// - `interface`: An optional source interface for UDP communication.
+    /// - `reliability`: An optional setting for reliable or unreliable communication.
     PointToPoint {
+        /// Specifies the transport type (e.g., UDP or IPC).
         media_type: MediaType,
-        endpoint: Endpoint,         // e.g., 127.0.0.1:40123
-        interface: Option<Endpoint>,// for specifying interface=IP:port (mainly for UDP)
+        /// The target endpoint for communication (e.g., `127.0.0.1:40123`).
+        endpoint: Endpoint,
+        /// Optional source interface for UDP communication.
+        interface: Option<Endpoint>,
+        /// Optional reliability configuration (`ReliableConfig`).
         reliability: Option<ReliableConfig>,
     },
-    /// Multicast channel
+    /// Represents a multicast communication channel.
+    ///
+    /// # Fields
+    /// - `media_type`: The type of media transport (`MediaType`).
+    /// - `endpoint`: The multicast group endpoint.
+    /// - `config`: Configuration for multicast, including control and TTL.
+    /// - `control_mode`: Specifies how control messages are managed.
     Multicast {
+        /// Specifies the transport type (should be `MediaType::Udp` for multicast).
         media_type: MediaType,
-        endpoint: Endpoint,         // e.g., 0.0.0.0:40456
-        config: MulticastConfig,    // control address + TTL
+        /// The multicast group endpoint (e.g., `224.0.1.1:40456`).
+        endpoint: Endpoint,
+        /// Multicast configuration, including control messages and TTL.
+        config: MulticastConfig,
+        /// Specifies how control messages are managed (`ControlMode`).
         control_mode: ControlMode,
     },
 }
 
 pub(crate) fn is_port_open(port: u16) -> bool {
     // Very basic check: if we can bind to it, it's "open" from our perspective
-    match UdpSocket::bind(("127.0.0.1", port)) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    UdpSocket::bind(("127.0.0.1", port)).is_ok()
 }
 
 impl Channel {

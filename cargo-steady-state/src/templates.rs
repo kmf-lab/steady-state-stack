@@ -149,7 +149,7 @@ impl Channel {
     }
 }
 
-
+#[derive(Default)]
 pub(crate) struct Actor {
     pub(crate) display_name: String,
     pub(crate) display_suffix: Option<usize>,
@@ -230,7 +230,6 @@ pub(crate) struct ActorTemplate {
 mod additional_tests {
     use super::*;
     use std::cell::RefCell;
-    use std::time::Duration;
 
     impl Default for Channel {
         fn default() -> Self {
@@ -255,32 +254,19 @@ mod additional_tests {
         }
     }
 
-    impl Default for Actor {
-        fn default() -> Self {
-            Actor {
-                display_name: String::new(),
-                display_suffix: None,
-                mod_name: String::new(),
-                rx_channels: vec![],
-                tx_channels: vec![],
-                driver: vec![],
-            }
-        }
-    }
-
     #[test]
     fn test_channel_needs_tx_single_clone() {
         let channel = Channel {
             is_unbundled: true,
             ..Default::default()
         };
-        assert_eq!(channel.needs_tx_single_clone(), false);
+        assert!(!channel.needs_tx_single_clone());
 
         let channel = Channel {
             is_unbundled: false,
             ..Default::default()
         };
-        assert_eq!(channel.needs_tx_single_clone(), true);
+        assert!(channel.needs_tx_single_clone());
     }
 
     #[test]
@@ -289,13 +275,13 @@ mod additional_tests {
             is_unbundled: true,
             ..Default::default()
         };
-        assert_eq!(channel.needs_rx_single_clone(), false);
+        assert!(!channel.needs_rx_single_clone());
 
         let channel = Channel {
             is_unbundled: false,
             ..Default::default()
         };
-        assert_eq!(channel.needs_rx_single_clone(), true);
+        assert!(channel.needs_rx_single_clone());
     }
 
     #[test]
@@ -304,13 +290,13 @@ mod additional_tests {
             bundle_index: -1,
             ..Default::default()
         };
-        assert_eq!(channel.has_bundle_index(), false);
+        assert!(!channel.has_bundle_index());
 
         let channel = Channel {
             bundle_index: 0,
             ..Default::default()
         };
-        assert_eq!(channel.has_bundle_index(), true);
+        assert!(channel.has_bundle_index());
     }
 
     #[test]
@@ -369,7 +355,7 @@ mod additional_tests {
             ..Default::default()
         };
         let channels = vec![channel.clone()];
-        assert_eq!(channel.restructured_bundle_rx(&channels), true);
+        assert!(channel.restructured_bundle_rx(&channels));
 
         let channel = Channel {
             rebundle_index: -1,
@@ -377,7 +363,7 @@ mod additional_tests {
             ..Default::default()
         };
         let channels = vec![channel.clone()];
-        assert_eq!(channel.restructured_bundle_rx(&channels), false);
+        assert!(!channel.restructured_bundle_rx(&channels));
     }
 
     #[test]
@@ -387,21 +373,21 @@ mod additional_tests {
             is_unbundled: false,
             ..Default::default()
         };
-        assert_eq!(channel.restructured_bundle(), true);
+        assert!(channel.restructured_bundle());
 
         let channel = Channel {
             rebundle_index: -1,
             is_unbundled: false,
             ..Default::default()
         };
-        assert_eq!(channel.restructured_bundle(), false);
+        assert!(!channel.restructured_bundle());
 
         let channel = Channel {
             rebundle_index: 1,
             is_unbundled: true,
             ..Default::default()
         };
-        assert_eq!(channel.restructured_bundle(), false);
+        assert!(!channel.restructured_bundle());
     }
 
     #[test]
@@ -411,21 +397,21 @@ mod additional_tests {
             copy: true,
             ..Default::default()
         };
-        assert_eq!(channel.should_build_read_buffer(), false);
+        assert!(!channel.should_build_read_buffer());
 
         let channel = Channel {
             batch_read: 2,
             copy: true,
             ..Default::default()
         };
-        assert_eq!(channel.should_build_read_buffer(), true);
+        assert!(channel.should_build_read_buffer());
 
         let channel = Channel {
             batch_read: 2,
             copy: false,
             ..Default::default()
         };
-        assert_eq!(channel.should_build_read_buffer(), false);
+        assert!(!channel.should_build_read_buffer());
     }
 
     #[test]
@@ -435,21 +421,21 @@ mod additional_tests {
             copy: true,
             ..Default::default()
         };
-        assert_eq!(channel.should_build_write_buffer(), false);
+        assert!(!channel.should_build_write_buffer());
 
         let channel = Channel {
             batch_write: 2,
             copy: true,
             ..Default::default()
         };
-        assert_eq!(channel.should_build_write_buffer(), true);
+        assert!(channel.should_build_write_buffer());
 
         let channel = Channel {
             batch_write: 2,
             copy: false,
             ..Default::default()
         };
-        assert_eq!(channel.should_build_write_buffer(), false);
+        assert!(!channel.should_build_write_buffer());
     }
 
     #[test]
@@ -459,21 +445,21 @@ mod additional_tests {
             tx_channels: vec![vec![]],
             ..Default::default()
         };
-        assert_eq!(actor.is_on_graph_edge(), true);
+        assert!(actor.is_on_graph_edge());
 
         let actor = Actor {
             rx_channels: vec![vec![]],
             tx_channels: vec![],
             ..Default::default()
         };
-        assert_eq!(actor.is_on_graph_edge(), true);
+        assert!(actor.is_on_graph_edge());
 
         let actor = Actor {
             rx_channels: vec![vec![]],
             tx_channels: vec![vec![]],
             ..Default::default()
         };
-        assert_eq!(actor.is_on_graph_edge(), false);
+        assert!(!actor.is_on_graph_edge());
     }
 
     #[test]
