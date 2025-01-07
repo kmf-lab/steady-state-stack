@@ -362,11 +362,7 @@ impl SideChannelResponder {
         // Attempt to peek at the next message
         if let Some(q) = rx.try_peek() {
             // Check if the message can be downcast to the expected type
-            if q.is::<M>() {
-                true
-            } else {
-                false
-            }
+            q.is::<M>()
         } else {
             // No message available to peek at
             false
@@ -472,7 +468,7 @@ mod graph_testing_tests {
         info!("custom debug {:?}",text);
 
         let (_tx,rx) = oneshot::channel();
-        assert!(hub.register_node(actor_name.clone(), 10, rx));
+        assert!(hub.register_node(actor_name, 10, rx));
         
         // do not run as it will confuse the build due to log of error.
         // let (_tx,rx) = oneshot::channel();

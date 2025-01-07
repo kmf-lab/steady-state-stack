@@ -29,7 +29,7 @@ use futures_timer::Delay;
 use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
 use crate::distributed::aqueduct;
-use crate::distributed::aqueduct::{LazyAqueduct, LazyAqueductRx, LazyAqueductTx};
+use crate::distributed::aqueduct::{LazyAqueductRx, LazyAqueductTx};
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
@@ -182,10 +182,15 @@ impl ChannelBuilder {
     
     /// Simplified aqueduct builder using a shared builder for control and payload 
     /// for advanced custom channel configuration see aqueduct::build_aqueduct
-    pub(crate) fn build_aqueduct(&self, control_channel_length: usize, payload_channel_bytes: usize) -> (LazyAqueductTx, LazyAqueductRx,) {
+    pub(crate) fn build_aqueduct(&self
+                                 , control_channel_length: usize
+                                 , payload_channel_bytes: usize
+                                 , streams_first: i32
+                                 , streams_count: i32
+          ) -> (LazyAqueductTx, LazyAqueductRx,) {
         let control_builder = self.with_capacity(control_channel_length);
         let payload_builder = self.with_capacity(payload_channel_bytes);
-        aqueduct::build_aqueduct(&control_builder, &payload_builder)
+        aqueduct::build_aqueduct(&control_builder, &payload_builder, streams_first, streams_count)
     }
 }
 

@@ -183,7 +183,7 @@ impl ActorTeam {
 
         let (local_send, local_take) = oneshot::channel();
         let count_task = count.clone();
-        let team_id = self.team_id;;
+        let team_id = self.team_id;
 
         let super_task = {
             async move {

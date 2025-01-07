@@ -10,12 +10,17 @@ use crate::monitor::{RxMetaData, TxMetaData};
 
 
 impl AqueductRx {
-    pub fn new(control_channel: Rx<AqueductFragment>, payload_channel: Rx<u8>) -> Self {
+    pub fn new(control_channel: Rx<AqueductFragment>
+               , payload_channel: Rx<u8>
+               , stream_first: i32
+               , stream_count: i32) -> Self {
         AqueductRx {
             control_channel,
             payload_channel,
             assembly: HashMap::new(),
-            max_payload: i32::MAX
+            max_payload: i32::MAX,
+            stream_first,
+            stream_count
         }
     }
 
@@ -148,7 +153,7 @@ impl AqueductRx {
                         });
                     },
                     FragmentType::Middle | FragmentType::End => {
-                        let session_vec = self.assembly.entry(frame.stream_id).or_insert(HashMap::new())
+                        let session_vec = self.assembly.entry(frame.stream_id).or_default()
                             .entry(session_id).or_insert(Vec::new());
                         let collector = session_vec.last_mut().expect("vec");
                         debug_assert!(!collector.finish.is_some());
@@ -261,11 +266,14 @@ impl AqueductRx {
 /// 1. `LazyAqueductTx`: For sending (transmitting) Aqueduct fragments.
 /// 2. `LazyAqueductRx`: For receiving (assembling) Aqueduct fragments.
 ///
-pub fn build_aqueduct(control_builder: &ChannelBuilder, payload_builder: &ChannelBuilder) -> (LazyAqueductTx, LazyAqueductRx) {
-    let to_aeron = Arc::new(LazyAqueduct::new(control_builder, payload_builder));
+pub fn build_aqueduct(control_builder: &ChannelBuilder
+                      , payload_builder: &ChannelBuilder
+                      , streams_first: i32
+                      , streams_count: i32) -> (LazyAqueductTx, LazyAqueductRx) {
+    let lazy = Arc::new(LazyAqueduct::new(control_builder, payload_builder, streams_first, streams_count));
     (
-        LazyAqueductTx::new(to_aeron.clone()),
-        LazyAqueductRx::new(to_aeron.clone())
+        LazyAqueductTx::new(lazy.clone()),
+        LazyAqueductRx::new(lazy.clone())
     )
 }
 
@@ -326,10 +334,10 @@ pub enum FragmentDirection {
 /// - `stream_id`: The `IdType` for stream identification (in Aeron, typically an i32).
 /// - `direction`: Indicates if it’s `Outgoing` or `Incoming`, and includes relevant metadata.
 #[derive(Clone, Copy, Debug)]
-pub struct AqueductFragment {
+pub(crate) struct AqueductFragment {
     pub(crate) fragment_type: FragmentType,
     pub(crate) length: i32,
-    pub(crate) stream_id: IdType,
+    pub(crate) stream_id: IdType, // must be in the bound defined
     pub(crate) direction: FragmentDirection,
 }
 
@@ -449,8 +457,11 @@ impl IncomingMessage {
 pub struct AqueductRx {
     pub(crate) control_channel: Rx<AqueductFragment>,
     pub(crate) payload_channel: Rx<u8>,
+    //Now that we know stream range TODO: this first hash map can be removed.
     pub(crate) assembly: HashMap<IdType, HashMap<IdType, Vec<IncomingMessage>>>,
     pub(crate) max_payload: i32,
+    pub(crate) stream_first: i32,
+    pub(crate) stream_count: i32
 }
 
 /// Thread-safe receiver reference for the Aqueduct, wrapped in `Arc<Mutex<…>>`.
@@ -466,8 +477,8 @@ pub trait AquaductRxDef {
 /// Metadata about control and payload channels for a receiver, providing
 /// introspection or debugging information.
 pub struct AquaductRxMetaData {
-    pub(crate) control: RxMetaData,
-    pub(crate) payload: RxMetaData,
+    pub control: RxMetaData,
+    pub payload: RxMetaData,
 }
 
 impl AquaductRxDef for SteadyAqueductRx {
@@ -500,6 +511,8 @@ impl AquaductRxDef for SteadyAqueductRx {
 pub struct AqueductTx {
     pub(crate) control_channel: Tx<AqueductFragment>,
     pub(crate) payload_channel: Tx<u8>,
+    pub(crate) stream_first: i32,
+    pub(crate) stream_count: i32
 }
 
 impl AqueductTx {
@@ -507,10 +520,15 @@ impl AqueductTx {
     ///
     /// Typically not used directly by library consumers; use `build_aqueduct`
     /// or `LazyAqueductTx::new` instead.
-    pub fn new(control_channel: Tx<AqueductFragment>, payload_channel: Tx<u8>) -> Self {
+    pub(crate) fn new(control_channel: Tx<AqueductFragment>
+                      , payload_channel: Tx<u8>
+                      , stream_first:i32
+                      , stream_count:i32) -> Self {
         AqueductTx {
             control_channel,
             payload_channel,
+            stream_first,
+            stream_count,
         }
     }
 }
@@ -678,7 +696,7 @@ impl LazyAqueductTx {
 /// Once `get_tx_clone()` or `get_rx_clone()` is called, it performs the `eager_build_internal()`
 /// on both builders, obtaining actual channels for control and payload.
 #[derive(Debug)]
-pub(crate) struct LazyAqueduct {
+struct LazyAqueduct {
     /// Builder for the control channel. Wrapped in a `Mutex<Option<…>>` so we can
     /// take ownership once we decide to build channels.
     control_builder: Mutex<Option<ChannelBuilder>>,
@@ -687,6 +705,11 @@ pub(crate) struct LazyAqueduct {
     payload_builder: Mutex<Option<ChannelBuilder>>,
     /// Stores the actual channel objects (`(SteadyAqueductTx, SteadyAqueductRx)`) once built.
     channel: Mutex<Option<(SteadyAqueductTx, SteadyAqueductRx)>>,
+    /// first lowest stream id value
+    streams_first:i32,
+    /// count of streams starting with first, must be positive
+    /// count+first must also be <= 31 bits
+    streams_count:i32
 }
 
 impl LazyAqueduct {
@@ -699,11 +722,19 @@ impl LazyAqueduct {
     /// # Note
     /// Both builders are stored inside a `Mutex<Option<ChannelBuilder>>` so they can be
     /// moved out exactly once when building the channels.
-    pub(crate) fn new(control_builder: &ChannelBuilder, payload_builder: &ChannelBuilder) -> Self {
+    pub(crate) fn new(control_builder: &ChannelBuilder
+                      , payload_builder: &ChannelBuilder
+                      , streams_first: i32
+                      , streams_count: i32
+    ) -> Self {
+        assert!(streams_count>=0);
+        assert!((streams_first as i64 + streams_count as i64) < i32::MAX as i64);
         LazyAqueduct {
             control_builder: Mutex::new(Some(control_builder.clone())),
             payload_builder: Mutex::new(Some(payload_builder.clone())),
             channel: Mutex::new(None),
+            streams_first,
+            streams_count
         }
     }
 
@@ -723,8 +754,8 @@ impl LazyAqueduct {
             let (meta_tx, meta_rx) = meta_builder.eager_build_internal();
             let (data_tx, data_rx) = data_builder.eager_build_internal();
 
-            let tx = Arc::new(Mutex::new(AqueductTx::new(meta_tx, data_tx)));
-            let rx = Arc::new(Mutex::new(AqueductRx::new(meta_rx, data_rx)));
+            let tx = Arc::new(Mutex::new(AqueductTx::new(meta_tx, data_tx, self.streams_first, self.streams_count)));
+            let rx = Arc::new(Mutex::new(AqueductRx::new(meta_rx, data_rx, self.streams_first, self.streams_count)));
             *channel = Some((tx, rx));
         }
         channel.as_ref().expect("internal error").0.clone()
@@ -746,8 +777,8 @@ impl LazyAqueduct {
             let (meta_tx, meta_rx) = meta_builder.eager_build_internal();
             let (data_tx, data_rx) = data_builder.eager_build_internal();
 
-            let tx = Arc::new(Mutex::new(AqueductTx::new(meta_tx, data_tx)));
-            let rx = Arc::new(Mutex::new(AqueductRx::new(meta_rx, data_rx)));
+            let tx = Arc::new(Mutex::new(AqueductTx::new(meta_tx, data_tx, self.streams_first, self.streams_count)));
+            let rx = Arc::new(Mutex::new(AqueductRx::new(meta_rx, data_rx, self.streams_first, self.streams_count)));
             *channel = Some((tx, rx));
         }
         channel.as_ref().expect("internal error").1.clone()

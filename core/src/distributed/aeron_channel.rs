@@ -12,7 +12,6 @@ pub(crate) mod aeron_utils {
     use steady_state_aeron::context::Context;
     use steady_state_aeron::utils::errors::AeronError;
     use log::warn;
-    use crate::ActorIdentity;
     
     //For more details see:: https://github.com/real-logic/aeron/wiki/Channel-Configuration
 

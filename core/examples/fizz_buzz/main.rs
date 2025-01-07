@@ -176,7 +176,7 @@ mod graph_tests {
         let mut guard = graph.sidechannel_director().await;
         let g = guard.deref_mut();
         assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
-        if let Some(plane) = g {
+        if let Some(_plane) = g {
 
             //NOTE: to ensure the node_call is for the correct channel for a given actor unique types for each channel are required
 

@@ -143,7 +143,7 @@ pub mod logger {
                     Err(e)
                 }
             }
-        } else {
+        } else 
             if let Some(handle) = logger_handle.as_ref() {                
                 match level.parse() {
                     Ok(level) => {
@@ -163,7 +163,6 @@ pub mod logger {
             } else {
                 print!("Warning: Logger level change to {} failed.",level);
                 Err("Logger level change failed.".into())
-            }
-        }
+            }        
     }
 }

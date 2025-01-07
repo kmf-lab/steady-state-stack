@@ -1183,34 +1183,6 @@ mod enum_tests {
     }
 
     #[test]
-    fn test_send_saturation_variants() {
-        let wait = SendSaturation::IgnoreAndWait;
-        let err = SendSaturation::IgnoreAndErr;
-        let warn = SendSaturation::Warn;
-        let ignore = SendSaturation::IgnoreInRelease;
-
-        match wait {
-            SendSaturation::IgnoreAndWait => assert!(true),
-            _ => assert!(false, "Expected IgnoreAndWait"),
-        }
-
-        match err {
-            SendSaturation::IgnoreAndErr => assert!(true),
-            _ => assert!(false, "Expected IgnoreAndErr"),
-        }
-
-        match warn {
-            SendSaturation::Warn => assert!(true),
-            _ => assert!(false, "Expected Warn"),
-        }
-
-        match ignore {
-            SendSaturation::IgnoreInRelease => assert!(true),
-            _ => assert!(false, "Expected IgnoreInRelease"),
-        }
-    }
-
-    #[test]
     fn test_std_dev_creation() {
         let valid_std_dev = StdDev::new(5.0);
         assert_eq!(valid_std_dev, Some(StdDev(5.0)));
@@ -1235,7 +1207,7 @@ mod enum_tests {
         assert_eq!(std_dev, Some(StdDev(2.5)));
 
         let invalid_std_dev = StdDev::custom(10.1);
-        assert_eq!(invalid_std_dev, None);
+        assert_eq!(None, invalid_std_dev);
     }
 
     #[test]
@@ -1268,12 +1240,12 @@ mod enum_tests {
 
         match avg_above {
             Trigger::AvgAbove(val) => assert_eq!(val, Duration::from_secs(1)),
-            _ => assert!(false, "Expected AvgAbove"),
+            _ => unreachable!("Expected AvgAbove"),
         }
 
         match avg_below {
             Trigger::AvgBelow(val) => assert_eq!(val, Duration::from_secs(2)),
-            _ => assert!(false, "Expected AvgBelow"),
+            _ => unreachable!("Expected AvgBelow"),
         }
 
         match std_devs_above {
@@ -1281,7 +1253,7 @@ mod enum_tests {
                 assert_eq!(std_dev, StdDev::two());
                 assert_eq!(val, Duration::from_secs(3));
             },
-            _ => assert!(false, "Expected StdDevsAbove"),
+            _ => unreachable!("Expected StdDevsAbove"),
         }
 
         match std_devs_below {
@@ -1289,7 +1261,7 @@ mod enum_tests {
                 assert_eq!(std_dev, StdDev::one());
                 assert_eq!(val, Duration::from_secs(4));
             },
-            _ => assert!(false, "Expected StdDevsBelow"),
+            _ => unreachable!("Expected StdDevsBelow"),
         }
 
         match percentile_above {
@@ -1297,7 +1269,7 @@ mod enum_tests {
                 assert_eq!(percentile, Percentile(90.0));
                 assert_eq!(val, Duration::from_secs(5));
             },
-            _ => assert!(false, "Expected PercentileAbove"),
+            _ => unreachable!("Expected PercentileAbove"),
         }
 
         match percentile_below {
@@ -1305,7 +1277,7 @@ mod enum_tests {
                 assert_eq!(percentile, Percentile(10.0));
                 assert_eq!(val, Duration::from_secs(6));
             },
-            _ => assert!(false, "Expected PercentileBelow"),
+            _ => unreachable!("Expected PercentileBelow"),
         }
     }
 

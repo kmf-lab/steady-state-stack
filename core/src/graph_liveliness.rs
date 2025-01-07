@@ -29,7 +29,7 @@ use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::distributed::{aeron_receiver, aeron_sender};
 use crate::distributed::aeron_channel::aeron_utils::aeron_context;
-use crate::distributed::aqueduct::{LazyAqueduct, LazyAqueductRx, LazyAqueductTx, SteadyAqueductRx, SteadyAqueductTx};
+use crate::distributed::aqueduct::{LazyAqueductRx, LazyAqueductTx, SteadyAqueductRx, SteadyAqueductTx};
 use crate::distributed::distributed::Distributed;
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
@@ -549,7 +549,6 @@ impl Graph {
     pub fn build_aqueduct_distributor(&mut self
                                       , distribution: Distributed
                                       , name: &'static str
-                                      , streams: Box<[i32]>
                                       , rx: SteadyAqueductRx
                                       , threading: &mut Threading) {
         
@@ -571,7 +570,6 @@ impl Graph {
                                    aeron_sender::run(context
                                                      , rx.clone()
                                                      , channel
-                                                     , streams.clone()
                                                      , aeron.clone()
                                                      , state.clone())
                                , threading)
@@ -587,7 +585,6 @@ impl Graph {
     pub fn build_aqueduct_collector(&mut self
                                     , distribution: Distributed
                                     , name: &'static str
-                                    , streams: Box<[i32]>
                                     , tx: SteadyAqueductTx
                                     , threading: &mut Threading) {
 
@@ -608,7 +605,6 @@ impl Graph {
                                    aeron_receiver::run(context
                                                        , tx.clone()
                                                        , channel
-                                                       , streams.clone()
                                                        , aeron.clone()
                                                        , state.clone())
                                , threading);

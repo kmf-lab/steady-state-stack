@@ -5,14 +5,14 @@ use num_traits::Zero;
 use steady_state_aeron::aeron::*;
 use steady_state_aeron::concurrent::logbuffer::frame_descriptor;
 use crate::*;
-use crate::{ into_monitor, steady_state, SteadyCommander, SteadyContext, SteadyState, SteadyTxBundle};
+use crate::{ into_monitor, steady_state, SteadyCommander, SteadyContext, SteadyState};
 use crate::distributed::aeron_channel::Channel;
 use crate::distributed::aqueduct::{AquaductTxDef, AquaductTxMetaData, AqueductFragment, FragmentDirection, FragmentType, SteadyAqueductTx};
 
 #[derive(Default)]
 pub(crate) struct FragmentState {
-    pub(crate) arrival: Option<Instant>,
-    pub(crate) sub_reg_id: Option<i64>,
+    arrival: Option<Instant>,
+    sub_reg_id: Option<i64>,
 }
 
 /// In as much as possible this actor takes fragments and attempts to make them all contiguous in the
@@ -22,17 +22,16 @@ pub(crate) struct FragmentState {
 pub async fn run(context: SteadyContext
                  , tx: SteadyAqueductTx
                  , aeron_connect: Channel
-                 , stream_id: Box<[i32]>
                  , aeron: Arc<Mutex<Aeron>>
                  , state: SteadyState<FragmentState>) -> Result<(), Box<dyn Error>> {
 
     let md:AquaductTxMetaData = tx.meta_data();
-    internal_behavior(into_monitor!(context, [], [md.control,md.payload]), tx, aeron_connect, stream_id, aeron, state).await
+    internal_behavior(into_monitor!(context, [], [md.control,md.payload]), tx, aeron_connect, aeron, state).await
 
 }
 
 /*
-Fragment management:
+Fragment management:  - never combine, this is always done on the reader side!!
     We have 3 solutions to deal with the publishers which may have their frame fragments
     interleaved. These are the choices:
     (Default, fragmented)
@@ -40,10 +39,6 @@ Fragment management:
         up to the deserialization logic. Very complex on that end. May be useful for lowest
         latency and where we can consume partial messages.
     (Jumbo fragments)
-    2. when possible combine the current fragment with the next when they are from the
-       same publisher then generate new header. This does not eliminate fragments but
-       reduces them. This takes no extra memory and is not difficult to implement.
-    (Minimize fragments)
     3. using N aqueuducts we can combine all fragments from the same publisher into
        a single frame. Working left to right we try to use the first aqueduct but only
        move to the next when we can combine to the current. The Headers have sequence
@@ -57,12 +52,11 @@ Fragment management:
 async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                                                      , tx: SteadyAqueductTx
                                                      , aeron_channel: Channel
-                                                     , stream_id: Box<[i32]>
                                                      , aeron:Arc<Mutex<Aeron>>
                                                      , state: SteadyState<FragmentState>) -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
 
-    let mut state_guard = steady_state(&state, || FragmentState::default()).await;
+    let mut state_guard = steady_state(&state, FragmentState::default).await;
     if let Some(state) = state_guard.as_mut() {
 
             use steady_state_aeron::concurrent::atomic_buffer::AtomicBuffer;
@@ -71,12 +65,17 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
             use steady_state_aeron::utils::types::Index;
 
             // trace!("Receiver register publication: {:?} {:?}",aeron_channel.cstring(), stream_id);
+            let mut tx_lock = tx.lock().await;
 
             if state.sub_reg_id.is_none() {
+
+                 //TODO: al the streams
+                let stream_id = tx_lock.stream_first;
+
                 //only add publication once if not already set
                     let reg = {
                         let mut locked_aeron = aeron.lock().await;
-                        locked_aeron.add_subscription(aeron_channel.cstring(), stream_id[0])
+                        locked_aeron.add_subscription(aeron_channel.cstring(), stream_id)
                     };
                     match reg {
                         Ok(reg_id) => { state.sub_reg_id = Some(reg_id); }
@@ -87,8 +86,7 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                     };
                
             }
-            let mut tx_lock = tx.lock().await;
-            
+
             let subscription = match state.sub_reg_id {
                 Some(a) => {
                  
@@ -191,9 +189,12 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                                                         }
                                                     };
 
+                        //TODO: all streams
+                        let stream_id = tx_lock.stream_first;
+
                         let ok = cmd.try_send(
                             &mut tx_lock.control_channel,
-                            AqueductFragment::new(frame_type, stream_id[0], FragmentDirection::Incoming(header.session_id(), state.arrival.take().unwrap_or(Instant::now()) ), length)
+                            AqueductFragment::new(frame_type, stream_id, FragmentDirection::Incoming(header.session_id(), state.arrival.take().unwrap_or(Instant::now()) ), length)
                         );
                         debug_assert!(ok.is_ok()); //should not fail since we checked for room at the top before we started.
 
@@ -225,10 +226,14 @@ pub(crate) mod aeron_media_driver_tests {
             .build(());
 
         let channel_builder = graph.channel_builder();
+        let streams_first = 1;
+        let streams_count = 1;
         let (to_aeron_tx,to_aeron_rx) = channel_builder.build_aqueduct(3
-                                                                       ,30);
+                                                                       ,30
+                                     ,streams_first, streams_count);
         let (from_aeron_tx,from_aeron_rx) = channel_builder.build_aqueduct(3
-                                                                           ,30);
+                                                                           ,30
+                                      ,streams_first, streams_count);
 
         let distribution = DistributionBuilder::aeron()
             .with_media_type(MediaType::Udp)
@@ -236,18 +241,14 @@ pub(crate) mod aeron_media_driver_tests {
                             , 40125)
             .build();
 
-        let stream_ids_boxed: Box<[i32]> = vec![1].into_boxed_slice();//we must not collide with the other test
-
 
         graph.build_aqueduct_distributor(distribution.clone()
                                          , "SenderTest"
-                                         , stream_ids_boxed.clone()
                                          , to_aeron_rx.clone()
                                          , &mut Threading::Spawn);
 
         graph.build_aqueduct_collector(distribution.clone()
                                        , "ReceiverTest"
-                                       , stream_ids_boxed.clone()
                                        , from_aeron_tx.clone()
                                        , &mut Threading::Spawn); //must not be same thread
 

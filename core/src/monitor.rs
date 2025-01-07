@@ -2078,7 +2078,7 @@ pub(crate) mod monitor_tests {
                 //inject new data while we have an iterator open
                 if let Some(ref mut send_guard) = tx.try_lock() {
                     assert_eq!(1, send_guard.vacant_units());
-                    for item in vec![13, 14, 15] {
+                    for item in [13, 14, 15] {
                         
                         match send_guard.shared_try_send(item) {
                             Ok(()) => {},
