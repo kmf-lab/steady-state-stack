@@ -16,10 +16,12 @@ pub(crate) struct FragmentState {
     pub(crate) pub_reg_id: Vec<i64>,
 }
 
-//TODO: add the stream list to the channel to validate before sending!!
-
-pub async fn run(context: SteadyContext, rx: SteadyAqueductRx, aeron_connect: Channel
-                 , aeron:Arc<Mutex<Aeron>>, state: SteadyState<FragmentState>) -> Result<(), Box<dyn Error>> {
+/// Aeron Sender of messages taken from SteadyAqueduct
+pub async fn run(context: SteadyContext
+                 , rx: SteadyAqueductRx
+                 , aeron_connect: Channel
+                 , aeron:Arc<Mutex<Aeron>>
+                 , state: SteadyState<FragmentState>) -> Result<(), Box<dyn Error>> {
     let md:AquaductRxMetaData = rx.meta_data();
     internal_behavior(into_monitor!(context, [md.control,md.payload], []), rx, aeron_connect, aeron, state).await
 }
@@ -41,7 +43,7 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
 
             let mut rx_lock = rx.lock().await;
 
-            for i in (0..rx_lock.stream_count) { //on actor restart we will use existing ids
+            for i in 0..rx_lock.stream_count { //on actor restart we will use existing ids
                 if state.pub_reg_id.len()== i as usize {    //only add publication once if not already set
                     let stream_id = rx_lock.stream_first+i;
                     //trace!("Sender register publication: {:?} {:?}",aeron_channel.cstring(), stream_id);
@@ -83,10 +85,9 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
         // Now `publication_vec` holds all the `ExclusivePublication` instances, unwrapped from Arc and Mutex.
      
 
-            //////////////////////////////////////////////////////////////////////////////
+        let duration = start.elapsed();
+        warn!("Sender connected to Aeron publication(s) in {:?}", duration);
 
-            let duration = start.elapsed();
-            warn!("Sender connected to Aeron publication(s) in {:?}", duration);
             while cmd.is_running(&mut || rx_lock.is_closed_and_empty()) {
                 //warn!("waiting for rx message");
                 let clean = await_for_all!(cmd.wait_closed_or_avail_units(&mut rx_lock.control_channel, 1));
@@ -98,9 +99,11 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                         //TODO: in this early iteration we only support full unfragmented blocks for send
                         assert_eq!(aquaduct_frame.fragment_type, FragmentType::UnFragmented);
 
-                        //TODO: must asert stream_id is in range when we set it!!!!
-                        warn!("subtraction {} - {} ",aquaduct_frame.stream_id,rx_lock.stream_first);
-                        ((aquaduct_frame.stream_id-rx_lock.stream_first) as usize,aquaduct_frame.length as usize)
+                        debug_assert!(aquaduct_frame.stream_id >= rx_lock.stream_first);
+                        debug_assert!(aquaduct_frame.stream_id < rx_lock.stream_first+rx_lock.stream_count);
+                        //trace!("subtraction {} - {} ", aquaduct_frame.stream_id, rx_lock.stream_first);
+
+                        ((aquaduct_frame.stream_id - rx_lock.stream_first) as usize,aquaduct_frame.length as usize)
                     } else {
                         (usize::MAX,0) //this case may happen during shutdown and we ignore it with if to_read>0
                     };
@@ -217,42 +220,27 @@ pub(crate) mod aeron_tests {
     use futures_timer::Delay;
     use super::*;
     use crate::distributed::aeron_channel::{MediaType};
-    use crate::distributed::aqueduct::{AqueductFragment, SteadyAqueductTx};
+    use crate::distributed::aqueduct::{AquaductTxDef, AquaductTxMetaData, AqueductFragment, SteadyAqueductTx};
     use crate::distributed::distributed::{DistributionBuilder};
 
-    //TODO: Send mb of data so we can time it and check (head tail neither both)
-    //TODO: need sealize deserlize trate examples. (last if we have time)
-    //TODO: need byte sending api first for all testing and release.
-    //TODO: clean up the code
-    
     pub async fn mock_sender_run(mut context: SteadyContext
                                  , tx: SteadyAqueductTx) -> Result<(), Box<dyn Error>> {
 
-        //required to ensure we do not stop before everyinng is up..
-        //context.is_running() //TODO: check the regirstion and vote logic.
-        
-        //TODO: AqueductFrame seems differnet in and out we must re-think this.
-        
+        let md:AquaductTxMetaData = tx.meta_data();
+        let mut cmd = into_monitor!(context, [], [md.control,md.payload]);
+
         let mut tx = tx.lock().await;
+        //normally would be a while but for this test we only need to send these two.
+        //TODO: send MB of data..
+        if cmd.is_running(&mut || tx.mark_closed()) {
 
-       // await_for_all!(context.wait_vacant_messages(&mut tx, 2, 1000));
+            let stream_id = 7;
+            await_for_all!(cmd.wait_shutdown_or_vacant_aqueduct(&mut tx, 2, 1000));
+            cmd.try_aqueduct_send(&mut tx, stream_id, &[1,2,3]);
+            cmd.try_aqueduct_send(&mut tx, stream_id, &[4,5,6]);
+        }
 
-
-        // TODO: context.aqueduct_send(&mut tx, stream_id, &[1,2,3]))
-
-
-        let len = context.send_slice_until_full(&mut tx.payload_channel, &[1,2,3]);
-        let _ = context.try_send(&mut tx.control_channel, AqueductFragment::simple_outgoing(7, 3));
-
-        let len = context.send_slice_until_full(&mut tx.payload_channel, &[4,5,6]);
-        let _ = context.try_send(&mut tx.control_channel, AqueductFragment::simple_outgoing(7, 3));
-
-        //output we can only write a full block  beginnint to end alll byte count
-        // we could write some bytes in different batchs but they al must fit in the channel or we cant send them.
-        
-        
-        tx.payload_channel.mark_closed();
-        tx.control_channel.mark_closed();
+        tx.mark_closed();
 
         Ok(())
     }
@@ -260,35 +248,24 @@ pub(crate) mod aeron_tests {
     pub async fn mock_receiver_run(mut context: SteadyContext
                                    , rx: SteadyAqueductRx) -> Result<(), Box<dyn Error>> {
 
-        
-        //reading from the network may be brokeninto parts.
-        //  we may read head, body, tail, all ??  next big problem!!
-        
-        
-        // read data into vec by stream and producer
-        // check apis for copy or peek into vec operations.
-        
+        let md:AquaductRxMetaData = rx.meta_data();
+        let mut cmd = into_monitor!(context, [md.control,md.payload], []);
+
         let mut rx = rx.lock().await;
+        await_for_all!(cmd.wait_avail_units(&mut rx.control_channel, 2)); //not waiting for closed.
 
-    //    await_for_all!(context.wait_closed_or_avail_messages(&mut rx, 2));
+        //TODO: this test must be skippe in github without aeron..
+        rx.defragment(&mut cmd);//TODO: change to cmd call
+        let mut vec_results = rx.take_by_stream(7); //TODO: change to cmd call
+        warn!("length: {}",vec_results.len());
+        warn!("first: {:?}",vec_results[0].data);
 
-        //need a method signature for this pattern
-        //rx.defragment(&mut context);
-        //let frames = rx.take_stream_arrival(1);
-    //    let _:Vec<IncomingMessage> = context.aqueduct_take(&mut rx, 1); //by arrival is the default?
-        
-        await_for_all!(context.wait_closed_or_avail_units(&mut rx.control_channel, 2));
 
-        let _ = context.try_take(&mut rx.control_channel);
-        let mut data = [0u8; 3];
-        let result = context.take_slice(&mut rx.payload_channel, &mut data[0..3]);
-        //assert_eq!(3, result);
-        //assert_eq!([1,2,3], data);
+        let data0 = vec_results[0].data.take().expect("");
+        let data1 = vec_results[1].data.take().expect("");
 
-        let _ = context.try_take(&mut rx.control_channel);
-        let result = context.take_slice(&mut rx.payload_channel, &mut data[0..3]);
-        //assert_eq!(3, result);
-        //assert_eq!([4,5,6], data);
+        assert_eq!([1,2,3], &data0[..]);
+        assert_eq!([4,5,6], &data1[..]);
 
         Ok(())
     }

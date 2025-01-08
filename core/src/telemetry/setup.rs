@@ -561,6 +561,6 @@ mod tests {
         telemetry_setup.configure();
 
         // Since `configure` has no output, the main check is that no panic occurs.
-        assert!(true);
+        assert!(!telemetry_setup.channel_meta_data.connects_sidecar);
     }
 }

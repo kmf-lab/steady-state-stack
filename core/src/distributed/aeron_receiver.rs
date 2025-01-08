@@ -131,13 +131,9 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
             let duration = start.elapsed();
             warn!("Receiver connected in: {:?} {:?} {:?}", duration, subscription.channel(), subscription.stream_id());
             while cmd.is_running(&mut || tx_lock.mark_closed()) {
-
-                
-                
-                
+                                              
                 await_for_all!(cmd.wait_periodic(Duration::from_micros(20)),
-                               cmd.wait_shutdown_or_vacant_units(&mut tx_lock.control_channel, 1)
-                
+                               cmd.wait_shutdown_or_vacant_units(&mut tx_lock.control_channel, 1)                
                 );
 
                 //TODO: we need to avoid poill if we have no images!!

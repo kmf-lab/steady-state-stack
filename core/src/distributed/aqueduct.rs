@@ -411,6 +411,7 @@ impl AqueductFragment {
 ///   For some messages, you might have a control-only scenario with minimal or no actual payload,
 ///   in which case `data` could remain `None`. Otherwise, it holds the concatenation
 ///   of all fragments that were needed to reconstruct this message.
+#[derive(Debug)]
 pub struct IncomingMessage {
     /// The Aeron stream ID that identifies the logical stream within a single channel.
     pub stream_id: IdType,
@@ -429,22 +430,6 @@ pub struct IncomingMessage {
     
     /// did this message load without issue or is there an error to report
     pub result: Result<(), Box<dyn Error>>
-}
-
-impl IncomingMessage {
-    /// Creates a new `IncomingMessage` with a known arrival time but no other
-    /// fields set yet. This is typically used internally by the assembly process,
-    /// then filled in as more fragments arrive.
-    pub(crate) fn new(arrival: Instant) -> Self {
-        IncomingMessage {
-            stream_id: 0,
-            session_id: 0,
-            arrival,
-            finish: None,
-            data: None,
-            result: Ok(())
-        }
-    }
 }
 
 /// Core receiver for Aqueduct fragments.

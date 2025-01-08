@@ -304,7 +304,6 @@ pub struct SteadyContext {
 }
 
 
-
 impl Clone for SteadyContext {
     fn clone(&self) -> Self {
         SteadyContext {

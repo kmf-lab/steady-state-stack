@@ -17,6 +17,7 @@ use crate::*;
 use crate::actor_builder::{MCPU, Percentile, Work};
 use crate::channel_builder::{Filled, Rate};
 use crate::commander::SteadyCommander;
+use crate::distributed::aqueduct::{AqueductFragment, AqueductRx, AqueductTx};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannelResponder};
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
@@ -360,6 +361,22 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     //TODO: future feature to optimize threading, not yet implemented
     //monitor.chain_channels([rx],tx); //any of the left channels may produce output on the right
 
+    /// try aqueduct send
+    fn try_aqueduct_send<'a>(&mut self, tx: &mut AqueductTx, stream_id: i32, payload: &'a[u8]) -> Result<(), &'a[u8]> {
+
+        debug_assert!(stream_id >= tx.stream_first);
+        debug_assert!(stream_id < tx.stream_first + tx.stream_count);
+
+        if tx.payload_channel.vacant_units()>=payload.len() && tx.control_channel.vacant_units()>=1 {
+            let len = self.send_slice_until_full(&mut tx.payload_channel, &payload);
+            debug_assert!(len==payload.len());
+            let result = self.try_send(&mut tx.control_channel, AqueductFragment::simple_outgoing(stream_id, payload.len() as i32));
+            debug_assert!(!result.is_err());
+            Ok(())
+        } else {
+            Err(payload)
+        }
+    }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     ///
@@ -431,6 +448,23 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_stop_requested(&self) -> bool {
         self.is_liveliness_in(&[ GraphLivelinessState::StopRequested ])
+    }
+
+    ///  Waits until we have the specified message count and byte count room on this target aqueduct
+    async fn wait_shutdown_or_vacant_aqueduct(&self, this: &mut AqueductTx, message_count: usize, bytes_count: usize) -> bool {
+        self.wait_shutdown_or_vacant_units(&mut this.payload_channel, bytes_count).await
+            &&
+        self.wait_shutdown_or_vacant_units(&mut this.control_channel, message_count).await
+    }
+
+    /// Waits until we have available count of messages
+    async fn wait_shutdown_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool {
+        self.wait_shutdown_or_avail_units(&mut this.control_channel, avail_count).await
+    }
+
+    /// Waits until we have available count of messages
+    async fn wait_closed_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool {
+        self.wait_closed_or_avail_units(&mut this.control_channel,avail_count).await
     }
 
     /// Waits until a specified number of units are available in the Rx channel bundle.
@@ -963,6 +997,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
         done
     }
+
 
     /// Attempts to send a single message to the Tx channel without blocking.
     ///

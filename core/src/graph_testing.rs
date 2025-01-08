@@ -239,11 +239,12 @@ impl SideChannelResponder {
     ) -> bool {
         if self.should_apply::<M>().await {
             let girth = target_tx_bundle.len();
-            for x in 0..girth {
-                if !cmd.wait_vacant_units(&mut target_tx_bundle[x], 1).await {
+            for t in target_tx_bundle.iter_mut() {
+                if !cmd.wait_vacant_units(&mut *t, 1).await {
                     return false;
                 };
             }
+
             self.respond_with(|message| {
                 let msg = message.downcast_ref::<M>().expect("error casting");
                 let total: usize = (0..girth)

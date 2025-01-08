@@ -18,6 +18,7 @@ use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
 use futures::stream::{FuturesUnordered, StreamExt};
+use crate::distributed::aqueduct::{AqueductFragment, AqueductRx, AqueductTx, SteadyAqueductTx};
 use crate::util::logger;
 
 impl SteadyContext {
@@ -715,6 +716,24 @@ impl SteadyCommander for SteadyContext {
     async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
         this.shared_send_async(a, self.ident, saturation).await
     }
+
+
+    fn try_aqueduct_send<'a>(&mut self, tx: &mut AqueductTx, stream_id: i32, payload: &'a[u8]) -> Result<(), &'a[u8]> {
+
+        debug_assert!(stream_id >= tx.stream_first);
+        debug_assert!(stream_id < tx.stream_first + tx.stream_count);
+
+        if tx.payload_channel.vacant_units()>=payload.len() && tx.control_channel.vacant_units()>=1 {
+            let len = self.send_slice_until_full(&mut tx.payload_channel, &payload);
+            debug_assert!(len==payload.len());
+            let result = self.try_send(&mut tx.control_channel, AqueductFragment::simple_outgoing(stream_id, payload.len() as i32));
+            debug_assert!(result.is_err());
+            Ok(())
+        } else {
+            Err(payload)
+        }
+    }
+
     /// Attempts to take a message from the channel if available.
     ///
     /// # Returns
@@ -729,6 +748,24 @@ impl SteadyCommander for SteadyContext {
     async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
         this.shared_take_async().await
     }
+
+    ///  Waits until we have the specified message count and byte count room on this target aqueduct
+    async fn wait_shutdown_or_vacant_aqueduct(&self, this: &mut AqueductTx, message_count: usize, bytes_count: usize) -> bool {
+        this.payload_channel.shared_wait_shutdown_or_vacant_units(bytes_count).await
+        &&
+        this.control_channel.shared_wait_shutdown_or_vacant_units(message_count).await
+    }
+
+    /// Waits until we have available count of messages
+    async fn wait_shutdown_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool {
+        this.control_channel.shared_wait_shutdown_or_avail_units(avail_count).await
+    }
+
+    /// Waits until we have available count of messages
+    async fn wait_closed_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool {
+        this.control_channel.shared_wait_closed_or_avail_units(avail_count).await
+    }
+
     /// Waits until the specified number of available units are in the receiver.
     ///
     /// # Parameters
@@ -852,6 +889,9 @@ impl SteadyCommander for SteadyContext {
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
+    /// try send aqueduct message
+    fn try_aqueduct_send<'a>(&mut self, tx: &mut AqueductTx, stream_id: i32, payload: &'a[u8]) -> Result<(), &'a[u8]>;
+
     /// set log level for the entire application
     fn loglevel(&self, loglevel: &str);
 
@@ -898,16 +938,16 @@ pub trait SteadyCommander {
     fn is_liveliness_running(&self) -> bool;
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_stop_requested(&self) -> bool;
-    
 
+    /// wait for outgoing room on the aqueduct or shutdown signal
+    async fn wait_shutdown_or_vacant_aqueduct(&self, this: &mut AqueductTx, message_count: usize, bytes_count: usize) -> bool;
 
-    // impl SteadyContext {
-    //     pub(crate) fn wait_vacant_messages(&self, p0: &mut MutexGuard<AqueductTx>, p1: i32, p2: i32) -> _ {
-    //         todo!()
-    //     }
-    // }
-    
-    
+    /// wait for messages on aqueduct or shutdown signal
+    async fn wait_shutdown_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool;
+
+    /// wait for message on aqueduct or closed signal
+    async fn wait_closed_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool;
+
     /// Waits until a specified number of units are available in the Rx channel bundle.
     ///
     /// # Parameters
