@@ -103,7 +103,6 @@ pin-project      = "1.1.7"
 
 # fork of aeron-rs with just the fixes we need until they get merged into the mainline
 steady_state_aeron     = { version="0.1.6-kmf1" }
-tokio = "1.42.0"
 # for local testing
 #steady_state_aeron    = { path = "../../aeron-rs", version="0.1.6-kmf1" }
 
