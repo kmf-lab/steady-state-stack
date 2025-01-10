@@ -1,5 +1,6 @@
 
 use std::error::Error;
+use std::hash::{DefaultHasher, Hasher};
 use futures_timer::Delay;
 use num_traits::Zero;
 use ringbuf::consumer::Consumer;
@@ -26,6 +27,14 @@ pub async fn run(context: SteadyContext
     internal_behavior(into_monitor!(context, [md.control,md.payload], []), rx, aeron_connect, aeron, state).await
 }
 
+fn calculate_hash(buf: &[u8], start: usize, len: usize) -> i64 {
+    // Create a new hasher
+    let mut hasher = DefaultHasher::new();
+    // Feed the relevant slice of the buffer into the hasher
+    hasher.write(&buf[start..start + len]);
+    // Get the hash value and return it as an `i64`
+    hasher.finish() as i64
+}
 
 async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                                                      , rx: SteadyAqueductRx
@@ -138,9 +147,12 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                         loop {
                             const APP_ID:i64 = 8675309;
                             //TODO: need to use this field to hash payload with our private key.
-                            let f:OnReservedValueSupplier = |_buf,_start,_len| {APP_ID};
-                            //TODO: in the reader if this value does not match expected set the Result Err so we know 
-                            warn!("index {} pubs {} stream_first {}",stream_index, publication_vec.len(), rx_lock.stream_first );
+                            let f: OnReservedValueSupplier = |buf, start, _len| {
+                                // Example hash calculation of the data in the buffer
+                                //calculate_hash(buf, start, len)
+                                
+                                APP_ID // + buf.get_bytes(start)
+                            };
                             let offer_response = publication_vec[stream_index].offer_opt(to_send, 0, to_send.capacity(), f);
 
                             match offer_response {
@@ -149,25 +161,14 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                                     break;
                                 },
                                 Err(aeron_error) => {
-                                    warn!("Error publishing data: {:?}", aeron_error);
+                                    warn!("Trying again, Error publishing data: {:?}", aeron_error);
                                     yield_now::yield_now().await; //ok  we can retry again but should yeild until we can get the publication
                                     let timeout = Instant::now() + Duration::from_secs(15);
-                                    while !publication_vec[stream_index].is_connected() {
-                                        
-                                        //trace!("Waiting for Aeron publication to connect... {:?}",publication[stream_index].channel());
-                                        
-                                        // let channel_status = publication.channel_status();
-                                        // warn!(
-                                        //     "Publication channel status {}: {} ",
-                                        //     channel_status,
-                                        //     steady_state_aeron::concurrent::status::status_indicator_reader::channel_status_to_str(channel_status)
-                                        // );
-                                        cmd.wait_periodic(Duration::from_millis(40)).await;
-                                        if Instant::now() > timeout {
-                                            error!("Timed out waiting for Aeron publication to connect.");
-                                            return Err("Publication failed to connect".into());
-                                        }
+                                    let ex_pub = &publication_vec[stream_index];
+                                    if let Some(value) = spin_until_connected(&mut cmd, timeout, ex_pub).await {
+                                        return value;
                                     }
+                                    warn!("finished the while");
                                 }
                             }
                         }
@@ -187,6 +188,26 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
 } else {
 Err("State not available".into())
     }
+}
+
+async fn spin_until_connected<CMD: SteadyCommander>(cmd: &mut CMD, timeout: Instant, ex_pub: &ExclusivePublication) -> Option<Result<(), Box<dyn Error>>> {
+    while !ex_pub.is_connected() {
+
+        //trace!("Waiting for Aeron publication to connect... {:?}",publication[stream_index].channel());
+
+        // let channel_status = publication.channel_status();
+        // warn!(
+        //     "Publication channel status {}: {} ",
+        //     channel_status,
+        //     steady_state_aeron::concurrent::status::status_indicator_reader::channel_status_to_str(channel_status)
+        // );
+        cmd.wait_periodic(Duration::from_millis(40)).await;
+        if Instant::now() > timeout {
+            error!("Timed out waiting for Aeron publication to connect.");
+            return Some(Err("Publication failed to connect".into()));
+        }
+    }
+    None
 }
 
 async fn lookup_publication<CMD: SteadyCommander>(cmd: &mut CMD, aeron: &mut Arc<Mutex<Aeron>>, id: i64) ->
@@ -236,8 +257,8 @@ pub(crate) mod aeron_tests {
 
             let stream_id = 7;
             await_for_all!(cmd.wait_shutdown_or_vacant_aqueduct(&mut tx, 2, 1000));
-            cmd.try_aqueduct_send(&mut tx, stream_id, &[1,2,3]);
-            cmd.try_aqueduct_send(&mut tx, stream_id, &[4,5,6]);
+            let _ = cmd.try_aqueduct_send(&mut tx, stream_id, &[1,2,3]);
+            let _ = cmd.try_aqueduct_send(&mut tx, stream_id, &[4,5,6]);
         }
 
         tx.mark_closed();
@@ -247,24 +268,27 @@ pub(crate) mod aeron_tests {
 
     pub async fn mock_receiver_run(mut context: SteadyContext
                                    , rx: SteadyAqueductRx) -> Result<(), Box<dyn Error>> {
+        //TODO: this test must be skippe in github without aeron..
 
         let md:AquaductRxMetaData = rx.meta_data();
         let mut cmd = into_monitor!(context, [md.control,md.payload], []);
 
         let mut rx = rx.lock().await;
         await_for_all!(cmd.wait_avail_units(&mut rx.control_channel, 2)); //not waiting for closed.
-
-        //TODO: this test must be skippe in github without aeron..
         rx.defragment(&mut cmd);//TODO: change to cmd call
+
+
         let mut vec_results = rx.take_by_stream(7); //TODO: change to cmd call
-        warn!("length: {}",vec_results.len());
+        warn!("msg count: {}",vec_results.len());
         warn!("first: {:?}",vec_results[0].data);
 
 
         let data0 = vec_results[0].data.take().expect("");
-        let data1 = vec_results[1].data.take().expect("");
-
         assert_eq!([1,2,3], &data0[..]);
+
+        warn!("second: {:?}",vec_results[1].data);
+
+        let data1 = vec_results[1].data.take().expect("");
         assert_eq!([4,5,6], &data1[..]);
 
         Ok(())
@@ -276,7 +300,12 @@ pub(crate) mod aeron_tests {
         let mut graph = GraphBuilder::for_testing()
                                  .with_telemetry_metric_features(false)
                                  .build(());
- 
+        
+        if !graph.is_aeron_media_driver_present() {
+            info!("aeron test skipped, no media driver present");
+            return;
+        }
+        
         let channel_builder = graph.channel_builder();
         let streams_first = 7;
         let streams_count = 1;
@@ -315,7 +344,7 @@ pub(crate) mod aeron_tests {
 
         //we must wait long enough for both actors to connect
         //not sure why this needs to take so long but 14 sec seems to be smallest
-        Delay::new(Duration::from_secs(22)).await;
+        Delay::new(Duration::from_secs(42)).await;
 
         graph.request_stop();
         //we wait up to the timeout for clean shutdown which is transmission of all the data

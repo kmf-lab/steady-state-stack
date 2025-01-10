@@ -1,5 +1,6 @@
-use std::collections::HashMap;
-use std::error::Error;
+use std::collections::{HashMap, HashSet};
+use std::iter::Peekable;
+use std::ops::BitOr;
 use std::sync::Arc;
 use std::time::Instant;
 use futures_util::lock::Mutex;
@@ -9,181 +10,339 @@ use crate::{Rx, SteadyCommander, Tx};
 use crate::monitor::{RxMetaData, TxMetaData};
 
 
+pub struct IncomingMessageIterator<'a> {
+    session_iters: Vec<(&'a IdType, std::vec::IntoIter<IncomingMessage>)>,
+}
+
+impl<'a> IncomingMessageIterator<'a> {
+    pub fn new_for_stream(
+        collect: &'a mut Vec<HashMap<IdType, Vec<IncomingMessage>>>,
+        stream_id: i32,
+        stream_first: i32,
+    ) -> Self {
+        let stream_index = (stream_id - stream_first) as usize;
+
+        let session_iters: Vec<_> = collect[stream_index]
+            .iter_mut()
+            .map(|(session_id, messages)| {
+                (
+                    session_id,
+                    messages.drain(..).collect::<Vec<_>>().into_iter(),
+                )
+            })
+            .collect();
+
+        Self { session_iters }
+    }
+
+    pub fn new_for_all_streams(
+        collect: &'a mut Vec<HashMap<IdType, Vec<IncomingMessage>>>,
+    ) -> Self {
+        let session_iters: Vec<_> = collect
+            .iter_mut()
+            .flat_map(|stream| stream.iter_mut())
+            .map(|(session_id, messages)| {
+                (
+                    session_id,
+                    messages.drain(..).collect::<Vec<_>>().into_iter(),
+                )
+            })
+            .collect();
+
+        Self { session_iters }
+    }
+
+    pub fn new_for_stream_subset(
+        collect: &'a mut Vec<HashMap<IdType, Vec<IncomingMessage>>>,
+        stream_ids: &HashSet<i32>, // Use a HashSet for efficient lookups
+        stream_first: i32,
+    ) -> Self {
+        let session_iters: Vec<_> = collect
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(stream_index, stream)| {
+                let stream_id = stream_index as i32 + stream_first;
+                if stream_ids.contains(&stream_id) {
+                    Some(
+                        stream
+                            .iter_mut()
+                            .map(|(session_id, messages)| {
+                                (
+                                    session_id,
+                                    messages.drain(..).collect::<Vec<_>>().into_iter(),
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+
+        Self { session_iters }
+    }
+}
+
+impl<'a> Iterator for IncomingMessageIterator<'a> {
+    type Item = IncomingMessage;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut smallest_session_idx: Option<usize> = None;
+        let mut smallest_message: Option<IncomingMessage> = None;
+
+        // Iterate over session iterators
+        for (i, (_, iter)) in self.session_iters.iter_mut().enumerate() {
+            // Peek at the next message
+            if let Some(msg) = iter.next() {
+                if msg.finish.is_none() {
+                    // Skip the entire iterator if the first message is incomplete
+                    continue;
+                }
+
+                match &smallest_message {
+                    Some(current) => {
+                        if msg.arrival < current.arrival {
+                            smallest_session_idx = Some(i);
+                            smallest_message = Some(msg);
+                        }
+                    }
+                    None => {
+                        smallest_session_idx = Some(i);
+                        smallest_message = Some(msg);
+                    }
+                }
+            }
+        }
+
+        // Remove the iterator if it's exhausted
+        if let Some(idx) = smallest_session_idx {
+            let (_, iter) = &mut self.session_iters[idx];
+            if iter.len() == 0 {
+                self.session_iters.remove(idx);
+            }
+            return smallest_message;
+        }
+
+        None
+    }
+}
+
+pub struct CombinedFragmentIterator<I>
+where
+    I: Iterator<Item = AqueductFragment>,
+{
+    inner: Peekable<I>,
+}
+
+impl<I> CombinedFragmentIterator<I>
+where
+    I: Iterator<Item = AqueductFragment>,
+{
+    pub fn new(iter: I) -> Self {
+        Self {
+            inner: iter.peekable(),
+        }
+    }
+}
+
+impl<I> Iterator for CombinedFragmentIterator<I>
+where
+    I: Iterator<Item = AqueductFragment>,
+{
+    type Item = AqueductFragment;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut current = self.inner.next()?;
+        while let Some(&next) = self.inner.peek() {
+            // Check if fragments can be combined
+            if let (
+                FragmentDirection::Incoming(current_id, _current_timestamp),
+                FragmentDirection::Incoming(next_id, _),
+            ) = (current.direction, next.direction)
+            {
+                if current.fragment_type != (FragmentType::End | current.fragment_type)
+                    && next.fragment_type != (FragmentType::Begin | next.fragment_type)
+                    && current.stream_id == next.stream_id
+                    && current_id == next_id
+                {
+                    // Combine fragments
+                    current.length += next.length;
+                    current.fragment_type = current.fragment_type | next.fragment_type;
+                    //do not change current direction it stands as is
+                    self.inner.next(); // Consume the peeked item
+                    continue;
+                }
+            }
+            break;
+        }
+        Some(current)
+    }
+}
+
 impl AqueductRx {
     pub fn new(control_channel: Rx<AqueductFragment>
                , payload_channel: Rx<u8>
                , stream_first: i32
                , stream_count: i32) -> Self {
+
+        //must have one map per stream
+        let mut collect = Vec::with_capacity(stream_count as usize);
+        for _ in 0..stream_count as usize {
+            collect.push(HashMap::new());
+        };
+
         AqueductRx {
             control_channel,
             payload_channel,
-            assembly: HashMap::new(),
-            max_payload: i32::MAX,
             stream_first,
-            stream_count
+            stream_count,
+            collect
         }
     }
 
-    /// not sure we keep this.
-    fn take_by_stream_grouped(&mut self, stream_id: i32) -> Vec<IncomingMessage> {
+
+    pub fn take_by_stream(&mut self, stream_id: i32) -> Vec<IncomingMessage> {        
+        IncomingMessageIterator::new_for_stream(&mut self.collect
+                                                , stream_id
+                                                , self.stream_first).collect()   
+    }
+
+    pub fn take_all_streams(&mut self) -> Vec<IncomingMessage> {
+        IncomingMessageIterator::new_for_all_streams(&mut self.collect).collect()
+    }
+
+
+
+    pub fn peek_by_stream(&self, stream_id: i32) -> Vec<&IncomingMessage> {
         let mut result = Vec::new();
 
-        if let Some(session_map) = self.assembly.get_mut(&stream_id) {
-            // Collect session keys to remove if they become empty
-            let mut keys_to_remove = Vec::new();
+        let stream_index = (stream_id - self.stream_first) as usize;
+        debug_assert!(stream_index < self.stream_count as usize);
 
-            for (session_id, vec) in session_map.iter_mut() {
-                let mut i = 0;
-                while i < vec.len() {
-                    if vec[i].finish.is_some() {
-                        // Remove the collector and transfer ownership to the result
-                        result.push(vec.remove(i));
-                    } else {
-                        i += 1; // Only increment if we didn't remove an element
-                    }
+        // Iterate over all sessions in the stream and collect references to finished messages
+        for (_session_id, messages) in &self.collect[stream_index] {
+            for msg in messages {
+                if msg.finish.is_some() {
+                    result.push(msg);
                 }
-
-                // Mark the session key for removal if its vector is now empty
-                if vec.is_empty() {
-                    keys_to_remove.push(*session_id);
-                }
-            }
-
-            // Remove session keys with empty vectors
-            for key in keys_to_remove {
-                session_map.remove(&key);
-            }
-
-            // Remove the parent key if the session map is now empty
-            if session_map.is_empty() {
-                self.assembly.remove(&stream_id);
             }
         }
-
+        result.sort_by_key(|msg| msg.arrival);
         result
     }
 
-    pub fn take_by_stream(&mut self, stream_id: i32) -> Vec<IncomingMessage> {
+    // Sort the result by arrival time
+    pub fn peek_all_streams(&self) -> Vec<&IncomingMessage> {
         let mut result = Vec::new();
 
-        if let Some(session_map) = self.assembly.get_mut(&stream_id) {
-            // Collect session keys to remove if they become empty
-            let mut keys_to_remove = Vec::new();
-
-            // Create a vector of mutable references to each session's vector
-            let mut session_iters: Vec<_> = session_map
-                .iter_mut()
-                .map(|(session_id, vec)| (session_id, vec))
-                .collect();
-
-            // Perform the merge-like process
-            while !session_iters.is_empty() {
-                // Find the next `FrameCollector` with the smallest `began` time
-                let mut smallest_idx = 0;
-                for i in 1..session_iters.len() {
-                    if session_iters[i].1[0].arrival < session_iters[smallest_idx].1[0].arrival {
-                        smallest_idx = i;
+        // Iterate over all streams
+        for stream in &self.collect {
+            // Iterate over all sessions in the stream
+            for (_session_id, messages) in stream {
+                // Collect references to finished messages
+                for msg in messages {
+                    if msg.finish.is_some() {
+                        result.push(msg);
                     }
                 }
-
-                // Remove the smallest collector and push it to the result
-                let (session_id, vec) = &mut session_iters[smallest_idx];
-                result.push(vec.remove(0));
-
-                // If the session's vector is empty, mark it for removal
-                if vec.is_empty() {
-                    keys_to_remove.push(**session_id);
-                    session_iters.remove(smallest_idx);
-                }
-            }
-
-            // Remove empty session keys from the session map
-            for key in keys_to_remove {
-                session_map.remove(&key);
-            }
-
-            // Remove the parent key if the session map is now empty
-            if session_map.is_empty() {
-                self.assembly.remove(&stream_id);
             }
         }
+
+        // Sort the result by arrival time
+        result.sort_by_key(|msg| msg.arrival);
         result
     }
 
+    //do not defrag just count
+    pub fn count_by_stream(&self, stream_id: i32) -> usize {
+        let stream_index = (stream_id - self.stream_first) as usize;
+        debug_assert!(stream_index < self.stream_count as usize);
+
+        // Count the number of finished messages in the stream
+        self.collect[stream_index]
+            .values()
+            .flat_map(|messages| messages.iter())
+            .filter(|msg| msg.finish.is_some())
+            .count()
+    }
+
+    //do not defrag just count
+    pub fn count_all_streams(&self) -> usize {
+        self.collect
+            .iter()
+            .flat_map(|stream| stream.values()) // Iterate over all session vectors in all streams
+            .flat_map(|messages| messages.iter()) // Iterate over all messages in all session vectors
+            .filter(|msg| msg.finish.is_some()) // Filter for finished messages
+            .count()
+    }
 
 
-
+   /// errors are sent in order, unfished wait for timeout and arrive late?
+    /// must always defrag before starting an iterator we cant do it in the middle! or order is lost!!
     /// non blocking call to consume available data and move it to vecs
-    /// returns count of fragments consumed
+    /// returns count frames de-fragmented
     pub fn defragment<T: SteadyCommander>(&mut self, cmd: &mut T) -> usize {
+        let mut count = 0;
 
-        //TODO: check the tree and see how much memory we are using if this is getting out of hand do not process anything new.
-        
+        //iterate each fragment we get from aeron
+        let fragment_iterator = cmd.take_into_iter(&mut self.control_channel);
+        //combine neighboring fragments if we get lucky and they share stream & session
+        let combined_iter = CombinedFragmentIterator::new(fragment_iterator);
+        //take each incoming fragment and move the payload in to vecs for consumer iterator later
+        combined_iter.for_each(|frame| {
+                    if let FragmentDirection::Incoming(session_id, arrival)  = frame.direction {
 
-        //how many fragments will we attempt to process at once is limited here
-        let mut frags = [AqueductFragment::simple_outgoing(-1, 0); 100];
-        let frags_count = cmd.take_slice(&mut self.control_channel, &mut frags);
-        for i in 0..frags_count {
-            let frame = frags[i];
-            if let FragmentDirection::Incoming(session_id, arrival)  = frame.direction {
-                match frame.fragment_type {
-                    FragmentType::UnFragmented | FragmentType::Begin => {
-                        //TODO: assert frame.length< channel length !!!
-                        let mut data = vec![0u8; frame.length as usize];
-                        let count = cmd.take_slice(&mut self.payload_channel, &mut data);
-                        debug_assert_eq!(count, frame.length as usize);
+                        let stream_index = (frame.stream_id-self.stream_first) as usize;
+                        debug_assert!(stream_index < self.stream_count as usize);
 
-                        let session_vec = self.assembly.entry(frame.stream_id).or_default()
-                            .entry(session_id).or_default();
-                        #[cfg(debug_assertions)]
-                        if !session_vec.is_empty() {
-                            debug_assert!(session_vec.last_mut().expect("vec").finish.is_some());
-                            //TODO: we probably need to force close this?? based on some timeout.
-                        }
-
-                        //TODO: we must limit incommong message instances.
-
-                        session_vec.push(IncomingMessage {
-                            stream_id: frame.stream_id,
-                            arrival,
-                            finish: if frame.fragment_type == FragmentType::UnFragmented { Some(Instant::now()) } else { None },
-                            data: Some(data),
-                            session_id: 0,
-                            result: Ok(())
-                        });
-                    },
-                    FragmentType::Middle | FragmentType::End => {
-                        let session_vec = self.assembly.entry(frame.stream_id).or_default()
-                            .entry(session_id).or_insert(Vec::new());
-                        let collector = session_vec.last_mut().expect("vec");
-                        debug_assert!(!collector.finish.is_some());
-
-
-                        if let Some(ref mut data) = collector.data {
-                            let start = data.len();
-                            let desired = start + frame.length as usize;
-                            if desired < self.max_payload as usize {
-                                data.resize(desired, 0);
-                                let count = cmd.take_slice(&mut self.payload_channel, &mut data[start..]);
+                        match frame.fragment_type {
+                            FragmentType::UnFragmented | FragmentType::Begin => {
+                                debug_assert!(frame.length<= self.payload_channel.capacity() as i32);
+                                let mut consumer_vec = vec![0u8; frame.length as usize];
+                                let count = cmd.take_slice(&mut self.payload_channel, &mut consumer_vec);
                                 debug_assert_eq!(count, frame.length as usize);
-                            } else {
-                                // TODO: mark this as an error for removal.
-                               // collector.corrupt = true
-                            }
-                        } else {
-                            panic!("internal error, vec must be in new messages");
-                        }
+                                let session_vec = &mut self.collect[stream_index]
+                                                           .entry(session_id).or_default();
 
-                        if frame.fragment_type == FragmentType::End {
-                            collector.finish = Some(Instant::now());
+                                session_vec.push(IncomingMessage {
+                                    stream_id: frame.stream_id,
+                                    arrival,
+                                    finish: if frame.fragment_type == FragmentType::UnFragmented { Some(Instant::now()) } else { None },
+                                    data: Some(consumer_vec),
+                                    session_id: 0
+                                });
+                            },
+                            FragmentType::Middle | FragmentType::End => {
+                                let session_vec = &mut self.collect[stream_index]
+                                    .entry(session_id).or_insert(Vec::new());
+                                let collector = session_vec.last_mut().expect("vec");
+                                debug_assert!(!collector.finish.is_some());
+
+                                if let Some(ref mut data) = collector.data {
+                                    let start = data.len();
+                                    let desired = start + frame.length as usize;
+                                    debug_assert!(desired < i32::MAX as usize);
+                                    data.resize(desired, 0);
+                                    let count = cmd.take_slice(&mut self.payload_channel, &mut data[start..]);
+                                    debug_assert_eq!(count, frame.length as usize);                                    
+                                } else {
+                                    panic!("internal error, vec must be in new messages");
+                                }
+
+                                if frame.fragment_type == FragmentType::End {
+                                    count += 1;
+                                    collector.finish = Some(Instant::now());
+                                }
+                            }
                         }
+                    } else {
+                        warn!("Expected FrameDirection::Incoming");
                     }
                 }
-            } else {
-                warn!("Expected FrameDirection::Incoming");
-            }
-        }
-        frags_count        
+        );
+        count
     }
 }
 
@@ -287,32 +446,67 @@ pub type IdType = i32; // is i32 because this is what Aeron is using, unlikely t
 /// when the data size exceeds certain limits (e.g., network MTU) or when
 /// you wish to process data in smaller chunks for other reasons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)] // Ensure the enum is represented as an 8-bit integer.
 pub enum FragmentType {
     /// Represents the first piece of a multi-part message.
     ///
     /// This indicates that no previous fragments exist for this message.
     /// Assembly code typically starts building a new message when it sees a `Begin` fragment.
-    Begin,
+    Begin = 1,
 
     /// Represents a piece that is neither the first nor the final fragment.
     ///
     /// Multiple `Middle` fragments may appear in a single message if it’s large.
     /// Assembly code continues adding these fragments until an `End` fragment is encountered.
-    Middle,
+    Middle = 0,
 
     /// Represents the final piece of a multi-part message.
     ///
     /// After receiving an `End` fragment, assembly code knows that the
     /// entire message is complete and no more fragments are expected.
-    End,
+    End = 2,
 
     /// Represents a complete message fitting into a single fragment.
     ///
     /// If the message is small enough, there’s no need for additional fragments.
     /// This indicates the message is already complete, without `Begin`, `Middle`, or `End` parts.
-    UnFragmented,
+    UnFragmented = 3,
 }
 
+
+// Implement the `BitOr` operator for combining `FragmentType` values.
+impl BitOr for FragmentType {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        // Perform the OR operation on the numeric values and map it back to the `FragmentType`.
+        match (self as u8) | (rhs as u8) {
+            1 => FragmentType::Begin,
+            2 => FragmentType::End,
+            3 => FragmentType::UnFragmented,
+            _ => FragmentType::Middle, // Default to `Middle` for all other cases.
+        }
+    }
+}
+
+impl FragmentType {
+    /// Converts a numeric value back to `FragmentType`.
+    /// This is useful if you need to decode the result of a bitwise operation.
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(FragmentType::Middle),
+            1 => Some(FragmentType::Begin),
+            2 => Some(FragmentType::End),
+            3 => Some(FragmentType::UnFragmented),
+            _ => None, // Return `None` for invalid values.
+        }
+    }
+
+    /// Gets the numeric value of the `FragmentType`.
+    pub fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
 
 /// Indicates whether a fragment is being sent or received, and includes
 /// metadata (such as session ID and arrival time) for received fragments.
@@ -334,7 +528,7 @@ pub enum FragmentDirection {
 /// - `stream_id`: The `IdType` for stream identification (in Aeron, typically an i32).
 /// - `direction`: Indicates if it’s `Outgoing` or `Incoming`, and includes relevant metadata.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct AqueductFragment {
+pub struct AqueductFragment {
     pub(crate) fragment_type: FragmentType,
     pub(crate) length: i32,
     pub(crate) stream_id: IdType, // must be in the bound defined
@@ -428,8 +622,6 @@ pub struct IncomingMessage {
     /// An optional buffer holding the fully-assembled payload bytes of the message.
     pub data: Option<Vec<u8>>,
     
-    /// did this message load without issue or is there an error to report
-    pub result: Result<(), Box<dyn Error>>
 }
 
 /// Core receiver for Aqueduct fragments.
@@ -442,11 +634,9 @@ pub struct IncomingMessage {
 pub struct AqueductRx {
     pub(crate) control_channel: Rx<AqueductFragment>,
     pub(crate) payload_channel: Rx<u8>,
-    //Now that we know stream range TODO: this first hash map can be removed.
-    pub(crate) assembly: HashMap<IdType, HashMap<IdType, Vec<IncomingMessage>>>,
-    pub(crate) max_payload: i32,
     pub(crate) stream_first: i32,
-    pub(crate) stream_count: i32
+    pub(crate) stream_count: i32,
+    pub(crate) collect: Vec<HashMap<IdType, Vec<IncomingMessage>>>
 }
 
 /// Thread-safe receiver reference for the Aqueduct, wrapped in `Arc<Mutex<…>>`.
@@ -606,7 +796,7 @@ impl LazyAqueductRx {
             assert_eq!(count, c.length as usize);
             count
         } else {
-            log::warn!("error taking metadata");
+            //trace!("shutdown happened while waiting to take");
             0
         }
     }

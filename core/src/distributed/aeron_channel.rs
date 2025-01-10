@@ -11,7 +11,7 @@ pub(crate) mod aeron_utils {
     use steady_state_aeron::aeron::Aeron;
     use steady_state_aeron::context::Context;
     use steady_state_aeron::utils::errors::AeronError;
-    use log::warn;
+    use log::{info, trace, warn};
     
     //For more details see:: https://github.com/real-logic/aeron/wiki/Channel-Configuration
 
@@ -52,11 +52,11 @@ pub(crate) mod aeron_utils {
 
         match Aeron::new(aeron_context) {
             Ok(aeron) => {
-                warn!("Aeron context created using: {:?}", aeron.context().cnc_file_name());
+                trace!("Aeron context created using: {:?}", aeron.context().cnc_file_name());
                 Some(Arc::new(Mutex::new(aeron)))
             }
             Err(e) => {
-                warn!("Failed to create Aeron context: {:?}", e);
+                trace!("Failed to create Aeron context: {:?}", e);
                 None
             }
         }

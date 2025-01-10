@@ -29,7 +29,7 @@ use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::distributed::{aeron_receiver, aeron_sender};
 use crate::distributed::aeron_channel::aeron_utils::aeron_context;
-use crate::distributed::aqueduct::{LazyAqueductRx, LazyAqueductTx, SteadyAqueductRx, SteadyAqueductTx};
+use crate::distributed::aqueduct::{LazyAqueductTx, SteadyAqueductRx, SteadyAqueductTx};
 use crate::distributed::distributed::Distributed;
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
@@ -541,6 +541,12 @@ pub struct Graph {
 }
 
 impl Graph {
+    pub(crate) fn is_aeron_media_driver_present(&mut self) -> bool {
+        if self.aeron.is_none() { //lazy load, we only support one
+            self.aeron = aeron_context();
+        }
+        self.aeron.is_some()
+    }
 
     pub fn loglevel(&self, loglevel: &str) {
         let _ = logger::initialize_with_level(loglevel);

@@ -159,7 +159,7 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                         Ok(ControlledPollAction::ABORT)
                     } else {
 
-                        //trace!("we have room: {} >= {}", room, length);
+                        warn!("we have room: {} >= {} {:?}", room, length, header.frame_length());
                         let incoming_slice: &[u8] = unsafe {
                             slice::from_raw_parts_mut(buffer.buffer().offset(offset as isize)
                                                       , length as usize)
@@ -185,6 +185,7 @@ async fn internal_behavior<CMD: SteadyCommander>(mut cmd: CMD
                                                         }
                                                     };
 
+                        warn!("reading frame tyhpe: {:?} flags: {:?} ",frame_type, header.flags());
                         //TODO: all streams
                         let stream_id = tx_lock.stream_first;
 
@@ -216,10 +217,14 @@ pub(crate) mod aeron_media_driver_tests {
 
     #[async_std::test]
     async fn test_bytes_process() {
-
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(false)
             .build(());
+
+        if !graph.is_aeron_media_driver_present() {
+            info!("aeron test skipped, no media driver present");
+            return;
+        }
 
         let channel_builder = graph.channel_builder();
         let streams_first = 1;

@@ -18,7 +18,7 @@ use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
 use futures::stream::{FuturesUnordered, StreamExt};
-use crate::distributed::aqueduct::{AqueductFragment, AqueductRx, AqueductTx, SteadyAqueductTx};
+use crate::distributed::aqueduct::{AqueductFragment, AqueductRx, AqueductTx};
 use crate::util::logger;
 
 impl SteadyContext {
