@@ -27,10 +27,10 @@ use steady_state_aeron::aeron::Aeron;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
-use crate::distributed::{aeron_receiver, aeron_sender};
+use crate::distributed::{aeron_publish, aeron_subscribe};
 use crate::distributed::aeron_channel::aeron_utils::aeron_context;
-use crate::distributed::aqueduct::{LazyAqueductTx, SteadyAqueductRx, SteadyAqueductTx};
-use crate::distributed::distributed::Distributed;
+use crate::distributed::aeron_distributed::Distributed;
+use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, SteadyStreamTxBundle, StreamFragment, StreamMessage};
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -552,10 +552,10 @@ impl Graph {
         let _ = logger::initialize_with_level(loglevel);
     }
 
-    pub fn build_aqueduct_distributor(&mut self
+    pub fn build_stream_distributor<const GIRTH:usize>(&mut self
                                       , distribution: Distributed
                                       , name: &'static str
-                                      , rx: SteadyAqueductRx
+                                      , rx: LazySteadyStreamRxBundle<StreamMessage,GIRTH>
                                       , threading: &mut Threading) {
         
         match distribution {
@@ -565,19 +565,19 @@ impl Graph {
                     self.aeron = aeron_context();
                 }
 
+
                 if let Some(aeron) = &self.aeron {
                     let state = new_state();
                     let aeron = aeron.clone();
 
-
                     self.actor_builder()
                         .with_name(name)
                         .build(move |context| 
-                                   aeron_sender::run(context
-                                                     , rx.clone()
-                                                     , channel
-                                                     , aeron.clone()
-                                                     , state.clone())
+                                   aeron_publish::run(context
+                                                         , rx.clone()
+                                                         , channel
+                                                         , aeron.clone()
+                                                         , state.clone())
                                , threading)
 
                 }
@@ -588,10 +588,10 @@ impl Graph {
         }
     }
 
-    pub fn build_aqueduct_collector(&mut self
+    pub fn build_stream_collector<const GIRTH:usize>(&mut self
                                     , distribution: Distributed
                                     , name: &'static str
-                                    , tx: SteadyAqueductTx
+                                    , tx: LazySteadyStreamTxBundle<StreamFragment, GIRTH>
                                     , threading: &mut Threading) {
 
         match distribution {
@@ -605,14 +605,17 @@ impl Graph {
                     let state = new_state();
                     let aeron = aeron.clone();
 
+                    //let connection = channel.cstring();
+                    
                     self.actor_builder()
                         .with_name(name)
+                        //.with_custom_label(connection) // TODO: need something like this.
                         .build(move |context|
-                                   aeron_receiver::run(context
-                                                       , tx.clone()
-                                                       , channel
-                                                       , aeron.clone()
-                                                       , state.clone())
+                                   aeron_subscribe::run(context
+                                                        , tx.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
+                                                        , channel
+                                                        , aeron.clone()
+                                                        , state.clone())
                                , threading);
 
                 }

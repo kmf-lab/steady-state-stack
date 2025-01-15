@@ -417,6 +417,18 @@ impl<T> Rx<T> {
     }
 
     #[inline]
+    pub(crate) fn shared_advance_index(&mut self, count: usize) -> usize {
+        let avail = self.rx.occupied_len();
+        let idx = if count>avail {
+                      avail
+                   } else {
+                      count
+                   };
+        unsafe { self.rx.advance_read_index(idx); }
+        idx
+    }
+
+    #[inline]
     pub(crate) fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
         CountingIterator::new(self.rx.pop_iter(), &self.take_count)
        // self.rx.pop_iter()
@@ -670,7 +682,7 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     fn wait_avail_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()>;
 }
 
-impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> { //TODO: test
+impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> {
 
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))

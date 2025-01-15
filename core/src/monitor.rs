@@ -12,14 +12,14 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::thread::ThreadId;
 use futures::channel::oneshot;
-use futures_util::{FutureExt, select};
+use futures_util::{select, FutureExt};
 use crate::*;
-use crate::actor_builder::{MCPU, Percentile, Work};
+use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
 use crate::commander::SteadyCommander;
-use crate::distributed::aqueduct::{AqueductFragment, AqueductRx, AqueductTx};
+use crate::distributed::steady_stream::{SteadyStreamItem, StreamMessage, StreamRxBundle};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
-use crate::graph_testing::{SideChannelResponder};
+use crate::graph_testing::SideChannelResponder;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::telemetry::setup::send_all_local_telemetry_async;
@@ -160,6 +160,17 @@ pub struct TxMetaData(pub(crate) Arc<ChannelMetaData>);
 impl TxMetaData {
     pub fn meta_data(self) -> TxMetaData {self}
 }
+pub struct TxMetaDataHolder<const LEN: usize> {
+    pub(crate) array:[TxMetaData;LEN]
+}
+impl <const LEN: usize>TxMetaDataHolder<LEN> {
+    pub(crate) fn new(array: [TxMetaData;LEN]) -> Self {
+        TxMetaDataHolder { array }
+    }
+    pub(crate) fn meta_data(self) -> [TxMetaData;LEN] {
+        self.array
+    }
+}
 
 /// Metadata for a receiver channel.
 #[derive(Debug)]
@@ -168,6 +179,18 @@ pub struct RxMetaData(pub(crate) Arc<ChannelMetaData>);
 impl RxMetaData {
     pub fn meta_data(self) -> RxMetaData {self}
 }
+pub struct RxMetaDataHolder<const LEN: usize> {
+    pub(crate) array:[RxMetaData;LEN]
+}
+impl <const LEN: usize>RxMetaDataHolder<LEN> {
+    pub(crate) fn new(array: [RxMetaData;LEN]) -> Self {
+       RxMetaDataHolder { array }
+    }
+    pub(crate) fn meta_data(self) -> [RxMetaData;LEN] {
+        self.array
+    }
+}
+
 
 
 /// Trait for telemetry receiver.
@@ -361,22 +384,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     //TODO: future feature to optimize threading, not yet implemented
     //monitor.chain_channels([rx],tx); //any of the left channels may produce output on the right
 
-    /// try aqueduct send
-    fn try_aqueduct_send<'a>(&mut self, tx: &mut AqueductTx, stream_id: i32, payload: &'a[u8]) -> Result<(), &'a[u8]> {
 
-        debug_assert!(stream_id >= tx.stream_first);
-        debug_assert!(stream_id < tx.stream_first + tx.stream_count);
-
-        if tx.payload_channel.vacant_units()>=payload.len() && tx.control_channel.vacant_units()>=1 {
-            let len = self.send_slice_until_full(&mut tx.payload_channel, &payload);
-            debug_assert!(len==payload.len());
-            let result = self.try_send(&mut tx.control_channel, AqueductFragment::simple_outgoing(stream_id, payload.len() as i32));
-            debug_assert!(!result.is_err());
-            Ok(())
-        } else {
-            Err(payload)
-        }
-    }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     ///
@@ -450,22 +458,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         self.is_liveliness_in(&[ GraphLivelinessState::StopRequested ])
     }
 
-    ///  Waits until we have the specified message count and byte count room on this target aqueduct
-    async fn wait_shutdown_or_vacant_aqueduct(&self, this: &mut AqueductTx, message_count: usize, bytes_count: usize) -> bool {
-        self.wait_shutdown_or_vacant_units(&mut this.payload_channel, bytes_count).await
-            &&
-        self.wait_shutdown_or_vacant_units(&mut this.control_channel, message_count).await
-    }
 
-    /// Waits until we have available count of messages
-    async fn wait_shutdown_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool {
-        self.wait_shutdown_or_avail_units(&mut this.control_channel, avail_count).await
-    }
-
-    /// Waits until we have available count of messages
-    async fn wait_closed_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool {
-        self.wait_closed_or_avail_units(&mut this.control_channel,avail_count).await
-    }
 
     /// Waits until a specified number of units are available in the Rx channel bundle.
     ///
@@ -553,6 +546,53 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             let local_r = result.clone();
             async move {
                 let bool_result = rx.shared_wait_closed_or_avail_units(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }
+                .boxed() // Box the future to make them the same type
+        });
+
+        let mut futures: Vec<_> = futures.collect();
+
+        //this adds one extra feature as the last one
+        futures.push( async move {
+            let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
+            if !guard.is_terminated() {
+                let _ = guard.deref_mut().await;
+            }
+        }.boxed());
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, index, remaining) = select_all(futures).await;
+            if remaining.len() == index { //we had the last one finish
+                result.store(false, Ordering::Relaxed);
+                break;
+            }
+            futures = remaining;
+            count_down -= 1;
+            if count_down <= 1 {
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+
+
+    async fn wait_closed_or_avail_units_stream<S: SteadyStreamItem>(&self, this: &mut StreamRxBundle<'_, S>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        S: Send + Sync
+    {
+        let _guard = self.start_profile(CALL_OTHER);
+
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+        let futures = this.iter_mut().map(|rx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = rx.control_channel.shared_wait_closed_or_avail_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -846,6 +886,20 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         done
     }
 
+
+
+    fn advance_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize {
+        if let Some(ref st) = self.telemetry.state {
+            let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+        let done = this.shared_advance_index(count);
+        this.local_index = self.dynamic_event_count(
+            this.local_index,
+            this.channel_meta_data.id,
+            done as isize);
+        done
+    }
+    
     /// Attempts to peek at the next message in the channel without removing it.
     ///
     /// # Parameters
@@ -1276,6 +1330,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         }
     }
 
+    
     /// Asynchronously retrieves and removes a single message from the channel.
     ///
     /// # Parameters
@@ -1551,6 +1606,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     fn identity(&self) -> ActorIdentity {
         self.ident
     }
+
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> LocalMonitor<RX_LEN, TX_LEN> {
@@ -1619,11 +1675,11 @@ pub(crate) mod monitor_tests {
     use std::sync::Once;
     use std::time::Duration;
     use futures_timer::Delay;
-    use std::sync::{Arc};
+    use std::sync::Arc;
     use parking_lot::RwLock;
     use futures::channel::oneshot;
     use std::time::Instant;
-    use std::sync::atomic::{AtomicUsize};
+    use std::sync::atomic::AtomicUsize;
     use crate::channel_builder::ChannelBuilder;
 
     lazy_static! {

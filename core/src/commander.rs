@@ -1,7 +1,7 @@
 
 use std::future::Future;
 use std::time::{Duration, Instant};
-use futures_util::future::{FusedFuture};
+use futures_util::future::FusedFuture;
 use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,7 +18,7 @@ use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
 use futures::stream::{FuturesUnordered, StreamExt};
-use crate::distributed::aqueduct::{AqueductFragment, AqueductRx, AqueductTx};
+use crate::distributed::steady_stream::{SteadyStreamItem, StreamMessage, StreamRxBundle};
 use crate::util::logger;
 
 impl SteadyContext {
@@ -264,7 +264,44 @@ impl SteadyCommander for SteadyContext {
 
         result.load(Ordering::Relaxed)
     }
-    
+
+
+    async fn wait_closed_or_avail_units_stream<S: SteadyStreamItem>(&self
+                              , this: &mut StreamRxBundle<'_, S>
+                              , avail_count: usize
+                              , ready_channels: usize) -> bool
+    where
+        S: Send + Sync
+    {
+        let count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+
+        let mut futures = FuturesUnordered::new();
+
+        // Push futures into the FuturesUnordered collection
+        for rx in this.iter_mut().take(count_down) {
+            let local_r = result.clone();
+            futures.push(async move {
+                let bool_result = rx.control_channel.shared_wait_closed_or_avail_units(avail_count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            });
+        }
+
+        let mut completed = 0;
+
+        // Poll futures concurrently
+        while let Some(_) = futures.next().await {
+            completed += 1;
+            if completed >= count_down {
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
     ///
     /// # Parameters
@@ -718,21 +755,6 @@ impl SteadyCommander for SteadyContext {
     }
 
 
-    fn try_aqueduct_send<'a>(&mut self, tx: &mut AqueductTx, stream_id: i32, payload: &'a[u8]) -> Result<(), &'a[u8]> {
-
-        debug_assert!(stream_id >= tx.stream_first);
-        debug_assert!(stream_id < tx.stream_first + tx.stream_count);
-
-        if tx.payload_channel.vacant_units()>=payload.len() && tx.control_channel.vacant_units()>=1 {
-            let len = self.send_slice_until_full(&mut tx.payload_channel, &payload);
-            debug_assert!(len==payload.len());
-            let result = self.try_send(&mut tx.control_channel, AqueductFragment::simple_outgoing(stream_id, payload.len() as i32));
-            debug_assert!(result.is_err());
-            Ok(())
-        } else {
-            Err(payload)
-        }
-    }
 
     /// Attempts to take a message from the channel if available.
     ///
@@ -749,21 +771,8 @@ impl SteadyCommander for SteadyContext {
         this.shared_take_async().await
     }
 
-    ///  Waits until we have the specified message count and byte count room on this target aqueduct
-    async fn wait_shutdown_or_vacant_aqueduct(&self, this: &mut AqueductTx, message_count: usize, bytes_count: usize) -> bool {
-        this.payload_channel.shared_wait_shutdown_or_vacant_units(bytes_count).await
-        &&
-        this.control_channel.shared_wait_shutdown_or_vacant_units(message_count).await
-    }
-
-    /// Waits until we have available count of messages
-    async fn wait_shutdown_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool {
-        this.control_channel.shared_wait_shutdown_or_avail_units(avail_count).await
-    }
-
-    /// Waits until we have available count of messages
-    async fn wait_closed_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool {
-        this.control_channel.shared_wait_closed_or_avail_units(avail_count).await
+    fn advance_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize {
+        this.shared_advance_index(count)
     }
 
     /// Waits until the specified number of available units are in the receiver.
@@ -889,9 +898,6 @@ impl SteadyCommander for SteadyContext {
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
-    /// try send aqueduct message
-    fn try_aqueduct_send<'a>(&mut self, tx: &mut AqueductTx, stream_id: i32, payload: &'a[u8]) -> Result<(), &'a[u8]>;
-
     /// set log level for the entire application
     fn loglevel(&self, loglevel: &str);
 
@@ -939,15 +945,9 @@ pub trait SteadyCommander {
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_stop_requested(&self) -> bool;
 
-    /// wait for outgoing room on the aqueduct or shutdown signal
-    async fn wait_shutdown_or_vacant_aqueduct(&self, this: &mut AqueductTx, message_count: usize, bytes_count: usize) -> bool;
+    
 
-    /// wait for messages on aqueduct or shutdown signal
-    async fn wait_shutdown_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool;
-
-    /// wait for message on aqueduct or closed signal
-    async fn wait_closed_or_avail_aqueduct(&self, this: &mut AqueductRx, avail_count: usize) -> bool;
-
+    
     /// Waits until a specified number of units are available in the Rx channel bundle.
     ///
     /// # Parameters
@@ -986,6 +986,14 @@ pub trait SteadyCommander {
     where
         T: Send + Sync,
     ;
+
+
+    async fn wait_closed_or_avail_units_stream<S: SteadyStreamItem>(&self, this: &mut StreamRxBundle<'_,S>, avail_count: usize, ready_channels: usize) -> bool
+    where
+        S: Send + Sync,
+    ;
+
+
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
     ///
     /// # Parameters
@@ -1314,6 +1322,11 @@ pub trait SteadyCommander {
     /// # Returns
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
     fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>;
+
+
+    fn advance_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize;
+
+
     /// Attempts to take a message from the channel if available.
     ///
     /// # Returns

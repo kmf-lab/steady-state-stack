@@ -13,7 +13,7 @@ pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>
 
 
 
-//TODO: 2025, we should use static for all telemetry work.
+//TODO: 2026, we should use static for all telemetry work.
 //      this might lead to a general solution for static in other places
 //let mut rb = AsyncRb::<Static<T, 12>>::default().split_ref()
 //   AsyncRb::<ChannelBacking<T>>::new(cap).split_ref()
@@ -28,8 +28,7 @@ use async_ringbuf::traits::Split;
 use futures_timer::Delay;
 use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
-use crate::distributed::aqueduct;
-use crate::distributed::aqueduct::{LazyAqueductRx, LazyAqueductTx};
+use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, SteadyStreamItem};
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
@@ -178,21 +177,7 @@ pub struct ChannelBuilder {
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
 }
 
-impl ChannelBuilder {
-    
-    /// Simplified aqueduct builder using a shared builder for control and payload 
-    /// for advanced custom channel configuration see aqueduct::build_aqueduct
-    pub(crate) fn build_aqueduct(&self
-                                 , control_channel_length: usize
-                                 , payload_channel_bytes: usize
-                                 , streams_first: i32
-                                 , streams_count: i32
-          ) -> (LazyAqueductTx, LazyAqueductRx,) {
-        let control_builder = self.with_capacity(control_channel_length);
-        let payload_builder = self.with_capacity(payload_channel_bytes);
-        aqueduct::build_aqueduct(&control_builder, &payload_builder, streams_first, streams_count)
-    }
-}
+
 
 const DEFAULT_CAPACITY: usize = 64;
 impl ChannelBuilder {
@@ -340,6 +325,34 @@ impl ChannelBuilder {
         )
     }
 
+    pub fn build_as_stream<T: SteadyStreamItem, const GIRTH: usize>(&self, base_stream_id: i32) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
+        assert!(base_stream_id>=0, "Stream Id must be positive");
+        assert!((base_stream_id+GIRTH as i32)<i32::MAX, "Stream Id of all channels must fit in i32");
+
+        let mut tx_vec = Vec::with_capacity(GIRTH);
+        let mut rx_vec = Vec::with_capacity(GIRTH);
+
+        (0..GIRTH).for_each(|i| { //TODO: later add custom builders for control vs payload
+            let lazy = Arc::new(LazyStream::new(&self, &self, base_stream_id+i as i32));
+            let (t, r) = (LazyStreamTx::<T>::new(lazy.clone()), LazyStreamRx::<T>::new(lazy.clone()));
+
+            tx_vec.push(t);
+            rx_vec.push(r);
+        });
+
+        (
+            match tx_vec.try_into() {
+                Ok(t) => t,
+                Err(_) => panic!("Internal error, incorrect length")
+            }
+            ,
+            match rx_vec.try_into() {
+                Ok(t) => t,
+                Err(_) => panic!("Internal error, incorrect length")
+            }
+            ,
+        )
+    }
 
     /// Sets the capacity for the channel being built.
     ///

@@ -37,14 +37,6 @@ pub(crate) mod aeron_utils {
     pub fn aeron_context() -> Option<Arc<Mutex<Aeron>>> {
         let mut aeron_context = Context::new();
 
-        // Example set-up instructions:
-        // sudo chmod -R 2775 /dev/shm/aeron-default
-        // sudo usermod -aG aeronmd <your-username>
-        //
-        // For advanced tuning, you might set:
-        //     aeron.event.buffer.length = 8MB
-        // etc.
-
         aeron_context.set_new_publication_handler(Box::new(on_new_publication_handler));
         aeron_context.set_error_handler(Box::new(error_handler));
         aeron_context.set_pre_touch_mapped_memory(true);
@@ -292,7 +284,6 @@ impl Channel {
                     }
 
                     MediaType::Ipc => {
-                        // "aeron:ipc"
                         "aeron:ipc".to_string()
                     }
 

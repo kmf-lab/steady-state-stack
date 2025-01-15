@@ -1,3 +1,4 @@
+
 //! # Steady State Core - Easy Performant Async
 //!  Steady State is a high performance, easy to use, actor based framework for building concurrent applications in Rust.
 //!  Guarantee your SLA with telemetry, alerts and Prometheus.
@@ -51,16 +52,16 @@ pub mod install {
 }
 
 pub mod distributed {
-    /// module for sending data over Aeron
-    pub mod aeron_sender;
-    /// module for receiving data over Aeron
-    pub mod aeron_receiver;
     /// enums for making new aeron connection strings
     pub mod aeron_channel;
     /// new channels for serialized data
-    pub mod aqueduct;
-    /// new channels for serialized data
-    pub mod distributed;
+    pub mod aeron_distributed;
+    /// Stream channels
+    pub mod steady_stream;
+    /// Publish message from stream to aeron
+    pub mod aeron_publish;
+    /// Subscribe to aeron and put incoming messages in streams
+    pub mod aeron_subscribe;
 }
 
 /// module for testing full graphs of actors
@@ -326,6 +327,32 @@ impl Clone for SteadyContext {
         }
     }
 }
+
+// #[macro_export]
+// macro_rules! concat_arrays {
+//     ($arr1:expr, $arr2:expr) => {{
+//         [
+//             $($arr1[$i]),*, // Expand all items from the first array
+//             $($arr2[$i]),* // Expand all items from the second array
+//         ]
+// }};
+// }
+// #[macro_export]
+// macro_rules! concat_arrays {
+//     ($arr1:expr, $arr2:expr) => {{
+//         let mut result = [unsafe { std::mem::zeroed() }; GIRTH * 2];
+//         result[..GIRTH].copy_from_slice($arr1);
+//         result[GIRTH..].copy_from_slice($arr2);
+//         result
+//     }};
+// }
+
+// fn concat_arrays<T: Copy>(arr1: &[T], arr2: &[T]) -> [T; { arr1.len() + arr2.len() }] {
+//     let mut result = [unsafe { std::mem::zeroed() }; { arr1.len() + arr2.len() }];
+//     result[..arr1.len()].copy_from_slice(arr1);
+//     result[arr1.len()..].copy_from_slice(arr2);
+//     result
+// }
 
 /// Macro takes a SteadyContext and a list of Rx and Tx channels
 /// and returns a LocalMonitor. The Monitor is the only way to produce
