@@ -28,7 +28,7 @@ use async_ringbuf::traits::Split;
 use futures_timer::Delay;
 use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
-use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, SteadyStreamItem};
+use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, StreamItem};
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
@@ -325,7 +325,7 @@ impl ChannelBuilder {
         )
     }
 
-    pub fn build_as_stream<T: SteadyStreamItem, const GIRTH: usize>(&self, base_stream_id: i32) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
+    pub fn build_as_stream<T: StreamItem, const GIRTH: usize>(&self, base_stream_id: i32) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
         assert!(base_stream_id>=0, "Stream Id must be positive");
         assert!((base_stream_id+GIRTH as i32)<i32::MAX, "Stream Id of all channels must fit in i32");
 

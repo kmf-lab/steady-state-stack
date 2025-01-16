@@ -18,7 +18,7 @@ use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
 use futures::stream::{FuturesUnordered, StreamExt};
-use crate::distributed::steady_stream::{SteadyStreamItem, StreamMessage, StreamRxBundle};
+use crate::distributed::steady_stream::{StreamItem, ItemFragment, ItemMessage, StreamRxBundle, StreamTxBundle};
 use crate::util::logger;
 
 impl SteadyContext {
@@ -266,12 +266,42 @@ impl SteadyCommander for SteadyContext {
     }
 
 
-    async fn wait_closed_or_avail_units_stream<S: SteadyStreamItem>(&self
-                              , this: &mut StreamRxBundle<'_, S>
-                              , avail_count: usize
-                              , ready_channels: usize) -> bool
-    where
-        S: Send + Sync
+    async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant_count: usize, vacant_bytes: usize, ready_channels: usize) -> bool
+    {
+        let count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+
+        let mut futures = FuturesUnordered::new();
+
+        // Push futures into the FuturesUnordered collection
+        for tx in this.iter_mut().take(count_down) {
+            let local_r = result.clone();
+            futures.push(async move {
+                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant_count).await
+                               && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant_bytes).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            });
+        }
+
+        let mut completed = 0;
+
+        // Poll futures concurrently
+        while let Some(_) = futures.next().await {
+            completed += 1;
+            if completed >= count_down {
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+
+    async fn wait_closed_or_avail_units_stream<S: StreamItem>(&self
+                                                              , this: &mut StreamRxBundle<'_, S>
+                                                              , avail_count: usize
+                                                              , ready_channels: usize) -> bool
     {
         let count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
@@ -282,7 +312,7 @@ impl SteadyCommander for SteadyContext {
         for rx in this.iter_mut().take(count_down) {
             let local_r = result.clone();
             futures.push(async move {
-                let bool_result = rx.control_channel.shared_wait_closed_or_avail_units(avail_count).await;
+                let bool_result = rx.item_channel.shared_wait_closed_or_avail_units(avail_count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -612,6 +642,28 @@ impl SteadyCommander for SteadyContext {
     fn try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T> {
         this.shared_try_send(msg)
     }
+
+
+    fn try_stream_send<S: StreamItem>(&mut self, this: &mut StreamTxBundle<'_, S>
+                                      , stream_id: i32
+                                      , control: S
+                                      , payload: &[u8]) -> Result<(), S> {
+        debug_assert!(stream_id>= this[0].stream_id);
+        debug_assert!(stream_id<= this[this.len()-1].stream_id);
+        let idx:usize = (stream_id - this[0].stream_id) as usize;
+
+        if this[idx].payload_channel.shared_vacant_units()>= payload.len() 
+           && this[idx].item_channel.shared_vacant_units()>= 1 {
+            let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
+            debug_assert_eq!(count, payload.len());
+            let result = this[idx].item_channel.shared_try_send(control);
+            debug_assert!(result.is_ok());
+            Ok(())
+        } else {
+            Err(control)
+        }
+    }
+
     /// Checks if the Tx channel is currently full.
     ///
     /// # Parameters
@@ -987,11 +1039,15 @@ pub trait SteadyCommander {
         T: Send + Sync,
     ;
 
+    fn try_stream_send<S: StreamItem>(&mut self
+                                      , this: &mut StreamTxBundle<'_, S>
+                                      , stream_id: i32
+                                      , control: S
+                                      , payload: &[u8]) -> Result<(), S>;
 
-    async fn wait_closed_or_avail_units_stream<S: SteadyStreamItem>(&self, this: &mut StreamRxBundle<'_,S>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        S: Send + Sync,
-    ;
+    async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant_count: usize, vacant_bytes: usize, ready_channels: usize) -> bool;
+
+    async fn wait_closed_or_avail_units_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_,S>, avail_count: usize, ready_channels: usize) -> bool;
 
 
     /// Waits until a specified number of units are vacant in the Tx channel bundle.

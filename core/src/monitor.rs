@@ -17,7 +17,7 @@ use crate::*;
 use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
 use crate::commander::SteadyCommander;
-use crate::distributed::steady_stream::{SteadyStreamItem, StreamMessage, StreamRxBundle};
+use crate::distributed::steady_stream::{StreamItem, ItemMessage, StreamRxBundle, StreamTxBundle};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::SideChannelResponder;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
@@ -581,7 +581,53 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     }
 
 
-    async fn wait_closed_or_avail_units_stream<S: SteadyStreamItem>(&self, this: &mut StreamRxBundle<'_, S>, avail_count: usize, ready_channels: usize) -> bool
+    async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant_count: usize, vacant_bytes: usize, ready_channels: usize) -> bool
+    {
+        let mut count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+
+        let _guard = self.start_profile(CALL_OTHER);
+
+        let futures = this.iter_mut().map(|tx| {
+            let local_r = result.clone();
+            async move {
+                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant_count).await
+                               && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant_bytes).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            }.boxed() // Box the future to make them the same type
+        });
+
+        let mut futures: Vec<_> = futures.collect();
+
+        //this adds one extra feature as the last one
+        futures.push( async move {
+            let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
+            if !guard.is_terminated() {
+                let _ = guard.deref_mut().await;
+            }
+        }.boxed());
+
+        while !futures.is_empty() {
+            // Wait for the first future to complete
+            let (_result, index, remaining) = select_all(futures).await;
+            if remaining.len() == index { //we had the last one finish
+                result.store(false, Ordering::Relaxed);
+                break;
+            }
+            futures = remaining;
+            count_down -= 1;
+            if count_down <= 1 { //we may have 1 left for the shutdown
+                break;
+            }
+        }
+
+        result.load(Ordering::Relaxed)
+    }
+
+
+    async fn wait_closed_or_avail_units_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_, S>, avail_count: usize, ready_channels: usize) -> bool
     where
         S: Send + Sync
     {
@@ -592,7 +638,11 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let futures = this.iter_mut().map(|rx| {
             let local_r = result.clone();
             async move {
-                let bool_result = rx.control_channel.shared_wait_closed_or_avail_units(avail_count).await;
+                let bool_result = rx.item_channel.shared_wait_closed_or_avail_units(avail_count).await;
+                
+                //TODO: we need to retrun if S is message but for fragments we need to know
+                //      that we have assimbled the end of the message.
+                
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -602,7 +652,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
         let mut futures: Vec<_> = futures.collect();
 
-        //this adds one extra feature as the last one
+        //this adds one extra future as the last one
         futures.push( async move {
             let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
             if !guard.is_terminated() {
@@ -1079,6 +1129,46 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         }
     }
 
+
+    fn try_stream_send<S: StreamItem>(&mut self, this: &mut StreamTxBundle<'_, S>
+                                      , stream_id: i32
+                                      , item: S
+                                      , payload: &[u8]) -> Result<(), S> {
+        if let Some(ref mut st) = self.telemetry.state {
+            let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+
+        debug_assert!(stream_id>= this[0].stream_id);
+        debug_assert!(stream_id<= this[this.len()-1].stream_id);
+        let idx:usize = (stream_id - this[0].stream_id) as usize;
+
+        if this[idx].payload_channel.shared_vacant_units()>= payload.len()
+            && this[idx].item_channel.shared_vacant_units()>= 1 {
+            let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
+            debug_assert_eq!(count, payload.len());
+            let result = this[idx].item_channel.shared_try_send(item);
+            debug_assert!(result.is_ok());
+
+            this[idx].payload_channel.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
+                tel.process_event(this[idx].payload_channel.local_index
+                                  , this[idx].payload_channel.channel_meta_data.id, count as isize)
+            } else {
+                MONITOR_NOT
+            };
+
+            this[idx].item_channel.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
+                tel.process_event(this[idx].item_channel.local_index
+                                  , this[idx].item_channel.channel_meta_data.id, 1)
+            } else {
+                MONITOR_NOT
+            };
+                        
+            Ok(())
+        } else {
+            Err(item)
+        }
+    }
+    
     /// Checks if the Tx channel is currently full.
     ///
     /// # Parameters

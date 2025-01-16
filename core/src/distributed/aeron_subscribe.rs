@@ -9,7 +9,7 @@ use steady_state_aeron::concurrent::logbuffer::header::Header;
 use steady_state_aeron::image::ControlledPollAction;
 use steady_state_aeron::subscription::Subscription;
 use crate::distributed::aeron_channel::Channel;
-use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamTxBundleTrait, StreamFragment, FragmentType};
+use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamTxBundleTrait, ItemFragment, FragmentType};
 use crate::{into_monitor, SteadyCommander, SteadyContext, SteadyState};
 use crate::*;
 use crate::monitor::{TxMetaDataHolder};
@@ -21,7 +21,7 @@ pub(crate) struct AeronSubscribeSteadyState {
 }
 
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
-                                     , tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
+                                     , tx: SteadyStreamTxBundle<ItemFragment,GIRTH>
                                      , aeron_connect: Channel
                                      , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                                      , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
@@ -30,7 +30,7 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
 }
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
-                                                                 , tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
+                                                                 , tx: SteadyStreamTxBundle<ItemFragment,GIRTH>
                                                                  , aeron_channel: Channel
                                                                  , aeron: Arc<futures_util::lock::Mutex<Aeron>>
                                                                  , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
@@ -121,7 +121,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             await_for_all!( cmd.wait_periodic(Duration::from_millis(10)) );
 
             for i in 0..GIRTH {
-                let max_poll_frags = tx[i].control_channel.vacant_units();
+                let max_poll_frags = tx[i].item_channel.vacant_units();
                 if max_poll_frags>0 {
                     match &mut subs[i] {
                         Ok(ref mut sub) => {
@@ -137,7 +137,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                 }
                                 //trace!("poll found something");
 
-                                let ctrl_room = cmd.vacant_units(&mut tx[i].control_channel);
+                                let ctrl_room = cmd.vacant_units(&mut tx[i].item_channel);
                                 let room = cmd.vacant_units(&mut tx[i].payload_channel);
                                 let abort = room < length as usize && ctrl_room > 1;
                                 if abort { //back off until we have room.
@@ -171,8 +171,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         }
                                     };
 
-                                    let ok = cmd.try_send(&mut tx[i].control_channel,
-                                                          StreamFragment {
+                                    let ok = cmd.try_send(&mut tx[i].item_channel,
+                                                          ItemFragment {
                                                               length,
                                                               session_id: header.session_id(),
                                                               arrival: Instant::now(),
@@ -207,10 +207,17 @@ pub(crate) mod aeron_media_driver_tests {
     use super::*;
     use crate::distributed::aeron_channel::MediaType;
     use crate::distributed::aeron_distributed::DistributionBuilder;
-    use crate::distributed::steady_stream::StreamMessage;
+    use crate::distributed::steady_stream::ItemMessage;
+    use async_std::sync::Mutex;
+    use once_cell::sync::Lazy;
+
+    pub(crate) static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
 
     #[async_std::test]
     async fn test_bytes_process() {
+        let _lock = TEST_MUTEX.lock().await; // Lock to ensure sequential execution
+
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(false)
             .build(());
@@ -223,9 +230,8 @@ pub(crate) mod aeron_media_driver_tests {
         let channel_builder = graph.channel_builder();
 
         //TODO: need a macro to make this easier?
-
-        let (to_aeron_tx,to_aeron_rx) = channel_builder.build_as_stream::<StreamMessage,2>(0);
-        let (from_aeron_tx,from_aeron_rx) = channel_builder.build_as_stream::<StreamFragment,2>(0);
+        let (to_aeron_tx,to_aeron_rx) = channel_builder.build_as_stream::<ItemMessage,2>(0);
+        let (from_aeron_tx,from_aeron_rx) = channel_builder.build_as_stream::<ItemFragment,2>(0);
 
         let distribution = DistributionBuilder::aeron()
             .with_media_type(MediaType::Udp)

@@ -30,7 +30,7 @@ use crate::channel_builder::ChannelBuilder;
 use crate::distributed::{aeron_publish, aeron_subscribe};
 use crate::distributed::aeron_channel::aeron_utils::aeron_context;
 use crate::distributed::aeron_distributed::Distributed;
-use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, SteadyStreamTxBundle, StreamFragment, StreamMessage};
+use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, SteadyStreamTxBundle, ItemFragment, ItemMessage};
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -555,7 +555,7 @@ impl Graph {
     pub fn build_stream_distributor<const GIRTH:usize>(&mut self
                                       , distribution: Distributed
                                       , name: &'static str
-                                      , rx: LazySteadyStreamRxBundle<StreamMessage,GIRTH>
+                                      , rx: LazySteadyStreamRxBundle<ItemMessage,GIRTH>
                                       , threading: &mut Threading) {
         
         match distribution {
@@ -591,7 +591,7 @@ impl Graph {
     pub fn build_stream_collector<const GIRTH:usize>(&mut self
                                     , distribution: Distributed
                                     , name: &'static str
-                                    , tx: LazySteadyStreamTxBundle<StreamFragment, GIRTH>
+                                    , tx: LazySteadyStreamTxBundle<ItemFragment, GIRTH>
                                     , threading: &mut Threading) {
 
         match distribution {

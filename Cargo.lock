@@ -2089,6 +2089,7 @@ dependencies = [
  "nuclei",
  "num-traits",
  "num_cpus",
+ "once_cell",
  "parking_lot 0.12.3",
  "pin-project",
  "rand",

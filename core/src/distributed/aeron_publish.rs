@@ -7,7 +7,7 @@ use steady_state_aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer}
 use steady_state_aeron::exclusive_publication::ExclusivePublication;
 use steady_state_aeron::utils::types::Index;
 use crate::distributed::aeron_channel::Channel;
-use crate::distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamMessage, StreamRxBundleTrait};
+use crate::distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, ItemMessage, StreamRxBundleTrait};
 use crate::{into_monitor, SteadyCommander, SteadyContext, SteadyState};
 use crate::*;
 use crate::monitor::{RxMetaDataHolder};
@@ -18,7 +18,7 @@ pub(crate) struct AeronPublishSteadyState {
 }
 
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
-                                     , rx: SteadyStreamRxBundle<StreamMessage,GIRTH>
+                                     , rx: SteadyStreamRxBundle<ItemMessage,GIRTH>
                                      , aeron_connect: Channel
                                      , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                                      , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
@@ -27,7 +27,7 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
 }
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
-                                                                 , rx: SteadyStreamRxBundle<StreamMessage,GIRTH>
+                                                                 , rx: SteadyStreamRxBundle<ItemMessage,GIRTH>
                                                                  , aeron_channel: Channel
                                                                  , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                                                                  , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
@@ -112,11 +112,11 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         warn!("running publisher");
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
-            let clean = await_for_all!(cmd.wait_closed_or_avail_units_stream::<StreamMessage>(&mut rx, 1,1));
+            let clean = await_for_all!(cmd.wait_closed_or_avail_units_stream::<ItemMessage>(&mut rx, 1,1));
             if clean {
                 for i in 0..GIRTH {                    
                    
-                        if let Some(stream_message) = cmd.try_peek(&mut rx[i].control_channel) {
+                        if let Some(stream_message) = cmd.try_peek(&mut rx[i].item_channel) {
                            
                                 match &mut pubs[i] {
                                     Ok(p) => {
@@ -155,7 +155,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                 let slice = to_send.as_slice();
                                                 warn!("Published FirstByte:{:?} Len:{:?} LastByte:{:?} NewStreamPos:{}", slice[0], slice.len(),slice[slice.len()-1], value);
                                                 //worked so we can now finalize the take
-                                                let msg = cmd.try_take(&mut rx[i].control_channel);
+                                                let msg = cmd.try_take(&mut rx[i].item_channel);
                                                 debug_assert!(msg.is_some());
                                                 let actual = cmd.advance_index(&mut rx[i].payload_channel,to_read);
                                                 debug_assert_eq!(actual,to_read);
@@ -190,15 +190,15 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 #[cfg(test)]
 pub(crate) mod aeron_tests {
     use std::net::{IpAddr, Ipv4Addr};
-    use futures_timer::Delay;
     use super::*;
     use crate::distributed::aeron_channel::MediaType;
     use crate::distributed::aeron_distributed::DistributionBuilder;
-    use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamFragment, StreamTxBundleTrait};
+    use crate::distributed::aeron_subscribe;
+    use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, ItemFragment, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;
 
     pub async fn mock_sender_run<const GIRTH: usize>(mut context: SteadyContext
-                                                     , tx: SteadyStreamTxBundle<StreamMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
+                                                     , tx: SteadyStreamTxBundle<ItemMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
         let tx_meta = TxMetaDataHolder::new(tx.payload_meta_data());
         let mut cmd = into_monitor!(context, [], tx_meta);
@@ -206,41 +206,48 @@ pub(crate) mod aeron_tests {
         let mut tx = tx.lock().await;
         //normally would be a while but for this test we only need to send these two.
         //TODO: send MB of data..
-        if cmd.is_running(&mut || tx.mark_closed()) {
+        while cmd.is_running(&mut || tx.mark_closed()) {
 
-            // let stream_id = 7; TODO: missing methods
-            // await_for_all!(cmd.wait_shutdown_or_vacant_aqueduct(&mut tx, 2, 1000));
-            // let _ = cmd.try_aqueduct_send(&mut tx, stream_id, &[1,2,3]);
-            // let _ = cmd.try_aqueduct_send(&mut tx, stream_id, &[4,5,6]);
+            //waiting for at least 1 channel in the stream has room for 2 made of 6 bytes
+            let clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx, 2, 6, 1));
+                       
+            if clean {
+                let stream_id = 7; //these will succeed since we just checked above for room 
+                let _result = cmd.try_stream_send(&mut tx, stream_id, ItemMessage::new(3), &[1, 2, 3]);
+                let _result = cmd.try_stream_send(&mut tx, stream_id, ItemMessage::new(3), &[4, 5, 6]);
+                return Ok(()); //exit now because we sent all our data
+            }
         }
-
-        tx.mark_closed();
 
         Ok(())
     }
 
     pub async fn mock_receiver_run<const GIRTH:usize>(mut context: SteadyContext
-                                   , rx: SteadyStreamRxBundle<StreamFragment, GIRTH>) -> Result<(), Box<dyn Error>> {
+                                                      , rx: SteadyStreamRxBundle<ItemFragment, GIRTH>) -> Result<(), Box<dyn Error>> {
         let rx_meta = RxMetaDataHolder::new(rx.payload_meta_data());
         let mut cmd = into_monitor!(context, rx_meta, []);
 
         let mut rx = rx.lock().await;
-        warn!("wait for two");//StreamRxBundle
-        await_for_all!(cmd.wait_closed_or_avail_units_stream::<StreamFragment>(&mut rx, 1,1)); //not waiting for closed.
+        warn!("wait for two");//TODO: this must do some defragment to have the messages ready
+        await_for_all!(cmd.wait_closed_or_avail_units_stream::<ItemFragment>(&mut rx, 1,1)); //not waiting for closed.
         
+        //we waited above for 2 messages so we know there are 2 to consume
+        //reading from a single channel with a single stream id
+     //   let item:Option<ItemMessage> = cmd.try_take(rx[0]); //TODO: this just consumes next messge
+     //   let item:Option<ItemMessage> = cmd.try_take(rx[0]); //TODO: this just consumes next messge
+        
+        
+        ///////// old code
         // rx.defragment(&mut cmd);//TODO: change to cmd call
         // warn!("finished wait");
-        // 
         // let mut vec_results = rx.take_by_stream(7); //TODO: change to cmd call
         // warn!("msg count: {}",vec_results.len());
         // warn!("first: {:?}",vec_results[0].data);
-        // 
-        // 
+        
+        // verification
         // let data0 = vec_results[0].data.take().expect("");
         // assert_eq!([1,2,3], &data0[..]);
-        // 
         // warn!("second: {:?}",vec_results[1].data);
-        // 
         // let data1 = vec_results[1].data.take().expect("");
         // assert_eq!([4,5,6], &data1[..]);
 
@@ -250,9 +257,9 @@ pub(crate) mod aeron_tests {
 
     #[async_std::test]
     async fn test_bytes_process() {
-        //TODO: these must be public exports or clone is broken.
-        //TODO: these must be public exports or clone is broken.
-        use crate::distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamFragment, StreamMessage};
+        let _lock = aeron_subscribe::aeron_media_driver_tests::TEST_MUTEX.lock().await; // Lock to ensure sequential execution
+
+        use crate::distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, ItemFragment, ItemMessage};
 
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(false)
@@ -265,8 +272,8 @@ pub(crate) mod aeron_tests {
 
         let channel_builder = graph.channel_builder();
 
-        let (to_aeron_tx,to_aeron_rx) = channel_builder.build_as_stream::<StreamMessage,1>(7);
-        let (from_aeron_tx,from_aeron_rx) = channel_builder.build_as_stream::<StreamFragment,1>(7);
+        let (to_aeron_tx,to_aeron_rx) = channel_builder.build_as_stream::<ItemMessage,1>(7);
+        let (from_aeron_tx,from_aeron_rx) = channel_builder.build_as_stream::<ItemFragment,1>(7);
 
         let distribution = DistributionBuilder::aeron()
             .with_media_type(MediaType::Udp)
@@ -283,16 +290,16 @@ pub(crate) mod aeron_tests {
                                        , "SenderTest"
                                        , to_aeron_rx
                                        , &mut Threading::Spawn);
-        // 
-        // let x = to_aeron_tx.clone();
-        // graph.actor_builder().with_name("MockSender")
-        //     .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
-        //            , &mut Threading::Spawn);
-        // 
-        // graph.actor_builder().with_name("MockReceiver")
-        //     .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
-        //            , &mut Threading::Spawn);
-        // 
+        
+        let x = to_aeron_tx.clone();
+        graph.actor_builder().with_name("MockSender")
+            .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
+                   , &mut Threading::Spawn);
+        
+        graph.actor_builder().with_name("MockReceiver")
+            .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
+                   , &mut Threading::Spawn);
+        
         // graph.start(); //startup the graph
         // 
         // graph.block_until_stopped(Duration::from_secs(2));
