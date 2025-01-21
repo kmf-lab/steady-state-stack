@@ -99,8 +99,14 @@ parking_lot      = "0.12.3"
 tempfile         = "3.14.0"
 num_cpus         = "1.16.0"
 pin-project      = "1.1.7"
+ahash            = "0.8.11" # fastest hash map so far
 
-
+# buldign in MQTT for IoT and Lambdas, for soon 0.2 release
+mqttrs           = "0.4.1"
+# building in encryption for soon 0.2 release, pre testing now.
+hkdf             = "0.13.0-pre.4" # generate common hash for all peer pods
+x25519-dalek     = "2.0.1"              #
+chacha20poly1305 = "0.11.0-pre.2" # for encrypted streams
 # fork of aeron-rs with just the fixes we need until they get merged into the mainline
 steady_state_aeron     = { version="0.1.6-kmf1" }
 once_cell = "1.20.2"
@@ -147,12 +153,13 @@ once_cell = "1.20.2"
 
 #  Roadmap for distributed actors (core of the 2.0 release)
 # 1. Core: Aeron       https://crates.io/crates/aeron
-# 2. Core: ZeroMQ      https://crates.io/crates/zmq
-# 3. Core: LibP2P      https://crates.io/crates/libp2p
-# 4. Bridge: Kafka
-# 5. Bridge: MQTT
-# 6. WebRTC
-# 7. ROS2  (perhaps needs to be much earlier and deeper integration)
+# 2. Bridge: MQTT (AWS IoT Core) for AWS Lambda integration
+# 3. Core: ZeroMQ      https://crates.io/crates/zmq
+# 4. ROS2
+# 5. Core: LibP2P      https://crates.io/crates/libp2p
+# 6. Bridge: Kafka
+# 7. WebRTC
+
 
 
 

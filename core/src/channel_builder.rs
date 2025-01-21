@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use ringbuf::storage::Heap;
+use ringbuf::storage::{Array, Heap};
 use std::sync::Arc;
 use futures::lock::Mutex;
 use std::time::{Duration, Instant};
@@ -15,10 +15,15 @@ pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>
 
 //TODO: 2026, we should use static for all telemetry work.
 //      this might lead to a general solution for static in other places
-//let mut rb = AsyncRb::<Static<T, 12>>::default().split_ref()
-//   AsyncRb::<ChannelBacking<T>>::new(cap).split_ref()
+//use ringbuf::storage::Heap;
+//use ringbuf::storage::Array;
+//use async_ringbuf::traits::Split;
 
-//# use ringbuf::traits::Split;
+//let rb = AsyncRb::<Heap<u8>>::new(1000).split();
+//let rb = AsyncRb::<Array<u8,1000>>::default().split();  //static
+
+
+
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 
 use futures::channel::oneshot;
@@ -325,19 +330,22 @@ impl ChannelBuilder {
         )
     }
 
-    pub fn build_as_stream<T: StreamItem, const GIRTH: usize>(&self, base_stream_id: i32) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
+    pub fn build_as_stream<T: StreamItem, const GIRTH: usize>(&self
+                                               , base_stream_id: i32
+                                               , items: usize, bytes: usize               
+                                               ) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
         assert!(base_stream_id>=0, "Stream Id must be positive");
         assert!((base_stream_id+GIRTH as i32)<i32::MAX, "Stream Id of all channels must fit in i32");
 
-        let mut tx_vec = Vec::with_capacity(GIRTH);
-        let mut rx_vec = Vec::with_capacity(GIRTH);
+        let mut tx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
+        let mut rx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
 
-        (0..GIRTH).for_each(|i| { //TODO: later add custom builders for control vs payload
-            let lazy = Arc::new(LazyStream::new(&self, &self, base_stream_id+i as i32));
-            let (t, r) = (LazyStreamTx::<T>::new(lazy.clone()), LazyStreamRx::<T>::new(lazy.clone()));
-
-            tx_vec.push(t);
-            rx_vec.push(r);
+        (0..GIRTH).for_each(|i| { //TODO: later add custom builders for items vs payload
+            let lazy = Arc::new(LazyStream::new(&self.with_capacity(items)
+                                              , &self.with_capacity(bytes)
+                                              , base_stream_id+i as i32));           
+            tx_vec.push(LazyStreamTx::<T>::new(lazy.clone()));
+            rx_vec.push(LazyStreamRx::<T>::new(lazy.clone()));
         });
 
         (
@@ -673,6 +681,8 @@ impl ChannelBuilder {
         let rx_version = Arc::new(AtomicU32::new(Self::UNSET));
         let noise_threshold = self.noise_threshold;
 
+        //let rb = AsyncRb::<Heap<u8>>::new(1000).split();;
+        //let rb = AsyncRb::<Array<u8,1000>>::default().split();
         let rb = AsyncRb::<ChannelBacking<T>>::new(self.capacity);
         let (tx, rx) = rb.split();
         (

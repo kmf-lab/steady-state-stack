@@ -29,8 +29,8 @@ use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::distributed::{aeron_publish, aeron_subscribe};
 use crate::distributed::aeron_channel::aeron_utils::aeron_context;
-use crate::distributed::aeron_distributed::Distributed;
-use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, SteadyStreamTxBundle, ItemFragment, ItemMessage};
+use crate::distributed::aeron_distributed::DistributedTech;
+use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamSessionMessage, StreamSimpleMessage};
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -553,13 +553,13 @@ impl Graph {
     }
 
     pub fn build_stream_distributor<const GIRTH:usize>(&mut self
-                                      , distribution: Distributed
+                                      , distribution: DistributedTech
                                       , name: &'static str
-                                      , rx: LazySteadyStreamRxBundle<ItemMessage,GIRTH>
+                                      , rx: LazySteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
                                       , threading: &mut Threading) {
         
         match distribution {
-            Distributed::Aeron(channel) => {
+            DistributedTech::Aeron(channel) => {
 
                 if self.aeron.is_none() { //lazy load, we only support one
                     self.aeron = aeron_context();
@@ -572,6 +572,8 @@ impl Graph {
 
                     self.actor_builder()
                         .with_name(name)
+                        .with_mcpu_avg()
+                        .with_thread_info()
                         .build(move |context| 
                                    aeron_publish::run(context
                                                          , rx.clone()
@@ -589,19 +591,21 @@ impl Graph {
     }
 
     pub fn build_stream_collector<const GIRTH:usize>(&mut self
-                                    , distribution: Distributed
+                                    , distribution: DistributedTech
                                     , name: &'static str
-                                    , tx: LazySteadyStreamTxBundle<ItemFragment, GIRTH>
+                                    , tx: LazySteadyStreamTxBundle<StreamSessionMessage, GIRTH>
                                     , threading: &mut Threading) {
 
         match distribution {
-            Distributed::Aeron(channel) => {
+            DistributedTech::Aeron(channel) => {
 
                 if self.aeron.is_none() { //lazy load, we only support one
                     self.aeron = aeron_context();
                 }
                 
+                
                 if let Some(ref aeron) = self.aeron {
+                                     
                     let state = new_state();
                     let aeron = aeron.clone();
 
@@ -609,6 +613,8 @@ impl Graph {
                     
                     self.actor_builder()
                         .with_name(name)
+                        .with_mcpu_avg()
+                        .with_thread_info()
                         //.with_custom_label(connection) // TODO: need something like this.
                         .build(move |context|
                                    aeron_subscribe::run(context

@@ -94,17 +94,16 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
 
         let state2 = state.clone();
         let config2 = config.clone();
-
+        if let Some(ref listener_new) = *opt_tcp {
+            #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
+            println!("Telemetry on http://{}", listener_new.local_addr().expect("Unable to get local address"));
+            #[cfg(feature = "prometheus_metrics")]
+            println!("Prometheus can scrape on on http://{}/metrics", listener_new.local_addr().expect("Unable to read local address"));
+        }
+        
         //NOTE: this is probably a mistake this loop could be its own actor.
         spawn(async move {
            if let Some(ref listener_new) = *opt_tcp {
-               #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
-               let local_addr = listener_new.local_addr().expect("Unable to get local address");
-               #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
-               println!("Telemetry on http://{}", local_addr);
-               #[cfg(feature = "prometheus_metrics")]
-               println!("Prometheus can scrape on on http://{}/metrics", listener_new.local_addr().expect("Unable to read local address"));
-
                //loops and blocks for new connections and shutdown
                handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
            }

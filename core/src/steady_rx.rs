@@ -505,7 +505,7 @@ impl<T> Rx<T> {
             let mut operation = &mut self.rx.wait_occupied(wait_for_count);
             select! { _ = one_down => {}
                     , _ = operation => {}
-                    , };
+                    , }
         }
         self.rx.iter()
     }

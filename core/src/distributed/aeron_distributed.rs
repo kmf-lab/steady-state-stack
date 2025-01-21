@@ -1,470 +1,335 @@
-//! This module provides builder-pattern functionality for configuring various
-//! forms of Aeron-based distributed communication. It includes support for
-//! point-to-point (unicast or IPC) and multicast, with optional reliability
-//! settings, TTL (time-to-live) for multicast, and more.
-
-use std::net::IpAddr;
+use std::cmp::PartialEq;
 use crate::distributed::aeron_channel::*;
 
-/// Represents different distributed technologies that can be configured and built.
-///
-/// Currently, it supports Aeron, and can be extended to include technologies like ZeroMQ.
-/// This enum, once fully built, carries all the configuration necessary for distributed
-/// communication.
-///
-/// # Variants
-/// - `None`: Indicates that no distributed communication is configured.
-/// - `Aeron(Channel, i32)`: An Aeron-based channel plus a stream ID, which identifies the specific data stream.
-#[derive(Debug, Clone)]
-pub enum Distributed {
-    /// No distributed communication is configured.
+#[derive(Debug,Clone)]
+pub enum DistributedTech {
     None,
-    /// An Aeron-based communication channel and its associated `stream_id`.
-    ///
-    /// * `Channel`: Describes how Aeron should send/receive data (unicast, IPC, or multicast).
     Aeron(Channel),
+    // Add more types here as needed
 }
 
-/// Represents the capability for point-to-point communication.
-///
-/// This trait is typically implemented by builder components that can
-/// configure source network interface and reliability for unicast or IPC channels.
-pub trait PointToPoint {
-    /// Configures a specific interface (`Endpoint`) on which the communication will bind.
-    ///
-    /// In some scenarios, a machine has multiple network interfaces and
-    /// you want to pick one for sending/receiving data. This method helps
-    /// you specify exactly which IP/port to use.
-    ///
-    /// # Arguments
-    /// - `interface`: An `Endpoint` indicating `ip` and `port` to bind to.
-    fn with_interface(self, interface: Endpoint) -> Self;
 
-    /// Configures the reliability level of the communication.
-    ///
-    /// By default, Aeron can work with "best-effort" or "reliable" modes.
-    /// This method lets you pick which one you want:
-    /// - `ReliableConfig::Reliable` for retransmission in case of packet loss.
-    /// - `ReliableConfig::Unreliable` for best effort (lower latency, possible packet loss).
-    ///
-    /// # Arguments
-    /// - `reliability`: A `ReliableConfig` (either `Reliable` or `Unreliable`).
-    fn with_reliability(self, reliability: ReliableConfig) -> Self;
+/////////////////////////////////////
+
+/// Internal marker for whether the config is point-to-point or multicast.
+///
+/// We store it inside `AeronConfig` so at build-time we know which
+/// `Channel` variant to create.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AeronMode {
+    None,
+    PointToPoint,
+    Multicast,
 }
 
-/// Represents the capability for multicast communication.
+/// A single builder struct holding **all** Aeron-related configuration.
 ///
-/// This trait is typically implemented by builder components that can
-/// configure multicast-specific parameters like TTL (time-to-live) and
-/// control mode (dynamic vs manual).
-pub trait Multicast {
-    /// Provides a complete `MulticastConfig` object for configuring
-    /// the control endpoint and TTL directly.
-    ///
-    /// Useful if you already have a fully-formed `MulticastConfig` object
-    /// and want to apply it in one go.
-    fn with_multicast_config(self, config: MulticastConfig) -> Self;
-
-    /// Specifies how control messages for multicast are handled:
-    /// - `ControlMode::Dynamic`: Aeron automatically manages control messages.
-    /// - `ControlMode::Manual`: You take over handling control messages yourself.
-    fn with_control_mode(self, control_mode: ControlMode) -> Self;
-
-    /// Sets the time-to-live (TTL) for multicast packets, in router hops.
-    ///
-    /// Each router the packet crosses decrements the TTL by 1. When it reaches 0, it is dropped.
-    /// Lower TTL keeps packets local; higher TTL allows wider network reach.
-    fn with_ttl(self, ttl: u8) -> Self;
-}
-
-/// Represents a valid Aeron configuration for the builder pattern.
+/// It creates either:
+/// - A point-to-point channel (`Channel::PointToPoint`)
+/// - A multicast channel (`Channel::Multicast`)
 ///
-/// This generic struct can represent either:
-/// - A point-to-point mode (`AeronConfig<PointToPointMode>`)  
-/// - A multicast mode (`AeronConfig<MulticastMode>`)
-///
-/// It carries essential details such as the `media_type`, the target `endpoint`,
-/// and mode-specific fields.
+/// # Cloning Pattern
+/// Each `with_` or `use_` method takes `&self`, clones this config,
+/// then updates the clone and returns it. This ensures the original
+/// builder is never mutated.
 #[derive(Debug, Clone)]
-pub struct AeronConfig<Mode> {
-    /// The Aeron media type (e.g., `Udp`, `Ipc`, `SpyUdp`, or `SpyIpc`).
-    media_type: MediaType,
-    /// The primary `Endpoint` for communication.
-    ///
-    /// In point-to-point, this is usually the remote or local socket address
-    /// (e.g., `127.0.0.1:40123`).
-    /// In multicast, this may be the multicast group address/port (e.g., `224.0.1.1:40456`).
-    endpoint: Endpoint,
-    /// The specific mode of operation—point-to-point or multicast—with its own parameters.
-    mode: Mode,
-}
-
-/// Marker type for point-to-point configurations.
-///
-/// This contains optional parameters like:
-/// - `interface`: The local network interface to bind, if specified.
-/// - `reliability`: Whether the channel is reliable or best-effort.
-#[derive(Debug, Clone)]
-pub struct PointToPointMode {
-    /// The local interface endpoint, if any (e.g., `192.168.1.2:0`).
-    pub interface: Option<Endpoint>,
-    /// The reliability setting for the channel.
-    /// - `Some(ReliableConfig::Reliable)` for reliable retransmissions.
-    /// - `Some(ReliableConfig::Unreliable)` for best-effort.
-    pub reliability: Option<ReliableConfig>,
-}
-
-/// Marker type for multicast configurations.
-///
-/// This includes:
-/// - The `MulticastConfig` struct (where you can set `control` endpoint and `ttl`).
-/// - The `ControlMode` indicating how control messages are handled.
-#[derive(Debug, Clone)]
-pub struct MulticastMode {
-    /// Configuration for multicast packets (control endpoint, TTL, etc.).
-    pub config: MulticastConfig,
-    /// Specifies whether the control messages are handled automatically (`Dynamic`)
-    /// or manually (`Manual`).
-    pub control_mode: ControlMode,
-}
-
-impl AeronConfig<PointToPointMode> {
-    /// Creates a new Aeron configuration for point-to-point communication.
-    ///
-    /// # Panics
-    /// Panics if `media_type` is not one of `Udp`, `SpyUdp`, `Ipc`, or `SpyIpc`.
-    pub fn new_point_to_point(media_type: MediaType, endpoint: Endpoint) -> Self {
-        if matches!(media_type, MediaType::Udp | MediaType::SpyUdp | MediaType::Ipc | MediaType::SpyIpc) {
-            Self {
-                media_type,
-                endpoint,
-                mode: PointToPointMode {
-                    interface: None,
-                    reliability: None,
-                },
-            }
-        } else {
-            panic!("Invalid media type for point-to-point configuration");
-        }
-    }
-
-    /// Sets the interface for point-to-point communication.
-    ///
-    /// This determines the local IP/port to bind to. If you're listening or
-    /// sending packets from a specific network card, set its IP and port here.
-    ///
-    /// # Arguments
-    /// - `ip`: The IP address of the local interface.
-    /// - `port`: The port to use on that interface (often 0 for auto-assignment).
-    pub fn with_interface(self, ip: IpAddr, port: u16) -> Self {
-        let mut mode = self.mode.clone();
-        mode.interface = Some(Endpoint { ip, port });
-        Self {
-            media_type: self.media_type,
-            endpoint: self.endpoint,
-            mode,
-        }
-    }
-
-    /// Sets the reliability for the point-to-point communication.
-    ///
-    /// # Arguments
-    /// - `reliability`: A `ReliableConfig`, either `Reliable` or `Unreliable`.
-    pub fn with_reliability(self, reliability: ReliableConfig) -> Self {
-        let mut mode = self.mode.clone();
-        mode.reliability = Some(reliability);
-        Self {
-            media_type: self.media_type,
-            endpoint: self.endpoint,
-            mode,
-        }
-    }
-
-    /// Builds the `Channel` instance with the specified configuration.
-    ///
-    /// # Returns
-    /// A `Channel::PointToPoint` variant that Aeron can use for sending/receiving data.
-    pub fn build(self) -> Channel {
-        Channel::PointToPoint {
-            media_type: self.media_type,
-            endpoint: self.endpoint,
-            interface: self.mode.interface,
-            reliability: self.mode.reliability,
-        }
-    }
-}
-
-impl AeronConfig<MulticastMode> {
-    /// Creates a new Aeron configuration for multicast communication.
-    ///
-    /// # Panics
-    /// Panics if `media_type` is not `Udp` or `SpyUdp`.  
-    /// (Multicast requires a UDP-based transport.)
-    pub fn new_multicast(media_type: MediaType, endpoint: Endpoint, control_ip: IpAddr, control_port: u16) -> Self {
-        if matches!(media_type, MediaType::Udp | MediaType::SpyUdp) {
-            Self {
-                media_type,
-                endpoint,
-                mode: MulticastMode {
-                    config: MulticastConfig {
-                        control: Endpoint {
-                            ip: control_ip,
-                            port: control_port,
-                        },
-                        ttl: None,
-                    },
-                    control_mode: ControlMode::Dynamic,
-                },
-            }
-        } else {
-            panic!("Invalid media type for multicast configuration");
-        }
-    }
-
-    /// Sets the control mode for multicast packets.
-    ///
-    /// # Arguments
-    /// - `control_mode`: A `ControlMode` indicating whether control messages
-    ///   are dynamically handled by Aeron or configured manually.
-    pub fn with_control_mode(self, control_mode: ControlMode) -> Self {
-        let mut mode = self.mode.clone();
-        mode.control_mode = control_mode;
-        Self {
-            media_type: self.media_type,
-            endpoint: self.endpoint,
-            mode,
-        }
-    }
-
-    /// Sets the time-to-live (TTL) for multicast packets, in hops.
-    ///
-    /// This controls how many network devices (routers) can forward the multicast packet
-    /// before it is dropped.
-    ///
-    /// # Arguments
-    /// - `ttl`: An integer representing the number of hops allowed (e.g., 1, 5, 8).
-    pub fn with_ttl(self, ttl: u8) -> Self {
-        let mut mode = self.mode.clone();
-        mode.config.ttl = Some(ttl);
-        Self {
-            media_type: self.media_type,
-            endpoint: self.endpoint,
-            mode,
-        }
-    }
-
-    /// Builds the `Channel` instance with the specified multicast configuration.
-    ///
-    /// # Returns
-    /// A `Channel::Multicast` variant that Aeron can use for sending/receiving data
-    /// to/from a multicast group.
-    pub fn build(self) -> Channel {
-        Channel::Multicast {
-            media_type: self.media_type,
-            endpoint: self.endpoint,
-            config: self.mode.config,
-            control_mode: self.mode.control_mode,
-        }
-    }
-}
-
-/// Builder for configuring and creating a `Distributed` instance.
-///
-/// This builder supports multiple distributed technologies, starting with Aeron.
-/// It can be extended to support others like ZeroMQ or Kafka by adding
-/// additional configuration pathways.
-///
-/// The builder is generic over a configuration type `T`. Initially, it's `()`,
-/// which means "no configuration yet." Once you pick a technology (e.g., Aeron),
-/// it transitions to a more specific builder.
-#[derive(Debug, Clone)]
-pub struct DistributionBuilder<T> {
-    /// The current configuration state stored in this builder.
-    config: T,
-}
-
-impl DistributionBuilder<()> {
-    /// Creates a new `DistributedBuilder` instance for Aeron communication.
-    ///
-    /// This resets the builder to a state where you're ready to configure Aeron
-    /// channels (either point-to-point or multicast).
-    ///
-    /// # Returns
-    /// An [`AeronBuilder`] that lets you set the media type (`Udp`, `Ipc`, etc.)
-    /// and pick the communication mode (point-to-point or multicast).
-    pub fn aeron() -> AeronBuilder {
-        AeronBuilder::default()
-    }
-}
-
-/// Builder for configuring Aeron communication.
-///
-/// The `AeronBuilder` starts with an optional media type. You must call
-/// `with_media_type()` to specify `Udp`, `Ipc`, `SpyUdp`, or `SpyIpc`.
-/// After setting the media type, you can build either point-to-point
-/// or multicast channels using the relevant methods.
-#[derive(Debug, Clone, Default)]
-pub struct AeronBuilder {
-    /// The chosen media type, if set. If not set, building will panic.
+pub struct AeronConfig {
+    // -------------------------------
+    // Common fields for any channel
+    // -------------------------------
     media_type: Option<MediaType>,
+    term_length: Option<usize>,
+
+    // --------------------------------------
+    // Specific mode: none, point-to-point, or multicast
+    // --------------------------------------
+    mode: AeronMode,
+
+    // Endpoint is used in both P2P and multicast
+    endpoint: Option<Endpoint>,
+
+    // For point-to-point:
+    interface: Option<Endpoint>,
+    reliability: Option<ReliableConfig>,
+
+    // For multicast:
+    control_endpoint: Option<Endpoint>,
+    control_mode: Option<ControlMode>,
+    ttl: Option<u8>,
 }
 
 
-impl AeronBuilder {
-    /// Sets the media type for Aeron communication.
+impl AeronConfig {
+    /// Creates a new (empty) Aeron configuration.
     ///
-    /// # Arguments
-    /// - `media_type`: A `MediaType` variant (e.g., `Udp` for network, `Ipc` for local IPC).
+    /// You must call at least one of:
+    /// - `use_point_to_point(...)`
+    /// - `use_multicast(...)`
     ///
-    /// # Returns
-    /// An updated `AeronBuilder` ready to pick the communication style (point-to-point or multicast).
-    pub fn with_media_type(self, media_type: MediaType) -> Self {
-        Self { media_type: Some(media_type) }
+    /// And you must also set a `media_type` before building.
+    pub fn new() -> Self {
+        Self {
+            media_type: None,
+            term_length: None,
+            mode: AeronMode::None,
+            endpoint: None,
+            interface: None,
+            reliability: None,
+            control_endpoint: None,
+            control_mode: None,
+            ttl: None,
+        }
     }
 
-    /// Sets up a point-to-point communication channel.
+    // -------------------------------------------------
+    //       COMMON / SHARED METHODS
+    // -------------------------------------------------
+
+    /// Sets the Aeron `MediaType` (e.g., `Udp`, `Ipc`, `SpyUdp`, `SpyIpc`).
     ///
-    /// # Arguments
-    /// - `ip`: The IP address of the endpoint (where to send/receive).
-    /// - `port`: The port number of the endpoint.
+    pub fn with_media_type(&self, media_type: MediaType) -> Self {
+        let mut clone = self.clone();
+        clone.media_type = Some(media_type);
+        clone
+    }
+
+    /// Sets an optional Aeron term buffer length (e.g. 1 MB).
     ///
-    /// # Returns
-    /// A `DistributionBuilder<AeronConfig<PointToPointMode>>` for further point-to-point configuration.
+    pub fn with_term_length(&self, term_length: usize) -> Self {
+        let mut clone = self.clone();
+        clone.term_length = Some(term_length);
+        clone
+    }
+
+    // -------------------------------------------------
+    //          POINT-TO-POINT METHODS
+    // -------------------------------------------------
+
+    /// Switches this builder to **point-to-point** mode, with the given endpoint.
+    ///
+    /// - `endpoint`: Where to send/receive data (e.g. `127.0.0.1:40123`).
     ///
     /// # Panics
-    /// Panics if no media type has been specified.
-    pub fn point_to_point(self, ip: IpAddr, port: u16) -> DistributionBuilder<AeronConfig<PointToPointMode>> {
-        let media_type = self.media_type.expect("Media type must be specified");
-        DistributionBuilder {
-            config: AeronConfig::new_point_to_point(media_type, Endpoint { ip, port }),
-        }
+    /// Panics if the chosen `media_type` is invalid for P2P. Typically,
+    /// valid media types for P2P are `Udp`, `SpyUdp`, `Ipc`, and `SpyIpc`.
+    ///
+    pub fn use_point_to_point(&self, endpoint: Endpoint) -> Self {
+        let mut clone = self.clone();
+        clone.mode = AeronMode::PointToPoint;
+        clone.endpoint = Some(endpoint);
+        clone
     }
 
-    /// Sets up a multicast communication channel.
+    /// Sets the local interface for **point-to-point** communication.
     ///
-    /// # Arguments
-    /// - `ip`: The IP address of the multicast endpoint (often `0.0.0.0` for local bind).
-    /// - `port`: The port number of the multicast endpoint.
-    /// - `control_ip`: The IP address for the multicast control endpoint (e.g., `224.0.1.1`).
-    /// - `control_port`: The port for the multicast control endpoint.
-    ///
-    /// # Returns
-    /// A `DistributionBuilder<AeronConfig<MulticastMode>>` for further multicast configuration.
+    /// - `interface`: The IP/port to bind locally (e.g. `192.168.1.10:0`).
     ///
     /// # Panics
-    /// Panics if no media type has been specified.
-    pub fn multicast(
-        self,
-        ip: IpAddr,
-        port: u16,
-        control_ip: IpAddr,
-        control_port: u16
-    ) -> DistributionBuilder<AeronConfig<MulticastMode>> {
-        let media_type = self.media_type.expect("Media type must be specified");
-        DistributionBuilder {
-            config: AeronConfig::new_multicast(media_type, Endpoint { ip, port }, control_ip, control_port),
+    /// Panics if not currently in P2P mode.
+    ///
+    pub fn with_interface(&self, interface: Endpoint) -> Self {
+        if self.mode != AeronMode::PointToPoint {
+            panic!("`with_interface` called but not in point-to-point mode.");
+        }
+        let mut clone = self.clone();
+        clone.interface = Some(interface);
+        clone
+    }
+
+    /// Sets the reliability for **point-to-point** communication.
+    ///
+    /// - `reliability`: `ReliableConfig::Reliable` or `ReliableConfig::Unreliable`.
+    ///
+    /// # Panics
+    /// Panics if not currently in P2P mode.
+    ///
+    pub fn with_reliability(&self, reliability: ReliableConfig) -> Self {
+        if self.mode != AeronMode::PointToPoint {
+            panic!("`with_reliability` called but not in point-to-point mode.");
+        }
+        let mut clone = self.clone();
+        clone.reliability = Some(reliability);
+        clone
+    }
+
+    // -------------------------------------------------
+    //            MULTICAST METHODS
+    // -------------------------------------------------
+
+    /// Switches this builder to **multicast** mode, specifying both the group endpoint
+    /// and the control endpoint.
+    ///
+    /// - `group_endpoint`: The multicast group (e.g. `224.0.1.1:40456`).
+    /// - `control_endpoint`: The control endpoint for joining/leaving the group.
+    ///
+    /// # Panics
+    /// Panics if `media_type` is invalid for multicast (usually must be `Udp` or `SpyUdp`).
+    ///
+    pub fn use_multicast(&self, group_endpoint: Endpoint, control_endpoint: Endpoint) -> Self {
+        let mut clone = self.clone();
+        clone.mode = AeronMode::Multicast;
+        clone.endpoint = Some(group_endpoint);
+        clone.control_endpoint = Some(control_endpoint);
+        clone
+    }
+
+    /// Sets the control mode for **multicast** (either `Dynamic` or `Manual`).
+    ///
+    /// # Panics
+    /// Panics if not in multicast mode.
+    ///
+     pub fn with_control_mode(&self, control_mode: ControlMode) -> Self {
+        if self.mode != AeronMode::Multicast {
+            panic!("`with_control_mode` called but not in multicast mode.");
+        }
+        let mut clone = self.clone();
+        clone.control_mode = Some(control_mode);
+        clone
+    }
+
+    /// Sets the Time-to-Live (TTL) for **multicast** packets.
+    ///
+    /// # Panics
+    /// Panics if not in multicast mode.
+    ///
+    pub fn with_ttl(&self, ttl: u8) -> Self {
+        if self.mode != AeronMode::Multicast {
+            panic!("`with_ttl` called but not in multicast mode.");
+        }
+        let mut clone = self.clone();
+        clone.ttl = Some(ttl);
+        clone
+    }
+
+    // -------------------------------------------------
+    //               FINAL BUILD
+    // -------------------------------------------------
+
+    /// Consumes the builder and produces a final [`Channel`].
+    ///
+    /// # Panics
+    /// Panics if required fields are missing or if `mode` is `None`.
+    ///
+    pub fn build(&self) -> Channel {
+        let media_type = self.media_type
+            .expect("media_type must be set before build()");
+
+        match self.mode {
+            AeronMode::None => {
+                panic!("No channel mode selected (point-to-point or multicast).");
+            }
+
+            AeronMode::PointToPoint => {
+                // P2P must have an endpoint
+                let endpoint = self.endpoint
+                    .expect("endpoint must be set for point-to-point mode");
+                Channel::PointToPoint {
+                    media_type,
+                    endpoint,
+                    interface: self.interface,
+                    reliability: self.reliability,
+                    term_length: self.term_length,
+                }
+            }
+
+            AeronMode::Multicast => {
+                // Mcast must have an endpoint and a control endpoint
+                let endpoint = self.endpoint
+                    .expect("multicast group endpoint must be set");
+                let control_ep = self.control_endpoint
+                    .expect("control endpoint must be set for multicast");
+
+                Channel::Multicast {
+                    media_type,
+                    endpoint,
+                    config: MulticastConfig {
+                        control: control_ep,
+                        ttl: self.ttl,
+                    },
+                    control_mode: self.control_mode
+                        .unwrap_or(ControlMode::Dynamic),
+                    term_length: self.term_length,
+                }
+            }
         }
     }
 }
 
-impl DistributionBuilder<AeronConfig<PointToPointMode>> {
-    /// Sets the interface for point-to-point communication (local bind IP and port).
-    ///
-    /// # Arguments
-    /// - `ip`: The local interface IP.
-    /// - `port`: The local interface port.
-    ///
-    /// # Returns
-    /// A new `DistributionBuilder` wrapping the updated configuration.
-    pub fn with_interface(self, ip: IpAddr, port: u16) -> Self {
-        Self {
-            config: self.config.with_interface(ip, port),
+// -------------------------------
+// EXAMPLE USAGE (IN TESTS)
+// -------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_p2p() {
+        let p2p_channel = AeronConfig::new()
+            .with_media_type(MediaType::Udp)
+            .use_point_to_point(Endpoint {
+                ip: "127.0.0.1".parse().unwrap(),
+                port: 40123,
+            })
+            .with_interface(Endpoint {
+                ip: "192.168.1.10".parse().unwrap(),
+                port: 0,
+            })
+            .with_reliability(ReliableConfig::Reliable)
+            .with_term_length(1_048_576)
+            .build();
+
+        match p2p_channel {
+            Channel::PointToPoint {
+                media_type,
+                endpoint,
+                interface,
+                reliability,
+                term_length,
+            } => {
+                assert_eq!(media_type, MediaType::Udp);
+                assert_eq!(endpoint.port, 40123);
+                assert!(interface.is_some());
+                assert_eq!(reliability, Some(ReliableConfig::Reliable));
+                assert_eq!(term_length, Some(1_048_576));
+            }
+            _ => panic!("Expected a PointToPoint channel"),
         }
     }
 
-    /// Sets the reliability for the point-to-point communication.
-    ///
-    /// # Arguments
-    /// - `reliability`: The `ReliableConfig` to use (`Reliable` or `Unreliable`).
-    ///
-    /// # Returns
-    /// A new `DistributionBuilder` wrapping the updated configuration.
-    pub fn with_reliability(self, reliability: ReliableConfig) -> Self {
-        Self {
-            config: self.config.with_reliability(reliability),
-        }
-    }
+    #[test]
+    fn build_multicast() {
+        let mcast_channel = AeronConfig::new()
+            .with_media_type(MediaType::Udp)
+            .use_multicast(
+                Endpoint {
+                    ip: "224.0.1.1".parse().unwrap(),
+                    port: 40456,
+                },
+                Endpoint {
+                    ip: "224.0.1.1".parse().unwrap(),
+                    port: 40457,
+                }
+            )
+            .with_control_mode(ControlMode::Manual)
+            .with_ttl(5)
+            .build();
 
-    /// Builds the `Distributed` instance with the specified stream ID.
-    ///
-    /// # Arguments
-    /// - `stream_id`: The Aeron stream ID for identifying the data stream.
-    ///
-    /// # Returns
-    /// A `Distributed` enum variant containing the configured Aeron channel and stream ID.
-    pub fn build(self) -> Distributed {
-        Distributed::Aeron(self.config.build())
+        match mcast_channel {
+            Channel::Multicast {
+                media_type,
+                endpoint,
+                config,
+                control_mode,
+                term_length,
+            } => {
+                assert_eq!(media_type, MediaType::Udp);
+                assert_eq!(endpoint.port, 40456);
+                assert_eq!(config.control.port, 40457);
+                assert_eq!(control_mode, ControlMode::Manual);
+                assert_eq!(config.ttl, Some(5));
+                assert!(term_length.is_none());
+            }
+            _ => panic!("Expected a Multicast channel"),
+        }
     }
 }
-
-impl DistributionBuilder<AeronConfig<MulticastMode>> {
-    /// Sets the control mode for multicast packets.
-    ///
-    /// # Arguments
-    /// - `control_mode`: `ControlMode::Dynamic` or `ControlMode::Manual`.
-    ///
-    /// # Returns
-    /// A new `DistributionBuilder` wrapping the updated configuration.
-    pub fn with_control_mode(self, control_mode: ControlMode) -> Self {
-        Self {
-            config: self.config.with_control_mode(control_mode),
-        }
-    }
-
-    /// Sets the time-to-live (TTL) for multicast packets.
-    ///
-    /// # Arguments
-    /// - `ttl`: The TTL in router hops (e.g., 1, 5, 8).
-    ///
-    /// # Returns
-    /// A new `DistributionBuilder` wrapping the updated configuration.
-    pub fn with_ttl(self, ttl: u8) -> Self {
-        Self {
-            config: self.config.with_ttl(ttl),
-        }
-    }
-
-    /// Builds the `Distributed` instance with the specified stream ID.
-    ///
-    /// # Arguments
-    /// - `stream_id`: The Aeron stream ID for identifying the data stream.
-    ///
-    /// # Returns
-    /// A `Distributed` enum variant containing the configured Aeron channel and stream ID.
-    pub fn build(self) -> Distributed {
-        Distributed::Aeron(self.config.build())
-    }
-}
-
-// Example usage:
-//
-// let builder = DistributedBuilder::aeron()
-//     .with_media_type(MediaType::Udp)
-//     .point_to_point("127.0.0.1".parse().unwrap(), 40123);
-// let distributed = builder
-//     .with_interface("192.168.1.1".parse().unwrap(), 12345)
-//     .with_reliability(ReliableConfig::Reliable)
-//     .build();
-//
-// let multicast_builder = DistributedBuilder::aeron()
-//     .with_media_type(MediaType::Udp)
-//     .multicast(
-//         "0.0.0.0".parse().unwrap(),
-//         40456,
-//         "224.0.1.1".parse().unwrap(),
-//         40457,
-//     );
-// let multicast_distributed = multicast_builder
-//     .with_control_mode(ControlMode::Manual)
-//     .with_ttl(8)
-//     .build();

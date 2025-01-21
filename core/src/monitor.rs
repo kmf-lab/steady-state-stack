@@ -17,7 +17,7 @@ use crate::*;
 use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
 use crate::commander::SteadyCommander;
-use crate::distributed::steady_stream::{StreamItem, ItemMessage, StreamRxBundle, StreamTxBundle};
+use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamSessionMessage, StreamRx, StreamData};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::SideChannelResponder;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
@@ -280,6 +280,8 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) show_thread_info: bool,
     pub(crate) team_id: usize,
 }
+
+
 
 pub(crate) struct FinallyRollupProfileGuard<'a> {
     st: &'a SteadyTelemetryActorSend,
@@ -627,10 +629,11 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     }
 
 
-    async fn wait_closed_or_avail_units_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_, S>, avail_count: usize, ready_channels: usize) -> bool
+    async fn wait_closed_or_avail_message_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_, S>, messages_count: usize, ready_channels: usize) -> bool
     where
         S: Send + Sync
     {
+
         let _guard = self.start_profile(CALL_OTHER);
 
         let mut count_down = ready_channels.min(this.len());
@@ -638,12 +641,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let futures = this.iter_mut().map(|rx| {
             let local_r = result.clone();
             async move {
-                let bool_result = rx.item_channel.shared_wait_closed_or_avail_units(avail_count).await;
-                
-                //TODO: we need to retrun if S is message but for fragments we need to know
-                //      that we have assimbled the end of the message.
-                
-                if !bool_result {
+                if !rx.shared_wait_closed_or_avail_messages(messages_count).await {
                     local_r.store(false, Ordering::Relaxed);
                 }
             }
@@ -1128,15 +1126,15 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             Err(sensitive) => Err(sensitive),
         }
     }
+//StreamSimpleMessage::new(3)
 
-
-    fn try_stream_send<S: StreamItem>(&mut self, this: &mut StreamTxBundle<'_, S>
+    fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
                                       , stream_id: i32
-                                      , item: S
-                                      , payload: &[u8]) -> Result<(), S> {
+                                      , payload: &[u8]) -> Result<(), StreamSimpleMessage> {
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
+        let item = StreamSimpleMessage::new(payload.len() as i32);
 
         debug_assert!(stream_id>= this[0].stream_id);
         debug_assert!(stream_id<= this[this.len()-1].stream_id);
@@ -1419,6 +1417,59 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             None => None,
         }
     }
+
+    fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
+        if let Some(ref st) = self.telemetry.state {
+            let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+
+        let item = self.try_take(&mut this.item_channel);
+        if let Some(item) = item {
+            let len = item.length();
+            debug_assert!(len>0, "no point in sending empty items");
+            // let mut target = Vec::with_capacity(len as usize);
+            // assert!(this.payload_channel.avail_units() as i32>=len);
+            // unsafe { target.set_len(len as usize); }
+            // let count = self.take_slice(&mut this.payload_channel, &mut target);           
+            // debug_assert_eq!(count as i32,len);
+            // let box_slice = target.into_boxed_slice();
+
+
+            // Allocate uninitialized memory for the slice
+            let mut box_slice = Box::new_uninit_slice(len as usize);
+            assert!(this.payload_channel.avail_units() as i32 >= len);
+
+            // SAFETY: Convert uninitialized memory to a mutable reference slice of `u8`
+            let slice = unsafe { std::slice::from_raw_parts_mut(box_slice.as_mut_ptr() as *mut u8, len as usize) };
+
+            // Fill the slice with data
+            let count = self.take_slice(&mut this.payload_channel, slice);
+            debug_assert_eq!(count as i32, len);
+
+            // SAFETY: Now all elements are initialized, converting to an initialized Box<[u8]>
+            let box_slice: Box<[u8]> = unsafe { box_slice.assume_init() };
+
+
+            debug_assert!(box_slice.len()>0);
+            debug_assert_eq!(box_slice.len() as i32, len);
+
+            this.item_channel.local_index = self.dynamic_event_count(
+                            this.item_channel.local_index,
+                            this.item_channel.channel_meta_data.id,
+                            1);
+            this.payload_channel.local_index = self.dynamic_event_count(
+                            this.payload_channel.local_index,
+                            this.payload_channel.channel_meta_data.id,
+                            item.length() as isize);
+
+
+            Some(StreamData::new(item, box_slice))
+
+        } else {
+            None
+        }
+    }
+    
 
     
     /// Asynchronously retrieves and removes a single message from the channel.

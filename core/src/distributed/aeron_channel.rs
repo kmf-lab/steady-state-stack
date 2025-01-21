@@ -16,7 +16,7 @@ pub(crate) mod aeron_utils {
     //For more details see:: https://github.com/real-logic/aeron/wiki/Channel-Configuration
 
     fn error_handler(error: AeronError) {
-        warn!("Error: {:?}", error);
+        warn!("Aeron Error: {:?}", error);
     }
 
     fn on_new_publication_handler(
@@ -37,13 +37,14 @@ pub(crate) mod aeron_utils {
     pub fn aeron_context() -> Option<Arc<Mutex<Aeron>>> {
         let mut aeron_context = Context::new();
 
-        aeron_context.set_new_publication_handler(Box::new(on_new_publication_handler));
+        //aeron_context.set_new_publication_handler(Box::new(on_new_publication_handler));
         aeron_context.set_error_handler(Box::new(error_handler));
-        aeron_context.set_pre_touch_mapped_memory(true);
+        aeron_context.set_pre_touch_mapped_memory(false);
+        //aeron_context.set_agent_name("");
         aeron_context.set_aeron_dir("/dev/shm/aeron-default".parse().expect("valid path"));
-
+        
         match Aeron::new(aeron_context) {
-            Ok(aeron) => {
+            Ok(aeron) => {                
                 trace!("Aeron context created using: {:?}", aeron.context().cnc_file_name());
                 Some(Arc::new(Mutex::new(aeron)))
             }
@@ -65,7 +66,7 @@ pub(crate) mod aeron_utils {
 /// - `Ipc`: Inter-Process Communication channel for processes on the same machine.
 /// - `SpyUdp`: Observes traffic on a UDP channel without sending or receiving.
 /// - `SpyIpc`: Observes traffic on an IPC channel without sending or receiving.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaType {
     /// Standard UDP channel: used for point-to-point or multicast communication.
     /// Example: `aeron:udp?endpoint=127.0.0.1:40456`
@@ -85,7 +86,7 @@ pub enum MediaType {
 ///
 /// Control messages in multicast are used to coordinate the distribution of data.
 /// The mode determines whether control is handled automatically or manually.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlMode {
     /// Control messages are managed automatically by Aeron.
     /// This is the most common mode and is easier to use for most applications.
@@ -178,7 +179,7 @@ pub struct PointServiceConfig {
 /// # Variants
 /// - `Reliable`: Ensures reliable communication with retransmissions.
 /// - `Unreliable`: Best-effort communication without retransmissions.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReliableConfig {
     /// Ensures reliable communication. Lost packets are retransmitted.
     Reliable,
@@ -214,6 +215,8 @@ pub enum Channel {
         interface: Option<Endpoint>,
         /// Optional reliability configuration (`ReliableConfig`).
         reliability: Option<ReliableConfig>,
+        /// Optional specific term length
+        term_length: Option<usize>,
     },
     /// Represents a multicast communication channel.
     ///
@@ -231,6 +234,8 @@ pub enum Channel {
         config: MulticastConfig,
         /// Specifies how control messages are managed (`ControlMode`).
         control_mode: ControlMode,
+        /// Optional specific term length
+        term_length: Option<usize>,
     },
 }
 
@@ -249,14 +254,15 @@ impl Channel {
     ///
     /// For multicast, we add `|control=...|control-mode=...|ttl=...` as needed.
     pub fn cstring(&self) -> CString {
-        let channel_str = match self {
+        let mut channel_str = match self {
             Channel::PointToPoint {
                 media_type,
                 endpoint,
                 interface,
                 reliability,
+                term_length
             } => {
-                match media_type {
+                let mut s =match media_type {
                     MediaType::Udp => {
                         // Start building the base channel string for PointToPoint UDP
                         let base = "aeron:udp".to_string();
@@ -315,7 +321,13 @@ impl Channel {
                         // Spy on IPC: "aeron:spy:aeron:ipc"
                         "aeron-spy:aeron:ipc".to_string()
                     }
-                }
+                };
+
+                if let Some(term_length) = term_length {
+                    s.push_str(&format!("|term-length={}",term_length));
+                };
+                
+                s
             }
 
             Channel::Multicast {
@@ -323,6 +335,7 @@ impl Channel {
                 endpoint,
                 config,
                 control_mode,
+                term_length
             } => {
                 // Typical multicast: "aeron:udp?endpoint=...|control=...|control-mode=...|ttl=..."
                 let (prefix, base_media) = match media_type {
@@ -355,11 +368,14 @@ impl Channel {
                 if let Some(ttl_val) = config.ttl {
                     s.push_str(&format!("|ttl={}", ttl_val));
                 }
+                
+                if let Some(term_length) = term_length {
+                    s.push_str(&format!("|term-length={}",term_length));
+                }
 
                 s
             }
         };
-
         CString::new(channel_str).expect("Failed to create CString from channel string")
     }
 }
@@ -391,6 +407,7 @@ mod aeron_channel_tests {
             endpoint,
             interface: None,
             reliability: None,
+            term_length: None,
         };
 
         let connection = channel.cstring();
@@ -412,6 +429,7 @@ mod aeron_channel_tests {
             endpoint,
             interface: None,
             reliability: None,
+            term_length: None,
         };
 
         let connection = channel.cstring();
@@ -433,6 +451,7 @@ mod aeron_channel_tests {
             endpoint,
             interface: None,
             reliability: None,
+            term_length: None
         };
 
         let connection = channel.cstring();
@@ -461,6 +480,7 @@ mod aeron_channel_tests {
             endpoint,
             config,
             control_mode: ControlMode::Manual,
+            term_length: None
         };
 
         let connection = channel.cstring();
@@ -489,6 +509,7 @@ mod aeron_channel_tests {
             endpoint,
             interface: Some(iface),
             reliability: Some(reliability),
+            term_length: None
         };
 
         let connection = channel.cstring();
@@ -510,6 +531,7 @@ mod aeron_channel_tests {
             endpoint,
             interface: None,
             reliability: None,
+            term_length: None
         };
 
         let connection = channel.cstring();
@@ -531,6 +553,7 @@ mod aeron_channel_tests {
             endpoint,
             interface: None,
             reliability: None,
+            term_length: None
         };
 
         let connection = channel.cstring();
@@ -562,6 +585,7 @@ mod aeron_channel_tests {
             endpoint,
             config,
             control_mode: ControlMode::Manual,
+            term_length: None
         };
 
         let connection = channel.cstring();
@@ -572,93 +596,3 @@ mod aeron_channel_tests {
     }
 }
 
-/*
-The `AERON_EVENT_LOG` environment variable in Aeron is a bitmap that enables specific logging events. The value `0xffff` represents a 16-bit bitmap where every bit is set to `1`, enabling all possible logging events.
-
-### Explanation of Each Bit in `AERON_EVENT_LOG`
-
-Below is the breakdown of each bit, what it controls, and its hexadecimal representation:
-
-| **Bit** | **Hex Value** | **Description**                                         |
-|---------|---------------|---------------------------------------------------------|
-| **0**   | `0x0001`      | **Frame Logging**: Logs Aeron frame-level events, including control frames, data frames, and acknowledgment frames. |
-| **1**   | `0x0002`      | **Raw Frame Logging**: Logs raw Aeron frames at the lowest level, including protocol headers and payload. |
-| **2**   | `0x0004`      | **Network Events**: Logs network-level events, such as sending and receiving packets. |
-| **3**   | `0x0008`      | **Driver Commands**: Logs commands sent to the media driver (e.g., adding publications, subscriptions). |
-| **4**   | `0x0010`      | **Driver Responses**: Logs responses from the media driver (e.g., acknowledgments of commands). |
-| **5**   | `0x0020`      | **Media Driver Events**: Logs internal media driver events, including buffer allocations and releases. |
-| **6**   | `0x0040`      | **Flow Control**: Logs flow control events, such as NAKs (negative acknowledgments) or loss recovery. |
-| **7**   | `0x0080`      | **Congestion Control**: Logs congestion control events, such as changes in transmission rate. |
-| **8**   | `0x0100`      | **Publication Events**: Logs publication-related events, such as buffers being sent. |
-| **9**   | `0x0200`      | **Subscription Events**: Logs subscription-related events, such as buffers being received. |
-| **10**  | `0x0400`      | **Error Logging**: Logs driver errors or protocol-level errors. |
-| **11**  | `0x0800`      | **Driver Time Events**: Logs driver time-related events, such as polling intervals or latency measurements. |
-| **12**  | `0x1000`      | **Image Events**: Logs Aeron image-related events (e.g., lifecycle events like image creation or loss). |
-| **13**  | `0x2000`      | **Replay Events**: Logs events related to Aeron’s replay mechanism for stored messages. |
-| **14**  | `0x4000`      | **Loss Events**: Logs message loss and recovery events. |
-| **15**  | `0x8000`      | **All Other Events**: Catches any Aeron-related events not explicitly covered by the other bits. |
-
----
-
-### Interpreting the Value `0xffff`
-
-`0xffff` in hexadecimal means all 16 bits are set to `1`. Each bit represents a specific logging category, so setting all bits to `1` enables logging for **all possible events**.
-
-In binary, `0xffff` looks like this:
-
-```
-1111 1111 1111 1111
-```
-
-This enables all the above event categories. It's the most verbose logging level, useful for debugging.
-
----
-
-### Enabling Specific Logging Categories
-
-To enable only specific categories, you can set the value of `AERON_EVENT_LOG` to the **bitwise OR** of the desired hex values. For example:
-
-- To log **frame-level events** and **network events** only:
-```
-0x0001 (Frame Logging) | 0x0004 (Network Events) = 0x0005
-```
-Set:
-```bash
-export AERON_EVENT_LOG="0x0005"
-```
-
-- To log **errors** and **image events** only:
-```
-0x0400 (Error Logging) | 0x1000 (Image Events) = 0x1400
-```
-Set:
-```bash
-export AERON_EVENT_LOG="0x1400"
-```
-
----
-
-### Use Cases
-
-1. **Debugging Connectivity**:
-- Set `AERON_EVENT_LOG="0x0007"` to enable logging for **frames** (`0x0001`), **raw frames** (`0x0002`), and **network events** (`0x0004`).
-
-2. **Investigating Loss or Congestion**:
-- Set `AERON_EVENT_LOG="0x0040 | 0x4000"` to enable logging for **flow control** (`0x0040`) and **loss events** (`0x4000`).
-
-3. **Error Analysis**:
-- Set `AERON_EVENT_LOG="0x0400"` to enable **error logging** only.
-
----
-
-### Default Value
-
-If `AERON_EVENT_LOG` is not set, logging is typically disabled or limited to critical errors. Using `0xffff` is suitable for development and debugging but may generate a large volume of logs in production.
-
-For production environments, consider enabling only specific logging categories relevant to diagnosing issues.
-
----
-
-By understanding the value of each bit, you can fine-tune Aeron's logging to suit your debugging needs and reduce unnecessary verbosity when required.
-
-*/

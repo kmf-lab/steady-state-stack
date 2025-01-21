@@ -18,7 +18,7 @@ use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
 use futures::stream::{FuturesUnordered, StreamExt};
-use crate::distributed::steady_stream::{StreamItem, ItemFragment, ItemMessage, StreamRxBundle, StreamTxBundle};
+use crate::distributed::steady_stream::{StreamItem, StreamSessionMessage, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, StreamData};
 use crate::util::logger;
 
 impl SteadyContext {
@@ -298,10 +298,10 @@ impl SteadyCommander for SteadyContext {
         result.load(Ordering::Relaxed)
     }
 
-    async fn wait_closed_or_avail_units_stream<S: StreamItem>(&self
-                                                              , this: &mut StreamRxBundle<'_, S>
-                                                              , avail_count: usize
-                                                              , ready_channels: usize) -> bool
+    async fn wait_closed_or_avail_message_stream<S: StreamItem>(&self
+                                                                , this: &mut StreamRxBundle<'_, S>
+                                                                , avail_count: usize
+                                                                , ready_channels: usize) -> bool
     {
         let count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
@@ -644,14 +644,13 @@ impl SteadyCommander for SteadyContext {
     }
 
 
-    fn try_stream_send<S: StreamItem>(&mut self, this: &mut StreamTxBundle<'_, S>
-                                      , stream_id: i32
-                                      , control: S
-                                      , payload: &[u8]) -> Result<(), S> {
+    fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
+                       , stream_id: i32
+                       , payload: &[u8]) -> Result<(), StreamSimpleMessage>{
         debug_assert!(stream_id>= this[0].stream_id);
         debug_assert!(stream_id<= this[this.len()-1].stream_id);
         let idx:usize = (stream_id - this[0].stream_id) as usize;
-
+        let control = StreamSimpleMessage::new(payload.len() as i32);
         if this[idx].payload_channel.shared_vacant_units()>= payload.len() 
            && this[idx].item_channel.shared_vacant_units()>= 1 {
             let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
@@ -812,9 +811,24 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
-    fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
+    fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T> {       
         this.shared_try_take()
     }
+
+
+    fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
+        let item = self.try_take(&mut this.item_channel);
+        if let Some(item) = item {
+            let mut target = Vec::with_capacity(item.length() as usize);
+            self.take_slice(&mut this.payload_channel, &mut target);
+            let box_slice = target.into_boxed_slice();
+            Some(StreamData::new(item, box_slice))
+        } else {
+            None
+        }
+    }
+
+
     /// Attempts to take a message from the channel if available.
     ///
     /// # Returns
@@ -1039,15 +1053,13 @@ pub trait SteadyCommander {
         T: Send + Sync,
     ;
 
-    fn try_stream_send<S: StreamItem>(&mut self
-                                      , this: &mut StreamTxBundle<'_, S>
-                                      , stream_id: i32
-                                      , control: S
-                                      , payload: &[u8]) -> Result<(), S>;
+    fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
+                       , stream_id: i32
+                       , payload: &[u8]) -> Result<(), StreamSimpleMessage>;
 
     async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant_count: usize, vacant_bytes: usize, ready_channels: usize) -> bool;
 
-    async fn wait_closed_or_avail_units_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_,S>, avail_count: usize, ready_channels: usize) -> bool;
+    async fn wait_closed_or_avail_message_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_,S>, avail_count: usize, ready_channels: usize) -> bool;
 
 
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
@@ -1379,6 +1391,7 @@ pub trait SteadyCommander {
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
     fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>;
 
+    fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>>;
 
     fn advance_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize;
 
