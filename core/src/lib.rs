@@ -77,7 +77,7 @@ pub mod commander;
 
 
 pub use graph_testing::GraphTestResult;
-pub use monitor::LocalMonitor;
+pub use monitor::{LocalMonitor,RxMetaDataHolder,TxMetaDataHolder};
 pub use channel_builder::Rate;
 pub use channel_builder::Filled;
 pub use channel_builder::LazySteadyRx;
@@ -95,11 +95,21 @@ pub use steady_rx::Rx;
 pub use steady_tx::Tx;
 pub use steady_rx::SteadyRxBundleTrait;
 pub use steady_tx::SteadyTxBundleTrait;
-pub use steady_rx::RxBundleTrait;
-pub use steady_tx::TxBundleTrait;
+pub use steady_rx::{RxBundleTrait,RxCore};
+pub use steady_tx::{TxBundleTrait};
 pub use commander::SteadyCommander;
+pub use distributed::aeron_channel::{Channel, Endpoint, MediaType};
+pub use distributed::aeron_distributed::{AeronConfig, DistributedTech};
+pub use distributed::steady_stream::{StreamSimpleMessage,StreamSessionMessage};
+pub use distributed::steady_stream::{LazySteadyStreamTxBundle,LazySteadyStreamRxBundle};
+pub use distributed::steady_stream::{SteadyStreamTxBundle,SteadyStreamRxBundle};
+pub use distributed::steady_stream::{LazyStreamTx,LazyStreamRx};
+pub use distributed::steady_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
+pub use distributed::steady_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
+pub use distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
 
 
+pub use log::{error, warn, debug, trace, info};
 
 use std::any::Any;
 use std::time::{Duration, Instant};
@@ -691,6 +701,7 @@ mod lib_tests {
     use parking_lot::RwLock;
     use futures::lock::Mutex;
     use commander::SteadyCommander;
+    use crate::steady_tx::TxCore;
 
     #[test]
     fn test_std_dev_valid_values() {
@@ -1129,7 +1140,7 @@ mod lib_tests {
     // Test for try_send
     #[test]
     fn test_try_send() {
-        let (tx, _rx) = create_test_channel();
+        let (tx, _rx) = create_test_channel::<usize>();
         let mut context = test_steady_context();
         let tx = tx.clone();
         if let Some(mut tx) = tx.try_lock() {

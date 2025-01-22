@@ -8,9 +8,9 @@ pub(crate) mod aeron_utils {
     use std::ffi::CString;
     use std::sync::Arc;
     use futures_util::lock::Mutex;
-    use steady_state_aeron::aeron::Aeron;
-    use steady_state_aeron::context::Context;
-    use steady_state_aeron::utils::errors::AeronError;
+    use aeron::aeron::Aeron;
+    use aeron::context::Context;
+    use aeron::utils::errors::AeronError;
     use log::{info, trace, warn};
     
     //For more details see:: https://github.com/real-logic/aeron/wiki/Channel-Configuration
@@ -34,14 +34,16 @@ pub(crate) mod aeron_utils {
         );
     }
 
-    pub fn aeron_context() -> Option<Arc<Mutex<Aeron>>> {
-        let mut aeron_context = Context::new();
+    pub fn aeron_context(mut aeron_context: Context) -> Option<Arc<Mutex<Aeron>>> {
 
         //aeron_context.set_new_publication_handler(Box::new(on_new_publication_handler));
         aeron_context.set_error_handler(Box::new(error_handler));
         aeron_context.set_pre_touch_mapped_memory(false);
         //aeron_context.set_agent_name("");
+        //TODO: try both?
         aeron_context.set_aeron_dir("/dev/shm/aeron-default".parse().expect("valid path"));
+
+        //aeron_context.set_aeron_dir("/dev/hugepages/aeron-default".parse().expect("valid path"));
         
         match Aeron::new(aeron_context) {
             Ok(aeron) => {                
@@ -239,10 +241,10 @@ pub enum Channel {
     },
 }
 
-pub(crate) fn is_port_open(port: u16) -> bool {
-    // Very basic check: if we can bind to it, it's "open" from our perspective
-    UdpSocket::bind(("127.0.0.1", port)).is_ok()
-}
+// pub(crate) fn is_port_open(port: u16) -> bool {
+//     // Very basic check: if we can bind to it, it's "open" from our perspective
+//     UdpSocket::bind(("127.0.0.1", port)).is_ok()
+// }
 
 impl Channel {
     /// Build a valid Aeron channel string according to official docs.

@@ -15,6 +15,11 @@ AFTER="docker.service"
 WANTED_BY="multi-user.target"
 RESTART_POLICY="always"
 
+# NOTE: you may need to run update_sysctl.sh for maximum performance and to support large buffers
+
+# groups #SERVICE_USER
+# sudo usermod -aG docker $SERVICE_USER
+
 # Ensure systemd and required commands are available
 if ! command -v systemctl &> /dev/null; then
     echo "systemctl not found. systemd might not be installed."
@@ -63,20 +68,27 @@ fi
 USER_ID=$(id -u $SERVICE_USER 2>/dev/null)
 GROUP_ID=$(id -g $SERVICE_USER 2>/dev/null)
 
-# Create the systemd service file   --shm-size=2g
+loginctl enable-linger $SERVICE_USER
+
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=$DESCRIPTION
 After=$AFTER
 
 [Service]
-ExecStart=/usr/bin/docker run --rm --ipc=host --network=host --shm-size=512m --cap-add=SYS_ADMIN -v /dev/shm:/dev/shm -u ${USER_ID}:${GROUP_ID} --name $SERVICE_NAME $DOCKER_IMAGE $DOCKER_CMD
+ExecStart=/usr/bin/docker run --rm --cpuset-cpus="0-2" --ipc=host --network=host \
+ --shm-size=4g --cap-add=sys_nice --cap-add=ipc_lock --cap-add=SYS_ADMIN \
+ -v /dev/shm:/dev/shm -u ${USER_ID}:${GROUP_ID} --name $SERVICE_NAME $DOCKER_IMAGE \
+ nice -10 $DOCKER_CMD
 User=$SERVICE_USER
 Group=$SERVICE_USER
 UMask=0002
 Nice=-10
 Restart=$RESTART_POLICY
 ExecStop=/usr/bin/docker stop $SERVICE_NAME
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+AmbientCapabilities=CAP_SYS_NICE
 
 [Install]
 WantedBy=$WANTED_BY
@@ -96,7 +108,8 @@ systemctl start "$SERVICE_NAME"
 echo "$SERVICE_NAME service installed and started successfully."
 echo "Use 'systemctl status $SERVICE_NAME' to check its status."
 echo "Use 'journalctl -u $SERVICE_NAME -n 50 -f' to tail its logs."
-
+sleep 5
+systemctl --no-pager status $SERVICE_NAME
 
 
 #The C Media Driver supports a subset of configuration options which are relevant for the Driver, i.e.:
@@ -105,3 +118,9 @@ echo "Use 'journalctl -u $SERVICE_NAME -n 50 -f' to tail its logs."
 # aeron.event.log.disable (or as AERON_EVENT_LOG_DISABLE env variable): System property containing a comma separated list of Driver events to exclude.
 
 # More details at:  https://github.com/real-logic/aeron/wiki
+
+# Easy test to confirm aeronmd is working, run in two terminals
+# docker exec -it aeronmd /build/binaries/basic_publisher -s 123
+# docker exec -it aeronmd /build/binaries/basic_subscriber -s 123
+# or
+# docker exec -it aeronmd /build/binaries/streaming_publisher -s=123 -m 1000 -L 8

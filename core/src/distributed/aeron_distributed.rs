@@ -215,8 +215,9 @@ impl AeronConfig {
             .expect("media_type must be set before build()");
 
         match self.mode {
-            AeronMode::None => {
+            AeronMode::None => {                
                 panic!("No channel mode selected (point-to-point or multicast).");
+                               
             }
 
             AeronMode::PointToPoint => {
@@ -267,11 +268,11 @@ mod tests {
         let p2p_channel = AeronConfig::new()
             .with_media_type(MediaType::Udp)
             .use_point_to_point(Endpoint {
-                ip: "127.0.0.1".parse().unwrap(),
+                ip: "127.0.0.1".parse().expect("ip"),
                 port: 40123,
             })
             .with_interface(Endpoint {
-                ip: "192.168.1.10".parse().unwrap(),
+                ip: "192.168.1.10".parse().expect("ip"),
                 port: 0,
             })
             .with_reliability(ReliableConfig::Reliable)
@@ -302,11 +303,11 @@ mod tests {
             .with_media_type(MediaType::Udp)
             .use_multicast(
                 Endpoint {
-                    ip: "224.0.1.1".parse().unwrap(),
+                    ip: "224.0.1.1".parse().expect("ip"),
                     port: 40456,
                 },
                 Endpoint {
-                    ip: "224.0.1.1".parse().unwrap(),
+                    ip: "224.0.1.1".parse().expect("ip"),
                     port: 40457,
                 }
             )

@@ -1,4 +1,5 @@
 use std::any::type_name;
+use std::array;
 use std::ops::*;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
@@ -11,17 +12,25 @@ use futures_timer::Delay;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::thread::ThreadId;
+use async_ringbuf::consumer::AsyncConsumer;
+use async_ringbuf::producer::AsyncProducer;
+use bytes::BufMut;
 use futures::channel::oneshot;
 use futures_util::{select, FutureExt};
+use ringbuf::consumer::Consumer;
+use ringbuf::producer::Producer;
+use ringbuf::traits::Observer;
 use crate::*;
 use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
 use crate::commander::SteadyCommander;
-use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamSessionMessage, StreamRx, StreamData};
+use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamSessionMessage, StreamRx, StreamTx, Defrag};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::SideChannelResponder;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
+use crate::steady_rx::RxCore;
+use crate::steady_tx::TxCore;
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
 
@@ -164,10 +173,10 @@ pub struct TxMetaDataHolder<const LEN: usize> {
     pub(crate) array:[TxMetaData;LEN]
 }
 impl <const LEN: usize>TxMetaDataHolder<LEN> {
-    pub(crate) fn new(array: [TxMetaData;LEN]) -> Self {
+    pub fn new(array: [TxMetaData;LEN]) -> Self {
         TxMetaDataHolder { array }
     }
-    pub(crate) fn meta_data(self) -> [TxMetaData;LEN] {
+    pub fn meta_data(self) -> [TxMetaData;LEN] {
         self.array
     }
 }
@@ -183,10 +192,11 @@ pub struct RxMetaDataHolder<const LEN: usize> {
     pub(crate) array:[RxMetaData;LEN]
 }
 impl <const LEN: usize>RxMetaDataHolder<LEN> {
-    pub(crate) fn new(array: [RxMetaData;LEN]) -> Self {
-       RxMetaDataHolder { array }
+    pub fn new(array: [RxMetaData;LEN]) -> Self {
+        RxMetaDataHolder { array }
     }
-    pub(crate) fn meta_data(self) -> [RxMetaData;LEN] {
+
+    pub fn meta_data(self) -> [RxMetaData;LEN] {
         self.array
     }
 }
@@ -594,7 +604,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             let local_r = result.clone();
             async move {
                 let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant_count).await
-                               && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant_bytes).await;
+                                     && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant_bytes).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -628,29 +638,56 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         result.load(Ordering::Relaxed)
     }
 
-
-    async fn wait_closed_or_avail_message_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_, S>, messages_count: usize, ready_channels: usize) -> bool
+    /// Waits for a stream to be closed or for available messages across multiple channels.
+    ///
+    /// This method ensures that it spends most of its time asynchronously waiting
+    /// for messages to become available on a given number of ready channels or until
+    /// the stream is closed. It also listens for a shutdown signal.
+    ///
+    /// # Parameters:
+    /// - `this`: A mutable reference to the `StreamRxBundle` containing multiple receivers.
+    /// - `messages_count`: The number of messages to wait for in each stream.
+    /// - `ready_channels`: The number of channels that need to be ready before exiting early.
+    ///
+    /// # Returns:
+    /// - `true` if messages were available on the required number of channels.
+    /// - `false` if a shutdown signal was received or all streams were closed.
+    ///
+    /// # Performance Considerations:
+    /// - The function is designed to be mostly async-waiting, avoiding busy loops.
+    /// - Using `select_all` with a `Vec` of boxed futures can cause heap allocations.
+    /// - `Arc<AtomicBool>` is used for shared state, but `Ordering::Relaxed` should be
+    ///   carefully considered for thread safety in more complex scenarios.
+    /// - The shutdown signal is checked through `oneshot::Receiver`, which is an efficient
+    ///   way to detect termination without unnecessary polling.
+    async fn wait_closed_or_avail_message_stream<S: StreamItem>(
+        &self,
+        this: &mut StreamRxBundle<'_,S>,
+        messages_count: usize,
+        ready_channels: usize,
+    ) -> bool
     where
-        S: Send + Sync
+        S: Send + Sync,
     {
-
         let _guard = self.start_profile(CALL_OTHER);
-
         let mut count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
-        let futures = this.iter_mut().map(|rx| {
+
+        let mut futures: Vec<_> = Vec::with_capacity(this.len()+1);
+        for mut rx in this {
+            debug_assert!(messages_count < usize::from(rx.item_channel.rx.capacity()));
             let local_r = result.clone();
+            futures.push(
             async move {
-                if !rx.shared_wait_closed_or_avail_messages(messages_count).await {
-                    local_r.store(false, Ordering::Relaxed);
+                let bool_result = rx.item_channel.shared_wait_closed_or_avail_units(messages_count).await;
+                if !bool_result {
+                     local_r.store(false, Ordering::Relaxed);
                 }
-            }
-                .boxed() // Box the future to make them the same type
-        });
+            }.boxed()); // Box the future to make them the same type
+        }
 
-        let mut futures: Vec<_> = futures.collect();
 
-        //this adds one extra future as the last one
+        //this adds one extra feature as the last one
         futures.push( async move {
             let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
             if !guard.is_terminated() {
@@ -936,7 +973,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
 
 
-    fn advance_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize {
+    fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
@@ -1005,7 +1042,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// `true` if the channel has no messages available, otherwise `false`.
-    fn is_empty<T>(&self, this: &mut Rx<T>) -> bool {
+    fn is_empty<T: RxCore>(&self, this: &mut T) -> bool {
         this.shared_is_empty()
     }
 
@@ -1016,7 +1053,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// A `usize` indicating the number of available messages.
-    fn avail_units<T>(&self, this: &mut Rx<T>) -> usize {
+    fn avail_units<T: RxCore>(&self, this: &mut T) -> usize {
         this.shared_avail_units()
     }
 
@@ -1109,63 +1146,139 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
-    fn try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T> {
+       fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut> {
+
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
 
         match this.shared_try_send(msg) {
-            Ok(_) => {
-                this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
-                } else {
-                    MONITOR_NOT
-                };
+            Ok(done_count) => {
+                if let Some(ref mut tel) = self.telemetry.send_tx {
+                    this.telemetry_inc(done_count, tel); } else { this.monitor_not(); };
                 Ok(())
             }
             Err(sensitive) => Err(sensitive),
         }
     }
-//StreamSimpleMessage::new(3)
 
-    fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
-                                      , stream_id: i32
-                                      , payload: &[u8]) -> Result<(), StreamSimpleMessage> {
+    // fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
+    //                                   , stream_id: i32
+    //                                   , payload: &[u8]) -> Result<(), StreamSimpleMessage> {
+    //     if let Some(ref mut st) = self.telemetry.state {
+    //         let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+    //     }
+    //     let item = StreamSimpleMessage::new(payload.len() as i32);
+    //
+    //     debug_assert!(stream_id>= this[0].stream_id);
+    //     debug_assert!(stream_id<= this[this.len()-1].stream_id);
+    //     let idx:usize = (stream_id - this[0].stream_id) as usize;
+    //
+    //     if this[idx].payload_channel.vacant_units()>= payload.len()
+    //         && this[idx].item_channel.vacant_units()>= 1 {
+    //
+    //         let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
+    //         debug_assert_eq!(count, payload.len());
+    //         let result = this[idx].item_channel.shared_try_send(item);
+    //         debug_assert!(result.is_ok());
+    //
+    //          if let Some(ref mut tel) = self.telemetry.send_tx {
+    //              this[idx].payload_channel.local_index = tel.process_event(this[idx].payload_channel.local_index
+    //                               , this[idx].payload_channel.channel_meta_data.id, count as isize);
+    //
+    //              this[idx].item_channel.local_index = tel.process_event(this[idx].item_channel.local_index
+    //                                                                     , this[idx].item_channel.channel_meta_data.id, 1);
+    //
+    //          } else {
+    //              this[idx].payload_channel.local_index = MONITOR_NOT;
+    //              this[idx].item_channel.local_index = MONITOR_NOT;
+    //          };
+    //
+    //         Ok(())
+    //     } else {
+    //         Err(item)
+    //     }
+    // }
+
+    fn flush_defrag_messages<S: StreamItem>(&mut self
+                                            , out_item: &mut Tx<S>
+                                            , out_data: &mut Tx<u8>
+                                            , defrag: &mut Defrag<S>) -> Option<i32> {
+        //record this was called    
         if let Some(ref mut st) = self.telemetry.state {
-            let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
-        let item = StreamSimpleMessage::new(payload.len() as i32);
+        debug_assert!(!out_data.make_closed.is_none(), "Send called after channel marked closed");
+        debug_assert!(!out_item.make_closed.is_none(), "Send called after channel marked closed");
+          
+        //slice messages
+        let (items_a, items_b) = defrag.ringbuffer_items.1.as_slices();
+        let on_ring_items = items_a.len()+items_b.len();
+        let msg_count = out_item.tx.vacant_len().min(on_ring_items);
+        let items_len_a = msg_count.min(items_a.len());
+        let items_len_b = msg_count - items_len_a;
+        // if (msg_count<on_ring_items) {
+        //     warn!("only flushing {} of {} due to {}", msg_count, on_ring_items, out_item.tx.vacant_len());
+        // }
 
-        debug_assert!(stream_id>= this[0].stream_id);
-        debug_assert!(stream_id<= this[this.len()-1].stream_id);
-        let idx:usize = (stream_id - this[0].stream_id) as usize;
+        //sum messages length
+        let total_bytes_a = items_a[0..items_len_a].iter().map(|x| x.length()).sum::<i32>() as usize;
+        let total_bytes_b = items_b[0..items_len_b].iter().map(|x| x.length()).sum::<i32>() as usize;
+        let total_bytes = total_bytes_a + total_bytes_b;
+        //warn!("push one large group {} {}",msg_count,total_bytes);
+       // out_data.tx.wait_vacant(total_bytes).await; //
+  //      if total_bytes <= out_data.tx.vacant_len() {
+            //move this slice to the tx
+            let (payload_a, payload_b) = defrag.ringbuffer_bytes.1.as_slices();
+           // warn!("tx payload slices {} {}",payload_a.len(),payload_b.len());
 
-        if this[idx].payload_channel.shared_vacant_units()>= payload.len()
-            && this[idx].item_channel.shared_vacant_units()>= 1 {
-            let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
-            debug_assert_eq!(count, payload.len());
-            let result = this[idx].item_channel.shared_try_send(item);
-            debug_assert!(result.is_ok());
-
-            this[idx].payload_channel.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-                tel.process_event(this[idx].payload_channel.local_index
-                                  , this[idx].payload_channel.channel_meta_data.id, count as isize)
+            let len_a = total_bytes.min(payload_a.len());
+            let mut check_bytes = out_data.tx.push_slice(&payload_a[0..len_a]);
+            let len_b = total_bytes - len_a;
+            if len_b > 0 {
+                check_bytes += out_data.tx.push_slice(&payload_b[0..len_b]);
+            }
+            assert_eq!(check_bytes,total_bytes,"Internal error");
+            unsafe {
+                defrag.ringbuffer_bytes.1.advance_read_index(total_bytes)
+            }
+            //move the messages
+            //warn!("tx push slice {} {}",len_a,len_b);
+            out_item.tx.push_slice(&items_a[0..items_len_a]);
+            if items_len_b > 0 {
+                out_item.tx.push_slice(&items_b[0..items_len_b]);
+            }
+            unsafe {
+                defrag.ringbuffer_items.1.advance_read_index(msg_count)
+            }
+        // } else {
+        //     //skipped no room
+        //     warn!("no room skipped, internal error");
+        //     return Some(defrag.session_id); //try again later and do not pick up more
+        // }
+        /////
+        // record the telemetry for this change
+        if msg_count>0 {
+            //warn!("update send telmetry {} {}",msg_count,total_bytes);
+            if let Some(ref mut tel) = self.telemetry.send_tx {
+                out_item.local_index = tel.process_event(out_item.local_index, out_item.channel_meta_data.id, msg_count as isize);
+                out_data.local_index = tel.process_event(out_data.local_index, out_data.channel_meta_data.id, total_bytes as isize);
             } else {
-                MONITOR_NOT
-            };
-
-            this[idx].item_channel.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-                tel.process_event(this[idx].item_channel.local_index
-                                  , this[idx].item_channel.channel_meta_data.id, 1)
-            } else {
-                MONITOR_NOT
-            };
-                        
-            Ok(())
-        } else {
-            Err(item)
+                out_item.local_index = MONITOR_NOT;
+                out_data.local_index = MONITOR_NOT;
+            }
+        }
+                
+       if defrag.ringbuffer_items.1.is_empty() {
+           debug_assert_eq!(0,defrag.ringbuffer_bytes.1.occupied_len());
+           None
+        } else { //we want to flush again if we left anything behind and not loose the session_id
+           Some(defrag.session_id)
         }
     }
+
+
+
     
     /// Checks if the Tx channel is currently full.
     ///
@@ -1174,8 +1287,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
-    fn is_full<T>(&self, this: &mut Tx<T>) -> bool {
-        this.is_full()
+    fn is_full<T: TxCore>(&self, this: &mut T) -> bool {
+        this.shared_is_full()
     }
 
     /// Returns the number of vacant units in the Tx channel.
@@ -1185,7 +1298,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// The number of messages that can still be sent before the channel is full.
-    fn vacant_units<T>(&self, this: &mut Tx<T>) -> usize {
+    fn vacant_units<T: TxCore>(&self, this: &mut T) -> usize {
         this.shared_vacant_units()
     }
 
@@ -1195,12 +1308,12 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// - `this`: A mutable reference to a `Tx<T>` instance.
     ///
     /// # Asynchronous
-    async fn wait_empty<T>(&self, this: &mut Tx<T>) -> bool {
+    async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
         if self.telemetry.is_dirty() {
             let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
-                this.shared_vacant_units()==this.capacity()
+                this.shared_vacant_units()==this.shared_capacity()
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
                 let wat = this.shared_wait_empty();
@@ -1375,8 +1488,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         } else {
             None
         };
-        
-        let result = this.shared_send_async_timeout(a, self.ident, saturation, timeout).await; 
+
+        let result = this.shared_send_async_timeout(a, self.ident, saturation, timeout).await;
         drop(guard);
         match result {
             Ok(_) => {
@@ -1402,73 +1515,156 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
-    fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
+    fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
+
         match this.shared_try_take() {
-            Some(msg) => {
-                this.local_index = self.dynamic_event_count(
-                    this.local_index,
-                    this.channel_meta_data.id,
-                    1);
+            Some((done_count,msg)) => {
+                if let Some(ref mut tel) = self.telemetry.send_rx {
+                   this.telemetry_inc(done_count, tel); } else { this.monitor_not(); };
                 Some(msg)
-            }
-            None => None,
+            },
+            None => None
         }
     }
 
-    fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
-        if let Some(ref st) = self.telemetry.state {
-            let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
 
-        let item = self.try_take(&mut this.item_channel);
-        if let Some(item) = item {
-            let len = item.length();
-            debug_assert!(len>0, "no point in sending empty items");
-            // let mut target = Vec::with_capacity(len as usize);
-            // assert!(this.payload_channel.avail_units() as i32>=len);
-            // unsafe { target.set_len(len as usize); }
-            // let count = self.take_slice(&mut this.payload_channel, &mut target);           
-            // debug_assert_eq!(count as i32,len);
-            // let box_slice = target.into_boxed_slice();
+    // fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize {
+    //     if let Some(ref st) = self.telemetry.state {
+    //         let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+    //     }
+    //
+    //     //count total items we will take
+    //     let total_items = LEN.min(this.item_channel.avail_units());
+    //
+    //     //item backing arrays plus specific lengths
+    //     let (item_a,item_b) = this.item_channel.rx.as_slices();
+    //     let item_a_len = total_items.min(item_a.len());
+    //     let item_b_len = total_items-item_a_len;
+    //
+    //     // all bytes consumed by all these items
+    //     let mut total_bytes = 0;
+    //
+    //     let (payload_a,payload_b) = this.payload_channel.rx.as_slices();
+    //     let mut first_payload_block = true; //start with first block
+    //     let mut payload_index = 0; //payload index for current active payload
+    //
+    //     let mut item_target_index = 0;
+    //     for i in 0..item_a_len {
+    //         let item = item_a[i];
+    //         total_bytes += item.length();
+    //
+    //         if first_payload_block {
+    //             let next_payload = payload_index+item.length();
+    //             if next_payload <= payload_a.len() as i32 { //normal case
+    //                 target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize..next_payload as usize].into());
+    //                 payload_index = next_payload;
+    //             } else {//rare case where we span
+    //                 let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
+    //                 let b_len = item.length() as usize - a_len as usize ;
+    //                 let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
+    //                 vec.put_slice(&payload_a[payload_index as usize ..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
+    //                 vec.put_slice(&payload_b[0 as usize ..(0+b_len) as usize]);
+    //                 target[item_target_index] = (item, vec.into());
+    //                 first_payload_block=false;
+    //                 payload_index= b_len as i32;
+    //             }
+    //         } else { //normal case
+    //             let next_payload = payload_index+item.length();
+    //             target[item_target_index] = (item, payload_b[payload_index as usize ..next_payload as usize].into());
+    //             payload_index = next_payload;
+    //         }
+    //         item_target_index += 1;
+    //     }
+    //     for i in 0..item_b_len {
+    //         let item = item_b[i];
+    //         total_bytes += item.length();
+    //
+    //         if first_payload_block {
+    //             let next_payload = payload_index+item.length();
+    //             if next_payload <= payload_a.len() as i32 { //normal case
+    //                 target[item_target_index] = (item, payload_a[payload_index as usize .. next_payload as usize].into());
+    //                 payload_index = next_payload;
+    //             } else {//rare case where we span
+    //                 let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
+    //                 let b_len = item.length() as usize - a_len;
+    //                 let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
+    //                 vec.put_slice(&payload_a[payload_index as usize..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
+    //                 vec.put_slice(&payload_b[0 as usize..(0+b_len) as usize]);
+    //                 target[item_target_index] = (item, vec.into());
+    //                 first_payload_block=false;
+    //                 payload_index= b_len as i32;
+    //             }
+    //         } else { //normal case
+    //             let next_payload = payload_index+item.length();
+    //             target[item_target_index] = (item, payload_b[payload_index as usize..next_payload as usize].into());
+    //             payload_index = next_payload;
+    //         }
+    //         item_target_index += 1;
+    //     }
+    //
+    //     this.payload_channel.shared_advance_index(total_bytes as usize);
+    //     this.item_channel.shared_advance_index(total_items as usize);
+    //
+    //
+    //     this.item_channel.local_index = self.dynamic_event_count(
+    //         this.item_channel.local_index,
+    //         this.item_channel.channel_meta_data.id,
+    //         total_items as isize);
+    //     this.payload_channel.local_index = self.dynamic_event_count(
+    //         this.payload_channel.local_index,
+    //         this.payload_channel.channel_meta_data.id,
+    //         total_bytes as isize);
+    //     return total_items as usize;
+    // }
 
-
-            // Allocate uninitialized memory for the slice
-            let mut box_slice = Box::new_uninit_slice(len as usize);
-            assert!(this.payload_channel.avail_units() as i32 >= len);
-
-            // SAFETY: Convert uninitialized memory to a mutable reference slice of `u8`
-            let slice = unsafe { std::slice::from_raw_parts_mut(box_slice.as_mut_ptr() as *mut u8, len as usize) };
-
-            // Fill the slice with data
-            let count = self.take_slice(&mut this.payload_channel, slice);
-            debug_assert_eq!(count as i32, len);
-
-            // SAFETY: Now all elements are initialized, converting to an initialized Box<[u8]>
-            let box_slice: Box<[u8]> = unsafe { box_slice.assume_init() };
-
-
-            debug_assert!(box_slice.len()>0);
-            debug_assert_eq!(box_slice.len() as i32, len);
-
-            this.item_channel.local_index = self.dynamic_event_count(
-                            this.item_channel.local_index,
-                            this.item_channel.channel_meta_data.id,
-                            1);
-            this.payload_channel.local_index = self.dynamic_event_count(
-                            this.payload_channel.local_index,
-                            this.payload_channel.channel_meta_data.id,
-                            item.length() as isize);
-
-
-            Some(StreamData::new(item, box_slice))
-
-        } else {
-            None
-        }
-    }
+    //
+    // fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
+    //     if let Some(ref st) = self.telemetry.state {
+    //         let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+    //     }
+    //
+    //     let item = self.try_take(&mut this.item_channel);
+    //     if let Some(item) = item {
+    //         let len = item.length();
+    //         debug_assert!(len>0, "no point in sending empty items");
+    //
+    //         // Allocate uninitialized memory for the slice
+    //         let mut box_slice = Box::new_uninit_slice(len as usize);
+    //         assert!(this.payload_channel.avail_units() as i32 >= len);
+    //
+    //         // SAFETY: Convert uninitialized memory to a mutable reference slice of `u8`
+    //         let slice = unsafe { std::slice::from_raw_parts_mut(box_slice.as_mut_ptr() as *mut u8, len as usize) };
+    //
+    //         // Fill the slice with data
+    //         let count = self.take_slice(&mut this.payload_channel, slice);
+    //         debug_assert_eq!(count as i32, len);
+    //
+    //         // SAFETY: Now all elements are initialized, converting to an initialized Box<[u8]>
+    //         let box_slice: Box<[u8]> = unsafe { box_slice.assume_init() };
+    //
+    //
+    //         debug_assert!(box_slice.len()>0);
+    //         debug_assert_eq!(box_slice.len() as i32, len);
+    //
+    //         this.item_channel.local_index = self.dynamic_event_count(
+    //                         this.item_channel.local_index,
+    //                         this.item_channel.channel_meta_data.id,
+    //                         1);
+    //         this.payload_channel.local_index = self.dynamic_event_count(
+    //                         this.payload_channel.local_index,
+    //                         this.payload_channel.channel_meta_data.id,
+    //                         item.length() as isize);
+    //
+    //
+    //         Some((item, box_slice))
+    //
+    //     } else {
+    //         None
+    //     }
+    // }
     
 
     
@@ -2313,7 +2509,7 @@ pub(crate) mod monitor_tests {
                     for item in [13, 14, 15] {
                         
                         match send_guard.shared_try_send(item) {
-                            Ok(()) => {},
+                            Ok(d) => {},
                             Err(_) => {}
                         }
                     }

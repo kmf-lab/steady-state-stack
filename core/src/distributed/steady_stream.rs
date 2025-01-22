@@ -4,19 +4,25 @@
 //! going into `aeron_publish` and N streams as a const array coming from
 //! `aeron_subscribe`.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
 use ahash::AHashMap;
 use async_ringbuf::AsyncRb;
+use async_ringbuf::producer::AsyncProducer;
 use async_ringbuf::wrap::AsyncWrap;
 use futures_util::AsyncWriteExt;
 use futures_util::future::FusedFuture;
 use futures_util::lock::{Mutex, MutexGuard, MutexLockFuture};
+use log::warn;
+use num_traits::Zero;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use ringbuf::storage::Heap;
 use ringbuf::traits::{Observer, Split};
 use crate::{monitor::{RxMetaData, TxMetaData}, channel_builder::ChannelBuilder, Rx, Tx, SteadyCommander};
+use crate::steady_rx::RxCore;
+use crate::steady_tx::TxCore;
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
 pub type IdType = i32;
@@ -82,7 +88,6 @@ pub trait SteadyStreamRxBundleTrait<T: StreamItem, const GIRTH: usize> {
     fn control_meta_data(&self) -> [RxMetaData; GIRTH];
     fn payload_meta_data(&self) -> [RxMetaData; GIRTH];
 
-
 }
 
 impl<T: StreamItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRTH> for SteadyStreamRxBundle<T, GIRTH> {
@@ -122,6 +127,8 @@ pub trait SteadyStreamTxBundleTrait<T: StreamItem, const GIRTH: usize> {
     /// An array of `RxMetaData` objects containing metadata for each receiver.
     fn control_meta_data(&self) -> [TxMetaData; GIRTH];
     fn payload_meta_data(&self) -> [TxMetaData; GIRTH];
+
+
 }
 
 impl<T: StreamItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRTH> for SteadyStreamTxBundle<T, GIRTH> {
@@ -159,11 +166,16 @@ pub type StreamRxBundle<'a, T> = Vec<MutexGuard<'a, StreamRx<T>>>;
 pub trait StreamTxBundleTrait {
     /// Marks all channels in the bundle as closed.
     fn mark_closed(&mut self) -> bool;
+
+    fn stream_index(&self, stream_id: i32) -> usize;
+
 }
 
 pub trait StreamRxBundleTrait {
     fn is_closed_and_empty(&mut self) -> bool;
     fn is_closed(&mut self) -> bool;
+    fn stream_index(&self, stream_id: i32) -> usize;
+
 }
 
 impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
@@ -173,6 +185,11 @@ impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
         true  // always returns true, close request is never rejected by this method.
     }
 
+    fn stream_index(&self, stream_id: i32) -> usize {
+        assert!(stream_id>=self[0].stream_id);
+        assert!(stream_id-self[0].stream_id < self.len() as i32);
+        (stream_id - self[0].stream_id) as usize
+    }
 }
 
 impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
@@ -182,7 +199,11 @@ impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
     fn is_closed(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed())
     }
-
+    fn stream_index(&self, stream_id: i32) -> usize {
+        assert!(stream_id>=self[0].stream_id);
+        assert!(stream_id-self[0].stream_id < self.len() as i32);
+        (stream_id - self[0].stream_id) as usize
+    }
 }
 
 
@@ -194,14 +215,17 @@ impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
 /// This allows both `StreamFragment` and `StreamMessage` to share
 /// functionality in testing and real code.
 
-pub(crate) trait StreamItem: Send + Sync {
+pub(crate) trait StreamItem: Copy + Send + Sync {
     /// Creates a new instance with the given length, used for testing.
     fn testing_new(length: i32) -> Self;
 
     /// Returns the length of this item (in bytes).
     fn length(&self) -> i32;
 
+    // Return new stream item
+    fn from_defrag(defrag_entry: &Defrag<Self>) -> Self;
 }
+
 
 /// A stream fragment, typically for incoming multi-part messages.
 ///
@@ -244,11 +268,19 @@ impl StreamItem for StreamSessionMessage {
     fn length(&self) -> i32 {
         self.length
     }
-
+    
+    fn from_defrag(defrag_entry: &Defrag<Self>) -> Self {
+        StreamSessionMessage{
+            length: defrag_entry.running_length as i32,
+            session_id: defrag_entry.session_id,
+            arrival: defrag_entry.arrival.expect("defrag must have needed Instant"),
+            finished: defrag_entry.finish.expect("defrag must have needed Instant"),
+        }
+    }
 }
 
 /// A simple stream message, typically for outgoing single-part messages.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct StreamSimpleMessage {
     pub length: i32,
 }
@@ -272,7 +304,10 @@ impl StreamItem for StreamSimpleMessage {
     fn length(&self) -> i32 {
         self.length
     }
-
+    
+    fn from_defrag(defrag_entry: &Defrag<Self>) -> Self {
+        StreamSimpleMessage::new(defrag_entry.running_length as i32)
+    }
 }
 
 
@@ -297,33 +332,36 @@ pub struct StreamTxMetaData {
 
 /// A transmitter for a steady stream. Holds two channels:
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
-pub(crate) struct StreamTx<T: StreamItem> {
+pub struct StreamTx<T: StreamItem> {
     pub(crate) item_channel: Tx<T>,
     pub(crate) payload_channel: Tx<u8>,
     pub(crate) stream_id: i32,
-    defrag: AHashMap<i32, Defrag>,
-    pub(crate) ready: Option<(i32,usize)>
+    defrag: AHashMap<i32, Defrag<T>>,
+    pub(crate) ready: VecDeque<i32>
 }
 
-struct Defrag {
-    arrival: Option<Instant>,
-    finish: Option<Instant>,
-    session_id: i32,
-    ringbuffer: (AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<u8>>>,false, true>)
+pub(crate) struct Defrag<T: StreamItem> {
+    pub(crate) arrival: Option<Instant>,
+    pub(crate) finish: Option<Instant>,
+    pub(crate) session_id: i32,
+    pub(crate) running_length: usize,
+    pub(crate) ringbuffer_items: (AsyncWrap<Arc<AsyncRb<Heap<T>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<T>>>,false, true>),
+    pub(crate) ringbuffer_bytes: (AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<u8>>>,false, true>)
 }
 
-impl Defrag {
+impl <T: StreamItem> Defrag<T> {
 
-    pub fn new(session_id: i32, capacity: usize) -> Defrag {
+    pub fn new(session_id: i32, items: usize, bytes: usize) -> Self {
         Defrag {
             arrival: None,
             finish: None,
             session_id,
-            ringbuffer: AsyncRb::<Heap<u8>>::new(capacity).split()
+            running_length: 0,
+            ringbuffer_items: AsyncRb::<Heap<T>>::new(items).split(),
+            ringbuffer_bytes: AsyncRb::<Heap<u8>>::new(bytes).split()
         }
     }
 }
-
 
 impl<T: StreamItem> StreamTx<T> {
     /// Creates a new `StreamTx` wrapping the given channels and `stream_id`.
@@ -333,7 +371,7 @@ impl<T: StreamItem> StreamTx<T> {
             payload_channel,
             stream_id,
             defrag: Default::default(),
-            ready: None
+            ready: VecDeque::with_capacity(4)
         }
     }
 
@@ -344,172 +382,108 @@ impl<T: StreamItem> StreamTx<T> {
         true
     }
 
-}
+    //call this when we have no data in from poll to clear out anything waiting.
+    pub(crate) fn fragment_flush_all<C: SteadyCommander>(&mut self, cmd: &mut C) {
+        self.ready.clear();
+        for de in self.defrag.values_mut().filter(|f| !f.ringbuffer_items.0.is_empty()) {
+                     if let Some(x) = cmd.flush_defrag_messages( &mut self.item_channel
+                                                                , &mut self.payload_channel
+                                                                , de) {
+                         self.ready.push_back(x);
+                     }
+        }
+    }
 
+        pub(crate) fn fragment_flush_ready<C: SteadyCommander>(&mut self, cmd: &mut C) {
+            let mut count_down = self.ready.len();
+            //warn!("fragment_flush_ready for ready {:?} ", self.ready);
+            while let Some(session_id) = self.ready.pop_front() {
+            count_down -= 1;
+            if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
+                if let Some(x) = cmd.flush_defrag_messages(  &mut self.item_channel
+                                                           , &mut self.payload_channel
+                                                           , defrag_entry) {
+                    self.ready.push_back(x);
+                }
+            }
+        }
+    }
 
-impl StreamTx<StreamSessionMessage> {
+    pub(crate) fn smallest_space(&mut self) -> Option<usize> {
+         self.defrag
+             .values()
+             .map(|d| d.ringbuffer_items.0.vacant_len())
+             .min()
+    }
 
-    pub(crate) fn fragment_consume<C: SteadyCommander>(&mut self, cmd: &mut C, session_id:i32, slice: &[u8], is_begin: bool, is_end: bool) {
+    #[inline]
+    pub(crate) fn fragment_consume(&mut self
+                                   , session_id:i32
+                                   , slice: &[u8]
+                                   , is_begin: bool
+                                   , is_end: bool
+                                   , now: Instant) {
 
-        // Get or create the Defrag entry for the session ID
+        //Get or create the Defrag entry for the session ID
         let mut defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
-            Defrag::new(session_id, self.payload_channel.capacity()) // Adjust capacity as needed
+            Defrag::new(session_id, self.item_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
         });
+        debug_assert!(defrag_entry.ringbuffer_items.1.occupied_len() < defrag_entry.ringbuffer_items.1.capacity().into());
 
-        // If this is the beginning of a fragment, assert the ringbuffer is empty
+
+        // // If this is the beginning of a fragment, assert the ringbuffer is empty
+        let some_now = Some(now);
         if is_begin {
-            // Ensure the ringbuffer is empty before beginning
-            debug_assert!(defrag_entry.ringbuffer.0.is_empty(), "Ringbuffer must be empty at the beginning of a fragment");
-            defrag_entry.arrival = Some(Instant::now()); // Set the arrival time to now
+            defrag_entry.arrival = some_now; // Set the arrival time to now
+            if is_end {
+                defrag_entry.finish = some_now;
+            }
+        } else {
+            if is_end {
+                defrag_entry.finish = some_now;
+            }
         }
 
         // Append the slice to the ringbuffer (first half of the split)
         let slice_len = slice.len();
         debug_assert!(slice_len>0);
-        let count = defrag_entry.ringbuffer.0.push_slice(slice);
+
+        let count = defrag_entry.ringbuffer_bytes.0.push_slice(slice);
+        defrag_entry.running_length += count;
         debug_assert_eq!(count, slice_len, "internal buffer should have had room");
 
-        // If this is the end of a fragment, set the finish time
+        // If this is the end of a fragment send
         if is_end {
-            defrag_entry.finish = Some(Instant::now());
-            let len = defrag_entry.ringbuffer.1.occupied_len();
-            debug_assert!(len>0);
-            self.ready = Some((session_id,len));
-
-            if self.payload_channel.shared_vacant_units() >= len {
-                if self.item_channel.shared_vacant_units() >= 1 {
-                    let (a,b) = defrag_entry.ringbuffer.1.as_slices();
-                    debug_assert_eq!(len, a.len()+b.len());
-                    let t1 = cmd.send_slice_until_full( &mut self.payload_channel, a);
-                    let t2 = cmd.send_slice_until_full( &mut self.payload_channel, b);
-                    debug_assert_eq!(len, t1+t2);
-                    let _ = cmd.try_send(&mut self.item_channel, Self::build_item(defrag_entry,len as i32));
-                    self.ready.take(); //clear ready so we can consume more.
-                    unsafe {
-                        defrag_entry.ringbuffer.1.advance_read_index(len)
-                    }
+            let result = defrag_entry.ringbuffer_items.0.try_push(T::from_defrag(defrag_entry));
+            debug_assert!(result.is_ok());
+            
+            let cap: usize = defrag_entry.ringbuffer_items.0.capacity().into();
+            if defrag_entry.ringbuffer_items.1.occupied_len() == cap {
+                if !self.ready.contains(&defrag_entry.session_id) {
+                    self.ready.push_back(defrag_entry.session_id);
                 }
-            }
-        }
-    }
+            };
 
-    pub(crate) fn fragment_flush<C: SteadyCommander>(&mut self, cmd: &mut C) {
-
-        if let Some((session_id,len)) = self.ready {
-            if self.payload_channel.shared_vacant_units() >= len
-                && self.item_channel.shared_vacant_units() >= 1 {
-                    if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
-                        let (a, b) = defrag_entry.ringbuffer.1.as_slices();
-                        debug_assert_eq!(len, a.len()+b.len());
-                        let t1 = cmd.send_slice_until_full( &mut self.payload_channel, a);
-                        let t2 = cmd.send_slice_until_full( &mut self.payload_channel, b);
-                        debug_assert_eq!(len, t1+t2);
-                        cmd.try_send(&mut self.item_channel, Self::build_item(defrag_entry,len as i32));
-                        self.ready.take(); //clear ready so we can consume more.
-                        unsafe {
-                            defrag_entry.ringbuffer.1.advance_read_index(len)
-                    }
-                }
-            }
-        }
-    }
-
-    fn build_item(defrag: &mut Defrag, length: i32) -> StreamSessionMessage {
-        debug_assert!(length>0, "we should never see zero payload");
-        StreamSessionMessage {
-            length,
-            session_id: defrag.session_id,
-            arrival: defrag.arrival.expect("arrival"),
-            finished: defrag.finish.expect("finished"),
+            defrag_entry.running_length = 0;
+            defrag_entry.arrival = None;
+            defrag_entry.finish = None;
         }
     }
 }
 
-impl StreamTx<StreamSimpleMessage> {
-
-    pub(crate) fn fragment_consume<C: SteadyCommander>(&mut self, cmd: &mut C, session_id:i32, slice: &[u8], is_begin: bool, is_end: bool) -> bool {
-
-        // Get or create the Defrag entry for the session ID
-        let mut defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
-            Defrag::new(session_id, self.payload_channel.capacity()) // Adjust capacity as needed
-        });
-
-        // If this is the beginning of a fragment, assert the ringbuffer is empty
-        if is_begin {
-            // Ensure the ringbuffer is empty before beginning
-            debug_assert!(defrag_entry.ringbuffer.0.is_empty(), "Ringbuffer must be empty at the beginning of a fragment");
-            defrag_entry.arrival = Some(Instant::now()); // Set the arrival time to now
-        }
-
-        // Append the slice to the ringbuffer (first half of the split)
-        let count = defrag_entry.ringbuffer.0.push_slice(slice);
-        debug_assert_eq!(count, slice.len(), "internal buffer should have had room");
-
-        // If this is the end of a fragment, set the finish time
-        if is_end {
-            defrag_entry.finish = Some(Instant::now());
-            let len = defrag_entry.ringbuffer.1.occupied_len();
-            debug_assert!(len>0);
-            self.ready = Some((session_id,len));
-
-            if self.payload_channel.shared_vacant_units() >= len
-                && self.item_channel.shared_vacant_units() >= 1 {
-                    let (a,b) = defrag_entry.ringbuffer.1.as_slices();
-                    debug_assert_eq!(len, a.len()+b.len());
-                    let t1 = cmd.send_slice_until_full( &mut self.payload_channel, a);
-                    let t2 = cmd.send_slice_until_full( &mut self.payload_channel, b);
-                    debug_assert_eq!(len, t1+t2);
-                    cmd.try_send(&mut self.item_channel, Self::build_item(len as i32));
-                    self.ready.take(); //clear ready so we can consume more.
-                false
-            } else {
-                true // when true, we could not send so we must try again.
-            }
-        } else {
-            false
-        }
-    }
-
-    pub(crate) fn fragment_flush<C: SteadyCommander>(&mut self, cmd: &mut C) {
-
-        if let Some((session_id,len)) = self.ready {
-            if self.payload_channel.shared_vacant_units() >= len
-                && self.item_channel.shared_vacant_units() >= 1 {
-                if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
-                    let (a, b) = defrag_entry.ringbuffer.1.as_slices();
-                    debug_assert_eq!(len, a.len()+b.len());
-                    let t1 = cmd.send_slice_until_full( &mut self.payload_channel, a);
-                    let t2 = cmd.send_slice_until_full( &mut self.payload_channel, b);
-                    debug_assert_eq!(len, t1+t2);
-                    cmd.try_send(&mut self.item_channel, Self::build_item(len as i32));
-                    self.ready.take(); //clear ready so we can consume more.
-                    unsafe {
-                        defrag_entry.ringbuffer.1.advance_read_index(defrag_entry.ringbuffer.1.occupied_len())
-                    }
-                }
-            }
-        }
-    }
-
-    fn build_item(length: i32) -> StreamSimpleMessage {
-        debug_assert!(length>0, "we should never see zero payload");
-        StreamSimpleMessage {
-            length
-        }
-    }
-}
-
-
-pub struct StreamData<T: StreamItem> {
-    pub item: T,
-    pub payload: Box<[u8]>,
-}
-
-impl <T: StreamItem>StreamData<T> {
-    pub fn new(item: T, payload: Box<[u8]>) -> Self {
-      StreamData {item, payload}
-    }
-}
+// not sure we want this anymore.
+//
+// #[derive(Clone, Debug)]
+// pub struct StreamData<T: StreamItem> {
+//     pub item: T,
+//     pub payload: Box<[u8]>,
+// }
+//
+// impl <T: StreamItem>StreamData<T> {
+//     pub fn new(item: T, payload: Box<[u8]>) -> Self {
+//       StreamData {item, payload}
+//     }
+// }
 
 
 /// A receiver for a steady stream. Holds two channels:
@@ -532,9 +506,9 @@ impl<T: StreamItem> StreamRx<T> {
         }
     }
 
-    pub async fn shared_wait_closed_or_avail_messages(&mut self, full_messages: usize) -> bool {
-        self.item_channel.shared_wait_closed_or_avail_units(full_messages).await
-    }
+    // pub async fn shared_wait_closed_or_avail_messages(&mut self, full_messages: usize) -> bool {
+    //     self.item_channel.shared_wait_closed_or_avail_units(full_messages).await
+    // }
 
     /// Checks if both channels are closed and empty.
     pub fn is_closed_and_empty(&mut self) -> bool {
@@ -547,7 +521,117 @@ impl<T: StreamItem> StreamRx<T> {
         //debug!("closed {} {}", self.item_channel.is_closed(), self.payload_channel.is_closed());
         self.item_channel.is_closed() && self.payload_channel.is_closed()
     }
+    pub(crate) fn consume_messages<C: SteadyCommander>(
+        &mut self,
+        cmd: &mut C,
+        byte_limit: usize,
+        mut fun: impl FnMut(&mut [u8], &mut [u8]) -> bool,
+    ) {
+        // Obtain mutable slices from the item and payload channels
+        let (item1, item2) = self.item_channel.rx.as_mut_slices();
+        let (mut payload1, mut payload2) = self.payload_channel.rx.as_mut_slices();
 
+        // Variables to track the state of the iteration
+        let mut on_first = true; // Whether we are still processing the first payload slice
+        let mut active_index = 0; // Current index in the active payload slice
+        let mut active_items = 0; // Number of items processed
+        let mut active_data:usize = 0; // Total bytes processed
+
+        // Process items from the first slice
+        for i in item1 {
+            // Extract payload slices based on the current state
+            let (a, b) = Self::extract_stream_payload_slices(
+                &mut payload1,
+                &mut payload2,
+                &mut on_first,
+                &mut active_index,
+                i.length() as usize,
+            );
+
+            // Apply the provided function to the payload slices
+            if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
+                // If the limit is reached or the function returns false, advance the read indices and exit
+                let x = cmd.advance_read_index(&mut self.payload_channel, active_data);
+                debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
+                let x = cmd.advance_read_index(&mut self.item_channel, active_items);
+                debug_assert_eq!(x, active_items, "Item channel advance mismatch");
+                return;
+            }
+
+            // Update the counts of processed items and data
+            active_items += 1;
+            active_data += i.length() as usize;
+        }
+
+        // Process items from the second slice
+        for i in item2 {
+            // Extract payload slices based on the current state
+            let (a, b) = Self::extract_stream_payload_slices(
+                &mut payload1,
+                &mut payload2,
+                &mut on_first,
+                &mut active_index,
+                i.length() as usize,
+            );
+
+            // Apply the provided function to the payload slices
+            if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
+                // If the limit is reached or the function returns false, advance the read indices and exit
+                let x = cmd.advance_read_index(&mut self.payload_channel, active_data);
+                debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
+                let x = cmd.advance_read_index(&mut self.item_channel, active_items);
+                debug_assert_eq!(x, active_items, "Item channel advance mismatch");
+                return;
+            }
+
+            // Update the counts of processed items and data
+            active_items += 1;
+            active_data += i.length() as usize;
+        }
+
+        // !("we made it to the end with {}",active_items);
+        // If all items are processed successfully, advance the read indices
+        let x = cmd.advance_read_index(&mut self.payload_channel, active_data);
+        debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
+        let x = cmd.advance_read_index(&mut self.item_channel, active_items);
+        debug_assert_eq!(x, active_items, "Item channel advance mismatch");
+    }
+
+    fn extract_stream_payload_slices<'a>(
+        payload1: &'a mut [u8],
+        payload2: &'a mut [u8],
+        on_first: &mut bool,
+        active_index: &mut usize,
+        bytes: usize,
+    ) -> (&'a mut [u8], &'a mut [u8]) {
+        if *on_first {
+            
+            let payload_len = payload1.len();
+            let p1_len = payload1.len() - *active_index;
+            let len_a = p1_len.min(bytes); // Length of the slice from the first payload
+            let len_b = bytes - len_a; // Length of the slice from the second payload
+        
+            // Create mutable slices from the payloads
+            let a = &mut payload1[*active_index..(*active_index + len_a)];
+            let b = &mut payload2[0..len_b];
+
+            // Update the active index and check if we need to switch to the second payload
+            *active_index += len_a;
+            if *active_index >= payload_len || len_b > 0 {
+                *on_first = false;
+                *active_index = len_b; // Reset active_index for payload2
+            }
+            (a, b)
+        } else {
+            let len_b = (payload2.len() - *active_index).min(bytes); // Length of the slice from the second payload
+
+            let a = &mut payload2[*active_index..(*active_index + len_b)];
+            let b = &mut payload1[0..0]; // Empty slice from the first payload
+            *active_index += len_b;
+
+            (a, b)
+        }
+    }
 }
 
 /// Type alias for thread-safe, asynchronous references to `StreamRx` and `StreamTx`.
@@ -576,13 +660,13 @@ pub(crate) struct LazyStream<T: StreamItem> {
 
 /// A lazily-initialized transmitter wrapper for a steady stream.
 #[derive(Debug)]
-pub(crate) struct LazyStreamTx<T: StreamItem> {
+pub struct LazyStreamTx<T: StreamItem> {
     lazy_channel: Arc<LazyStream<T>>,
 }
 
 /// A lazily-initialized receiver wrapper for a steady stream.
 #[derive(Debug)]
-pub(crate) struct LazyStreamRx<T: StreamItem> {
+pub struct LazyStreamRx<T: StreamItem> {
     lazy_channel: Arc<LazyStream<T>>,
 }
 

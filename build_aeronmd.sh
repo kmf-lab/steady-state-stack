@@ -1,12 +1,18 @@
 #!/bin/bash
 
+# this is only here for reference and testing
+# you should not need it as we have scripts in core for installing
+# areron media driver as a systemd service using docker
+
+# wget -qO- https://github.com/Kitware/CMake/releases/download/v3.27.6/cmake-3.27.6-linux-x86_64.tar.gz | tar --strip-components=1 -xz -C /usr/local
+
 # You may need to select Java 17
 # sudo update-alternatives --config java
 
 
 # Variables
 AERON_REPO="https://github.com/real-logic/aeron.git"
-AERON_BRANCH="1.39.0"
+AERON_BRANCH="1.46.7"
 OUT_DIR="$(pwd)/target/aeron-driver-native"
 BUILD_DIR="$OUT_DIR/build"
 
@@ -40,7 +46,7 @@ function build_aeron {
     # so we bump up to JDK 17, not yet compatible with 21
     mkdir -p "$OUT_DIR"
       cd "$OUT_DIR" || exit 1
-    ./gradlew wrapper --gradle-version 7.4.2
+    ./gradlew wrapper --gradle-version 8.12
 
 
     echo "Building Aeron C++ Media Driver..."
@@ -56,7 +62,7 @@ function build_aeron {
 
     # Build the project
     cmake --build . || {
-        echo "Build failed."
+        echo "Build failed, review the above log."
         exit 1
     }
 

@@ -241,15 +241,17 @@ async fn internal_behavior<const GIRTH: usize>(
                     let measured = i.elapsed().as_millis() as u64;
 
                     let margin = 1.max(1+(ctrl.frame_rate_ms>>1));
-                    
-                    if measured > ctrl.frame_rate_ms+margin {
+
+                    //log if this is far out of bounds
+                    if measured > (ctrl.frame_rate_ms+margin)*4 {
                         warn!("frame rate is far too slow {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?} other:{:?}"
                             , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
                     }
-                    // if measured < ctrl.frame_rate_ms-margin && _tcount >0{
-                    //     warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
-                    //         , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
-                    // }
+                    if measured < (ctrl.frame_rate_ms-margin>>2) && _tcount >0{
+                         warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
+                             , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
+                    }
+
                 }
             }
 
@@ -408,7 +410,7 @@ fn gather_node_details(
                                   if meta.id == i {
                                       let msg = format!("Possible missing TX for actor {:?} RX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
                                       let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
-                                      if *count ==5 {
+                                      if *count ==21 {
                                           warn!("{}",msg);
                                       }
 
@@ -419,7 +421,7 @@ fn gather_node_details(
                                   if meta.id == i {
                                       let msg = format!("Possible missing RX for actor {:?} TX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
                                       let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
-                                      if *count==5 {
+                                      if *count==21 {
                                           warn!("{}",msg);
                                       }
                                   }

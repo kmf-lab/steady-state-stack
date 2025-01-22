@@ -2,7 +2,7 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{abstract_executor, steady_config, SteadyContext, util, Threading, new_state};
+use crate::{abstract_executor, steady_config, SteadyContext, util, Threading, new_state, Percentile};
 use std::ops::Sub;
 use std::sync::{Arc};
 use parking_lot::{RwLock,RwLockWriteGuard};
@@ -23,7 +23,8 @@ use futures::channel::oneshot::{Sender};
 
 use futures_util::lock::{MutexGuard, MutexLockFuture};
 use nuclei::config::IoUringConfiguration;
-use steady_state_aeron::aeron::Aeron;
+use aeron::aeron::Aeron;
+use aeron::context::Context;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
@@ -541,9 +542,9 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub(crate) fn is_aeron_media_driver_present(&mut self) -> bool {
+    pub fn is_aeron_media_driver_present(&mut self) -> bool {
         if self.aeron.is_none() { //lazy load, we only support one
-            self.aeron = aeron_context();
+            self.aeron = aeron_context(Context::new());
         }
         self.aeron.is_some()
     }
@@ -561,10 +562,9 @@ impl Graph {
         match distribution {
             DistributedTech::Aeron(channel) => {
 
-                if self.aeron.is_none() { //lazy load, we only support one
-                    self.aeron = aeron_context();
-                }
-
+               if self.aeron.is_none() { //lazy load, we only support one
+                  self.aeron = aeron_context(Context::new());
+               }
 
                 if let Some(aeron) = &self.aeron {
                     let state = new_state();
@@ -572,8 +572,11 @@ impl Graph {
 
                     self.actor_builder()
                         .with_name(name)
-                        .with_mcpu_avg()
                         .with_thread_info()
+                        .with_mcpu_percentile(Percentile::p96())
+                        .with_mcpu_percentile(Percentile::p25())
+
+                        // .with_explicit_core(7)
                         .build(move |context| 
                                    aeron_publish::run(context
                                                          , rx.clone()
@@ -600,11 +603,10 @@ impl Graph {
             DistributedTech::Aeron(channel) => {
 
                 if self.aeron.is_none() { //lazy load, we only support one
-                    self.aeron = aeron_context();
+                      self.aeron = aeron_context(Context::new());
                 }
-                
-                
-                if let Some(ref aeron) = self.aeron {
+
+                if let Some(ref aeron) = &self.aeron {
                                      
                     let state = new_state();
                     let aeron = aeron.clone();
@@ -613,8 +615,11 @@ impl Graph {
                     
                     self.actor_builder()
                         .with_name(name)
-                        .with_mcpu_avg()
                         .with_thread_info()
+                        .with_mcpu_percentile(Percentile::p96())
+                        .with_mcpu_percentile(Percentile::p25())
+
+                        //  .with_explicit_core(8)
                         //.with_custom_label(connection) // TODO: need something like this.
                         .build(move |context|
                                    aeron_subscribe::run(context

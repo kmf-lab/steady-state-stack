@@ -78,9 +78,9 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 [dependencies]
 nuclei           = { version = "0.4.4", optional = true } # foundational proactive runtime
 ringbuf          = "0.4.7"  # foundational bounded message passing
-async-ringbuf    = "0.3.1"  # foundational bounded message passing
-log              = "0.4.22"  # common logging traits
-flexi_logger     = { version="0.29.6", features=["colors", "async"] }  # default flexable logging implementation
+async-ringbuf    = "0.3.2"  # foundational bounded message passing
+log              = "0.4.25"  # common logging traits
+flexi_logger     = { version="0.29.8", features=["colors", "async"] }  # default flexable logging implementation
 futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
 hdrhistogram     = "7.5.4"  # for latency histograms
 bytes            = { version = "1.9.0", features = [] }
@@ -108,10 +108,11 @@ hkdf             = "0.13.0-pre.4" # generate common hash for all peer pods
 x25519-dalek     = "2.0.1"              #
 chacha20poly1305 = "0.11.0-pre.2" # for encrypted streams
 # fork of aeron-rs with just the fixes we need until they get merged into the mainline
-steady_state_aeron     = { version="0.1.6-kmf1" }
+#steady_state_aeron     = { version="0.1.6-kmf1" }
 once_cell = "1.20.2"
 # for local testing
-#steady_state_aeron    = { path = "../../aeron-rs", version="0.1.6-kmf1" }
+aeron = "0.2.0"
+# steady_state_aeron    = { path = "../../aeron-rs", version="0.1.6-kmf1" }
 
 
 

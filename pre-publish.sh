@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ "$NICENESS_SET" != "1" ]; then
+    export NICENESS_SET=1
+    sudo exec nice -n 10 "$0" "$@"
+fi
+
 cargo update
 rustup default stable
 
@@ -51,7 +56,7 @@ fi
 # cargo tree -i prost
 # cargo tree -i prost-build
 
-RUST_BACKTRACE=1 RUST_TEST_THREADS=48 cargo test --workspace --tests --examples -j 48 -- --nocapture | tee cargo_test.txt
+RUST_BACKTRACE=full RUST_LOG=debug RUST_TEST_THREADS=24 cargo test --workspace --tests --examples -j 24 -- --nocapture --show-output | tee cargo_test.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
