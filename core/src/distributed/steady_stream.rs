@@ -351,16 +351,24 @@ impl StreamTx<StreamSessionMessage> {
 
     pub(crate) fn fragment_consume<C: SteadyCommander>(&mut self, cmd: &mut C, session_id:i32, slice: &[u8], is_begin: bool, is_end: bool) {
 
-        // Get or create the Defrag entry for the session ID
+        //Get or create the Defrag entry for the session ID 
         let mut defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
             Defrag::new(session_id, self.payload_channel.capacity()) // Adjust capacity as needed
         });
 
-        // If this is the beginning of a fragment, assert the ringbuffer is empty
+        // // If this is the beginning of a fragment, assert the ringbuffer is empty
         if is_begin {
             // Ensure the ringbuffer is empty before beginning
             debug_assert!(defrag_entry.ringbuffer.0.is_empty(), "Ringbuffer must be empty at the beginning of a fragment");
-            defrag_entry.arrival = Some(Instant::now()); // Set the arrival time to now
+            let now = Instant::now();
+            defrag_entry.arrival = Some(now); // Set the arrival time to now
+             if is_end {
+                 defrag_entry.finish = Some(now);
+            }
+        } else {
+            if is_end {
+                defrag_entry.finish = Some(Instant::now());
+            } 
         }
 
         // Append the slice to the ringbuffer (first half of the split)
@@ -368,30 +376,37 @@ impl StreamTx<StreamSessionMessage> {
         debug_assert!(slice_len>0);
         let count = defrag_entry.ringbuffer.0.push_slice(slice);
         debug_assert_eq!(count, slice_len, "internal buffer should have had room");
-
-        // If this is the end of a fragment, set the finish time
+         
+        // If this is the end of a fragment send
         if is_end {
-            defrag_entry.finish = Some(Instant::now());
-            let len = defrag_entry.ringbuffer.1.occupied_len();
-            debug_assert!(len>0);
-            self.ready = Some((session_id,len));
+             let len = defrag_entry.ringbuffer.1.occupied_len();
+             debug_assert!(len>0);
+         
+             if self.payload_channel.shared_vacant_units() >= len 
+             && self.item_channel.shared_vacant_units() >= 1 {
+                 let (a,b) = defrag_entry.ringbuffer.1.as_slices();
+                 debug_assert_eq!(len, a.len()+b.len());
+                 let item = Self::build_item(&defrag_entry,len as i32);
 
-            if self.payload_channel.shared_vacant_units() >= len {
-                if self.item_channel.shared_vacant_units() >= 1 {
-                    let (a,b) = defrag_entry.ringbuffer.1.as_slices();
-                    debug_assert_eq!(len, a.len()+b.len());
-                    let t1 = cmd.send_slice_until_full( &mut self.payload_channel, a);
-                    let t2 = cmd.send_slice_until_full( &mut self.payload_channel, b);
-                    debug_assert_eq!(len, t1+t2);
-                    let _ = cmd.try_send(&mut self.item_channel, Self::build_item(defrag_entry,len as i32));
-                    self.ready.take(); //clear ready so we can consume more.
-                    unsafe {
-                        defrag_entry.ringbuffer.1.advance_read_index(len)
-                    }
-                }
-            }
-        }
+                  cmd.try_stream_session_message_send( &mut self.item_channel
+                                                      , &mut self.payload_channel
+                                                      , item
+                                                      , a, b);
+                
+                 unsafe {
+                     defrag_entry.ringbuffer.1.advance_read_index(len);
+                 }
+                 debug_assert!(defrag_entry.ringbuffer.0.is_empty(), "should be empty now");
+                 
+                 self.ready.take(); //clear ready so we can consume more.
+                 defrag_entry.arrival = None;
+                 defrag_entry.finish = None;
+             } else {
+                 self.ready = Some((session_id,len));         
+             }
+         }
     }
+
 
     pub(crate) fn fragment_flush<C: SteadyCommander>(&mut self, cmd: &mut C) {
 
@@ -400,21 +415,21 @@ impl StreamTx<StreamSessionMessage> {
                 && self.item_channel.shared_vacant_units() >= 1 {
                     if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
                         let (a, b) = defrag_entry.ringbuffer.1.as_slices();
-                        debug_assert_eq!(len, a.len()+b.len());
-                        let t1 = cmd.send_slice_until_full( &mut self.payload_channel, a);
-                        let t2 = cmd.send_slice_until_full( &mut self.payload_channel, b);
-                        debug_assert_eq!(len, t1+t2);
-                        cmd.try_send(&mut self.item_channel, Self::build_item(defrag_entry,len as i32));
-                        self.ready.take(); //clear ready so we can consume more.
+                                               
+                        cmd.try_stream_session_message_send( &mut self.item_channel
+                                                             , &mut self.payload_channel
+                                                             , Self::build_item(defrag_entry,len as i32)
+                                                             , a, b);
+                        
                         unsafe {
                             defrag_entry.ringbuffer.1.advance_read_index(len)
-                    }
-                }
-            }
+                         }
+                   }
+               }
+           }
         }
-    }
 
-    fn build_item(defrag: &mut Defrag, length: i32) -> StreamSessionMessage {
+    fn build_item(defrag: &Defrag, length: i32) -> StreamSessionMessage {
         debug_assert!(length>0, "we should never see zero payload");
         StreamSessionMessage {
             length,
@@ -456,11 +471,16 @@ impl StreamTx<StreamSimpleMessage> {
                 && self.item_channel.shared_vacant_units() >= 1 {
                     let (a,b) = defrag_entry.ringbuffer.1.as_slices();
                     debug_assert_eq!(len, a.len()+b.len());
-                    let t1 = cmd.send_slice_until_full( &mut self.payload_channel, a);
-                    let t2 = cmd.send_slice_until_full( &mut self.payload_channel, b);
-                    debug_assert_eq!(len, t1+t2);
-                    cmd.try_send(&mut self.item_channel, Self::build_item(len as i32));
-                    self.ready.take(); //clear ready so we can consume more.
+                
+                    let item = Self::build_item(len as i32);
+
+                      cmd.try_stream_simple_message_send( &mut self.item_channel
+                                                     , &mut self.payload_channel
+                                                     , item
+                                                     , a, b);
+                    unsafe {
+                        defrag_entry.ringbuffer.1.advance_read_index(len)
+                    }
                 false
             } else {
                 true // when true, we could not send so we must try again.
@@ -478,13 +498,14 @@ impl StreamTx<StreamSimpleMessage> {
                 if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
                     let (a, b) = defrag_entry.ringbuffer.1.as_slices();
                     debug_assert_eq!(len, a.len()+b.len());
-                    let t1 = cmd.send_slice_until_full( &mut self.payload_channel, a);
-                    let t2 = cmd.send_slice_until_full( &mut self.payload_channel, b);
-                    debug_assert_eq!(len, t1+t2);
-                    cmd.try_send(&mut self.item_channel, Self::build_item(len as i32));
-                    self.ready.take(); //clear ready so we can consume more.
+                    let item = Self::build_item(len as i32);
+
+                    cmd.try_stream_simple_message_send( &mut self.item_channel
+                                                        , &mut self.payload_channel
+                                                        , item
+                                                        , a, b);
                     unsafe {
-                        defrag_entry.ringbuffer.1.advance_read_index(defrag_entry.ringbuffer.1.occupied_len())
+                        defrag_entry.ringbuffer.1.advance_read_index(len)
                     }
                 }
             }

@@ -133,9 +133,8 @@ impl<T> Tx<T> {
 
     #[inline]
     pub(crate) fn shared_try_send(&mut self, msg: T) -> Result<(), T> {
-        if self.make_closed.is_none() {
-            warn!("Send called after channel marked closed");
-        }
+        debug_assert!(!self.make_closed.is_none(),"Send called after channel marked closed");
+        
         match self.tx.try_push(msg) {
             Ok(_) => Ok(()),
             Err(m) => Err(m),
@@ -153,13 +152,7 @@ impl<T> Tx<T> {
     #[inline]
     pub(crate) fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
         where T: Copy {
-        if self.make_closed.is_none() {
-
-            let backtrace = Backtrace::capture();
-            eprintln!("{:?}", backtrace);
-
-            warn!("Send called after channel marked closed");
-        }
+        debug_assert!(!self.make_closed.is_none(),"Send called after channel marked closed");
         self.tx.push_slice(slice)
     }
 

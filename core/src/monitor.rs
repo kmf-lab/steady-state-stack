@@ -13,11 +13,13 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::thread::ThreadId;
 use futures::channel::oneshot;
 use futures_util::{select, FutureExt};
+use ringbuf::producer::Producer;
+use ringbuf::traits::Observer;
 use crate::*;
 use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
 use crate::commander::SteadyCommander;
-use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamSessionMessage, StreamRx, StreamData};
+use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamSessionMessage, StreamRx, StreamData, StreamTx};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::SideChannelResponder;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
@@ -1126,7 +1128,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             Err(sensitive) => Err(sensitive),
         }
     }
-//StreamSimpleMessage::new(3)
 
     fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
                                       , stream_id: i32
@@ -1165,6 +1166,80 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         } else {
             Err(item)
         }
+    }
+
+    fn try_stream_session_message_send(&mut self
+                                       , item: &mut Tx<StreamSessionMessage>
+                                       , data: &mut Tx<u8>
+                                       , message: StreamSessionMessage
+                                       , payload_a: &[u8], payload_b: &[u8]) -> Result<(), StreamSessionMessage> {
+   
+        if let Some(ref mut st) = self.telemetry.state {
+            let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+        
+        // //////////////////////////////////////////////////////
+        debug_assert!(!data.make_closed.is_none(), "Send called after channel marked closed");
+        debug_assert!(!item.make_closed.is_none(), "Send called after channel marked closed");
+        
+        let t1 = data.tx.push_slice(payload_a);
+        let t2 = if payload_b.len() > 0 {
+                                        data.tx.push_slice(payload_b)
+                                    } else {
+                                        0
+                                    };
+        let bytes = t1+t2;
+        debug_assert_eq!(bytes as i32, message.length);  
+        let result = item.tx.try_push(message);
+        debug_assert!(result.is_ok());       
+        ////////
+
+        let (a,b) = if let Some(ref mut tel) = self.telemetry.send_tx {
+            (tel.process_event(item.local_index, item.channel_meta_data.id, 1)
+            ,tel.process_event(data.local_index, data.channel_meta_data.id, bytes as isize)  )
+        } else {
+            (MONITOR_NOT,MONITOR_NOT)
+        };
+        item.local_index = a;
+        data.local_index = b;
+        Ok(())
+    }
+
+    fn try_stream_simple_message_send(&mut self
+                                      , item: &mut Tx<StreamSimpleMessage>
+                                      , data: &mut Tx<u8>
+                                      , message: StreamSimpleMessage
+                                      , payload_a: &[u8], payload_b: &[u8]) -> Result<(), StreamSimpleMessage> {
+        if let Some(ref mut st) = self.telemetry.state {
+            let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+
+      
+        debug_assert!(!data.make_closed.is_none(), "Send called after channel marked closed");
+        debug_assert!(!item.make_closed.is_none(), "Send called after channel marked closed");
+
+        ////this block is the slowest part due to writing to memory outside
+        let t1 = data.tx.push_slice(payload_a);
+        let t2 = if payload_b.len() > 0 {
+            data.tx.push_slice(payload_b)
+        } else {
+            0
+        };
+        let bytes = t1+t2;
+        debug_assert_eq!(bytes as i32, message.length);
+        let result = item.tx.try_push(message);
+        debug_assert!(result.is_ok());
+        /////end of the slow block
+
+        let (a,b) = if let Some(ref mut tel) = self.telemetry.send_tx {
+            (tel.process_event(item.local_index, item.channel_meta_data.id, 1)
+             ,tel.process_event(data.local_index, data.channel_meta_data.id, bytes as isize)  )
+        } else {
+            (MONITOR_NOT,MONITOR_NOT)
+        };
+        item.local_index = a;
+        data.local_index = b;
+        Ok(())
     }
     
     /// Checks if the Tx channel is currently full.

@@ -123,7 +123,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             } else {
                 await_for_all!(cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1))
             };
-            
+
             let mut count_done = 0;
 
                 backoff = false;
@@ -198,7 +198,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                                       
                         }
                 }
-         
+
             if count_done>0 {
               //  warn!("count done per pass {}",count_done);
             }
@@ -216,9 +216,11 @@ pub(crate) mod aeron_tests {
     use crate::distributed::aeron_subscribe;
     use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;
+    use crate::distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
 
     //NOTE: bump this up for longer running load tests
-    pub const TEST_ITEMS: usize = 2_000_000;
+    pub const TEST_ITEMS: usize = 2_000_000_000;
+    pub const STREAM_ID: i32 = 5; 
 
     pub async fn mock_sender_run<const GIRTH: usize>(mut context: SteadyContext
                                                      , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
@@ -236,13 +238,12 @@ pub(crate) mod aeron_tests {
 
             let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx, vacant_items, vacant_bytes, 1));
             let remaining = TEST_ITEMS - sent_count;
-            
+
             if remaining > 0 {
                 let actual_vacant = cmd.vacant_units(&mut tx[0].item_channel).min(remaining);
-                let stream_id = 7; //these will succeed since we just checked above for room
                 for _i in 0..(actual_vacant >> 1) {
-                    let _result = cmd.try_stream_send(&mut tx, stream_id, &[1, 2, 3, 4, 5, 6, 7, 8]);
-                    let _result = cmd.try_stream_send(&mut tx, stream_id, &[9, 10, 11, 12, 13, 14, 15, 16]);
+                    let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &[1, 2, 3, 4, 5, 6, 7, 8]);
+                    let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &[9, 10, 11, 12, 13, 14, 15, 16]);
                 }
                 sent_count += actual_vacant;
             }
@@ -264,10 +265,10 @@ pub(crate) mod aeron_tests {
         let mut cmd = into_monitor!(context, RxMetaDataHolder::new(rx.control_meta_data()), []);
         let mut rx = rx.lock().await;
 
-        let mut received_count = 0;    
+        let mut received_count = 0;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
 
-            let messages_required = 20_000;
+            let messages_required = 40_000;
             let _clean = await_for_all!(
                                        // cmd.wait_periodic(Duration::from_millis(400)),
                                         cmd.wait_closed_or_avail_message_stream(&mut rx, messages_required,1));
@@ -277,11 +278,11 @@ pub(crate) mod aeron_tests {
 
             let avail = cmd.avail_units(&mut rx[0].item_channel);
 
-            for i in 0..(avail>>1) {              
+            for i in 0..(avail>>1) {
                 if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
                     //warn!("test data {:?}",d.payload);
                     assert_eq!(&*Box::new([1, 2, 3, 4, 5, 6, 7, 8]), &*d.payload);
-                }    
+                }
                 if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
                     //warn!("test data {:?}",d.payload);
                     assert_eq!(&*Box::new([9, 10, 11, 12, 13, 14, 15, 16]), &*d.payload);
@@ -306,8 +307,6 @@ pub(crate) mod aeron_tests {
     async fn test_bytes_process() {
         let _lock = aeron_subscribe::aeron_media_driver_tests::TEST_MUTEX.lock().await; // Lock to ensure sequential execution
 
-        use crate::distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSessionMessage, StreamSimpleMessage};
-
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(true)
             .build(());
@@ -325,35 +324,33 @@ pub(crate) mod aeron_tests {
             .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-            .build_as_stream::<StreamSimpleMessage,1>(7
-                                                                  , 91193
-                                                                  , 911930);
+            .build_as_stream::<StreamSimpleMessage,1>(STREAM_ID
+                                                                  , 911937
+                                                                  , 9119370);
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_avg_rate()
             .with_avg_filled()
             .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-            .build_as_stream::<StreamSessionMessage,1>(7
-                                                                   , 93719
-                                                                   , 937190);
+            .build_as_stream::<StreamSessionMessage,1>(STREAM_ID
+                                                                   , 937197
+                                                                   , 9371970);
 
-        let aeron_config = AeronConfig::new()
+        let aeron_config = AeronConfig::new()            
             .with_media_type(MediaType::Udp)
             .use_point_to_point(Endpoint {
                 ip: "127.0.0.1".parse().expect("Invalid IP address"),
                 port: 40456,
             })
-            .with_term_length(1024 * 1024 * 8)
-            .build();
+            
+            
+            .with_term_length(1024 * 1024 * 32)
+            .build(); 
         let dist =  DistributedTech::Aeron(aeron_config);
 
-        graph.actor_builder().with_name("MockReceiver")
-            .with_mcpu_avg()
-            .with_thread_info()
-            .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
-                   , &mut Threading::Spawn);
 
+      //let this create the pipe first??
         graph.build_stream_collector(dist.clone()
                                      , "ReceiverTest"
                                      , from_aeron_tx
@@ -363,13 +360,18 @@ pub(crate) mod aeron_tests {
                                        , "SenderTest"
                                        , to_aeron_rx
                                        , &mut Threading::Spawn);
-        
+
         graph.actor_builder().with_name("MockSender")
             .with_mcpu_avg()
             .with_thread_info()
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
                    , &mut Threading::Spawn);
 
+        graph.actor_builder().with_name("MockReceiver")
+            .with_mcpu_avg()
+            .with_thread_info()
+            .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
+                   , &mut Threading::Spawn);
 
         graph.start(); //startup the graph
 

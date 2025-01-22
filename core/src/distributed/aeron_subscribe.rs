@@ -136,14 +136,12 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
         warn!("running subscriber '{:?}' all subscriptions in place",cmd.identity());
 
- 
         while cmd.is_running(&mut || tx.mark_closed()) {
      
             // only poll this often
-            let clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(200)) );
+            let clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(100)) );
 
-
-            const MIN_SPACE: usize = 64;
+            const MIN_SPACE: usize = 128;
 
             //stay looping until we find a pass with no data.
             loop {
@@ -156,39 +154,51 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                 if tx[i].ready.is_none() {
                                     ////////////////////////
                                     // stay here and poll as long as we can
-    
-                                    
-                                    if !sub.is_connected() {
-                                        if sub.is_closed() {
-                                            //confirm this is a good time to shut down??
-                                            //TODO: then total this across all streams
-                                        }
-                                    }
+
+                                    // if !sub.is_connected() {
+                                    //     if sub.is_closed() {
+                                    //         //confirm this is a good time to shut down??
+                                    //         //TODO: then total this across all streams
+                                    //     }
+                                    // }
 
                                     let mut no_count = 0;
                                     loop {
                                         let mut local_data = false;
+                                               
                                         sub.controlled_poll(&mut |buffer: &AtomicBuffer
                                                                   , offset: i32
                                                                   , length: i32
                                                                   , header: &Header| {
-                                            local_data = true;
+                                            
+                                            local_data = true; //1.3M/sec vs 300K ?
                                             if tx[i].ready.is_none() { //only take data if we flushed last ready
-                                                let is_begin: bool = 0 != (header.flags() & frame_descriptor::BEGIN_FRAG);
-                                                let is_end: bool = 0 != (header.flags() & frame_descriptor::END_FRAG);
-                                                tx[i].fragment_consume(&mut cmd, header.session_id(), buffer.as_sub_slice(offset, length), is_begin, is_end);
-                                                Ok(ControlledPollAction::CONTINUE)
+                                                 let flags =header.flags();
+                                                 let is_begin: bool = 0 != (flags & frame_descriptor::BEGIN_FRAG);
+                                                 let is_end: bool = 0 != (flags & frame_descriptor::END_FRAG);
+                                                 let slice = buffer.as_sub_slice(offset, length);
+                                                 tx[i].fragment_consume(&mut cmd, header.session_id(), slice, is_begin, is_end);
+                                                 if tx[i].ready.is_none() {
+                                                     //ae accepted this and are ready for another
+                                                    Ok(ControlledPollAction::CONTINUE)
+                                                 } else {
+                                                     warn!("could not write backoff");
+                                                     //we accepted this but need to backoff
+                                                     Ok(ControlledPollAction::BREAK)
+                                                 }
                                             } else {
+                                                warn!("serious back off");
+                                                //we can not and did not accept
                                                 tx[i].fragment_flush(&mut cmd);
                                                 Ok(ControlledPollAction::ABORT)
                                             }
-                                        }, max_poll_frags as i32);
+                                        }, max_poll_frags as i32); //TODO: make much larger
                                         if !local_data {
                                             no_count += 1;
                                         }
                                         found_data |= local_data;
                                         cmd.relay_stats_smartly();
-                                        if  no_count>4 || tx[i].ready.is_some() {
+                                        if  no_count>8 || tx[i].ready.is_some() {
                                             break; //leave loop since there was no data or no room
                                         }
                                         max_poll_frags = tx[i].item_channel.vacant_units();

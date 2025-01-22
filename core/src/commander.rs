@@ -11,14 +11,15 @@ use std::thread;
 use std::ops::DerefMut;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, LocalMonitor, Rx, RxBundle, SendSaturation, SteadyContext, Tx, TxBundle};
 use crate::graph_testing::SideChannelResponder;
-use crate::monitor::{RxMetaData, TxMetaData};
+use crate::monitor::{RxMetaData, TxMetaData, CALL_SINGLE_WRITE};
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_rx::RxDef;
 use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
 use futures::stream::{FuturesUnordered, StreamExt};
-use crate::distributed::steady_stream::{StreamItem, StreamSessionMessage, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, StreamData};
+use ringbuf::producer::Producer;
+use crate::distributed::steady_stream::{StreamItem, StreamSessionMessage, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, StreamData, StreamTx};
 use crate::util::logger;
 
 impl SteadyContext {
@@ -617,7 +618,7 @@ impl SteadyCommander for SteadyContext {
     fn send_slice_until_full<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
     where
         T: Copy
-    {
+    {        
         this.shared_send_slice_until_full(slice)
     }
     /// Sends messages from an iterator to the Tx channel until it is full.
@@ -661,6 +662,52 @@ impl SteadyCommander for SteadyContext {
         } else {
             Err(control)
         }
+    }
+
+    fn try_stream_session_message_send(&mut self
+                                       , item: &mut Tx<StreamSessionMessage>
+                                       , data: &mut Tx<u8>
+                                       , message: StreamSessionMessage
+                                       , payload_a: &[u8], payload_b: &[u8]) -> Result<(), StreamSessionMessage> {
+
+        debug_assert!(!data.make_closed.is_none(), "Send called after channel marked closed");
+        debug_assert!(!item.make_closed.is_none(), "Send called after channel marked closed");
+
+        let t1 = data.tx.push_slice(payload_a);
+        let t2 = if payload_b.len() > 0 {
+            data.tx.push_slice(payload_b)
+        } else {
+            0
+        };
+        let bytes = t1+t2;
+        debug_assert_eq!(bytes as i32, message.length);
+        let result = item.tx.try_push(message);
+        debug_assert!(result.is_ok());
+       
+        Ok(())
+    }
+
+    fn try_stream_simple_message_send(&mut self                                     
+                                      , item: &mut Tx<StreamSimpleMessage>
+                                      , data: &mut Tx<u8>
+                                      , message: StreamSimpleMessage
+                                      , payload_a: &[u8], payload_b: &[u8]) -> Result<(), StreamSimpleMessage> {
+
+        debug_assert!(!data.make_closed.is_none(), "Send called after channel marked closed");
+        debug_assert!(!item.make_closed.is_none(), "Send called after channel marked closed");
+
+        let t1 = data.tx.push_slice(payload_a);
+        let t2 = if payload_b.len() > 0 {
+            data.tx.push_slice(payload_b)
+        } else {
+            0
+        };
+        let bytes = t1+t2;
+        debug_assert_eq!(bytes as i32, message.length);
+        let result = item.tx.try_push(message);
+        debug_assert!(result.is_ok());
+
+        Ok(())
     }
 
     /// Checks if the Tx channel is currently full.
@@ -1056,6 +1103,19 @@ pub trait SteadyCommander {
     fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
                        , stream_id: i32
                        , payload: &[u8]) -> Result<(), StreamSimpleMessage>;
+
+    fn try_stream_session_message_send(&mut self
+                               , item: &mut Tx<StreamSessionMessage>
+                               , data: &mut Tx<u8>
+                               , message: StreamSessionMessage
+                               , payload_a: &[u8], payload_b: &[u8]) -> Result<(), StreamSessionMessage>;
+
+    fn try_stream_simple_message_send(&mut self
+                                      , item: &mut Tx<StreamSimpleMessage>
+                                      , data: &mut Tx<u8>  
+                                      , message: StreamSimpleMessage
+                                      , payload_a: &[u8]
+                                      , payload_b: &[u8]) -> Result<(), StreamSimpleMessage>;
 
     async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant_count: usize, vacant_bytes: usize, ready_channels: usize) -> bool;
 
