@@ -18,6 +18,8 @@ use async_ringbuf::traits::Split;
 use async_ringbuf::wrap::AsyncWrap;
 use crate::monitor::{TxMetaDataHolder};
 use ahash::AHashMap;
+use steady_state_aeron::concurrent::strategies::{BusySpinIdleStrategy, Strategy};
+//  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 #[derive(Default)]
 pub(crate) struct AeronSubscribeSteadyState {
@@ -58,6 +60,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
     let mut state_guard = steady_state(&state, || AeronSubscribeSteadyState::default()).await;
     if let Some(state) = state_guard.as_mut() {
+        //TODO: better data structure required, need a collecion of subs.
         let mut subs: [Result<Subscription, Box<dyn Error>>; GIRTH] = std::array::from_fn(|_| Err("Not Found".into()));
 
         //ensure right length
@@ -82,31 +85,30 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             };
             //trace!("released add_subscription lock");
         }
-        Delay::new(Duration::from_millis(40)).await; //back off so our request can get ready
+        Delay::new(Duration::from_millis(4)).await; //back off so our request can get ready
 
     // now lookup when the subscriptions are ready
         for f in 0..GIRTH {
             if let Some(id) = state.sub_reg_id[f] {
                 subs[f] = loop {
                     let sub = {
-                        let mut aeron = aeron.lock().await; //caution other actors need this so do jit
-                        // trace!("holding find_subscription({}) lock",id);
-                        let response = aeron.find_subscription(id);
-                        // trace!("released find_subscription({}) lock",id);
-                        response
-                    };
+                                let mut aeron = aeron.lock().await; //caution other actors need this so do jit
+                                // trace!("holding find_subscription({}) lock",id);
+                                aeron.find_subscription(id)
+                             };
                     match sub {
                         Err(e) => {
                             if e.to_string().contains("Awaiting")
                                 || e.to_string().contains("not ready") {
                                 //important that we do not poll fast while driver is setting up
-                                Delay::new(Duration::from_millis(40)).await;
+                                Delay::new(Duration::from_millis(2)).await;
                                 if cmd.is_liveliness_stop_requested() {
                                     //trace!("stop detected before finding publication");
                                     //we are done, shutdown happened before we could start up.
                                     break Err("Shutdown requested while waiting".into());
                                 }
                             } else {
+
                                 warn!("Error finding publication: {:?}", e);
                                 break Err(e.into());
                             }
@@ -119,6 +121,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                     match mutex.into_inner() {
                                         Ok(subscription) => {
                                             // Successfully extracted the ExclusivePublication
+
                                             break Ok(subscription);
                                         }
                                         Err(_) => panic!("Failed to unwrap Mutex"),
@@ -137,93 +140,108 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         warn!("running subscriber '{:?}' all subscriptions in place",cmd.identity());
 
         while cmd.is_running(&mut || tx.mark_closed()) {
-     
+
+            //warn!("looping");
             // only poll this often
-            let clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(100)) );
+            let clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
 
-            const MIN_SPACE: usize = 128;
-
-            //stay looping until we find a pass with no data.
-            loop {
                 let mut found_data = false;
                 for i in 0..GIRTH {
-                    let mut max_poll_frags = tx[i].item_channel.vacant_units();
-                    if max_poll_frags > MIN_SPACE {
                         match &mut subs[i] {
                             Ok(ref mut sub) => {
-                                if tx[i].ready.is_none() {
-                                    ////////////////////////
-                                    // stay here and poll as long as we can
-
-                                    // if !sub.is_connected() {
-                                    //     if sub.is_closed() {
-                                    //         //confirm this is a good time to shut down??
-                                    //         //TODO: then total this across all streams
-                                    //     }
-                                    // }
-
+                                if tx[i].ready.is_empty() {
                                     let mut no_count = 0;
-                                    loop {
+                                    tx[i].fragment_flush_all(&mut cmd);
+                                    let mut remaining_poll = if let Some(s)= tx[i].smallest_space() {
+                                                                     s as i32
+                                                                } else {
+                                                                    tx[i].item_channel.capacity() as i32
+                                                                };
+
+
                                         let mut local_data = false;
-                                               
-                                        sub.controlled_poll(&mut |buffer: &AtomicBuffer
-                                                                  , offset: i32
-                                                                  , length: i32
-                                                                  , header: &Header| {
-                                            
-                                            local_data = true; //1.3M/sec vs 300K ?
-                                            if tx[i].ready.is_none() { //only take data if we flushed last ready
-                                                 let flags =header.flags();
-                                                 let is_begin: bool = 0 != (flags & frame_descriptor::BEGIN_FRAG);
-                                                 let is_end: bool = 0 != (flags & frame_descriptor::END_FRAG);
-                                                 let slice = buffer.as_sub_slice(offset, length);
-                                                 tx[i].fragment_consume(&mut cmd, header.session_id(), slice, is_begin, is_end);
-                                                 if tx[i].ready.is_none() {
-                                                     //ae accepted this and are ready for another
-                                                    Ok(ControlledPollAction::CONTINUE)
-                                                 } else {
-                                                     warn!("could not write backoff");
-                                                     //we accepted this but need to backoff
-                                                     Ok(ControlledPollAction::BREAK)
-                                                 }
-                                            } else {
-                                                warn!("serious back off");
-                                                //we can not and did not accept
-                                                tx[i].fragment_flush(&mut cmd);
-                                                Ok(ControlledPollAction::ABORT)
+                                        let mut sent_count = 0;
+                                        let mut sent_bytes = 0;
+
+                                        let frags = {
+                                            //NOTE: aeron is NOT thread safe so we are forced to lock across the entire app
+                                            let mut total = 0;
+                                            //each call to this is no more than one full SOCKET_SO_RCVBUF
+                                            for z in 0..16 {
+
+                                                let c = {
+                                                    //TODO: we need to wait on this lock butalso track it.
+                                                    let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
+                                                    sub.poll(&mut |buffer: &AtomicBuffer
+                                                                           , offset: i32
+                                                                           , length: i32
+                                                                           , header: &Header| {
+                                                        local_data = true;
+                                                        let flags = header.flags();
+                                                        let is_begin: bool = 0 != (flags & frame_descriptor::BEGIN_FRAG);
+                                                        let is_end: bool = 0 != (flags & frame_descriptor::END_FRAG);
+                                                        //TODO: example project must be two projects without lock contention
+                                                        //TODO: run with profiiler
+
+                                                        tx[i].fragment_consume(header.session_id()
+                                                                               , buffer.as_sub_slice(offset, length)
+                                                                               , is_begin, is_end);
+                                                        sent_count += 1;
+                                                        sent_bytes += length;
+                                                    }, remaining_poll)
+                                                };
+                                                // if z>0 && c>0 {
+                                                //     warn!("success at {} found more {} ",z,c);
+                                                // }
+
+                                                remaining_poll -= c;
+                                                total += c;
+                                                if !tx[i].ready.is_empty() || remaining_poll<1000 {
+                                                    break;
+                                                }
+                                                cmd.relay_stats_smartly();
+                                                Delay::new(Duration::from_millis(2)).await;
+                                             //   warn!("relay stats here");
+
                                             }
-                                        }, max_poll_frags as i32); //TODO: make much larger
+                                            total
+                                        };
+                                        if !tx[i].ready.is_empty() {
+                                            tx[i].fragment_flush_ready(&mut cmd);
+                                        }
                                         if !local_data {
                                             no_count += 1;
+                                            yield_now().await;
+                                        } else {
+                                            no_count = 0;
                                         }
                                         found_data |= local_data;
-                                        cmd.relay_stats_smartly();
-                                        if  no_count>8 || tx[i].ready.is_some() {
-                                            break; //leave loop since there was no data or no room
+                                        if  no_count>5 {
+                                            //TODO: may not flush all so check again periodicly in our main loop
+                                            tx[i].fragment_flush_all(&mut cmd);
+
+                                            continue; //next stream
                                         }
-                                        max_poll_frags = tx[i].item_channel.vacant_units();
-                                        cmd.relay_stats_smartly();
-                                    }
+
 
                                     // see break, we only stop when we have no data or no room
                                     /////////////////////////////////
 
                                 } else {
-                                    tx[i].fragment_flush(&mut cmd);
+                                    tx[i].fragment_flush_ready(&mut cmd);
                                 }
                             }
                             Err(e) => {
                                 panic!("{:?}", e); //restart this actor for some reason we do not have subscription
                             }
                         }
-                    }
+                    
                 }
                 if cmd.is_liveliness_stop_requested() || !found_data {
                     break;
                 } else {
                     cmd.relay_stats_smartly();
                 }
-            }
 
         }
     }

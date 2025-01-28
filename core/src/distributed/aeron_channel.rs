@@ -34,8 +34,7 @@ pub(crate) mod aeron_utils {
         );
     }
 
-    pub fn aeron_context() -> Option<Arc<Mutex<Aeron>>> {
-        let mut aeron_context = Context::new();
+    pub fn aeron_context(mut aeron_context: Context) -> Option<Arc<Mutex<Aeron>>> {
 
         //aeron_context.set_new_publication_handler(Box::new(on_new_publication_handler));
         aeron_context.set_error_handler(Box::new(error_handler));

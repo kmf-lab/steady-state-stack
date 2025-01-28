@@ -2,6 +2,7 @@ use std::error::Error;
 use std::sync::{Arc};
 use futures_timer::Delay;
 use ringbuf::consumer::Consumer;
+use ringbuf::traits::Observer;
 use steady_state_aeron::aeron::Aeron;
 use steady_state_aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use steady_state_aeron::exclusive_publication::ExclusivePublication;
@@ -11,10 +12,16 @@ use crate::distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamRxBund
 use crate::{into_monitor, SteadyCommander, SteadyContext, SteadyState};
 use crate::*;
 use crate::monitor::{RxMetaDataHolder};
+//  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
+
+// TODO: what if we have to aeron clients talking to the same media driver? seems bad?
+
+const ITEMS_BUFFER_SIZE:usize = 1000;
 
 #[derive(Default)]
 pub(crate) struct AeronPublishSteadyState {
     pub(crate) pub_reg_id: Vec<Option<i64>>,
+    pub(crate) items_taken: usize,
 }
 
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
@@ -58,7 +65,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             };
             //trace!("released add_exclusive_publication lock");
         }
-        Delay::new(Duration::from_millis(20)).await; //back off so our request can get ready
+        Delay::new(Duration::from_millis(2)).await; //back off so our request can get ready
 
         // now lookup when the publications are ready
             for f in 0..GIRTH {
@@ -76,7 +83,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                 if e.to_string().contains("Awaiting")
                                     || e.to_string().contains("not ready") {
                                     //important that we do not poll fast while driver is setting up
-                                    Delay::new(Duration::from_millis(40)).await;
+                                    Delay::new(Duration::from_millis(4)).await;
                                     if cmd.is_liveliness_stop_requested() {
                                         //trace!("stop detected before finding publication");
                                         //we are done, shutdown happened before we could start up.
@@ -95,6 +102,19 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         match mutex.into_inner() {
                                             Ok(publication) => {
                                                 // Successfully extracted the ExclusivePublication
+                                                loop {
+                                                    warn!("pub {} max_message_length {} max_message_length {} available_window {:?}"
+                                                           , publication.session_id(),  publication.max_message_length(), publication.max_message_length(), publication.available_window() );
+                                                    // 
+                                                    if let Ok(w) = publication.available_window() {
+                                                        if w>1024 {
+                                                            break; //we have a window!!
+                                                        }
+                                                        Delay::new(Duration::from_millis(40));
+                                                    } else {
+                                                        Delay::new(Duration::from_millis(200));
+                                                    }
+                                                }
                                                 break Ok(publication);
                                             }
                                             Err(_) => panic!("Failed to unwrap Mutex"),
@@ -110,98 +130,76 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                 }
             }
 
+        warn!("running publish '{:?}' all publications in place",cmd.identity());
 
-        warn!("running publisher '{:?}' all publications in place",cmd.identity());
-
-        let wait_for = 16000;
+        let wait_for = 131072;
         let mut backoff = false;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
             let clean = if backoff {
-                await_for_all!(cmd.wait_periodic(Duration::from_millis(100)),
+                await_for_all!(cmd.wait_periodic(Duration::from_millis(10)),
                                cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1))
             } else {
+                cmd.relay_stats_smartly();
                 await_for_all!(cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1))
             };
 
             let mut count_done = 0;
+            let mut count_bytes = 0;
 
                 backoff = false;
-                for i in 0..GIRTH {                    
-                   
-                        while let Some(stream_message) = cmd.try_peek(&mut rx[i].item_channel) {
-                           
-                                match &mut pubs[i] {
-                                    Ok(p) => {
-                                        let message_length = stream_message.length as usize;
-                                        let (a, b) = rx[i].payload_channel.rx.as_mut_slices(); //TODO: better function?
-                                        let a_len = message_length.min(a.len());
-                                        let remaining_read = message_length - a_len;
-
-                                        let offer_response = if remaining_read == 0 {
-                                            p.offer_part(AtomicBuffer::wrap_slice(&mut a[0..a_len]), 0, message_length as Index)
-                                        } else {
-                                            // Rare case: we are going over the edge, so we are forced to copy the data
-                                            // NOTE: With patch to exclusive_publication, we could avoid this copy
-                                            let aligned_buffer = AlignedBuffer::with_capacity(message_length as Index);
-                                            let mut buf = AtomicBuffer::from_aligned(&aligned_buffer);
-
-                                            // SAFETY: Ensure that memory regions do not overlap
-                                            assert!(a_len + remaining_read <= aligned_buffer.len as usize);
-
-                                            // Use non-overlapping memory copy for safety
-                                            buf.put_bytes(0, &a[..a_len]);
-                                            //warn!("to read {} and buf now {:?} ",message_length, &buf.as_slice()[..a_len.min(40)]);
-
-                                            let b_len = remaining_read.min(b.len());
-                                            let extended_read = remaining_read - b_len;
-
-                                            buf.put_bytes(a_len as Index, &b[..b_len]);
-
-                                            // Check if the entire expected data has been read
-                                            assert_eq!(0, extended_read, "Error: not all data was read into buffer!");
-
-                                            // Add detailed warnings for debugging purposes
-                                            // warn!("Buffer content (A): {:?}", &buf.as_slice()[..message_length.min(40)]);
-                                            p.offer_part(buf, 0, message_length as Index)
-
-                                        };
+                for i in 0..GIRTH {
+                    //buld a working batch solution first and then extract to functions later
+                    //peek a block ahead, 
 
 
-                                        // const APP_ID:i64 = 8675309;
-                                        // //TODO: need to use this field to hash payload with our private key.
-                                        // let f: OnReservedValueSupplier = |buf, start, _len| {
-                                        //     // Example hash calculation of the data in the buffer
-                                        //     //calculate_hash(buf, start, len)
-                                        //     APP_ID // + buf.get_bytes(start)
-                                        // };
-                                        match offer_response {
-                                            Ok(_value) => {
-                                                count_done += 1;
-                                                //worked so we can now finalize the take
-                                                let msg = cmd.try_take(&mut rx[i].item_channel);
-                                                debug_assert!(msg.is_some());
-                                                let actual = cmd.advance_index(&mut rx[i].payload_channel, message_length);
-                                                debug_assert_eq!(actual, message_length);
-                                            },
-                                            Err(aeron_error) => {
-                                                //warn!("backoff message {}",aeron_error);
-                                                backoff= true;
-                                                break; //go on to next stream this one is full
-                                            }
+                       //provide every message and slice until false is returned at that point
+                        //we release everything consumed up to this point and return or if no data
+                        //upon return release
+                    match &mut pubs[i] {
+                        Ok(p) => {
+                            let vacant_aeron_bytes = p.available_window().unwrap_or(0);
+                            if vacant_aeron_bytes >=  1024 *1024 {
+                                let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
+                                rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], mut slice2: &mut [u8]| {
+                                    let msg_len = slice1.len() + slice2.len();
+                                    assert!(msg_len>0);
+                                    let response = if slice2.len() == 0 {
+                                        p.offer_part(AtomicBuffer::wrap_slice(&mut slice1), 0, msg_len as Index)
+                                    } else {  // TODO: p.try_claim() is probably a beter  way to move our datarather than AtomicBuffer usage..
+                                        let a_len = msg_len.min(slice1.len());
+                                        let remaining_read = msg_len - a_len;
+                                        let aligned_buffer = AlignedBuffer::with_capacity(msg_len as Index);
+                                        let mut buf = AtomicBuffer::from_aligned(&aligned_buffer);
+                                        buf.put_bytes(0, slice1);
+                                        let b_len = remaining_read.min(slice2.len());
+                                        let _extended_read = remaining_read - b_len;
+
+                                        buf.put_bytes(a_len as Index, slice2);
+                                        p.offer_part(buf, 0, msg_len as Index)
+                                    };
+                                    match response {
+                                        Ok(_value) => {
+                                            count_done += 1;
+                                            count_bytes+=msg_len;
+                                            true
+                                        }
+                                        Err(aeron_error) => {
+                                            backoff = true;
+                                            false
                                         }
                                     }
-                                    Err(e) => {
-                                        panic!("{:?}",e);//we should have had the pup so try again
-                                    }
-                                }
-                                                                      
+                                });                         
+                            }
                         }
+                        Err(e) => {
+                            panic!("{:?}", e); //we should have had the pup so try again
+                        }
+                    }                   
+                    
                 }
 
-            if count_done>0 {
-              //  warn!("count done per pass {}",count_done);
-            }
+
          }        
     }
     Ok(())
@@ -219,8 +217,22 @@ pub(crate) mod aeron_tests {
     use crate::distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
 
     //NOTE: bump this up for longer running load tests
-    pub const TEST_ITEMS: usize = 2_000_000_000;
-    pub const STREAM_ID: i32 = 5; 
+    pub const TEST_ITEMS: usize = 20_000_000_000;
+    pub const STREAM_ID: i32 = 12;
+    //TODO: review the locking and init of terms in shared context??
+    // The max length of a term buffer is 1GB (ie 1024MB) Imposed by the media driver.
+    pub const TERM_MB: i32 = 64; //at 1MB we are targeting 12M messages per second
+       //our goal is to clear 39M messages per second requiring 4MB
+       // a single stream at 64 maps 400MB of live shared memory
+    // https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
+    // Check SO_RCVBUF and SO_SNDBUF settings on the NICs and the OS
+    
+    // for loopback testing, we may need queue length to hold more units for 4MB of buffer data
+    // ip link show lo | grep qlen
+    // sudo ip link set lo txqueuelen 10000
+
+    // sudo ss -tulnpe | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
+    // sudo ss -m -p | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
 
     pub async fn mock_sender_run<const GIRTH: usize>(mut context: SteadyContext
                                                      , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
@@ -228,24 +240,47 @@ pub(crate) mod aeron_tests {
         let mut cmd = into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data()));
         let mut tx = tx.lock().await;
 
+        let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
+        let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
+
+        const BATCH_SIZE:usize = 5000;
+        let mut items: [StreamSimpleMessage; BATCH_SIZE] = [StreamSimpleMessage::new(8);BATCH_SIZE];
+        let mut data: [[u8;8]; BATCH_SIZE] = [data1; BATCH_SIZE];
+        for i in 0..BATCH_SIZE {
+            if i % 2 == 0 {
+                data[i] = data1;
+            } else {
+                data[i] = data2;
+            }
+        }
+        let all_bytes: Vec<u8> = data.iter().flatten().map(|f| *f).collect();
+
         let mut sent_count = 0;
         while cmd.is_running(&mut || tx.mark_closed()) {
 
             //waiting for at least 1 channel in the stream has room for 2 made of 6 bytes
-            let vacant_items = 20000;
+            let vacant_items = 200000;
             let data_size = 8;
             let vacant_bytes = vacant_items * data_size;
 
-            let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx, vacant_items, vacant_bytes, 1));
-            let remaining = TEST_ITEMS - sent_count;
+            let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx
+                                       , vacant_items, vacant_bytes, 1));
 
-            if remaining > 0 {
-                let actual_vacant = cmd.vacant_units(&mut tx[0].item_channel).min(remaining);
-                for _i in 0..(actual_vacant >> 1) {
-                    let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &[1, 2, 3, 4, 5, 6, 7, 8]);
-                    let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &[9, 10, 11, 12, 13, 14, 15, 16]);
-                }
-                sent_count += actual_vacant;
+            let mut remaining = TEST_ITEMS;
+            let idx:usize = (STREAM_ID - tx[0].stream_id) as usize;
+            while remaining > 0 && cmd.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
+
+                //cmd.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
+                cmd.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
+                cmd.send_slice_until_full(&mut tx[idx].item_channel, &items);
+
+                // this old solution worked but consumed more core
+                // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
+                //     let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data1);
+                //     let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data2);
+                // }
+                sent_count += BATCH_SIZE;
+                remaining -= BATCH_SIZE
             }
 
             if sent_count>=TEST_ITEMS {
@@ -268,28 +303,28 @@ pub(crate) mod aeron_tests {
         let mut received_count = 0;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
 
-            let messages_required = 40_000;
-            let _clean = await_for_all!(
-                                       // cmd.wait_periodic(Duration::from_millis(400)),
-                                        cmd.wait_closed_or_avail_message_stream(&mut rx, messages_required,1));
+            let messages_required = 200_000;
+            let _clean = await_for_all!(cmd.wait_closed_or_avail_message_stream(&mut rx, messages_required,1));
 
             //we waited above for 2 messages so we know there are 2 to consume
             //reading from a single channel with a single stream id
 
             let avail = cmd.avail_units(&mut rx[0].item_channel);
+            let data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
+            let data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
 
             for i in 0..(avail>>1) {
                 if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
                     //warn!("test data {:?}",d.payload);
-                    assert_eq!(&*Box::new([1, 2, 3, 4, 5, 6, 7, 8]), &*d.payload);
+                    debug_assert_eq!(&*data1, &*d.payload);
                 }
                 if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
                     //warn!("test data {:?}",d.payload);
-                    assert_eq!(&*Box::new([9, 10, 11, 12, 13, 14, 15, 16]), &*d.payload);
+                    debug_assert_eq!(&*data2, &*d.payload);
                 }
             }
             received_count += messages_required;
-            cmd.relay_stats_smartly(); //should not be needed.
+            //cmd.relay_stats_smartly(); //should not be needed.
 
             //here we request shutdown but we only leave after our upstream actors are done
             if received_count >= (TEST_ITEMS-messages_required) {
@@ -325,8 +360,8 @@ pub(crate) mod aeron_tests {
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
             .build_as_stream::<StreamSimpleMessage,1>(STREAM_ID
-                                                                  , 911937
-                                                                  , 9119370);
+                                                                  , 4*1024*1024
+                                                                  , 32*1024*1024);
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_avg_rate()
             .with_avg_filled()
@@ -334,23 +369,30 @@ pub(crate) mod aeron_tests {
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
             .build_as_stream::<StreamSessionMessage,1>(STREAM_ID
-                                                                   , 937197
-                                                                   , 9371970);
+                                                                   , 4*1024*1024
+                                                                   , 32*1024*1024);
 
+        //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
         let aeron_config = AeronConfig::new()            
-            .with_media_type(MediaType::Udp)
+            //TODO: to hack Ipc we need point to point and no term length
+            .with_media_type(MediaType::Ipc) //Udp
             .use_point_to_point(Endpoint {
                 ip: "127.0.0.1".parse().expect("Invalid IP address"),
                 port: 40456,
             })
-            
-            
-            .with_term_length(1024 * 1024 * 32)
-            .build(); 
+            //.with_term_length((1024 * 1024 * TERM_MB) as usize)
+            .build();
+
+
         let dist =  DistributedTech::Aeron(aeron_config);
 
+        //set this up first so sender has a place to send to
+        graph.actor_builder().with_name("MockReceiver")
+            .with_mcpu_avg()
+            .with_thread_info()
+            .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
+                   , &mut Threading::Spawn);
 
-      //let this create the pipe first??
         graph.build_stream_collector(dist.clone()
                                      , "ReceiverTest"
                                      , from_aeron_tx
@@ -367,11 +409,6 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
                    , &mut Threading::Spawn);
 
-        graph.actor_builder().with_name("MockReceiver")
-            .with_mcpu_avg()
-            .with_thread_info()
-            .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
-                   , &mut Threading::Spawn);
 
         graph.start(); //startup the graph
 

@@ -18,8 +18,11 @@ use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
 use futures::stream::{FuturesUnordered, StreamExt};
+use log::warn;
+use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
-use crate::distributed::steady_stream::{StreamItem, StreamSessionMessage, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, StreamData, StreamTx};
+use ringbuf::traits::Observer;
+use crate::distributed::steady_stream::{StreamItem, StreamSessionMessage, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, StreamData, StreamTx, Defrag};
 use crate::util::logger;
 
 impl SteadyContext {
@@ -664,50 +667,53 @@ impl SteadyCommander for SteadyContext {
         }
     }
 
-    fn try_stream_session_message_send(&mut self
-                                       , item: &mut Tx<StreamSessionMessage>
-                                       , data: &mut Tx<u8>
-                                       , message: StreamSessionMessage
-                                       , payload_a: &[u8], payload_b: &[u8]) -> Result<(), StreamSessionMessage> {
+    fn flush_defrag_messages<S: StreamItem>(&mut self
+                                            , out_item: &mut Tx<S>
+                                            , out_data: &mut Tx<u8>
+                                            , defrag: &mut Defrag<S>) -> Option<i32> {
 
-        debug_assert!(!data.make_closed.is_none(), "Send called after channel marked closed");
-        debug_assert!(!item.make_closed.is_none(), "Send called after channel marked closed");
 
-        let t1 = data.tx.push_slice(payload_a);
-        let t2 = if payload_b.len() > 0 {
-            data.tx.push_slice(payload_b)
+        //slice messages
+        let (items_a, items_b) = defrag.ringbuffer_items.1.as_slices();
+        //warn!("on ring buffer items {} {}",items_a.len(),items_b.len());
+        let msg_count = out_item.tx.vacant_len().min(items_a.len()+items_b.len());
+        let msg_count = msg_count.min(50000); //hack test must be smaller than our channel!!!
+        let items_len_a = msg_count.min(items_a.len()) as usize;
+        let items_len_b = msg_count - items_len_a;
+        //sum messages length
+        let total_bytes_a = items_a[0..items_len_a].iter().map(|x| x.length()).sum::<i32>() as usize;
+        let total_bytes_b = items_b[0..items_len_b].iter().map(|x| x.length()).sum::<i32>() as usize;
+        let total_bytes = total_bytes_a + total_bytes_b;
+        //warn!("push one large group {} {}",msg_count,total_bytes);
+        if total_bytes <= out_data.tx.vacant_len() {
+            //move this slice to the tx
+            let (payload_a, payload_b) = defrag.ringbuffer_bytes.1.as_slices();
+            // warn!("tx payload slices {} {}",payload_a.len(),payload_b.len());
+
+            let len_a = total_bytes.min(payload_a.len()) as usize;
+            out_data.tx.push_slice(&payload_a[0..len_a]);
+            let len_b = total_bytes - len_a;
+            if len_b > 0 {
+                out_data.tx.push_slice(&payload_b[0..len_b]);
+            }
+            unsafe {
+                defrag.ringbuffer_bytes.1.advance_read_index(total_bytes)
+            }
+            //move the messages
+            //warn!("tx push slice {} {}",len_a,len_b);
+            out_item.tx.push_slice(&items_a[0..items_len_a]);
+            if items_len_b > 0 {
+                out_item.tx.push_slice(&items_b[0..items_len_b]);
+            }
+            unsafe {
+                defrag.ringbuffer_items.1.advance_read_index(msg_count)
+            }
         } else {
-            0
-        };
-        let bytes = t1+t2;
-        debug_assert_eq!(bytes as i32, message.length);
-        let result = item.tx.try_push(message);
-        debug_assert!(result.is_ok());
-       
-        Ok(())
-    }
-
-    fn try_stream_simple_message_send(&mut self                                     
-                                      , item: &mut Tx<StreamSimpleMessage>
-                                      , data: &mut Tx<u8>
-                                      , message: StreamSimpleMessage
-                                      , payload_a: &[u8], payload_b: &[u8]) -> Result<(), StreamSimpleMessage> {
-
-        debug_assert!(!data.make_closed.is_none(), "Send called after channel marked closed");
-        debug_assert!(!item.make_closed.is_none(), "Send called after channel marked closed");
-
-        let t1 = data.tx.push_slice(payload_a);
-        let t2 = if payload_b.len() > 0 {
-            data.tx.push_slice(payload_b)
-        } else {
-            0
-        };
-        let bytes = t1+t2;
-        debug_assert_eq!(bytes as i32, message.length);
-        let result = item.tx.try_push(message);
-        debug_assert!(result.is_ok());
-
-        Ok(())
+            //skipped no room
+            warn!("no room skipped");
+            return Some(defrag.session_id); //try again later and do not pick up more
+        }
+        None
     }
 
     /// Checks if the Tx channel is currently full.
@@ -1100,22 +1106,18 @@ pub trait SteadyCommander {
         T: Send + Sync,
     ;
 
-    fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
+    fn try_stream_send(&mut self
+                       , this: &mut StreamTxBundle<'_, StreamSimpleMessage>
                        , stream_id: i32
                        , payload: &[u8]) -> Result<(), StreamSimpleMessage>;
 
-    fn try_stream_session_message_send(&mut self
-                               , item: &mut Tx<StreamSessionMessage>
-                               , data: &mut Tx<u8>
-                               , message: StreamSessionMessage
-                               , payload_a: &[u8], payload_b: &[u8]) -> Result<(), StreamSessionMessage>;
-
-    fn try_stream_simple_message_send(&mut self
-                                      , item: &mut Tx<StreamSimpleMessage>
-                                      , data: &mut Tx<u8>  
-                                      , message: StreamSimpleMessage
-                                      , payload_a: &[u8]
-                                      , payload_b: &[u8]) -> Result<(), StreamSimpleMessage>;
+    fn flush_defrag_messages<S: StreamItem>(&mut self
+                                            , item: &mut Tx<S>
+                                            , data: &mut Tx<u8>
+                                            , defrag: &mut Defrag<S>
+                                ) -> Option<i32>;
+    
+       
 
     async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant_count: usize, vacant_bytes: usize, ready_channels: usize) -> bool;
 

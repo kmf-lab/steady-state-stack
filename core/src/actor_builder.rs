@@ -543,6 +543,8 @@ impl ActorBuilder {
             I: Fn(SteadyContext) -> F + 'static,
             F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
+        //TODO: need with_??? to set core affnity.
+        
         let team_id = self.team_count.clone().fetch_add(1, Ordering::SeqCst);
         let thread_lock = self.thread_lock.clone();
         let rate_ms = self.frame_rate_ms;

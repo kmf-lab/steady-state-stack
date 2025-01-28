@@ -215,8 +215,9 @@ impl AeronConfig {
             .expect("media_type must be set before build()");
 
         match self.mode {
-            AeronMode::None => {
+            AeronMode::None => {                
                 panic!("No channel mode selected (point-to-point or multicast).");
+                               
             }
 
             AeronMode::PointToPoint => {

@@ -408,7 +408,7 @@ fn gather_node_details(
                                   if meta.id == i {
                                       let msg = format!("Possible missing TX for actor {:?} RX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
                                       let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
-                                      if *count ==5 {
+                                      if *count ==21 {
                                           warn!("{}",msg);
                                       }
 
@@ -419,7 +419,7 @@ fn gather_node_details(
                                   if meta.id == i {
                                       let msg = format!("Possible missing RX for actor {:?} TX {:?} Channel:{:?} ", sender.ident, meta.show_type, i);
                                       let count = state.error_map.entry(msg.clone()).and_modify(|c| {*c += 1u32;}).or_insert(0u32);
-                                      if *count==5 {
+                                      if *count==21 {
                                           warn!("{}",msg);
                                       }
                                   }
