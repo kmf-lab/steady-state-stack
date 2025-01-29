@@ -43,7 +43,9 @@ pub struct ActorBuilder {
     runtime_state: Arc<RwLock<GraphLiveliness>>,
     actor_count: Arc<AtomicUsize>,
     thread_lock: Arc<Mutex<()>>,
-
+    excluded_cores: Vec<usize>,
+    core_balancer: Option<CoreBalancer>,
+    explicit_core: Option<usize>,
     refresh_rate_in_bits: u8,
     window_bucket_in_bits: u8,
     usage_review: bool,
@@ -61,6 +63,35 @@ pub struct ActorBuilder {
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     backplane: Arc<Mutex<Option<SideChannelHub>>>,
     team_count: Arc<AtomicUsize>,
+}
+
+#[derive(Clone)]
+pub struct CoreBalancer {
+    core_usage: Vec<usize>,  // Tracks how many actors are assigned to each core
+}
+
+impl CoreBalancer {
+    fn new(total_cores: usize) -> Self {
+        CoreBalancer {
+            core_usage: vec![0; total_cores],
+        }
+    }
+
+    fn allocate_core(&mut self, excluded_cores: &[usize]) -> usize {
+        // Step 1: Find the core with the least usage (immutable borrow)
+        let core = self.core_usage
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !excluded_cores.contains(i))
+            .min_by_key(|(_, &count)| count)
+            .map(|(core, _)| core)
+            .expect("No available cores");
+
+        // Step 2: Increment the usage count for the selected core (mutable borrow)
+        self.core_usage[core] += 1;
+
+        core
+    }
 }
 
 #[cfg(feature = "core_affinity")]
@@ -180,16 +211,27 @@ impl ActorTeam {
         if self.future_builder.is_empty() {
             return 0; // Nothing to spawn, so return
         }
-
+        
+        //TODO: repair this later right now teams do not yet support specifci core selection logic
+        //      see spawn logic and rethink this here.        
+        
         let (local_send, local_take) = oneshot::channel();
         let count_task = count.clone();
         let team_id = self.team_id;
 
         let super_task = {
             async move {
-                //println!("spawn ActorTeam {:?}", self.team_id); //shoudl not all be zero.
+                // Determine the core to use based on the provided options
+                let core = team_id;//  TODO: new work goes here to select cores
+                
+
+                // Pin the thread to the selected core if the `core_affinity` feature is enabled
                 #[cfg(feature = "core_affinity")]
-                let _= pin_thread_to_core(team_id);
+                {
+                    if let Err(e) = pin_thread_to_core(core) {
+                        eprintln!("Failed to pin thread to core {}: {:?}", core, e);
+                    }
+                }
 
 
                 //NOTE: call will Register this node which MUST be done before we release local_send.send();
@@ -354,6 +396,7 @@ impl ActorBuilder {
             actor_name: ActorName::new("",None),
             backplane: graph.backplane.clone(),
             thread_lock: graph.thread_lock.clone(),
+            excluded_cores: vec![],
             actor_count: graph.actor_count.clone(),
             args: graph.args.clone(),
             telemetry_tx: graph.all_telemetry_rx.clone(),
@@ -369,11 +412,13 @@ impl ActorBuilder {
             trigger_mcpu: Vec::with_capacity(0),
             trigger_load: Vec::with_capacity(0),
             team_count: graph.team_count.clone(),
+            explicit_core: None,
             show_thread_info: false,
             avg_mcpu: false,
             avg_load: false,
             frame_rate_ms: graph.telemetry_production_rate_ms,
             usage_review: false,
+            core_balancer: None,
         }
     }
 
@@ -394,6 +439,27 @@ impl ActorBuilder {
         result.window_bucket_in_bits = window_in_bits;
         result
     }
+
+
+    pub fn with_core_exclusion(mut self, cores: Vec<usize>) -> Self {
+        let mut result = self.clone();
+        result.excluded_cores = cores;
+        result
+    }
+
+    pub fn with_core_balancing(mut self, balancer: CoreBalancer) -> Self {
+        let mut result = self.clone();
+        result.core_balancer = Some(balancer);
+        result
+    }
+
+    //zero based.
+    pub fn with_explicit_core(mut self, zero_offset_core: usize) -> Self {
+        let mut result = self.clone();
+        result.explicit_core = Some(zero_offset_core);
+        result
+    }
+    
 
     /// Disables any metric collection
     /// 
@@ -543,13 +609,17 @@ impl ActorBuilder {
             I: Fn(SteadyContext) -> F + 'static,
             F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
-        //TODO: need with_??? to set core affnity.
+        // Clone the necessary fields to avoid moving `self` into the closure
+        let excluded_cores = self.excluded_cores.clone();
+        let core_balancer = self.core_balancer.clone();
+        let explicit_core = self.explicit_core.clone();
         
-        let team_id = self.team_count.clone().fetch_add(1, Ordering::SeqCst);
+        let default_core = self.team_count.clone().fetch_add(1, Ordering::SeqCst);
         let thread_lock = self.thread_lock.clone();
         let rate_ms = self.frame_rate_ms;
         let context_archetype = self.single_actor_exec_archetype(build_actor_exec);
 
+        
         nuclei::block_on(async move {
            let _guard = thread_lock.lock().await;
            match nuclei::spawn_more_threads(1).await {
@@ -557,11 +627,38 @@ impl ActorBuilder {
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
            }
             let fun:NonSendWrapper<DynCall> =  build_actor_registration(&context_archetype);
-            let master_ctx:SteadyContext = build_actor_context(&context_archetype, rate_ms, team_id);
+            let master_ctx:SteadyContext = build_actor_context(&context_archetype, rate_ms, default_core);
 
             nuclei::spawn(async move {
-               #[cfg(feature = "core_affinity")]
-               let _ = pin_thread_to_core(team_id);
+                // Determine the core to use based on the provided options
+                let default = if let Some(exp) = explicit_core {exp} else {default_core};
+                let core = if let Some(mut balancer) = core_balancer {
+                    // Use the balancer to allocate a core, respecting exclusions
+                    balancer.allocate_core(&excluded_cores)
+                } else if !excluded_cores.is_empty() {
+                    if !excluded_cores.contains(&default) {
+                        // Use the default_core if it is not excluded
+                        default
+                    } else {
+                        // If the default_core is excluded, find the first available core that is not excluded
+                        (0..excluded_cores.len())
+                            .find(|&core| !excluded_cores.contains(&core))
+                            .unwrap_or(default) // Fall back to default_core if no valid core is found
+                    }
+                } else {
+                    // Default behavior: use the default core
+                    default
+                };
+
+                // Pin the thread to the selected core if the `core_affinity` feature is enabled
+                #[cfg(feature = "core_affinity")]
+                {
+                    if let Err(e) = pin_thread_to_core(core) {
+                        eprintln!("Failed to pin thread to core {}: {:?}", core, e);
+                    }
+                }
+
+                println!("Actor assigned to core: {}", core);
 
                 loop {
                    match catch_unwind(AssertUnwindSafe( || {

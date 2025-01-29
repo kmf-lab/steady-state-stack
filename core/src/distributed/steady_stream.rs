@@ -453,7 +453,7 @@ impl<T: StreamItem> StreamTx<T> {
 
 
 
-
+#[derive(Clone, Debug)]
 pub struct StreamData<T: StreamItem> {
     pub item: T,
     pub payload: Box<[u8]>,
@@ -531,9 +531,9 @@ impl<T: StreamItem> StreamRx<T> {
             // Apply the provided function to the payload slices
             if active_data+(i.length() as usize) >= byte_limit || !fun(a, b) {
                 // If the limit is reached or the function returns false, advance the read indices and exit
-                let x = cmd.advance_index(&mut self.payload_channel, active_data);
+                let x = cmd.advance_read_index(&mut self.payload_channel, active_data);
                 debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
-                let x = cmd.advance_index(&mut self.item_channel, active_items);
+                let x = cmd.advance_read_index(&mut self.item_channel, active_items);
                 debug_assert_eq!(x, active_items, "Item channel advance mismatch");
                 return;
             }
@@ -557,9 +557,9 @@ impl<T: StreamItem> StreamRx<T> {
             // Apply the provided function to the payload slices
             if active_data+(i.length() as usize) >= byte_limit || !fun(a, b) {
                 // If the limit is reached or the function returns false, advance the read indices and exit
-                let x = cmd.advance_index(&mut self.payload_channel, active_data);
+                let x = cmd.advance_read_index(&mut self.payload_channel, active_data);
                 debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
-                let x = cmd.advance_index(&mut self.item_channel, active_items);
+                let x = cmd.advance_read_index(&mut self.item_channel, active_items);
                 debug_assert_eq!(x, active_items, "Item channel advance mismatch");
                 return;
             }
@@ -571,9 +571,9 @@ impl<T: StreamItem> StreamRx<T> {
 
         // !("we made it to the end with {}",active_items);
         // If all items are processed successfully, advance the read indices
-        let x = cmd.advance_index(&mut self.payload_channel, active_data);
+        let x = cmd.advance_read_index(&mut self.payload_channel, active_data);
         debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
-        let x = cmd.advance_index(&mut self.item_channel, active_items);
+        let x = cmd.advance_read_index(&mut self.item_channel, active_items);
         debug_assert_eq!(x, active_items, "Item channel advance mismatch");
     }
 

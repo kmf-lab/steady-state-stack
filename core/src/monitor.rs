@@ -13,6 +13,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::thread::ThreadId;
 use async_ringbuf::producer::AsyncProducer;
+use bytes::BufMut;
 use futures::channel::oneshot;
 use futures_util::{select, FutureExt};
 use ringbuf::consumer::Consumer;
@@ -941,7 +942,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
 
 
-    fn advance_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize {
+    fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
@@ -1501,6 +1502,97 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         }
     }
 
+
+    fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize {
+        if let Some(ref st) = self.telemetry.state {
+            let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+
+        //count total items we will take
+        let total_items = LEN.min(this.item_channel.avail_units());
+
+        //item backing arrays plus specific lengths
+        let (item_a,item_b) = this.item_channel.rx.as_slices();
+        let item_a_len = total_items.min(item_a.len());
+        let item_b_len = total_items-item_a_len;
+
+        // all bytes consumed by all these items
+        let mut total_bytes = 0;
+
+        let (payload_a,payload_b) = this.payload_channel.rx.as_slices();
+        let mut first_payload_block = true; //start with first block
+        let mut payload_index = 0; //payload index for current active payload
+
+        let mut item_target_index = 0;
+        for i in 0..item_a_len {
+            let item = item_a[i];
+            total_bytes += item.length();
+
+            if first_payload_block {
+                let next_payload = payload_index+item.length();
+                if next_payload <= payload_a.len() as i32 { //normal case
+                    target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize..next_payload as usize].into());
+                    payload_index = next_payload;
+                } else {//rare case where we span
+                    let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
+                    let b_len = item.length() as usize - a_len as usize ;
+                    let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
+                    vec.put_slice(&payload_a[payload_index as usize ..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
+                    vec.put_slice(&payload_b[0 as usize ..(0+b_len) as usize]);
+                    target[item_target_index] = StreamData::new(item, vec.into());
+                    first_payload_block=false;
+                    payload_index= b_len as i32;
+                }
+            } else { //normal case
+                let next_payload = payload_index+item.length();
+                target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize ..next_payload as usize].into());
+                payload_index = next_payload;
+            }
+            item_target_index += 1;
+        }
+        for i in 0..item_b_len {
+            let item = item_b[i];
+            total_bytes += item.length();
+
+            if first_payload_block {
+                let next_payload = payload_index+item.length();
+                if next_payload <= payload_a.len() as i32 { //normal case
+                    target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize .. next_payload as usize].into());
+                    payload_index = next_payload;
+                } else {//rare case where we span
+                    let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
+                    let b_len = item.length() as usize - a_len;
+                    let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
+                    vec.put_slice(&payload_a[payload_index as usize..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
+                    vec.put_slice(&payload_b[0 as usize..(0+b_len) as usize]);
+                    target[item_target_index] = StreamData::new(item, vec.into());
+                    first_payload_block=false;
+                    payload_index= b_len as i32;
+                }
+            } else { //normal case
+                let next_payload = payload_index+item.length();
+                target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize..next_payload as usize].into());
+                payload_index = next_payload;
+            }
+            item_target_index += 1;
+        }
+
+        this.payload_channel.shared_advance_index(total_bytes as usize);
+        this.item_channel.shared_advance_index(total_items as usize);
+
+
+        this.item_channel.local_index = self.dynamic_event_count(
+            this.item_channel.local_index,
+            this.item_channel.channel_meta_data.id,
+            total_items as isize);
+        this.payload_channel.local_index = self.dynamic_event_count(
+            this.payload_channel.local_index,
+            this.payload_channel.channel_meta_data.id,
+            total_bytes as isize);
+        return total_items as usize;
+    }
+
+
     fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -1510,13 +1602,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         if let Some(item) = item {
             let len = item.length();
             debug_assert!(len>0, "no point in sending empty items");
-            // let mut target = Vec::with_capacity(len as usize);
-            // assert!(this.payload_channel.avail_units() as i32>=len);
-            // unsafe { target.set_len(len as usize); }
-            // let count = self.take_slice(&mut this.payload_channel, &mut target);           
-            // debug_assert_eq!(count as i32,len);
-            // let box_slice = target.into_boxed_slice();
-
 
             // Allocate uninitialized memory for the slice
             let mut box_slice = Box::new_uninit_slice(len as usize);

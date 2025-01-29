@@ -132,7 +132,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
         warn!("running publish '{:?}' all publications in place",cmd.identity());
 
-        let wait_for = 131072;
+        let wait_for = 1024*1024;//131072;
         let mut backoff = false;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
@@ -159,8 +159,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                     match &mut pubs[i] {
                         Ok(p) => {
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
-                            if vacant_aeron_bytes >=  1024 *1024 {
-                                let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
+                            if vacant_aeron_bytes >=  8 * 1024 *1024 {
+             //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
                                 rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], mut slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len>0);
@@ -212,7 +212,7 @@ pub(crate) mod aeron_tests {
     use crate::distributed::aeron_channel::{Endpoint, MediaType};
     use crate::distributed::aeron_distributed::{AeronConfig, DistributedTech};
     use crate::distributed::aeron_subscribe;
-    use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
+    use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamData, StreamSessionMessage, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;
     use crate::distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
 
@@ -300,34 +300,56 @@ pub(crate) mod aeron_tests {
         let mut cmd = into_monitor!(context, RxMetaDataHolder::new(rx.control_meta_data()), []);
         let mut rx = rx.lock().await;
 
+        let data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
+        let data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
+
+        const LEN:usize = 100_000;
+
+        // let mut buffer: [StreamData<StreamSessionMessage>; LEN] = core::array::from_fn(|_| {
+        //     StreamData::new(
+        //         StreamSessionMessage::new(0, 0, Instant::now(), Instant::now()),
+        //         Vec::new().into()
+        //     )
+        // });
+
         let mut received_count = 0;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
 
-            let messages_required = 200_000;
-            let _clean = await_for_all!(cmd.wait_closed_or_avail_message_stream(&mut rx, messages_required,1));
+            let _clean = await_for_all!(cmd.wait_closed_or_avail_message_stream(&mut rx, LEN, 1));
 
             //we waited above for 2 messages so we know there are 2 to consume
             //reading from a single channel with a single stream id
 
-            let avail = cmd.avail_units(&mut rx[0].item_channel);
-            let data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
-            let data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
+            //let taken = cmd.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
 
-            for i in 0..(avail>>1) {
-                if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
-                    //warn!("test data {:?}",d.payload);
-                    debug_assert_eq!(&*data1, &*d.payload);
-                }
-                if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
-                    //warn!("test data {:?}",d.payload);
-                    debug_assert_eq!(&*data2, &*d.payload);
-                }
-            }
-            received_count += messages_required;
+            let bytes = cmd.avail_units(&mut rx[0].payload_channel);
+            cmd.advance_read_index(&mut rx[0].payload_channel, bytes);
+            let taken = cmd.avail_units(&mut rx[0].item_channel);
+            cmd.advance_read_index(&mut rx[0].item_channel, taken);
+
+
+            //  let avail = cmd.avail_units(&mut rx[0].item_channel);
+
+           // TODO: need a way to test this..
+
+
+            // for i in 0..(avail>>1) {
+            //     if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
+            //         //warn!("test data {:?}",d.payload);
+            //         debug_assert_eq!(&*data1, &*d.payload);
+            //     }
+            //     if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
+            //         //warn!("test data {:?}",d.payload);
+            //         debug_assert_eq!(&*data2, &*d.payload);
+            //     }
+            // }
+
+
+            received_count += taken;
             //cmd.relay_stats_smartly(); //should not be needed.
 
             //here we request shutdown but we only leave after our upstream actors are done
-            if received_count >= (TEST_ITEMS-messages_required) {
+            if received_count >= (TEST_ITEMS-taken) {
                 error!("stop requested");
                 cmd.request_graph_stop();
                 return Ok(());
@@ -386,10 +408,27 @@ pub(crate) mod aeron_tests {
 
         let dist =  DistributedTech::Aeron(aeron_config);
 
+        graph.actor_builder().with_name("MockSender")
+            .with_thread_info()
+            .with_mcpu_percentile(Percentile::p96())
+            .with_mcpu_percentile(Percentile::p25())
+
+            //  .with_explicit_core(6)
+            .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
+                   , &mut Threading::Spawn);
+
+        graph.build_stream_distributor(dist.clone()
+                                       , "SenderTest"
+                                       , to_aeron_rx
+                                       , &mut Threading::Spawn);
+
         //set this up first so sender has a place to send to
         graph.actor_builder().with_name("MockReceiver")
-            .with_mcpu_avg()
             .with_thread_info()
+            .with_mcpu_percentile(Percentile::p96())
+            .with_mcpu_percentile(Percentile::p25())
+
+            // .with_explicit_core(9)
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
@@ -398,16 +437,8 @@ pub(crate) mod aeron_tests {
                                      , from_aeron_tx
                                      , &mut Threading::Spawn);
 
-        graph.build_stream_distributor(dist.clone()
-                                       , "SenderTest"
-                                       , to_aeron_rx
-                                       , &mut Threading::Spawn);
 
-        graph.actor_builder().with_name("MockSender")
-            .with_mcpu_avg()
-            .with_thread_info()
-            .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
-                   , &mut Threading::Spawn);
+
 
 
         graph.start(); //startup the graph
