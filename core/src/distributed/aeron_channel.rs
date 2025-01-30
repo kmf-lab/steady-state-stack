@@ -8,9 +8,9 @@ pub(crate) mod aeron_utils {
     use std::ffi::CString;
     use std::sync::Arc;
     use futures_util::lock::Mutex;
-    use steady_state_aeron::aeron::Aeron;
-    use steady_state_aeron::context::Context;
-    use steady_state_aeron::utils::errors::AeronError;
+    use aeron::aeron::Aeron;
+    use aeron::context::Context;
+    use aeron::utils::errors::AeronError;
     use log::{info, trace, warn};
     
     //For more details see:: https://github.com/real-logic/aeron/wiki/Channel-Configuration
@@ -40,7 +40,10 @@ pub(crate) mod aeron_utils {
         aeron_context.set_error_handler(Box::new(error_handler));
         aeron_context.set_pre_touch_mapped_memory(false);
         //aeron_context.set_agent_name("");
+        //TODO: try both?
         aeron_context.set_aeron_dir("/dev/shm/aeron-default".parse().expect("valid path"));
+
+        //aeron_context.set_aeron_dir("/dev/hugepages/aeron-default".parse().expect("valid path"));
         
         match Aeron::new(aeron_context) {
             Ok(aeron) => {                

@@ -63,7 +63,10 @@ RUN echo "net.core.rmem_max=4194304" >> /etc/sysctl.conf && \
     echo "net.ipv4.udp_mem=8388608 12582912 16777216" >> /etc/sysctl.conf && \
     sysctl -p
 
-
+# Enable Huge Pages inside the container
+#RUN echo "vm.nr_hugepages=256" >> /etc/sysctl.conf && \
+#    echo "vm.hugetlb_shm_group=1000" >> /etc/sysctl.conf && \
+#    sysctl -p
 
 ENV AERON_DIR=/dev/shm/aeron-default
 ENV AERON_THREADING_MODE=DEDICATED
@@ -76,6 +79,7 @@ ENV AERON_SENDER_IDLE_STRATEGY=backoff
 ENV AERON_CONDUCTOR_IDLE_STRATEGY=backoff
 ENV AERON_RECEIVER_IDLE_STRATEGY=backoff
 
+ENV AERON_USE_HUGE_PAGES=true
 # Flow control and subscriber window size settings
 ENV AERON_SOCKET_SO_RCVBUF=4194304
 ENV AERON_RCV_INITIAL_WINDOW_LENGTH=4194304

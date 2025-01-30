@@ -634,16 +634,47 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         result.load(Ordering::Relaxed)
     }
 
-
-    async fn wait_closed_or_avail_message_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_, S>, messages_count: usize, ready_channels: usize) -> bool
+    /// Waits for a stream to be closed or for available messages across multiple channels.
+    ///
+    /// This method ensures that it spends most of its time asynchronously waiting
+    /// for messages to become available on a given number of ready channels or until
+    /// the stream is closed. It also listens for a shutdown signal.
+    ///
+    /// # Parameters:
+    /// - `this`: A mutable reference to the `StreamRxBundle` containing multiple receivers.
+    /// - `messages_count`: The number of messages to wait for in each stream.
+    /// - `ready_channels`: The number of channels that need to be ready before exiting early.
+    ///
+    /// # Returns:
+    /// - `true` if messages were available on the required number of channels.
+    /// - `false` if a shutdown signal was received or all streams were closed.
+    ///
+    /// # Performance Considerations:
+    /// - The function is designed to be mostly async-waiting, avoiding busy loops.
+    /// - Using `select_all` with a `Vec` of boxed futures can cause heap allocations.
+    /// - `Arc<AtomicBool>` is used for shared state, but `Ordering::Relaxed` should be
+    ///   carefully considered for thread safety in more complex scenarios.
+    /// - The shutdown signal is checked through `oneshot::Receiver`, which is an efficient
+    ///   way to detect termination without unnecessary polling.
+    async fn wait_closed_or_avail_message_stream<S: StreamItem>(
+        &self,
+        this: &mut StreamRxBundle<'_,S>,
+        messages_count: usize,
+        ready_channels: usize,
+    ) -> bool
     where
-        S: Send + Sync
+        S: Send + Sync,
     {
-
+        // Profile the function call to measure its execution time
         let _guard = self.start_profile(CALL_OTHER);
 
+        // Determine how many channels we should wait for before proceeding
         let mut count_down = ready_channels.min(this.len());
+
+        // Shared atomic flag to indicate if waiting should continue
         let result = Arc::new(AtomicBool::new(true));
+
+        // Create an async task for each receiver to wait for available messages
         let futures = this.iter_mut().map(|rx| {
             let local_r = result.clone();
             async move {
@@ -651,33 +682,42 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
                     local_r.store(false, Ordering::Relaxed);
                 }
             }
-                .boxed() // Box the future to make them the same type
+                .boxed() // Box the future to ensure a consistent return type
         });
 
+        // Collect all futures into a Vec
         let mut futures: Vec<_> = futures.collect();
 
-        //this adds one extra future as the last one
-        futures.push( async move {
+        // Add an additional future to wait for the shutdown signal
+        futures.push(async move {
             let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
             if !guard.is_terminated() {
-                let _ = guard.deref_mut().await;
+                let _ = guard.deref_mut().await; // Wait for shutdown signal
             }
-        }.boxed());
+        }
+            .boxed());
 
+        // Process futures until a stopping condition is met
         while !futures.is_empty() {
-            // Wait for the first future to complete
+            // Wait for any future to complete
             let (_result, index, remaining) = select_all(futures).await;
-            if remaining.len() == index { //we had the last one finish
+
+            // If the last future (shutdown signal) finished, stop waiting
+            if remaining.len() == index {
                 result.store(false, Ordering::Relaxed);
                 break;
             }
+
             futures = remaining;
             count_down -= 1;
+
+            // Stop early if enough channels have become available
             if count_down <= 1 {
                 break;
             }
         }
 
+        // Return whether the required number of channels were ready
         result.load(Ordering::Relaxed)
     }
 

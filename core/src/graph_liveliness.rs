@@ -2,7 +2,7 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{abstract_executor, steady_config, SteadyContext, util, Threading, new_state};
+use crate::{abstract_executor, steady_config, SteadyContext, util, Threading, new_state, Percentile};
 use std::ops::Sub;
 use std::sync::{Arc};
 use parking_lot::{RwLock,RwLockWriteGuard};
@@ -23,8 +23,8 @@ use futures::channel::oneshot::{Sender};
 
 use futures_util::lock::{MutexGuard, MutexLockFuture};
 use nuclei::config::IoUringConfiguration;
-use steady_state_aeron::aeron::Aeron;
-use steady_state_aeron::context::Context;
+use aeron::aeron::Aeron;
+use aeron::context::Context;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
@@ -572,8 +572,11 @@ impl Graph {
 
                     self.actor_builder()
                         .with_name(name)
-                        .with_mcpu_avg()
                         .with_thread_info()
+                        .with_mcpu_percentile(Percentile::p96())
+                        .with_mcpu_percentile(Percentile::p25())
+
+                        // .with_explicit_core(7)
                         .build(move |context| 
                                    aeron_publish::run(context
                                                          , rx.clone()
@@ -612,8 +615,11 @@ impl Graph {
                     
                     self.actor_builder()
                         .with_name(name)
-                        .with_mcpu_avg()
                         .with_thread_info()
+                        .with_mcpu_percentile(Percentile::p96())
+                        .with_mcpu_percentile(Percentile::p25())
+
+                        //  .with_explicit_core(8)
                         //.with_custom_label(connection) // TODO: need something like this.
                         .build(move |context|
                                    aeron_subscribe::run(context

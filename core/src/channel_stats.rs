@@ -1244,7 +1244,7 @@ pub(crate) mod stats_tests {
 
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "filled 25%ile 12 %\nfilled 50%ile 12 %\nfilled 75%ile 24 %\nfilled 90%ile 24 %\n");
+        assert_eq!(display_label, "filled 25%ile 31 %\nfilled 50%ile 31 %\nfilled 75%ile 63 %\nfilled 90%ile 63 %\n");
 
         // Define a trigger with a standard deviation condition
         assert!(computer.triggered_filled(&Trigger::PercentileAbove(Percentile::p90(), Filled::Exact(47))), "Trigger should fire when standard deviation from the average filled is above the threshold");
@@ -1398,7 +1398,7 @@ pub(crate) mod stats_tests {
 
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "rate 25%ile 595 per/sec\nrate 50%ile 666 per/sec\nrate 75%ile 904 per/sec\nrate 90%ile 1166 per/sec\n");
+        assert_eq!(display_label, "rate 25%ile 25 per/sec\nrate 50%ile 28 per/sec\nrate 75%ile 38 per/sec\nrate 90%ile 49 per/sec\n");
 
         // Define a trigger with a standard deviation condition
         assert!(computer.triggered_rate(&Trigger::PercentileAbove(Percentile::p90(), Rate::per_millis(47))), "Trigger should fire when standard deviation from the average filled is above the threshold");

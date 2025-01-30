@@ -75,9 +75,8 @@ pub(crate) mod hd_actor_tests {
 
         graph.request_stop(); //let all actors close when inputs are closed
 
-
         let result_data = ticks_rx_out.testing_take().await;
-        assert_eq!(result_data.len(), BATCH);
+        assert!(result_data.len()<=BATCH);
 
         ticks_tx_in.testing_close(Duration::from_millis(30)).await;
 

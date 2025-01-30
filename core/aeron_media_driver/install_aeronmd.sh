@@ -73,7 +73,10 @@ Description=$DESCRIPTION
 After=$AFTER
 
 [Service]
-ExecStart=/usr/bin/docker run --rm --cpuset-cpus="0-2" --ipc=host --network=host --shm-size=4g --cap-add=sys_nice --cap-add=ipc_lock --cap-add=SYS_ADMIN -v /dev/shm:/dev/shm -u ${USER_ID}:${GROUP_ID} --name $SERVICE_NAME $DOCKER_IMAGE nice -10 $DOCKER_CMD
+ExecStart=/usr/bin/docker run --rm --cpuset-cpus="0-2" --ipc=host --network=host \
+ --shm-size=4g --cap-add=sys_nice --cap-add=ipc_lock --cap-add=SYS_ADMIN \
+ -v /dev/shm:/dev/shm -u ${USER_ID}:${GROUP_ID} --name $SERVICE_NAME $DOCKER_IMAGE \
+ nice -10 $DOCKER_CMD
 User=$SERVICE_USER
 Group=$SERVICE_USER
 UMask=0002

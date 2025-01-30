@@ -656,9 +656,9 @@ impl ActorBuilder {
                     if let Err(e) = pin_thread_to_core(core) {
                         eprintln!("Failed to pin thread to core {}: {:?}", core, e);
                     }
+                 //   trace!("Actor assigned to core: {}", core);
                 }
 
-                println!("Actor assigned to core: {}", core);
 
                 loop {
                    match catch_unwind(AssertUnwindSafe( || {

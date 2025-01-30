@@ -256,8 +256,8 @@ impl StreamItem for StreamSessionMessage {
         StreamSessionMessage{
             length: defrag_entry.running_length as i32,
             session_id: defrag_entry.session_id,
-            arrival: defrag_entry.arrival.unwrap_or(Instant::now()),
-            finished: defrag_entry.finish.unwrap_or(Instant::now()),
+            arrival: defrag_entry.arrival.expect("defrag must have needed Instant"),
+            finished: defrag_entry.finish.expect("defrag must have needed Instant"),
         }
     }
 }
@@ -399,28 +399,31 @@ impl<T: StreamItem> StreamTx<T> {
              .min()
     }
 
+    #[inline]
     pub(crate) fn fragment_consume(&mut self
                                    , session_id:i32
                                    , slice: &[u8]
-                                   , is_begin: bool, is_end: bool) {
+                                   , is_begin: bool
+                                   , is_end: bool
+                                   , now: Instant) {
 
         //Get or create the Defrag entry for the session ID
         let mut defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
             Defrag::new(session_id, self.item_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
         });
-        assert!(defrag_entry.ringbuffer_items.1.occupied_len() < defrag_entry.ringbuffer_items.1.capacity().into());
+        debug_assert!(defrag_entry.ringbuffer_items.1.occupied_len() < defrag_entry.ringbuffer_items.1.capacity().into());
 
 
         // // If this is the beginning of a fragment, assert the ringbuffer is empty
+        let some_now = Some(now);
         if is_begin {
-            let now = Instant::now();
-            defrag_entry.arrival = Some(now); // Set the arrival time to now
+            defrag_entry.arrival = some_now; // Set the arrival time to now
             if is_end {
-                defrag_entry.finish = Some(now);
+                defrag_entry.finish = some_now;
             }
         } else {
             if is_end {
-                defrag_entry.finish = Some(Instant::now());
+                defrag_entry.finish = some_now;
             }
         }
 
@@ -435,10 +438,10 @@ impl<T: StreamItem> StreamTx<T> {
         // If this is the end of a fragment send
         if is_end {
             let result = defrag_entry.ringbuffer_items.0.try_push(T::from_defrag(defrag_entry));
-            assert!(result.is_ok());
+            debug_assert!(result.is_ok());
             
             let cap: usize = defrag_entry.ringbuffer_items.0.capacity().into();
-            if defrag_entry.ringbuffer_items.1.occupied_len() == cap { // && TODO: special flag to force this?
+            if defrag_entry.ringbuffer_items.1.occupied_len() == cap {
                 if !self.ready.contains(&defrag_entry.session_id) {
                     self.ready.push_back(defrag_entry.session_id);
                 }

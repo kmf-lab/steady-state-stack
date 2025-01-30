@@ -3,10 +3,10 @@ use std::sync::{Arc};
 use futures_timer::Delay;
 use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
-use steady_state_aeron::aeron::Aeron;
-use steady_state_aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
-use steady_state_aeron::exclusive_publication::ExclusivePublication;
-use steady_state_aeron::utils::types::Index;
+use aeron::aeron::Aeron;
+use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
+use aeron::exclusive_publication::ExclusivePublication;
+use aeron::utils::types::Index;
 use crate::distributed::aeron_channel::Channel;
 use crate::distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamSimpleMessage, StreamRxBundleTrait};
 use crate::{into_monitor, SteadyCommander, SteadyContext, SteadyState};
@@ -132,12 +132,12 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
         warn!("running publish '{:?}' all publications in place",cmd.identity());
 
-        let wait_for = 1024*1024;//131072;
-        let mut backoff = false;
+        let wait_for = 512*1024;
+        let mut backoff = true;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
             let clean = if backoff {
-                await_for_all!(cmd.wait_periodic(Duration::from_millis(10)),
+                await_for_any!(cmd.wait_periodic(Duration::from_millis(10)),
                                cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1))
             } else {
                 cmd.relay_stats_smartly();
@@ -159,7 +159,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                     match &mut pubs[i] {
                         Ok(p) => {
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
-                            if vacant_aeron_bytes >=  8 * 1024 *1024 {
+                            if vacant_aeron_bytes >=  1024 {
              //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
                                 rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], mut slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
@@ -207,6 +207,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
 
 #[cfg(test)]
+#[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
 pub(crate) mod aeron_tests {
     use super::*;
     use crate::distributed::aeron_channel::{Endpoint, MediaType};
@@ -217,8 +218,11 @@ pub(crate) mod aeron_tests {
     use crate::distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
 
     //NOTE: bump this up for longer running load tests
-    pub const TEST_ITEMS: usize = 20_000_000_000;
-    pub const STREAM_ID: i32 = 12;
+    //       20_000_000_000;
+    pub const TEST_ITEMS: usize = 200_000_000;
+
+
+    pub const STREAM_ID: i32 = 11;
     //TODO: review the locking and init of terms in shared context??
     // The max length of a term buffer is 1GB (ie 1024MB) Imposed by the media driver.
     pub const TERM_MB: i32 = 64; //at 1MB we are targeting 12M messages per second
@@ -361,8 +365,12 @@ pub(crate) mod aeron_tests {
     }
 
     #[async_std::test]
+   // #[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
     async fn test_bytes_process() {
-        let _lock = aeron_subscribe::aeron_media_driver_tests::TEST_MUTEX.lock().await; // Lock to ensure sequential execution
+        if true {
+            return; //do not run this test
+        }
+
 
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(true)
@@ -397,12 +405,16 @@ pub(crate) mod aeron_tests {
         //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
         let aeron_config = AeronConfig::new()            
             //TODO: to hack Ipc we need point to point and no term length
-            .with_media_type(MediaType::Ipc) //Udp
+            //we will use this for unit tests.
+           .with_media_type(MediaType::Ipc) // 10MMps
+
+        //    .with_media_type(MediaType::Udp)// 4MMps- std 4K page
+          //  .with_term_length((1024 * 1024 * TERM_MB) as usize)
+
             .use_point_to_point(Endpoint {
                 ip: "127.0.0.1".parse().expect("Invalid IP address"),
                 port: 40456,
             })
-            //.with_term_length((1024 * 1024 * TERM_MB) as usize)
             .build();
 
 
@@ -437,14 +449,8 @@ pub(crate) mod aeron_tests {
                                      , from_aeron_tx
                                      , &mut Threading::Spawn);
 
-
-
-
-
         graph.start(); //startup the graph
-
         graph.block_until_stopped(Duration::from_secs(21));
-
     }
 
 }
