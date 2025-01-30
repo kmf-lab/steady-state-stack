@@ -12,6 +12,7 @@ use futures_timer::Delay;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::thread::ThreadId;
+use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
 use bytes::BufMut;
 use futures::channel::oneshot;
@@ -665,59 +666,46 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     where
         S: Send + Sync,
     {
-        // Profile the function call to measure its execution time
         let _guard = self.start_profile(CALL_OTHER);
-
-        // Determine how many channels we should wait for before proceeding
         let mut count_down = ready_channels.min(this.len());
-
-        // Shared atomic flag to indicate if waiting should continue
         let result = Arc::new(AtomicBool::new(true));
 
-        // Create an async task for each receiver to wait for available messages
-        let futures = this.iter_mut().map(|rx| {
+        let mut futures: Vec<_> = Vec::with_capacity(this.len()+1);
+        for mut rx in this {
+            debug_assert!(messages_count < usize::from(rx.item_channel.rx.capacity()));
             let local_r = result.clone();
+            futures.push(
             async move {
-                if !rx.shared_wait_closed_or_avail_messages(messages_count).await {
-                    local_r.store(false, Ordering::Relaxed);
+                let bool_result = rx.item_channel.shared_wait_closed_or_avail_units(messages_count).await;
+                if !bool_result {
+                     local_r.store(false, Ordering::Relaxed);
                 }
-            }
-                .boxed() // Box the future to ensure a consistent return type
-        });
+            }.boxed()); // Box the future to make them the same type
+        }
 
-        // Collect all futures into a Vec
-        let mut futures: Vec<_> = futures.collect();
 
-        // Add an additional future to wait for the shutdown signal
-        futures.push(async move {
+        //this adds one extra feature as the last one
+        futures.push( async move {
             let guard: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
             if !guard.is_terminated() {
-                let _ = guard.deref_mut().await; // Wait for shutdown signal
+                let _ = guard.deref_mut().await;
             }
-        }
-            .boxed());
+        }.boxed());
 
-        // Process futures until a stopping condition is met
         while !futures.is_empty() {
-            // Wait for any future to complete
+            // Wait for the first future to complete
             let (_result, index, remaining) = select_all(futures).await;
-
-            // If the last future (shutdown signal) finished, stop waiting
-            if remaining.len() == index {
+            if remaining.len() == index { //we had the last one finish
                 result.store(false, Ordering::Relaxed);
                 break;
             }
-
             futures = remaining;
             count_down -= 1;
-
-            // Stop early if enough channels have become available
             if count_down <= 1 {
                 break;
             }
         }
 
-        // Return whether the required number of channels were ready
         result.load(Ordering::Relaxed)
     }
 

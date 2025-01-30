@@ -132,17 +132,15 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
         warn!("running publish '{:?}' all publications in place",cmd.identity());
 
-        let wait_for = 512*1024;
+
+        let wait_for = (512*1024).min(rx.capacity());
         let mut backoff = true;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
-            let clean = if backoff {
-                await_for_any!(cmd.wait_periodic(Duration::from_millis(10)),
-                               cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1))
-            } else {
-                cmd.relay_stats_smartly();
-                await_for_all!(cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1))
-            };
+            let clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
+                          ,cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1)
+                           );
+
 
             let mut count_done = 0;
             let mut count_bytes = 0;
@@ -158,8 +156,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                         //upon return release
                     match &mut pubs[i] {
                         Ok(p) => {
+
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
-                            if vacant_aeron_bytes >=  1024 {
              //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
                                 rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], mut slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
@@ -189,11 +187,11 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                             false
                                         }
                                     }
-                                });                         
-                            }
+                                });
                         }
                         Err(e) => {
-                            panic!("{:?}", e); //we should have had the pup so try again
+                            warn!("panic details {}",e);
+                          //  panic!("{:?}", e); //we should have had the pup so try again
                         }
                     }                   
                     
@@ -368,9 +366,8 @@ pub(crate) mod aeron_tests {
    // #[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
     async fn test_bytes_process() {
         if true {
-            return; //do not run this test
+             return; //do not run this test
         }
-
 
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(true)

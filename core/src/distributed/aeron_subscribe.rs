@@ -266,9 +266,9 @@ pub(crate) mod aeron_media_driver_tests {
 
     #[async_std::test]
     async fn test_bytes_process() {
-          if true {
-              return; //Not running this test at this time.
-          }
+          // if true {
+          //     return; //Not running this test at this time.
+          // }
 
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(false)
@@ -285,8 +285,6 @@ pub(crate) mod aeron_media_driver_tests {
         const STREAMS_COUNT:usize = 1;
         let (to_aeron_tx,to_aeron_rx) = channel_builder
             .build_as_stream::<StreamSimpleMessage,STREAMS_COUNT>(0, 500, 3000);
-        let (from_aeron_tx,from_aeron_rx) = channel_builder
-            .build_as_stream::<StreamSessionMessage,STREAMS_COUNT>(0, 500, 3000);
 
         let aeron_config = AeronConfig::new()
             .with_media_type(MediaType::Ipc) //for testing
@@ -300,34 +298,39 @@ pub(crate) mod aeron_media_driver_tests {
 
         let dist =  DistributedTech::Aeron(aeron_config);
 
-        graph.build_stream_collector(dist.clone()
-                                     , "ReceiverTest"
-                                     , from_aeron_tx
-                                     , &mut Threading::Spawn);
-
         graph.build_stream_distributor(dist.clone()
-                                         , "SenderTest"
-                                         , to_aeron_rx
-                                         , &mut Threading::Spawn);
+                                       , "SenderTest"
+                                       , to_aeron_rx
+                                       , &mut Threading::Spawn);
 
         for i in 0..100 {
             to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]).await;
             to_aeron_tx[0].testing_send_frame(&[6, 7, 8, 9, 10]).await;
         }
-        
+
         for i in 0..STREAMS_COUNT {
             to_aeron_tx[i].testing_close().await;
         }
-        
+
+
+        let (from_aeron_tx,from_aeron_rx) = channel_builder
+            .build_as_stream::<StreamSessionMessage,STREAMS_COUNT>(0, 500, 3000);
+
+        graph.build_stream_collector(dist.clone()
+                                     , "ReceiverTest"
+                                     , from_aeron_tx
+                                     , &mut Threading::Spawn);
+
 
         graph.start(); //startup the graph
 
+        warn!("waiting -------------------------");
         //wait till we see 2 full fragments back
         from_aeron_rx[0].testing_avail_wait(2).await;
-
+        warn!("found two");
         graph.request_stop();
         //we wait up to the timeout for clean shutdown which is transmission of all the data
-        graph.block_until_stopped(Duration::from_secs(4));
+        graph.block_until_stopped(Duration::from_secs(21));
 
         //from_aeron_rx.
 

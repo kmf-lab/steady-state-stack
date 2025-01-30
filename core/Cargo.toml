@@ -78,9 +78,9 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 [dependencies]
 nuclei           = { version = "0.4.4", optional = true } # foundational proactive runtime
 ringbuf          = "0.4.7"  # foundational bounded message passing
-async-ringbuf    = "0.3.1"  # foundational bounded message passing
-log              = "0.4.22"  # common logging traits
-flexi_logger     = { version="0.29.6", features=["colors", "async"] }  # default flexable logging implementation
+async-ringbuf    = "0.3.2"  # foundational bounded message passing
+log              = "0.4.25"  # common logging traits
+flexi_logger     = { version="0.29.8", features=["colors", "async"] }  # default flexable logging implementation
 futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
 hdrhistogram     = "7.5.4"  # for latency histograms
 bytes            = { version = "1.9.0", features = [] }
