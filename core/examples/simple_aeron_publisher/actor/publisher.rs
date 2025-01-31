@@ -2,8 +2,11 @@ use std::error::Error;
 use std::time::Duration;
 use log::info;
 use steady_state::*;
-use steady_state::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSimpleMessage, StreamTxBundleTrait};
-use steady_state::monitor::TxMetaDataHolder;
+
+pub const TEST_ITEMS: usize = 200_000_000;
+
+
+pub const STREAM_ID: i32 = 11;
 
 pub async fn run<const GIRTH: usize>(mut context: SteadyContext
                                      , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>>  {
@@ -41,6 +44,7 @@ pub async fn run<const GIRTH: usize>(mut context: SteadyContext
         let idx:usize = (STREAM_ID - tx[0].stream_id) as usize;
         while remaining > 0 && cmd.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
 
+            //TODO: make this interface also a trait.
             //cmd.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
             cmd.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
             cmd.send_slice_until_full(&mut tx[idx].item_channel, &items);

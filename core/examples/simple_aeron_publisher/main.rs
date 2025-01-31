@@ -3,14 +3,10 @@ use log::info;
 use steady_state::*;
 use structopt::*;
 use structopt_derive::*;
-use steady_state::distributed::aeron_channel::{Channel, Endpoint, MediaType};
-use steady_state::distributed::aeron_distributed::{AeronConfig, DistributedTech};
-use steady_state::distributed::steady_stream::StreamSessionMessage;
 
 pub(crate) mod actor {
-   pub(crate) mod consumer;
+   pub(crate) mod publisher;
 }
-
 
 #[derive(StructOpt, Debug, PartialEq, Clone)]
 pub(crate) struct MainArg {
@@ -21,7 +17,6 @@ pub(crate) struct MainArg {
 }
 
 pub const STREAM_ID: i32 = 1234;
-
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 pub const AERON_CHANNEL: Channel = AeronConfig::new()
     .with_media_type(MediaType::Ipc) // 10MMps
@@ -30,9 +25,9 @@ pub const AERON_CHANNEL: Channel = AeronConfig::new()
     //   .with_term_length((1024 * 1024 * TERM_MB) as usize)
 
     .use_point_to_point(Endpoint {
-            ip: "127.0.0.1".parse().expect("Invalid IP address"),
-            port: 40456,
-            })
+        ip: "127.0.0.1".parse().expect("Invalid IP address"),
+        port: 40456,
+    })
     .build();
 
 fn main() {
@@ -52,30 +47,31 @@ fn main() {
 
     let channel_builder = graph.channel_builder();
 
-//TODO: rename as string bundle?
-    let (from_aeron_tx,from_aeron_rx) = channel_builder
+    let (to_aeron_tx,to_aeron_rx) = channel_builder
         .with_avg_rate()
         .with_avg_filled()
         .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-        .build_as_stream::<StreamSessionMessage,1>(STREAM_ID
-                                                   , 4*1024*1024
-                                                   , 32*1024*1024);
+        .build_as_stream::<StreamSimpleMessage,1>(STREAM_ID
+                                                  , 4*1024*1024
+                                                  , 32*1024*1024);
 
 
-    //set this up first so sender has a place to send to
-    graph.actor_builder().with_name("MockReceiver")
+
+
+    graph.actor_builder().with_name("MockSender")
         .with_thread_info()
         .with_mcpu_percentile(Percentile::p96())
         .with_mcpu_percentile(Percentile::p25())
-        .build(move |context| actor::consumer::run(context, from_aeron_rx.clone())
+        .build(move |context| actor::publisher::run(context, to_aeron_tx.clone())
                , &mut Threading::Spawn);
 
-    graph.build_stream_collector(DistributedTech::Aeron(AERON_CHANNEL)
-                                 , "ReceiverTest"
-                                 , from_aeron_tx
-                                 , &mut Threading::Spawn);
+    graph.build_stream_distributor(DistributedTech::Aeron(AERON_CHANNEL)
+                                   , "SenderTest"
+                                   , to_aeron_rx
+                                   , &mut Threading::Spawn);
+
 
     graph.start(); //startup the graph
     graph.block_until_stopped(Duration::from_secs(21));

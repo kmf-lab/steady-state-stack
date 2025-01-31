@@ -643,13 +643,13 @@ pub(crate) struct LazyStream<T: StreamItem> {
 
 /// A lazily-initialized transmitter wrapper for a steady stream.
 #[derive(Debug)]
-pub(crate) struct LazyStreamTx<T: StreamItem> {
+pub struct LazyStreamTx<T: StreamItem> {
     lazy_channel: Arc<LazyStream<T>>,
 }
 
 /// A lazily-initialized receiver wrapper for a steady stream.
 #[derive(Debug)]
-pub(crate) struct LazyStreamRx<T: StreamItem> {
+pub struct LazyStreamRx<T: StreamItem> {
     lazy_channel: Arc<LazyStream<T>>,
 }
 
