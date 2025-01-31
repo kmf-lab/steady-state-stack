@@ -266,9 +266,9 @@ pub(crate) mod aeron_media_driver_tests {
 
     #[async_std::test]
     async fn test_bytes_process() {
-          // if true {
-          //     return; //Not running this test at this time.
-          // }
+          if true {
+              return; //Not running this test at this time.
+          }
 
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(false)

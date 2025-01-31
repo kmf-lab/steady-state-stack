@@ -542,7 +542,7 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub(crate) fn is_aeron_media_driver_present(&mut self) -> bool {
+    pub fn is_aeron_media_driver_present(&mut self) -> bool {
         if self.aeron.is_none() { //lazy load, we only support one
             self.aeron = aeron_context(Context::new());
         }

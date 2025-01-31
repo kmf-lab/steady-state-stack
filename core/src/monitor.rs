@@ -171,7 +171,7 @@ pub struct TxMetaDataHolder<const LEN: usize> {
     pub(crate) array:[TxMetaData;LEN]
 }
 impl <const LEN: usize>TxMetaDataHolder<LEN> {
-    pub(crate) fn new(array: [TxMetaData;LEN]) -> Self {
+    pub fn new(array: [TxMetaData;LEN]) -> Self {
         TxMetaDataHolder { array }
     }
     pub(crate) fn meta_data(self) -> [TxMetaData;LEN] {
@@ -190,7 +190,7 @@ pub struct RxMetaDataHolder<const LEN: usize> {
     pub(crate) array:[RxMetaData;LEN]
 }
 impl <const LEN: usize>RxMetaDataHolder<LEN> {
-    pub(crate) fn new(array: [RxMetaData;LEN]) -> Self {
+    pub fn new(array: [RxMetaData;LEN]) -> Self {
        RxMetaDataHolder { array }
     }
     pub(crate) fn meta_data(self) -> [RxMetaData;LEN] {
