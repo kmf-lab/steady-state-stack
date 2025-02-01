@@ -21,6 +21,8 @@ use ringbuf::producer::Producer;
 use ringbuf::storage::Heap;
 use ringbuf::traits::{Observer, Split};
 use crate::{monitor::{RxMetaData, TxMetaData}, channel_builder::ChannelBuilder, Rx, Tx, SteadyCommander};
+use crate::steady_rx::RxCore;
+use crate::steady_tx::TxCore;
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
 pub type IdType = i32;
@@ -489,9 +491,9 @@ impl<T: StreamItem> StreamRx<T> {
         }
     }
 
-    pub async fn shared_wait_closed_or_avail_messages(&mut self, full_messages: usize) -> bool {
-        self.item_channel.shared_wait_closed_or_avail_units(full_messages).await
-    }
+    // pub async fn shared_wait_closed_or_avail_messages(&mut self, full_messages: usize) -> bool {
+    //     self.item_channel.shared_wait_closed_or_avail_units(full_messages).await
+    // }
 
     /// Checks if both channels are closed and empty.
     pub fn is_closed_and_empty(&mut self) -> bool {

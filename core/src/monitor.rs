@@ -1490,8 +1490,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         } else {
             None
         };
-        
-        let result = this.shared_send_async_timeout(a, self.ident, saturation, timeout).await; 
+
+        let result = this.shared_send_async_timeout(a, self.ident, saturation, timeout).await;
         drop(guard);
         match result {
             Ok(_) => {

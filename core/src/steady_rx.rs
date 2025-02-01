@@ -529,45 +529,7 @@ impl<T> Rx<T> {
     }
 
 
-    
-    #[inline]
-    pub(crate) async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
 
-            let mut one_down = &mut self.oneshot_shutdown;
-            if !one_down.is_terminated() {
-                let mut operation = &mut self.rx.wait_occupied(count);
-                select! { _ = one_down => false, _ = operation => true }
-            } else {
-                self.rx.occupied_len() >= count
-            }
-
-    }
-
-    #[inline]
-    pub(crate) async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool {
-        if self.rx.occupied_len() >= count {
-            true
-        } else {//we always return true if we have count regardless of the shutdown status
-            let mut one_closed = &mut self.is_closed;
-            if !one_closed.is_terminated() {
-                let mut operation = &mut self.rx.wait_occupied(count);
-                select! { _ = one_closed => self.rx.occupied_len() >= count, _ = operation => true }
-            } else {
-                self.rx.occupied_len() >= count // if closed, we can still take
-            }
-        }
-    }
-    
-    #[inline]
-    pub(crate) async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
-        if self.rx.occupied_len() >= count {
-            true
-        } else {
-                let operation = &mut self.rx.wait_occupied(count);
-                operation.await;
-                true    
-        }
-    }
 }
 
 
@@ -781,6 +743,13 @@ pub trait RxCore {
     fn shared_is_empty(&self) -> bool;
 
     fn shared_avail_units(&mut self) -> usize;
+
+    async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool;
+
+    async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool;
+
+    async fn shared_wait_avail_units(&mut self, count: usize) -> bool;
+
 }
 
 impl <T>RxCore for Rx<T> {
@@ -796,23 +765,94 @@ impl <T>RxCore for Rx<T> {
     fn shared_avail_units(&mut self) -> usize {
         self.rx.occupied_len()
     }
+
+
+   async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
+
+        let mut one_down = &mut self.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(count);
+            select! { _ = one_down => false, _ = operation => true }
+        } else {
+            self.rx.occupied_len() >= count
+        }
+
+    }
+
+    async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool {
+        if self.rx.occupied_len() >= count {
+            true
+        } else {//we always return true if we have count regardless of the shutdown status
+            let mut one_closed = &mut self.is_closed;
+            if !one_closed.is_terminated() {
+                let mut operation = &mut self.rx.wait_occupied(count);
+                select! { _ = one_closed => self.rx.occupied_len() >= count, _ = operation => true }
+            } else {
+                self.rx.occupied_len() >= count // if closed, we can still take
+            }
+        }
+    }
+
+    async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
+        if self.rx.occupied_len() >= count {
+            true
+        } else {
+            let operation = &mut self.rx.wait_occupied(count);
+            operation.await;
+            true
+        }
+    }
 }
 impl <T: StreamItem> RxCore for StreamRx<T> {
-    #[inline]
+
     fn shared_capacity(&self) -> usize {
         self.item_channel.rx.capacity().get()
     }
 
-    #[inline]
     fn shared_is_empty(&self) -> bool  {
         self.item_channel.rx.is_empty()
     }
 
-    #[inline]
     fn shared_avail_units(&mut self) -> usize {
         self.item_channel.rx.occupied_len()
     }
 
+
+    async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
+
+        let mut one_down = &mut self.item_channel.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.item_channel.rx.wait_occupied(count);
+            select! { _ = one_down => false, _ = operation => true }
+        } else {
+            self.item_channel.rx.occupied_len() >= count
+        }
+
+    }
+
+    async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool {
+        if self.item_channel.rx.occupied_len() >= count {
+            true
+        } else {//we always return true if we have count regardless of the shutdown status
+            let mut one_closed = &mut self.item_channel.is_closed;
+            if !one_closed.is_terminated() {
+                let mut operation = &mut self.item_channel.rx.wait_occupied(count);
+                select! { _ = one_closed => self.item_channel.rx.occupied_len() >= count, _ = operation => true }
+            } else {
+                self.item_channel.rx.occupied_len() >= count // if closed, we can still take
+            }
+        }
+    }
+
+    async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
+        if self.item_channel.rx.occupied_len() >= count {
+            true
+        } else {
+            let operation = &mut self.item_channel.rx.wait_occupied(count);
+            operation.await;
+            true
+        }
+    }
 }
 
 impl<T: RxCore> RxCore for futures::lock::MutexGuard<'_, T> {
@@ -826,6 +866,18 @@ impl<T: RxCore> RxCore for futures::lock::MutexGuard<'_, T> {
 
     fn shared_avail_units(&mut self) -> usize {
         <T as RxCore>::shared_avail_units(&mut **self)
+    }
+
+    async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
+        <T as RxCore>::shared_wait_shutdown_or_avail_units(&mut **self, count).await
+    }
+
+    async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool {
+        <T as RxCore>::shared_wait_closed_or_avail_units(&mut **self, count).await
+    }
+
+    async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
+        <T as RxCore>::shared_wait_avail_units(&mut **self, count).await
     }
 }
 
