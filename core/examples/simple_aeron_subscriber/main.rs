@@ -19,23 +19,25 @@ pub(crate) struct MainArg {
 pub const STREAM_ID: i32 = 1234;
 
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
-pub const AERON_CHANNEL: Channel = AeronConfig::new()
-    .with_media_type(MediaType::Ipc) // 10MMps
 
-    //   .with_media_type(MediaType::Udp)// 4MMps- std 4K page
-    //   .with_term_length((1024 * 1024 * TERM_MB) as usize)
-
-    .use_point_to_point(Endpoint {
-            ip: "127.0.0.1".parse().expect("Invalid IP address"),
-            port: 40456,
-            })
-    .build();
 
 fn main() {
     let cli_args = MainArg::from_args();
     let _ = init_logging("info");
     let mut graph = GraphBuilder::default()
            .build(cli_args); //or pass () if no args
+
+    let aeron_channel: Channel = AeronConfig::new()
+        .with_media_type(MediaType::Ipc) // 10MMps
+
+        //   .with_media_type(MediaType::Udp)// 4MMps- std 4K page
+        //   .with_term_length((1024 * 1024 * TERM_MB) as usize)
+
+        .use_point_to_point(Endpoint {
+            ip: "127.0.0.1".parse().expect("Invalid IP address"),
+            port: 40456,
+        })
+        .build();
 
     let mut graph = GraphBuilder::for_testing()
         .with_telemetry_metric_features(true)
@@ -69,7 +71,7 @@ fn main() {
         .build(move |context| actor::subscriber::run(context, base.clone())
                , &mut Threading::Spawn);
 
-    graph.build_stream_collector(DistributedTech::Aeron(AERON_CHANNEL)
+    graph.build_stream_collector(DistributedTech::Aeron(aeron_channel)
                                  , "ReceiverTest"
                                  , from_aeron_tx
                                  , &mut Threading::Spawn);

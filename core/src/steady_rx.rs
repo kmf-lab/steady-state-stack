@@ -16,6 +16,7 @@ use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
 use crate::{RxBundle, SteadyRx, SteadyRxBundle, Tx};
 use crate::distributed::steady_stream::{StreamItem, StreamRx, StreamTx};
+use crate::steady_tx::TxCore;
 
 /// Represents a receiver that consumes messages from a channel.
 ///
@@ -774,47 +775,58 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
 /////////////////////////////////////////////////////////////////
 
 pub trait RxCore {
-    #[inline]
-    fn capacity(&self) -> usize;
-    #[inline]
-    fn is_empty(&self) -> bool;
-    #[inline]
-    fn avail_units(&mut self) -> usize;
+
+    fn shared_capacity(&self) -> usize;
+
+    fn shared_is_empty(&self) -> bool;
+
+    fn shared_avail_units(&mut self) -> usize;
 }
 
 impl <T>RxCore for Rx<T> {
 
-    #[inline]
-    fn capacity(&self) -> usize {
+    fn shared_capacity(&self) -> usize {
         self.rx.capacity().get()
     }
 
-    #[inline]
-    fn is_empty(&self) -> bool  {
+    fn shared_is_empty(&self) -> bool  {
         self.rx.is_empty()
     }
 
-    #[inline]
-    fn avail_units(&mut self) -> usize {
+    fn shared_avail_units(&mut self) -> usize {
         self.rx.occupied_len()
     }
 }
 impl <T: StreamItem> RxCore for StreamRx<T> {
     #[inline]
-    fn capacity(&self) -> usize {
+    fn shared_capacity(&self) -> usize {
         self.item_channel.rx.capacity().get()
     }
 
     #[inline]
-    fn is_empty(&self) -> bool  {
+    fn shared_is_empty(&self) -> bool  {
         self.item_channel.rx.is_empty()
     }
 
     #[inline]
-    fn avail_units(&mut self) -> usize {
+    fn shared_avail_units(&mut self) -> usize {
         self.item_channel.rx.occupied_len()
     }
 
+}
+
+impl<T: RxCore> RxCore for futures::lock::MutexGuard<'_, T> {
+    fn shared_capacity(&self) -> usize {
+        <T as RxCore>::shared_capacity(&**self)
+    }
+
+    fn shared_is_empty(&self) -> bool {
+        <T as RxCore>::shared_is_empty(&**self)
+    }
+
+    fn shared_avail_units(&mut self) -> usize {
+        <T as RxCore>::shared_avail_units(&mut **self)
+    }
 }
 
 #[cfg(test)]

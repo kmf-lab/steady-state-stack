@@ -5,7 +5,7 @@ use std::any::type_name;
 use std::backtrace::Backtrace;
 use std::time::{Duration, Instant};
 use futures::channel::oneshot;
-use futures_util::lock::{MutexLockFuture};
+use futures_util::lock::{MutexGuard, MutexLockFuture};
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use futures_util::future::{FusedFuture, select_all};
@@ -356,47 +356,47 @@ impl<T> TxBundleTrait for TxBundle<'_, T> {
 /////////////////////////////////////////////////////////////////
 
 pub trait TxCore {
-    #[inline]
-    fn capacity(&self) -> usize;
-    #[inline]
-    fn is_full(&self) -> bool;
-    #[inline]
-    fn is_empty(&self) -> bool;
-    #[inline]
-    fn vacant_units(&self) -> usize;
-    #[inline]
-    async fn wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool;
-    #[inline]
-    async fn wait_vacant_units(&mut self, count: usize) -> bool;
-    #[inline]
-    async fn wait_empty(&mut self) -> bool;
+
+    fn shared_capacity(&self) -> usize;
+
+    fn shared_is_full(&self) -> bool;
+
+    fn shared_is_empty(&self) -> bool;
+
+    fn shared_vacant_units(&self) -> usize;
+
+    async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool;
+
+    async fn shared_wait_vacant_units(&mut self, count: usize) -> bool;
+
+    async fn shared_wait_empty(&mut self) -> bool;
 
 }
 
 impl <T> TxCore for Tx<T> {
 
     #[inline]
-    fn capacity(&self) -> usize {
+    fn shared_capacity(&self) -> usize {
         self.tx.capacity().get()
     }
 
     #[inline]
-    fn is_full(&self) -> bool {
+    fn shared_is_full(&self) -> bool {
         self.tx.is_full()
     }
 
     #[inline]
-    fn is_empty(&self) -> bool {
+    fn shared_is_empty(&self) -> bool {
         self.tx.is_empty()
     }
 
     #[inline]
-    fn vacant_units(&self) -> usize {
+    fn shared_vacant_units(&self) -> usize {
         self.tx.vacant_len()
     }
 
     #[inline]
-    async fn wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
+    async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
         if self.tx.vacant_len() >= count {
             true
         } else {
@@ -410,7 +410,7 @@ impl <T> TxCore for Tx<T> {
         }
     }
     #[inline]
-    async fn wait_vacant_units(&mut self, count: usize) -> bool {
+    async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
         if self.tx.vacant_len() >= count {
             true
         } else {
@@ -421,7 +421,7 @@ impl <T> TxCore for Tx<T> {
     }
 
     #[inline]
-    async fn wait_empty(&mut self) -> bool {
+    async fn shared_wait_empty(&mut self) -> bool {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
             let mut operation = &mut self.tx.wait_vacant(usize::from(self.tx.capacity()));
@@ -436,27 +436,27 @@ impl <T> TxCore for Tx<T> {
 impl <T: StreamItem> TxCore for StreamTx<T> {
 
     #[inline]
-    fn capacity(&self) -> usize {
+    fn shared_capacity(&self) -> usize {
         self.item_channel.tx.capacity().get()
     }
 
     #[inline]
-    fn is_full(&self) -> bool {
+    fn shared_is_full(&self) -> bool {
         self.item_channel.tx.is_full()
     }
 
     #[inline]
-    fn is_empty(&self) -> bool {
+    fn shared_is_empty(&self) -> bool {
         self.item_channel.tx.is_empty()
     }
 
     #[inline]
-    fn vacant_units(&self) -> usize {
+    fn shared_vacant_units(&self) -> usize {
         self.item_channel.tx.vacant_len()
     }
 
     #[inline]
-    async fn wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
+    async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
         if self.item_channel.tx.vacant_len() >= count {
             true
         } else {
@@ -470,7 +470,7 @@ impl <T: StreamItem> TxCore for StreamTx<T> {
         }
     }
     #[inline]
-    async fn wait_vacant_units(&mut self, count: usize) -> bool {
+    async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
         if self.item_channel.tx.vacant_len() >= count {
             true
         } else {
@@ -481,7 +481,7 @@ impl <T: StreamItem> TxCore for StreamTx<T> {
     }
 
     #[inline]
-    async fn wait_empty(&mut self) -> bool {
+    async fn shared_wait_empty(&mut self) -> bool {
         let mut one_down = &mut self.item_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
             let mut operation = &mut self.item_channel.tx.wait_vacant(usize::from(self.item_channel.tx.capacity()));
@@ -491,4 +491,41 @@ impl <T: StreamItem> TxCore for StreamTx<T> {
         }
     }
 
+}
+
+impl<T: TxCore> TxCore for futures::lock::MutexGuard<'_, T> {
+    #[inline]
+    fn shared_capacity(&self) -> usize {
+        <T as TxCore>::shared_capacity(&**self)
+    }
+
+    #[inline]
+    fn shared_is_full(&self) -> bool {
+        <T as TxCore>::shared_is_full(&**self)
+    }
+
+    #[inline]
+    fn shared_is_empty(&self) -> bool {
+        <T as TxCore>::shared_is_empty(&**self)
+    }
+
+    #[inline]
+    fn shared_vacant_units(&self) -> usize {
+        <T as TxCore>::shared_vacant_units(&**self)
+    }
+
+    #[inline]
+    async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
+        <T as TxCore>::shared_wait_shutdown_or_vacant_units(&mut **self, count).await
+    }
+
+    #[inline]
+    async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
+        <T as TxCore>::shared_wait_vacant_units(&mut **self,count).await
+    }
+
+    #[inline]
+    async fn shared_wait_empty(&mut self) -> bool {
+        <T as TxCore>::shared_wait_empty(&mut **self).await
+    }
 }

@@ -29,6 +29,7 @@ use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::SideChannelResponder;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
+use crate::steady_rx::RxCore;
 use crate::steady_tx::TxCore;
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
@@ -175,7 +176,7 @@ impl <const LEN: usize>TxMetaDataHolder<LEN> {
     pub fn new(array: [TxMetaData;LEN]) -> Self {
         TxMetaDataHolder { array }
     }
-    pub(crate) fn meta_data(self) -> [TxMetaData;LEN] {
+    pub fn meta_data(self) -> [TxMetaData;LEN] {
         self.array
     }
 }
@@ -192,9 +193,10 @@ pub struct RxMetaDataHolder<const LEN: usize> {
 }
 impl <const LEN: usize>RxMetaDataHolder<LEN> {
     pub fn new(array: [RxMetaData;LEN]) -> Self {
-       RxMetaDataHolder { array }
+        RxMetaDataHolder { array }
     }
-    pub(crate) fn meta_data(self) -> [RxMetaData;LEN] {
+
+    pub fn meta_data(self) -> [RxMetaData;LEN] {
         self.array
     }
 }
@@ -601,8 +603,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let futures = this.iter_mut().map(|tx| {
             let local_r = result.clone();
             async move {
-                let bool_result = tx.item_channel.wait_shutdown_or_vacant_units(vacant_count).await
-                                     && tx.payload_channel.wait_shutdown_or_vacant_units(vacant_bytes).await;
+                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant_count).await
+                                     && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant_bytes).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -1040,7 +1042,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// `true` if the channel has no messages available, otherwise `false`.
-    fn is_empty<T>(&self, this: &mut Rx<T>) -> bool {
+    fn is_empty<T: RxCore>(&self, this: &mut T) -> bool {
         this.shared_is_empty()
     }
 
@@ -1051,7 +1053,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// A `usize` indicating the number of available messages.
-    fn avail_units<T>(&self, this: &mut Rx<T>) -> usize {
+    fn avail_units<T: RxCore>(&self, this: &mut T) -> usize {
         this.shared_avail_units()
     }
 
@@ -1287,8 +1289,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
-    fn is_full<T>(&self, this: &mut Tx<T>) -> bool {
-        this.is_full()
+    fn is_full<T: TxCore>(&self, this: &mut T) -> bool {
+        this.shared_is_full()
     }
 
     /// Returns the number of vacant units in the Tx channel.
@@ -1298,7 +1300,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// The number of messages that can still be sent before the channel is full.
-    fn vacant_units<T>(&self, this: &mut Tx<T>) -> usize {
+    fn vacant_units<T: TxCore>(&self, this: &mut T) -> usize {
         this.shared_vacant_units()
     }
 
@@ -1308,12 +1310,12 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// - `this`: A mutable reference to a `Tx<T>` instance.
     ///
     /// # Asynchronous
-    async fn wait_empty<T>(&self, this: &mut Tx<T>) -> bool {
+    async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
         if self.telemetry.is_dirty() {
             let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
-                this.shared_vacant_units()==this.capacity()
+                this.shared_vacant_units()==this.shared_capacity()
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
                 let wat = this.shared_wait_empty();

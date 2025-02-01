@@ -282,8 +282,8 @@ impl SteadyCommander for SteadyContext {
         for tx in this.iter_mut().take(count_down) {
             let local_r = result.clone();
             futures.push(async move {
-                let bool_result = tx.item_channel.wait_shutdown_or_vacant_units(vacant_count).await
-                                     && tx.payload_channel.wait_shutdown_or_vacant_units(vacant_bytes).await;
+                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant_count).await
+                                     && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant_bytes).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -583,7 +583,7 @@ impl SteadyCommander for SteadyContext {
     /// # Returns
     /// `true` if the channel has no messages available, otherwise `false`.
     fn is_empty<T: RxCore>(&self, this: &mut T) -> bool {
-        this.is_empty()
+        this.shared_is_empty()
     }
     /// Returns the number of messages currently available in the channel.
     ///
@@ -592,7 +592,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// A `usize` indicating the number of available messages.
-    fn avail_units<T>(&self, this: &mut Rx<T>) -> usize {
+    fn avail_units<T: RxCore>(&self, this: &mut T) -> usize {
         this.shared_avail_units()
     }
     /// Asynchronously peeks at the next available message in the channel without removing it.
@@ -725,7 +725,7 @@ impl SteadyCommander for SteadyContext {
     /// # Returns
     /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
     fn is_full<T: TxCore>(&self, this: &mut T) -> bool {
-        this.is_full()
+        this.shared_is_full()
     }
     /// Returns the number of vacant units in the Tx channel.
     ///
@@ -735,7 +735,7 @@ impl SteadyCommander for SteadyContext {
     /// # Returns
     /// The number of messages that can still be sent before the channel is full.
     fn vacant_units<T: TxCore>(&self, this: &mut T) -> usize {
-        this.vacant_units()
+        this.shared_vacant_units()
     }
     /// Asynchronously waits until the Tx channel is empty.
     ///
@@ -744,7 +744,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Asynchronous
     async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool {
-        this.wait_empty().await
+        this.shared_wait_empty().await
     }
     /// Takes messages into an iterator.
     ///
@@ -1415,7 +1415,7 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// `true` if the channel has no messages available, otherwise `false`.
-    fn is_empty<T>(&self, this: &mut Rx<T>) -> bool;
+    fn is_empty<T: RxCore>(&self, this: &mut T) -> bool;
     /// Returns the number of messages currently available in the channel.
     ///
     /// # Parameters
@@ -1423,7 +1423,7 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// A `usize` indicating the number of available messages.
-    fn avail_units<T>(&self, this: &mut Rx<T>) -> usize;
+    fn avail_units<T: RxCore>(&self, this: &mut T) -> usize;
     /// Asynchronously peeks at the next available message in the channel without removing it.
     ///
     /// # Parameters
@@ -1474,7 +1474,7 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
-    fn is_full<T>(&self, this: &mut Tx<T>) -> bool;
+    fn is_full<T: TxCore>(&self, this: &mut T) -> bool;
     /// Returns the number of vacant units in the Tx channel.
     ///
     /// # Parameters
@@ -1482,14 +1482,14 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// The number of messages that can still be sent before the channel is full.
-    fn vacant_units<T>(&self, this: &mut Tx<T>) -> usize;
+    fn vacant_units<T: TxCore>(&self, this: &mut T) -> usize;
     /// Asynchronously waits until the Tx channel is empty.
     ///
     /// # Parameters
     /// - `this`: A mutable reference to a `Tx<T>` instance.
     ///
     /// # Asynchronous
-    async fn wait_empty<T>(&self, this: &mut Tx<T>) -> bool;
+    async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool;
     /// Takes messages into an iterator.
     ///
     /// # Parameters

@@ -315,7 +315,7 @@ pub struct StreamTxMetaData {
 
 /// A transmitter for a steady stream. Holds two channels:
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
-pub(crate) struct StreamTx<T: StreamItem> {
+pub struct StreamTx<T: StreamItem> {
     pub(crate) item_channel: Tx<T>,
     pub(crate) payload_channel: Tx<u8>,
     pub(crate) stream_id: i32,
