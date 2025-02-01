@@ -14,7 +14,8 @@ use std::ops::{Deref, DerefMut};
 use futures_timer::Delay;
 use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
-use crate::{RxBundle, SteadyRx, SteadyRxBundle};
+use crate::{RxBundle, SteadyRx, SteadyRxBundle, Tx};
+use crate::distributed::steady_stream::{StreamItem, StreamRx, StreamTx};
 
 /// Represents a receiver that consumes messages from a channel.
 ///
@@ -362,7 +363,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Useful for determining if the channel is empty before attempting to consume messages.
-    pub fn is_empty(&self) -> bool {        
+    pub fn is_empty(&self) -> bool {
         self.shared_is_empty()
     }
 
@@ -385,7 +386,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Enables monitoring of the current load or backlog of messages in the channel for adaptive processing strategies.
-    pub fn avail_units(&mut self) -> usize {        
+    pub fn avail_units(&mut self) -> usize {
         self.shared_avail_units()
     }
 
@@ -403,10 +404,6 @@ impl<T> Rx<T> {
     }
 
 
-    #[inline]
-    fn shared_capacity(&self) -> usize {
-        self.rx.capacity().get()
-    }
 
     #[inline]
     pub(crate) fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
@@ -530,15 +527,6 @@ impl<T> Rx<T> {
         self.rx.iter()
     }
 
-    #[inline]
-    pub(crate) fn shared_is_empty(&self) -> bool  {
-        self.rx.is_empty()
-    }
-
-    #[inline]
-    pub(crate) fn shared_avail_units(&mut self) -> usize {        
-        self.rx.occupied_len()
-    }
 
     
     #[inline]
@@ -753,7 +741,7 @@ pub trait RxBundleTrait {
     fn tx_instance_reset(&mut self);
 }
 
-impl<T> RxBundleTrait for RxBundle<'_, T> { //TODO: test
+impl<T> RxBundleTrait for RxBundle<'_, T> {
 
     fn is_closed_and_empty(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed_and_empty())
@@ -780,6 +768,53 @@ impl<T> RxBundleTrait for RxBundle<'_, T> { //TODO: test
     fn tx_instance_reset(&mut self) {
         self.iter_mut().for_each(|f| f.tx_instance_reset());
     }
+}
+
+
+/////////////////////////////////////////////////////////////////
+
+pub trait RxCore {
+    #[inline]
+    fn capacity(&self) -> usize;
+    #[inline]
+    fn is_empty(&self) -> bool;
+    #[inline]
+    fn avail_units(&mut self) -> usize;
+}
+
+impl <T>RxCore for Rx<T> {
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.rx.capacity().get()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool  {
+        self.rx.is_empty()
+    }
+
+    #[inline]
+    fn avail_units(&mut self) -> usize {
+        self.rx.occupied_len()
+    }
+}
+impl <T: StreamItem> RxCore for StreamRx<T> {
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.item_channel.rx.capacity().get()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool  {
+        self.item_channel.rx.is_empty()
+    }
+
+    #[inline]
+    fn avail_units(&mut self) -> usize {
+        self.item_channel.rx.occupied_len()
+    }
+
 }
 
 #[cfg(test)]

@@ -17,6 +17,7 @@ use futures::pin_mut;
 use futures_timer::Delay;
 use crate::{steady_config, ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
+use crate::distributed::steady_stream::{StreamItem, StreamTx};
 use crate::monitor::{ChannelMetaData, TxMetaData};
 
 /// The `Tx` struct represents a transmission channel for messages of type `T`.
@@ -29,6 +30,8 @@ pub struct Tx<T> {
     pub(crate) make_closed: Option<oneshot::Sender<()>>,
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
 }
+
+
 
 impl<T> Tx<T> {
 
@@ -122,19 +125,11 @@ impl<T> Tx<T> {
         self.shared_wait_empty().await
     }
 
-    ////////////////////////////////////////////////////////////////
-    // Shared implementations, if you need to swap out the channel it is done here
-    ////////////////////////////////////////////////////////////////
-
-    #[inline]
-    fn shared_capacity(&self) -> usize {
-        self.tx.capacity().get()
-    }
 
     #[inline]
     pub(crate) fn shared_try_send(&mut self, msg: T) -> Result<(), T> {
         debug_assert!(!self.make_closed.is_none(),"Send called after channel marked closed");
-        
+
         match self.tx.try_push(msg) {
             Ok(_) => Ok(()),
             Err(m) => Err(m),
@@ -151,64 +146,10 @@ impl<T> Tx<T> {
 
     #[inline]
     pub(crate) fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
-        where T: Copy {
+    where T: Copy {
         debug_assert!(!self.make_closed.is_none(),"Send called after channel marked closed");
         self.tx.push_slice(slice)
     }
-
-    #[inline]
-    fn shared_is_full(&self) -> bool {
-        self.tx.is_full()
-    }
-
-    #[inline]
-    fn shared_is_empty(&self) -> bool {
-        self.tx.is_empty()
-    }
-
-    #[inline]
-    pub(crate) fn shared_vacant_units(&self) -> usize {
-        self.tx.vacant_len()
-    }
-
-    #[inline]
-    pub(crate) async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
-        if self.tx.vacant_len() >= count {
-            true
-        } else {
-            let mut one_down = &mut self.oneshot_shutdown;
-            if !one_down.is_terminated() {
-                let mut operation = &mut self.tx.wait_vacant(count);
-                select! { _ = one_down => false, _ = operation => true, }
-            } else {
-                false
-            }
-        }
-    }
-    #[inline]
-    pub(crate) async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
-        if self.tx.vacant_len() >= count {
-            true
-        } else {
-            let operation = &mut self.tx.wait_vacant(count);
-            operation.await;
-            true
-        }
-    }
-    
-
-    #[inline]
-    pub(crate) async fn shared_wait_empty(&mut self) -> bool {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.tx.wait_vacant(usize::from(self.tx.capacity()));
-            select! { _ = one_down => false, _ = operation => true, }
-        } else {
-            self.tx.capacity().get() == self.tx.vacant_len()
-        }
-    }
-
-
 
     #[inline]
     pub(crate) async fn shared_send_async_timeout(&mut self, msg: T, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<(), T> {
@@ -262,9 +203,6 @@ impl<T> Tx<T> {
                         }
                     }
                 }
-
-                
-               
             }
         }
     }
@@ -415,3 +353,142 @@ impl<T> TxBundleTrait for TxBundle<'_, T> {
 
 }
 
+/////////////////////////////////////////////////////////////////
+
+pub trait TxCore {
+    #[inline]
+    fn capacity(&self) -> usize;
+    #[inline]
+    fn is_full(&self) -> bool;
+    #[inline]
+    fn is_empty(&self) -> bool;
+    #[inline]
+    fn vacant_units(&self) -> usize;
+    #[inline]
+    async fn wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool;
+    #[inline]
+    async fn wait_vacant_units(&mut self, count: usize) -> bool;
+    #[inline]
+    async fn wait_empty(&mut self) -> bool;
+
+}
+
+impl <T> TxCore for Tx<T> {
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.tx.capacity().get()
+    }
+
+    #[inline]
+    fn is_full(&self) -> bool {
+        self.tx.is_full()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.tx.is_empty()
+    }
+
+    #[inline]
+    fn vacant_units(&self) -> usize {
+        self.tx.vacant_len()
+    }
+
+    #[inline]
+    async fn wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
+        if self.tx.vacant_len() >= count {
+            true
+        } else {
+            let mut one_down = &mut self.oneshot_shutdown;
+            if !one_down.is_terminated() {
+                let mut operation = &mut self.tx.wait_vacant(count);
+                select! { _ = one_down => false, _ = operation => true, }
+            } else {
+                false
+            }
+        }
+    }
+    #[inline]
+    async fn wait_vacant_units(&mut self, count: usize) -> bool {
+        if self.tx.vacant_len() >= count {
+            true
+        } else {
+            let operation = &mut self.tx.wait_vacant(count);
+            operation.await;
+            true
+        }
+    }
+
+    #[inline]
+    async fn wait_empty(&mut self) -> bool {
+        let mut one_down = &mut self.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.tx.wait_vacant(usize::from(self.tx.capacity()));
+            select! { _ = one_down => false, _ = operation => true, }
+        } else {
+            self.tx.capacity().get() == self.tx.vacant_len()
+        }
+    }
+
+
+}
+impl <T: StreamItem> TxCore for StreamTx<T> {
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.item_channel.tx.capacity().get()
+    }
+
+    #[inline]
+    fn is_full(&self) -> bool {
+        self.item_channel.tx.is_full()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.item_channel.tx.is_empty()
+    }
+
+    #[inline]
+    fn vacant_units(&self) -> usize {
+        self.item_channel.tx.vacant_len()
+    }
+
+    #[inline]
+    async fn wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
+        if self.item_channel.tx.vacant_len() >= count {
+            true
+        } else {
+            let mut one_down = &mut self.item_channel.oneshot_shutdown;
+            if !one_down.is_terminated() {
+                let mut operation = &mut self.item_channel.tx.wait_vacant(count);
+                select! { _ = one_down => false, _ = operation => true, }
+            } else {
+                false
+            }
+        }
+    }
+    #[inline]
+    async fn wait_vacant_units(&mut self, count: usize) -> bool {
+        if self.item_channel.tx.vacant_len() >= count {
+            true
+        } else {
+            let operation = &mut self.item_channel.tx.wait_vacant(count);
+            operation.await;
+            true
+        }
+    }
+
+    #[inline]
+    async fn wait_empty(&mut self) -> bool {
+        let mut one_down = &mut self.item_channel.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.item_channel.tx.wait_vacant(usize::from(self.item_channel.tx.capacity()));
+            select! { _ = one_down => false, _ = operation => true, }
+        } else {
+            self.item_channel.tx.capacity().get() == self.item_channel.tx.vacant_len()
+        }
+    }
+
+}

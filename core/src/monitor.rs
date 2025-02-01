@@ -29,6 +29,7 @@ use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::SideChannelResponder;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
+use crate::steady_tx::TxCore;
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::yield_now::yield_now;
 
@@ -600,8 +601,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let futures = this.iter_mut().map(|tx| {
             let local_r = result.clone();
             async move {
-                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant_count).await
-                               && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant_bytes).await;
+                let bool_result = tx.item_channel.wait_shutdown_or_vacant_units(vacant_count).await
+                                     && tx.payload_channel.wait_shutdown_or_vacant_units(vacant_bytes).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -1173,8 +1174,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         debug_assert!(stream_id<= this[this.len()-1].stream_id);
         let idx:usize = (stream_id - this[0].stream_id) as usize;
 
-        if this[idx].payload_channel.shared_vacant_units()>= payload.len()
-            && this[idx].item_channel.shared_vacant_units()>= 1 {
+        if this[idx].payload_channel.vacant_units()>= payload.len()
+            && this[idx].item_channel.vacant_units()>= 1 {
             
             let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
             debug_assert_eq!(count, payload.len());
