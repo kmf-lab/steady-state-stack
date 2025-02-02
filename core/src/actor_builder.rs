@@ -441,20 +441,20 @@ impl ActorBuilder {
     }
 
 
-    pub fn with_core_exclusion(mut self, cores: Vec<usize>) -> Self {
+    pub fn with_core_exclusion(&self, cores: Vec<usize>) -> Self {
         let mut result = self.clone();
         result.excluded_cores = cores;
         result
     }
 
-    pub fn with_core_balancing(mut self, balancer: CoreBalancer) -> Self {
+    pub fn with_core_balancing(&self, balancer: CoreBalancer) -> Self {
         let mut result = self.clone();
         result.core_balancer = Some(balancer);
         result
     }
 
     //zero based.
-    pub fn with_explicit_core(mut self, zero_offset_core: usize) -> Self {
+    pub fn with_explicit_core(&self, zero_offset_core: usize) -> Self {
         let mut result = self.clone();
         result.explicit_core = Some(zero_offset_core);
         result

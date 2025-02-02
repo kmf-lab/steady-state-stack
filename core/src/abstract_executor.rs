@@ -123,7 +123,7 @@ pub(crate) fn init(enable_driver: bool, nuclei_config: IoUringConfiguration) {
 ///
 pub(crate) fn block_on<F, T>(future: F) -> T
     where
-        F: Future<Output = T> + Send + 'static,
+        F: Future<Output = T> + 'static,
         T: Send,
 {
     nuclei::block_on(future) // Block until the future is resolved

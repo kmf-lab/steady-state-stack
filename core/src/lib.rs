@@ -1139,7 +1139,7 @@ mod lib_tests {
     // Test for try_send
     #[test]
     fn test_try_send() {
-        let (tx, _rx) = create_test_channel();
+        let (tx, _rx) = create_test_channel::<usize>();
         let mut context = test_steady_context();
         let tx = tx.clone();
         if let Some(mut tx) = tx.try_lock() {

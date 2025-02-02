@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use ringbuf::storage::{Array, Heap};
+use ringbuf::storage::{Heap};
 use std::sync::Arc;
 use futures::lock::Mutex;
 use std::time::{Duration, Instant};

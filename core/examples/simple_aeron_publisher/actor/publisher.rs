@@ -40,23 +40,28 @@ pub async fn run<const GIRTH: usize>(mut context: SteadyContext
         let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx
                                        , vacant_items, vacant_bytes, 1));
 
+
+
         let mut remaining = TEST_ITEMS;
-        // let idx:usize = (STREAM_ID - tx[0].stream_id) as usize;
-        // while remaining > 0 && cmd.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
-        //
-        //     //TODO: make this interface also a trait.
-        //     //cmd.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
-        //     cmd.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
-        //     cmd.send_slice_until_full(&mut tx[idx].item_channel, &items);
-        //
-        //     // this old solution worked but consumed more core
-        //     // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
-        //     //     let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data1);
-        //     //     let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data2);
-        //     // }
-        //     sent_count += BATCH_SIZE;
-        //     remaining -= BATCH_SIZE
-        // }
+      //   let idx:usize = (STREAM_ID - tx[0].stream_id) as usize;
+       //   while remaining > 0 && cmd.vacant_units(&mut tx[idx]) >= BATCH_SIZE {
+       //
+       //      //TODO: make this interface also a trait.
+       //    //  cmd.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
+       // //     cmd.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
+       //  //    cmd.send_slice_until_full(&mut tx[idx].item_channel, &items);
+       //
+       //      // this old solution worked but consumed more core
+       //      //  for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
+       //      //      let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data1);
+       //      //      let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data2);
+       //      //
+       //      //      cmd.try_send(&mut tx, STREAM_ID, &data1);
+       //      //
+       //      //  }
+       //      sent_count += BATCH_SIZE;
+       //      remaining -= BATCH_SIZE
+       //   }
 
         if sent_count>=TEST_ITEMS {
             //if an actor exits without closing its streams we will get a dirty shutdown.

@@ -12,7 +12,7 @@ use std::ops::DerefMut;
 use bytes::BufMut;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, LocalMonitor, Rx, RxBundle, SendSaturation, SteadyContext, Tx, TxBundle};
 use crate::graph_testing::SideChannelResponder;
-use crate::monitor::{RxMetaData, TxMetaData, CALL_SINGLE_WRITE};
+use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_rx::{RxCore, RxDef};
 use crate::steady_tx::{TxDef, TxCore};
@@ -23,7 +23,7 @@ use log::warn;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use ringbuf::traits::Observer;
-use crate::distributed::steady_stream::{StreamItem, StreamSessionMessage, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, StreamData, StreamTx, Defrag};
+use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, StreamData, Defrag};
 use crate::util::logger;
 
 impl SteadyContext {
@@ -644,7 +644,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
-    fn try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T> {
+    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut> {
         this.shared_try_send(msg)
     }
 
@@ -1466,8 +1466,11 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
-    fn try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T>;
-    /// Checks if the Tx channel is currently full.
+
+    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut>;
+
+
+        /// Checks if the Tx channel is currently full.
     ///
     /// # Parameters
     /// - `this`: A mutable reference to a `Tx<T>` instance.

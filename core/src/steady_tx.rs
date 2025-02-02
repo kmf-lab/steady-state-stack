@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use log::{error, trace, warn};
-use futures_util::{FutureExt, select};
+use futures_util::{select, FutureExt};
 use std::any::type_name;
 use std::backtrace::Backtrace;
 use std::time::{Duration, Instant};
@@ -19,6 +19,7 @@ use crate::{steady_config, ActorIdentity, SendSaturation, SteadyTx, SteadyTxBund
 use crate::channel_builder::InternalSender;
 use crate::distributed::steady_stream::{StreamItem, StreamTx};
 use crate::monitor::{ChannelMetaData, TxMetaData};
+use crate::monitor_telemetry::SteadyTelemetrySend;
 
 /// The `Tx` struct represents a transmission channel for messages of type `T`.
 /// It provides methods to send messages to the channel, check the channel's state, and handle the transmission lifecycle.
@@ -250,6 +251,11 @@ impl<T> TxBundleTrait for TxBundle<'_, T> {
 
 }
 
+pub(crate) enum TxDone { //returns counts for telemetry, can be ignored, also this is internal only
+    Normal(usize),
+    Stream(usize,usize)
+}
+
 /////////////////////////////////////////////////////////////////
 
 pub trait TxCore {
@@ -270,14 +276,18 @@ pub trait TxCore {
 
     async fn shared_wait_empty(&mut self) -> bool;
 
-    fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<(), Self::MsgOut>;
+    fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
 
     async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<(), Self::MsgOut>;
 
     async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), Self::MsgOut>;
 
+    fn shared_telemetry_inc(&mut self, done: TxDone, tel: &mut SteadyTelemetrySend<const LL:usize >);
 
     }
+
+//Need try_send and try_stream_send and send_slice_until_full
+//Need  SteadyStreamTxBundle  channel to index function
 
 impl<T> TxCore for Tx<T> {
 
@@ -341,11 +351,11 @@ impl<T> TxCore for Tx<T> {
     }
 
     #[inline]
-    fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<(), Self::MsgOut> {
+    fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
         debug_assert!(!self.make_closed.is_none(),"Send called after channel marked closed");
 
         match self.tx.try_push(msg) {
-            Ok(_) => Ok(()),
+            Ok(_) => Ok(TxDone::Normal(1)),
             Err(m) => Err(m),
         }
     }
@@ -507,7 +517,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
     }
 
     #[inline]
-    fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<(), Self::MsgOut> {
+    fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
         let (item,payload) = msg;
         assert_eq!(item.length(),payload.len() as i32);
 
@@ -518,7 +528,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
            self.item_channel.tx.vacant_len() >= 1 {
             let _ = self.payload_channel.tx.push_slice(payload);
             let _ = self.item_channel.tx.try_push(item);
-            Ok(())
+            Ok(TxDone::Stream(1,payload.len()))
         } else {
             Err(item)
         }
@@ -559,7 +569,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
 
         match push_result {
             Ok(_) => Ok(()),
-            Err(msg) => {
+            Err((item,payload)) => {
                 match saturation {
                     SendSaturation::IgnoreAndWait => { /* fallthrough */ }
                     SendSaturation::IgnoreAndErr => {
@@ -578,7 +588,10 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
                     }
                 }
                 if let Some(timeout) = timeout {
-                    let has_room = self.shared_wait_vacant_units(1).fuse();
+                    let has_room = async {
+                        self.payload_channel.tx.wait_vacant(payload.len()).await;
+                        self.item_channel.tx.wait_vacant(1).await;
+                    }.fuse();
                     pin_mut!(has_room);
                     let mut timeout_future = Delay::new(timeout).fuse();
 
@@ -586,9 +599,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
                     _ = has_room => {
                         {
                             // Borrow the payload channel in its own block:
-                            let payload_tx = &mut self.payload_channel.tx;
-                            payload_tx.wait_vacant(payload.len()).await;
-                            let got_all = payload_tx.push_slice(&payload) == payload.len();
+                            let got_all = self.payload_channel.tx.push_slice(&payload) == payload.len();
                             if !got_all {
                                 error!("channel is closed");
                                 return Err(item);
@@ -654,7 +665,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
 
         match push_result {
             Ok(_) => Ok(()),
-            Err(msg) => {
+            Err((item,payload)) => {
                 match saturation {
                     SendSaturation::IgnoreAndWait => {
                     }

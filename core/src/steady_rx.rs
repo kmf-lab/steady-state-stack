@@ -14,9 +14,8 @@ use std::ops::{Deref, DerefMut};
 use futures_timer::Delay;
 use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
-use crate::{RxBundle, SteadyRx, SteadyRxBundle, Tx};
-use crate::distributed::steady_stream::{StreamItem, StreamRx, StreamTx};
-use crate::steady_tx::TxCore;
+use crate::{RxBundle, SteadyRx, SteadyRxBundle, TxCore};
+use crate::distributed::steady_stream::{StreamItem, StreamRx};
 
 /// Represents a receiver that consumes messages from a channel.
 ///
@@ -40,6 +39,48 @@ pub struct Rx<T> {
 }
 
 impl <T> Rx<T> {
+
+    #[inline]
+    pub(crate) fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
+    where T: Copy {
+
+        let count:usize = self.rx.peek_slice(elems);
+
+        if count > 0 {
+            let take_count = self.take_count.load(Ordering::Relaxed);
+            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
+            if !cached_take_count == take_count {
+                self.peek_repeats.store(0, Ordering::Relaxed);
+                self.cached_take_count.store(take_count, Ordering::Relaxed);
+            } else {
+                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
+            }
+        } else {
+            self.peek_repeats.store(0, Ordering::Relaxed);
+        }
+        count
+    }
+
+
+    #[inline]
+    pub(crate) fn shared_try_peek(&self) -> Option<&T> {
+
+        let result = self.rx.try_peek();
+        if result.is_some() {
+            let take_count = self.take_count.load(Ordering::Relaxed);
+            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
+            if !cached_take_count == take_count {
+                self.peek_repeats.store(0, Ordering::Relaxed);
+                self.cached_take_count.store(take_count, Ordering::Relaxed);
+            } else {
+                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
+            }
+        } else {
+            self.peek_repeats.store(0, Ordering::Relaxed);
+        }
+
+        result
+    }
 
     /// Checks if the same item is being peeked multiple times, indicating it should be moved to dead letters.
     ///
@@ -201,26 +242,6 @@ impl <T> Rx<T> {
     
     
 
-    #[inline]
-    pub(crate) fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
-        where T: Copy {
-
-        let count:usize = self.rx.peek_slice(elems);
-
-        if count > 0 {
-            let take_count = self.take_count.load(Ordering::Relaxed);
-            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
-            if !cached_take_count == take_count {
-                self.peek_repeats.store(0, Ordering::Relaxed);
-                self.cached_take_count.store(take_count, Ordering::Relaxed);
-            } else {
-                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
-            }
-        } else {
-            self.peek_repeats.store(0, Ordering::Relaxed);
-        }
-        count
-    }
 
     #[inline]
     pub(crate) async fn shared_peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
@@ -256,25 +277,7 @@ impl <T> Rx<T> {
         self.shared_try_peek_slice(elems)
     }
 
-    #[inline]
-    pub(crate) fn shared_try_peek(&self) -> Option<&T> {
 
-        let result = self.rx.try_peek();
-        if result.is_some() {
-            let take_count = self.take_count.load(Ordering::Relaxed);
-            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
-            if !cached_take_count == take_count {
-                self.peek_repeats.store(0, Ordering::Relaxed);
-                self.cached_take_count.store(take_count, Ordering::Relaxed);
-            } else {
-                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
-            }
-        } else {
-            self.peek_repeats.store(0, Ordering::Relaxed);
-        }
-
-        result
-    }
 }
 
 impl<T> Rx<T> {
@@ -737,6 +740,8 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
 /////////////////////////////////////////////////////////////////
 
 pub trait RxCore {
+    // type MsgRef<'a>;
+    // type MsgOut;
 
     fn shared_capacity(&self) -> usize;
 
@@ -753,6 +758,9 @@ pub trait RxCore {
 }
 
 impl <T>RxCore for Rx<T> {
+
+    // type MsgRef<'a> = &'a T where T: 'a;
+    // type MsgOut = T;
 
     fn shared_capacity(&self) -> usize {
         self.rx.capacity().get()
@@ -802,8 +810,16 @@ impl <T>RxCore for Rx<T> {
             true
         }
     }
+
+
 }
+
+// TODO: need cmd wait_closed_or_avail_message_stream
+// TODO: need try_take, and  take_stream_slice use StreamData if not reff
+
 impl <T: StreamItem> RxCore for StreamRx<T> {
+    // type MsgRef<'a> = (T, &'a[u8]);
+    // type MsgOut = T;
 
     fn shared_capacity(&self) -> usize {
         self.item_channel.rx.capacity().get()
@@ -853,9 +869,13 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
             true
         }
     }
+
 }
 
-impl<T: RxCore> RxCore for futures::lock::MutexGuard<'_, T> {
+impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
+    // type MsgRef<'a> = <T as RxCore>::MsgRef<'a>;
+    // type MsgOut = <T as RxCore>::MsgOut;
+
     fn shared_capacity(&self) -> usize {
         <T as RxCore>::shared_capacity(&**self)
     }
@@ -879,11 +899,12 @@ impl<T: RxCore> RxCore for futures::lock::MutexGuard<'_, T> {
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
         <T as RxCore>::shared_wait_avail_units(&mut **self, count).await
     }
+
 }
 
 #[cfg(test)]
 mod rx_tests {
-    use crate::{GraphBuilder, SteadyTxBundle, SteadyTxBundleTrait};
+    use crate::{GraphBuilder, SteadyTxBundle, SteadyTxBundleTrait, TxCore};
     use super::*;
 
     #[async_std::test]

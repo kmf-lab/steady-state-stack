@@ -1146,18 +1146,26 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
-    fn try_send<T>(&mut self, this: &mut Tx<T>, msg: T) -> Result<(), T> {
+       fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut> {
+
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
 
         match this.shared_try_send(msg) {
-            Ok(_) => {
-                this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
+            Ok(done_count) => {
+
+                if let Some(ref mut tel) = self.telemetry.send_tx {
+                    this.shared_telemetry_inc(self, done_count);
+
+                    this.local_index = tel.process_event(this.local_index, this.channel_meta_data.id, 1);
                 } else {
-                    MONITOR_NOT
+                    this.shared_telemetry_inc(self, done_count);
+
+                    this.local_index = MONITOR_NOT;
                 };
+
+
                 Ok(())
             }
             Err(sensitive) => Err(sensitive),
