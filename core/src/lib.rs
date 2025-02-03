@@ -100,7 +100,7 @@ pub use steady_tx::{TxBundleTrait};
 pub use commander::SteadyCommander;
 pub use distributed::aeron_channel::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_distributed::{AeronConfig, DistributedTech};
-pub use distributed::steady_stream::{StreamSimpleMessage,StreamSessionMessage,StreamData};
+pub use distributed::steady_stream::{StreamSimpleMessage,StreamSessionMessage};
 pub use distributed::steady_stream::{LazySteadyStreamTxBundle,LazySteadyStreamRxBundle};
 pub use distributed::steady_stream::{SteadyStreamTxBundle,SteadyStreamRxBundle};
 pub use distributed::steady_stream::{LazyStreamTx,LazyStreamRx};

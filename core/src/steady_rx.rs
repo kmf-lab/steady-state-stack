@@ -3,7 +3,7 @@ use futures_util::{FutureExt, select, task};
 use std::sync::Arc;
 use futures_util::lock::{MutexLockFuture};
 use std::time::{Duration, Instant};
-use log::error;
+use log::{error, warn};
 use futures::channel::oneshot;
 use futures_util::future::{BoxFuture, FusedFuture, select_all};
 use async_ringbuf::consumer::AsyncConsumer;
@@ -14,8 +14,10 @@ use std::ops::{Deref, DerefMut};
 use futures_timer::Delay;
 use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
-use crate::{RxBundle, SteadyRx, SteadyRxBundle};
+use crate::{RxBundle, SteadyRx, SteadyRxBundle, MONITOR_NOT};
 use crate::distributed::steady_stream::{StreamItem, StreamRx};
+use crate::monitor_telemetry::SteadyTelemetrySend;
+use crate::steady_tx::TxDone;
 
 /// Represents a receiver that consumes messages from a channel.
 ///
@@ -736,12 +738,22 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
     }
 }
 
+pub(crate) enum RxDone { //returns counts for telemetry, can be ignored, also this is internal only
+    Normal(usize),
+    Stream(usize,usize)
+}
 
 /////////////////////////////////////////////////////////////////
 
 pub trait RxCore {
     // type MsgRef<'a>;
-    // type MsgOut;
+    type MsgOut;
+
+
+
+    fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>);
+
+    fn monitor_not(&mut self);
 
     fn shared_capacity(&self) -> usize;
 
@@ -755,13 +767,30 @@ pub trait RxCore {
 
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool;
 
-   // fn shared_try_take(&mut self) -> Option<T>;
+    fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)>;
 }
 
 impl <T>RxCore for Rx<T> {
 
     // type MsgRef<'a> = &'a T where T: 'a;
-    // type MsgOut = T;
+    type MsgOut = T;
+
+
+    fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>) {
+        match done_count {
+            RxDone::Normal(d) =>
+                self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, d as isize),
+            RxDone::Stream(i,p) => {
+                warn!("internal error should have gotten Normal");
+                self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, i as isize)
+            },
+        }
+    }
+
+    #[inline]
+    fn monitor_not(&mut self) {
+        self.local_index = MONITOR_NOT;
+    }
 
     fn shared_capacity(&self) -> usize {
         self.rx.capacity().get()
@@ -812,15 +841,16 @@ impl <T>RxCore for Rx<T> {
         }
     }
 
-    // #[inline]
-    // fn shared_try_take(&mut self) -> Option<T> {
-    //     let result = self.rx.try_pop();
-    //     if result.is_some() {
-    //         self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
-    //     }
-    //     result
-    // }
-
+    #[inline]
+    fn shared_try_take(&mut self) -> Option<(RxDone, Self::MsgOut)> {
+        match self.rx.try_pop() {
+            Some(r) => {
+                self.take_count.fetch_add(1,Ordering::Relaxed); //for DLQ
+                Some((RxDone::Normal(1), r))
+            },
+            None => None
+        }
+    }
 }
 
 // TODO: need cmd wait_closed_or_avail_message_stream
@@ -828,7 +858,25 @@ impl <T>RxCore for Rx<T> {
 
 impl <T: StreamItem> RxCore for StreamRx<T> {
     // type MsgRef<'a> = (T, &'a[u8]);
-    // type MsgOut = T;
+    type MsgOut = (T, Box<[u8]>);
+
+
+    fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>) {
+        match done_count {
+            RxDone::Normal(d) =>
+                warn!("internal error should have gotten Stream"),
+            RxDone::Stream(i,p) => {
+                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.id, i as isize);
+                self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.id, p as isize);
+            },
+        }
+    }
+
+    #[inline]
+    fn monitor_not(&mut self) {
+        self.item_channel.local_index = MONITOR_NOT;
+        self.payload_channel.local_index = MONITOR_NOT;
+    }
 
     fn shared_capacity(&self) -> usize {
         self.item_channel.rx.capacity().get()
@@ -880,20 +928,43 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
     }
 
 
-    // #[inline]
-    // pub(crate) fn shared_try_take(&mut self) -> Option<T> {
-    //     let result = self.rx.try_pop();
-    //     if result.is_some() {
-    //         self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
-    //     }
-    //     result
-    // }
+    #[inline]
+    fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)> {
+        if let Some(item) = self.item_channel.rx.try_peek() {
+            if item.length() <= self.payload_channel.rx.occupied_len() as i32 {
+
+                let mut payload:Vec<u8> = Vec::with_capacity(item.length() as usize);
+                self.payload_channel.rx.peek_slice(&mut payload);
+                let payload = payload.into_boxed_slice();
+                drop(item);
+                if let Some(item) = self.item_channel.rx.try_pop() {
+                    unsafe { self.payload_channel.rx.advance_read_index(payload.len()); }
+                    self.item_channel.take_count.fetch_add(1,Ordering::Relaxed); //for DLQ!
+                    Some( (RxDone::Stream(1,payload.len()),(item,payload)) )
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
 
 }
 
 impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     // type MsgRef<'a> = <T as RxCore>::MsgRef<'a>;
-    // type MsgOut = <T as RxCore>::MsgOut;
+    type MsgOut = <T as RxCore>::MsgOut;
+
+    fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
+        <T as RxCore>::telemetry_inc(&mut **self,done_count, tel)
+    }
+
+    fn monitor_not(&mut self) {
+        <T as RxCore>::monitor_not(&mut **self)
+    }
 
     fn shared_capacity(&self) -> usize {
         <T as RxCore>::shared_capacity(&**self)
@@ -919,6 +990,9 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_wait_avail_units(&mut **self, count).await
     }
 
+    fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)> {
+        <T as RxCore>::shared_try_take(&mut **self)
+    }
 }
 
 #[cfg(test)]

@@ -1515,19 +1515,18 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// An `Option<T>` which is `Some(T)` if a message is available, or `None` if the channel is empty.
-    fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
+    fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
+
         match this.shared_try_take() {
-            Some(msg) => {
-                this.local_index = self.dynamic_event_count(
-                    this.local_index,
-                    this.channel_meta_data.id,
-                    1);
+            Some((done_count,msg)) => {
+                if let Some(ref mut tel) = self.telemetry.send_rx {
+                   this.telemetry_inc(done_count, tel); } else { this.monitor_not(); };
                 Some(msg)
-            }
-            None => None,
+            },
+            None => None
         }
     }
 

@@ -14,7 +14,7 @@ use crate::{steady_config, ActorIdentity, GraphLivelinessState, LocalMonitor, Rx
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
-use crate::steady_rx::{RxCore, RxDef};
+use crate::steady_rx::{RxCore, RxDef, RxDone};
 use crate::steady_tx::{TxDef, TxCore};
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
@@ -869,8 +869,8 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
-    fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T> {       
-        this.shared_try_take()
+    fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> {
+        this.shared_try_take().map(|(d,m)|m)
     }
 
 
@@ -1474,6 +1474,11 @@ pub trait SteadyCommander {
 
     fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut>;
 
+    /// Attempts to take a message from the channel if available.
+    ///
+    /// # Returns
+    /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
+    fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut>;
 
         /// Checks if the Tx channel is currently full.
     ///
@@ -1532,11 +1537,7 @@ pub trait SteadyCommander {
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
     async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T>;
-    /// Attempts to take a message from the channel if available.
-    ///
-    /// # Returns
-    /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
-    fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>;
+
 
     // fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize;
     //
