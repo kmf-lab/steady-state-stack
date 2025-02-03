@@ -15,7 +15,7 @@ use std::ops::Deref;
 use std::thread;
 use futures::pin_mut;
 use futures_timer::Delay;
-use crate::{steady_config, ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle};
+use crate::{steady_config, ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle, MONITOR_NOT};
 use crate::channel_builder::InternalSender;
 use crate::distributed::steady_stream::{StreamItem, StreamTx};
 use crate::monitor::{ChannelMetaData, TxMetaData};
@@ -258,9 +258,14 @@ pub(crate) enum TxDone { //returns counts for telemetry, can be ignored, also th
 
 /////////////////////////////////////////////////////////////////
 
+
 pub trait TxCore {
     type MsgIn<'a>;
     type MsgOut;
+
+    fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>);
+
+    fn monitor_not(&mut self);
 
     fn shared_capacity(&self) -> usize;
 
@@ -282,17 +287,34 @@ pub trait TxCore {
 
     async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), Self::MsgOut>;
 
-    fn shared_telemetry_inc(&mut self, done: TxDone, tel: &mut SteadyTelemetrySend<const LL:usize >);
 
     }
 
 //Need try_send and try_stream_send and send_slice_until_full
 //Need  SteadyStreamTxBundle  channel to index function
 
+
 impl<T> TxCore for Tx<T> {
 
     type MsgIn<'a> = T;
     type MsgOut = T;
+
+    fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
+        match done_count {
+            TxDone::Normal(d) =>
+              self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, d as isize),
+            TxDone::Stream(i,p) => {
+                warn!("internal error should have gotten Normal");
+                self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, i as isize)
+            },
+        }
+    }
+
+
+    #[inline]
+    fn monitor_not(&mut self) {
+        self.local_index = MONITOR_NOT;
+    }
 
     #[inline]
     fn shared_capacity(&self) -> usize {
@@ -459,6 +481,22 @@ impl<T> TxCore for Tx<T> {
 impl<T: StreamItem> TxCore for StreamTx<T> {
     type MsgIn<'a> = (T, &'a[u8]);
     type MsgOut = T;
+
+    fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
+        match done_count {
+            TxDone::Normal(d) => warn!("internal error should have gotten Stream"),
+            TxDone::Stream(i,p) => {
+                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.id, i as isize);
+                self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.id, p as isize);
+            },
+        }
+    }
+
+    #[inline]
+    fn monitor_not(&mut self) {
+        self.item_channel.local_index = MONITOR_NOT;
+        self.payload_channel.local_index = MONITOR_NOT;
+    }
 
      #[inline]
     fn shared_capacity(&self) -> usize {
@@ -712,6 +750,14 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;
     type MsgOut = <T as TxCore>::MsgOut;
 
+    fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
+        <T as TxCore>::telemetry_inc(&mut **self, done_count, tel)
+    }
+
+    fn monitor_not(&mut self) {
+        <T as TxCore>::monitor_not(&mut **self)
+    }
+
     #[inline]
     fn shared_capacity(&self) -> usize {
         <T as TxCore>::shared_capacity(&**self)
@@ -747,7 +793,7 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
         <T as TxCore>::shared_wait_empty(&mut **self).await
     }
 
-    fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<(), Self::MsgOut> {
+    fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
         <T as TxCore>::shared_try_send(&mut **self, msg)
     }
 

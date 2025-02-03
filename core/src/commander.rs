@@ -23,7 +23,7 @@ use log::warn;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use ringbuf::traits::Observer;
-use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, StreamData, Defrag};
+use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, Defrag};
 use crate::util::logger;
 
 impl SteadyContext {
@@ -645,28 +645,32 @@ impl SteadyCommander for SteadyContext {
     /// # Returns
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
     fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut> {
-        this.shared_try_send(msg)
-    }
-
-
-    fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
-                       , stream_id: i32
-                       , payload: &[u8]) -> Result<(), StreamSimpleMessage>{
-        debug_assert!(stream_id>= this[0].stream_id);
-        debug_assert!(stream_id<= this[this.len()-1].stream_id);
-        let idx:usize = (stream_id - this[0].stream_id) as usize;
-        let control = StreamSimpleMessage::new(payload.len() as i32);
-        if this[idx].payload_channel.vacant_units()>= payload.len()
-           && this[idx].item_channel.vacant_units()>= 1 {
-            let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
-            debug_assert_eq!(count, payload.len());
-            let result = this[idx].item_channel.shared_try_send(control);
-            debug_assert!(result.is_ok());
-            Ok(())
-        } else {
-            Err(control)
+        match this.shared_try_send(msg) {
+            Ok(d) => Ok(()),
+            Err(msg) => Err(msg),
         }
     }
+
+
+
+    // fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
+    //                    , stream_id: i32
+    //                    , payload: &[u8]) -> Result<(), StreamSimpleMessage>{
+    //     debug_assert!(stream_id>= this[0].stream_id);
+    //     debug_assert!(stream_id<= this[this.len()-1].stream_id);
+    //     let idx:usize = (stream_id - this[0].stream_id) as usize;
+    //     let control = StreamSimpleMessage::new(payload.len() as i32);
+    //     if this[idx].payload_channel.vacant_units()>= payload.len()
+    //        && this[idx].item_channel.vacant_units()>= 1 {
+    //         let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
+    //         debug_assert_eq!(count, payload.len());
+    //         let result = this[idx].item_channel.shared_try_send(control);
+    //         debug_assert!(result.is_ok());
+    //         Ok(())
+    //     } else {
+    //         Err(control)
+    //     }
+    // }
 
     fn flush_defrag_messages<S: StreamItem>(&mut self
                                             , out_item: &mut Tx<S>
@@ -870,93 +874,93 @@ impl SteadyCommander for SteadyContext {
     }
 
 
-    fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize {
-        //count total items we will take
-        let total_items = LEN.min(this.item_channel.avail_units());
-
-        //item backing arrays plus specific lengths
-        let (item_a,item_b) = this.item_channel.rx.as_slices();
-        let item_a_len = total_items.min(item_a.len());
-        let item_b_len = total_items-item_a_len;
-
-        // all bytes consumed by all these items
-        let mut total_bytes = 0;
-
-        let (payload_a,payload_b) = this.payload_channel.rx.as_slices();
-        let mut first_payload_block = true; //start with first block
-        let mut payload_index = 0; //payload index for current active payload
-
-        let mut item_target_index = 0;
-        for i in 0..item_a_len {
-            let item = item_a[i];
-            total_bytes += item.length();
-
-            if first_payload_block {
-                let next_payload = payload_index+item.length();
-                if next_payload <= payload_a.len() as i32 { //normal case
-                    target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize..next_payload as usize].into());
-                    payload_index = next_payload;
-                } else {//rare case where we span
-                    let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
-                    let b_len = item.length() as usize - a_len as usize ;
-                    let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
-                    vec.put_slice(&payload_a[payload_index as usize ..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
-                    vec.put_slice(&payload_b[0 as usize ..(0+b_len) as usize]);
-                    target[item_target_index] = StreamData::new(item, vec.into());
-                    first_payload_block=false;
-                    payload_index= b_len as i32;
-                }
-            } else { //normal case
-                let next_payload = payload_index+item.length();
-                target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize ..next_payload as usize].into());
-                payload_index = next_payload;
-            }
-            item_target_index += 1;
-        }
-        for i in 0..item_b_len {
-            let item = item_b[i];
-            total_bytes += item.length();
-
-            if first_payload_block {
-                let next_payload = payload_index+item.length();
-                if next_payload <= payload_a.len() as i32 { //normal case
-                    target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize .. next_payload as usize].into());
-                    payload_index = next_payload;
-                } else {//rare case where we span
-                    let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
-                    let b_len = item.length() as usize - a_len;
-                    let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
-                    vec.put_slice(&payload_a[payload_index as usize..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
-                    vec.put_slice(&payload_b[0 as usize..(0+b_len) as usize]);
-                    target[item_target_index] = StreamData::new(item, vec.into());
-                    first_payload_block=false;
-                    payload_index= b_len as i32;
-                }
-            } else { //normal case
-                let next_payload = payload_index+item.length();
-                target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize..next_payload as usize].into());
-                payload_index = next_payload;
-            }
-            item_target_index += 1;
-        }
-
-        this.payload_channel.shared_advance_index(total_bytes as usize);
-        this.item_channel.shared_advance_index(total_items as usize);
-        return total_items;
-    }
-
-
-    fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
-        let item = self.try_take(&mut this.item_channel);
-        if let Some(item) = item {
-            let mut target = Vec::with_capacity(item.length() as usize);
-            self.take_slice(&mut this.payload_channel, &mut target);
-            let box_slice = target.into_boxed_slice();
-            Some(StreamData::new(item, box_slice))
-        } else {
-            None
-        }
-    }
+    // fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize {
+    //     //count total items we will take
+    //     let total_items = LEN.min(this.item_channel.avail_units());
+    //
+    //     //item backing arrays plus specific lengths
+    //     let (item_a,item_b) = this.item_channel.rx.as_slices();
+    //     let item_a_len = total_items.min(item_a.len());
+    //     let item_b_len = total_items-item_a_len;
+    //
+    //     // all bytes consumed by all these items
+    //     let mut total_bytes = 0;
+    //
+    //     let (payload_a,payload_b) = this.payload_channel.rx.as_slices();
+    //     let mut first_payload_block = true; //start with first block
+    //     let mut payload_index = 0; //payload index for current active payload
+    //
+    //     let mut item_target_index = 0;
+    //     for i in 0..item_a_len {
+    //         let item = item_a[i];
+    //         total_bytes += item.length();
+    //
+    //         if first_payload_block {
+    //             let next_payload = payload_index+item.length();
+    //             if next_payload <= payload_a.len() as i32 { //normal case
+    //                 target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize..next_payload as usize].into());
+    //                 payload_index = next_payload;
+    //             } else {//rare case where we span
+    //                 let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
+    //                 let b_len = item.length() as usize - a_len as usize ;
+    //                 let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
+    //                 vec.put_slice(&payload_a[payload_index as usize ..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
+    //                 vec.put_slice(&payload_b[0 as usize ..(0+b_len) as usize]);
+    //                 target[item_target_index] = StreamData::new(item, vec.into());
+    //                 first_payload_block=false;
+    //                 payload_index= b_len as i32;
+    //             }
+    //         } else { //normal case
+    //             let next_payload = payload_index+item.length();
+    //             target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize ..next_payload as usize].into());
+    //             payload_index = next_payload;
+    //         }
+    //         item_target_index += 1;
+    //     }
+    //     for i in 0..item_b_len {
+    //         let item = item_b[i];
+    //         total_bytes += item.length();
+    //
+    //         if first_payload_block {
+    //             let next_payload = payload_index+item.length();
+    //             if next_payload <= payload_a.len() as i32 { //normal case
+    //                 target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize .. next_payload as usize].into());
+    //                 payload_index = next_payload;
+    //             } else {//rare case where we span
+    //                 let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
+    //                 let b_len = item.length() as usize - a_len;
+    //                 let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
+    //                 vec.put_slice(&payload_a[payload_index as usize..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
+    //                 vec.put_slice(&payload_b[0 as usize..(0+b_len) as usize]);
+    //                 target[item_target_index] = StreamData::new(item, vec.into());
+    //                 first_payload_block=false;
+    //                 payload_index= b_len as i32;
+    //             }
+    //         } else { //normal case
+    //             let next_payload = payload_index+item.length();
+    //             target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize..next_payload as usize].into());
+    //             payload_index = next_payload;
+    //         }
+    //         item_target_index += 1;
+    //     }
+    //
+    //     this.payload_channel.shared_advance_index(total_bytes as usize);
+    //     this.item_channel.shared_advance_index(total_items as usize);
+    //     return total_items;
+    // }
+    //
+    //
+    // fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
+    //     let item = self.try_take(&mut this.item_channel);
+    //     if let Some(item) = item {
+    //         let mut target = Vec::with_capacity(item.length() as usize);
+    //         self.take_slice(&mut this.payload_channel, &mut target);
+    //         let box_slice = target.into_boxed_slice();
+    //         Some(StreamData::new(item, box_slice))
+    //     } else {
+    //         None
+    //     }
+    // }
 
 
     /// Attempts to take a message from the channel if available.
@@ -1088,6 +1092,8 @@ impl SteadyCommander for SteadyContext {
 }
 
 
+
+
 /// NOTE this trait is passed into actors and actors are tied to a single thread. As a result
 ///      we need not worry about these methods needing Send. We also know that T will come
 ///      from other actors so we can assume that T is Send + Sync
@@ -1183,10 +1189,10 @@ pub trait SteadyCommander {
         T: Send + Sync,
     ;
 
-    fn try_stream_send(&mut self
-                       , this: &mut StreamTxBundle<'_, StreamSimpleMessage>
-                       , stream_id: i32
-                       , payload: &[u8]) -> Result<(), StreamSimpleMessage>;
+    // fn try_stream_send(&mut self
+    //                    , this: &mut StreamTxBundle<'_, StreamSimpleMessage>
+    //                    , stream_id: i32
+    //                    , payload: &[u8]) -> Result<(), StreamSimpleMessage>;
 
     fn flush_defrag_messages<S: StreamItem>(&mut self
                                             , item: &mut Tx<S>
@@ -1433,8 +1439,7 @@ pub trait SteadyCommander {
     /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
     ///
     /// # Asynchronous
-    async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
-    ;
+    async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>;
     /// Sends a slice of messages to the Tx channel until it is full.
     ///
     /// # Parameters
@@ -1533,9 +1538,9 @@ pub trait SteadyCommander {
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
     fn try_take<T>(&mut self, this: &mut Rx<T>) -> Option<T>;
 
-    fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize;
-
-    fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>>;
+    // fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize;
+    //
+    // fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>>;
 
     fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize;
 

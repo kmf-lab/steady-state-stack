@@ -88,7 +88,6 @@ pub trait SteadyStreamRxBundleTrait<T: StreamItem, const GIRTH: usize> {
     fn control_meta_data(&self) -> [RxMetaData; GIRTH];
     fn payload_meta_data(&self) -> [RxMetaData; GIRTH];
 
-
 }
 
 impl<T: StreamItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRTH> for SteadyStreamRxBundle<T, GIRTH> {
@@ -128,6 +127,8 @@ pub trait SteadyStreamTxBundleTrait<T: StreamItem, const GIRTH: usize> {
     /// An array of `RxMetaData` objects containing metadata for each receiver.
     fn control_meta_data(&self) -> [TxMetaData; GIRTH];
     fn payload_meta_data(&self) -> [TxMetaData; GIRTH];
+
+
 }
 
 impl<T: StreamItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRTH> for SteadyStreamTxBundle<T, GIRTH> {
@@ -165,11 +166,16 @@ pub type StreamRxBundle<'a, T> = Vec<MutexGuard<'a, StreamRx<T>>>;
 pub trait StreamTxBundleTrait {
     /// Marks all channels in the bundle as closed.
     fn mark_closed(&mut self) -> bool;
+
+    fn stream_index(&self, stream_id: i32) -> usize;
+
 }
 
 pub trait StreamRxBundleTrait {
     fn is_closed_and_empty(&mut self) -> bool;
     fn is_closed(&mut self) -> bool;
+    fn stream_index(&self, stream_id: i32) -> usize;
+
 }
 
 impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
@@ -179,6 +185,9 @@ impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
         true  // always returns true, close request is never rejected by this method.
     }
 
+    fn stream_index(&self, stream_id: i32) -> usize {
+        (stream_id - self[0].stream_id) as usize
+    }
 }
 
 impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
@@ -188,7 +197,9 @@ impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
     fn is_closed(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed())
     }
-
+    fn stream_index(&self, stream_id: i32) -> usize {
+        (stream_id - self[0].stream_id) as usize
+    }
 }
 
 
@@ -456,19 +467,19 @@ impl<T: StreamItem> StreamTx<T> {
     }
 }
 
-
-
-#[derive(Clone, Debug)]
-pub struct StreamData<T: StreamItem> {
-    pub item: T,
-    pub payload: Box<[u8]>,
-}
-
-impl <T: StreamItem>StreamData<T> {
-    pub fn new(item: T, payload: Box<[u8]>) -> Self {
-      StreamData {item, payload}
-    }
-}
+// not sure we want this anymore.
+//
+// #[derive(Clone, Debug)]
+// pub struct StreamData<T: StreamItem> {
+//     pub item: T,
+//     pub payload: Box<[u8]>,
+// }
+//
+// impl <T: StreamItem>StreamData<T> {
+//     pub fn new(item: T, payload: Box<[u8]>) -> Self {
+//       StreamData {item, payload}
+//     }
+// }
 
 
 /// A receiver for a steady stream. Holds two channels:

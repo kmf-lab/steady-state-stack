@@ -211,7 +211,7 @@ pub(crate) mod aeron_tests {
     use crate::distributed::aeron_channel::{Endpoint, MediaType};
     use crate::distributed::aeron_distributed::{AeronConfig, DistributedTech};
     use crate::distributed::aeron_subscribe;
-    use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamData, StreamSessionMessage, StreamTxBundleTrait};
+    use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;
     use crate::distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
 

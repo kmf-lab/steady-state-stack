@@ -96,7 +96,7 @@ pub use steady_tx::Tx;
 pub use steady_rx::SteadyRxBundleTrait;
 pub use steady_tx::SteadyTxBundleTrait;
 pub use steady_rx::{RxBundleTrait,RxCore};
-pub use steady_tx::{TxBundleTrait,TxCore};
+pub use steady_tx::{TxBundleTrait};
 pub use commander::SteadyCommander;
 pub use distributed::aeron_channel::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_distributed::{AeronConfig, DistributedTech};
@@ -701,6 +701,7 @@ mod lib_tests {
     use parking_lot::RwLock;
     use futures::lock::Mutex;
     use commander::SteadyCommander;
+    use crate::steady_tx::TxCore;
 
     #[test]
     fn test_std_dev_valid_values() {

@@ -14,7 +14,7 @@ use std::ops::{Deref, DerefMut};
 use futures_timer::Delay;
 use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
-use crate::{RxBundle, SteadyRx, SteadyRxBundle, TxCore};
+use crate::{RxBundle, SteadyRx, SteadyRxBundle};
 use crate::distributed::steady_stream::{StreamItem, StreamRx};
 
 /// Represents a receiver that consumes messages from a channel.
@@ -435,14 +435,6 @@ impl<T> Rx<T> {
        // self.rx.pop_iter()
     }
 
-    #[inline]
-    pub(crate) fn shared_try_take(&mut self) -> Option<T> {
-        let result = self.rx.try_pop();
-        if result.is_some() {
-            self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
-        }
-        result
-    }
 
     #[inline]
     pub(crate) fn shared_try_peek_iter(&self) -> impl Iterator<Item = &T> {
@@ -532,6 +524,14 @@ impl<T> Rx<T> {
     }
 
 
+    #[inline]
+    pub(crate) fn shared_try_take(&mut self) -> Option<T> {
+        let result = self.rx.try_pop();
+        if result.is_some() {
+            self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
+        }
+        result
+    }
 
 }
 
@@ -755,6 +755,7 @@ pub trait RxCore {
 
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool;
 
+   // fn shared_try_take(&mut self) -> Option<T>;
 }
 
 impl <T>RxCore for Rx<T> {
@@ -811,6 +812,14 @@ impl <T>RxCore for Rx<T> {
         }
     }
 
+    // #[inline]
+    // fn shared_try_take(&mut self) -> Option<T> {
+    //     let result = self.rx.try_pop();
+    //     if result.is_some() {
+    //         self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
+    //     }
+    //     result
+    // }
 
 }
 
@@ -870,6 +879,16 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
         }
     }
 
+
+    // #[inline]
+    // pub(crate) fn shared_try_take(&mut self) -> Option<T> {
+    //     let result = self.rx.try_pop();
+    //     if result.is_some() {
+    //         self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
+    //     }
+    //     result
+    // }
+
 }
 
 impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
@@ -904,7 +923,8 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod rx_tests {
-    use crate::{GraphBuilder, SteadyTxBundle, SteadyTxBundleTrait, TxCore};
+    use crate::{GraphBuilder, SteadyTxBundle, SteadyTxBundleTrait};
+    use crate::steady_tx::TxCore;
     use super::*;
 
     #[async_std::test]

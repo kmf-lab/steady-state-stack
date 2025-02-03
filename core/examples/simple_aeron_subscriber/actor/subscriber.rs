@@ -27,30 +27,27 @@ pub async fn run<const GIRTH:usize>(mut context: SteadyContext
     let mut received_count = 0;
     while cmd.is_running(&mut || rx.is_closed_and_empty()) {
 
-
+        // TODO: check message stream as releant?
         let _clean = await_for_all!(cmd.wait_closed_or_avail_message_stream(&mut rx, LEN, 1));
 
         let taken = cmd.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
-  //TODO: get connectivity working then add value testing ehre.
 
+         let avail = cmd.avail_units(&mut rx[0]);
 
-       //TODO: should work with both tominimize methods?
-        // let avail = cmd.avail_units(&mut rx[0].item_channel);
-        // for i in 0..(avail>>1) {
-        //     if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
+         for i in 0..(avail>>1) {
+        //     if let (i,d) = cmd.try_take(&mut rx[0]) {
         //         //warn!("test data {:?}",d.payload);
-        //         debug_assert_eq!(&*data1, &*d.payload);
+        //         debug_assert_eq!(&*data1, &*d);
         //     }
-        //     if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
+        //     if let (i,d) = cmd.try_take(&mut rx[0]) {
         //         //warn!("test data {:?}",d.payload);
-        //         debug_assert_eq!(&*data2, &*d.payload);
+        //         debug_assert_eq!(&*data2, &*d);
         //     }
-        // }
-        // let taken = avail;
+         }
+         let taken = avail;
 
 
         received_count += taken;
-        //cmd.relay_stats_smartly(); //should not be needed.
 
         //here we request shutdown but we only leave after our upstream actors are done
         if received_count >= (TEST_ITEMS-taken) {

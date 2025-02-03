@@ -6,7 +6,6 @@ use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
 use futures::lock::{Mutex, MutexGuard};
-use futures::SinkExt;
 use crate::actor::div_by_3_producer::NumberMessage;
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]

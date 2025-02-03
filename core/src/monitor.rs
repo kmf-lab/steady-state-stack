@@ -24,7 +24,7 @@ use crate::*;
 use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
 use crate::commander::SteadyCommander;
-use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamSessionMessage, StreamRx, StreamData, StreamTx, Defrag};
+use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamSessionMessage, StreamRx, StreamTx, Defrag};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::SideChannelResponder;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
@@ -1154,61 +1154,51 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
         match this.shared_try_send(msg) {
             Ok(done_count) => {
-
                 if let Some(ref mut tel) = self.telemetry.send_tx {
-                    this.shared_telemetry_inc(self, done_count);
-
-                    this.local_index = tel.process_event(this.local_index, this.channel_meta_data.id, 1);
-                } else {
-                    this.shared_telemetry_inc(self, done_count);
-
-                    this.local_index = MONITOR_NOT;
-                };
-
-
+                    this.telemetry_inc(done_count, tel); } else { this.monitor_not(); };
                 Ok(())
             }
             Err(sensitive) => Err(sensitive),
         }
     }
 
-    fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
-                                      , stream_id: i32
-                                      , payload: &[u8]) -> Result<(), StreamSimpleMessage> {
-        if let Some(ref mut st) = self.telemetry.state {
-            let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
-        let item = StreamSimpleMessage::new(payload.len() as i32);
-
-        debug_assert!(stream_id>= this[0].stream_id);
-        debug_assert!(stream_id<= this[this.len()-1].stream_id);
-        let idx:usize = (stream_id - this[0].stream_id) as usize;
-
-        if this[idx].payload_channel.vacant_units()>= payload.len()
-            && this[idx].item_channel.vacant_units()>= 1 {
-            
-            let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
-            debug_assert_eq!(count, payload.len());
-            let result = this[idx].item_channel.shared_try_send(item);
-            debug_assert!(result.is_ok());            
-            
-             if let Some(ref mut tel) = self.telemetry.send_tx {
-                 this[idx].payload_channel.local_index = tel.process_event(this[idx].payload_channel.local_index
-                                  , this[idx].payload_channel.channel_meta_data.id, count as isize);
-                 
-                 this[idx].item_channel.local_index = tel.process_event(this[idx].item_channel.local_index
-                                                                        , this[idx].item_channel.channel_meta_data.id, 1);
-             
-             } else {
-                 this[idx].payload_channel.local_index = MONITOR_NOT;
-                 this[idx].item_channel.local_index = MONITOR_NOT;
-             };
-                        
-            Ok(())
-        } else {
-            Err(item)
-        }
-    }
+    // fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
+    //                                   , stream_id: i32
+    //                                   , payload: &[u8]) -> Result<(), StreamSimpleMessage> {
+    //     if let Some(ref mut st) = self.telemetry.state {
+    //         let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+    //     }
+    //     let item = StreamSimpleMessage::new(payload.len() as i32);
+    //
+    //     debug_assert!(stream_id>= this[0].stream_id);
+    //     debug_assert!(stream_id<= this[this.len()-1].stream_id);
+    //     let idx:usize = (stream_id - this[0].stream_id) as usize;
+    //
+    //     if this[idx].payload_channel.vacant_units()>= payload.len()
+    //         && this[idx].item_channel.vacant_units()>= 1 {
+    //
+    //         let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
+    //         debug_assert_eq!(count, payload.len());
+    //         let result = this[idx].item_channel.shared_try_send(item);
+    //         debug_assert!(result.is_ok());
+    //
+    //          if let Some(ref mut tel) = self.telemetry.send_tx {
+    //              this[idx].payload_channel.local_index = tel.process_event(this[idx].payload_channel.local_index
+    //                               , this[idx].payload_channel.channel_meta_data.id, count as isize);
+    //
+    //              this[idx].item_channel.local_index = tel.process_event(this[idx].item_channel.local_index
+    //                                                                     , this[idx].item_channel.channel_meta_data.id, 1);
+    //
+    //          } else {
+    //              this[idx].payload_channel.local_index = MONITOR_NOT;
+    //              this[idx].item_channel.local_index = MONITOR_NOT;
+    //          };
+    //
+    //         Ok(())
+    //     } else {
+    //         Err(item)
+    //     }
+    // }
 
     fn flush_defrag_messages<S: StreamItem>(&mut self
                                             , out_item: &mut Tx<S>
@@ -1542,140 +1532,140 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     }
 
 
-    fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize {
-        if let Some(ref st) = self.telemetry.state {
-            let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
+    // fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize {
+    //     if let Some(ref st) = self.telemetry.state {
+    //         let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+    //     }
+    //
+    //     //count total items we will take
+    //     let total_items = LEN.min(this.item_channel.avail_units());
+    //
+    //     //item backing arrays plus specific lengths
+    //     let (item_a,item_b) = this.item_channel.rx.as_slices();
+    //     let item_a_len = total_items.min(item_a.len());
+    //     let item_b_len = total_items-item_a_len;
+    //
+    //     // all bytes consumed by all these items
+    //     let mut total_bytes = 0;
+    //
+    //     let (payload_a,payload_b) = this.payload_channel.rx.as_slices();
+    //     let mut first_payload_block = true; //start with first block
+    //     let mut payload_index = 0; //payload index for current active payload
+    //
+    //     let mut item_target_index = 0;
+    //     for i in 0..item_a_len {
+    //         let item = item_a[i];
+    //         total_bytes += item.length();
+    //
+    //         if first_payload_block {
+    //             let next_payload = payload_index+item.length();
+    //             if next_payload <= payload_a.len() as i32 { //normal case
+    //                 target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize..next_payload as usize].into());
+    //                 payload_index = next_payload;
+    //             } else {//rare case where we span
+    //                 let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
+    //                 let b_len = item.length() as usize - a_len as usize ;
+    //                 let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
+    //                 vec.put_slice(&payload_a[payload_index as usize ..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
+    //                 vec.put_slice(&payload_b[0 as usize ..(0+b_len) as usize]);
+    //                 target[item_target_index] = (item, vec.into());
+    //                 first_payload_block=false;
+    //                 payload_index= b_len as i32;
+    //             }
+    //         } else { //normal case
+    //             let next_payload = payload_index+item.length();
+    //             target[item_target_index] = (item, payload_b[payload_index as usize ..next_payload as usize].into());
+    //             payload_index = next_payload;
+    //         }
+    //         item_target_index += 1;
+    //     }
+    //     for i in 0..item_b_len {
+    //         let item = item_b[i];
+    //         total_bytes += item.length();
+    //
+    //         if first_payload_block {
+    //             let next_payload = payload_index+item.length();
+    //             if next_payload <= payload_a.len() as i32 { //normal case
+    //                 target[item_target_index] = (item, payload_a[payload_index as usize .. next_payload as usize].into());
+    //                 payload_index = next_payload;
+    //             } else {//rare case where we span
+    //                 let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
+    //                 let b_len = item.length() as usize - a_len;
+    //                 let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
+    //                 vec.put_slice(&payload_a[payload_index as usize..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
+    //                 vec.put_slice(&payload_b[0 as usize..(0+b_len) as usize]);
+    //                 target[item_target_index] = (item, vec.into());
+    //                 first_payload_block=false;
+    //                 payload_index= b_len as i32;
+    //             }
+    //         } else { //normal case
+    //             let next_payload = payload_index+item.length();
+    //             target[item_target_index] = (item, payload_b[payload_index as usize..next_payload as usize].into());
+    //             payload_index = next_payload;
+    //         }
+    //         item_target_index += 1;
+    //     }
+    //
+    //     this.payload_channel.shared_advance_index(total_bytes as usize);
+    //     this.item_channel.shared_advance_index(total_items as usize);
+    //
+    //
+    //     this.item_channel.local_index = self.dynamic_event_count(
+    //         this.item_channel.local_index,
+    //         this.item_channel.channel_meta_data.id,
+    //         total_items as isize);
+    //     this.payload_channel.local_index = self.dynamic_event_count(
+    //         this.payload_channel.local_index,
+    //         this.payload_channel.channel_meta_data.id,
+    //         total_bytes as isize);
+    //     return total_items as usize;
+    // }
 
-        //count total items we will take
-        let total_items = LEN.min(this.item_channel.avail_units());
-
-        //item backing arrays plus specific lengths
-        let (item_a,item_b) = this.item_channel.rx.as_slices();
-        let item_a_len = total_items.min(item_a.len());
-        let item_b_len = total_items-item_a_len;
-
-        // all bytes consumed by all these items
-        let mut total_bytes = 0;
-
-        let (payload_a,payload_b) = this.payload_channel.rx.as_slices();
-        let mut first_payload_block = true; //start with first block
-        let mut payload_index = 0; //payload index for current active payload
-
-        let mut item_target_index = 0;
-        for i in 0..item_a_len {
-            let item = item_a[i];
-            total_bytes += item.length();
-
-            if first_payload_block {
-                let next_payload = payload_index+item.length();
-                if next_payload <= payload_a.len() as i32 { //normal case
-                    target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize..next_payload as usize].into());
-                    payload_index = next_payload;
-                } else {//rare case where we span
-                    let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
-                    let b_len = item.length() as usize - a_len as usize ;
-                    let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
-                    vec.put_slice(&payload_a[payload_index as usize ..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
-                    vec.put_slice(&payload_b[0 as usize ..(0+b_len) as usize]);
-                    target[item_target_index] = StreamData::new(item, vec.into());
-                    first_payload_block=false;
-                    payload_index= b_len as i32;
-                }
-            } else { //normal case
-                let next_payload = payload_index+item.length();
-                target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize ..next_payload as usize].into());
-                payload_index = next_payload;
-            }
-            item_target_index += 1;
-        }
-        for i in 0..item_b_len {
-            let item = item_b[i];
-            total_bytes += item.length();
-
-            if first_payload_block {
-                let next_payload = payload_index+item.length();
-                if next_payload <= payload_a.len() as i32 { //normal case
-                    target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize .. next_payload as usize].into());
-                    payload_index = next_payload;
-                } else {//rare case where we span
-                    let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
-                    let b_len = item.length() as usize - a_len;
-                    let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
-                    vec.put_slice(&payload_a[payload_index as usize..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
-                    vec.put_slice(&payload_b[0 as usize..(0+b_len) as usize]);
-                    target[item_target_index] = StreamData::new(item, vec.into());
-                    first_payload_block=false;
-                    payload_index= b_len as i32;
-                }
-            } else { //normal case
-                let next_payload = payload_index+item.length();
-                target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize..next_payload as usize].into());
-                payload_index = next_payload;
-            }
-            item_target_index += 1;
-        }
-
-        this.payload_channel.shared_advance_index(total_bytes as usize);
-        this.item_channel.shared_advance_index(total_items as usize);
-
-
-        this.item_channel.local_index = self.dynamic_event_count(
-            this.item_channel.local_index,
-            this.item_channel.channel_meta_data.id,
-            total_items as isize);
-        this.payload_channel.local_index = self.dynamic_event_count(
-            this.payload_channel.local_index,
-            this.payload_channel.channel_meta_data.id,
-            total_bytes as isize);
-        return total_items as usize;
-    }
-
-
-    fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
-        if let Some(ref st) = self.telemetry.state {
-            let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
-
-        let item = self.try_take(&mut this.item_channel);
-        if let Some(item) = item {
-            let len = item.length();
-            debug_assert!(len>0, "no point in sending empty items");
-
-            // Allocate uninitialized memory for the slice
-            let mut box_slice = Box::new_uninit_slice(len as usize);
-            assert!(this.payload_channel.avail_units() as i32 >= len);
-
-            // SAFETY: Convert uninitialized memory to a mutable reference slice of `u8`
-            let slice = unsafe { std::slice::from_raw_parts_mut(box_slice.as_mut_ptr() as *mut u8, len as usize) };
-
-            // Fill the slice with data
-            let count = self.take_slice(&mut this.payload_channel, slice);
-            debug_assert_eq!(count as i32, len);
-
-            // SAFETY: Now all elements are initialized, converting to an initialized Box<[u8]>
-            let box_slice: Box<[u8]> = unsafe { box_slice.assume_init() };
-
-
-            debug_assert!(box_slice.len()>0);
-            debug_assert_eq!(box_slice.len() as i32, len);
-
-            this.item_channel.local_index = self.dynamic_event_count(
-                            this.item_channel.local_index,
-                            this.item_channel.channel_meta_data.id,
-                            1);
-            this.payload_channel.local_index = self.dynamic_event_count(
-                            this.payload_channel.local_index,
-                            this.payload_channel.channel_meta_data.id,
-                            item.length() as isize);
-
-
-            Some(StreamData::new(item, box_slice))
-
-        } else {
-            None
-        }
-    }
+    //
+    // fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
+    //     if let Some(ref st) = self.telemetry.state {
+    //         let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+    //     }
+    //
+    //     let item = self.try_take(&mut this.item_channel);
+    //     if let Some(item) = item {
+    //         let len = item.length();
+    //         debug_assert!(len>0, "no point in sending empty items");
+    //
+    //         // Allocate uninitialized memory for the slice
+    //         let mut box_slice = Box::new_uninit_slice(len as usize);
+    //         assert!(this.payload_channel.avail_units() as i32 >= len);
+    //
+    //         // SAFETY: Convert uninitialized memory to a mutable reference slice of `u8`
+    //         let slice = unsafe { std::slice::from_raw_parts_mut(box_slice.as_mut_ptr() as *mut u8, len as usize) };
+    //
+    //         // Fill the slice with data
+    //         let count = self.take_slice(&mut this.payload_channel, slice);
+    //         debug_assert_eq!(count as i32, len);
+    //
+    //         // SAFETY: Now all elements are initialized, converting to an initialized Box<[u8]>
+    //         let box_slice: Box<[u8]> = unsafe { box_slice.assume_init() };
+    //
+    //
+    //         debug_assert!(box_slice.len()>0);
+    //         debug_assert_eq!(box_slice.len() as i32, len);
+    //
+    //         this.item_channel.local_index = self.dynamic_event_count(
+    //                         this.item_channel.local_index,
+    //                         this.item_channel.channel_meta_data.id,
+    //                         1);
+    //         this.payload_channel.local_index = self.dynamic_event_count(
+    //                         this.payload_channel.local_index,
+    //                         this.payload_channel.channel_meta_data.id,
+    //                         item.length() as isize);
+    //
+    //
+    //         Some((item, box_slice))
+    //
+    //     } else {
+    //         None
+    //     }
+    // }
     
 
     
@@ -2520,7 +2510,7 @@ pub(crate) mod monitor_tests {
                     for item in [13, 14, 15] {
                         
                         match send_guard.shared_try_send(item) {
-                            Ok(()) => {},
+                            Ok(d) => {},
                             Err(_) => {}
                         }
                     }

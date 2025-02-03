@@ -416,9 +416,10 @@ mod graph_testing_tests {
     use async_std::test;
     use futures::channel::oneshot;
     use log::info;
-    use crate::{GraphLiveliness, LazySteadyRx, LazySteadyTx, Rx, SteadyCommander, SteadyContext, TxCore};
+    use crate::{GraphLiveliness, LazySteadyRx, LazySteadyTx, Rx, SteadyCommander, SteadyContext};
     use crate::channel_builder::ChannelBuilder;
     use crate::monitor::ActorMetaData;
+    use crate::steady_tx::TxCore;
 
     #[test]
     async fn test_graph_test_result_ok() {

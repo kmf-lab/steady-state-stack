@@ -18,16 +18,6 @@ pub async fn run<const GIRTH: usize>(mut context: SteadyContext
     let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
 
     const BATCH_SIZE:usize = 5000;
-    let mut items: [StreamSimpleMessage; BATCH_SIZE] = [StreamSimpleMessage::new(8);BATCH_SIZE];
-    let mut data: [[u8;8]; BATCH_SIZE] = [data1; BATCH_SIZE];
-    for i in 0..BATCH_SIZE {
-        if i % 2 == 0 {
-            data[i] = data1;
-        } else {
-            data[i] = data2;
-        }
-    }
-    let all_bytes: Vec<u8> = data.iter().flatten().map(|f| *f).collect();
 
     let mut sent_count = 0;
     while cmd.is_running(&mut || tx.mark_closed()) {
@@ -41,27 +31,22 @@ pub async fn run<const GIRTH: usize>(mut context: SteadyContext
                                        , vacant_items, vacant_bytes, 1));
 
 
+        let item = StreamSimpleMessage::new(8);
 
         let mut remaining = TEST_ITEMS;
-      //   let idx:usize = (STREAM_ID - tx[0].stream_id) as usize;
-       //   while remaining > 0 && cmd.vacant_units(&mut tx[idx]) >= BATCH_SIZE {
-       //
-       //      //TODO: make this interface also a trait.
-       //    //  cmd.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
-       // //     cmd.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
-       //  //    cmd.send_slice_until_full(&mut tx[idx].item_channel, &items);
-       //
-       //      // this old solution worked but consumed more core
-       //      //  for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
-       //      //      let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data1);
-       //      //      let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data2);
-       //      //
-       //      //      cmd.try_send(&mut tx, STREAM_ID, &data1);
-       //      //
-       //      //  }
-       //      sent_count += BATCH_SIZE;
-       //      remaining -= BATCH_SIZE
-       //   }
+         let idx:usize = tx.stream_index(STREAM_ID);
+         while remaining > 0 && cmd.vacant_units(&mut tx[idx]) >= BATCH_SIZE {
+
+             let actual_vacant = cmd.vacant_units(&mut tx[idx]);
+
+             for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
+                 let _result = cmd.try_send(&mut tx[idx], (item,&data1));
+                 let _result = cmd.try_send(&mut tx[idx], (item,&data2));
+
+             }
+            sent_count += BATCH_SIZE;
+            remaining -= BATCH_SIZE
+         }
 
         if sent_count>=TEST_ITEMS {
             //if an actor exits without closing its streams we will get a dirty shutdown.
