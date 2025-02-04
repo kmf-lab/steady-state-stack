@@ -186,6 +186,8 @@ impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
     }
 
     fn stream_index(&self, stream_id: i32) -> usize {
+        assert!(stream_id>=self[0].stream_id);
+        assert!(stream_id-self[0].stream_id < self.len() as i32);
         (stream_id - self[0].stream_id) as usize
     }
 }
@@ -198,6 +200,8 @@ impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
         self.iter_mut().all(|f| f.is_closed())
     }
     fn stream_index(&self, stream_id: i32) -> usize {
+        assert!(stream_id>=self[0].stream_id);
+        assert!(stream_id-self[0].stream_id < self.len() as i32);
         (stream_id - self[0].stream_id) as usize
     }
 }

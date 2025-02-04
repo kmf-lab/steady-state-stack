@@ -35,20 +35,19 @@ struct State {
 /// This function returns an error if the server fails to start or encounters a runtime error.
 pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Result<(), Box<dyn Error>> {
     
-    //NOTE: we could use this to turn of the server if desired.
-    let addr = Some(format!("{}:{}", steady_config::telemetry_server_ip(), steady_config::telemetry_server_port()));
+    //NOTE: we could use this to turn off the server if desired.
+    let addr = Some(format!("{}:{}"
+                            , steady_config::telemetry_server_ip()
+                            , steady_config::telemetry_server_port()));
 
     let opt_tcp:Arc<Option<Handle<TcpListener>>> = if let Some(ref addr) = addr {
-        if let Ok(h) = Handle::<TcpListener>::bind(addr) {
-            //let _local_addr = h.local_addr().expect("Unable to get local address");
-            //opt_addr.replace(format!("{}", local_addr));
-            Arc::new(Some(h))
-        } else {
-            error!("Unable to Bind to http://{}", addr);
-            Arc::new(None)
+        match Handle::<TcpListener>::bind(addr) {
+            Ok(h) => Arc::new(Some(h)),
+            Err(e) => {error!("Unable to Bind to http://{} {}", addr, e);
+                       Arc::new(None)}
         }
     } else {
-        error!("Unable to Bind to http://{:?}", &addr);
+        error!("No address provided: {:?}", &addr);
         Arc::new(None)
     };
 
@@ -88,6 +87,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
 
     let (tcp_sender_tx, tcp_receiver_tx) = oneshot::channel();
     let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
+
 
     //Only spin up server if addr is provided, this allows for unit testing where we cannot open that port.
     if opt_tcp.is_some() {

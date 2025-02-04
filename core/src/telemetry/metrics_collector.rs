@@ -241,15 +241,17 @@ async fn internal_behavior<const GIRTH: usize>(
                     let measured = i.elapsed().as_millis() as u64;
 
                     let margin = 1.max(1+(ctrl.frame_rate_ms>>1));
-                    
-                    if measured > ctrl.frame_rate_ms+margin {
+
+                    //log if this is far out of bounds
+                    if measured > (ctrl.frame_rate_ms+margin)*4 {
                         warn!("frame rate is far too slow {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?} other:{:?}"
                             , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
                     }
-                    // if measured < ctrl.frame_rate_ms-margin && _tcount >0{
-                    //     warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
-                    //         , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
-                    // }
+                    if measured < (ctrl.frame_rate_ms-margin>>2) && _tcount >0{
+                         warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
+                             , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
+                    }
+
                 }
             }
 

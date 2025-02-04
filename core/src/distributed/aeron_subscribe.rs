@@ -233,7 +233,54 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                 }
                             }
                             Err(e) => {
-                                panic!("{:?}", e); //restart this actor for some reason we do not have subscription
+                                if let Some(id) = state.sub_reg_id[i] {
+                                    let sub = {
+                                        let mut aeron = aeron.lock().await; //caution other actors need this so do jit
+                                        warn!("holding find_subscription({}) lock",id);
+                                        aeron.find_subscription(id)
+                                    };
+                                    match sub {
+                                        Err(e) => {
+                                            if e.to_string().contains("Awaiting")
+                                                || e.to_string().contains("not ready") {
+                                                //important that we do not poll fast while driver is setting up
+                                                Delay::new(Duration::from_millis(2)).await;
+                                                if cmd.is_liveliness_stop_requested() {
+                                                    warn!("stop detected before finding publication");
+                                                    return Ok(());
+                                                    //we are done, shutdown happened before we could start up.
+                                                    //break Err("Shutdown requested while waiting".into());
+                                                }
+                                            } else {
+
+                                                warn!("Error finding publication: {:?}", e);
+                                                break;
+                                            }
+                                        },
+                                        Ok(subscription) => {
+                                            // Take ownership of the Arc and unwrap it
+                                            match Arc::try_unwrap(subscription) {
+                                                Ok(mutex) => {
+                                                    // Take ownership of the inner Mutex
+                                                    match mutex.into_inner() {
+                                                        Ok(subscription) => {
+                                                            // Successfully extracted the ExclusivePublication
+                                                            //warn!("unwrap");
+                                                           //0 subs[i] = Ok(subscription);
+                                                            break;
+                                                        }
+                                                        Err(_) => panic!("Failed to unwrap Mutex"),
+                                                    }
+                                                }
+                                                Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
+                                            }
+                                        }
+                                    }
+
+
+                                }
+
+                               // panic!("{:?}", e); //restart this actor for some reason we do not have subscription
                             }
                         }
                     

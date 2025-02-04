@@ -241,10 +241,10 @@ pub enum Channel {
     },
 }
 
-pub(crate) fn is_port_open(port: u16) -> bool {
-    // Very basic check: if we can bind to it, it's "open" from our perspective
-    UdpSocket::bind(("127.0.0.1", port)).is_ok()
-}
+// pub(crate) fn is_port_open(port: u16) -> bool {
+//     // Very basic check: if we can bind to it, it's "open" from our perspective
+//     UdpSocket::bind(("127.0.0.1", port)).is_ok()
+// }
 
 impl Channel {
     /// Build a valid Aeron channel string according to official docs.

@@ -924,9 +924,10 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
         if let Some(item) = self.item_channel.rx.try_peek() {
             if item.length() <= self.payload_channel.rx.occupied_len() as i32 {
 
-                let mut payload:Vec<u8> = Vec::with_capacity(item.length() as usize);
+                let mut payload = vec![0u8; item.length() as usize];
                 self.payload_channel.rx.peek_slice(&mut payload);
                 let payload = payload.into_boxed_slice();
+
                 drop(item);
                 if let Some(item) = self.item_channel.rx.try_pop() {
                     unsafe { self.payload_channel.rx.advance_read_index(payload.len()); }

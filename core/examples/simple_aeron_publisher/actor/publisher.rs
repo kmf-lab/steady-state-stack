@@ -3,9 +3,7 @@ use std::time::Duration;
 use log::info;
 use steady_state::*;
 
-pub const TEST_ITEMS: usize = 200_000_000;
-
-
+pub const TEST_ITEMS: usize = 20_000_000_000;
 pub const STREAM_ID: i32 = 1234;
 
 pub async fn run<const GIRTH: usize>(mut context: SteadyContext
@@ -28,7 +26,7 @@ pub async fn run<const GIRTH: usize>(mut context: SteadyContext
         let vacant_items = 200000;
         let data_size = 8;
         let vacant_bytes = vacant_items * data_size;
-
+// TODO: wrwrite to take (i,p)
         let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx
                                        , vacant_items, vacant_bytes, 1));
 
@@ -37,7 +35,7 @@ pub async fn run<const GIRTH: usize>(mut context: SteadyContext
 
         let mut remaining = TEST_ITEMS;
          let idx:usize = tx.stream_index(STREAM_ID);
-         warn!("index of {} out of {}",idx, tx.len());
+         // trace!("index of {} out of {}",idx, tx.len());
          while remaining > 0 && cmd.vacant_units(&mut tx[idx]) >= BATCH_SIZE {
 
              let actual_vacant = cmd.vacant_units(&mut tx[idx]);

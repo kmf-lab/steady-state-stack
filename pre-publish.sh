@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ "$NICENESS_SET" != "1" ]; then
+    export NICENESS_SET=1
+    sudo exec nice -n 10 "$0" "$@"
+fi
+
 cargo update
 rustup default stable
 

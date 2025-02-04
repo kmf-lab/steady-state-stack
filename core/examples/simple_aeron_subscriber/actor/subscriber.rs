@@ -2,10 +2,9 @@ use std::error::Error;
 use std::time::{Duration, Instant};
 use steady_state::*;
 
-pub const TEST_ITEMS: usize = 200_000_000;
-
-
+pub const TEST_ITEMS: usize = 20_000_000_000;
 pub const STREAM_ID: i32 = 1234;
+
 pub async fn run<const GIRTH:usize>(mut context: SteadyContext
                                     , rx: SteadyStreamRxBundle<StreamSessionMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
@@ -20,7 +19,7 @@ pub async fn run<const GIRTH:usize>(mut context: SteadyContext
 
     let mut received_count = 0;
     while cmd.is_running(&mut || rx.is_closed_and_empty()) {
-
+///  TODO: change to grop..
         let _clean = await_for_all!(cmd.wait_closed_or_avail_message_stream(&mut rx, LEN, 1));
 
          let avail = cmd.avail_units(&mut rx[0]);

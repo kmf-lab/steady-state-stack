@@ -29,6 +29,7 @@ fn main() {
     let cli_args = MainArg::from_args();
     let _ = init_logging("info");
     let mut graph = GraphBuilder::default()
+           .with_telemtry_production_rate_ms(200)
            .build(cli_args); //or pass () if no args
 
     let aeron_channel: Channel = AeronConfig::new()
@@ -42,10 +43,6 @@ fn main() {
             port: 40456,
         })
         .build();
-
-    let mut graph = GraphBuilder::for_testing()
-        .with_telemetry_metric_features(true)
-        .build(());
 
     if !graph.is_aeron_media_driver_present() {
         info!("aeron test skipped, no media driver present");
