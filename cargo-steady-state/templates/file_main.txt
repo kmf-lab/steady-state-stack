@@ -13,10 +13,6 @@ mod actor {
 
 fn main() {
     let opt = Args::from_args();
-    if let Err(e) = init_logging(&opt.loglevel) {
-        //do not use logger to report logger could not start
-        eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
-    }
 
     let service_executable_name = "{{project_name}}";
     let service_user = "{{project_name}}_user";
@@ -28,6 +24,7 @@ fn main() {
     if !systemd_command {
         info!("Starting up");
         let mut graph = build_graph(GraphBuilder::default().build(opt.clone()) );
+        graph.loglevel(&opt.loglevel);
         graph.start();
 
         {  //remove this block to run forever.

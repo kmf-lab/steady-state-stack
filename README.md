@@ -49,7 +49,7 @@ Your sponsorship will accelerate the development of this groundbreaking framewor
 
 ### Flexible Concurrency Management
 
-- **Easy Async**: Simplify asynchronous programming with ergonomic abstractions.
+- **Easy Async**: Simplify asynchronous programming with ergonomic abstractions. Build actors without Send Trait.
 - **Thread Management**: Easily configure actors to run on a single thread or distribute them across multiple threads for optimal performance.
 
 ### Clean Shutdown on Signal
