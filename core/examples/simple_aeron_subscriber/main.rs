@@ -1,3 +1,4 @@
+use std::env;
 use std::time::Duration;
 use steady_state::*;
 use structopt::*;
@@ -22,6 +23,9 @@ pub const STREAM_ID: i32 = 1234;
 
 
 fn main() {
+    env::set_var("TELEMETRY_SERVER_PORT", "9102");
+    env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+
     let cli_args = MainArg::from_args();
     let _ = init_logging("info");
     let mut graph = GraphBuilder::default()

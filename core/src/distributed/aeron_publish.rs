@@ -103,8 +103,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                             Ok(publication) => {
                                                 // Successfully extracted the ExclusivePublication
                                                 loop {
-                                                    warn!("pub {} max_message_length {} max_message_length {} available_window {:?}"
-                                                           , publication.session_id(),  publication.max_message_length(), publication.max_message_length(), publication.available_window() );
+                                                    // warn!("pub {} max_message_length {} max_message_length {} available_window {:?}"
+                                                    //       , publication.session_id(),  publication.max_message_length(), publication.max_message_length(), publication.available_window() );
                                                     // 
                                                     if let Ok(w) = publication.available_window() {
                                                         if w>1024 {

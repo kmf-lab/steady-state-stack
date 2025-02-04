@@ -5,7 +5,7 @@ use steady_state::*;
 pub const TEST_ITEMS: usize = 200_000_000;
 
 
-pub const STREAM_ID: i32 = 11;
+pub const STREAM_ID: i32 = 1234;
 pub async fn run<const GIRTH:usize>(mut context: SteadyContext
                                     , rx: SteadyStreamRxBundle<StreamSessionMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
@@ -17,12 +17,6 @@ pub async fn run<const GIRTH:usize>(mut context: SteadyContext
 
     const LEN:usize = 100_000;
 
-    let mut buffer: [(StreamSessionMessage,Box<[u8]>); LEN] = core::array::from_fn(|_| {
-        (
-            StreamSessionMessage::new(0, 0, Instant::now(), Instant::now()),
-            Vec::new().into()
-        )
-    });
 
     let mut received_count = 0;
     while cmd.is_running(&mut || rx.is_closed_and_empty()) {

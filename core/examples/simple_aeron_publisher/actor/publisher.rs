@@ -6,13 +6,15 @@ use steady_state::*;
 pub const TEST_ITEMS: usize = 200_000_000;
 
 
-pub const STREAM_ID: i32 = 11;
+pub const STREAM_ID: i32 = 1234;
 
 pub async fn run<const GIRTH: usize>(mut context: SteadyContext
                                      , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>>  {
 
     let mut cmd = into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data()));
     let mut tx = tx.lock().await;
+
+    warn!("called run");
 
     let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
     let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
@@ -35,6 +37,7 @@ pub async fn run<const GIRTH: usize>(mut context: SteadyContext
 
         let mut remaining = TEST_ITEMS;
          let idx:usize = tx.stream_index(STREAM_ID);
+         warn!("index of {} out of {}",idx, tx.len());
          while remaining > 0 && cmd.vacant_units(&mut tx[idx]) >= BATCH_SIZE {
 
              let actual_vacant = cmd.vacant_units(&mut tx[idx]);

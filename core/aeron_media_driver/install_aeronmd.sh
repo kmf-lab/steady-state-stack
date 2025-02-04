@@ -17,6 +17,8 @@ RESTART_POLICY="always"
 
 # NOTE: you may need to run update_sysctl.sh for maximum performance and to support large buffers
 
+# groups #SERVICE_USER
+# sudo usermod -aG docker $SERVICE_USER
 
 # Ensure systemd and required commands are available
 if ! command -v systemctl &> /dev/null; then
@@ -66,6 +68,7 @@ fi
 USER_ID=$(id -u $SERVICE_USER 2>/dev/null)
 GROUP_ID=$(id -g $SERVICE_USER 2>/dev/null)
 
+loginctl enable-linger $SERVICE_USER
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]

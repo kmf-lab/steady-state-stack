@@ -51,17 +51,18 @@ RUN apk add --no-cache \
     musl \
     libuuid \
     libbsd \
-    zlib
+    zlib \
+    coreutils
 
-# NOTE: you may need to run update_sysctl.sh on host to support large buffers
-
-RUN echo "net.core.rmem_max=4194304" >> /etc/sysctl.conf && \
-    echo "net.core.wmem_max=4194304" >> /etc/sysctl.conf && \
-    echo "fs.file-max=1048576" >> /etc/sysctl.conf && \
-    echo "net.ipv4.udp_rmem_min=4194304" >> /etc/sysctl.conf && \
-    echo "net.ipv4.udp_wmem_min=4194304" >> /etc/sysctl.conf && \
-    echo "net.ipv4.udp_mem=8388608 12582912 16777216" >> /etc/sysctl.conf && \
+# TODO: you may need to run this in the host as well
+RUN echo "net.core.rmem_max=4194304" | tee -a /etc/sysctl.conf && \
+    echo "net.core.wmem_max=4194304" |  tee -a /etc/sysctl.conf && \
+    echo "fs.file-max=1048576" | tee -a /etc/sysctl.conf && \
+    echo "net.ipv4.udp_rmem_min=4194304" | tee -a /etc/sysctl.conf && \
+    echo "net.ipv4.udp_wmem_min=4194304" | tee -a /etc/sysctl.conf && \
+    echo "net.ipv4.udp_mem=8388608 12582912 16777216" | tee -a /etc/sysctl.conf && \
     sysctl -p
+
 
 # Enable Huge Pages inside the container
 #RUN echo "vm.nr_hugepages=256" >> /etc/sysctl.conf && \

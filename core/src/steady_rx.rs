@@ -526,15 +526,6 @@ impl<T> Rx<T> {
     }
 
 
-    #[inline]
-    pub(crate) fn shared_try_take(&mut self) -> Option<T> {
-        let result = self.rx.try_pop();
-        if result.is_some() {
-            self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
-        }
-        result
-    }
-
 }
 
 

@@ -1,4 +1,6 @@
+use std::env;
 use std::time::Duration;
+use libc::setenv;
 use log::info;
 use steady_state::*;
 use structopt::*;
@@ -21,11 +23,16 @@ pub const STREAM_ID: i32 = 1234;
 
 
 fn main() {
+
+    env::set_var("TELEMETRY_SERVER_PORT", "9101");
+    env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+
     let cli_args = MainArg::from_args();
     let _ = init_logging("info");
     let mut graph = GraphBuilder::default()
            .build(cli_args); //or pass () if no args
 
+  warn!("hello");
     let aeron_channel: Channel = AeronConfig::new()
         .with_media_type(MediaType::Ipc) // 10MMps
 
