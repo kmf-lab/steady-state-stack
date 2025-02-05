@@ -2359,6 +2359,7 @@ dependencies = [
  "rand_distr",
  "regex",
  "ringbuf",
+ "smallvec",
  "structopt",
  "structopt-derive",
  "tempfile",

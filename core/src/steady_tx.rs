@@ -264,28 +264,16 @@ pub trait TxCore {
     type MsgOut;
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>);
-
     fn monitor_not(&mut self);
-
     fn shared_capacity(&self) -> usize;
-
     fn shared_is_full(&self) -> bool;
-
     fn shared_is_empty(&self) -> bool;
-
     fn shared_vacant_units(&self) -> usize;
-
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool;
-
     async fn shared_wait_vacant_units(&mut self, count: usize) -> bool;
-
     async fn shared_wait_empty(&mut self) -> bool;
-
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
-
     async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<(), Self::MsgOut>;
-
-    //?? TxDone??
     async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), Self::MsgOut>;
 
 

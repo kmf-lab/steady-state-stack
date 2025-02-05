@@ -98,6 +98,7 @@ futures-util     = "0.3.31"
 parking_lot      = "0.12.3"
 tempfile         = "3.14.0"
 num_cpus         = "1.16.0"
+smallvec         = "1.13.2"
 pin-project      = "1.1.7"
 ahash            = "0.8.11" # fastest hash map so far
 

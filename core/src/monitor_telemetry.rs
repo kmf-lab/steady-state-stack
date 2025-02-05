@@ -74,11 +74,28 @@ impl SteadyTelemetryActorSend {
     }
 }
 
-/// Structure representing the sender side of steady telemetry with a fixed length.
+/// Represents the sender side of steady telemetry with a fixed-length buffer.
+///
+/// This structure is optimized for performance by keeping all its fields on the stack,
+/// but as the size increases, heap allocation might be necessary.
+///
+/// # Type Parameters
+/// - `LENGTH`: The fixed size of the internal arrays used for tracking telemetry data.
 pub struct SteadyTelemetrySend<const LENGTH: usize> {
+    /// The transmission channel for sending telemetry data.
+    /// This is typically used for sending statistics or monitoring information.
     pub(crate) tx: SteadyTx<[usize; LENGTH]>,
+
+    /// A fixed-size array tracking the count of specific telemetry events.
+    /// Each index corresponds to a different event type or metric.
     pub(crate) count: [usize; LENGTH],
+
+    /// The last recorded timestamp when a telemetry error occurred.
+    /// Used for tracking and debugging issues in telemetry data collection.
     pub(crate) last_telemetry_error: Instant,
+
+    /// A mapping of local indices to their inverse counterparts.
+    /// This is used for quick lookups and efficient data processing.
     pub(crate) inverse_local_index: [usize; LENGTH],
 }
 
@@ -302,12 +319,12 @@ impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
         tx: Arc<Mutex<Tx<[usize; LENGTH]>>>,
         count: [usize; LENGTH],
         inverse_local_index: [usize; LENGTH],
-        start_now: Instant
+        last_telemetry_error: Instant
     ) -> SteadyTelemetrySend<LENGTH> {
         SteadyTelemetrySend {
             tx,
             count,
-            last_telemetry_error: start_now,
+            last_telemetry_error,
             inverse_local_index
         }
     }
