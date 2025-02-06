@@ -320,7 +320,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                 if let Some(ref mut lock_guard) = send_tx.tx.try_lock() {
                     if send_tx.count.iter().any(|x| !x.is_zero()) {
                         let tx = lock_guard.deref_mut();
-                        match tx.shared_try_send(send_tx.count) {
+                        match tx.shared_try_send(send_tx.count.clone()) {
                             Ok(_) => {
                                 send_tx.count.fill(0);
                                 if tx.local_index.lt(&MONITOR_NOT) {
@@ -351,7 +351,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                 if let Some(ref mut lock_guard) = send_rx.tx.try_lock() {
                     if send_rx.count.iter().any(|x| !x.is_zero()) {
                         let rx = lock_guard.deref_mut();
-                        match rx.shared_try_send(send_rx.count) {
+                        match rx.shared_try_send(send_rx.count.clone()) {
                             Ok(_) => {
                                 send_rx.count.fill(0);
                                 if rx.local_index.lt(&MONITOR_NOT) {
@@ -433,7 +433,7 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
             let mut tx = send_tx.tx.lock().await;
             if tx.make_closed.is_none() {
                 if send_tx.count.iter().any(|x| !x.is_zero()) {
-                    let _ = tx.shared_send_async(send_tx.count, ident, SendSaturation::IgnoreInRelease).await;
+                    let _ = tx.shared_send_async(send_tx.count.clone(), ident, SendSaturation::IgnoreInRelease).await;
                 }
                 tx.mark_closed();
                 tx.wait_empty().await;
@@ -443,8 +443,9 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
         if let Some(ref send_rx) = telemetry_send_rx {
             let mut rx = send_rx.tx.lock().await;
             if rx.make_closed.is_none() {
+
                 if send_rx.count.iter().any(|x| !x.is_zero()) {
-                    let _ = rx.shared_send_async(send_rx.count, ident, SendSaturation::IgnoreInRelease).await;
+                    let _ = rx.shared_send_async(send_rx.count.clone(), ident, SendSaturation::IgnoreInRelease).await;
                 }
                 rx.mark_closed();
                 rx.wait_empty().await;

@@ -292,7 +292,7 @@ impl<T> TxCore for Tx<T> {
         match done_count {
             TxDone::Normal(d) =>
               self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, d as isize),
-            TxDone::Stream(i,p) => {
+            TxDone::Stream(i,_p) => {
                 warn!("internal error should have gotten Normal");
                 self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, i as isize)
             },
@@ -472,7 +472,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
-            TxDone::Normal(d) => warn!("internal error should have gotten Stream"),
+            TxDone::Normal(d) => warn!("internal error should have gotten Stream: {}",d),
             TxDone::Stream(i,p) => {
                 self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.id, i as isize);
                 self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.id, p as isize);

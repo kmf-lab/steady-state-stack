@@ -232,17 +232,6 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         future_send: &mut Vec<i64>,
     ) -> bool {
         if let Some(ref take) = &self.take {
-            let mut buffer = [[0usize; RXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
-
-            let count = {
-                if let Some(mut rx_guard) = take.rx.try_lock() {
-                    let rx = rx_guard.deref_mut();
-                    rx.shared_take_slice(&mut buffer)
-                } else {
-                    0
-                }
-            };
-            let populated_slice = &buffer[0..count];
 
             take.details.iter().for_each(|meta| {
                 let max_takeable = take_send_source[meta.id].1 - take_send_source[meta.id].0;
@@ -252,17 +241,23 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 future_take[meta.id] -= value_taken;
             });
 
-            populated_slice.iter().for_each(|msg| {
-                take.details.iter().zip(msg.iter()).for_each(|(meta, val)| {
-                    let limit = take_send_source[meta.id].1;
-                    let val = *val as i64;
-                    if i64::is_zero(&future_take[meta.id]) && val + take_send_source[meta.id].0 <= limit {
-                        take_send_source[meta.id].0 += val;
-                    } else {
-                        future_take[meta.id] += val;
-                    }
-                });
-            });
+            let mut some = false;
+             if let Some(mut rx_guard) = take.rx.try_lock() {
+                 let rx = rx_guard.deref_mut();
+                 rx.shared_take_into_iter()
+                     .take(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1)
+                     .for_each(|msg| {
+                     take.details.iter().zip(msg.iter()).for_each(|(meta, val)| {
+                         let limit = take_send_source[meta.id].1;
+                         let val = *val as i64;
+                         if i64::is_zero(&future_take[meta.id]) && val + take_send_source[meta.id].0 <= limit {
+                             take_send_source[meta.id].0 += val;
+                         } else {
+                             future_take[meta.id] += val;
+                         }
+                     });
+                 });
+             }
 
             take.details.iter().for_each(|meta| {
                 let dif = take_send_source[meta.id].1 - take_send_source[meta.id].0;
@@ -273,7 +268,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 }
             });
 
-            count > 0
+            some
         } else {
             false
         }
@@ -286,28 +281,25 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         future_send: &mut Vec<i64>,
     ) -> bool {
         if let Some(ref send) = &self.send {
-            let mut buffer = [[0usize; TXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
-
-            let count = {
-                if let Some(mut tx_guard) = send.rx.try_lock() {
-                    let tx = tx_guard.deref_mut();
-                    tx.shared_take_slice(&mut buffer)
-                } else {
-                    0
-                }
-            };
-            let populated_slice = &buffer[0..count];
 
             assert_eq!(future_send.len(), take_send_target.len());
 
-            populated_slice.iter().for_each(|msg| {
-                send.details.iter().zip(msg.iter()).for_each(|(meta, val)| {
-                    take_send_target[meta.id].1 += future_send[meta.id];
-                    future_send[meta.id] = 0;
-                    take_send_target[meta.id].1 += *val as i64;
+            if let Some(mut tx_guard) = send.rx.try_lock() {
+                let tx = tx_guard.deref_mut();
+                let mut some = false;
+                tx.shared_take_into_iter()
+                    .take(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1)
+                    .for_each(|msg| { some=true;
+                    send.details.iter().zip(msg.iter()).for_each(|(meta, val)| {
+                        take_send_target[meta.id].1 += future_send[meta.id];
+                        future_send[meta.id] = 0;
+                        take_send_target[meta.id].1 += *val as i64;
+                    });
                 });
-            });
-            count > 0
+                some
+            } else {
+                false
+            }
         } else {
             false
         }
