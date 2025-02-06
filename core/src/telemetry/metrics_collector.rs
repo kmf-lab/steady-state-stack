@@ -77,7 +77,7 @@ struct RawDiagramState {
 /// Runs the metrics collector actor, collecting telemetry data from all actors and consolidating it for sharing and logging.
 pub(crate) async fn run<const GIRTH: usize>(
     context: SteadyContext,
-    dynamic_senders_vec: Arc<RwLock<Vec<crate::telemetry::metrics_collector::CollectorDetail>>>,
+    dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>>,
     optional_servers: SteadyTxBundle<DiagramData, GIRTH>,
 ) -> Result<(), Box<dyn Error>> {
     internal_behavior(context, dynamic_senders_vec, optional_servers).await
