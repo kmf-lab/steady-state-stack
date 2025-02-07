@@ -2,7 +2,6 @@ use std::error::Error;
 use std::sync::{Arc};
 use futures_timer::Delay;
 use ringbuf::consumer::Consumer;
-use ringbuf::traits::Observer;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
@@ -246,7 +245,7 @@ pub(crate) mod aeron_tests {
         let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
 
         const BATCH_SIZE:usize = 5000;
-        let mut items: [StreamSimpleMessage; BATCH_SIZE] = [StreamSimpleMessage::new(8);BATCH_SIZE];
+        let items: [StreamSimpleMessage; BATCH_SIZE] = [StreamSimpleMessage::new(8);BATCH_SIZE];
         let mut data: [[u8;8]; BATCH_SIZE] = [data1; BATCH_SIZE];
         for i in 0..BATCH_SIZE {
             if i % 2 == 0 {

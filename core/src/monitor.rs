@@ -1,5 +1,4 @@
 use std::any::type_name;
-use std::array;
 use std::ops::*;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
@@ -13,8 +12,6 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::thread::ThreadId;
 use async_ringbuf::consumer::AsyncConsumer;
-use async_ringbuf::producer::AsyncProducer;
-use bytes::BufMut;
 use futures::channel::oneshot;
 use futures_util::{select, FutureExt};
 use ringbuf::consumer::Consumer;

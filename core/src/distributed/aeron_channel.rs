@@ -1,7 +1,7 @@
 
 use std::ffi::CString;
 use std::fmt::Debug;
-use std::net::{IpAddr, UdpSocket};
+use std::net::{IpAddr};
 
 
 pub(crate) mod aeron_utils {
@@ -11,8 +11,7 @@ pub(crate) mod aeron_utils {
     use aeron::aeron::Aeron;
     use aeron::context::Context;
     use aeron::utils::errors::AeronError;
-    use log::{info, trace, warn};
-    
+    use log::*;
     //For more details see:: https://github.com/real-logic/aeron/wiki/Channel-Configuration
 
     fn error_handler(error: AeronError) {
@@ -256,7 +255,7 @@ impl Channel {
     ///
     /// For multicast, we add `|control=...|control-mode=...|ttl=...` as needed.
     pub fn cstring(&self) -> CString {
-        let mut channel_str = match self {
+        let channel_str = match self {
             Channel::PointToPoint {
                 media_type,
                 endpoint,

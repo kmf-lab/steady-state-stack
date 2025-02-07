@@ -9,19 +9,16 @@ use std::sync::Arc;
 use std::time::Instant;
 use ahash::AHashMap;
 use async_ringbuf::AsyncRb;
-use async_ringbuf::producer::AsyncProducer;
 use async_ringbuf::wrap::AsyncWrap;
 use futures_util::AsyncWriteExt;
 use futures_util::future::FusedFuture;
 use futures_util::lock::{Mutex, MutexGuard, MutexLockFuture};
-use log::warn;
-use num_traits::Zero;
+
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use ringbuf::storage::Heap;
 use ringbuf::traits::{Observer, Split};
 use crate::{monitor::{RxMetaData, TxMetaData}, channel_builder::ChannelBuilder, Rx, Tx, SteadyCommander};
-use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
@@ -425,7 +422,7 @@ impl<T: StreamItem> StreamTx<T> {
                                    , now: Instant) {
 
         //Get or create the Defrag entry for the session ID
-        let mut defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
+        let defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
             Defrag::new(session_id, self.item_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
         });
         debug_assert!(defrag_entry.ringbuffer_items.1.occupied_len() < defrag_entry.ringbuffer_items.1.capacity().into());
