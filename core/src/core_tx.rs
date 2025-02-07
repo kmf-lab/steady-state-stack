@@ -28,7 +28,7 @@ pub trait TxCore {
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
     async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<(), Self::MsgOut>;
     async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), Self::MsgOut>;
-
+    fn shared_send_iter_until_full<I: Iterator<Item = Self::MsgIn<'_>>>(&mut self, iter: I) -> usize;
 
     }
 
@@ -36,6 +36,14 @@ impl<T> TxCore for Tx<T> {
 
     type MsgIn<'a> = T;
     type MsgOut = T;
+
+
+    fn shared_send_iter_until_full<I: Iterator<Item = Self::MsgIn<'_>>>(&mut self, iter: I) -> usize {
+         if self.make_closed.is_none() {
+             warn!("Send called after channel marked closed");
+         }
+         self.tx.push_iter(iter)
+    }
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
@@ -218,6 +226,19 @@ impl<T> TxCore for Tx<T> {
 impl<T: StreamItem> TxCore for StreamTx<T> {
     type MsgIn<'a> = (T, &'a[u8]);
     type MsgOut = T;
+
+
+    fn shared_send_iter_until_full<I: Iterator<Item = Self::MsgIn<'_>>>(&mut self, iter: I) -> usize {
+
+
+        debug_assert!(!self.item_channel.make_closed.is_none(),"Send called after channel marked closed");
+        debug_assert!(!self.payload_channel.make_closed.is_none(),"Send called after channel marked closed");
+
+        let (item,payload) = msg;
+        assert_eq!(item.length(),payload.len() as i32);
+        self.tx.push_iter(iter) ???
+
+    }
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
@@ -485,6 +506,10 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
 impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;
     type MsgOut = <T as TxCore>::MsgOut;
+
+    fn shared_send_iter_until_full<I: Iterator<Item = Self::MsgIn<'_>>>(&mut self, iter: I) -> usize {
+        <T as TxCore>::shared_send_iter_until_full(&mut **self, iter)
+    }
 
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         <T as TxCore>::telemetry_inc(&mut **self, done_count, tel)

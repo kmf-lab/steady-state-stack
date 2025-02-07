@@ -141,13 +141,13 @@ impl<T> Tx<T> {
 
     //TODO: move these two
 
-    #[inline]
-    pub(crate) fn shared_send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
-        if self.make_closed.is_none() {
-            warn!("Send called after channel marked closed");
-        }
-        self.tx.push_iter(iter)
-    }
+    // #[inline]
+    // pub(crate) fn shared_send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
+    //     if self.make_closed.is_none() {
+    //         warn!("Send called after channel marked closed");
+    //     }
+    //     self.tx.push_iter(iter)
+    // }
 
     #[inline]
     pub(crate) fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
