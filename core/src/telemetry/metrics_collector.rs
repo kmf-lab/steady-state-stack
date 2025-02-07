@@ -21,6 +21,7 @@ use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
 use crate::{GraphLivelinessState, SteadyRx};
 use crate::commander::SteadyCommander;
+use crate::core_tx::TxCore;
 use crate::steady_rx::*;
 use crate::steady_tx::*;
 use crate::telemetry::metrics_collector;
@@ -550,7 +551,7 @@ mod metric_collector_tests {
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use futures::executor::block_on;
-    use crate::{GraphBuilder};
+    use crate::{GraphBuilder, RxCore};
 
     #[test]
     fn test_raw_diagram_state_default() {

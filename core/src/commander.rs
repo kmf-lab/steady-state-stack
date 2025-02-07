@@ -14,8 +14,8 @@ use crate::{steady_config, ActorIdentity, GraphLivelinessState, LocalMonitor, Rx
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
-use crate::steady_rx::{RxCore, RxDef, RxDone};
-use crate::steady_tx::{TxDef, TxCore};
+use crate::steady_rx::RxDef;
+use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
 use crate::yield_now::yield_now;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -23,7 +23,9 @@ use log::warn;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use ringbuf::traits::Observer;
-use crate::distributed::steady_stream::{StreamItem, StreamSimpleMessage, StreamRxBundle, StreamTxBundle, StreamRx, Defrag};
+use crate::core_rx::{RxCore, RxDone};
+use crate::core_tx::TxCore;
+use crate::distributed::steady_stream::{Defrag, StreamItem, StreamRx, StreamRxBundle, StreamSimpleMessage, StreamTxBundle};
 use crate::util::logger;
 
 impl SteadyContext {

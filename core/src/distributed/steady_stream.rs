@@ -21,8 +21,8 @@ use ringbuf::producer::Producer;
 use ringbuf::storage::Heap;
 use ringbuf::traits::{Observer, Split};
 use crate::{monitor::{RxMetaData, TxMetaData}, channel_builder::ChannelBuilder, Rx, Tx, SteadyCommander};
-use crate::steady_rx::RxCore;
-use crate::steady_tx::TxCore;
+use crate::core_rx::RxCore;
+use crate::core_tx::TxCore;
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
 pub type IdType = i32;

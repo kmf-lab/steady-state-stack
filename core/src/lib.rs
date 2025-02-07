@@ -74,10 +74,11 @@ pub mod steady_rx;
 pub mod yield_now;
     /// module for all commands for channels used by actors
 pub mod commander;
-
+mod core_rx;
+mod core_tx;
 
 pub use graph_testing::GraphTestResult;
-pub use monitor::{LocalMonitor,RxMetaDataHolder,TxMetaDataHolder};
+pub use monitor::{LocalMonitor, RxMetaDataHolder, TxMetaDataHolder};
 pub use channel_builder::Rate;
 pub use channel_builder::Filled;
 pub use channel_builder::LazySteadyRx;
@@ -95,21 +96,21 @@ pub use steady_rx::Rx;
 pub use steady_tx::Tx;
 pub use steady_rx::SteadyRxBundleTrait;
 pub use steady_tx::SteadyTxBundleTrait;
-pub use steady_rx::{RxBundleTrait,RxCore};
-pub use steady_tx::{TxBundleTrait};
+pub use steady_rx::RxBundleTrait;
+pub use steady_tx::TxBundleTrait;
 pub use commander::SteadyCommander;
 pub use distributed::aeron_channel::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_distributed::{AeronConfig, DistributedTech};
-pub use distributed::steady_stream::{StreamSimpleMessage,StreamSessionMessage};
-pub use distributed::steady_stream::{LazySteadyStreamTxBundle,LazySteadyStreamRxBundle};
-pub use distributed::steady_stream::{SteadyStreamTxBundle,SteadyStreamRxBundle};
-pub use distributed::steady_stream::{LazyStreamTx,LazyStreamRx};
+pub use distributed::steady_stream::{StreamSessionMessage, StreamSimpleMessage};
+pub use distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
+pub use distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};
+pub use distributed::steady_stream::{LazyStreamRx, LazyStreamTx};
 pub use distributed::steady_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
 pub use distributed::steady_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
 pub use distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
 
 
-pub use log::{error, warn, debug, trace, info};
+pub use log::{debug, error, info, trace, warn};
 
 use std::any::Any;
 use std::time::{Duration, Instant};
@@ -126,12 +127,13 @@ use log::*;
 use crate::monitor::{ActorMetaData, ChannelMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::setup;
-use crate::util::{logger};
+use crate::util::logger;
 use futures::*;
 use futures::channel::oneshot;
 use futures::select;
-use futures_util::future::{FusedFuture};
+use futures_util::future::FusedFuture;
 use futures_util::lock::MutexGuard;
+pub use core_rx::RxCore;
 use monitor_telemetry::SteadyTelemetry;
 use crate::actor_builder::NodeTxRx;
 use crate::yield_now::yield_now;
@@ -701,7 +703,7 @@ mod lib_tests {
     use parking_lot::RwLock;
     use futures::lock::Mutex;
     use commander::SteadyCommander;
-    use crate::steady_tx::TxCore;
+    use crate::core_tx::TxCore;
 
     #[test]
     fn test_std_dev_valid_values() {
