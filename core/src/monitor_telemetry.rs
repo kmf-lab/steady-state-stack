@@ -5,9 +5,8 @@ use futures_util::lock::Mutex;
 use log::error;
 use std::ops::DerefMut;
 use num_traits::Zero;
-use smallvec::SmallVec;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
-use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
+use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx, RxCore};
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
 
@@ -21,7 +20,7 @@ pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
 
 /// Structure representing the telemetry take side with a fixed length.
 pub struct SteadyTelemetryTake<const LENGTH: usize> {
-    pub(crate) rx: Arc<Mutex<Rx<SmallVec<[usize; LENGTH]>>>>,
+    pub(crate) rx: Arc<Mutex<Rx<[usize; LENGTH]>>>,
     pub(crate) details: Vec<Arc<ChannelMetaData>>,
 }
 
@@ -85,11 +84,11 @@ impl SteadyTelemetryActorSend {
 pub struct SteadyTelemetrySend<const LENGTH: usize> {
     /// The transmission channel for sending telemetry data.
     /// This is typically used for sending statistics or monitoring information.
-    pub(crate) tx: SteadyTx<SmallVec<[usize; LENGTH]>>,
+    pub(crate) tx: SteadyTx<[usize; LENGTH]>,
 
     /// A fixed-size array tracking the count of specific telemetry events.
     /// Each index corresponds to a different event type or metric.
-    pub(crate) count: SmallVec<[usize; LENGTH]>,
+    pub(crate) count: [usize; LENGTH],
 
     /// The last recorded timestamp when a telemetry error occurred.
     /// Used for tracking and debugging issues in telemetry data collection.
@@ -97,7 +96,7 @@ pub struct SteadyTelemetrySend<const LENGTH: usize> {
 
     /// A mapping of local indices to their inverse counterparts.
     /// This is used for quick lookups and efficient data processing.
-    pub(crate) inverse_local_index: SmallVec<[usize; LENGTH]>,
+    pub(crate) inverse_local_index: [usize; LENGTH],
 }
 
 impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
@@ -248,6 +247,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                      .take(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1)
                      .for_each(|msg| {
                      take.details.iter().zip(msg.iter()).for_each(|(meta, val)| {
+                         some = true;
                          let limit = take_send_source[meta.id].1;
                          let val = *val as i64;
                          if i64::is_zero(&future_take[meta.id]) && val + take_send_source[meta.id].0 <= limit {
@@ -309,16 +309,16 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
 impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
     /// Creates a new instance of SteadyTelemetrySend.
     pub fn new(
-        tx: Arc<Mutex<Tx<SmallVec<[usize; LENGTH]>>>>,
+        tx: Arc<Mutex<Tx<[usize; LENGTH]>>>,
         count: [usize; LENGTH],
         inverse_local_index: [usize; LENGTH],
         last_telemetry_error: Instant
     ) -> SteadyTelemetrySend<LENGTH> {
         SteadyTelemetrySend {
             tx,
-            count: SmallVec::<[usize;LENGTH]>::from_slice(&count),
+            count,
             last_telemetry_error,
-            inverse_local_index: SmallVec::<[usize;LENGTH]>::from_slice(&inverse_local_index)
+            inverse_local_index
         }
     }
 

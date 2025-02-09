@@ -7,10 +7,23 @@ use futures_util::lock::MutexGuard;
 use ringbuf::traits::Observer;
 use futures_util::future::FusedFuture;
 use async_ringbuf::producer::AsyncProducer;
+use nuclei::block_on;
 use ringbuf::producer::Producer;
 use crate::distributed::steady_stream::{StreamItem, StreamTx};
-use crate::{ActorIdentity, SendSaturation, Tx, MONITOR_NOT};
+use crate::{ActorIdentity, SendSaturation, StreamSimpleMessage, Tx, MONITOR_NOT};
 use crate::monitor_telemetry::SteadyTelemetrySend;
+
+// Define a newtype that wraps the tuple.
+struct StreamMessageAndBytes<'a>(StreamSimpleMessage, &'a [u8]);
+
+impl<'a> From<&'a [u8]> for StreamMessageAndBytes<'a> {
+    fn from(bytes: &'a [u8]) -> Self {
+        // Create a new StreamSimpleMessage and wrap it with the bytes.
+        StreamMessageAndBytes(StreamSimpleMessage::new(bytes.len() as i32), bytes)
+    }
+}
+
+
 
 pub trait TxCore {
     type MsgIn<'a>;
@@ -28,17 +41,23 @@ pub trait TxCore {
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
     async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<(), Self::MsgOut>;
     async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), Self::MsgOut>;
-    fn shared_send_iter_until_full<I: Iterator<Item = Self::MsgIn<'_>>>(&mut self, iter: I) -> usize;
+    fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize;
+    fn shared_send_slice_until_full<'a>(&mut self, slice: &[Self::MsgIn<'a>]) -> usize where Self::MsgOut: Copy;
 
-    }
+  }
 
 impl<T> TxCore for Tx<T> {
 
     type MsgIn<'a> = T;
     type MsgOut = T;
 
+    fn shared_send_slice_until_full<'a>(&mut self, slice: &[Self::MsgIn<'a>]) -> usize where Self::MsgOut: Copy
+    {
+        debug_assert!(!self.make_closed.is_none(),"Send called after channel marked closed");
+        self.tx.push_slice(slice)
+    }
 
-    fn shared_send_iter_until_full<I: Iterator<Item = Self::MsgIn<'_>>>(&mut self, iter: I) -> usize {
+    fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
          if self.make_closed.is_none() {
              warn!("Send called after channel marked closed");
          }
@@ -227,17 +246,47 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
     type MsgIn<'a> = (T, &'a[u8]);
     type MsgOut = T;
 
+    fn shared_send_slice_until_full<'a>(&mut self, slice: &[Self::MsgIn<'a>]) -> usize where Self::MsgOut: Copy
+    {
+        debug_assert!(!self.item_channel.make_closed.is_none(),"Send called after channel marked closed");
+        debug_assert!(!self.payload_channel.make_closed.is_none(),"Send called after channel marked closed");
 
-    fn shared_send_iter_until_full<I: Iterator<Item = Self::MsgIn<'_>>>(&mut self, iter: I) -> usize {
+        let mut index = 0;
+        while index < slice.len()
+              && slice[index].0.length()<= self.payload_channel.vacant_units() as i32
+              && self.item_channel.vacant_units() >= 1  {
+              self.payload_channel.tx.push_slice(slice[index].1);
+              self.item_channel.tx.push(slice[index].0.clone());
+              index = index +1;
+        }
+        index
+    }
 
+    /// assumes you have enough bytes in the payload of the target stream for the item count
+    /// if space is not provided this will log and block until space is avilable.s
+    fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
 
         debug_assert!(!self.item_channel.make_closed.is_none(),"Send called after channel marked closed");
         debug_assert!(!self.payload_channel.make_closed.is_none(),"Send called after channel marked closed");
 
-        let (item,payload) = msg;
-        assert_eq!(item.length(),payload.len() as i32);
-        self.tx.push_iter(iter) ???
+        let mut count = 0;
 
+        //while we have room keep going.
+        let item_limit = self.item_channel.tx.vacant_len();
+        let limited_iter = iter
+            .take(item_limit);
+
+        for (item,payload) in limited_iter {
+            assert_eq!(item.length(),payload.len() as i32);
+            if payload.len() > self.payload_channel.tx.vacant_len() {
+                warn!("the payload of the stream should be larger we need {} but found {}",payload.len(),self.payload_channel.tx.vacant_len());
+                block_on(self.payload_channel.tx.wait_vacant(payload.len()));
+            }
+            let _ = self.payload_channel.tx.push_slice(payload);
+            let _ = self.item_channel.tx.try_push(item);
+            count += 1;
+        }
+        count
     }
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
@@ -507,7 +556,12 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;
     type MsgOut = <T as TxCore>::MsgOut;
 
-    fn shared_send_iter_until_full<I: Iterator<Item = Self::MsgIn<'_>>>(&mut self, iter: I) -> usize {
+
+    fn shared_send_slice_until_full<'a>(&mut self, slice: &[Self::MsgIn<'a>]) -> usize where Self::MsgOut: Copy {
+        <T as TxCore>::shared_send_slice_until_full(&mut **self, slice)
+    }
+
+    fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
         <T as TxCore>::shared_send_iter_until_full(&mut **self, iter)
     }
 

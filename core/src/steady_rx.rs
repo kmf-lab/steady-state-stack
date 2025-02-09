@@ -3,22 +3,18 @@ use futures_util::{select, task, FutureExt};
 use std::sync::Arc;
 use futures_util::lock::MutexLockFuture;
 use std::time::{Duration, Instant};
-use log::{error, warn};
 use futures::channel::oneshot;
 use futures_util::future::{select_all, BoxFuture, FusedFuture};
 use async_ringbuf::consumer::AsyncConsumer;
 use ringbuf::consumer::Consumer;
-use ringbuf::traits::Observer;
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 use futures_timer::Delay;
+use log::error;
 use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
-use crate::{RxBundle, SteadyRx, SteadyRxBundle, MONITOR_NOT};
+use crate::{RxBundle, SteadyRx, SteadyRxBundle};
 use crate::core_rx::RxCore;
-use crate::distributed::steady_stream::{StreamItem, StreamRx};
-use crate::monitor_telemetry::SteadyTelemetrySend;
-use crate::core_tx::TxDone;
 
 /// Represents a receiver that consumes messages from a channel.
 ///
@@ -408,126 +404,6 @@ impl<T> Rx<T> {
     pub async fn wait_avail_units(&mut self, count: usize) -> bool {
         self.shared_wait_shutdown_or_avail_units(count).await;
         false
-    }
-
-
-
-
-    //TODO: move these 8
-
-
-    #[inline]
-    pub(crate) fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
-        where T: Copy {
-        let count = self.rx.pop_slice(elems);
-        self.take_count.fetch_add(count as u32, Ordering::Relaxed); //wraps on overflow
-        count
-    }
-
-    #[inline]
-    pub(crate) fn shared_advance_index(&mut self, count: usize) -> usize {
-        let avail = self.rx.occupied_len();
-        let idx = if count>avail {
-                      avail
-                   } else {
-                      count
-                   };
-        unsafe { self.rx.advance_read_index(idx); }
-        idx
-    }
-
-    #[inline]
-    pub(crate) fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
-        CountingIterator::new(self.rx.pop_iter(), &self.take_count)
-       // self.rx.pop_iter()
-    }
-
-
-    #[inline]
-    pub(crate) fn shared_try_peek_iter(&self) -> impl Iterator<Item = &T> {
-        self.rx.iter()
-    }
-
-    /// Asynchronously retrieves and removes a single message from the channel.
-    ///
-    ///
-    /// # Returns
-    /// An `Option<T>` which is `Some(T)` when a message becomes available.
-    /// None is ONLY returned if there is no data AND a shutdown was requested!
-    ///
-    /// # Asynchronous
-    #[inline]
-    pub(crate) async fn shared_take_async(&mut self) -> Option<T> {
-        let mut one_down = &mut self.oneshot_shutdown;
-        let result = if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.pop();
-            select! { _ = one_down => self.rx.try_pop(),
-                     p = operation => p }
-        } else {
-            self.rx.try_pop()
-        };
-        if result.is_some() {
-            self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
-        }
-        result
-    }
-
-    #[inline]
-    pub(crate) async fn shared_take_async_timeout(&mut self, timeout: Option<Duration> ) -> Option<T> {
-        let mut one_down = &mut self.oneshot_shutdown;
-        let result = if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.pop();            
-            if let Some(timeout) = timeout {
-                let mut timeout = Delay::new(timeout).fuse();
-                select! { _ = one_down  => self.rx.try_pop()
-                        , p = operation => p
-                        , _ = timeout   => self.rx.try_pop()
-                }
-            } else {
-                select! { _ = one_down  => self.rx.try_pop()
-                        , p = operation => p 
-                }
-            }            
-        } else {
-            self.rx.try_pop()
-        };
-        if result.is_some() {
-            self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
-        }
-        result
-    }
-    
-
-    #[inline]
-    pub(crate) async fn shared_peek_async_iter(&mut self, wait_for_count: usize) -> impl Iterator<Item = &T> {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-            select! { _ = one_down => {}
-                    , _ = operation => {}
-                    , }
-        }
-        self.rx.iter()
-    }
-
-    #[inline]
-    pub(crate) async fn shared_peek_async_iter_timeout(&mut self, wait_for_count: usize, timeout: Option<Duration>) -> impl Iterator<Item = &T> {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-            if let Some(timeout) = timeout {
-                let mut timeout = Delay::new(timeout).fuse();
-                select! { _ = one_down => {}
-                        , _ = operation => {}
-                        , _ = timeout => {}
-                };
-            } else {
-                select! { _ = one_down => {}
-                        , _ = operation => {}                        
-                };
-            }
-        }
-        self.rx.iter()
     }
 
 

@@ -76,9 +76,11 @@ pub mod yield_now;
 pub mod commander;
 mod core_rx;
 mod core_tx;
+mod commander_context;
+mod commander_monitor;
 
 pub use graph_testing::GraphTestResult;
-pub use monitor::{LocalMonitor, RxMetaDataHolder, TxMetaDataHolder};
+pub use monitor::{RxMetaDataHolder, TxMetaDataHolder};
 pub use channel_builder::Rate;
 pub use channel_builder::Filled;
 pub use channel_builder::LazySteadyRx;
@@ -126,15 +128,13 @@ use log::*;
 
 use crate::monitor::{ActorMetaData, ChannelMetaData};
 use crate::telemetry::metrics_collector::CollectorDetail;
-use crate::telemetry::setup;
 use crate::util::logger;
 use futures::*;
 use futures::channel::oneshot;
 use futures::select;
-use futures_util::future::FusedFuture;
 use futures_util::lock::MutexGuard;
+pub use commander_monitor::LocalMonitor;
 pub use core_rx::RxCore;
-use monitor_telemetry::SteadyTelemetry;
 use crate::actor_builder::NodeTxRx;
 use crate::yield_now::yield_now;
 

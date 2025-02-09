@@ -1,26 +1,23 @@
 use std::sync::Arc;
 use log::{error, trace, warn};
-use futures_util::{select, FutureExt};
+use futures_util::{FutureExt};
 use std::any::type_name;
 use std::backtrace::Backtrace;
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 use futures::channel::oneshot;
-use futures_util::lock::{MutexGuard, MutexLockFuture};
+use futures_util::lock::{MutexLockFuture};
 use ringbuf::traits::Observer;
-use ringbuf::producer::Producer;
-use futures_util::future::{select_all, FusedFuture};
-use async_ringbuf::producer::AsyncProducer;
+use futures_util::future::{select_all};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::thread;
-use futures::pin_mut;
-use futures_timer::Delay;
-use crate::{steady_config, ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle, MONITOR_NOT};
+
+use crate::{steady_config, ActorIdentity, SteadyTx, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::core_tx::TxCore;
-use crate::distributed::steady_stream::{StreamItem, StreamTx};
+
 use crate::monitor::{ChannelMetaData, TxMetaData};
-use crate::monitor_telemetry::SteadyTelemetrySend;
+
 
 /// The `Tx` struct represents a transmission channel for messages of type `T`.
 /// It provides methods to send messages to the channel, check the channel's state, and handle the transmission lifecycle.
@@ -136,26 +133,6 @@ impl<T> Tx<T> {
             self.last_error_send = Instant::now();
         }
     }
-
-
-
-    //TODO: move these two
-
-    // #[inline]
-    // pub(crate) fn shared_send_iter_until_full<I: Iterator<Item = T>>(&mut self, iter: I) -> usize {
-    //     if self.make_closed.is_none() {
-    //         warn!("Send called after channel marked closed");
-    //     }
-    //     self.tx.push_iter(iter)
-    // }
-
-    #[inline]
-    pub(crate) fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
-    where T: Copy {
-        debug_assert!(!self.make_closed.is_none(),"Send called after channel marked closed");
-        self.tx.push_slice(slice)
-    }
-
 
 
 }

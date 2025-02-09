@@ -1,7 +1,6 @@
 use std::error::Error;
 use std::sync::{Arc};
 use futures_timer::Delay;
-use ringbuf::consumer::Consumer;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
@@ -137,7 +136,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
             let clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
-                          ,cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1)
+                          ,cmd.wait_closed_or_avail_units_bundle(&mut rx, wait_for, 1)
                            );
 
 
@@ -264,8 +263,8 @@ pub(crate) mod aeron_tests {
             let data_size = 8;
             let vacant_bytes = vacant_items * data_size;
 
-            let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx
-                                       , vacant_items, vacant_bytes, 1));
+            let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units(&mut tx
+                                       , (vacant_items, vacant_bytes), 1));
 
             let mut remaining = TEST_ITEMS;
             let idx:usize = (STREAM_ID - tx[0].stream_id) as usize;
@@ -316,7 +315,7 @@ pub(crate) mod aeron_tests {
         let mut received_count = 0;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
 
-            let _clean = await_for_all!(cmd.wait_closed_or_avail_message_stream(&mut rx, LEN, 1));
+            let _clean = await_for_all!(cmd.wait_closed_or_avail_units(&mut rx, LEN, 1));
 
             //we waited above for 2 messages so we know there are 2 to consume
             //reading from a single channel with a single stream id

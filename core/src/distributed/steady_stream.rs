@@ -10,15 +10,15 @@ use std::time::Instant;
 use ahash::AHashMap;
 use async_ringbuf::AsyncRb;
 use async_ringbuf::wrap::AsyncWrap;
-use futures_util::AsyncWriteExt;
-use futures_util::future::FusedFuture;
+
+
 use futures_util::lock::{Mutex, MutexGuard, MutexLockFuture};
 
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use ringbuf::storage::Heap;
 use ringbuf::traits::{Observer, Split};
-use crate::{monitor::{RxMetaData, TxMetaData}, channel_builder::ChannelBuilder, Rx, Tx, SteadyCommander};
+use crate::{monitor::{RxMetaData, TxMetaData}, channel_builder::ChannelBuilder, Rx, Tx, SteadyCommander, RxCore};
 use crate::core_tx::TxCore;
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
@@ -289,7 +289,7 @@ impl StreamSimpleMessage {
     /// - Panics if `length.0 < 0` (should never happen due to `Length` checks).
     pub fn new(length: i32) -> Self {
         assert!(length >= 0, "Message length cannot be negative");
-        StreamSimpleMessage { length: length }
+        StreamSimpleMessage { length }
     }
 }
 
@@ -807,7 +807,7 @@ impl<T: StreamItem> LazyStreamRx<T> {
         let s = self.clone();
         let mut l = s.lock().await;
 
-        if let Some(c) = l.item_channel.shared_take_async().await {
+        if let Some(_c) = l.item_channel.shared_take_async().await {
             let count = l.payload_channel.shared_take_slice(data);
             assert_eq!(count, data.len());
             count

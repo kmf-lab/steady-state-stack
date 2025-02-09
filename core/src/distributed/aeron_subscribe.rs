@@ -7,7 +7,6 @@ use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
-use aeron::image::ControlledPollAction;
 use aeron::subscription::Subscription;
 use crate::distributed::aeron_channel::Channel;
 use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamTxBundleTrait, StreamSessionMessage};
@@ -19,7 +18,6 @@ use async_ringbuf::wrap::AsyncWrap;
 use crate::monitor::{TxMetaDataHolder};
 use ahash::AHashMap;
 use num_traits::Zero;
-use aeron::concurrent::strategies::{BusySpinIdleStrategy, Strategy};
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 #[derive(Default)]
@@ -145,7 +143,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
             //warn!("looping");
             // only poll this often
-            let clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
+            let _clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
 
                 let mut found_data = false;
                 for i in 0..GIRTH {
@@ -167,7 +165,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                             //NOTE: aeron is NOT thread safe so we are forced to lock across the entire app
                                             let mut total = 0;
                                             //each call to this is no more than one full SOCKET_SO_RCVBUF
-                                            for z in 0..16 { //16
+                                            for _z in 0..16 { //16
 
                                                 let c = {
                                                     let now = Instant::now();
@@ -232,7 +230,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                     tx[i].fragment_flush_ready(&mut cmd);
                                 }
                             }
-                            Err(e) => {
+                            Err(_e) => {
                                 if let Some(id) = state.sub_reg_id[i] {
                                     let sub = {
                                         let mut aeron = aeron.lock().await; //caution other actors need this so do jit
@@ -300,7 +298,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod aeron_media_driver_tests {
-    use std::net::{IpAddr, Ipv4Addr};
     use super::*;
     use crate::distributed::aeron_channel::{Endpoint, MediaType};
     use crate::distributed::steady_stream::StreamSimpleMessage;
@@ -350,7 +347,7 @@ pub(crate) mod aeron_media_driver_tests {
                                        , to_aeron_rx
                                        , &mut Threading::Spawn);
 
-        for i in 0..100 {
+        for _i in 0..100 {
             to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]).await;
             to_aeron_tx[0].testing_send_frame(&[6, 7, 8, 9, 10]).await;
         }
