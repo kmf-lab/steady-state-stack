@@ -273,7 +273,7 @@ impl SideChannelResponder {
     ///
     /// # Returns
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn equals_responder<M: 'static + Clone + Debug + Send + Eq, C: SteadyCommander>(
+    pub async fn equals_responder<M: 'static + Copy + Clone + Debug + Send + Eq, C: SteadyCommander>(
         &self,
         cmd: &mut C,
         source_rx: &mut Rx<M>,
@@ -314,7 +314,7 @@ impl SideChannelResponder {
     ///
     /// # Returns
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn equals_responder_bundle<M: 'static + Clone + Debug + Send + Eq, C: SteadyCommander>(
+    pub async fn equals_responder_bundle<M: 'static + Copy + Clone + Debug + Send + Eq, C: SteadyCommander>(
         &self,
         cmd: &mut C,
         source_rx: &mut RxBundle<'_, M>,

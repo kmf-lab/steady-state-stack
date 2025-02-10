@@ -107,7 +107,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 
     //TODO: check usage and add to the SteadyState
-    pub(crate) fn validate_capacity_tx<T>(this: &mut Tx<T>, count: usize) -> usize {
+    pub(crate) fn validate_capacity_tx<T: TxCore>(this: &mut T, count: usize) -> usize {
         if count <= this.capacity() {
             count
         } else {
@@ -598,10 +598,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send,
-    {
+    async fn wait_vacant_units_bundle<T: TxCore>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
+     {
         let mut count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
 
@@ -754,7 +752,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// An iterator over the messages in the channel.
-    fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
+    fn try_peek_iter<'a, T:RxCore>(&'a self, this: &'a mut T) -> impl Iterator<Item = &'a T::MsgOut> + 'a {
         this.shared_try_peek_iter()
     }
 
@@ -770,7 +768,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// An iterator over the messages in the channel.
     ///
     /// # Asynchronous
-    async fn peek_async_iter<'a, T>(&'a self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
+    async fn peek_async_iter<'a, T: RxCore>(&'a self, this: &'a mut T, wait_for_count: usize) -> impl Iterator<Item = &'a T::MsgOut> + 'a {
         let _guard = self.start_profile(CALL_OTHER);
         let timeout = if self.telemetry.is_dirty() {
             let remaining_micros = self.telemetry_remaining_micros();
@@ -1084,7 +1082,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// An iterator over the taken messages.
-    fn take_into_iter<'a, T: Sync + Send>(& mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a
+    fn take_into_iter<'a, T: RxCore>(& mut self, this: &'a mut T) -> impl Iterator<Item = T::MsgOut> + 'a
     {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -1464,7 +1462,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// `true` if the units are available, otherwise `false`.
     ///
     /// # Asynchronous
-    async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_shutdown_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
 
@@ -1495,7 +1493,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// `true` if the units are available, otherwise `false` if closed channel.
     ///
     /// # Asynchronous
-    async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_closed_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
         if self.telemetry.is_dirty() {
@@ -1525,7 +1523,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// `true` if the units are available, otherwise `false` if pending telemetry data to send.
     ///
     /// # Asynchronous
-    async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_avail_units<T:RxCore>(&self, this: &mut T, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
         if self.telemetry.is_dirty() {

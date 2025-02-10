@@ -1069,7 +1069,7 @@ mod lib_tests {
     // Test avail_units method
     #[test]
     fn test_avail_units() {
-        let context = test_steady_context();
+        let mut context = test_steady_context();
         let rx = create_rx(vec![1, 2, 3]);
         if let Some(mut rx) = rx.try_lock() {
             assert_eq!(context.avail_units(&mut rx), 3);

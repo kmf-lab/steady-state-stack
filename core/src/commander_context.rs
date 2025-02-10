@@ -462,7 +462,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// An iterator over the messages in the channel.
-    fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item=&'a T> + 'a {
+    fn try_peek_iter<'a, T: RxCore>(&'a self, this: &'a mut T) -> impl Iterator<Item=&'a T::MsgOut> + 'a {
         this.shared_try_peek_iter()
     }
     /// Asynchronously returns an iterator over the messages in the channel,
@@ -476,7 +476,7 @@ impl SteadyCommander for SteadyContext {
     /// An iterator over the messages in the channel.
     ///
     /// # Asynchronous
-    async fn peek_async_iter<'a, T>(&'a self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item=&'a T> + 'a {
+    async fn peek_async_iter<'a, T:RxCore>(&'a self, this: &'a mut T, wait_for_count: usize) -> impl Iterator<Item=&'a T::MsgOut> + 'a {
         this.shared_peek_async_iter(wait_for_count).await
     }
     /// Checks if the channel is currently empty.
@@ -661,7 +661,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// An iterator over the taken messages.
-    fn take_into_iter<'a, T: Sync + Send>(&mut self, this: &'a mut Rx<T>) -> impl Iterator<Item=T> + 'a {
+    fn take_into_iter<'a, T: RxCore>(&mut self, this: &'a mut T) -> impl Iterator<Item=T::MsgOut> + 'a {
         this.shared_take_into_iter()
     }
     /// Calls an asynchronous function and monitors its execution for telemetry.
@@ -763,7 +763,7 @@ impl SteadyCommander for SteadyContext {
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
+    async fn send_async<T:TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> Result<(), T::MsgOut> {
         this.shared_send_async(a, self.ident, saturation).await
     }
 
@@ -880,7 +880,8 @@ impl SteadyCommander for SteadyContext {
     }
 
     fn advance_read_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> T::MsgSize {
-        this.shared_advance_index(count)
+        let ((_d,r)) = this.shared_advance_index(count);
+        r
     }
 
     /// Waits until the specified number of available units are in the receiver.
@@ -890,7 +891,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_shutdown_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         this.shared_wait_shutdown_or_avail_units(count).await
     }
     /// Waits until the specified number of available units are in the receiver.
@@ -900,7 +901,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_closed_or_avail_units<T:RxCore>(&self, this: &mut T, count: usize) -> bool {
         this.shared_wait_closed_or_avail_units(count).await
     }
     /// Waits until the specified number of vacant units are in the transmitter.

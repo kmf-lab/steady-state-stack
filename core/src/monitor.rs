@@ -436,7 +436,7 @@ pub(crate) mod monitor_tests {
     fn test_avail_units() {
         let (_tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
-        let monitor = context.into_monitor_internal([],[]);
+        let mut monitor = context.into_monitor_internal([],[]);
            // into_monitor!(context,[],[]);
 
         if let Some(mut rx) = rx.try_lock() {

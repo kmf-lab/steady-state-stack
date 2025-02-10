@@ -104,32 +104,6 @@ pub trait SteadyCommander {
     async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool;
 
 
-    /// Waits until the specified number of available units are in the receiver.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool;
-    /// Waits until the specified number of available units are in the receiver.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool;
-
-    /// Waits until the specified number of vacant units are in the transmitter.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool;
-
     
     /// Attempts to peek at a slice of messages without removing them from the channel.
     ///
@@ -259,6 +233,32 @@ pub trait SteadyCommander {
     //  after this point all methods work with all types or has private purpose.
     /////////////////////////////////////////////////////
 
+    /// Waits until the specified number of available units are in the receiver.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available, `false` if the wait was interrupted.
+    async fn wait_shutdown_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
+    /// Waits until the specified number of available units are in the receiver.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available, `false` if the wait was interrupted.
+    async fn wait_closed_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
+
+    /// Waits until the specified number of vacant units are in the transmitter.
+    ///
+    /// # Parameters
+    /// - `count`: The number of units to wait for.
+    ///
+    /// # Returns
+    /// `true` if the required number of units became available, `false` if the wait was interrupted.
+    async fn wait_shutdown_or_vacant_units<T: TxCore>(&self, this: &mut T, count: usize) -> bool;
+
 
     /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
     ///
@@ -271,7 +271,7 @@ pub trait SteadyCommander {
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn, saturation: SendSaturation) -> Result<(), T::MsgOut>;
+    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> Result<(), T::MsgOut>;
 
 
     fn advance_read_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize ) -> usize;
@@ -323,7 +323,7 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// A `usize` indicating the number of available messages.
-    fn avail_units<T: RxCore>(&self, this: &mut T) -> usize;
+    fn avail_units<T: RxCore>(&mut self, this: &mut T) -> usize;
 
     /// Attempts to send a single message to the Tx channel without blocking.
     ///

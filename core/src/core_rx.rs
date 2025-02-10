@@ -16,7 +16,7 @@ use futures_util::{FutureExt};
 
 
 pub trait RxCore {
-    // type MsgRef<'a>;
+
     type MsgOut;
     type MsgSize;
 
@@ -32,7 +32,7 @@ pub trait RxCore {
 
     fn shared_try_peek_iter(&self) -> impl Iterator<Item = &Self::MsgOut>;
 
-    fn shared_peek_async_iter(&mut self, wait_for_count: usize) -> impl Iterator<Item = &Self::MsgOut>;
+    async fn shared_peek_async_iter(&mut self, wait_for_count: usize) -> impl Iterator<Item = &Self::MsgOut>;
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>);
 
@@ -52,13 +52,13 @@ pub trait RxCore {
 
     fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)>;
 
-    fn shared_take_slice(&mut self, elems: &mut [Self::MsgOut]) -> usize where Self::MsgOut: Copy;
+    fn shared_take_slice(&mut self, elems: &mut [Self::MsgOut]) -> usize;
 
     fn shared_advance_index(&mut self, step: Self::MsgSize) -> (RxDone, Self::MsgSize);
 
 }
 
-impl <T>RxCore for Rx<T> {
+impl <T: std::marker::Copy>RxCore for Rx<T> {
 
     // type MsgRef<'a> = &'a T where T: 'a;
     type MsgOut = T;
@@ -170,8 +170,7 @@ impl <T>RxCore for Rx<T> {
         (RxDone::Normal(idx),idx)
     }
 
-    fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
-    where T: Copy {
+    fn shared_take_slice(&mut self, elems: &mut [T]) -> usize {
         let count = self.rx.pop_slice(elems);
         self.take_count.fetch_add(count as u32, Ordering::Relaxed); //wraps on overflow
         count
@@ -555,7 +554,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     ///
     /// # Asynchronous
     async fn shared_take_async(&mut self) -> Option<(RxDone, Self::MsgOut)> {
-        <T as RxCore>::shared_take_async(&mut **self)
+        <T as RxCore>::shared_take_async(&mut **self).await
     }
 
     fn shared_take_into_iter(&mut self) -> impl Iterator<Item = Self::MsgOut> {
@@ -580,7 +579,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     }
 
     fn shared_take_slice(&mut self, elems: &mut [Self::MsgOut]) -> usize {
-        <T as RxCore>::shared_take_slice(&mut **self,elems)
+        <T as RxCore>::shared_take_slice(&mut **self, elems)
     }
 
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
