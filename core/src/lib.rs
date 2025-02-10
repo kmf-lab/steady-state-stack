@@ -74,10 +74,17 @@ pub mod steady_rx;
 pub mod yield_now;
     /// module for all commands for channels used by actors
 pub mod commander;
+mod core_rx;
+mod core_tx;
+pub mod commander_context;
+pub mod commander_monitor;
 
+pub use commander_monitor::*;
+pub use commander_context::*;
+pub use commander::*;
 
 pub use graph_testing::GraphTestResult;
-pub use monitor::{LocalMonitor,RxMetaDataHolder,TxMetaDataHolder};
+pub use monitor::{RxMetaDataHolder, TxMetaDataHolder};
 pub use channel_builder::Rate;
 pub use channel_builder::Filled;
 pub use channel_builder::LazySteadyRx;
@@ -95,21 +102,21 @@ pub use steady_rx::Rx;
 pub use steady_tx::Tx;
 pub use steady_rx::SteadyRxBundleTrait;
 pub use steady_tx::SteadyTxBundleTrait;
-pub use steady_rx::{RxBundleTrait,RxCore};
-pub use steady_tx::{TxBundleTrait};
+pub use steady_rx::RxBundleTrait;
+pub use steady_tx::TxBundleTrait;
 pub use commander::SteadyCommander;
 pub use distributed::aeron_channel::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_distributed::{AeronConfig, DistributedTech};
-pub use distributed::steady_stream::{StreamSimpleMessage,StreamSessionMessage};
-pub use distributed::steady_stream::{LazySteadyStreamTxBundle,LazySteadyStreamRxBundle};
-pub use distributed::steady_stream::{SteadyStreamTxBundle,SteadyStreamRxBundle};
-pub use distributed::steady_stream::{LazyStreamTx,LazyStreamRx};
+pub use distributed::steady_stream::{StreamSessionMessage, StreamSimpleMessage};
+pub use distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
+pub use distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};
+pub use distributed::steady_stream::{LazyStreamRx, LazyStreamTx};
 pub use distributed::steady_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
 pub use distributed::steady_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
 pub use distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
 
 
-pub use log::{error, warn, debug, trace, info};
+pub use log::{debug, error, info, trace, warn};
 
 use std::any::Any;
 use std::time::{Duration, Instant};
@@ -117,23 +124,21 @@ use std::time::{Duration, Instant};
 use std::fmt::Debug;
 use std::sync::Arc;
 use parking_lot::RwLock;
-use std::sync::atomic::{AtomicU64, AtomicUsize};
+use std::sync::atomic::AtomicUsize;
 use futures::lock::Mutex;
 use std::ops::DerefMut;
 #[allow(unused_imports)]
 use log::*;
 
 use crate::monitor::{ActorMetaData, ChannelMetaData};
-use crate::telemetry::metrics_collector::CollectorDetail;
-use crate::telemetry::setup;
-use crate::util::{logger};
+use crate::util::logger;
 use futures::*;
 use futures::channel::oneshot;
 use futures::select;
-use futures_util::future::{FusedFuture};
+use futures_util::future::FusedFuture;
 use futures_util::lock::MutexGuard;
-use monitor_telemetry::SteadyTelemetry;
-use crate::actor_builder::NodeTxRx;
+pub use commander_monitor::LocalMonitor;
+pub use core_rx::RxCore;
 use crate::yield_now::yield_now;
 
 /// Type alias for a thread-safe steady state (S) wrapped in an `Arc` and `Mutex`.
@@ -294,49 +299,6 @@ pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
     logger::initialize_with_level(loglevel)
 }
 
-/// Context for managing actor state and interactions within the Steady framework.
-pub struct SteadyContext {
-    pub(crate) ident: ActorIdentity,
-    pub(crate) instance_id: u32,
-    pub(crate) is_in_graph: bool,
-    pub(crate) channel_count: Arc<AtomicUsize>,
-    pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
-    pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
-    pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
-    pub(crate) actor_metadata: Arc<ActorMetaData>,
-    pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
-    pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
-    pub(crate) last_periodic_wait: AtomicU64,
-    pub(crate) actor_start_time: Instant,
-    pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
-    pub(crate) frame_rate_ms: u64,
-    pub(crate) team_id: usize,
-    pub(crate) show_thread_info: bool
-}
-
-
-impl Clone for SteadyContext {
-    fn clone(&self) -> Self {
-        SteadyContext {
-            ident: self.ident.clone(),
-            instance_id: self.instance_id,
-            is_in_graph: self.is_in_graph,
-            channel_count: self.channel_count.clone(),
-            all_telemetry_rx: self.all_telemetry_rx.clone(),
-            runtime_state: self.runtime_state.clone(),
-            args: self.args.clone(),
-            actor_metadata: self.actor_metadata.clone(),
-            oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
-            oneshot_shutdown: self.oneshot_shutdown.clone(),
-            last_periodic_wait: Default::default(),
-            actor_start_time: Instant::now(),
-            node_tx_rx: self.node_tx_rx.clone(),
-            frame_rate_ms: self.frame_rate_ms,
-            team_id: self.team_id,
-            show_thread_info: self.show_thread_info
-        }
-    }
-}
 
 // #[macro_export]
 // macro_rules! concat_arrays {
@@ -701,7 +663,8 @@ mod lib_tests {
     use parking_lot::RwLock;
     use futures::lock::Mutex;
     use commander::SteadyCommander;
-    use crate::steady_tx::TxCore;
+    use crate::commander_context::SteadyContext;
+    use crate::core_tx::TxCore;
 
     #[test]
     fn test_std_dev_valid_values() {

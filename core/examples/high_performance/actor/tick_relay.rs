@@ -6,7 +6,6 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 use std::error::Error;
-use steady_state::commander::SteadyCommander;
 use crate::actor::tick_generator::Tick;
 
 const BATCH:usize = 2000;
@@ -40,7 +39,7 @@ pub(crate) mod actor_tests {
     use futures_timer::Delay;
     use steady_state::*;
     use crate::actor::tick_generator::Tick;
-    use crate::actor::tick_relay::{BATCH, internal_behavior};
+    use crate::actor::tick_relay::{internal_behavior, BATCH};
 
     #[async_std::test]
     pub(crate) async fn test_simple_process() {

@@ -3,8 +3,8 @@ use std::time::Duration;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::{SteadyRx};
-use steady_state::{SteadyTx};
+use steady_state::SteadyRx;
+use steady_state::SteadyTx;
 use crate::actor::data_generator::Packet;
 
 pub async fn run(context: SteadyContext

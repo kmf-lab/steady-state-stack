@@ -7,7 +7,6 @@ use steady_state::*;
 use crate::Args;
 
 use std::error::Error;
-use steady_state::commander::SteadyCommander;
 use steady_state::steady_rx::{RxBundleTrait, SteadyRxBundleTrait};
 use crate::actor::tick_consumer::TickCount;
 
@@ -90,7 +89,7 @@ pub(crate) mod actor_tests {
     use std::time::Duration;
     use async_std::test;
     use steady_state::*;
-    use crate::actor::final_consumer::{BATCH, internal_behavior};
+    use crate::actor::final_consumer::{internal_behavior, BATCH};
     use crate::actor::tick_consumer::TickCount;
 
     #[test]

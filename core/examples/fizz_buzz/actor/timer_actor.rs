@@ -5,6 +5,7 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
+
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct PrintSignal {
    pub(crate) tick: u32

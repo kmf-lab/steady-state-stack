@@ -6,7 +6,6 @@ use futures_util::lock::Mutex;
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use steady_state::*;
-use steady_state::commander::SteadyCommander;
 use crate::args::Args;
 
 const BATCH_SIZE: usize = 1000;

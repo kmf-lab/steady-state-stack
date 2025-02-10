@@ -7,13 +7,13 @@ use crate::actor::data_generator::Packet;
 //use futures::future::FutureExt;
 use std::time::Duration;
 
-use steady_state::{SteadyRx};
-use steady_state::{SteadyTxBundle};
+use steady_state::SteadyRx;
+use steady_state::SteadyTxBundle;
 
 pub async fn run<const GIRTH:usize>(context: SteadyContext
-                 , one_of: usize
-                 , rx: SteadyRx<Packet>
-                 , tx: SteadyTxBundle<Packet,GIRTH>
+                                    , one_of: usize
+                                    , rx: SteadyRx<Packet>
+                                    , tx: SteadyTxBundle<Packet,GIRTH>
                 ) -> Result<(),Box<dyn Error>> {
 
     internal_behavior(into_monitor!(context,[rx],tx), one_of, rx, tx).await
