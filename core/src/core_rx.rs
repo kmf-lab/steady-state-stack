@@ -11,9 +11,7 @@ use crate::distributed::steady_stream::{StreamItem, StreamRx};
 use crate::steady_rx::RxDone;
 
 pub trait RxCore {
-    // type MsgRef<'a>;
     type MsgOut;
-
 
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>);
@@ -33,6 +31,7 @@ pub trait RxCore {
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool;
 
     fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)>;
+
 }
 
 impl <T>RxCore for Rx<T> {

@@ -7,6 +7,7 @@ use futures_util::lock::MutexGuard;
 use ringbuf::traits::Observer;
 use futures_util::future::FusedFuture;
 use async_ringbuf::producer::AsyncProducer;
+use nuclei::block_on;
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
@@ -16,6 +17,8 @@ use crate::distributed::steady_stream::{StreamItem, StreamTx};
 pub trait TxCore {
     type MsgIn<'a>;
     type MsgOut;
+
+    fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize;
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>);
     fn monitor_not(&mut self);
@@ -37,6 +40,13 @@ impl<T> TxCore for Tx<T> {
 
     type MsgIn<'a> = T;
     type MsgOut = T;
+
+    fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
+        if self.make_closed.is_none() {
+            warn!("Send called after channel marked closed");
+        }
+        self.tx.push_iter(iter)
+    }
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
@@ -219,6 +229,31 @@ impl<T> TxCore for Tx<T> {
 impl<T: StreamItem> TxCore for StreamTx<T> {
     type MsgIn<'a> = (T, &'a[u8]);
     type MsgOut = T;
+
+    fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
+        debug_assert!(!self.item_channel.make_closed.is_none(),"Send called after channel marked closed");
+        debug_assert!(!self.payload_channel.make_closed.is_none(),"Send called after channel marked closed");
+
+        let mut count = 0;
+
+        //while we have room keep going.
+        let item_limit = self.item_channel.tx.vacant_len();
+        let limited_iter = iter
+            .take(item_limit);
+
+        for (item,payload) in limited_iter {
+            assert_eq!(item.length(),payload.len() as i32);
+            if payload.len() > self.payload_channel.tx.vacant_len() {
+                warn!("the payload of the stream should be larger we need {} but found {}",payload.len(),self.payload_channel.tx.vacant_len());
+                block_on(self.payload_channel.tx.wait_vacant(payload.len()));
+            }
+            let _ = self.payload_channel.tx.push_slice(payload);
+            let _ = self.item_channel.tx.try_push(item);
+            count += 1;
+        }
+        count
+
+    }
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
@@ -490,6 +525,10 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         <T as TxCore>::telemetry_inc(&mut **self, done_count, tel)
     }
+
+    fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
+        <T as TxCore>::shared_send_iter_until_full(&mut **self,iter)
+     }
 
     fn monitor_not(&mut self) {
         <T as TxCore>::monitor_not(&mut **self)
