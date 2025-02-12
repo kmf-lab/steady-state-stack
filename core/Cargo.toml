@@ -90,7 +90,6 @@ num-traits       = "0.2.19" # for num::Zero and other generic math traits
 itoa             = "1.0.14"
 time             = { version = "0.3.36", features = ["macros", "formatting", "parsing"] }
 dirs             = "5.0.1"
-colored          = "2.1.0"
 structopt        = "0.3.26"  # CLI parse for type safe arguments
 structopt-derive = "0.4.18"  # adds Args::from_args() to your structopt struct
 futures          = "0.3.31"  # for Select! Barrier etc and lock::Mutex

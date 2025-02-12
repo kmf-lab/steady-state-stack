@@ -330,9 +330,9 @@ impl ChannelBuilder {
         )
     }
 
-    pub fn build_as_stream<T: StreamItem, const GIRTH: usize>(&self
-                                               , base_stream_id: i32
-                                               , items: usize, bytes: usize               
+    pub fn build_as_stream_bundle<T: StreamItem, const GIRTH: usize>(&self
+                                                                     , base_stream_id: i32
+                                                                     , bytes_per_item: usize
                                                ) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
         assert!(base_stream_id>=0, "Stream Id must be positive");
         assert!((base_stream_id+GIRTH as i32)<i32::MAX, "Stream Id of all channels must fit in i32");
@@ -340,9 +340,10 @@ impl ChannelBuilder {
         let mut tx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
         let mut rx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
 
+        let payload_channel_builder = &self.with_capacity(self.capacity*bytes_per_item);
         (0..GIRTH).for_each(|i| { //TODO: later add custom builders for items vs payload
-            let lazy = Arc::new(LazyStream::new(&self.with_capacity(items)
-                                              , &self.with_capacity(bytes)
+            let lazy = Arc::new(LazyStream::new(&self
+                                              , &payload_channel_builder
                                               , base_stream_id+i as i32));           
             tx_vec.push(LazyStreamTx::<T>::new(lazy.clone()));
             rx_vec.push(LazyStreamRx::<T>::new(lazy.clone()));
@@ -361,6 +362,24 @@ impl ChannelBuilder {
             ,
         )
     }
+    pub fn build_as_stream<T: StreamItem>(&self, stream_id: i32, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
+        let bytes_capacity = self.capacity*bytes_per_item;
+        let lazy_stream = Arc::new(LazyStream::new(&self
+                                                   , &self.with_capacity(bytes_capacity)
+                                                   , stream_id));
+        (LazyStreamTx::<T>::new(lazy_stream.clone()), LazyStreamRx::<T>::new(lazy_stream.clone()))
+    }
+
+    /// Builds and returns a pair of lazy wrappers of the transmitter and receiver with
+    /// the current configuration.
+    ///
+    /// # Returns
+    /// A tuple containing the transmitter (`LazySteadyTx<T>`) and receiver (`LazySteadyRx<T>`).
+    pub fn build<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
+        let lazy_channel = Arc::new(LazyChannel::new(self));
+        (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))
+    }
+
 
     /// Sets the capacity for the channel being built.
     ///
@@ -645,15 +664,7 @@ impl ChannelBuilder {
     /// This method ties together all the configured options, applying them to the newly created channel.
     pub const UNSET: u32 = u32::MAX;
 
-    /// Builds and returns a pair of lazy wrappers of the transmitter and receiver with
-    /// the current configuration.
-    ///
-    /// # Returns
-    /// A tuple containing the transmitter (`LazySteadyTx<T>`) and receiver (`LazySteadyRx<T>`).
-    pub fn build<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
-        let lazy_channel = Arc::new(LazyChannel::new(self));
-        (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))
-    }
+
 
     pub(crate) fn eager_build_internal<T>(&self) -> (Tx<T>, Rx<T>) {
 

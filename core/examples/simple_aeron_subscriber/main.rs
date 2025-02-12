@@ -58,9 +58,9 @@ fn main() {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-        .build_as_stream::<StreamSessionMessage,1>(STREAM_ID
-                                                   , 4*1024*1024
-                                                   , 32*1024*1024);
+        .with_capacity(4*1024*1024)
+        .build_as_stream_bundle::<StreamSessionMessage,1>(STREAM_ID
+                                                          ,8);
 
 
     let base = from_aeron_rx.clone();

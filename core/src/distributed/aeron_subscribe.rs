@@ -331,7 +331,8 @@ pub(crate) mod aeron_media_driver_tests {
         //NOTE: each stream adds startup time as each transfer term must be tripled and zeroed
         const STREAMS_COUNT:usize = 1;
         let (to_aeron_tx,to_aeron_rx) = channel_builder
-            .build_as_stream::<StreamSimpleMessage,STREAMS_COUNT>(0, 500, 3000);
+            .with_capacity(500)
+            .build_as_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>(0, 6);
 
         let aeron_config = AeronConfig::new()
             .with_media_type(MediaType::Ipc) //for testing
@@ -361,7 +362,8 @@ pub(crate) mod aeron_media_driver_tests {
 
 
         let (from_aeron_tx,from_aeron_rx) = channel_builder
-            .build_as_stream::<StreamSessionMessage,STREAMS_COUNT>(0, 500, 3000);
+            .with_capacity(500)
+            .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(0, 6);
 
         graph.build_stream_collector(dist.clone()
                                      , "ReceiverTest"
