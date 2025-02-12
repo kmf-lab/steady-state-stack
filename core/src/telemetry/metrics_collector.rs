@@ -10,7 +10,7 @@ use log::*; // Allow unused import
 
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
 #[allow(unused_imports)]
-use crate::{into_monitor, steady_config, yield_now, SendSaturation, SteadyContext, SteadyTxBundle};
+use crate::{into_monitor, steady_config, yield_now, SendSaturation, SteadyTxBundle};
 
 use futures::future::*;
 use futures_timer::Delay;
@@ -21,6 +21,9 @@ use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
 use crate::{GraphLivelinessState, SteadyRx};
 use crate::commander::SteadyCommander;
+#[allow(unused_imports)]
+use crate::commander_context::SteadyContext;
+use crate::core_tx::TxCore;
 use crate::steady_rx::*;
 use crate::steady_tx::*;
 use crate::telemetry::metrics_collector;
@@ -550,7 +553,7 @@ mod metric_collector_tests {
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use futures::executor::block_on;
-    use crate::{GraphBuilder};
+    use crate::{GraphBuilder, RxCore};
 
     #[test]
     fn test_raw_diagram_state_default() {

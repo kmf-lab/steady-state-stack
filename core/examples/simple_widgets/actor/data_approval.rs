@@ -7,8 +7,8 @@ use log::*;
 
 use steady_state::*;
 
-use steady_state::{SteadyRx};
-use steady_state::{SteadyTx};
+use steady_state::SteadyRx;
+use steady_state::SteadyTx;
 use crate::actor::data_feedback::FailureFeedback;
 
 const BATCH_SIZE: usize = 2000;
@@ -78,7 +78,7 @@ pub(crate) mod approval_tests {
     use std::time::Duration;
     use async_std::test;
     use steady_state::*;
-    use crate::actor::data_approval::{BATCH_SIZE, internal_behavior};
+    use crate::actor::data_approval::{internal_behavior, BATCH_SIZE};
     use crate::actor::WidgetInventory;
 
     #[test]

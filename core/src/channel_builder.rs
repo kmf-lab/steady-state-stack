@@ -708,7 +708,7 @@ impl ChannelBuilder {
             Rx {
                 rx,
                 channel_meta_data,
-                local_index: MONITOR_UNKNOWN,
+                local_monitor_index: MONITOR_UNKNOWN,
                 is_closed: receiver_is_closed,
                 last_error_send: noise_threshold,
                 oneshot_shutdown: receiver_rx,

@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::sync::{Arc};
+use std::sync::Arc;
 use futures_timer::Delay;
 use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
@@ -8,10 +8,11 @@ use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel::Channel;
-use crate::distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamSimpleMessage, StreamRxBundleTrait};
-use crate::{into_monitor, SteadyCommander, SteadyContext, SteadyState};
+use crate::distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamSimpleMessage};
+use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
-use crate::monitor::{RxMetaDataHolder};
+use crate::commander_context::SteadyContext;
+use crate::monitor::RxMetaDataHolder;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 // TODO: what if we have to aeron clients talking to the same media driver? seems bad?

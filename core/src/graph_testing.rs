@@ -17,7 +17,7 @@ use futures_util::lock::Mutex;
 use async_ringbuf::traits::Split;
 use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
-use futures_util::{select};
+use futures_util::select;
 use ringbuf::consumer::Consumer;
 use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyCommander, Tx, TxBundle};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
@@ -416,10 +416,11 @@ mod graph_testing_tests {
     use async_std::test;
     use futures::channel::oneshot;
     use log::info;
-    use crate::{GraphLiveliness, LazySteadyRx, LazySteadyTx, Rx, SteadyCommander, SteadyContext};
+    use crate::{GraphLiveliness, LazySteadyRx, LazySteadyTx, Rx, SteadyCommander};
     use crate::channel_builder::ChannelBuilder;
+    use crate::commander_context::SteadyContext;
     use crate::monitor::ActorMetaData;
-    use crate::steady_tx::TxCore;
+    use crate::core_tx::TxCore;
 
     #[test]
     async fn test_graph_test_result_ok() {

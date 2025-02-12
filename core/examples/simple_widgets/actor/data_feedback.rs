@@ -2,8 +2,8 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::{SteadyRx};
-use steady_state::{SteadyTx};
+use steady_state::SteadyRx;
+use steady_state::SteadyTx;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FailureFeedback {
@@ -54,7 +54,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd:C, rx: SteadyRx<FailureFe
 mod tests {
     use std::time::Duration;
     use futures_timer::Delay;
-    use steady_state::{GraphBuilder};
+    use steady_state::GraphBuilder;
     use crate::actor::data_feedback::internal_behavior;
 
     #[async_std::test]
