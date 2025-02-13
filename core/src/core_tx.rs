@@ -12,7 +12,7 @@ use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
 use crate::{ActorIdentity, SendSaturation, StreamSimpleMessage, Tx, MONITOR_NOT};
-use crate::distributed::steady_stream::{StreamItem, StreamTx};
+use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 
 
 

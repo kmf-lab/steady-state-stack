@@ -21,7 +21,7 @@ use crate::*;
 use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
 use crate::commander::SteadyCommander;
-use crate::distributed::steady_stream::StreamItem;
+use crate::distributed::distributed_stream::StreamItem;
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::core_rx::RxCore;

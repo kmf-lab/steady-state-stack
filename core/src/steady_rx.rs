@@ -16,7 +16,7 @@ use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
 use crate::{RxBundle, SteadyRx, SteadyRxBundle, MONITOR_NOT};
 use crate::core_rx::RxCore;
-use crate::distributed::steady_stream::{StreamItem, StreamRx};
+use crate::distributed::distributed_stream::{StreamItem, StreamRx};
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
 

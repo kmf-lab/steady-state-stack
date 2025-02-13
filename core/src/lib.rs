@@ -53,11 +53,11 @@ pub mod install {
 
 pub mod distributed {
     /// enums for making new aeron connection strings
-    pub mod aeron_channel;
+    pub mod aeron_channel_structs;
     /// new channels for serialized data
-    pub mod aeron_distributed;
+    pub mod aeron_channel_builder;
     /// Stream channels
-    pub mod steady_stream;
+    pub mod distributed_stream;
     /// Publish message from stream to aeron
     pub mod aeron_publish_bundle;
     /// Subscribe to aeron and put incoming messages in streams
@@ -108,15 +108,15 @@ pub use steady_tx::SteadyTxBundleTrait;
 pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
 pub use commander::SteadyCommander;
-pub use distributed::aeron_channel::{Channel, Endpoint, MediaType};
-pub use distributed::aeron_distributed::{AeronConfig, DistributedTech};
-pub use distributed::steady_stream::{StreamSessionMessage, StreamSimpleMessage};
-pub use distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
-pub use distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};
-pub use distributed::steady_stream::{LazyStreamRx, LazyStreamTx};
-pub use distributed::steady_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
-pub use distributed::steady_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
-pub use distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
+pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
+pub use distributed::aeron_channel_builder::{AeronConfig, DistributedTech};
+pub use distributed::distributed_stream::{StreamSessionMessage, StreamSimpleMessage};
+pub use distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
+pub use distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};
+pub use distributed::distributed_stream::{LazyStreamRx, LazyStreamTx};
+pub use distributed::distributed_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
+pub use distributed::distributed_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
+pub use distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
 
 
 pub use log::{debug, error, info, trace, warn};

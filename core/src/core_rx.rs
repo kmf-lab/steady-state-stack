@@ -7,7 +7,7 @@ use async_ringbuf::consumer::AsyncConsumer;
 use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{Rx, MONITOR_NOT};
-use crate::distributed::steady_stream::{StreamItem, StreamRx};
+use crate::distributed::distributed_stream::{StreamItem, StreamRx};
 use crate::steady_rx::RxDone;
 
 pub trait RxCore {

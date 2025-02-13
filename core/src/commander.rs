@@ -16,7 +16,7 @@ use crate::commander_context::SteadyContext;
 use crate::commander_monitor::LocalMonitor;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::steady_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
+use crate::distributed::distributed_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
 impl SteadyContext {
     /// Converts the context into a local monitor.
     ///

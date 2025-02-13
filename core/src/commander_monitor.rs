@@ -20,7 +20,7 @@ use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_R
 use crate::{steady_config, yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, RxCore, SendSaturation, SteadyCommander, Tx, TxBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
 use crate::core_tx::TxCore;
-use crate::distributed::steady_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
+use crate::distributed::distributed_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};

@@ -1,5 +1,5 @@
 use std::cmp::PartialEq;
-use crate::distributed::aeron_channel::*;
+use crate::distributed::aeron_channel_structs::*;
 
 #[derive(Debug,Clone)]
 pub enum DistributedTech {

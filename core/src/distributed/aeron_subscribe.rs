@@ -7,8 +7,8 @@ use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
-use crate::distributed::aeron_channel::Channel;
-use crate::distributed::steady_stream::{SteadyStreamTx, SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait, StreamTxDef};
+use crate::distributed::aeron_channel_structs::Channel;
+use crate::distributed::distributed_stream::{SteadyStreamTx, SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait, StreamTxDef};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
 use ringbuf::storage::Heap;
@@ -269,11 +269,11 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 pub(crate) mod aeron_media_driver_tests {
     use std::net::{IpAddr, Ipv4Addr};
     use super::*;
-    use crate::distributed::aeron_channel::{Endpoint, MediaType};
-    use crate::distributed::steady_stream::StreamSimpleMessage;
+    use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
+    use crate::distributed::distributed_stream::StreamSimpleMessage;
     use async_std::sync::Mutex;
     use once_cell::sync::Lazy;
-    use crate::distributed::aeron_distributed::{AeronConfig, DistributedTech};
+    use crate::distributed::aeron_channel_builder::{AeronConfig, DistributedTech};
 
     pub(crate) static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 

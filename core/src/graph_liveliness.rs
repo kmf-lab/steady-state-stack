@@ -30,9 +30,9 @@ use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::commander_context::SteadyContext;
 use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
-use crate::distributed::aeron_channel::aeron_utils::aeron_context;
-use crate::distributed::aeron_distributed::DistributedTech;
-use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamSessionMessage, StreamSimpleMessage};
+use crate::distributed::aeron_channel_structs::aeron_utils::aeron_context;
+use crate::distributed::aeron_channel_builder::DistributedTech;
+use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamSessionMessage, StreamSimpleMessage};
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -560,18 +560,21 @@ impl Graph {
                                        , name: &'static str
                                        , rx: LazyStreamRx<StreamSimpleMessage>
                                        , threading: &mut Threading) {
+        self.build_distributor_single(distribution, name, rx, threading);
+    }
+
+    pub(crate) fn build_distributor_single(mut g: &mut Graph, distribution: DistributedTech, name: &str, rx: LazyStreamRx<StreamSimpleMessage>, threading: &mut Threading) {
         match distribution {
             DistributedTech::Aeron(channel) => {
-
-                if self.aeron.is_none() { //lazy load, we only support one
-                    self.aeron = aeron_context(Context::new());
+                if g.aeron.is_none() { //lazy load, we only support one
+                    g.aeron = aeron_context(Context::new());
                 }
 
-                if let Some(aeron) = &self.aeron {
+                if let Some(aeron) = &g.aeron {
                     let state = new_state();
                     let aeron = aeron.clone();
 
-                    self.actor_builder()
+                    g.actor_builder()
                         .with_name(name)
                         .with_thread_info()
                         .with_mcpu_percentile(Percentile::p96())
@@ -579,10 +582,10 @@ impl Graph {
                         // .with_explicit_core(7)
                         .build(move |context|
                                    aeron_publish::run(context
-                                                             , rx.clone()
-                                                             , channel
-                                                             , aeron.clone()
-                                                             , state.clone())
+                                                      , rx.clone()
+                                                      , channel
+                                                      , aeron.clone()
+                                                      , state.clone())
                                , threading)
                 }
             }
@@ -592,12 +595,11 @@ impl Graph {
         }
     }
 
-
     pub fn build_stream_distributor_bundle<const GIRTH:usize>(&mut self
-                                          , distribution: DistributedTech
-                                          , name: &'static str
-                                          , rx: LazySteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
-                                          , threading: &mut Threading) {
+                                                              , distribution: DistributedTech
+                                                              , name: &'static str
+                                                              , rx: LazySteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
+                                                              , threading: &mut Threading) {
         
         match distribution {
             DistributedTech::Aeron(channel) => {

@@ -19,7 +19,7 @@ use std::ops::DerefMut;
 use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, RxCore, SendSaturation, SteadyCommander, Tx, TxBundle};
 use crate::actor_builder::NodeTxRx;
 use crate::core_tx::TxCore;
-use crate::distributed::steady_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
+use crate::distributed::distributed_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;

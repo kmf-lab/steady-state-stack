@@ -18,7 +18,7 @@ use futures_timer::Delay;
 use crate::{steady_config, ActorIdentity, SendSaturation, SteadyTx, SteadyTxBundle, TxBundle, MONITOR_NOT};
 use crate::channel_builder::InternalSender;
 use crate::core_tx::TxCore;
-use crate::distributed::steady_stream::{StreamItem, StreamTx};
+use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 use crate::monitor::{ChannelMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetrySend;
 

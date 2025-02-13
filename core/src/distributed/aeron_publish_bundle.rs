@@ -7,8 +7,8 @@ use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
-use crate::distributed::aeron_channel::Channel;
-use crate::distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamSimpleMessage};
+use crate::distributed::aeron_channel_structs::Channel;
+use crate::distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamSimpleMessage};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
@@ -209,12 +209,12 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 #[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
 pub(crate) mod aeron_tests {
     use super::*;
-    use crate::distributed::aeron_channel::{Endpoint, MediaType};
-    use crate::distributed::aeron_distributed::{AeronConfig, DistributedTech};
+    use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
+    use crate::distributed::aeron_channel_builder::{AeronConfig, DistributedTech};
     use crate::distributed::aeron_subscribe_bundle;
-    use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
+    use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;
-    use crate::distributed::steady_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
+    use crate::distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
 
     //NOTE: bump this up for longer running load tests
     //       20_000_000_000;
