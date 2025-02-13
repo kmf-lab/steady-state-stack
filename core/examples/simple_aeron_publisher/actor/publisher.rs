@@ -26,9 +26,9 @@ pub async fn run<const GIRTH: usize>(mut context: SteadyContext
         let vacant_items = 200000;
         let data_size = 8;
         let vacant_bytes = vacant_items * data_size;
-// TODO: wrwrite to take (i,p)
+// TODO: wrwrite to take (i,p) as a group.
         let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx
-                                       , vacant_items, vacant_bytes, 1));
+                                       , (vacant_items, vacant_bytes), 1));
 
 
         let item = StreamSimpleMessage::new(8);
@@ -40,8 +40,10 @@ pub async fn run<const GIRTH: usize>(mut context: SteadyContext
 
              let actual_vacant = cmd.vacant_units(&mut tx[idx]);
 
+             // TODO: auto convert to item..
              for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
-                 let _result = cmd.try_send(&mut tx[idx], (item,&data1));
+                                                              // item!(&data)
+                 let _result = cmd.try_send(&mut tx[idx], StreamSimpleMessage::wrap(&data1) );
                  let _result = cmd.try_send(&mut tx[idx], (item,&data2));
 
              }
