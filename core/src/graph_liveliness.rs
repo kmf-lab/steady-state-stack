@@ -29,7 +29,7 @@ use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::commander_context::SteadyContext;
-use crate::distributed::{aeron_publish, aeron_subscribe};
+use crate::distributed::{aeron_publish_bundle, aeron_subscribe_bundle};
 use crate::distributed::aeron_channel::aeron_utils::aeron_context;
 use crate::distributed::aeron_distributed::DistributedTech;
 use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamSessionMessage, StreamSimpleMessage};
@@ -579,11 +579,11 @@ impl Graph {
 
                         // .with_explicit_core(7)
                         .build(move |context| 
-                                   aeron_publish::run(context
-                                                         , rx.clone()
-                                                         , channel
-                                                         , aeron.clone()
-                                                         , state.clone())
+                                   aeron_publish_bundle::run(context
+                                                             , rx.clone()
+                                                             , channel
+                                                             , aeron.clone()
+                                                             , state.clone())
                                , threading)
 
                 }
@@ -623,11 +623,11 @@ impl Graph {
                         //  .with_explicit_core(8)
                         //.with_custom_label(connection) // TODO: need something like this.
                         .build(move |context|
-                                   aeron_subscribe::run(context
-                                                        , tx.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
-                                                        , channel
-                                                        , aeron.clone()
-                                                        , state.clone())
+                                   aeron_subscribe_bundle::run(context
+                                                               , tx.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
+                                                               , channel
+                                                               , aeron.clone()
+                                                               , state.clone())
                                , threading);
 
                 }

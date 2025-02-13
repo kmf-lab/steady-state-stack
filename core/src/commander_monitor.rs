@@ -352,7 +352,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     }
 
 
-    async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant_count: usize, vacant_bytes: usize, ready_channels: usize) -> bool
+    async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self
+                               , this: &mut StreamTxBundle<'_, S>, vacant: (usize, usize), ready_channels: usize) -> bool
     {
         let mut count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
@@ -362,8 +363,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let futures = this.iter_mut().map(|tx| {
             let local_r = result.clone();
             async move {
-                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant_count).await
-                                     && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant_bytes).await;
+                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant.0).await
+                                     && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant.1).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }

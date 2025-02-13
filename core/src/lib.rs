@@ -59,9 +59,9 @@ pub mod distributed {
     /// Stream channels
     pub mod steady_stream;
     /// Publish message from stream to aeron
-    pub mod aeron_publish;
+    pub mod aeron_publish_bundle;
     /// Subscribe to aeron and put incoming messages in streams
-    pub mod aeron_subscribe;
+    pub mod aeron_subscribe_bundle;
 }
 
 /// module for testing full graphs of actors

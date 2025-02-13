@@ -218,7 +218,8 @@ impl SteadyCommander for SteadyContext {
     }
 
 
-    async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant_count: usize, vacant_bytes: usize, ready_channels: usize) -> bool
+    async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self
+                          , this: &mut StreamTxBundle<'_, S>, vacant: (usize, usize), ready_channels: usize) -> bool
     {
         let count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
@@ -229,8 +230,8 @@ impl SteadyCommander for SteadyContext {
         for tx in this.iter_mut().take(count_down) {
             let local_r = result.clone();
             futures.push(async move {
-                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant_count).await
-                                     && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant_bytes).await;
+                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant.0).await
+                                     && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant.1).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }

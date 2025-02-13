@@ -286,6 +286,12 @@ pub struct StreamSimpleMessage {
 }
 
 impl StreamSimpleMessage {
+    pub fn wrap(p0: &[u8]) -> (StreamSimpleMessage, &[u8]) {
+        (StreamSimpleMessage::new(p0.len() as i32), p0)
+    }
+}
+
+impl StreamSimpleMessage {
     /// Creates a new `StreamMessage` from a `Length` wrapper.
     ///
     /// # Panics
