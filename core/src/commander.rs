@@ -222,7 +222,6 @@ pub trait SteadyCommander {
        
 
     async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant: (usize, usize), ready_channels: usize) -> bool;
-
     async fn wait_closed_or_avail_message_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_,S>, avail_count: usize, ready_channels: usize) -> bool;
 
 

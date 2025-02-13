@@ -7,10 +7,8 @@ use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
-use aeron::image::ControlledPollAction;
-use aeron::subscription::Subscription;
 use crate::distributed::aeron_channel::Channel;
-use crate::distributed::steady_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
+use crate::distributed::steady_stream::{SteadyStreamTx, SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait, StreamTxDef};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
 use ringbuf::storage::Heap;
@@ -25,75 +23,56 @@ use crate::commander_context::SteadyContext;
 
 #[derive(Default)]
 pub(crate) struct AeronSubscribeSteadyState {
-    sub_reg_id: Vec<Option<i64>>,
+    sub_reg_id: Option<i64>,
 }
 
-fn test() {
-   let rb = AsyncRb::<Heap<u8>>::new(1000).split();
-   let mut p: HashMap<i32, (AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<u8>>>,false, true>) > = HashMap::default();
-
-   p.insert(123 as i32, rb);
-
-   let mut map: AHashMap<i32, (AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<u8>>>,false, true>)> = AHashMap::new();
-
-  //TODO: make channel have TERM const we can use here for async buffer
-}
 
 // In Aeron, the maximum message length is determined by the term buffer length.
 // Specifically, the maximum message size is calculated as the
 // lesser of 16 MB or one-eighth of the term buffer length.
 
-pub async fn run<const GIRTH:usize,>(context: SteadyContext
-                                     , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
-                                     , aeron_connect: Channel
-                                     , aeron:Arc<futures_util::lock::Mutex<Aeron>>
-                                     , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
-    internal_behavior(into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data())), tx, aeron_connect, aeron, state).await
+pub async fn run(context: SteadyContext
+                 , tx: SteadyStreamTx<StreamSessionMessage>
+                 , aeron_connect: Channel
+                 , aeron:Arc<futures_util::lock::Mutex<Aeron>>
+                 , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
+    internal_behavior(into_monitor!(context, [], [tx.meta_data().control])
+                      , tx, aeron_connect, aeron, state).await
 }
 
-async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
-                                                                 , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
-                                                                 , aeron_channel: Channel
-                                                                 , aeron: Arc<futures_util::lock::Mutex<Aeron>>
-                                                                 , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<C: SteadyCommander>(mut cmd: C
+                 , tx: SteadyStreamTx<StreamSessionMessage>
+                 , aeron_channel: Channel
+                 , aeron: Arc<futures_util::lock::Mutex<Aeron>>
+                 , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
 
     let mut tx = tx.lock().await;
 
     let mut state_guard = steady_state(&state, || AeronSubscribeSteadyState::default()).await;
     if let Some(state) = state_guard.as_mut() {
-        //TODO: better data structure required, need a collecion of subs.
-        let mut subs: [Result<Subscription, Box<dyn Error>>; GIRTH] = std::array::from_fn(|_| Err("Not Found".into()));
-
-        //ensure right length
-        while state.sub_reg_id.len() < GIRTH {
-            state.sub_reg_id.push(None);
-        }
-        //add subscriptions
 
         {
             let mut aeron = aeron.lock().await;
-            //trace!("holding add_subscription lock");
-            for f in 0..GIRTH {
-                if state.sub_reg_id[f].is_none() { //only add if we have not already done this
-                    warn!("adding new sub {} {:?}", tx[f].stream_id, aeron_channel.cstring() );
-                    match aeron.add_subscription(aeron_channel.cstring(), tx[f].stream_id) {
+                if state.sub_reg_id.is_none() { //only add if we have not already done this
+                    warn!("adding new sub {} {:?}", tx.stream_id, aeron_channel.cstring() );
+                    match aeron.add_subscription(aeron_channel.cstring(), tx.stream_id) {
                         Ok(reg_id) => {
                             warn!("new subscription found: {}",reg_id);
-                            state.sub_reg_id[f] = Some(reg_id)},
+                            state.sub_reg_id = Some(reg_id)},
                         Err(e) => {
                             warn!("Unable to add publication: {:?}",e);
                         }
                     };
                 }
-            };
+
             warn!("released add_subscription lock");
         }
         Delay::new(Duration::from_millis(4)).await; //back off so our request can get ready
 
     // now lookup when the subscriptions are ready
-        for f in 0..GIRTH {
-            if let Some(id) = state.sub_reg_id[f] {
-                subs[f] = loop {
+        let mut my_sub = Err("");
+            if let Some(id) = state.sub_reg_id {
+                my_sub = loop {
                     let sub = {
                                 let mut aeron = aeron.lock().await; //caution other actors need this so do jit
                                 warn!("holding find_subscription({}) lock",id);
@@ -111,9 +90,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                     break Err("Shutdown requested while waiting".into());
                                 }
                             } else {
-
-                                warn!("Error finding publication: {:?}", e);
-                                break Err(e.into());
+                                warn!("Error finding subscription: {:?}", e);
+                                break Err("Unable to find requested subscription".into());
                             }
                         },
                         Ok(subscription) => {
@@ -138,27 +116,23 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             } else { //only add if we have not already done this
                 return Err("Check if Media Driver is running.".into());
             }
-        }
-
         warn!("running subscriber '{:?}' all subscriptions in place",cmd.identity());
 
         while cmd.is_running(&mut || tx.mark_closed()) {
 
-            //warn!("looping");
             // only poll this often
             let clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
 
                 let mut found_data = false;
-                for i in 0..GIRTH {
-                        match &mut subs[i] {
+                        match &mut my_sub {
                             Ok(ref mut sub) => {
-                                if tx[i].ready.is_empty() {
+                                if tx.ready.is_empty() {
                                     let mut no_count = 0;
-                                    tx[i].fragment_flush_all(&mut cmd);
-                                    let mut remaining_poll = if let Some(s)= tx[i].smallest_space() {
+                                    tx.fragment_flush_all(&mut cmd);
+                                    let mut remaining_poll = if let Some(s)= tx.smallest_space() {
                                                                      s as i32
                                                                 } else {
-                                                                    tx[i].item_channel.capacity() as i32
+                                                                    tx.item_channel.capacity() as i32
                                                                 };
                                         let mut local_data = false;
                                         let mut sent_count = 0;
@@ -172,7 +146,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
                                                 let c = {
                                                     let now = Instant::now();
-                                                    let mut stream = &mut tx[i];
+                                                    let mut stream = &mut tx;
                                                     //TODO: we need to wait on this lock butalso track it.
                                            //         let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
                                                     sub.poll(&mut |buffer: &AtomicBuffer
@@ -197,8 +171,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
                                                 remaining_poll -= c;
                                                 total += c;
-                                                if !tx[i].ready.is_empty() || c.is_zero() || remaining_poll.is_zero() {
-                                                    tx[i].fragment_flush_ready(&mut cmd);
+                                                if !tx.ready.is_empty() || c.is_zero() || remaining_poll.is_zero() {
+                                                    tx.fragment_flush_ready(&mut cmd);
                                                     break;
                                                 }
                                                 cmd.relay_stats_smartly();
@@ -208,8 +182,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                             }
                                             total
                                         };
-                                        if !tx[i].ready.is_empty() {
-                                            tx[i].fragment_flush_ready(&mut cmd);
+                                        if !tx.ready.is_empty() {
+                                            tx.fragment_flush_ready(&mut cmd);
                                         }
                                         if !local_data {
                                             no_count += 1;
@@ -220,21 +194,19 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         found_data |= local_data;
                                         if  no_count>5 {
                                             //TODO: may not flush all so check again periodicly in our main loop
-                                            tx[i].fragment_flush_all(&mut cmd);
+                                            tx.fragment_flush_all(&mut cmd);
 
                                             continue; //next stream
                                         }
-
-
                                     // see break, we only stop when we have no data or no room
                                     /////////////////////////////////
 
                                 } else {
-                                    tx[i].fragment_flush_ready(&mut cmd);
+                                    tx.fragment_flush_ready(&mut cmd);
                                 }
                             }
                             Err(e) => {
-                                if let Some(id) = state.sub_reg_id[i] {
+                                if let Some(id) = state.sub_reg_id {
                                     let sub = {
                                         let mut aeron = aeron.lock().await; //caution other actors need this so do jit
                                         warn!("holding find_subscription({}) lock",id);
@@ -277,21 +249,15 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                             }
                                         }
                                     }
-
-
                                 }
-
                                // panic!("{:?}", e); //restart this actor for some reason we do not have subscription
                             }
                         }
-                    
-                }
                 if cmd.is_liveliness_stop_requested() || !found_data {
                     continue;
                 } else {
                     cmd.relay_stats_smartly();
                 }
-
         }
     }
     Ok(())
@@ -347,7 +313,7 @@ pub(crate) mod aeron_media_driver_tests {
 
         let dist =  DistributedTech::Aeron(aeron_config);
 
-        graph.build_stream_distributor(dist.clone()
+        graph.build_stream_distributor_bundle(dist.clone()
                                        , "SenderTest"
                                        , to_aeron_rx
                                        , &mut Threading::Spawn);
@@ -366,10 +332,10 @@ pub(crate) mod aeron_media_driver_tests {
             .with_capacity(500)
             .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(0, 6);
 
-        graph.build_stream_collector(dist.clone()
-                                     , "ReceiverTest"
-                                     , from_aeron_tx
-                                     , &mut Threading::Spawn);
+        graph.build_stream_collector_bundle(dist.clone()
+                                            , "ReceiverTest"
+                                            , from_aeron_tx
+                                            , &mut Threading::Spawn);
 
 
         graph.start(); //startup the graph

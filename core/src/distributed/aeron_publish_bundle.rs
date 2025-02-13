@@ -387,18 +387,17 @@ pub(crate) mod aeron_tests {
             .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-            .build_as_stream::<StreamSimpleMessage,1>(STREAM_ID
-                                                                  , 4*1024*1024
-                                                                  , 32*1024*1024);
+            .with_capacity(4*1024*1024)
+            .build_as_stream_bundle::<StreamSimpleMessage,1>(STREAM_ID,8);
+
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_avg_rate()
             .with_avg_filled()
             .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-            .build_as_stream::<StreamSessionMessage,1>(STREAM_ID
-                                                                   , 4*1024*1024
-                                                                   , 32*1024*1024);
+            .with_capacity(4*1024*1024)
+            .build_as_stream_bundle::<StreamSessionMessage,1>(STREAM_ID, 8);
 
         //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
         let aeron_config = AeronConfig::new()            
@@ -427,10 +426,10 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
                    , &mut Threading::Spawn);
 
-        graph.build_stream_distributor(dist.clone()
-                                       , "SenderTest"
-                                       , to_aeron_rx
-                                       , &mut Threading::Spawn);
+        graph.build_stream_distributor_bundle(dist.clone()
+                                              , "SenderTest"
+                                              , to_aeron_rx
+                                              , &mut Threading::Spawn);
 
         //set this up first so sender has a place to send to
         graph.actor_builder().with_name("MockReceiver")
@@ -442,10 +441,10 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
-        graph.build_stream_collector(dist.clone()
-                                     , "ReceiverTest"
-                                     , from_aeron_tx
-                                     , &mut Threading::Spawn);
+        graph.build_stream_collector_bundle(dist.clone()
+                                            , "ReceiverTest"
+                                            , from_aeron_tx
+                                            , &mut Threading::Spawn);
 
         graph.start(); //startup the graph
         graph.block_until_stopped(Duration::from_secs(21));

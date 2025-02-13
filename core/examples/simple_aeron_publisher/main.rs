@@ -72,10 +72,10 @@ fn main() {
         .build(move |context| actor::publisher::run(context, to_aeron_tx.clone())
                , &mut Threading::Spawn);
 
-    graph.build_stream_distributor(DistributedTech::Aeron(aeron_channel)
-                                   , "SenderTest"
-                                   , to_aeron_rx
-                                   , &mut Threading::Spawn);
+    graph.build_stream_distributor_bundle(DistributedTech::Aeron(aeron_channel)
+                                          , "SenderTest"
+                                          , to_aeron_rx
+                                          , &mut Threading::Spawn);
 
 
     graph.start(); //startup the graph

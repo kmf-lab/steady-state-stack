@@ -8,70 +8,63 @@ use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel::Channel;
-use crate::distributed::steady_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamSimpleMessage};
+use crate::distributed::steady_stream::{SteadyStreamRx, SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamRxDef, StreamSimpleMessage};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
 use crate::monitor::RxMetaDataHolder;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
-// TODO: what if we have to aeron clients talking to the same media driver? seems bad?
-
 const ITEMS_BUFFER_SIZE:usize = 1000;
 
 #[derive(Default)]
 pub(crate) struct AeronPublishSteadyState {
-    pub(crate) pub_reg_id: Vec<Option<i64>>,
+    pub(crate) pub_reg_id: Option<i64>,
     pub(crate) items_taken: usize,
 }
 
-pub async fn run<const GIRTH:usize,>(context: SteadyContext
-                                     , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
-                                     , aeron_connect: Channel
-                                     , aeron:Arc<futures_util::lock::Mutex<Aeron>>
-                                     , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
-    internal_behavior(into_monitor!(context, RxMetaDataHolder::new(rx.control_meta_data()), []), rx, aeron_connect, aeron, state).await
+pub async fn run(context: SteadyContext
+             , rx: SteadyStreamRx<StreamSimpleMessage>
+             , aeron_connect: Channel
+             , aeron:Arc<futures_util::lock::Mutex<Aeron>>
+             , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
+
+    internal_behavior(into_monitor!(context, [rx.meta_data().control], [])
+                      , rx, aeron_connect, aeron, state).await
 }
 
-async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
-                                                                 , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
+async fn internal_behavior<C: SteadyCommander>(mut cmd: C
+                                                                 , rx: SteadyStreamRx<StreamSimpleMessage>
                                                                  , aeron_channel: Channel
                                                                  , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                                                                  , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
 
     let mut rx = rx.lock().await;
+    let capacity:usize = rx.capacity().into();
+
+
     let mut state_guard = steady_state(&state, || AeronPublishSteadyState::default()).await;
     if let Some(state) = state_guard.as_mut() {
-        let mut pubs: [ Result<ExclusivePublication, Box<dyn Error> >;GIRTH] = std::array::from_fn(|_| Err("Not Found".into())  );
-               
-        //ensure right length
-        while state.pub_reg_id.len()<GIRTH {
-            state.pub_reg_id.push(None);
-        }
 
         {
             let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
-
            //trace!("holding add_exclusive_publication lock");
-            for f in 0..GIRTH {
-                if state.pub_reg_id[f].is_none() { //only add if we have not already done this
-                    warn!("adding new pub {} {:?}",rx[f].stream_id,aeron_channel.cstring() );
-                    match aeron.add_exclusive_publication(aeron_channel.cstring(), rx[f].stream_id) {
-                        Ok(reg_id) => state.pub_reg_id[f] = Some(reg_id),
-                        Err(e) => {
-                            warn!("Unable to add publication: {:?}",e);
-                        }
-                    };
-                }
-            };
-            //trace!("released add_exclusive_publication lock");
+            if state.pub_reg_id.is_none() { //only add if we have not already done this
+                warn!("adding new pub {} {:?}",rx.stream_id,aeron_channel.cstring() );
+                match aeron.add_exclusive_publication(aeron_channel.cstring(), rx.stream_id) {
+                    Ok(reg_id) => state.pub_reg_id = Some(reg_id),
+                    Err(e) => {
+                        warn!("Unable to add publication: {:?}",e);
+                    }
+                };
+            }
         }
         Delay::new(Duration::from_millis(2)).await; //back off so our request can get ready
 
         // now lookup when the publications are ready
-            for f in 0..GIRTH {
-                if let Some(id) = state.pub_reg_id[f] {
-                    pubs[f] = loop {
+        let mut my_pub = Err("");
+                if let Some(id) = state.pub_reg_id {
+                    my_pub = loop {
                         let ex_pub = {
                             let mut aeron = aeron.lock().await; //other actors need this so jit
                             //trace!("holding find_exclusive_publication({}) lock",id);
@@ -92,7 +85,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                     }
                                 } else {
                                     warn!("Error finding publication: {:?}", e);
-                                    break Err(e.into());
+                                    break Err("Unable to find requested publication".into());
                                 }
                             },
                             Ok(publication) => {
@@ -129,12 +122,10 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                 } else { //only add if we have not already done this
                     return Err("Check if Media Driver is running.".into());
                 }
-            }
 
         warn!("running publish '{:?}' all publications in place",cmd.identity());
 
-
-        let wait_for = (512*1024).min(rx.capacity());
+        let wait_for = (512*1024).min(capacity);
         let mut backoff = true;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
@@ -147,20 +138,19 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             let mut count_bytes = 0;
 
                 backoff = false;
-                for i in 0..GIRTH {
+
                     //buld a working batch solution first and then extract to functions later
                     //peek a block ahead, 
-
 
                        //provide every message and slice until false is returned at that point
                         //we release everything consumed up to this point and return or if no data
                         //upon return release
-                    match &mut pubs[i] {
+                    match &mut my_pub {
                         Ok(p) => {
 
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
              //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
-                                rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], mut slice2: &mut [u8]| {
+                                rx.consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], mut slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len>0);
                                     let response = if slice2.len() == 0 {
@@ -194,16 +184,11 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                             warn!("panic details {}",e);
                           //  panic!("{:?}", e); //we should have had the pup so try again
                         }
-                    }                   
-                    
-                }
-
-
+                    }
          }        
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 #[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
@@ -219,7 +204,6 @@ pub(crate) mod aeron_tests {
     //NOTE: bump this up for longer running load tests
     //       20_000_000_000;
     pub const TEST_ITEMS: usize = 200_000_000;
-
 
     pub const STREAM_ID: i32 = 11;
     //TODO: review the locking and init of terms in shared context??
@@ -427,7 +411,7 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
                    , &mut Threading::Spawn);
 
-        graph.build_stream_distributor(dist.clone()
+        graph.build_stream_distributor_bundle(dist.clone()
                                        , "SenderTest"
                                        , to_aeron_rx
                                        , &mut Threading::Spawn);
@@ -442,10 +426,10 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
-        graph.build_stream_collector(dist.clone()
-                                     , "ReceiverTest"
-                                     , from_aeron_tx
-                                     , &mut Threading::Spawn);
+        graph.build_stream_collector_bundle(dist.clone()
+                                            , "ReceiverTest"
+                                            , from_aeron_tx
+                                            , &mut Threading::Spawn);
 
         graph.start(); //startup the graph
         graph.block_until_stopped(Duration::from_secs(21));

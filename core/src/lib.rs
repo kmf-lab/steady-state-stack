@@ -62,6 +62,9 @@ pub mod distributed {
     pub mod aeron_publish_bundle;
     /// Subscribe to aeron and put incoming messages in streams
     pub mod aeron_subscribe_bundle;
+
+    pub mod aeron_publish;
+    pub mod aeron_subscribe;
 }
 
 /// module for testing full graphs of actors

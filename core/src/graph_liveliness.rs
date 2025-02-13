@@ -2,7 +2,7 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{abstract_executor, new_state, steady_config, util, Percentile, Threading};
+use crate::{abstract_executor, new_state, steady_config, util, LazyStreamRx, LazyStreamTx, Percentile, Threading};
 use std::ops::Sub;
 use std::sync::Arc;
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -29,7 +29,7 @@ use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::commander_context::SteadyContext;
-use crate::distributed::{aeron_publish_bundle, aeron_subscribe_bundle};
+use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
 use crate::distributed::aeron_channel::aeron_utils::aeron_context;
 use crate::distributed::aeron_distributed::DistributedTech;
 use crate::distributed::steady_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamSessionMessage, StreamSimpleMessage};
@@ -554,18 +554,18 @@ impl Graph {
         let _ = logger::initialize_with_level(loglevel);
     }
 
-    pub fn build_stream_distributor<const GIRTH:usize>(&mut self
-                                      , distribution: DistributedTech
-                                      , name: &'static str
-                                      , rx: LazySteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
-                                      , threading: &mut Threading) {
-        
+
+    pub fn build_stream_distributor_single(&mut self
+                                       , distribution: DistributedTech
+                                       , name: &'static str
+                                       , rx: LazyStreamRx<StreamSimpleMessage>
+                                       , threading: &mut Threading) {
         match distribution {
             DistributedTech::Aeron(channel) => {
 
-               if self.aeron.is_none() { //lazy load, we only support one
-                  self.aeron = aeron_context(Context::new());
-               }
+                if self.aeron.is_none() { //lazy load, we only support one
+                    self.aeron = aeron_context(Context::new());
+                }
 
                 if let Some(aeron) = &self.aeron {
                     let state = new_state();
@@ -576,7 +576,45 @@ impl Graph {
                         .with_thread_info()
                         .with_mcpu_percentile(Percentile::p96())
                         .with_mcpu_percentile(Percentile::p25())
+                        // .with_explicit_core(7)
+                        .build(move |context|
+                                   aeron_publish::run(context
+                                                             , rx.clone()
+                                                             , channel
+                                                             , aeron.clone()
+                                                             , state.clone())
+                               , threading)
+                }
+            }
+            _ => {
+                panic!("unsupported distribution type");
+            }
+        }
+    }
 
+
+    pub fn build_stream_distributor_bundle<const GIRTH:usize>(&mut self
+                                          , distribution: DistributedTech
+                                          , name: &'static str
+                                          , rx: LazySteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
+                                          , threading: &mut Threading) {
+        
+        match distribution {
+            DistributedTech::Aeron(channel) => {
+
+               if self.aeron.is_none() { //lazy load, we only support one
+                  self.aeron = aeron_context(Context::new());
+               }
+
+               if let Some(aeron) = &self.aeron {
+                    let state = new_state();
+                    let aeron = aeron.clone();
+
+                    self.actor_builder()
+                        .with_name(name)
+                        .with_thread_info()
+                        .with_mcpu_percentile(Percentile::p96())
+                        .with_mcpu_percentile(Percentile::p25())
                         // .with_explicit_core(7)
                         .build(move |context| 
                                    aeron_publish_bundle::run(context
@@ -585,8 +623,7 @@ impl Graph {
                                                              , aeron.clone()
                                                              , state.clone())
                                , threading)
-
-                }
+               }
             }
             _ => {
                 panic!("unsupported distribution type");
@@ -594,11 +631,55 @@ impl Graph {
         }
     }
 
-    pub fn build_stream_collector<const GIRTH:usize>(&mut self
-                                    , distribution: DistributedTech
-                                    , name: &'static str
-                                    , tx: LazySteadyStreamTxBundle<StreamSessionMessage, GIRTH>
-                                    , threading: &mut Threading) {
+
+    pub fn build_stream_collector_single(&mut self
+                                     , distribution: DistributedTech
+                                     , name: &'static str
+                                     , tx: LazyStreamTx<StreamSessionMessage>
+                                     , threading: &mut Threading) {
+
+        match distribution {
+            DistributedTech::Aeron(channel) => {
+
+                if self.aeron.is_none() { //lazy load, we only support one
+                    self.aeron = aeron_context(Context::new());
+                }
+
+                if let Some(ref aeron) = &self.aeron {
+
+                    let state = new_state();
+                    let aeron = aeron.clone();
+
+                    //let connection = channel.cstring();
+
+                    self.actor_builder()
+                        .with_name(name)
+                        .with_thread_info()
+                        .with_mcpu_percentile(Percentile::p96())
+                        .with_mcpu_percentile(Percentile::p25())
+
+                        //  .with_explicit_core(8)
+                        //.with_custom_label(connection) // TODO: need something like this.
+                        .build(move |context|
+                                   aeron_subscribe::run(context
+                                                               , tx.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
+                                                               , channel
+                                                               , aeron.clone()
+                                                               , state.clone())
+                               , threading);
+                }
+            }
+            _ => {
+                panic!("unsupported distribution type");
+            }
+        }
+    }
+
+    pub fn build_stream_collector_bundle<const GIRTH:usize>(&mut self
+                                                            , distribution: DistributedTech
+                                                            , name: &'static str
+                                                            , tx: LazySteadyStreamTxBundle<StreamSessionMessage, GIRTH>
+                                                            , threading: &mut Threading) {
 
         match distribution {
             DistributedTech::Aeron(channel) => {

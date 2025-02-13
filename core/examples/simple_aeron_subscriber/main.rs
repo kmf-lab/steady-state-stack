@@ -72,10 +72,10 @@ fn main() {
         .build(move |context| actor::subscriber::run(context, base.clone())
                , &mut Threading::Spawn);
 
-    graph.build_stream_collector(DistributedTech::Aeron(aeron_channel)
-                                 , "ReceiverTest"
-                                 , from_aeron_tx
-                                 , &mut Threading::Spawn);
+    graph.build_stream_collector_bundle(DistributedTech::Aeron(aeron_channel)
+                                        , "ReceiverTest"
+                                        , from_aeron_tx
+                                        , &mut Threading::Spawn);
 
     graph.start(); //startup the graph
     graph.block_until_stopped(Duration::from_secs(21));
