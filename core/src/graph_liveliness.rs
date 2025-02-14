@@ -560,10 +560,10 @@ impl Graph {
                                        , name: &'static str
                                        , rx: LazyStreamRx<StreamSimpleMessage>
                                        , threading: &mut Threading) {
-        self.build_distributor_single(distribution, name, rx, threading);
+        Self::build_distributor_single(self, distribution, name, rx, threading);
     }
 
-    pub(crate) fn build_distributor_single(mut g: &mut Graph, distribution: DistributedTech, name: &str, rx: LazyStreamRx<StreamSimpleMessage>, threading: &mut Threading) {
+    pub(crate) fn build_distributor_single(g: &mut Graph, distribution: DistributedTech, name: &'static str, rx: LazyStreamRx<StreamSimpleMessage>, threading: &mut Threading) {
         match distribution {
             DistributedTech::Aeron(channel) => {
                 if g.aeron.is_none() { //lazy load, we only support one
@@ -600,61 +600,63 @@ impl Graph {
                                                               , name: &'static str
                                                               , rx: LazySteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
                                                               , threading: &mut Threading) {
-        
+        Self::build_distributor_bundle(self, distribution, name, rx, threading);
+    }
+
+    pub(crate) fn build_distributor_bundle<const GIRTH:usize>(g: &mut Graph, distribution: DistributedTech, name: &'static str, rx: LazySteadyStreamRxBundle<StreamSimpleMessage, { GIRTH }>, threading: &mut Threading) {
         match distribution {
             DistributedTech::Aeron(channel) => {
+                if g.aeron.is_none() { //lazy load, we only support one
+                    g.aeron = aeron_context(Context::new());
+                }
 
-               if self.aeron.is_none() { //lazy load, we only support one
-                  self.aeron = aeron_context(Context::new());
-               }
-
-               if let Some(aeron) = &self.aeron {
+                if let Some(aeron) = &g.aeron {
                     let state = new_state();
                     let aeron = aeron.clone();
 
-                    self.actor_builder()
+                    g.actor_builder()
                         .with_name(name)
                         .with_thread_info()
                         .with_mcpu_percentile(Percentile::p96())
                         .with_mcpu_percentile(Percentile::p25())
                         // .with_explicit_core(7)
-                        .build(move |context| 
+                        .build(move |context|
                                    aeron_publish_bundle::run(context
                                                              , rx.clone()
                                                              , channel
                                                              , aeron.clone()
                                                              , state.clone())
                                , threading)
-               }
+                }
             }
             _ => {
                 panic!("unsupported distribution type");
-            }            
+            }
         }
     }
 
-
     pub fn build_stream_collector_single(&mut self
-                                     , distribution: DistributedTech
-                                     , name: &'static str
-                                     , tx: LazyStreamTx<StreamSessionMessage>
-                                     , threading: &mut Threading) {
+                                         , distribution: DistributedTech
+                                         , name: &'static str
+                                         , tx: LazyStreamTx<StreamSessionMessage>
+                                         , threading: &mut Threading) {
+        Self::build_collector_single(self, distribution, name, tx, threading);
+    }
 
+    fn build_collector_single(g: &mut Graph, distribution: DistributedTech, name: &'static str, tx: LazyStreamTx<StreamSessionMessage>, threading: &mut Threading) {
         match distribution {
             DistributedTech::Aeron(channel) => {
-
-                if self.aeron.is_none() { //lazy load, we only support one
-                    self.aeron = aeron_context(Context::new());
+                if g.aeron.is_none() { //lazy load, we only support one
+                    g.aeron = aeron_context(Context::new());
                 }
 
-                if let Some(ref aeron) = &self.aeron {
-
+                if let Some(ref aeron) = &g.aeron {
                     let state = new_state();
                     let aeron = aeron.clone();
 
                     //let connection = channel.cstring();
 
-                    self.actor_builder()
+                    g.actor_builder()
                         .with_name(name)
                         .with_thread_info()
                         .with_mcpu_percentile(Percentile::p96())
@@ -664,10 +666,10 @@ impl Graph {
                         //.with_custom_label(connection) // TODO: need something like this.
                         .build(move |context|
                                    aeron_subscribe::run(context
-                                                               , tx.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
-                                                               , channel
-                                                               , aeron.clone()
-                                                               , state.clone())
+                                                        , tx.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
+                                                        , channel
+                                                        , aeron.clone()
+                                                        , state.clone())
                                , threading);
                 }
             }
@@ -682,22 +684,23 @@ impl Graph {
                                                             , name: &'static str
                                                             , tx: LazySteadyStreamTxBundle<StreamSessionMessage, GIRTH>
                                                             , threading: &mut Threading) {
+        Self::build_collector_bundle(self, distribution, name, tx, threading);
+    }
 
+    pub(crate) fn build_collector_bundle<const GIRTH:usize>(g: &mut Graph, distribution: DistributedTech, name: &'static str, tx: LazySteadyStreamTxBundle<StreamSessionMessage, { GIRTH }>, threading: &mut Threading) {
         match distribution {
             DistributedTech::Aeron(channel) => {
-
-                if self.aeron.is_none() { //lazy load, we only support one
-                      self.aeron = aeron_context(Context::new());
+                if g.aeron.is_none() { //lazy load, we only support one
+                    g.aeron = aeron_context(Context::new());
                 }
 
-                if let Some(ref aeron) = &self.aeron {
-                                     
+                if let Some(ref aeron) = &g.aeron {
                     let state = new_state();
                     let aeron = aeron.clone();
 
                     //let connection = channel.cstring();
-                    
-                    self.actor_builder()
+
+                    g.actor_builder()
                         .with_name(name)
                         .with_thread_info()
                         .with_mcpu_percentile(Percentile::p96())
@@ -712,7 +715,6 @@ impl Graph {
                                                                , aeron.clone()
                                                                , state.clone())
                                , threading);
-
                 }
             }
             _ => {

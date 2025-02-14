@@ -1,6 +1,6 @@
 use log::{error, warn};
 use futures_util::{select, FutureExt};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use futures::pin_mut;
 use futures_timer::Delay;
 use futures_util::lock::MutexGuard;
@@ -11,7 +11,7 @@ use nuclei::block_on;
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
-use crate::{ActorIdentity, SendSaturation, StreamSimpleMessage, Tx, MONITOR_NOT};
+use crate::{steady_config, ActorIdentity, SendSaturation, StreamSimpleMessage, Tx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 
 
@@ -21,8 +21,11 @@ use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 pub trait TxCore {
     type MsgIn<'a>;
     type MsgOut;
+    type MsgSize;
+
 
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize;
+    fn log_perodic(&mut self) -> bool;
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>);
     fn monitor_not(&mut self);
@@ -30,8 +33,8 @@ pub trait TxCore {
     fn shared_is_full(&self) -> bool;
     fn shared_is_empty(&self) -> bool;
     fn shared_vacant_units(&self) -> usize;
-    async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool;
-    async fn shared_wait_vacant_units(&mut self, count: usize) -> bool;
+    async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool;
+    async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool;
     async fn shared_wait_empty(&mut self) -> bool;
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
     async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<(), Self::MsgOut>;
@@ -44,6 +47,16 @@ impl<T> TxCore for Tx<T> {
 
     type MsgIn<'a> = T;
     type MsgOut = T;
+    type MsgSize = usize;
+
+    fn log_perodic(&mut self) -> bool {
+        if self.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+            false
+        } else {
+            self.last_error_send = Instant::now();
+            true
+        }
+    }
 
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
         if self.make_closed.is_none() {
@@ -89,12 +102,13 @@ impl<T> TxCore for Tx<T> {
     }
 
     #[inline]
-    async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
+    async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool {
         if self.tx.vacant_len() >= count {
             true
         } else {
             let mut one_down = &mut self.oneshot_shutdown;
             if !one_down.is_terminated() {
+                let safe_count = count.min(self.tx.capacity().into());
                 let mut operation = &mut self.tx.wait_vacant(count);
                 select! { _ = one_down => false, _ = operation => true, }
             } else {
@@ -103,11 +117,12 @@ impl<T> TxCore for Tx<T> {
         }
     }
     #[inline]
-    async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
+    async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool {
         if self.tx.vacant_len() >= count {
             true
         } else {
-            let operation = &mut self.tx.wait_vacant(count);
+            let safe_count = count.min(self.tx.capacity().into());
+            let operation = &mut self.tx.wait_vacant(safe_count);
             operation.await;
             true
         }
@@ -233,6 +248,17 @@ impl<T> TxCore for Tx<T> {
 impl<T: StreamItem> TxCore for StreamTx<T> {
     type MsgIn<'a> = (T, &'a[u8]);
     type MsgOut = T;
+    type MsgSize = (usize, usize);
+
+
+    fn log_perodic(&mut self) -> bool {
+        if self.item_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+            false
+        } else {
+            self.item_channel.last_error_send = Instant::now();
+            true
+        }
+    }
 
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
         debug_assert!(!self.item_channel.make_closed.is_none(),"Send called after channel marked closed");
@@ -296,13 +322,18 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
     }
 
     #[inline]
-    async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
-        if self.item_channel.tx.vacant_len() >= count {
+    async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool {
+        if self.item_channel.tx.vacant_len() >= count.0 &&
+            self.payload_channel.tx.vacant_len() >= count.1 {
             true
         } else {
             let mut one_down = &mut self.item_channel.oneshot_shutdown;
             if !one_down.is_terminated() {
-                let mut operation = &mut self.item_channel.tx.wait_vacant(count);
+                let mut operation =
+                   async {
+                       self.item_channel.tx.wait_vacant(count.0.min(self.item_channel.capacity())).await;
+                       self.payload_channel.tx.wait_vacant(count.1.min(self.payload_channel.capacity())).await;
+                   };
                 select! { _ = one_down => false, _ = operation => true, }
             } else {
                 false
@@ -310,12 +341,13 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
         }
     }
     #[inline]
-    async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
-        if self.item_channel.tx.vacant_len() >= count {
+    async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool {
+        if self.item_channel.tx.vacant_len() >= count.0 &&
+            self.payload_channel.tx.vacant_len() >= count.1 {
             true
         } else {
-            let operation = &mut self.item_channel.tx.wait_vacant(count);
-            operation.await;
+            self.item_channel.tx.wait_vacant(count.0.min(self.item_channel.capacity())).await;
+            self.payload_channel.tx.wait_vacant(count.1.min(self.payload_channel.capacity())).await;
             true
         }
     }
@@ -525,6 +557,11 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
 impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;
     type MsgOut = <T as TxCore>::MsgOut;
+    type MsgSize =  <T as TxCore>::MsgSize;
+
+    fn log_perodic(&mut self) -> bool {
+        <T as TxCore>::log_perodic(&mut **self)
+    }
 
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         <T as TxCore>::telemetry_inc(&mut **self, done_count, tel)
@@ -559,12 +596,12 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     }
 
     #[inline]
-    async fn shared_wait_shutdown_or_vacant_units(&mut self, count: usize) -> bool {
+    async fn shared_wait_shutdown_or_vacant_units(&mut self, count: Self::MsgSize) -> bool {
         <T as TxCore>::shared_wait_shutdown_or_vacant_units(&mut **self, count).await
     }
 
     #[inline]
-    async fn shared_wait_vacant_units(&mut self, count: usize) -> bool {
+    async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool {
         <T as TxCore>::shared_wait_vacant_units(&mut **self,count).await
     }
 

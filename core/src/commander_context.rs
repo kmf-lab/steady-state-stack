@@ -930,7 +930,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_shutdown_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         this.shared_wait_shutdown_or_avail_units(count).await
     }
     /// Waits until the specified number of available units are in the receiver.
@@ -940,7 +940,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_closed_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         this.shared_wait_closed_or_avail_units(count).await
     }
     /// Waits until the specified number of vacant units are in the transmitter.
@@ -950,7 +950,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available
-    async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_avail_units<T:RxCore>(&self, this: &mut T, count: usize) -> bool {
         this.shared_wait_avail_units(count).await
     }
     /// Waits until the specified number of vacant units are in the transmitter.
@@ -960,7 +960,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+    async fn wait_shutdown_or_vacant_units<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
         this.shared_wait_shutdown_or_vacant_units(count).await
     }
     /// Waits until the specified number of vacant units are in the transmitter.
@@ -970,7 +970,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available
-    async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+    async fn wait_vacant_units<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
         this.shared_wait_vacant_units(count).await
     }
     /// Waits until shutdown

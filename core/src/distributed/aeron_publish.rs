@@ -40,7 +40,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                                                  , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
 
     let mut rx = rx.lock().await;
-    let capacity:usize = rx.capacity().into();
 
 
     let mut state_guard = steady_state(&state, || AeronPublishSteadyState::default()).await;
@@ -124,13 +123,14 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                 }
 
         warn!("running publish '{:?}' all publications in place",cmd.identity());
-
+        let capacity:usize = rx.capacity().into();
         let wait_for = (512*1024).min(capacity);
+
         let mut backoff = true;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
             let clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
-                          ,cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1)
+                                           ,cmd.wait_closed_or_avail_units(&mut rx, wait_for)
                            );
 
 

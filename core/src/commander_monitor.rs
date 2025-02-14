@@ -93,29 +93,25 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
 
-    //TODO: check usage and add to the SteadyState
-    pub(crate) fn validate_capacity_rx<T>(this: &mut Rx<T>, count: usize) -> usize {
-        if count <= this.capacity() {
+    pub(crate) fn validate_capacity_rx<T: RxCore>(this: &mut T, count: usize) -> usize {
+        if count <= this.shared_capacity() {
             count
         } else {
-            let capacity = this.capacity();
-            if this.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+            let capacity = this.shared_capacity();
+            if this.log_perodic() {
                 warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
-                this.last_error_send = Instant::now();
             }
             capacity
         }
     }
 
-    //TODO: check usage and add to the SteadyState
-    pub(crate) fn validate_capacity_tx<T>(this: &mut Tx<T>, count: usize) -> usize {
-        if count <= this.capacity() {
+    pub(crate) fn validate_capacity_tx<T: TxCore>(this: &mut T, count: usize) -> usize {
+        if count <= this.shared_capacity() {
             count
         } else {
-            let capacity = this.capacity();
-            if this.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+            let capacity = this.shared_capacity();
+            if this.log_perodic() {
                 warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
-                this.last_error_send = Instant::now();
             }
             capacity
         }
@@ -1484,7 +1480,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// `true` if the units are available, otherwise `false`.
     ///
     /// # Asynchronous
-    async fn wait_shutdown_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_shutdown_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
 
@@ -1515,7 +1511,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// `true` if the units are available, otherwise `false` if closed channel.
     ///
     /// # Asynchronous
-    async fn wait_closed_or_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_closed_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
         if self.telemetry.is_dirty() {
@@ -1545,7 +1541,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// `true` if the units are available, otherwise `false` if pending telemetry data to send.
     ///
     /// # Asynchronous
-    async fn wait_avail_units<T>(&self, this: &mut Rx<T>, count: usize) -> bool {
+    async fn wait_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
         if self.telemetry.is_dirty() {
@@ -1575,9 +1571,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// - `count`: The number of vacant units to wait for.
     ///
     /// # Asynchronous
-    async fn wait_shutdown_or_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+    async fn wait_shutdown_or_vacant_units<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
-        let count = Self::validate_capacity_tx(this, count);
 
         if self.telemetry.is_dirty() {
             let remaining_micros = self.telemetry_remaining_micros();
@@ -1603,9 +1598,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// - `count`: The number of vacant units to wait for.
     ///
     /// # Asynchronous
-    async fn wait_vacant_units<T>(&self, this: &mut Tx<T>, count: usize) -> bool {
+    async fn wait_vacant_units<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
-        let count = Self::validate_capacity_tx(this, count);
 
         if self.telemetry.is_dirty() {
             let remaining_micros = self.telemetry_remaining_micros();

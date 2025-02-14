@@ -1,12 +1,13 @@
 use log::warn;
 use futures_util::select;
 use std::sync::atomic::Ordering;
+use std::time::Instant;
 use ringbuf::traits::Observer;
 use futures_util::future::FusedFuture;
 use async_ringbuf::consumer::AsyncConsumer;
 use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
-use crate::{Rx, MONITOR_NOT};
+use crate::{steady_config, Rx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamRx};
 use crate::steady_rx::RxDone;
 
@@ -19,6 +20,8 @@ pub trait RxCore {
     fn monitor_not(&mut self);
 
     fn shared_capacity(&self) -> usize;
+
+    fn log_perodic(&mut self) -> bool;
 
     fn shared_is_empty(&self) -> bool;
 
@@ -37,6 +40,16 @@ pub trait RxCore {
 impl <T>RxCore for Rx<T> {
 
     type MsgOut = T;
+
+
+    fn log_perodic(&mut self) -> bool {
+        if self.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+            false
+        } else {
+            self.last_error_send = Instant::now();
+            true
+        }
+    }
 
     #[inline]
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>) {
@@ -119,6 +132,16 @@ impl <T>RxCore for Rx<T> {
 impl <T: StreamItem> RxCore for StreamRx<T> {
 
     type MsgOut = (T, Box<[u8]>);
+
+
+    fn log_perodic(&mut self) -> bool {
+        if self.item_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+            false
+        } else {
+            self.item_channel.last_error_send = Instant::now();
+            true
+        }
+    }
 
     #[inline]
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>) {
@@ -217,6 +240,10 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
 
 impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     type MsgOut = <T as RxCore>::MsgOut;
+
+    fn log_perodic(&mut self) -> bool {
+        <T as RxCore>::log_perodic(&mut **self)
+    }
 
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         <T as RxCore>::telemetry_inc(&mut **self,done_count, tel)

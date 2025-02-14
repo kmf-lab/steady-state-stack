@@ -383,6 +383,10 @@ impl<T: StreamItem> StreamTx<T> {
         true
     }
 
+    pub fn capacity(&mut self) -> usize {
+        self.item_channel.capacity()
+    }
+
     //call this when we have no data in from poll to clear out anything waiting.
     pub(crate) fn fragment_flush_all<C: SteadyCommander>(&mut self, cmd: &mut C) {
         self.ready.clear();
@@ -510,6 +514,9 @@ impl<T: StreamItem> StreamRx<T> {
     // pub async fn shared_wait_closed_or_avail_messages(&mut self, full_messages: usize) -> bool {
     //     self.item_channel.shared_wait_closed_or_avail_units(full_messages).await
     // }
+    pub fn capacity(&mut self) -> usize {
+        self.item_channel.capacity()
+    }
 
     /// Checks if both channels are closed and empty.
     pub fn is_closed_and_empty(&mut self) -> bool {
