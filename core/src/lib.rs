@@ -65,6 +65,7 @@ pub mod distributed {
 
     pub mod aeron_publish;
     pub mod aeron_subscribe;
+    pub mod distributed_builder;
 }
 
 /// module for testing full graphs of actors
@@ -109,7 +110,7 @@ pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
 pub use commander::SteadyCommander;
 pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
-pub use distributed::aeron_channel_builder::{AeronConfig, DistributedTech};
+pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
 pub use distributed::distributed_stream::{StreamSessionMessage, StreamSimpleMessage};
 pub use distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
 pub use distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};

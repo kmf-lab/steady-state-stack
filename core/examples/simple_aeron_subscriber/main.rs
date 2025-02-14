@@ -72,7 +72,7 @@ fn main() {
         .build(move |context| actor::subscriber::run(context, base.clone())
                , &mut Threading::Spawn);
 
-    graph.build_stream_collector_bundle(DistributedTech::Aeron(aeron_channel)
+    graph.build_stream_collector_bundle(AqueTech::Aeron(aeron_channel)
                                         , "ReceiverTest"
                                         , from_aeron_tx
                                         , &mut Threading::Spawn);

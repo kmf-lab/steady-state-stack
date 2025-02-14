@@ -25,13 +25,14 @@ use futures_util::lock::{MutexGuard, MutexLockFuture};
 use nuclei::config::IoUringConfiguration;
 use aeron::aeron::Aeron;
 use aeron::context::Context;
+use structopt::StructOpt;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::commander_context::SteadyContext;
-use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
+use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle, distributed_builder};
 use crate::distributed::aeron_channel_structs::aeron_utils::aeron_context;
-use crate::distributed::aeron_channel_builder::DistributedTech;
+use crate::distributed::aeron_channel_builder::AqueTech;
 use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamSessionMessage, StreamSimpleMessage};
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
@@ -524,7 +525,7 @@ impl GraphBuilder {
 }
 
 /// Manages the execution of actors in the graph.
-pub struct Graph {
+pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) actor_count: Arc<AtomicUsize>,
@@ -556,172 +557,39 @@ impl Graph {
 
 
     pub fn build_stream_distributor_single(&mut self
-                                       , distribution: DistributedTech
+                                       , distribution: AqueTech
                                        , name: &'static str
                                        , rx: LazyStreamRx<StreamSimpleMessage>
                                        , threading: &mut Threading) {
-        Self::build_distributor_single(self, distribution, name, rx, threading);
-    }
-
-    pub(crate) fn build_distributor_single(g: &mut Graph, distribution: DistributedTech, name: &'static str, rx: LazyStreamRx<StreamSimpleMessage>, threading: &mut Threading) {
-        match distribution {
-            DistributedTech::Aeron(channel) => {
-                if g.aeron.is_none() { //lazy load, we only support one
-                    g.aeron = aeron_context(Context::new());
-                }
-
-                if let Some(aeron) = &g.aeron {
-                    let state = new_state();
-                    let aeron = aeron.clone();
-
-                    g.actor_builder()
-                        .with_name(name)
-                        .with_thread_info()
-                        .with_mcpu_percentile(Percentile::p96())
-                        .with_mcpu_percentile(Percentile::p25())
-                        // .with_explicit_core(7)
-                        .build(move |context|
-                                   aeron_publish::run(context
-                                                      , rx.clone()
-                                                      , channel
-                                                      , aeron.clone()
-                                                      , state.clone())
-                               , threading)
-                }
-            }
-            _ => {
-                panic!("unsupported distribution type");
-            }
-        }
+        distributed_builder::build_distributor_single(self, distribution, name, rx, threading);
     }
 
     pub fn build_stream_distributor_bundle<const GIRTH:usize>(&mut self
-                                                              , distribution: DistributedTech
+                                                              , distribution: AqueTech
                                                               , name: &'static str
                                                               , rx: LazySteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
                                                               , threading: &mut Threading) {
-        Self::build_distributor_bundle(self, distribution, name, rx, threading);
+        distributed_builder::build_distributor_bundle(self, distribution, name, rx, threading);
     }
 
-    pub(crate) fn build_distributor_bundle<const GIRTH:usize>(g: &mut Graph, distribution: DistributedTech, name: &'static str, rx: LazySteadyStreamRxBundle<StreamSimpleMessage, { GIRTH }>, threading: &mut Threading) {
-        match distribution {
-            DistributedTech::Aeron(channel) => {
-                if g.aeron.is_none() { //lazy load, we only support one
-                    g.aeron = aeron_context(Context::new());
-                }
 
-                if let Some(aeron) = &g.aeron {
-                    let state = new_state();
-                    let aeron = aeron.clone();
-
-                    g.actor_builder()
-                        .with_name(name)
-                        .with_thread_info()
-                        .with_mcpu_percentile(Percentile::p96())
-                        .with_mcpu_percentile(Percentile::p25())
-                        // .with_explicit_core(7)
-                        .build(move |context|
-                                   aeron_publish_bundle::run(context
-                                                             , rx.clone()
-                                                             , channel
-                                                             , aeron.clone()
-                                                             , state.clone())
-                               , threading)
-                }
-            }
-            _ => {
-                panic!("unsupported distribution type");
-            }
-        }
-    }
 
     pub fn build_stream_collector_single(&mut self
-                                         , distribution: DistributedTech
+                                         , distribution: AqueTech
                                          , name: &'static str
                                          , tx: LazyStreamTx<StreamSessionMessage>
                                          , threading: &mut Threading) {
-        Self::build_collector_single(self, distribution, name, tx, threading);
-    }
-
-    fn build_collector_single(g: &mut Graph, distribution: DistributedTech, name: &'static str, tx: LazyStreamTx<StreamSessionMessage>, threading: &mut Threading) {
-        match distribution {
-            DistributedTech::Aeron(channel) => {
-                if g.aeron.is_none() { //lazy load, we only support one
-                    g.aeron = aeron_context(Context::new());
-                }
-
-                if let Some(ref aeron) = &g.aeron {
-                    let state = new_state();
-                    let aeron = aeron.clone();
-
-                    //let connection = channel.cstring();
-
-                    g.actor_builder()
-                        .with_name(name)
-                        .with_thread_info()
-                        .with_mcpu_percentile(Percentile::p96())
-                        .with_mcpu_percentile(Percentile::p25())
-
-                        //  .with_explicit_core(8)
-                        //.with_custom_label(connection) // TODO: need something like this.
-                        .build(move |context|
-                                   aeron_subscribe::run(context
-                                                        , tx.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
-                                                        , channel
-                                                        , aeron.clone()
-                                                        , state.clone())
-                               , threading);
-                }
-            }
-            _ => {
-                panic!("unsupported distribution type");
-            }
-        }
+        distributed_builder::build_collector_single(self, distribution, name, tx, threading);
     }
 
     pub fn build_stream_collector_bundle<const GIRTH:usize>(&mut self
-                                                            , distribution: DistributedTech
+                                                            , distribution: AqueTech
                                                             , name: &'static str
                                                             , tx: LazySteadyStreamTxBundle<StreamSessionMessage, GIRTH>
                                                             , threading: &mut Threading) {
-        Self::build_collector_bundle(self, distribution, name, tx, threading);
+        distributed_builder::build_collector_bundle(self, distribution, name, tx, threading);
     }
 
-    pub(crate) fn build_collector_bundle<const GIRTH:usize>(g: &mut Graph, distribution: DistributedTech, name: &'static str, tx: LazySteadyStreamTxBundle<StreamSessionMessage, { GIRTH }>, threading: &mut Threading) {
-        match distribution {
-            DistributedTech::Aeron(channel) => {
-                if g.aeron.is_none() { //lazy load, we only support one
-                    g.aeron = aeron_context(Context::new());
-                }
-
-                if let Some(ref aeron) = &g.aeron {
-                    let state = new_state();
-                    let aeron = aeron.clone();
-
-                    //let connection = channel.cstring();
-
-                    g.actor_builder()
-                        .with_name(name)
-                        .with_thread_info()
-                        .with_mcpu_percentile(Percentile::p96())
-                        .with_mcpu_percentile(Percentile::p25())
-
-                        //  .with_explicit_core(8)
-                        //.with_custom_label(connection) // TODO: need something like this.
-                        .build(move |context|
-                                   aeron_subscribe_bundle::run(context
-                                                               , tx.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
-                                                               , channel
-                                                               , aeron.clone()
-                                                               , state.clone())
-                               , threading);
-                }
-            }
-            _ => {
-                panic!("unsupported distribution type");
-            }
-        }
-    }
 
     /// Returns the telemetry production rate in milliseconds.
     pub fn telemetry_production_rate_ms(&self) -> u64 {
@@ -760,8 +628,8 @@ impl Graph {
         };
         let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown_rx));
         let now = Instant::now();
-        
-            
+
+
         SteadyContext {
             channel_count,
             ident: ActorIdentity::new(usize::MAX, name, None), //no Id this is for testing
@@ -859,7 +727,7 @@ impl Graph {
     ///
     /// This should be done after building the graph.
     pub fn start_with_timeout(&mut self, duration:Duration) -> bool {
-   
+
         trace!("start was called");
         // Everything has been scheduled and running so change the state
 
@@ -931,7 +799,7 @@ impl Graph {
                     return false;
                 }
                 return true;
-            } else {                
+            } else {
                 thread::sleep(Duration::from_millis(self.telemetry_production_rate_ms));
                 //in case any actors just returned Ok(()) without normal is_running call
                 //those need be set to approved votes for the shutdown

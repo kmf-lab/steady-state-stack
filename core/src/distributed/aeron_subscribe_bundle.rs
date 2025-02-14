@@ -307,7 +307,7 @@ pub(crate) mod aeron_media_driver_tests {
     use crate::distributed::distributed_stream::StreamSimpleMessage;
     use async_std::sync::Mutex;
     use once_cell::sync::Lazy;
-    use crate::distributed::aeron_channel_builder::{AeronConfig, DistributedTech};
+    use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
 
     pub(crate) static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -345,7 +345,7 @@ pub(crate) mod aeron_media_driver_tests {
             })
             .build();
 
-        let dist =  DistributedTech::Aeron(aeron_config);
+        let dist =  AqueTech::Aeron(aeron_config);
 
         graph.build_stream_distributor_bundle(dist.clone()
                                               , "SenderTest"

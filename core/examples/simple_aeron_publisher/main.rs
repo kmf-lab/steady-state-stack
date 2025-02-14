@@ -5,6 +5,7 @@ use log::info;
 use steady_state::*;
 use structopt::*;
 use structopt_derive::*;
+use steady_state::distributed::distributed_builder::AqueductBuilder;
 
 pub(crate) mod actor {
    pub(crate) mod publisher;
@@ -52,7 +53,7 @@ fn main() {
 
     let channel_builder = graph.channel_builder();
 
-    let (to_aeron_tx,to_aeron_rx) = channel_builder
+    let (to_aeron_tx, to_aeron_rx) = channel_builder
         .with_avg_rate()
         .with_avg_filled()
         .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
@@ -72,10 +73,13 @@ fn main() {
         .build(move |context| actor::publisher::run(context, to_aeron_tx.clone())
                , &mut Threading::Spawn);
 
-    graph.build_stream_distributor_bundle(DistributedTech::Aeron(aeron_channel)
-                                          , "SenderTest"
-                                          , to_aeron_rx
-                                          , &mut Threading::Spawn);
+
+    to_aeron_rx.build_aqueduct(&mut graph
+                             , AqueTech::Aeron(aeron_channel)
+                             , "SenderTest"
+                             , &mut Threading::Spawn);
+
+
 
 
     graph.start(); //startup the graph

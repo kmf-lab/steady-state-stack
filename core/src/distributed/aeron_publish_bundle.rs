@@ -210,7 +210,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 pub(crate) mod aeron_tests {
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
-    use crate::distributed::aeron_channel_builder::{AeronConfig, DistributedTech};
+    use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aeron_subscribe_bundle;
     use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;
@@ -415,7 +415,7 @@ pub(crate) mod aeron_tests {
             .build();
 
 
-        let dist =  DistributedTech::Aeron(aeron_config);
+        let dist =  AqueTech::Aeron(aeron_config);
 
         graph.actor_builder().with_name("MockSender")
             .with_thread_info()

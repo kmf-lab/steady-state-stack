@@ -327,14 +327,16 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
             self.payload_channel.tx.vacant_len() >= count.1 {
             true
         } else {
+            let icap = self.item_channel.capacity();
+            let pcap = self.payload_channel.capacity();
+
             let mut one_down = &mut self.item_channel.oneshot_shutdown;
             if !one_down.is_terminated() {
-                let mut operation =
-                   async {
-                       self.item_channel.tx.wait_vacant(count.0.min(self.item_channel.capacity())).await;
-                       self.payload_channel.tx.wait_vacant(count.1.min(self.payload_channel.capacity())).await;
-                   };
-                select! { _ = one_down => false, _ = operation => true, }
+                let mut operation = async {
+                                       self.item_channel.tx.wait_vacant(count.0.min(icap)).await;
+                                       self.payload_channel.tx.wait_vacant(count.1.min(pcap)).await;
+                                   };
+                select! { _ = one_down => false, _ = operation.fuse() => true, }
             } else {
                 false
             }

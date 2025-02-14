@@ -2,7 +2,7 @@ use std::cmp::PartialEq;
 use crate::distributed::aeron_channel_structs::*;
 
 #[derive(Debug,Clone)]
-pub enum DistributedTech {
+pub enum AqueTech {
     None,
     Aeron(Channel),
     // Add more types here as needed
