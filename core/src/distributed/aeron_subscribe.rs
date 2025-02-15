@@ -1,23 +1,15 @@
-use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
-use async_ringbuf::AsyncRb;
 use futures_timer::Delay;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamTx, SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait, StreamTxDef};
+use crate::distributed::distributed_stream::{SteadyStreamTx, StreamSessionMessage, StreamTxDef};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
-use ringbuf::storage::Heap;
-use async_ringbuf::traits::Split;
-use async_ringbuf::wrap::AsyncWrap;
-use crate::monitor::TxMetaDataHolder;
-use ahash::AHashMap;
 use num_traits::Zero;
-use aeron::concurrent::strategies::{BusySpinIdleStrategy, Strategy};
 use crate::commander_context::SteadyContext;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
@@ -146,7 +138,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
                                                 let c = {
                                                     let now = Instant::now();
-                                                    let mut stream = &mut tx;
+                                                    let stream = &mut tx;
                                                     //TODO: we need to wait on this lock butalso track it.
                                            //         let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
                                                     sub.poll(&mut |buffer: &AtomicBuffer
@@ -274,6 +266,7 @@ pub(crate) mod aeron_media_driver_tests {
     use async_std::sync::Mutex;
     use once_cell::sync::Lazy;
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
+    use crate::distributed::distributed_builder::AqueductBuilder;
 
     pub(crate) static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -313,12 +306,11 @@ pub(crate) mod aeron_media_driver_tests {
 
         let dist =  AqueTech::Aeron(aeron_config);
 
-        graph.build_stream_distributor_bundle(dist.clone()
+        to_aeron_rx.build_aqueduct(&mut graph, dist.clone()
                                        , "SenderTest"
-                                       , to_aeron_rx
                                        , &mut Threading::Spawn);
 
-        for i in 0..100 {
+        for _i in 0..100 {
             to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]).await;
             to_aeron_tx[0].testing_send_frame(&[6, 7, 8, 9, 10]).await;
         }
@@ -332,9 +324,8 @@ pub(crate) mod aeron_media_driver_tests {
             .with_capacity(500)
             .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(0, 6);
 
-        graph.build_stream_collector_bundle(dist.clone()
+        from_aeron_tx.build_aqueduct(&mut graph, dist.clone()
                                             , "ReceiverTest"
-                                            , from_aeron_tx
                                             , &mut Threading::Spawn);
 
 

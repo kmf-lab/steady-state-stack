@@ -12,7 +12,7 @@ macro_rules! await_for_all {
         async {
             let mut flag = true;
             $(
-                flag = flag & $t.await;
+                flag &= $t.await;
             )*
             flag
         }.await

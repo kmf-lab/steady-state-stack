@@ -1,31 +1,16 @@
 use std::ops::*;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
-use parking_lot::RwLock;
-use futures::lock::Mutex;
-use log::*; // allowed for all modules
-use num_traits::{One, Zero};
-use futures_timer::Delay;
-use std::future::Future;
+use num_traits::{One};
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::thread::ThreadId;
-use async_ringbuf::consumer::AsyncConsumer;
-use async_ringbuf::producer::AsyncProducer;
-use bytes::BufMut;
-use futures::channel::oneshot;
-use futures_util::FutureExt;
-use ringbuf::consumer::Consumer;
-use ringbuf::producer::Producer;
-use ringbuf::traits::Observer;
+
 use crate::*;
 use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
-use crate::commander::SteadyCommander;
-use crate::distributed::distributed_stream::StreamItem;
-use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
+use crate::graph_liveliness::{ActorIdentity};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
-use crate::core_rx::RxCore;
-use crate::core_tx::TxCore;
+
 /// Represents the status of an actor.
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct ActorStatus {
@@ -328,6 +313,7 @@ pub(crate) mod monitor_tests {
     use std::sync::atomic::AtomicUsize;
     use crate::channel_builder::ChannelBuilder;
     use crate::commander_context::SteadyContext;
+    use crate::core_tx::TxCore;
 
     lazy_static! {
         static ref INIT: Once = Once::new();

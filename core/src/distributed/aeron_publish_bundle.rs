@@ -1,8 +1,6 @@
 use std::error::Error;
 use std::sync::Arc;
 use futures_timer::Delay;
-use ringbuf::consumer::Consumer;
-use ringbuf::traits::Observer;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
@@ -138,7 +136,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         let mut backoff = true;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
-            let clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
+            let _clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
                           ,cmd.wait_closed_or_avail_message_stream::<StreamSimpleMessage>(&mut rx, wait_for, 1)
                            );
 
@@ -169,7 +167,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         let a_len = msg_len.min(slice1.len());
                                         let remaining_read = msg_len - a_len;
                                         let aligned_buffer = AlignedBuffer::with_capacity(msg_len as Index);
-                                        let mut buf = AtomicBuffer::from_aligned(&aligned_buffer);
+                                        let buf = AtomicBuffer::from_aligned(&aligned_buffer);
                                         buf.put_bytes(0, slice1);
                                         let b_len = remaining_read.min(slice2.len());
                                         let _extended_read = remaining_read - b_len;
@@ -212,6 +210,7 @@ pub(crate) mod aeron_tests {
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aeron_subscribe_bundle;
+    use crate::distributed::distributed_builder::AqueductBuilder;
     use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;
     use crate::distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
@@ -426,9 +425,8 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
                    , &mut Threading::Spawn);
 
-        graph.build_stream_distributor_bundle(dist.clone()
+        to_aeron_rx.build_aqueduct(&mut graph, dist.clone()
                                               , "SenderTest"
-                                              , to_aeron_rx
                                               , &mut Threading::Spawn);
 
         //set this up first so sender has a place to send to
@@ -441,9 +439,8 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
-        graph.build_stream_collector_bundle(dist.clone()
+        from_aeron_tx.build_aqueduct(&mut graph,dist.clone()
                                             , "ReceiverTest"
-                                            , from_aeron_tx
                                             , &mut Threading::Spawn);
 
         graph.start(); //startup the graph

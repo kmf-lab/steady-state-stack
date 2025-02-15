@@ -1,12 +1,10 @@
 use std::error::Error;
-use std::time::Duration;
-use log::info;
 use steady_state::*;
 
 pub const TEST_ITEMS: usize = 20_000_000_000;
 pub const STREAM_ID: i32 = 1234;
 
-pub async fn run<const GIRTH: usize>(mut context: SteadyContext
+pub async fn run<const GIRTH: usize>(context: SteadyContext
                                      , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>>  {
 
     let mut cmd = into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data()));

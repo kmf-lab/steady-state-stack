@@ -1,38 +1,36 @@
 
 use std::ffi::CString;
 use std::fmt::Debug;
-use std::net::{IpAddr, UdpSocket};
+use std::net::{IpAddr};
 
 
 pub(crate) mod aeron_utils {
-    use std::ffi::CString;
     use std::sync::Arc;
     use futures_util::lock::Mutex;
     use aeron::aeron::Aeron;
     use aeron::context::Context;
     use aeron::utils::errors::AeronError;
-    use log::{info, trace, warn};
-    
+    use log::*;
     //For more details see:: https://github.com/real-logic/aeron/wiki/Channel-Configuration
 
     fn error_handler(error: AeronError) {
         warn!("Aeron Error: {:?}", error);
     }
 
-    fn on_new_publication_handler(
-        channel: CString,
-        stream_id: i32,
-        session_id: i32,
-        correlation_id: i64,
-    ) {
-        warn!(
-            "Publication: {} stream:{} session:{} correlation:{}",
-            channel.to_str().expect("internal"),
-            stream_id,
-            session_id,
-            correlation_id
-        );
-    }
+    // fn on_new_publication_handler(
+    //     channel: CString,
+    //     stream_id: i32,
+    //     session_id: i32,
+    //     correlation_id: i64,
+    // ) {
+    //     warn!(
+    //         "Publication: {} stream:{} session:{} correlation:{}",
+    //         channel.to_str().expect("internal"),
+    //         stream_id,
+    //         session_id,
+    //         correlation_id
+    //     );
+    // }
 
     pub fn aeron_context(mut aeron_context: Context) -> Option<Arc<Mutex<Aeron>>> {
 
@@ -256,7 +254,7 @@ impl Channel {
     ///
     /// For multicast, we add `|control=...|control-mode=...|ttl=...` as needed.
     pub fn cstring(&self) -> CString {
-        let mut channel_str = match self {
+        let channel_str = match self {
             Channel::PointToPoint {
                 media_type,
                 endpoint,

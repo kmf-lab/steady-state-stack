@@ -250,7 +250,7 @@ async fn internal_behavior<const GIRTH: usize>(
                         warn!("frame rate is far too slow {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?} other:{:?}"
                             , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
                     }
-                    if measured < (ctrl.frame_rate_ms-margin>>2) && _tcount >0{
+                    if measured < (ctrl.frame_rate_ms-(margin>>2)) && _tcount >0{
                          warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
                              , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
                     }

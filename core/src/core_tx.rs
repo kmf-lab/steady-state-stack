@@ -11,11 +11,8 @@ use nuclei::block_on;
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
-use crate::{steady_config, ActorIdentity, SendSaturation, StreamSimpleMessage, Tx, MONITOR_NOT};
+use crate::{steady_config, ActorIdentity, SendSaturation, Tx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamTx};
-
-
-
 
 
 pub trait TxCore {
@@ -69,7 +66,7 @@ impl<T> TxCore for Tx<T> {
         match done_count {
             TxDone::Normal(d) =>
               self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, d as isize),
-            TxDone::Stream(i,p) => {
+            TxDone::Stream(i,_p) => {
                 warn!("internal error should have gotten Normal");
                 self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, i as isize)
             },
@@ -109,7 +106,7 @@ impl<T> TxCore for Tx<T> {
             let mut one_down = &mut self.oneshot_shutdown;
             if !one_down.is_terminated() {
                 let safe_count = count.min(self.tx.capacity().into());
-                let mut operation = &mut self.tx.wait_vacant(count);
+                let mut operation = &mut self.tx.wait_vacant(safe_count);
                 select! { _ = one_down => false, _ = operation => true, }
             } else {
                 false
@@ -287,7 +284,10 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
-            TxDone::Normal(d) => warn!("internal error should have gotten Stream"),
+            TxDone::Normal(i) => {
+                warn!("internal error should have gotten Stream");
+                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.id, i as isize);
+            },
             TxDone::Stream(i,p) => {
                 self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.id, i as isize);
                 self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.id, p as isize);
@@ -332,7 +332,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
 
             let mut one_down = &mut self.item_channel.oneshot_shutdown;
             if !one_down.is_terminated() {
-                let mut operation = async {
+                let operation = async {
                                        self.item_channel.tx.wait_vacant(count.0.min(icap)).await;
                                        self.payload_channel.tx.wait_vacant(count.1.min(pcap)).await;
                                    };

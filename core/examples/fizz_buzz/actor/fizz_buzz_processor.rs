@@ -5,7 +5,6 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
-use futures::lock::{Mutex, MutexGuard};
 use crate::actor::div_by_3_producer::NumberMessage;
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -66,7 +65,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
     state: SteadyState<RuntimeState>,
 ) -> Result<(), Box<dyn Error>> {
     let mut state_guard = steady_state(&state, || RuntimeState::new(1)).await;
-    if let Some(mut state) = state_guard.as_mut() {
+    if let Some(state) = state_guard.as_mut() {
         let mut numbers_rx = numbers_rx.lock().await;
         let mut fizzbuzz_messages_tx = fizzbuzz_messages_tx.lock().await;
         let mut errors_tx = errors_tx.lock().await;

@@ -11,7 +11,7 @@ use crate::{steady_config, Rx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamRx};
 use crate::steady_rx::RxDone;
 
-pub trait RxCore {
+pub(crate) trait RxCore {
     type MsgOut;
 
 
@@ -56,7 +56,7 @@ impl <T>RxCore for Rx<T> {
         self.local_monitor_index = match done_count {
             RxDone::Normal(d) =>
                 tel.process_event(self.local_monitor_index, self.channel_meta_data.id, d as isize),
-            RxDone::Stream(i,p) => {
+            RxDone::Stream(i,_p) => {
                 warn!("internal error should have gotten Normal");
                 tel.process_event(self.local_monitor_index, self.channel_meta_data.id, i as isize)
             },
@@ -146,8 +146,9 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
     #[inline]
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
-            RxDone::Normal(d) =>
-                warn!("internal error should have gotten Stream"),
+            RxDone::Normal(i) => {
+                self.item_channel.local_monitor_index = tel.process_event(self.item_channel.local_monitor_index, self.item_channel.channel_meta_data.id, i as isize);
+                warn!("internal error should have gotten Stream")},
             RxDone::Stream(i,p) => {
                 self.item_channel.local_monitor_index = tel.process_event(self.item_channel.local_monitor_index, self.item_channel.channel_meta_data.id, i as isize);
                 self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.channel_meta_data.id, p as isize);
@@ -220,7 +221,6 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
                 self.payload_channel.rx.peek_slice(&mut payload);
                 let payload = payload.into_boxed_slice();
 
-                drop(item);
                 if let Some(item) = self.item_channel.rx.try_pop() {
                     unsafe { self.payload_channel.rx.advance_read_index(payload.len()); }
                     self.item_channel.take_count.fetch_add(1,Ordering::Relaxed); //for DLQ!

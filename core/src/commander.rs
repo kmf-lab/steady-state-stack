@@ -10,8 +10,6 @@ use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_rx::RxDef;
 use crate::steady_tx::TxDef;
 use crate::telemetry::setup;
-use futures::stream::StreamExt;
-use ringbuf::consumer::Consumer;
 use crate::commander_context::SteadyContext;
 use crate::commander_monitor::LocalMonitor;
 use crate::core_rx::RxCore;
@@ -499,7 +497,7 @@ pub trait SteadyCommander {
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
     fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut>;
 
-        /// Checks if the Tx channel is currently full.
+    /// Checks if the Tx channel is currently full.
     ///
     /// # Parameters
     /// - `this`: A mutable reference to a `Tx<T>` instance.

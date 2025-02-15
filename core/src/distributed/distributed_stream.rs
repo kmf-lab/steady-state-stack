@@ -7,7 +7,6 @@
 use crate::core_tx::TxCore;
 use crate::{channel_builder::ChannelBuilder, monitor::{RxMetaData, TxMetaData}, Rx, SteadyCommander, Tx};
 use ahash::AHashMap;
-use async_ringbuf::producer::AsyncProducer;
 use async_ringbuf::wrap::AsyncWrap;
 use async_ringbuf::AsyncRb;
 use futures_util::lock::{Mutex, MutexGuard, MutexLockFuture};
@@ -210,7 +209,7 @@ impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
 /// This allows both `StreamFragment` and `StreamMessage` to share
 /// functionality in testing and real code.
 
-pub(crate) trait StreamItem: Copy + Send + Sync {
+pub trait StreamItem: Copy + Send + Sync {
     /// Creates a new instance with the given length, used for testing.
     fn testing_new(length: i32) -> Self;
 
@@ -293,7 +292,7 @@ impl StreamSimpleMessage {
     /// - Panics if `length.0 < 0` (should never happen due to `Length` checks).
     pub fn new(length: i32) -> Self {
         assert!(length >= 0, "Message length cannot be negative");
-        StreamSimpleMessage { length: length }
+        StreamSimpleMessage { length }
     }
 }
 
@@ -463,10 +462,8 @@ impl<T: StreamItem> StreamTx<T> {
             debug_assert!(result.is_ok());
             
             let cap: usize = defrag_entry.ringbuffer_items.0.capacity().into();
-            if defrag_entry.ringbuffer_items.1.occupied_len() == cap {
-                if !self.ready.contains(&defrag_entry.session_id) {
-                    self.ready.push_back(defrag_entry.session_id);
-                }
+            if defrag_entry.ringbuffer_items.1.occupied_len() == cap && !self.ready.contains(&defrag_entry.session_id) {
+                self.ready.push_back(defrag_entry.session_id);
             };
 
             defrag_entry.running_length = 0;
@@ -537,7 +534,7 @@ impl<T: StreamItem> StreamRx<T> {
     ) {
         // Obtain mutable slices from the item and payload channels
         let (item1, item2) = self.item_channel.rx.as_mut_slices();
-        let (mut payload1, mut payload2) = self.payload_channel.rx.as_mut_slices();
+        let (mut payload1, payload2) = self.payload_channel.rx.as_mut_slices();
 
         // Variables to track the state of the iteration
         let mut on_first = true; // Whether we are still processing the first payload slice
@@ -550,7 +547,7 @@ impl<T: StreamItem> StreamRx<T> {
             // Extract payload slices based on the current state
             let (a, b) = Self::extract_stream_payload_slices(
                 &mut payload1,
-                &mut payload2,
+                payload2,
                 &mut on_first,
                 &mut active_index,
                 i.length() as usize,
@@ -575,8 +572,8 @@ impl<T: StreamItem> StreamRx<T> {
         for i in item2 {
             // Extract payload slices based on the current state
             let (a, b) = Self::extract_stream_payload_slices(
-                &mut payload1,
-                &mut payload2,
+                payload1,
+                payload2,
                 &mut on_first,
                 &mut active_index,
                 i.length() as usize,

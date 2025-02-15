@@ -1,10 +1,8 @@
 use std::env;
 use std::time::Duration;
-use libc::setenv;
 use log::info;
 use steady_state::*;
 use structopt::*;
-use structopt_derive::*;
 use steady_state::distributed::distributed_builder::AqueductBuilder;
 
 pub(crate) mod actor {

@@ -17,8 +17,9 @@ use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
-use crate::{steady_config, yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, RxCore, SendSaturation, SteadyCommander, Tx, TxBundle, MONITOR_NOT};
+use crate::{yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, SendSaturation, SteadyCommander, Tx, TxBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
+use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
 use crate::graph_testing::SideChannelResponder;
@@ -422,8 +423,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         messages_count: usize,
         ready_channels: usize,
     ) -> bool
-    where
-        S: Send + Sync,
     {
         let _guard = self.start_profile(CALL_OTHER);
         let mut count_down = ready_channels.min(this.len());

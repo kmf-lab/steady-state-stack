@@ -143,8 +143,7 @@ pub mod logger {
                     Err(e)
                 }
             }
-        } else 
-            if let Some(handle) = logger_handle.as_ref() {                
+        }  else if let Some(handle) = logger_handle.as_ref() {
                 match level.parse() {
                     Ok(level) => {
                         handle.set_new_spec(
@@ -156,13 +155,14 @@ pub mod logger {
                         Ok(())
                     }
                     Err(e) => {
-                        print!("Warning: Logger level change to {} failed.",level);
+                        print!("Warning: Logger level change to {} failed.", level);
                         Err(e.into())
-                    }                    
+                    }
                 }
             } else {
-                print!("Warning: Logger level change to {} failed.",level);
+                print!("Warning: Logger level change to {} failed.", level);
                 Err("Logger level change failed.".into())
-            }        
+            }
+
     }
 }

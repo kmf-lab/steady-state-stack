@@ -16,8 +16,9 @@ use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use std::ops::DerefMut;
-use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, RxCore, SendSaturation, SteadyCommander, Tx, TxBundle};
+use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, SendSaturation, SteadyCommander, Tx, TxBundle};
 use crate::actor_builder::NodeTxRx;
+use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
 use crate::graph_testing::SideChannelResponder;
@@ -594,7 +595,7 @@ impl SteadyCommander for SteadyContext {
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
     fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut> {
         match this.shared_try_send(msg) {
-            Ok(d) => Ok(()),
+            Ok(_d) => Ok(()),
             Err(msg) => Err(msg),
         }
     }
@@ -818,7 +819,7 @@ impl SteadyCommander for SteadyContext {
     /// # Returns
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
     fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> {
-        this.shared_try_take().map(|(d,m)|m)
+        this.shared_try_take().map(|(_d,m)|m)
     }
 
 

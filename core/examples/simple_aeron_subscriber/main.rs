@@ -3,6 +3,7 @@ use std::time::Duration;
 use steady_state::*;
 use structopt::*;
 use structopt_derive::*;
+use steady_state::distributed::distributed_builder::AqueductBuilder;
 
 pub(crate) mod actor {
    pub(crate) mod subscriber;
@@ -72,9 +73,8 @@ fn main() {
         .build(move |context| actor::subscriber::run(context, base.clone())
                , &mut Threading::Spawn);
 
-    graph.build_stream_collector_bundle(AqueTech::Aeron(aeron_channel)
+    from_aeron_tx.build_aqueduct(&mut graph,AqueTech::Aeron(aeron_channel)
                                         , "ReceiverTest"
-                                        , from_aeron_tx
                                         , &mut Threading::Spawn);
 
     graph.start(); //startup the graph

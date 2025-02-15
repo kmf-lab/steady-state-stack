@@ -3,9 +3,8 @@ use std::time::{Duration, Instant};
 use steady_state::*;
 
 pub const TEST_ITEMS: usize = 20_000_000_000;
-pub const STREAM_ID: i32 = 1234;
 
-pub async fn run<const GIRTH:usize>(mut context: SteadyContext
+pub async fn run<const GIRTH:usize>(context: SteadyContext
                                     , rx: SteadyStreamRxBundle<StreamSessionMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
     let mut cmd = into_monitor!(context, RxMetaDataHolder::new(rx.control_meta_data()), []);
@@ -19,12 +18,11 @@ pub async fn run<const GIRTH:usize>(mut context: SteadyContext
 
     let mut received_count = 0;
     while cmd.is_running(&mut || rx.is_closed_and_empty()) {
-///  TODO: change to grop..
         let _clean = await_for_all!(cmd.wait_closed_or_avail_message_stream(&mut rx, LEN, 1));
 
          let avail = cmd.avail_units(&mut rx[0]);
 
-        for z in 0..(avail>>1) {
+        for _z in 0..(avail>>1) {
             if let Some((i,d)) = cmd.try_take(&mut rx[0]) {
                 debug_assert_eq!(8, i.length);
                 debug_assert_eq!(&*data1, &*d);

@@ -7,7 +7,6 @@ use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
-use aeron::image::ControlledPollAction;
 use aeron::subscription::Subscription;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
@@ -19,7 +18,6 @@ use async_ringbuf::wrap::AsyncWrap;
 use crate::monitor::TxMetaDataHolder;
 use ahash::AHashMap;
 use num_traits::Zero;
-use aeron::concurrent::strategies::{BusySpinIdleStrategy, Strategy};
 use crate::commander_context::SteadyContext;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
@@ -34,7 +32,7 @@ fn test() {
 
    p.insert(123 as i32, rb);
 
-   let mut map: AHashMap<i32, (AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<u8>>>,false, true>)> = AHashMap::new();
+   let map: AHashMap<i32, (AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<u8>>>,false, true>)> = AHashMap::new();
 
   //TODO: make channel have TERM const we can use here for async buffer
 }
@@ -308,6 +306,7 @@ pub(crate) mod aeron_media_driver_tests {
     use async_std::sync::Mutex;
     use once_cell::sync::Lazy;
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
+    use crate::distributed::distributed_builder::AqueductBuilder;
 
     pub(crate) static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -347,12 +346,11 @@ pub(crate) mod aeron_media_driver_tests {
 
         let dist =  AqueTech::Aeron(aeron_config);
 
-        graph.build_stream_distributor_bundle(dist.clone()
+        to_aeron_rx.build_aqueduct(&mut graph,dist.clone()
                                               , "SenderTest"
-                                              , to_aeron_rx
                                               , &mut Threading::Spawn);
 
-        for i in 0..100 {
+        for _i in 0..100 {
             to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]).await;
             to_aeron_tx[0].testing_send_frame(&[6, 7, 8, 9, 10]).await;
         }
@@ -366,9 +364,8 @@ pub(crate) mod aeron_media_driver_tests {
             .with_capacity(500)
             .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(0, 6);
 
-        graph.build_stream_collector_bundle(dist.clone()
+        from_aeron_tx.build_aqueduct(&mut graph,dist.clone()
                                             , "ReceiverTest"
-                                            , from_aeron_tx
                                             , &mut Threading::Spawn);
 
 

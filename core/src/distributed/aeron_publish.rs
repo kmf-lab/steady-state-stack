@@ -1,18 +1,15 @@
 use std::error::Error;
 use std::sync::Arc;
 use futures_timer::Delay;
-use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
-use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamRx, SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamRxDef, StreamSimpleMessage};
+use crate::distributed::distributed_stream::{SteadyStreamRx, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamRxDef, StreamSimpleMessage};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
-use crate::monitor::RxMetaDataHolder;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 const ITEMS_BUFFER_SIZE:usize = 1000;
@@ -197,6 +194,7 @@ pub(crate) mod aeron_tests {
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aeron_subscribe_bundle;
+    use crate::distributed::distributed_builder::AqueductBuilder;
     use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;
     use crate::distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
@@ -411,9 +409,8 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
                    , &mut Threading::Spawn);
 
-        graph.build_stream_distributor_bundle(dist.clone()
+        to_aeron_rx.build_aqueduct(&mut graph, dist.clone()
                                        , "SenderTest"
-                                       , to_aeron_rx
                                        , &mut Threading::Spawn);
 
         //set this up first so sender has a place to send to
@@ -426,9 +423,8 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
-        graph.build_stream_collector_bundle(dist.clone()
+        from_aeron_tx.build_aqueduct(&mut graph,dist.clone()
                                             , "ReceiverTest"
-                                            , from_aeron_tx
                                             , &mut Threading::Spawn);
 
         graph.start(); //startup the graph

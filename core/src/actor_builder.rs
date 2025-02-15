@@ -223,7 +223,6 @@ impl ActorTeam {
             async move {
                 // Determine the core to use based on the provided options
                 let core = team_id;//  TODO: new work goes here to select cores
-                
 
                 // Pin the thread to the selected core if the `core_affinity` feature is enabled
                 #[cfg(feature = "core_affinity")]
@@ -232,8 +231,6 @@ impl ActorTeam {
                         eprintln!("Failed to pin thread to core {}: {:?}", core, e);
                     }
                 }
-
-
                 //NOTE: call will Register this node which MUST be done before we release local_send.send();
                 let double_vec:Vec<(ActorRuntime, bool)> = self.future_builder.iter_mut()
                     .map(|f| (f.register(),false))
@@ -277,7 +274,7 @@ impl ActorTeam {
 
                             // If actor_result was Ok(...), that actor finished successfully,
                             // so remove it from the vector. If none left, break:
-                            let _ = leftover_futures.remove(index);
+                            drop(nuclei::block_on(leftover_futures.remove(index)));
                             // this actor is done and must not be part of the shutdown vote anymore
                             exit_actor_registration(&self.future_builder[index].fun);
                             if leftover_futures.is_empty() {
