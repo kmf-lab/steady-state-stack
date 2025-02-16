@@ -206,7 +206,7 @@ impl SideChannelResponder {
         target_tx: &mut Tx<M>,
     ) -> bool {
         if self.should_apply::<M>().await {
-            if cmd.wait_vacant_units(target_tx, 1).await {
+            if cmd.wait_vacant_single(target_tx, 1).await {
                 self.respond_with(|message| {
                     // Attempt to downcast to the expected message type
                     let msg = message.downcast_ref::<M>().expect("error casting");
@@ -240,7 +240,7 @@ impl SideChannelResponder {
         if self.should_apply::<M>().await {
             let girth = target_tx_bundle.len();
             for t in target_tx_bundle.iter_mut() {
-                if !cmd.wait_vacant_units(&mut *t, 1).await {
+                if !cmd.wait_vacant_single(&mut *t, 1).await {
                     return false;
                 };
             }
@@ -279,7 +279,7 @@ impl SideChannelResponder {
         source_rx: &mut Rx<M>,
     ) -> bool {
         if self.should_apply::<M>().await {
-            if cmd.wait_avail_units(source_rx, 1).await {
+            if cmd.wait_avail_single(source_rx, 1).await {
                 self.respond_with(|message| {
                     // Attempt to downcast to the expected message type
                     let msg: &M = message.downcast_ref::<M>().expect("error casting");
@@ -322,7 +322,8 @@ impl SideChannelResponder {
         if self.should_apply::<M>().await {
             let girth = source_rx.len();
             for x in 0..girth {
-                if !cmd.wait_avail_units(&mut source_rx[x], 1).await {
+                let srx = &mut source_rx[x];
+                if !cmd.wait_avail_single(srx, 1).await {
                     return false;
                 };
             }
@@ -570,7 +571,7 @@ mod graph_testing_tests {
         let context = test_steady_context();
         let rx = create_rx(vec![1, 2, 3]);
         if let Some(mut rx) = rx.try_lock() {
-            let result = context.wait_shutdown_or_avail_units(&mut rx, 3).await;
+            let result = context.wait_avail_single(&mut rx, 3).await;
             assert!(result);
         };
     }

@@ -136,6 +136,8 @@ use futures::channel::oneshot;
 use futures::select;
 use futures_util::lock::MutexGuard;
 pub use commander_monitor::LocalMonitor;
+use crate::core_rx::RxCore;
+use crate::core_tx::TxCore;
 use crate::yield_now::yield_now;
 
 /// Type alias for a thread-safe steady state (S) wrapped in an `Arc` and `Mutex`.
@@ -191,6 +193,10 @@ pub type TxBundle<'a, T> = Vec<MutexGuard<'a, Tx<T>>>;
 ///
 /// This type alias simplifies the usage of a collection of receiver guards for batch operations.
 pub type RxBundle<'a, T> = Vec<MutexGuard<'a, Rx<T>>>;
+
+pub type TxCoreBundle<'a, T: TxCore> = Vec<MutexGuard<'a, T>>;
+pub type RxCoreBundle<'a, T: RxCore> = Vec<MutexGuard<'a, T>>;
+
 
 
 /// Type alias for an array of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
@@ -927,7 +933,7 @@ mod lib_tests {
     async fn test_wait_avail_units_bundle() {
         let context = test_steady_context();
         let mut rx_bundle = RxBundle::<i32>::new();
-        let fut = context.wait_shutdown_or_avail_units_bundle(&mut rx_bundle, 1, 1);
+        let fut = context.wait_avail_bundle(&mut rx_bundle, 1, 1);
         assert!(fut.await);
     }
 
@@ -936,7 +942,7 @@ mod lib_tests {
     async fn test_wait_closed_or_avail_units_bundle() {
         let context = test_steady_context();
         let mut rx_bundle = RxBundle::<i32>::new();
-        let fut = context.wait_closed_or_avail_units_bundle(&mut rx_bundle, 1, 1);
+        let fut = context.wait_avail_bundle(&mut rx_bundle, 1, 1);
         assert!(fut.await);
     }
 
@@ -945,7 +951,7 @@ mod lib_tests {
     async fn test_wait_vacant_units_bundle() {
         let context = test_steady_context();
         let mut tx_bundle = TxBundle::<i32>::new();
-        let fut = context.wait_shutdown_or_vacant_units_bundle(&mut tx_bundle, 1, 1);
+        let fut = context.wait_vacant_bundle(&mut tx_bundle, 1, 1);
         assert!(fut.await);
 
     }
@@ -956,7 +962,7 @@ mod lib_tests {
         let rx = create_rx::<i32>(vec![1, 2, 3]);
         let guard = rx.try_lock();
         if let Some(mut rx) = guard {
-            let result = context.wait_shutdown_or_avail_units(&mut rx, 2).await;
+            let result = context.wait_avail_single(&mut rx, 2).await;
             assert!(result); // Ensure it waits for units or shutdown
         }
     }
@@ -967,7 +973,7 @@ mod lib_tests {
         let rx = create_rx::<i32>(vec![1, 2, 3]);
         let guard = rx.try_lock();
         if let Some(mut rx) = guard {
-            let result = context.wait_closed_or_avail_units(&mut rx, 2).await;
+            let result = context.wait_avail_single(&mut rx, 2).await;
             assert!(result); // Ensure it waits for availability or closure
         }
     }
@@ -989,7 +995,7 @@ mod lib_tests {
         let tx = create_tx::<i32>(vec![]);
         let guard = tx.try_lock();
         if let Some(mut tx) = guard {
-            let result = context.wait_shutdown_or_vacant_units(&mut tx, 2).await;
+            let result = context.wait_vacant_single(&mut tx, 2).await;
             assert!(result); // Should succeed if vacant units or shutdown occur
         }
     }
@@ -1000,7 +1006,7 @@ mod lib_tests {
         let tx = create_tx::<i32>(vec![]);
         let guard = tx.try_lock();
         if let Some(mut tx) = guard {
-            let result = context.wait_vacant_units(&mut tx, 1).await;
+            let result = context.wait_vacant_single(&mut tx, 1).await;
             assert!(result); // Ensure it waits for vacancy correctly
         }
     }

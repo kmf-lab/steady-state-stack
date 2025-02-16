@@ -3,7 +3,7 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 use futures_util::future::FusedFuture;
 use std::any::Any;
-use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxBundle, SendSaturation, Tx, TxBundle};
+use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxBundle, RxCoreBundle, SendSaturation, Tx, TxBundle, TxCoreBundle};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
@@ -164,119 +164,12 @@ pub trait SteadyCommander {
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_stop_requested(&self) -> bool;
 
-    
-
-    
-    /// Waits until a specified number of units are available in the Rx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `RxBundle<T>` instance.
-    /// - `avail_count`: The number of units to wait for availability.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are available, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    ///
-    /// # Asynchronous
-    async fn wait_shutdown_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send + Sync,
-    ;
-    /// Waits until a specified number of units are available in the Rx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `RxBundle<T>` instance.
-    /// - `avail_count`: The number of units to wait for availability.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are available, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    ///
-    /// # Asynchronous
-    async fn wait_closed_or_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send + Sync,
-    ;
-
-    // fn try_stream_send(&mut self
-    //                    , this: &mut StreamTxBundle<'_, StreamSimpleMessage>
-    //                    , stream_id: i32
-    //                    , payload: &[u8]) -> Result<(), StreamSimpleMessage>;
-
     fn flush_defrag_messages<S: StreamItem>(&mut self
                                             , item: &mut Tx<S>
                                             , data: &mut Tx<u8>
                                             , defrag: &mut Defrag<S>
-                                ) -> Option<i32>;
-    
-       
+    ) -> Option<i32>;
 
-    async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self, this: &mut StreamTxBundle<'_, S>, vacant: (usize, usize), ready_channels: usize) -> bool;
-    async fn wait_closed_or_avail_message_stream<S: StreamItem>(&self, this: &mut StreamRxBundle<'_,S>, avail_count: usize, ready_channels: usize) -> bool;
-
-
-    /// Waits until a specified number of units are vacant in the Tx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
-    /// - `avail_count`: The number of vacant units to wait for.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are vacant, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    /// # Asynchronous
-    async fn wait_avail_units_bundle<T>(&self, this: &mut RxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send + Sync,
-    ;
-    /// Waits until a specified number of units are vacant in the Tx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
-    /// - `avail_count`: The number of vacant units to wait for.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are vacant, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    /// # Asynchronous
-    async fn wait_shutdown_or_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send,
-    ;
-    /// Waits until a specified number of units are vacant in the Tx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
-    /// - `avail_count`: The number of vacant units to wait for.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are vacant, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    /// # Asynchronous
-    async fn wait_vacant_units_bundle<T>(&self, this: &mut TxBundle<'_, T>, avail_count: usize, ready_channels: usize) -> bool
-    where
-        T: Send,
-    ;
 
     /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
     ///
@@ -309,31 +202,22 @@ pub trait SteadyCommander {
     where
         F: FusedFuture<Output = ()> + 'static + Send + Sync;
 
-    /// Waits until the specified number of available units are in the receiver.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
-    /// Waits until the specified number of available units are in the receiver.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_closed_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
 
-    /// Waits until the specified number of available units are in the transmitter.
+
+    /// Waits until the specified number of available units are in the receiver.
     ///
     /// # Parameters
     /// - `count`: The number of units to wait for.
     ///
     /// # Returns
-    /// `true` if the required number of units became available
-    async fn wait_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
+    /// `true` if the required number of units became available, `false` if the wait was interrupted.
+    async fn wait_avail_single<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
+
+
+    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool;
+
+
+
     /// Waits until the specified number of vacant units are in the transmitter.
     ///
     /// # Parameters
@@ -341,15 +225,13 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_vacant_units<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool;
-    /// Waits until the specified number of vacant units are in the transmitter.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available
-    async fn wait_vacant_units<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool;
+    async fn wait_vacant_single<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool;
+
+    async fn wait_vacant_bundle<T: TxCore>(&self, this: &mut TxCoreBundle<'_, T>, count: T::MsgSize, ready_channels: usize) -> bool;
+
+
+
+
     /// Waits until shutdown
     ///
     /// # Returns
@@ -554,11 +436,6 @@ pub trait SteadyCommander {
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
     async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T>;
-
-
-    // fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize;
-    //
-    // fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>>;
 
     fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize;
 

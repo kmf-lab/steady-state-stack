@@ -30,8 +30,8 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd:C, rx: SteadyRx<FailureFe
 
     while cmd.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
-        let _clean = await_for_all!(   cmd.wait_shutdown_or_avail_units(&mut rx,1)
-                                     ,cmd.wait_shutdown_or_vacant_units(&mut tx,1)   );
+        let _clean = await_for_all!(   cmd.wait_avail_single(&mut rx,1)
+                                     ,cmd.wait_vacant_single(&mut tx,1)   );
 
         //in this example iterate once blocks/await until it has work to do
         //this example is a very responsive telemetry for medium load levels

@@ -1,7 +1,6 @@
 use std::error::Error;
 use std::sync::Arc;
 use futures_timer::Delay;
-use ringbuf::traits::Observer;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::utils::types::Index;
@@ -12,7 +11,6 @@ use crate::*;
 use crate::commander_context::SteadyContext;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
-const ITEMS_BUFFER_SIZE:usize = 1000;
 
 #[derive(Default)]
 pub(crate) struct AeronPublishSteadyState {
@@ -127,7 +125,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
             let clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
-                                           ,cmd.wait_closed_or_avail_units(&mut rx, wait_for)
+                                           ,cmd.wait_avail_single(&mut rx, wait_for)
                            );
 
 
@@ -156,7 +154,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                         let a_len = msg_len.min(slice1.len());
                                         let remaining_read = msg_len - a_len;
                                         let aligned_buffer = AlignedBuffer::with_capacity(msg_len as Index);
-                                        let mut buf = AtomicBuffer::from_aligned(&aligned_buffer);
+                                        let buf = AtomicBuffer::from_aligned(&aligned_buffer);
                                         buf.put_bytes(0, slice1);
                                         let b_len = remaining_read.min(slice2.len());
                                         let _extended_read = remaining_read - b_len;
@@ -248,7 +246,7 @@ pub(crate) mod aeron_tests {
             let data_size = 8;
             let vacant_bytes = vacant_items * data_size;
 
-            let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx
+            let _clean = await_for_all!(cmd.wait_vacant_bundle(&mut tx
                                        , (vacant_items, vacant_bytes), 1));
 
             let mut remaining = TEST_ITEMS;
@@ -300,7 +298,7 @@ pub(crate) mod aeron_tests {
         let mut received_count = 0;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
 
-            let _clean = await_for_all!(cmd.wait_closed_or_avail_message_stream(&mut rx, LEN, 1));
+            let _clean = await_for_all!(cmd.wait_avail_bundle(&mut rx, LEN, 1));
 
             //we waited above for 2 messages so we know there are 2 to consume
             //reading from a single channel with a single stream id

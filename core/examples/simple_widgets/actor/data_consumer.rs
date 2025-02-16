@@ -42,7 +42,7 @@ pub(crate) async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: Steady
 
     //predicate which affirms or denies the shutdown request
     while cmd.is_running(&mut || rx.is_closed_and_empty()) {
-        let _clean = await_for_all!(cmd.wait_shutdown_or_avail_units(&mut rx,1));
+        let _clean = await_for_all!(cmd.wait_avail_single(&mut rx,1));
 
         //example of high volume processing, we stay here until there is no more work BUT
         //we must also relay our telemetry data periodically
@@ -84,7 +84,7 @@ async fn internal_behavior_test<T: SteadyCommander>(mut monitor: T
     if let Some(simulator) = monitor.sidechannel_responder() {
         while monitor.is_running(&mut || rx.is_closed_and_empty()) {
 
-        let _clean = await_for_all!(monitor.wait_shutdown_or_avail_units(&mut rx,1));
+        let _clean = await_for_all!(monitor.wait_avail_single(&mut rx,1));
             simulator.respond_with(|expected| {
                 match monitor.try_take(&mut rx) {
                     Some(measured) => {

@@ -11,7 +11,7 @@ use crate::{steady_config, Rx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamRx};
 use crate::steady_rx::RxDone;
 
-pub(crate) trait RxCore {
+pub trait RxCore {
     type MsgOut;
 
 
@@ -27,10 +27,13 @@ pub(crate) trait RxCore {
 
     fn shared_avail_units(&mut self) -> usize;
 
+    #[warn(async_fn_in_trait)]
     async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool;
 
+    #[warn(async_fn_in_trait)]
     async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool;
 
+    #[warn(async_fn_in_trait)]
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool;
 
     fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)>;

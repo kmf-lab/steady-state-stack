@@ -18,7 +18,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 
     let mut received_count = 0;
     while cmd.is_running(&mut || rx.is_closed_and_empty()) {
-        let _clean = await_for_all!(cmd.wait_closed_or_avail_message_stream(&mut rx, LEN, 1));
+        let _clean = await_for_all!(cmd.wait_avail_bundle(&mut rx, LEN, 1));
 
          let avail = cmd.avail_units(&mut rx[0]);
 

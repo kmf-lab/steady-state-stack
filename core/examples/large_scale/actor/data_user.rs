@@ -51,7 +51,7 @@ pub async fn run(context: SteadyContext
 
             let clean = await_for_all!(
                   reponder.wait_available_units(1),
-                  monitor.wait_shutdown_or_avail_units(&mut rx, 1)
+                  monitor.wait_avail_single(&mut rx, 1)
             );
 
             if clean  {

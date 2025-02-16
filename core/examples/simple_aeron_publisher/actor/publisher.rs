@@ -25,7 +25,7 @@ pub async fn run<const GIRTH: usize>(context: SteadyContext
         let data_size = 8;
         let vacant_bytes = vacant_items * data_size;
 // TODO: wrwrite to take (i,p) as a group.
-        let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units_stream(&mut tx
+        let _clean = await_for_all!(cmd.wait_vacant_bundle(&mut tx
                                        , (vacant_items, vacant_bytes), 1));
 
 

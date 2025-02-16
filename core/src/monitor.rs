@@ -298,7 +298,7 @@ where
 
 #[cfg(test)]
 pub(crate) mod monitor_tests {
-
+    use std::any::Any;
     use crate::*;
     use super::*;
     use std::ops::DerefMut;
@@ -835,7 +835,7 @@ pub(crate) mod monitor_tests {
         }
 
         let result = monitor
-            .wait_shutdown_or_avail_units_bundle(&mut rx_bundle, 2, 2)
+            .wait_avail_bundle(&mut rx_bundle, 2, 2)
             .await;
         assert!(result);
     }
@@ -857,7 +857,7 @@ pub(crate) mod monitor_tests {
         }
 
         let result = monitor
-            .wait_closed_or_avail_units_bundle(&mut rx_bundle, 2, 2)
+            .wait_avail_bundle(&mut rx_bundle, 2, 2)
             .await;
         assert!(result);
     }
@@ -878,7 +878,7 @@ pub(crate) mod monitor_tests {
             rx_bundle.push(rx2);
         }
 
-        let result = monitor.wait_avail_units_bundle(&mut rx_bundle, 2, 2).await;
+        let result = monitor.wait_avail_bundle(&mut rx_bundle, 2, 2).await;
         assert!(result);
     }
 
@@ -903,7 +903,7 @@ pub(crate) mod monitor_tests {
         }
 
         let result = monitor
-            .wait_shutdown_or_vacant_units_bundle(&mut tx_bundle, 5, 2)
+            .wait_vacant_bundle(&mut tx_bundle, 5, 2)
             .await;
         assert!(result);
     }
@@ -926,7 +926,7 @@ pub(crate) mod monitor_tests {
             tx_bundle.push(tx2);
         }
 
-        let result = monitor.wait_vacant_units_bundle(&mut tx_bundle, 5, 2).await;
+        let result = monitor.wait_vacant_bundle(&mut tx_bundle, 5, 2).await;
         assert!(result);
     }
 
@@ -978,7 +978,7 @@ pub(crate) mod monitor_tests {
         let monitor = into_monitor!(context, [rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
-            let result = monitor.wait_shutdown_or_avail_units(&mut rx, 1).await;
+            let result = monitor.wait_avail_single(&mut rx, 1).await;
             assert!(!result);
         };
     }
@@ -991,7 +991,7 @@ pub(crate) mod monitor_tests {
         let monitor = into_monitor!(context, [rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
-            let result = monitor.wait_closed_or_avail_units(&mut rx, 1).await;
+            let result = monitor.wait_avail_single(&mut rx, 1).await;
             assert!(result);
         };
     }
@@ -1004,7 +1004,7 @@ pub(crate) mod monitor_tests {
         let monitor = into_monitor!(context, [rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
-            let result = monitor.wait_avail_units(&mut rx, 3).await;
+            let result = monitor.wait_avail_single(&mut rx, 3).await;
             assert!(result);
         };
     }
@@ -1107,7 +1107,7 @@ pub(crate) mod monitor_tests {
 
         if let Some(mut rx) = rx.try_lock() {
          
-            let result = monitor.wait_shutdown_or_avail_units(&mut rx, 1).await;
+            let result = monitor.wait_avail_single(&mut rx, 1).await;
             assert!(!result);
         };
     }
@@ -1127,7 +1127,7 @@ pub(crate) mod monitor_tests {
         }
 
         if let Some(mut tx) = tx.try_lock() {
-            let result = monitor.wait_shutdown_or_vacant_units(&mut tx, 1).await;
+            let result = monitor.wait_vacant_single(&mut tx, 1).await;
             assert!(result);
         };
     }
@@ -1268,7 +1268,7 @@ pub(crate) mod monitor_tests {
             tx.mark_closed();
         }
         if let Some(mut rx) = rx.try_lock() {         
-            let result = monitor.wait_closed_or_avail_units(&mut rx, 1).await;            
+            let result = monitor.wait_avail_single(&mut rx, 1).await;
             assert!(!result);
         };
     }

@@ -16,7 +16,7 @@ use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use std::ops::DerefMut;
-use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, SendSaturation, SteadyCommander, Tx, TxBundle};
+use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxBundle, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
@@ -119,221 +119,6 @@ impl SteadyCommander for SteadyContext {
         self.is_liveliness_in(&[ GraphLivelinessState::StopRequested ])
     }
 
-    /// Waits until a specified number of units are available in the Rx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `RxBundle<T>` instance.
-    /// - `avail_count`: The number of units to wait for availability.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are available, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    ///
-    /// # Asynchronous
-    async fn wait_shutdown_or_avail_units_bundle<T>(
-        &self,
-        this: &mut RxBundle<'_, T>,
-        avail_count: usize,
-        ready_channels: usize,
-    ) -> bool {
-        let count_down = ready_channels.min(this.len());
-        let result = Arc::new(AtomicBool::new(true));
-
-        let mut futures = FuturesUnordered::new();
-
-        // Push futures into the FuturesUnordered collection
-        for rx in this.iter_mut().take(count_down) {
-            let local_r = result.clone();
-            futures.push(async move {
-                let bool_result = rx.shared_wait_shutdown_or_avail_units(avail_count).await;
-                if !bool_result {
-                    local_r.store(false, Ordering::Relaxed);
-                }
-            });
-        }
-
-        let mut completed = 0;
-
-        // Poll futures concurrently
-        while let Some(_) = futures.next().await {
-            completed += 1;
-            if completed >= count_down {
-                break;
-            }
-        }
-
-        result.load(Ordering::Relaxed)
-    }
-    /// Waits until a specified number of units are available in the Rx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `RxBundle<T>` instance.
-    /// - `avail_count`: The number of units to wait for availability.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are available, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    ///
-    /// # Asynchronous
-    async fn wait_closed_or_avail_units_bundle<T>(
-        &self,
-        this: &mut RxBundle<'_, T>,
-        avail_count: usize,
-        ready_channels: usize,
-    ) -> bool {
-        let count_down = ready_channels.min(this.len());
-        let result = Arc::new(AtomicBool::new(true));
-
-        let mut futures = FuturesUnordered::new();
-
-        // Push futures into the FuturesUnordered collection
-        for rx in this.iter_mut().take(count_down) {
-            let local_r = result.clone();
-            futures.push(async move {
-                let bool_result = rx.shared_wait_closed_or_avail_units(avail_count).await;
-                if !bool_result {
-                    local_r.store(false, Ordering::Relaxed);
-                }
-            });
-        }
-
-        let mut completed = 0;
-
-        // Poll futures concurrently
-        while let Some(_) = futures.next().await {
-            completed += 1;
-            if completed >= count_down {
-                break;
-            }
-        }
-
-        result.load(Ordering::Relaxed)
-    }
-
-
-    async fn wait_shutdown_or_vacant_units_stream<S: StreamItem>(&self
-                          , this: &mut StreamTxBundle<'_, S>, vacant: (usize, usize), ready_channels: usize) -> bool
-    {
-        let count_down = ready_channels.min(this.len());
-        let result = Arc::new(AtomicBool::new(true));
-
-        let mut futures = FuturesUnordered::new();
-
-        // Push futures into the FuturesUnordered collection
-        for tx in this.iter_mut().take(count_down) {
-            let local_r = result.clone();
-            futures.push(async move {
-                let bool_result = tx.item_channel.shared_wait_shutdown_or_vacant_units(vacant.0).await
-                                     && tx.payload_channel.shared_wait_shutdown_or_vacant_units(vacant.1).await;
-                if !bool_result {
-                    local_r.store(false, Ordering::Relaxed);
-                }
-            });
-        }
-
-        let mut completed = 0;
-
-        // Poll futures concurrently
-        while let Some(_) = futures.next().await {
-            completed += 1;
-            if completed >= count_down {
-                break;
-            }
-        }
-
-        result.load(Ordering::Relaxed)
-    }
-
-    async fn wait_closed_or_avail_message_stream<S: StreamItem>(&self
-                                                                , this: &mut StreamRxBundle<'_, S>
-                                                                , avail_count: usize
-                                                                , ready_channels: usize) -> bool
-    {
-        let count_down = ready_channels.min(this.len());
-        let result = Arc::new(AtomicBool::new(true));
-
-        let mut futures = FuturesUnordered::new();
-
-        // Push futures into the FuturesUnordered collection
-        for rx in this.iter_mut().take(count_down) {
-            let local_r = result.clone();
-            futures.push(async move {
-                let bool_result = rx.item_channel.shared_wait_closed_or_avail_units(avail_count).await;
-                if !bool_result {
-                    local_r.store(false, Ordering::Relaxed);
-                }
-            });
-        }
-
-        let mut completed = 0;
-
-        // Poll futures concurrently
-        while let Some(_) = futures.next().await {
-            completed += 1;
-            if completed >= count_down {
-                break;
-            }
-        }
-
-        result.load(Ordering::Relaxed)
-    }
-
-    /// Waits until a specified number of units are vacant in the Tx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
-    /// - `avail_count`: The number of vacant units to wait for.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are vacant, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    /// # Asynchronous
-    async fn wait_avail_units_bundle<T>(
-        &self,
-        this: &mut RxBundle<'_, T>,
-        avail_count: usize,
-        ready_channels: usize,
-    ) -> bool {
-        let count_down = ready_channels.min(this.len());
-        let result = Arc::new(AtomicBool::new(true));
-
-        let mut futures = FuturesUnordered::new();
-
-        // Push futures into the FuturesUnordered collection
-        for rx in this.iter_mut().take(count_down) {
-            let local_r = result.clone();
-            futures.push(async move {
-                let bool_result = rx.shared_wait_avail_units(avail_count).await;
-                if !bool_result {
-                    local_r.store(false, Ordering::Relaxed);
-                }
-            });
-        }
-
-        let mut completed = 0;
-
-        // Poll futures concurrently
-        while let Some(_) = futures.next().await {
-            completed += 1;
-            if completed >= count_down {
-                break;
-            }
-        }
-
-        result.load(Ordering::Relaxed)
-    }
 
 
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
@@ -350,41 +135,41 @@ impl SteadyCommander for SteadyContext {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    async fn wait_shutdown_or_vacant_units_bundle<T>(
-        &self,
-        this: &mut TxBundle<'_, T>,
-        avail_count: usize,
-        ready_channels: usize,
-    ) -> bool
-    {
-        let count_down = ready_channels.min(this.len());
-        let result = Arc::new(AtomicBool::new(true));
-
-        let mut futures = FuturesUnordered::new();
-
-        // Push futures into the FuturesUnordered collection
-        for tx in this.iter_mut().take(count_down) {
-            let local_r = result.clone();
-            futures.push(async move {
-                let bool_result = tx.shared_wait_shutdown_or_vacant_units(avail_count).await;
-                if !bool_result {
-                    local_r.store(false, Ordering::Relaxed);
-                }
-            });
-        }
-
-        let mut completed = 0;
-
-        // Poll futures concurrently
-        while let Some(_) = futures.next().await {
-            completed += 1;
-            if completed >= count_down {
-                break;
-            }
-        }
-
-        result.load(Ordering::Relaxed)
-    }
+    // async fn wait_shutdown_or_vacant_units_bundle<T>(
+    //     &self,
+    //     this: &mut TxBundle<'_, T>,
+    //     avail_count: usize,
+    //     ready_channels: usize,
+    // ) -> bool
+    // {
+    //     let count_down = ready_channels.min(this.len());
+    //     let result = Arc::new(AtomicBool::new(true));
+    //
+    //     let mut futures = FuturesUnordered::new();
+    //
+    //     // Push futures into the FuturesUnordered collection
+    //     for tx in this.iter_mut().take(count_down) {
+    //         let local_r = result.clone();
+    //         futures.push(async move {
+    //             let bool_result = tx.shared_wait_shutdown_or_vacant_units(avail_count).await;
+    //             if !bool_result {
+    //                 local_r.store(false, Ordering::Relaxed);
+    //             }
+    //         });
+    //     }
+    //
+    //     let mut completed = 0;
+    //
+    //     // Poll futures concurrently
+    //     while let Some(_) = futures.next().await {
+    //         completed += 1;
+    //         if completed >= count_down {
+    //             break;
+    //         }
+    //     }
+    //
+    //     result.load(Ordering::Relaxed)
+    // }
 
 
     /// Waits until a specified number of units are vacant in the Tx channel bundle.
@@ -401,37 +186,37 @@ impl SteadyCommander for SteadyContext {
     /// - `T`: Must implement `Send` and `Sync`.
     ///
     /// # Asynchronous
-    async fn wait_vacant_units_bundle<T>(
-        &self,
-        this: &mut TxBundle<'_, T>,
-        avail_count: usize,
-        ready_channels: usize,
-    ) -> bool {
-        let count_down = ready_channels.min(this.len());
-        let result = Arc::new(AtomicBool::new(true));
-
-        let mut futures = FuturesUnordered::new();
-
-        for tx in this.iter_mut().take(count_down) {
-            let local_r = result.clone();
-            futures.push(async move {
-                let bool_result = tx.shared_wait_vacant_units(avail_count).await;
-                if !bool_result {
-                    local_r.store(false, Ordering::Relaxed);
-                }
-            });
-        }
-
-        let mut completed = 0;
-        while let Some(_) = futures.next().await {
-            completed += 1;
-            if completed >= count_down {
-                break;
-            }
-        }
-
-        result.load(Ordering::Relaxed)
-    }
+    // async fn wait_vacant_units_bundle<T>(
+    //     &self,
+    //     this: &mut TxBundle<'_, T>,
+    //     avail_count: usize,
+    //     ready_channels: usize,
+    // ) -> bool {
+    //     let count_down = ready_channels.min(this.len());
+    //     let result = Arc::new(AtomicBool::new(true));
+    //
+    //     let mut futures = FuturesUnordered::new();
+    //
+    //     for tx in this.iter_mut().take(count_down) {
+    //         let local_r = result.clone();
+    //         futures.push(async move {
+    //             let bool_result = tx.shared_wait_vacant_units(avail_count).await;
+    //             if !bool_result {
+    //                 local_r.store(false, Ordering::Relaxed);
+    //             }
+    //         });
+    //     }
+    //
+    //     let mut completed = 0;
+    //     while let Some(_) = futures.next().await {
+    //         completed += 1;
+    //         if completed >= count_down {
+    //             break;
+    //         }
+    //     }
+    //
+    //     result.load(Ordering::Relaxed)
+    // }
 
 
 
@@ -823,94 +608,6 @@ impl SteadyCommander for SteadyContext {
     }
 
 
-    // fn take_stream_slice<const LEN:usize, S: StreamItem>(&mut self, this: &mut StreamRx<S>, target: &mut [StreamData<S>; LEN]) -> usize {
-    //     //count total items we will take
-    //     let total_items = LEN.min(this.item_channel.avail_units());
-    //
-    //     //item backing arrays plus specific lengths
-    //     let (item_a,item_b) = this.item_channel.rx.as_slices();
-    //     let item_a_len = total_items.min(item_a.len());
-    //     let item_b_len = total_items-item_a_len;
-    //
-    //     // all bytes consumed by all these items
-    //     let mut total_bytes = 0;
-    //
-    //     let (payload_a,payload_b) = this.payload_channel.rx.as_slices();
-    //     let mut first_payload_block = true; //start with first block
-    //     let mut payload_index = 0; //payload index for current active payload
-    //
-    //     let mut item_target_index = 0;
-    //     for i in 0..item_a_len {
-    //         let item = item_a[i];
-    //         total_bytes += item.length();
-    //
-    //         if first_payload_block {
-    //             let next_payload = payload_index+item.length();
-    //             if next_payload <= payload_a.len() as i32 { //normal case
-    //                 target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize..next_payload as usize].into());
-    //                 payload_index = next_payload;
-    //             } else {//rare case where we span
-    //                 let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
-    //                 let b_len = item.length() as usize - a_len as usize ;
-    //                 let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
-    //                 vec.put_slice(&payload_a[payload_index as usize ..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
-    //                 vec.put_slice(&payload_b[0 as usize ..(0+b_len) as usize]);
-    //                 target[item_target_index] = StreamData::new(item, vec.into());
-    //                 first_payload_block=false;
-    //                 payload_index= b_len as i32;
-    //             }
-    //         } else { //normal case
-    //             let next_payload = payload_index+item.length();
-    //             target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize ..next_payload as usize].into());
-    //             payload_index = next_payload;
-    //         }
-    //         item_target_index += 1;
-    //     }
-    //     for i in 0..item_b_len {
-    //         let item = item_b[i];
-    //         total_bytes += item.length();
-    //
-    //         if first_payload_block {
-    //             let next_payload = payload_index+item.length();
-    //             if next_payload <= payload_a.len() as i32 { //normal case
-    //                 target[item_target_index] = StreamData::new(item, payload_a[payload_index as usize .. next_payload as usize].into());
-    //                 payload_index = next_payload;
-    //             } else {//rare case where we span
-    //                 let a_len = item.length() as usize -(payload_a.len() as usize - payload_index as usize) as usize;
-    //                 let b_len = item.length() as usize - a_len;
-    //                 let mut vec:Vec<u8> = Vec::with_capacity(item.length() as usize);
-    //                 vec.put_slice(&payload_a[payload_index as usize..(payload_index as usize + a_len) as usize]); //TODO: must not be item index..
-    //                 vec.put_slice(&payload_b[0 as usize..(0+b_len) as usize]);
-    //                 target[item_target_index] = StreamData::new(item, vec.into());
-    //                 first_payload_block=false;
-    //                 payload_index= b_len as i32;
-    //             }
-    //         } else { //normal case
-    //             let next_payload = payload_index+item.length();
-    //             target[item_target_index] = StreamData::new(item, payload_b[payload_index as usize..next_payload as usize].into());
-    //             payload_index = next_payload;
-    //         }
-    //         item_target_index += 1;
-    //     }
-    //
-    //     this.payload_channel.shared_advance_index(total_bytes as usize);
-    //     this.item_channel.shared_advance_index(total_items as usize);
-    //     return total_items;
-    // }
-    //
-    //
-    // fn try_take_stream<S: StreamItem>(&mut self, this: &mut StreamRx<S>) -> Option<StreamData<S>> {
-    //     let item = self.try_take(&mut this.item_channel);
-    //     if let Some(item) = item {
-    //         let mut target = Vec::with_capacity(item.length() as usize);
-    //         self.take_slice(&mut this.payload_channel, &mut target);
-    //         let box_slice = target.into_boxed_slice();
-    //         Some(StreamData::new(item, box_slice))
-    //     } else {
-    //         None
-    //     }
-    // }
-
 
     /// Attempts to take a message from the channel if available.
     ///
@@ -924,6 +621,7 @@ impl SteadyCommander for SteadyContext {
         this.shared_advance_index(count)
     }
 
+
     /// Waits until the specified number of available units are in the receiver.
     ///
     /// # Parameters
@@ -931,29 +629,10 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
-        this.shared_wait_shutdown_or_avail_units(count).await
-    }
-    /// Waits until the specified number of available units are in the receiver.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_closed_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
+    async fn wait_avail_single<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         this.shared_wait_closed_or_avail_units(count).await
     }
-    /// Waits until the specified number of vacant units are in the transmitter.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available
-    async fn wait_avail_units<T:RxCore>(&self, this: &mut T, count: usize) -> bool {
-        this.shared_wait_avail_units(count).await
-    }
+
     /// Waits until the specified number of vacant units are in the transmitter.
     ///
     /// # Parameters
@@ -961,19 +640,10 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_shutdown_or_vacant_units<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
+    async fn wait_vacant_single<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
         this.shared_wait_shutdown_or_vacant_units(count).await
     }
-    /// Waits until the specified number of vacant units are in the transmitter.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available
-    async fn wait_vacant_units<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
-        this.shared_wait_vacant_units(count).await
-    }
+
     /// Waits until shutdown
     ///
     /// # Returns
@@ -1038,4 +708,63 @@ impl SteadyCommander for SteadyContext {
         self.ident
     }
 
+    async fn wait_vacant_bundle<T: TxCore>(&self, this: &mut TxCoreBundle<'_, T>
+                                           , count: T::MsgSize
+                                           , ready_channels: usize) -> bool {
+
+            let count_down = ready_channels.min(this.len());
+            let result = Arc::new(AtomicBool::new(true));
+            let mut futures = FuturesUnordered::new();
+
+            // Push futures into the FuturesUnordered collection
+            for tx in this.iter_mut().take(count_down) {
+                let local_r = result.clone();
+                futures.push(async move {
+                    let bool_result = tx.shared_wait_shutdown_or_vacant_units(count.clone()).await;
+                    if !bool_result {
+                        local_r.store(false, Ordering::Relaxed);
+                    }
+                });
+            }
+            let mut completed = 0;
+            // Poll futures concurrently
+            while let Some(_) = futures.next().await {
+                completed += 1;
+                if completed >= count_down {
+                    break;
+                }
+            }
+            result.load(Ordering::Relaxed)
+        }
+
+    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool {
+
+            let count_down = ready_channels.min(this.len());
+            let result = Arc::new(AtomicBool::new(true));
+
+            let mut futures = FuturesUnordered::new();
+
+            // Push futures into the FuturesUnordered collection
+            for rx in this.iter_mut().take(count_down) {
+                let local_r = result.clone();
+                futures.push(async move {
+                    let bool_result = rx.shared_wait_closed_or_avail_units(count).await;
+                    if !bool_result {
+                        local_r.store(false, Ordering::Relaxed);
+                    }
+                });
+            }
+
+            let mut completed = 0;
+
+            // Poll futures concurrently
+            while let Some(_) = futures.next().await {
+                completed += 1;
+                if completed >= count_down {
+                    break;
+                }
+            }
+
+            result.load(Ordering::Relaxed)
+        }
 }

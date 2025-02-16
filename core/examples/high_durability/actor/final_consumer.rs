@@ -25,7 +25,7 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
     if let Some(simulator) = monitor.sidechannel_responder() {
         while monitor.is_running(&mut || rx.is_closed_and_empty()) {
 
-            let _clean = await_for_all!(monitor.wait_shutdown_or_avail_units(&mut rx[0],1));
+            let _clean = await_for_all!(monitor.wait_avail_single(&mut rx[0],1));
             simulator.respond_with(|expected| {
                 match monitor.try_take(&mut rx[0]) {
                     Some(measured) => {
@@ -67,7 +67,7 @@ async fn internal_behavior<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyCon
     let mut my_max_count: u128 = 0;
     while monitor.is_running(&mut || tick_counts_rx.is_closed_and_empty()) {
 
-        let _clean = await_for_all!(monitor.wait_shutdown_or_avail_units_bundle(&mut tick_counts_rx, 1, TICK_COUNTS_RX_GIRTH)    );
+        let _clean = await_for_all!(monitor.wait_avail_bundle(&mut tick_counts_rx, 1, TICK_COUNTS_RX_GIRTH)    );
 
         for i in 0..TICK_COUNTS_RX_GIRTH {
             let count = monitor.try_peek_slice(&mut tick_counts_rx[i], &mut buffer);

@@ -33,7 +33,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
 
     while cmd.is_running(&mut || index>=fizz_buzz_processor::STOP_VALUE && numbers_tx.mark_closed()) {
-        let _clean = await_for_all!(cmd.wait_shutdown_or_vacant_units(&mut numbers_tx, BATCH_SIZE>>1));
+        let _clean = await_for_all!(cmd.wait_vacant_single(&mut numbers_tx, BATCH_SIZE>>1));
 
         let mut i = 0;
         let limit = BATCH_SIZE.min(cmd.vacant_units(&mut numbers_tx));

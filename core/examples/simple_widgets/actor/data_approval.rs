@@ -39,9 +39,9 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<WidgetIn
     while cmd.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed() && feedback.mark_closed()) {
 
         let _clean = await_for_all_or_proceed_upon!(cmd.wait_periodic(Duration::from_millis(300))
-                            ,cmd.wait_shutdown_or_avail_units(&mut rx, BATCH_SIZE)
-                            ,cmd.wait_shutdown_or_vacant_units(&mut tx, BATCH_SIZE)
-                            ,cmd.wait_shutdown_or_vacant_units(&mut feedback, 1)
+                            ,cmd.wait_avail_single(&mut rx, BATCH_SIZE)
+                            ,cmd.wait_vacant_single(&mut tx, BATCH_SIZE)
+                            ,cmd.wait_vacant_single(&mut feedback, 1)
         );
 
         let count = cmd.take_slice(&mut rx, &mut buffer);

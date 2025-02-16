@@ -26,15 +26,15 @@ async fn internal_behavior<C:SteadyCommander, const GIRTH:usize>(mut cmd: C, one
     let mut tx = tx.lock().await;
 
     let count = rx.capacity().clone()/4;
-    let _tx_girth = tx.len();
+    let tx_girth = tx.len();
 
     while cmd.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
        // info!("router a");
         let _clean = await_for_all_or_proceed_upon!(
             cmd.wait_periodic(Duration::from_millis(40)),
-            cmd.wait_shutdown_or_avail_units(&mut rx,2),
-            cmd.wait_shutdown_or_vacant_units_bundle(&mut tx,count/2,_tx_girth)
+            cmd.wait_avail_single(&mut rx,2),
+            cmd.wait_vacant_bundle(&mut tx,count/2,tx_girth)
         );
        // info!("router b");
 

@@ -340,7 +340,7 @@ pub struct StreamTx<T: StreamItem> {
     pub(crate) ready: VecDeque<i32>
 }
 
-pub(crate) struct Defrag<T: StreamItem> {
+pub struct Defrag<T: StreamItem> {
     pub(crate) arrival: Option<Instant>,
     pub(crate) finish: Option<Instant>,
     pub(crate) session_id: i32,

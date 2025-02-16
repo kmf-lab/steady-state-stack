@@ -18,7 +18,7 @@ use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 pub trait TxCore {
     type MsgIn<'a>;
     type MsgOut;
-    type MsgSize;
+    type MsgSize: Copy;
 
 
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize;
