@@ -239,6 +239,7 @@ impl<T> TxBundleTrait for TxBundle<'_, T> {
 
 }
 
+#[derive(PartialEq,Eq)]
 pub enum TxDone {
     Normal(usize),
     Stream(usize,usize)

@@ -344,11 +344,10 @@ pub(crate) mod aeron_media_driver_tests {
             })
             .build();
 
-        let dist =  AqueTech::Aeron(aeron_config);
 
-        to_aeron_rx.build_aqueduct(&mut graph,dist.clone()
-                                              , "SenderTest"
-                                              , &mut Threading::Spawn);
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone())
+                   , &graph.actor_builder().with_name("SenderTest")
+                   , &mut Threading::Spawn);
 
         for _i in 0..100 {
             to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]).await;
@@ -364,9 +363,9 @@ pub(crate) mod aeron_media_driver_tests {
             .with_capacity(500)
             .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(0, 6);
 
-        from_aeron_tx.build_aqueduct(&mut graph,dist.clone()
-                                            , "ReceiverTest"
-                                            , &mut Threading::Spawn);
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone())
+                       , & graph.actor_builder().with_name("ReceiverTest")
+                       , &mut Threading::Spawn);
 
 
         graph.start(); //startup the graph

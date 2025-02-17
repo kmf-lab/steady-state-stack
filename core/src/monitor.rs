@@ -807,7 +807,7 @@ pub(crate) mod monitor_tests {
                         
                         match send_guard.shared_try_send(item) {
                             Ok(d) => {
-                                assert!(TxDone::Stream(2,2).eq(&d));
+                                assert!(TxDone::Stream(2,2) == d );
                             },
                             Err(_) => {}
                         }

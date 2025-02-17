@@ -107,6 +107,7 @@ pub use steady_tx::SteadyTxBundleTrait;
 pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
 pub use commander::SteadyCommander;
+pub use commander::RxWait;
 pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
 pub use distributed::distributed_stream::{StreamSessionMessage, StreamSimpleMessage};

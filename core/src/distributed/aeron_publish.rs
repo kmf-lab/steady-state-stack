@@ -353,7 +353,7 @@ pub(crate) mod aeron_tests {
             .with_telemetry_metric_features(true)
             .build(());
 
-        if !graph.is_aeron_media_driver_present() {
+        if graph.aeron_md().is_none() {
             info!("aeron test skipped, no media driver present");
             return;
         }
@@ -395,8 +395,6 @@ pub(crate) mod aeron_tests {
             .build();
 
 
-        let dist =  AqueTech::Aeron(aeron_config);
-
         graph.actor_builder().with_name("MockSender")
             .with_thread_info()
             .with_mcpu_percentile(Percentile::p96())
@@ -406,8 +404,8 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
                    , &mut Threading::Spawn);
 
-        to_aeron_rx.build_aqueduct(&mut graph, dist.clone()
-                                       , "SenderTest"
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone())
+                                       , & graph.actor_builder().with_name( "SenderTest")
                                        , &mut Threading::Spawn);
 
         //set this up first so sender has a place to send to
@@ -420,8 +418,8 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
-        from_aeron_tx.build_aqueduct(&mut graph,dist.clone()
-                                            , "ReceiverTest"
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone())
+                                            , &graph.actor_builder().with_name("ReceiverTest")
                                             , &mut Threading::Spawn);
 
         graph.start(); //startup the graph

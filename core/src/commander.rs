@@ -111,6 +111,14 @@ impl SteadyContext {
 }
 
 
+
+
+pub enum RxWait<'a, T:RxCore> {
+    Single(&'a mut T),
+    Bundle(&'a mut RxCoreBundle<'a, T>, usize)
+}
+
+
 /// NOTE this trait is passed into actors and actors are tied to a single thread. As a result
 ///      we need not worry about these methods needing Send. We also know that T will come
 ///      from other actors so we can assume that T is Send + Sync
@@ -215,6 +223,8 @@ pub trait SteadyCommander {
 
 
     async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool;
+
+    async fn wait_avail<T: RxCore>(&self, count: usize, this: RxWait<T>) -> bool;
 
 
 
@@ -338,7 +348,7 @@ pub trait SteadyCommander {
     /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
     ///
     /// # Asynchronous
-    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<&'a T::MsgPeek<'a>>;
+    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<T::MsgPeek<'a>>;
 
     /// Sends a slice of messages to the Tx channel until it is full.
     ///

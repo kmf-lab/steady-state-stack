@@ -17,7 +17,7 @@ pub trait RxCore {
     type MsgOut;
     type MsgPeek<'a> where Self: 'a;
 
-    async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<&Self::MsgPeek<'_>>;
+    async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'_>>;
 
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>);
@@ -48,9 +48,9 @@ pub trait RxCore {
 impl <T>RxCore for Rx<T> {
 
     type MsgOut = T;
-    type MsgPeek<'a> = T where T: 'a;
+    type MsgPeek<'a> = &'a T where T: 'a;
 
-    async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>) -> Option<&'a Self::MsgPeek<'_>> {
+    async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'a>> {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
             let mut operation = &mut self.rx.wait_occupied(1);
@@ -173,10 +173,10 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
 
     type MsgOut = (T, Box<[u8]>);
 
-    type MsgPeek<'a> = (T, (&'a[u8],&'a[u8])) where T: 'a;
+    type MsgPeek<'a> = (&'a T, &'a[u8],&'a[u8]) where T: 'a;
 
     async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>)
-        -> Option<&'a Self::MsgPeek<'a>> {
+                        -> Option<Self::MsgPeek<'a>> {
         let mut one_down = &mut self.item_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
             let mut operation = &mut self.item_channel.rx.wait_occupied(1);
@@ -205,7 +205,7 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
             let (a,b) = self.payload_channel.rx.as_slices();
             let count_a = a.len().min(item.length() as usize);
             let count_b  = item.length() as usize - count_a;
-            Some(&(*item, (&a[0..count_a], &b[0..count_b])))
+            Some((item, &a[0..count_a], &b[0..count_b]))
 
         } else {
             self.item_channel.peek_repeats.store(0, Ordering::Relaxed);
@@ -322,7 +322,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
 
     type MsgPeek<'a> =  <T as RxCore>::MsgPeek<'a> where Self: 'a;
 
-    async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>) -> Option<&'a Self::MsgPeek<'_>> {
+    async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'a>> {
         <T as RxCore>::shared_peek_async_timeout(& mut **self
                                                  ,timeout).await
     }

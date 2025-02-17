@@ -18,6 +18,7 @@ use ringbuf::producer::Producer;
 use std::ops::DerefMut;
 use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
+use crate::commander::RxWait;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
@@ -241,7 +242,7 @@ impl SteadyCommander for SteadyContext {
     /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
     ///
     /// # Asynchronous
-    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<&'a T::MsgPeek<'a>>
+    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<T::MsgPeek<'a>>
     {
             this.shared_peek_async_timeout(None).await
     }
@@ -649,4 +650,15 @@ impl SteadyCommander for SteadyContext {
 
             result.load(Ordering::Relaxed)
         }
+
+    async fn wait_avail<T: RxCore>(&self, count: usize, this: RxWait<'_, T>) -> bool {
+        match this {
+            RxWait::Single(r) => {
+                self.wait_avail_single(r,count).await
+            }
+            RxWait::Bundle(r, c) => {
+                self.wait_avail_bundle(r,count, c).await
+            }
+        }
+    }
 }

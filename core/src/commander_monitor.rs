@@ -20,6 +20,7 @@ use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
+use crate::commander::RxWait;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
@@ -153,7 +154,16 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     //TODO: future feature to optimize threading, not yet implemented
     //monitor.chain_channels([rx],tx); //any of the left channels may produce output on the right
 
-
+    async fn wait_avail<T: RxCore>(&self, count: usize, this: RxWait<'_, T>) -> bool {
+        match this {
+            RxWait::Single(r) => {
+                self.wait_avail_single(r,count).await
+            }
+            RxWait::Bundle(r, c) => {
+                self.wait_avail_bundle(r,count, c).await
+            }
+        }
+    }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     ///
@@ -405,7 +415,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
     ///
     /// # Asynchronous
-    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<&'a T::MsgPeek<'a>>
+    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<T::MsgPeek<'a>>
     {
         let _guard = self.start_profile(CALL_OTHER);
         let timeout = if self.telemetry.is_dirty() {
