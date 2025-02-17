@@ -3,7 +3,6 @@ use std::ffi::CString;
 use std::fmt::Debug;
 use std::net::{IpAddr};
 
-
 pub(crate) mod aeron_utils {
     use std::sync::Arc;
     use futures_util::lock::Mutex;
@@ -32,7 +31,7 @@ pub(crate) mod aeron_utils {
     //     );
     // }
 
-    pub fn aeron_context(mut aeron_context: Context) -> Option<Arc<Mutex<Aeron>>> {
+    pub(crate) fn aeron_context(mut aeron_context: Context) -> Option<Arc<Mutex<Aeron>>> {
 
         //aeron_context.set_new_publication_handler(Box::new(on_new_publication_handler));
         aeron_context.set_error_handler(Box::new(error_handler));
@@ -197,7 +196,7 @@ pub enum ReliableConfig {
 /// # Variants
 /// - `PointToPoint`: Used for unicast or IPC communication.
 /// - `Multicast`: Used for multicast communication.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Channel {
     /// Represents a point-to-point unicast or IPC channel.
     ///

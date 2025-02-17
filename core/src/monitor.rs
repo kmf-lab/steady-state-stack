@@ -314,6 +314,7 @@ pub(crate) mod monitor_tests {
     use crate::channel_builder::ChannelBuilder;
     use crate::commander_context::SteadyContext;
     use crate::core_tx::TxCore;
+    use crate::steady_tx::TxDone;
 
     lazy_static! {
         static ref INIT: Once = Once::new();
@@ -805,7 +806,9 @@ pub(crate) mod monitor_tests {
                     for item in [13, 14, 15] {
                         
                         match send_guard.shared_try_send(item) {
-                            Ok(d) => {},
+                            Ok(d) => {
+                                assert!(TxDone::Stream(2,2).eq(&d));
+                            },
                             Err(_) => {}
                         }
                     }

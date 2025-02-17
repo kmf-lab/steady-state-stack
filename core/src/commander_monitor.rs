@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use futures_util::lock::{Mutex, MutexGuard};
 use futures::channel::oneshot;
 use std::any::{type_name, Any};
-use futures_util::future::{select_all, FusedFuture};
+use futures_util::future::{FusedFuture};
 use futures_timer::Delay;
 use futures_util::{select, FutureExt, StreamExt};
 use std::future::Future;
@@ -18,11 +18,11 @@ use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
-use crate::{yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxBundle, TxCoreBundle, MONITOR_NOT};
+use crate::{yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
+use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
@@ -1072,7 +1072,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         for tx in this.iter_mut().take(count_down) {
             let local_r = result.clone();
             futures.push(async move {
-                let bool_result = tx.shared_wait_shutdown_or_vacant_units(count.clone()).await;
+                let bool_result = tx.shared_wait_shutdown_or_vacant_units(count).await;
                 if !bool_result {
                     local_r.store(false, Ordering::Relaxed);
                 }
@@ -1080,7 +1080,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         }
         let mut completed = 0;
         // Poll futures concurrently
-        while let Some(_) = futures.next().await {
+        while futures.next().await.is_some() {
             completed += 1;
             if completed >= count_down {
                 break;
@@ -1111,7 +1111,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let mut completed = 0;
 
         // Poll futures concurrently
-        while let Some(_) = futures.next().await {
+        while futures.next().await.is_some() {
             completed += 1;
             if completed >= count_down {
                 break;

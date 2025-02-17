@@ -22,7 +22,7 @@ use crate::commander_context::SteadyContext;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 #[derive(Default)]
-pub(crate) struct AeronSubscribeSteadyState {
+pub struct AeronSubscribeSteadyState {
     sub_reg_id: Vec<Option<i64>>,
 }
 
@@ -321,7 +321,7 @@ pub(crate) mod aeron_media_driver_tests {
             .with_telemetry_metric_features(false)
             .build(());
 
-        if !graph.is_aeron_media_driver_present() {
+        if graph.aeron_md().is_none() {
             info!("aeron test skipped, no media driver present");
             return;
         }

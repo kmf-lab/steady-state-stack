@@ -16,11 +16,11 @@ use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use std::ops::DerefMut;
-use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxBundle, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxBundle, TxCoreBundle};
+use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{Defrag, StreamItem, StreamRxBundle, StreamTxBundle};
+use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -50,7 +50,7 @@ pub struct SteadyContext {
 impl Clone for SteadyContext {
     fn clone(&self) -> Self {
         SteadyContext {
-            ident: self.ident.clone(),
+            ident: self.ident,
             instance_id: self.instance_id,
             is_in_graph: self.is_in_graph,
             channel_count: self.channel_count.clone(),
@@ -120,103 +120,6 @@ impl SteadyCommander for SteadyContext {
     }
 
 
-
-    /// Waits until a specified number of units are vacant in the Tx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
-    /// - `avail_count`: The number of vacant units to wait for.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are vacant, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    /// # Asynchronous
-    // async fn wait_shutdown_or_vacant_units_bundle<T>(
-    //     &self,
-    //     this: &mut TxBundle<'_, T>,
-    //     avail_count: usize,
-    //     ready_channels: usize,
-    // ) -> bool
-    // {
-    //     let count_down = ready_channels.min(this.len());
-    //     let result = Arc::new(AtomicBool::new(true));
-    //
-    //     let mut futures = FuturesUnordered::new();
-    //
-    //     // Push futures into the FuturesUnordered collection
-    //     for tx in this.iter_mut().take(count_down) {
-    //         let local_r = result.clone();
-    //         futures.push(async move {
-    //             let bool_result = tx.shared_wait_shutdown_or_vacant_units(avail_count).await;
-    //             if !bool_result {
-    //                 local_r.store(false, Ordering::Relaxed);
-    //             }
-    //         });
-    //     }
-    //
-    //     let mut completed = 0;
-    //
-    //     // Poll futures concurrently
-    //     while let Some(_) = futures.next().await {
-    //         completed += 1;
-    //         if completed >= count_down {
-    //             break;
-    //         }
-    //     }
-    //
-    //     result.load(Ordering::Relaxed)
-    // }
-
-
-    /// Waits until a specified number of units are vacant in the Tx channel bundle.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `TxBundle<T>` instance.
-    /// - `avail_count`: The number of vacant units to wait for.
-    /// - `ready_channels`: The number of ready channels to wait for.
-    ///
-    /// # Returns
-    /// `true` if the units are vacant, otherwise `false`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Send` and `Sync`.
-    ///
-    /// # Asynchronous
-    // async fn wait_vacant_units_bundle<T>(
-    //     &self,
-    //     this: &mut TxBundle<'_, T>,
-    //     avail_count: usize,
-    //     ready_channels: usize,
-    // ) -> bool {
-    //     let count_down = ready_channels.min(this.len());
-    //     let result = Arc::new(AtomicBool::new(true));
-    //
-    //     let mut futures = FuturesUnordered::new();
-    //
-    //     for tx in this.iter_mut().take(count_down) {
-    //         let local_r = result.clone();
-    //         futures.push(async move {
-    //             let bool_result = tx.shared_wait_vacant_units(avail_count).await;
-    //             if !bool_result {
-    //                 local_r.store(false, Ordering::Relaxed);
-    //             }
-    //         });
-    //     }
-    //
-    //     let mut completed = 0;
-    //     while let Some(_) = futures.next().await {
-    //         completed += 1;
-    //         if completed >= count_down {
-    //             break;
-    //         }
-    //     }
-    //
-    //     result.load(Ordering::Relaxed)
-    // }
 
 
 
@@ -417,7 +320,7 @@ impl SteadyCommander for SteadyContext {
         //warn!("on ring buffer items {} {}",items_a.len(),items_b.len());
         let msg_count = out_item.tx.vacant_len().min(items_a.len()+items_b.len());
         let msg_count = msg_count.min(50000); //hack test must be smaller than our channel!!!
-        let items_len_a = msg_count.min(items_a.len()) as usize;
+        let items_len_a = msg_count.min(items_a.len());
         let items_len_b = msg_count - items_len_a;
         //sum messages length
         let total_bytes_a = items_a[0..items_len_a].iter().map(|x| x.length()).sum::<i32>() as usize;
@@ -429,7 +332,7 @@ impl SteadyCommander for SteadyContext {
             let (payload_a, payload_b) = defrag.ringbuffer_bytes.1.as_slices();
             // warn!("tx payload slices {} {}",payload_a.len(),payload_b.len());
 
-            let len_a = total_bytes.min(payload_a.len()) as usize;
+            let len_a = total_bytes.min(payload_a.len());
             out_data.tx.push_slice(&payload_a[0..len_a]);
             let len_b = total_bytes - len_a;
             if len_b > 0 {
@@ -720,7 +623,7 @@ impl SteadyCommander for SteadyContext {
             for tx in this.iter_mut().take(count_down) {
                 let local_r = result.clone();
                 futures.push(async move {
-                    let bool_result = tx.shared_wait_shutdown_or_vacant_units(count.clone()).await;
+                    let bool_result = tx.shared_wait_shutdown_or_vacant_units(count).await;
                     if !bool_result {
                         local_r.store(false, Ordering::Relaxed);
                     }
@@ -728,7 +631,7 @@ impl SteadyCommander for SteadyContext {
             }
             let mut completed = 0;
             // Poll futures concurrently
-            while let Some(_) = futures.next().await {
+            while futures.next().await.is_some() {
                 completed += 1;
                 if completed >= count_down {
                     break;
@@ -758,7 +661,7 @@ impl SteadyCommander for SteadyContext {
             let mut completed = 0;
 
             // Poll futures concurrently
-            while let Some(_) = futures.next().await {
+            while futures.next().await.is_some() {
                 completed += 1;
                 if completed >= count_down {
                     break;

@@ -15,7 +15,7 @@ use futures_timer::Delay;
 use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
 use crate::core_rx::RxCore;
-
+use crate::{RxBundle, SteadyRx, SteadyRxBundle};
 
 /// Represents a receiver that consumes messages from a channel.
 ///

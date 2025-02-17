@@ -1,10 +1,14 @@
 use std::cmp::PartialEq;
+use std::fmt::{Debug};
+use std::net::{IpAddr, Ipv4Addr};
+use std::sync::Arc;
+use aeron::aeron::Aeron;
+use futures_util::lock::Mutex;
 use crate::distributed::aeron_channel_structs::*;
 
-#[derive(Debug,Clone)]
 pub enum AqueTech {
     None,
-    Aeron(Channel),
+    Aeron(Option<Arc<Mutex<Aeron>>>, Channel),
     // Add more types here as needed
 }
 
@@ -20,6 +24,7 @@ enum AeronMode {
     None,
     PointToPoint,
     Multicast,
+    Ipc,
 }
 
 /// A single builder struct holding **all** Aeron-related configuration.
@@ -117,6 +122,12 @@ impl AeronConfig {
         let mut clone = self.clone();
         clone.mode = AeronMode::PointToPoint;
         clone.endpoint = Some(endpoint);
+        clone
+    }
+
+    pub fn use_ipc(&self) -> Self {
+        let mut clone = self.clone();
+        clone.mode = AeronMode::Ipc;
         clone
     }
 
@@ -219,7 +230,15 @@ impl AeronConfig {
                 panic!("No channel mode selected (point-to-point or multicast).");
                                
             }
-
+            AeronMode::Ipc => {
+                Channel::PointToPoint {
+                    media_type,
+                    endpoint: Endpoint { ip: IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), port: 0 },
+                    interface: self.interface,
+                    reliability: self.reliability,
+                    term_length: self.term_length
+                }
+            }
             AeronMode::PointToPoint => {
                 // P2P must have an endpoint
                 let endpoint = self.endpoint
@@ -229,7 +248,7 @@ impl AeronConfig {
                     endpoint,
                     interface: self.interface,
                     reliability: self.reliability,
-                    term_length: self.term_length,
+                    term_length: self.term_length
                 }
             }
 
@@ -249,7 +268,7 @@ impl AeronConfig {
                     },
                     control_mode: self.control_mode
                         .unwrap_or(ControlMode::Dynamic),
-                    term_length: self.term_length,
+                    term_length: self.term_length
                 }
             }
         }

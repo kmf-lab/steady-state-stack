@@ -15,10 +15,9 @@ use crate::monitor::RxMetaDataHolder;
 
 // TODO: what if we have to aeron clients talking to the same media driver? seems bad?
 
-const ITEMS_BUFFER_SIZE:usize = 1000;
 
 #[derive(Default)]
-pub(crate) struct AeronPublishSteadyState {
+pub struct AeronPublishSteadyState {
     pub(crate) pub_reg_id: Vec<Option<i64>>,
     pub(crate) items_taken: usize,
 }
@@ -158,10 +157,10 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
              //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
-                                rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], mut slice2: &mut [u8]| {
+                                rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len>0);
-                                    let response = if slice2.len() == 0 {
+                                    let response = if slice2.is_empty() {
                                         p.offer_part(AtomicBuffer::wrap_slice(&mut slice1), 0, msg_len as Index)
                                     } else {  // TODO: p.try_claim() is probably a beter  way to move our datarather than AtomicBuffer usage..
                                         let a_len = msg_len.min(slice1.len());
@@ -182,6 +181,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                             true
                                         }
                                         Err(aeron_error) => {
+                                            error!("{:?}", aeron_error);
                                             backoff = true;
                                             false
                                         }
@@ -373,7 +373,7 @@ pub(crate) mod aeron_tests {
             .with_telemetry_metric_features(true)
             .build(());
 
-        if !graph.is_aeron_media_driver_present() {
+        if graph.aeron_md().is_none() {
             info!("aeron test skipped, no media driver present");
             return;
         }
@@ -414,8 +414,6 @@ pub(crate) mod aeron_tests {
             .build();
 
 
-        let dist =  AqueTech::Aeron(aeron_config);
-
         graph.actor_builder().with_name("MockSender")
             .with_thread_info()
             .with_mcpu_percentile(Percentile::p96())
@@ -425,9 +423,9 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
                    , &mut Threading::Spawn);
 
-        to_aeron_rx.build_aqueduct(&mut graph, dist.clone()
-                                              , "SenderTest"
-                                              , &mut Threading::Spawn);
+        to_aeron_rx.build_aqueduct(  AqueTech::Aeron(graph.aeron_md() ,aeron_config.clone())
+                                  , &graph.actor_builder().with_name("SenderTest")
+                                  , &mut Threading::Spawn);
 
         //set this up first so sender has a place to send to
         graph.actor_builder().with_name("MockReceiver")
@@ -439,9 +437,9 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
-        from_aeron_tx.build_aqueduct(&mut graph,dist.clone()
-                                            , "ReceiverTest"
-                                            , &mut Threading::Spawn);
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md() ,aeron_config.clone())
+                                    , &graph.actor_builder().with_name("ReceiverTest")
+                                    , &mut Threading::Spawn);
 
         graph.start(); //startup the graph
         graph.block_until_stopped(Duration::from_secs(21));

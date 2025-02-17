@@ -208,7 +208,6 @@ impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
 ///
 /// This allows both `StreamFragment` and `StreamMessage` to share
 /// functionality in testing and real code.
-
 pub trait StreamItem: Copy + Send + Sync {
     /// Creates a new instance with the given length, used for testing.
     fn testing_new(length: i32) -> Self;
@@ -429,7 +428,7 @@ impl<T: StreamItem> StreamTx<T> {
                                    , now: Instant) {
 
         //Get or create the Defrag entry for the session ID
-        let mut defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
+        let defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
             Defrag::new(session_id, self.item_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
         });
         debug_assert!(defrag_entry.ringbuffer_items.1.occupied_len() < defrag_entry.ringbuffer_items.1.capacity().into());
@@ -442,10 +441,8 @@ impl<T: StreamItem> StreamTx<T> {
             if is_end {
                 defrag_entry.finish = some_now;
             }
-        } else {
-            if is_end {
+        } else if is_end {
                 defrag_entry.finish = some_now;
-            }
         }
 
         // Append the slice to the ringbuffer (first half of the split)
@@ -534,7 +531,7 @@ impl<T: StreamItem> StreamRx<T> {
     ) {
         // Obtain mutable slices from the item and payload channels
         let (item1, item2) = self.item_channel.rx.as_mut_slices();
-        let (mut payload1, payload2) = self.payload_channel.rx.as_mut_slices();
+        let (payload1, payload2) = self.payload_channel.rx.as_mut_slices();
 
         // Variables to track the state of the iteration
         let mut on_first = true; // Whether we are still processing the first payload slice
@@ -546,7 +543,7 @@ impl<T: StreamItem> StreamRx<T> {
         for i in item1 {
             // Extract payload slices based on the current state
             let (a, b) = Self::extract_stream_payload_slices(
-                &mut payload1,
+                payload1,
                 payload2,
                 &mut on_first,
                 &mut active_index,

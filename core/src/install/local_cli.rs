@@ -55,8 +55,7 @@ impl LocalCLIBuilder {
     ///
     /// This should only be used if you know you need it for some custom distribution.
     pub fn with_custom_location(mut self, custom_install_dir: PathBuf) -> Self {
-        let in_path = env::var_os("PATH")
-            .map_or(false, |paths| paths.to_string_lossy().contains(&*custom_install_dir.to_string_lossy()));
+        let in_path = env::var_os("PATH").is_some_and(|paths| paths.to_string_lossy().contains(&*custom_install_dir.to_string_lossy()));
         self.system_wide = false;
         if in_path {
             self.install_dir = custom_install_dir;

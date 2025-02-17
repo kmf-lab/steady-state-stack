@@ -609,7 +609,7 @@ impl ActorBuilder {
         // Clone the necessary fields to avoid moving `self` into the closure
         let excluded_cores = self.excluded_cores.clone();
         let core_balancer = self.core_balancer.clone();
-        let explicit_core = self.explicit_core.clone();
+        let explicit_core = self.explicit_core;
         
         let default_core = self.team_count.clone().fetch_add(1, Ordering::SeqCst);
         let thread_lock = self.thread_lock.clone();
@@ -907,35 +907,6 @@ impl<T: ?Sized> NonSendWrapper<T> {
 }
 
 
-
-
-
-
-/// Constructs a future for the actor, incorporating startup synchronization and context initialization.
-///
-/// # Type Parameters
-///
-/// * `F` - The future returned by the execution logic.
-/// * `I` - The execution logic, a function taking a `SteadyContext` and returning `F`.
-///
-/// # Arguments
-///
-/// * `actor_startup_receiver` - An optional receiver for the startup synchronization channel.
-/// * `builder_source` - The archetype for building the actor context.
-/// * `frame_rate_ms` - The frame rate in milliseconds.
-///
-/// # Returns
-///
-/// A future representing the actor's execution.
-// fn build_actor_future(
-//     builder_source: &SteadyContextArchetype<DynCall>,
-//     frame_rate_ms: u64,
-//     team_id: usize,
-// ) -> (NonSendWrapper<DynCall>,SteadyContext) {
-//     let context = build_actor_context(&builder_source, frame_rate_ms, team_id);
-//     let fun = build_actor_registration(&builder_source);
-//     (fun, context)
-// }
 
 fn build_actor_registration(
     builder_source: &SteadyContextArchetype<DynCall>

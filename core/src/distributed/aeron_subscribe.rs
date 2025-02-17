@@ -14,7 +14,7 @@ use crate::commander_context::SteadyContext;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 #[derive(Default)]
-pub(crate) struct AeronSubscribeSteadyState {
+pub struct AeronSubscribeSteadyState {
     sub_reg_id: Option<i64>,
 }
 
@@ -134,7 +134,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                             //NOTE: aeron is NOT thread safe so we are forced to lock across the entire app
                                             let mut total = 0;
                                             //each call to this is no more than one full SOCKET_SO_RCVBUF
-                                            for z in 0..16 { //16
+                                            for _z in 0..16 { //16
 
                                                 let c = {
                                                     let now = Instant::now();
@@ -281,7 +281,7 @@ pub(crate) mod aeron_media_driver_tests {
             .with_telemetry_metric_features(false)
             .build(());
 
-        if !graph.is_aeron_media_driver_present() {
+        if graph.aeron_md().is_none() {
             info!("aeron test skipped, no media driver present");
             return;
         }
@@ -304,11 +304,10 @@ pub(crate) mod aeron_media_driver_tests {
             })
             .build();
 
-        let dist =  AqueTech::Aeron(aeron_config);
 
-        to_aeron_rx.build_aqueduct(&mut graph, dist.clone()
-                                       , "SenderTest"
-                                       , &mut Threading::Spawn);
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone())
+                               , &graph.actor_builder().with_name("SenderTest")
+                               , &mut Threading::Spawn);
 
         for _i in 0..100 {
             to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]).await;
@@ -324,9 +323,9 @@ pub(crate) mod aeron_media_driver_tests {
             .with_capacity(500)
             .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(0, 6);
 
-        from_aeron_tx.build_aqueduct(&mut graph, dist.clone()
-                                            , "ReceiverTest"
-                                            , &mut Threading::Spawn);
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config)
+                                     , &graph.actor_builder().with_name( "ReceiverTest")
+                                     , &mut Threading::Spawn);
 
 
         graph.start(); //startup the graph

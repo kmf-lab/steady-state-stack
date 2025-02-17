@@ -5,7 +5,7 @@ use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamRx, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamRxDef, StreamSimpleMessage};
+use crate::distributed::distributed_stream::{SteadyStreamRx, StreamRxDef, StreamSimpleMessage};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
@@ -75,11 +75,11 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                     if cmd.is_liveliness_stop_requested() {
                                         //trace!("stop detected before finding publication");
                                         //we are done, shutdown happened before we could start up.
-                                        break Err("Shutdown requested while waiting".into());
+                                        break Err("Shutdown requested while waiting");
                                     }
                                 } else {
                                     warn!("Error finding publication: {:?}", e);
-                                    break Err("Unable to find requested publication".into());
+                                    break Err("Unable to find requested publication");
                                 }
                             },
                             Ok(publication) => {
@@ -191,7 +191,6 @@ pub(crate) mod aeron_tests {
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-    use crate::distributed::aeron_subscribe_bundle;
     use crate::distributed::distributed_builder::AqueductBuilder;
     use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;

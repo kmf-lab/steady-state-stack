@@ -4,7 +4,7 @@
 
 use crate::{abstract_executor, steady_config, util};
 use std::ops::Sub;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
@@ -537,15 +537,15 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) noise_threshold: Instant,
     pub(crate) block_fail_fast: bool,
     pub(crate) telemetry_production_rate_ms: u64,
-    pub(crate) aeron: Option<Arc<Mutex<Aeron>>>, //None by default
+    pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+
 }
 
 impl Graph {
-    pub fn is_aeron_media_driver_present(&mut self) -> bool {
-        if self.aeron.is_none() { //lazy load, we only support one
-            self.aeron = aeron_context(Context::new());
-        }
-        self.aeron.is_some()
+
+    /// returns None if there is no Media Driver for Aeron found on this machine.
+    pub fn aeron_md(&mut self) -> Option<Arc<Mutex<Aeron>>> {
+        self.aeron.get_or_init(|| aeron_context(Context::new())).clone()
     }
 
     pub fn loglevel(&self, loglevel: &str) {
@@ -779,13 +779,14 @@ impl Graph {
             .collect::<Vec<_>>();
 
         // You can sort or prioritize the votes as needed here
-        voters.sort_by_key(|voter| !voter.as_ref().map_or(false, |f| f.in_favor)); // This will put `true` (in favor) votes first
+        voters.sort_by_key(|voter|
+            !voter.as_ref().is_some_and(|f| f.in_favor)); // This will put `true` (in favor) votes first
 
         // Now iterate over the sorted voters and log the results
         voters.iter().for_each(|voter| {
             warn!("#{:?} Voted: {:?} Ident: {:?}"
                                        , voter.as_ref().map_or(usize::MAX, |f| f.id)
-                                       , voter.as_ref().map_or(false, |f| f.in_favor)
+                                       , voter.as_ref().is_some_and(|f| f.in_favor)
                                        , voter.as_ref().map_or(
                                                    Default::default()
                                                  //self.state.registered_voters[0]
@@ -841,7 +842,7 @@ impl Graph {
                                                  0u64 //this zero prevents us from building telemetry
                                              },
             team_count: Arc::new(AtomicUsize::new(1)),
-            aeron: None,
+            aeron: Default::default(),
         };
 
         if builder.telemetry_metric_features {

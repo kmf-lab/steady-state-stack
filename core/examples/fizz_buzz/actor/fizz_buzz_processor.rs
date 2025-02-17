@@ -100,7 +100,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
             let _clean = await_for_all!(
                 cmd.wait_avail_single(&mut threes_rx[0], c1),
                 cmd.wait_avail_single(&mut fives_rx[0], c2),
-                cmd.wait_closed_or_vacant_units(&mut fizzbuzz_messages_tx, vacant_block)
+                cmd.wait_vacant_units(&mut fizzbuzz_messages_tx, vacant_block)
             );
 
             let start_value = state.value;

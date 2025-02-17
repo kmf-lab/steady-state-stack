@@ -30,11 +30,16 @@ pub trait TxCore {
     fn shared_is_full(&self) -> bool;
     fn shared_is_empty(&self) -> bool;
     fn shared_vacant_units(&self) -> usize;
+    #[warn(async_fn_in_trait)]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool;
+    #[warn(async_fn_in_trait)]
     async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool;
+    #[warn(async_fn_in_trait)]
     async fn shared_wait_empty(&mut self) -> bool;
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
+    #[warn(async_fn_in_trait)]
     async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<(), Self::MsgOut>;
+    #[warn(async_fn_in_trait)]
     async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), Self::MsgOut>;
 
 
@@ -138,7 +143,7 @@ impl<T> TxCore for Tx<T> {
 
     #[inline]
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
-        debug_assert!(!self.make_closed.is_none(),"Send called after channel marked closed");
+        debug_assert!(self.make_closed.is_some(),"Send called after channel marked closed");
 
         match self.tx.try_push(msg) {
             Ok(_) => Ok(TxDone::Normal(1)),
@@ -258,8 +263,8 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
     }
 
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
-        debug_assert!(!self.item_channel.make_closed.is_none(),"Send called after channel marked closed");
-        debug_assert!(!self.payload_channel.make_closed.is_none(),"Send called after channel marked closed");
+        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
 
         let mut count = 0;
 
@@ -370,8 +375,8 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
         let (item,payload) = msg;
         assert_eq!(item.length(),payload.len() as i32);
 
-        debug_assert!(!self.item_channel.make_closed.is_none(),"Send called after channel marked closed");
-        debug_assert!(!self.payload_channel.make_closed.is_none(),"Send called after channel marked closed");
+        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
 
         if self.payload_channel.tx.vacant_len() >= item.length() as usize &&
            self.item_channel.tx.vacant_len() >= 1 {
@@ -395,11 +400,11 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
         assert_eq!(item.length(), payload.len() as i32);
 
         debug_assert!(
-            !self.item_channel.make_closed.is_none(),
+            self.item_channel.make_closed.is_some(),
             "Send called after channel marked closed"
         );
         debug_assert!(
-            !self.payload_channel.make_closed.is_none(),
+            self.payload_channel.make_closed.is_some(),
             "Send called after channel marked closed"
         );
 
@@ -448,7 +453,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
                     _ = has_room => {
                         {
                             // Borrow the payload channel in its own block:
-                            let got_all = self.payload_channel.tx.push_slice(&payload) == payload.len();
+                            let got_all = self.payload_channel.tx.push_slice(payload) == payload.len();
                             if !got_all {
                                 error!("channel is closed");
                                 return Err(item);
@@ -459,10 +464,10 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
                             // Now borrow the item channel:
                             let item_tx = &mut self.item_channel.tx;
                             match item_tx.push(item).await {
-                                Ok(_) => return Ok(()),
+                                Ok(_) => Ok(()),
                                 Err(t) => {
                                     error!("channel is closed");
-                                    return Err(t);
+                                    Err(t)
                                 }
                             }
                         }
@@ -473,7 +478,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
                     {
                         let payload_tx = &mut self.payload_channel.tx;
                         payload_tx.wait_vacant(payload.len()).await;
-                        let pushed = payload_tx.push_slice(&payload) == payload.len();
+                        let pushed = payload_tx.push_slice(payload) == payload.len();
                         if !pushed {
                             error!("channel is closed");
                             return Err(item);
@@ -500,8 +505,8 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
         let (item,payload) = msg;
         assert_eq!(item.length(),payload.len() as i32);
 
-        debug_assert!(!self.item_channel.make_closed.is_none(),"Send called after channel marked closed");
-        debug_assert!(!self.payload_channel.make_closed.is_none(),"Send called after channel marked closed");
+        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
 
         let push_result = if self.payload_channel.tx.vacant_len() >= item.length() as usize &&
             self.item_channel.tx.vacant_len() >= 1 {
@@ -535,7 +540,7 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
                 }
                 //NOTE: may block here on shutdown if graph is built poorly
                 self.payload_channel.tx.wait_vacant(payload.len()).await;
-                match self.payload_channel.tx.push_slice(&payload)==payload.len() {
+                match self.payload_channel.tx.push_slice(payload)==payload.len() {
                     true => {
                         match self.item_channel.tx.push(item).await {
                             Ok(_) => Ok(()),
