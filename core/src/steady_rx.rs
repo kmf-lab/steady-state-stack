@@ -153,9 +153,9 @@ impl <T> Rx<T> {
     ///
     /// # Example Usage
     /// Useful for async scenarios where inspecting the next message without consuming it is required.
-    pub async fn peek_async(&mut self) -> Option<&T> {
-        self.shared_peek_async().await
-    }
+    // pub async fn peek_async(&mut self) -> Option<&T> {
+    //     self.shared_peek_async().await
+    // }
 
     /// Asynchronously returns an iterator over the messages in the channel, waiting for a specified number of messages to be available.
     ///
@@ -183,64 +183,6 @@ impl <T> Rx<T> {
     }
 
 
-
-    //TODO: move next these 2
-    pub(crate) async fn shared_peek_async(&mut self) -> Option<&T> {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.wait_occupied(1);
-            select! { _ = one_down => {}
-                    , _ = operation => {}
-                    , };
-        }
-        let result = self.rx.first();
-        if result.is_some() {
-            let take_count = self.take_count.load(Ordering::Relaxed);
-            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
-            if !cached_take_count == take_count {
-                self.peek_repeats.store(0, Ordering::Relaxed);
-                self.cached_take_count.store(take_count, Ordering::Relaxed);
-            } else {
-                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
-            }
-        } else {
-            self.peek_repeats.store(0, Ordering::Relaxed);
-        }
-        result
-    }
-    pub(crate) async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<&T> {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.wait_occupied(1);
-            if let Some(timeout) = timeout {
-                let mut timeout = Delay::new(timeout).fuse();
-                select! { _ = one_down => {}
-                        , _ = operation => {}
-                        , _ = timeout => {}
-                };
-            } else {
-                select! { _ = one_down => {}
-                        , _ = operation => {}
-                };
-            }
-        }
-        let result = self.rx.first();
-        if result.is_some() {
-            let take_count = self.take_count.load(Ordering::Relaxed);
-            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
-            if !cached_take_count == take_count {
-                self.peek_repeats.store(0, Ordering::Relaxed);
-                self.cached_take_count.store(take_count, Ordering::Relaxed);
-            } else {
-                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
-            }
-        } else {
-            self.peek_repeats.store(0, Ordering::Relaxed);
-        }
-        result
-    }
-    
-    
 
 
     #[inline]

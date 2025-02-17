@@ -13,7 +13,7 @@ use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
 use log::*;
-use futures_util::lock::Mutex;
+use futures_util::lock::{Mutex, MutexGuard};
 use async_ringbuf::traits::Split;
 use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
@@ -322,7 +322,7 @@ impl SideChannelResponder {
         if self.should_apply::<M>().await {
             let girth = source_rx.len();
             for x in 0..girth {
-                let srx = &mut source_rx[x];
+                let srx: &mut MutexGuard<Rx<M>> =  &mut source_rx[x];
                 if !cmd.wait_avail_single(srx, 1).await {
                     return false;
                 };

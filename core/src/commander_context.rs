@@ -22,7 +22,7 @@ use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
-use crate::monitor::ActorMetaData;
+use crate::monitor::{ActorMetaData, CALL_OTHER};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::logger;
 use crate::yield_now::yield_now;
@@ -241,9 +241,9 @@ impl SteadyCommander for SteadyContext {
     /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
     ///
     /// # Asynchronous
-    async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
+    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<&'a T::MsgPeek<'a>>
     {
-        this.shared_peek_async().await
+            this.shared_peek_async_timeout(None).await
     }
     /// Sends a slice of messages to the Tx channel until it is full.
     ///
@@ -287,27 +287,6 @@ impl SteadyCommander for SteadyContext {
             Err(msg) => Err(msg),
         }
     }
-
-
-
-    // fn try_stream_send(&mut self, this: &mut StreamTxBundle<'_, StreamSimpleMessage>
-    //                    , stream_id: i32
-    //                    , payload: &[u8]) -> Result<(), StreamSimpleMessage>{
-    //     debug_assert!(stream_id>= this[0].stream_id);
-    //     debug_assert!(stream_id<= this[this.len()-1].stream_id);
-    //     let idx:usize = (stream_id - this[0].stream_id) as usize;
-    //     let control = StreamSimpleMessage::new(payload.len() as i32);
-    //     if this[idx].payload_channel.vacant_units()>= payload.len()
-    //        && this[idx].item_channel.vacant_units()>= 1 {
-    //         let count = this[idx].payload_channel.shared_send_slice_until_full(payload);
-    //         debug_assert_eq!(count, payload.len());
-    //         let result = this[idx].item_channel.shared_try_send(control);
-    //         debug_assert!(result.is_ok());
-    //         Ok(())
-    //     } else {
-    //         Err(control)
-    //     }
-    // }
 
     fn flush_defrag_messages<S: StreamItem>(&mut self
                                             , out_item: &mut Tx<S>

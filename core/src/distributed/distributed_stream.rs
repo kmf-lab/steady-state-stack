@@ -17,6 +17,7 @@ use ringbuf::traits::{Observer, Split};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
+use crate::core_rx::RxCore;
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
 pub type IdType = i32;
@@ -673,6 +674,10 @@ pub struct LazyStreamRx<T: StreamItem> {
 }
 
 impl<T: StreamItem> LazyStream<T> {
+
+
+
+
     /// Creates a new `LazyStream` that defers channel construction until first use.
     pub(crate) fn new(
         item_builder: &ChannelBuilder,
@@ -790,6 +795,25 @@ impl<T: StreamItem> LazyStreamTx<T> {
 }
 
 impl<T: StreamItem> LazyStreamRx<T> {
+
+    /// For testing simulates taking data from the actor in a controlled manner.
+    pub async fn testing_avail_units(&self) -> usize {
+        let rx = self.lazy_channel.get_rx_clone().await;
+        let mut rx = rx.lock().await;
+        rx.shared_avail_units()
+    }
+
+
+    /// For testing simulates taking data from the actor in a controlled manner.
+    // pub async fn testing_take(&self) -> Vec<T> {
+    //     let rx = self.lazy_channel.get_rx_clone().await;
+    //     let mut rx = rx.lock().await;
+    //     let limit = rx.capacity();
+    //
+    //     rx.shared_take_into_iter().take(limit).collect()
+    // }
+
+
     /// Creates a new `LazyStreamRx` from an existing `Arc<LazyStream<T>>`.
     pub(crate) fn new(lazy_channel: Arc<LazyStream<T>>) -> Self {
         LazyStreamRx { lazy_channel }
@@ -812,7 +836,7 @@ impl<T: StreamItem> LazyStreamRx<T> {
         let s = self.clone();
         let mut l = s.lock().await;
 
-        if let Some(c) = l.item_channel.shared_take_async().await {
+        if let Some(_c) = l.item_channel.shared_take_async().await {
             let count = l.payload_channel.shared_take_slice(data);
             assert_eq!(count, data.len());
             count

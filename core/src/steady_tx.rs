@@ -132,6 +132,7 @@ impl<T> Tx<T> {
         self.shared_wait_empty().await
     }
 
+    // TODO: move this once we figure copy.
     pub(crate) fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
      where T: Copy
     {

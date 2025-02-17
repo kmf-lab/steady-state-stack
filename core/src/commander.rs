@@ -338,7 +338,8 @@ pub trait SteadyCommander {
     /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
     ///
     /// # Asynchronous
-    async fn peek_async<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>;
+    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<&'a T::MsgPeek<'a>>;
+
     /// Sends a slice of messages to the Tx channel until it is full.
     ///
     /// # Parameters

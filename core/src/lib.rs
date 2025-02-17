@@ -194,9 +194,9 @@ pub type TxBundle<'a, T> = Vec<MutexGuard<'a, Tx<T>>>;
 /// This type alias simplifies the usage of a collection of receiver guards for batch operations.
 pub type RxBundle<'a, T> = Vec<MutexGuard<'a, Rx<T>>>;
 
-#[warn(type_alias_bounds)]
+#[allow(type_alias_bounds)]
 pub type TxCoreBundle<'a, T: TxCore> = Vec<MutexGuard<'a, T>>;
-#[warn(type_alias_bounds)]
+#[allow(type_alias_bounds)]
 pub type RxCoreBundle<'a, T: RxCore> = Vec<MutexGuard<'a, T>>;
 
 
