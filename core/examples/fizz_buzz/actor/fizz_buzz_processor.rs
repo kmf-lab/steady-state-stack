@@ -98,7 +98,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
                 && errors_tx.mark_closed()
         }) {
             let _clean = await_for_all!(
-                cmd.wait_avail(c1, RxWait::Single(&mut threes_rx[0])),
+                cmd.wait_avail(&mut threes_rx[0], c1),
                 cmd.wait_avail(&mut fives_rx[0], c2),
                 cmd.wait_vacant(&mut fizzbuzz_messages_tx, vacant_block)
             );
