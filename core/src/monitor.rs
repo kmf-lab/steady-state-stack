@@ -982,7 +982,7 @@ pub(crate) mod monitor_tests {
 
         if let Some(mut rx) = rx.try_lock() {
             let result = monitor.wait_avail_single(&mut rx, 1).await;
-            assert!(!result);
+            assert!(result);
         };
     }
 
