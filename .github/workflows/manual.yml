@@ -17,16 +17,21 @@ env:
 
 jobs:
   build:
-    # Use official ARM64 label for public repos; fallback to ubuntu-latest for x64
     runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4  # Update to latest version
+      - uses: actions/checkout@v4
+
+      # Ensure rustup is available on ARM64 (workaround for #26)
+      - name: Install rustup (ARM64 workaround)
+        if: inputs.architecture == 'arm64'
+        run: |
+          which rustup || sudo DEBIAN_FRONTEND=noninteractive apt-get -y install rustup
 
       - name: Set up Rust
-        uses: actions/setup-rust@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          rust-version: stable
-          target: ${{ inputs.architecture == 'arm64' && 'aarch64-unknown-linux-gnu' || 'x86_64-unknown-linux-gnu' }}
+          toolchain: stable
+          targets: ${{ inputs.architecture == 'arm64' && 'aarch64-unknown-linux-gnu' || 'x86_64-unknown-linux-gnu' }}
 
       - name: Clean
         run: cargo clean
