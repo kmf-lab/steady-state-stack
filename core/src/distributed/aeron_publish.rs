@@ -125,7 +125,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
             let clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
-                                           ,cmd.wait_avail_single(&mut rx, wait_for)
+                                           ,cmd.wait_avail(&mut rx, wait_for)
                            );
 
 

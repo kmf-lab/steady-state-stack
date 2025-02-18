@@ -33,7 +33,7 @@ async fn internal_behavior<C:SteadyCommander, const GIRTH:usize>(mut cmd: C, one
        // info!("router a");
         let _clean = await_for_all_or_proceed_upon!(
             cmd.wait_periodic(Duration::from_millis(40)),
-            cmd.wait_avail_single(&mut rx,2),
+            cmd.wait_avail(&mut rx,2),
             cmd.wait_vacant_bundle(&mut tx,count/2,tx_girth)
         );
        // info!("router b");

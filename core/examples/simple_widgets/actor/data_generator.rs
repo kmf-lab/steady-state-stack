@@ -36,7 +36,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd:C
 
     while cmd.is_running(&mut || tx.mark_closed() ) {
 
-        let _clean = await_for_all!(cmd.wait_vacant_single(&mut tx, MULTIPLIER));
+        let _clean = await_for_all!(cmd.wait_vacant(&mut tx, MULTIPLIER));
 
         let len_out = tx.vacant_units().min(MULTIPLIER);
 

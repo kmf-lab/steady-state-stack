@@ -24,8 +24,8 @@ async fn internal_behavior<CMD: SteadyCommander>(mut context: CMD, ticks_rx: Ste
 
     while context.is_running(&mut || ticks_rx_lock.is_closed_and_empty() && ticks_tx_lock.mark_closed()) {
         let _clean = await_for_all!(
-                                context.wait_avail_single(&mut ticks_rx_lock,BATCH),
-                                context.wait_vacant_single(&mut ticks_tx_lock,BATCH)
+                                context.wait_avail(&mut ticks_rx_lock,BATCH),
+                                context.wait_vacant(&mut ticks_tx_lock,BATCH)
                                );
         let count = context.take_slice(&mut ticks_rx_lock, &mut buffer);
         context.send_slice_until_full(&mut ticks_tx_lock, &buffer[0..count]);

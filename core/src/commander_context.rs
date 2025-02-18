@@ -18,7 +18,6 @@ use ringbuf::producer::Producer;
 use std::ops::DerefMut;
 use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
-use crate::commander::RxWait;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
@@ -512,7 +511,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_avail_single<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         this.shared_wait_closed_or_avail_units(count).await
     }
 
@@ -523,7 +522,7 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_vacant_single<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
+    async fn wait_vacant<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
         this.shared_wait_shutdown_or_vacant_units(count).await
     }
 
@@ -651,14 +650,4 @@ impl SteadyCommander for SteadyContext {
             result.load(Ordering::Relaxed)
         }
 
-    async fn wait_avail<T: RxCore>(&self, count: usize, this: RxWait<'_, T>) -> bool {
-        match this {
-            RxWait::Single(r) => {
-                self.wait_avail_single(r, count).await
-            }
-            RxWait::Bundle(r, c) => {
-                self.wait_avail_bundle(r, count, c).await
-            }
-        }
-    }
 }

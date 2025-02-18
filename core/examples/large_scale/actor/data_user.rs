@@ -21,7 +21,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>)
 
         //we only added two here to force the macro test of two items
         await_for_any!( cmd.wait_shutdown()
-                       ,cmd.wait_avail_single(&mut rx, 1));
+                       ,cmd.wait_avail(&mut rx, 1));
 
         while let Some(packet) = cmd.try_take(&mut rx) {
             assert_eq!(packet.data.len(), 62);
@@ -51,7 +51,7 @@ pub async fn run(context: SteadyContext
 
             let clean = await_for_all!(
                   reponder.wait_available_units(1),
-                  monitor.wait_avail_single(&mut rx, 1)
+                  monitor.wait_avail(&mut rx, 1)
             );
 
             if clean  {

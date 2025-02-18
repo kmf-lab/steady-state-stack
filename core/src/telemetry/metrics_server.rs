@@ -113,7 +113,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
         //TODO: merge the above connection loop into this wait so we only have 1 thread and 1 loop.
-        let _clean = await_for_all!( ctrl.wait_avail_single(&mut rxg,1) );
+        let _clean = await_for_all!( ctrl.wait_avail(&mut rxg,1) );
 
         if let Some(msg) = ctrl.try_take(&mut rxg) {
             process_msg(msg

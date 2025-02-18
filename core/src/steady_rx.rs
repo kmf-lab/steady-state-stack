@@ -146,16 +146,7 @@ impl <T> Rx<T> {
         self.shared_peek_async_slice(wait_for_count, elems).await
     }
 
-    /// Asynchronously peeks at the next message in the channel without removing it.
-    ///
-    /// # Returns
-    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
-    ///
-    /// # Example Usage
-    /// Useful for async scenarios where inspecting the next message without consuming it is required.
-    // pub async fn peek_async(&mut self) -> Option<&T> {
-    //     self.shared_peek_async().await
-    // }
+
 
     /// Asynchronously returns an iterator over the messages in the channel, waiting for a specified number of messages to be available.
     ///
@@ -254,22 +245,6 @@ impl<T> Rx<T> {
         self.last_checked_tx_instance = id;
     }
 
-    /// Only for use in unit tests. (TODO: delete??)
-    pub fn block_until_not_empty(&self, duration: Duration) {
-        assert!(cfg!(debug_assertions), "This function is only for testing");
-        let start = Instant::now();
-        loop {
-            if !self.is_empty() {
-                break;
-            }
-            if start.elapsed() > duration {
-                error!("timeout waiting for channel to not be empty");
-                break;
-            }
-            std::thread::yield_now();
-        }
-    }
-
 
     /// Checks if the channel is closed.
     ///
@@ -338,28 +313,22 @@ impl<T> Rx<T> {
         self.shared_avail_units()
     }
 
-    /// Asynchronously waits for a specified number of messages to be available in the channel.
-    ///
-    /// # Parameters
-    /// - `count`: The number of messages to wait for.
-    ///
-    /// # Example Usage
-    /// Suitable for scenarios requiring batch processing where a certain number of messages are needed before processing begins.
-    #[inline]
-    pub async fn wait_avail_units(&mut self, count: usize) -> bool {
-        self.shared_wait_shutdown_or_avail_units(count).await;
-        false
-    }
+    // /// Asynchronously waits for a specified number of messages to be available in the channel.
+    // ///
+    // /// # Parameters
+    // /// - `count`: The number of messages to wait for.
+    // ///
+    // /// # Example Usage
+    // /// Suitable for scenarios requiring batch processing where a certain number of messages are needed before processing begins.
+    // #[inline]
+    // pub async fn wait_avail_units(&mut self, count: usize) -> bool {
+    //     self.shared_wait_shutdown_or_avail_units(count).await;
+    //     false
+    // }
 
 
+    //TODO: confirm these are moved to RxCore??
 
-    #[inline]
-    pub(crate) fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
-        where T: Copy {
-        let count = self.rx.pop_slice(elems);
-        self.take_count.fetch_add(count as u32, Ordering::Relaxed); //wraps on overflow
-        count
-    }
 
     #[inline]
     pub(crate) fn shared_advance_index(&mut self, count: usize) -> usize {
@@ -467,6 +436,13 @@ impl<T> Rx<T> {
         self.rx.iter()
     }
 
+    #[inline]
+    pub(crate) fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
+    where T: Copy {
+        let count = self.rx.pop_slice(elems);
+        self.take_count.fetch_add(count as u32, Ordering::Relaxed); //wraps on overflow
+        count
+    }
 
 }
 
@@ -590,7 +566,7 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
             let rx = rx.clone();
             async move {
                 let mut guard = rx.lock().await;
-                guard.wait_avail_units(avail_count).await;
+                guard.shared_wait_closed_or_avail_units(avail_count).await;
             }.boxed()
         });
 

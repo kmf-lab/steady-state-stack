@@ -107,7 +107,6 @@ pub use steady_tx::SteadyTxBundleTrait;
 pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
 pub use commander::SteadyCommander;
-pub use commander::RxWait;
 pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
 pub use distributed::distributed_stream::{StreamSessionMessage, StreamSimpleMessage};
@@ -965,7 +964,7 @@ mod lib_tests {
         let rx = create_rx::<i32>(vec![1, 2, 3]);
         let guard = rx.try_lock();
         if let Some(mut rx) = guard {
-            let result = context.wait_avail_single(&mut rx, 2).await;
+            let result = context.wait_avail(&mut rx, 2).await;
             assert!(result); // Ensure it waits for units or shutdown
         }
     }
@@ -976,7 +975,7 @@ mod lib_tests {
         let rx = create_rx::<i32>(vec![1, 2, 3]);
         let guard = rx.try_lock();
         if let Some(mut rx) = guard {
-            let result = context.wait_avail_single(&mut rx, 2).await;
+            let result = context.wait_avail(&mut rx, 2).await;
             assert!(result); // Ensure it waits for availability or closure
         }
     }
@@ -998,7 +997,7 @@ mod lib_tests {
         let tx = create_tx::<i32>(vec![]);
         let guard = tx.try_lock();
         if let Some(mut tx) = guard {
-            let result = context.wait_vacant_single(&mut tx, 2).await;
+            let result = context.wait_vacant(&mut tx, 2).await;
             assert!(result); // Should succeed if vacant units or shutdown occur
         }
     }
@@ -1009,7 +1008,7 @@ mod lib_tests {
         let tx = create_tx::<i32>(vec![]);
         let guard = tx.try_lock();
         if let Some(mut tx) = guard {
-            let result = context.wait_vacant_single(&mut tx, 1).await;
+            let result = context.wait_vacant(&mut tx, 1).await;
             assert!(result); // Ensure it waits for vacancy correctly
         }
     }

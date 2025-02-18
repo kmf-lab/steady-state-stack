@@ -38,8 +38,8 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
         
         // async on any required conditions to ensure we are not spinning
         let _clean = await_for_all!(
-                                    monitor.wait_avail_single(&mut ticks_rx,100),
-                                    monitor.wait_vacant_single(&mut tick_counts_tx,1)
+                                    monitor.wait_avail(&mut ticks_rx,100),
+                                    monitor.wait_vacant(&mut tick_counts_tx,1)
                                    );
 
         let count = monitor.try_peek_slice(&mut ticks_rx, &mut buffer);

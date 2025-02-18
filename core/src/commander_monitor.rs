@@ -20,7 +20,7 @@ use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
-use crate::commander::RxWait;
+
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
@@ -154,16 +154,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     //TODO: future feature to optimize threading, not yet implemented
     //monitor.chain_channels([rx],tx); //any of the left channels may produce output on the right
 
-    async fn wait_avail<T: RxCore>(&self, count: usize, this: RxWait<'_, T>) -> bool {
-        match this {
-            RxWait::Single(r) => {
-                self.wait_avail_single(r,count).await
-            }
-            RxWait::Bundle(r, c) => {
-                self.wait_avail_bundle(r,count, c).await
-            }
-        }
-    }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     ///
@@ -928,7 +918,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// `true` if the units are available, otherwise `false` if closed channel.
     ///
     /// # Asynchronous
-    async fn wait_avail_single<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count = Self::validate_capacity_rx(this, count);
         if self.telemetry.is_dirty() {
@@ -958,7 +948,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// - `count`: The number of vacant units to wait for.
     ///
     /// # Asynchronous
-    async fn wait_vacant_single<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
+    async fn wait_vacant<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
 
         if self.telemetry.is_dirty() {

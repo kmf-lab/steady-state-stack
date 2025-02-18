@@ -27,7 +27,7 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
     if let Some(simulator) = monitor.sidechannel_responder() {
         while monitor.is_running(&mut || rx.is_closed_and_empty()) {
 
-            let _clean = await_for_all!(monitor.wait_avail_single(&mut rx[0],1));
+            let _clean = await_for_all!(monitor.wait_avail(&mut rx[0],1));
             simulator.respond_with(|expected| {
                 match monitor.try_take(&mut rx[0]) {
                     Some(measured) => {

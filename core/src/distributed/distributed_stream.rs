@@ -850,7 +850,7 @@ impl<T: StreamItem> LazyStreamRx<T> {
         let s = self.clone();
         let mut l = s.lock().await;
 
-        l.item_channel.wait_avail_units(count).await
+        l.shared_wait_closed_or_avail_units(count).await
 
     }
 }

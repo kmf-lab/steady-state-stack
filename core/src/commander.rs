@@ -112,14 +112,6 @@ impl SteadyContext {
 
 
 
-
-
-pub enum RxWait<'a, T:RxCore> {
-    Single(&'a mut T),
-    Bundle(&'a mut RxCoreBundle<'a, T>, usize)
-}
-
-
 /// NOTE this trait is passed into actors and actors are tied to a single thread. As a result
 ///      we need not worry about these methods needing Send. We also know that T will come
 ///      from other actors so we can assume that T is Send + Sync
@@ -127,11 +119,9 @@ pub enum RxWait<'a, T:RxCore> {
 pub trait SteadyCommander {
 
 
-    async fn wait_avail_single<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
 
     async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool;
-
-    async fn wait_avail<T: RxCore>(&self, count: usize, this: RxWait<T>) -> bool;
 
 
 
@@ -229,7 +219,7 @@ pub trait SteadyCommander {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_vacant_single<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool;
+    async fn wait_vacant<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool;
 
     async fn wait_vacant_bundle<T: TxCore>(&self, this: &mut TxCoreBundle<'_, T>, count: T::MsgSize, ready_channels: usize) -> bool;
 
