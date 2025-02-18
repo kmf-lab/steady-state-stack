@@ -1,0 +1,54 @@
+name: Rust Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      features:
+        description: 'Comma-separated features to test (leave blank for default features)'
+        required: false
+        default: ''
+      architecture:
+        description: 'Architecture to use (x64 or arm64)'
+        required: false
+        default: 'x64'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # Use official ARM64 label for public repos; fallback to ubuntu-latest for x64
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4  # Update to latest version
+
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: stable
+          target: ${{ inputs.architecture == 'arm64' && 'aarch64-unknown-linux-gnu' || 'x86_64-unknown-linux-gnu' }}
+
+      - name: Clean
+        run: cargo clean
+
+      - name: Build
+        run: |
+          set -e
+          if [ -z "${{ inputs.features }}" ]; then
+            echo "No features specified; building with default features."
+            RUST_BACKTRACE=1 cargo build --verbose
+          else
+            echo "Building with specified features: ${{ inputs.features }}"
+            RUST_BACKTRACE=1 cargo build --verbose --no-default-features --features "${{ inputs.features }}"
+          fi
+
+      - name: Run Tests
+        run: |
+          set -e
+          if [ -z "${{ inputs.features }}" ]; then
+            echo "No features specified; running tests with default features."
+            RUST_BACKTRACE=1 cargo test --verbose
+          else
+            echo "Running tests with specified features: ${{ inputs.features }}"
+            RUST_BACKTRACE=1 cargo test --verbose --no-default-features --features "${{ inputs.features }}"
+          fi
