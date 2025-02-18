@@ -113,6 +113,7 @@ impl SteadyContext {
 
 
 
+
 pub enum RxWait<'a, T:RxCore> {
     Single(&'a mut T),
     Bundle(&'a mut RxCoreBundle<'a, T>, usize)
@@ -124,6 +125,15 @@ pub enum RxWait<'a, T:RxCore> {
 ///      from other actors so we can assume that T is Send + Sync
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
+
+
+    async fn wait_avail_single<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
+
+    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool;
+
+    async fn wait_avail<T: RxCore>(&self, count: usize, this: RxWait<T>) -> bool;
+
+
 
     /// set log level for the entire application
     fn loglevel(&self, loglevel: &str);
@@ -209,22 +219,6 @@ pub trait SteadyCommander {
     async fn wait_future_void<F>(&self, fut: F) -> bool
     where
         F: FusedFuture<Output = ()> + 'static + Send + Sync;
-
-
-
-    /// Waits until the specified number of available units are in the receiver.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_avail_single<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
-
-
-    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool;
-
-    async fn wait_avail<T: RxCore>(&self, count: usize, this: RxWait<T>) -> bool;
 
 
 

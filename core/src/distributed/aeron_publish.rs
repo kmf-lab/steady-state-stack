@@ -346,8 +346,11 @@ pub(crate) mod aeron_tests {
    // #[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
     async fn test_bytes_process() {
         if true {
-             return; //do not run this test
+            return; //do not run this test
         }
+       if std::env::var("GITHUB_ACTIONS").is_ok() {
+           return;
+       }
 
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(true)

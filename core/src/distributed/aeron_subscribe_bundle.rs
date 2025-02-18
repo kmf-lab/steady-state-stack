@@ -299,7 +299,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod aeron_media_driver_tests {
-    use std::net::{IpAddr, Ipv4Addr};
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::distributed_stream::StreamSimpleMessage;
@@ -316,6 +315,9 @@ pub(crate) mod aeron_media_driver_tests {
           if true {
               return; //Not running this test at this time.
           }
+        if std::env::var("GITHUB_ACTIONS").is_ok() {
+            return;
+        }
 
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(false)

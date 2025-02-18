@@ -30,16 +30,16 @@ pub trait TxCore {
     fn shared_is_full(&self) -> bool;
     fn shared_is_empty(&self) -> bool;
     fn shared_vacant_units(&self) -> usize;
-    #[warn(async_fn_in_trait)]
+    #[allow(async_fn_in_trait)]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool;
-    #[warn(async_fn_in_trait)]
+    #[allow(async_fn_in_trait)]
     async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool;
-    #[warn(async_fn_in_trait)]
+    #[allow(async_fn_in_trait)]
     async fn shared_wait_empty(&mut self) -> bool;
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
-    #[warn(async_fn_in_trait)]
+    #[allow(async_fn_in_trait)]
     async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<(), Self::MsgOut>;
-    #[warn(async_fn_in_trait)]
+    #[allow(async_fn_in_trait)]
     async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<(), Self::MsgOut>;
 
 

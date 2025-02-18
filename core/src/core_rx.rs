@@ -32,13 +32,13 @@ pub trait RxCore {
 
     fn shared_avail_units(&mut self) -> usize;
 
-    #[warn(async_fn_in_trait)]
+    #[allow(async_fn_in_trait)]
     async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool;
 
-    #[warn(async_fn_in_trait)]
+    #[allow(async_fn_in_trait)]
     async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool;
 
-    #[warn(async_fn_in_trait)]
+    #[allow(async_fn_in_trait)]
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool;
 
     fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)>;

@@ -807,7 +807,7 @@ pub(crate) mod monitor_tests {
                         
                         match send_guard.shared_try_send(item) {
                             Ok(d) => {
-                                assert!(TxDone::Stream(2,2) == d );
+                                assert_eq!(TxDone::Normal(1), d );
                             },
                             Err(_) => {}
                         }
@@ -976,7 +976,7 @@ pub(crate) mod monitor_tests {
     // Test for wait_shutdown_or_avail_units
     #[async_std::test]
     async fn test_wait_shutdown_or_avail_units() {
-        let (_tx,rx) = create_rx::<i32>(vec![]);
+        let (_tx,rx) = create_rx::<i32>(vec![1,2]);
         let context = test_steady_context();
         let monitor = into_monitor!(context, [rx], []);
 

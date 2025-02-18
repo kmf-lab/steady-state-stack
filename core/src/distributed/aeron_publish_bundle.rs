@@ -368,6 +368,9 @@ pub(crate) mod aeron_tests {
         if true {
              return; //do not run this test
         }
+        if std::env::var("GITHUB_ACTIONS").is_ok() {
+            return;
+        }
 
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(true)
