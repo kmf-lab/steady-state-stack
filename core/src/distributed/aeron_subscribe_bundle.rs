@@ -44,14 +44,16 @@ fn test() {
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
                                      , aeron_connect: Channel
+                                     , stream_id: i32
                                      , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                                      , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
-    internal_behavior(into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data())), tx, aeron_connect, aeron, state).await
+    internal_behavior(into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data())), tx, aeron_connect, stream_id, aeron, state).await
 }
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                                  , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
                                                                  , aeron_channel: Channel
+                                                                 , stream_id: i32
                                                                  , aeron: Arc<futures_util::lock::Mutex<Aeron>>
                                                                  , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
 
@@ -73,8 +75,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             //trace!("holding add_subscription lock");
             for f in 0..GIRTH {
                 if state.sub_reg_id[f].is_none() { //only add if we have not already done this
-                    warn!("adding new sub {} {:?}", tx[f].stream_id, aeron_channel.cstring() );
-                    match aeron.add_subscription(aeron_channel.cstring(), tx[f].stream_id) {
+                    warn!("adding new sub {} {:?}", f as i32 + stream_id, aeron_channel.cstring() );
+                    match aeron.add_subscription(aeron_channel.cstring(), f as i32 + stream_id) {
                         Ok(reg_id) => {
                             warn!("new subscription found: {}",reg_id);
                             state.sub_reg_id[f] = Some(reg_id)},
@@ -334,7 +336,7 @@ pub(crate) mod aeron_media_driver_tests {
         const STREAMS_COUNT:usize = 1;
         let (to_aeron_tx,to_aeron_rx) = channel_builder
             .with_capacity(500)
-            .build_as_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>(0, 6);
+            .build_as_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>( 6);
 
         let aeron_config = AeronConfig::new()
             .with_media_type(MediaType::Ipc) //for testing
@@ -347,7 +349,8 @@ pub(crate) mod aeron_media_driver_tests {
             .build();
 
 
-        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone())
+        let stream_id = 7;
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(), stream_id)
                    , &graph.actor_builder().with_name("SenderTest")
                    , &mut Threading::Spawn);
 
@@ -363,9 +366,9 @@ pub(crate) mod aeron_media_driver_tests {
 
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_capacity(500)
-            .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(0, 6);
+            .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>( 6);
 
-        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone())
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(),stream_id)
                        , & graph.actor_builder().with_name("ReceiverTest")
                        , &mut Threading::Spawn);
 

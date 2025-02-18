@@ -236,7 +236,7 @@ fn build_driver_block(actor: &Actor) -> String {
                     //2 may want the default channels_count or this may be a single
                     //  we ensure girth is 1 to confirm this choice.
                     if v.len()==2 && 1==girth {
-                        format!("cmd.wait_closed_or_avail_units(&mut {}_rx,{})", v[0], v[1])
+                        format!("cmd.wait_avail(&mut {}_rx,{})", v[0], v[1])
                     } else {
                         let channels_count = if girth>1 && v.len()>2 {
                             if let Some(p) = extract_percent(v[2].clone()) {
@@ -247,7 +247,7 @@ fn build_driver_block(actor: &Actor) -> String {
                         } else {
                             1 //if we got no girth assume 1 by default
                         };
-                        format!("cmd.wait_closed_or_avail_units_bundle(&mut {}_rx,{},{})", v[0], v[1], channels_count)
+                        format!("cmd.wait_avail_bundle(&mut {}_rx,{},{})", v[0], v[1], channels_count)
                     }
                 }).collect();
                 andy_drivers.append(&mut each);
@@ -726,7 +726,7 @@ mod more_tests {
         };
 
         let result = build_driver_block(&actor);
-        let expected = "cmd.wait_closed_or_avail_units(&mut input_rx,1)";
+        let expected = "cmd.wait_avail(&mut input_rx,1)";
         assert!(result.contains(expected));
     }
 

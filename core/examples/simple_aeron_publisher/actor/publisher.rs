@@ -32,7 +32,7 @@ pub async fn run<const GIRTH: usize>(context: SteadyContext
         let item = StreamSimpleMessage::new(8);
 
         let mut remaining = TEST_ITEMS;
-         let idx:usize = tx.stream_index(STREAM_ID);
+         let idx:usize = (0 - STREAM_ID) as usize;
          // trace!("index of {} out of {}",idx, tx.len());
          while remaining > 0 && cmd.vacant_units(&mut tx[idx]) >= BATCH_SIZE {
 

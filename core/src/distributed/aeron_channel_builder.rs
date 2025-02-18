@@ -6,9 +6,10 @@ use aeron::aeron::Aeron;
 use futures_util::lock::Mutex;
 use crate::distributed::aeron_channel_structs::*;
 
+type StreamId = i32;
 pub enum AqueTech {
     None,
-    Aeron(Option<Arc<Mutex<Aeron>>>, Channel),
+    Aeron(Option<Arc<Mutex<Aeron>>>, Channel, StreamId),
     // Add more types here as needed
 }
 

@@ -162,14 +162,11 @@ pub trait StreamTxBundleTrait {
     /// Marks all channels in the bundle as closed.
     fn mark_closed(&mut self) -> bool;
 
-    fn stream_index(&self, stream_id: i32) -> usize;
-
 }
 
 pub trait StreamRxBundleTrait {
     fn is_closed_and_empty(&mut self) -> bool;
     fn is_closed(&mut self) -> bool;
-    fn stream_index(&self, stream_id: i32) -> usize;
 
 }
 
@@ -180,11 +177,7 @@ impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
         true  // always returns true, close request is never rejected by this method.
     }
 
-    fn stream_index(&self, stream_id: i32) -> usize {
-        assert!(stream_id>=self[0].stream_id);
-        assert!(stream_id-self[0].stream_id < self.len() as i32);
-        (stream_id - self[0].stream_id) as usize
-    }
+
 }
 
 impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
@@ -194,11 +187,7 @@ impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
     fn is_closed(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed())
     }
-    fn stream_index(&self, stream_id: i32) -> usize {
-        assert!(stream_id>=self[0].stream_id);
-        assert!(stream_id-self[0].stream_id < self.len() as i32);
-        (stream_id - self[0].stream_id) as usize
-    }
+
 }
 
 
@@ -335,7 +324,6 @@ pub struct StreamTxMetaData {
 pub struct StreamTx<T: StreamItem> {
     pub(crate) item_channel: Tx<T>,
     pub(crate) payload_channel: Tx<u8>,
-    pub(crate) stream_id: i32,
     defrag: AHashMap<i32, Defrag<T>>,
     pub(crate) ready: VecDeque<i32>
 }
@@ -365,11 +353,10 @@ impl <T: StreamItem> Defrag<T> {
 
 impl<T: StreamItem> StreamTx<T> {
     /// Creates a new `StreamTx` wrapping the given channels and `stream_id`.
-    pub fn new(item_channel: Tx<T>, payload_channel: Tx<u8>, stream_id: i32) -> Self {
+    pub fn new(item_channel: Tx<T>, payload_channel: Tx<u8>) -> Self {
         StreamTx {
             item_channel,
             payload_channel,
-            stream_id,
             defrag: Default::default(),
             ready: VecDeque::with_capacity(4)
         }
@@ -490,19 +477,17 @@ impl<T: StreamItem> StreamTx<T> {
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
 pub struct StreamRx<T: StreamItem> {
     pub(crate) item_channel: Rx<T>,
-    pub(crate) payload_channel: Rx<u8>,
-    pub(crate) stream_id: i32
+    pub(crate) payload_channel: Rx<u8>
 }
 
 
 
 impl<T: StreamItem> StreamRx<T> {
     /// Creates a new `StreamRx` wrapping the given channels and `stream_id`.
-    pub(crate) fn new(item_channel: Rx<T>, payload_channel: Rx<u8>, stream_id: i32) -> Self {
+    pub(crate) fn new(item_channel: Rx<T>, payload_channel: Rx<u8>) -> Self {
         StreamRx {
             item_channel,
-            payload_channel,
-            stream_id
+            payload_channel
         }
     }
 
@@ -657,8 +642,6 @@ pub(crate) struct LazyStream<T: StreamItem> {
     /// Stores the actual channel objects (`(SteadyStreamTx, SteadyStreamRx)`) once built.
     channel: Mutex<Option<(SteadyStreamTx<T>, SteadyStreamRx<T>)>>,
 
-    /// Stream ID for this stream.
-    stream_id: i32,
 }
 
 /// A lazily-initialized transmitter wrapper for a steady stream.
@@ -682,14 +665,11 @@ impl<T: StreamItem> LazyStream<T> {
     pub(crate) fn new(
         item_builder: &ChannelBuilder,
         payload_builder: &ChannelBuilder,
-        stream_id: i32,
     ) -> Self {
-        assert!(stream_id >= 0, "Stream ID must zero or positive");
         LazyStream {
             item_builder: Mutex::new(Some(item_builder.clone())),
             payload_builder: Mutex::new(Some(payload_builder.clone())),
             channel: Mutex::new(None),
-            stream_id,
         }
     }
 
@@ -713,8 +693,8 @@ impl<T: StreamItem> LazyStream<T> {
             let (meta_tx, meta_rx) = meta_builder.eager_build_internal();
             let (data_tx, data_rx) = data_builder.eager_build_internal();
 
-            let tx = Arc::new(Mutex::new(StreamTx::new(meta_tx, data_tx, self.stream_id)));
-            let rx = Arc::new(Mutex::new(StreamRx::new(meta_rx, data_rx, self.stream_id)));
+            let tx = Arc::new(Mutex::new(StreamTx::new(meta_tx, data_tx)));
+            let rx = Arc::new(Mutex::new(StreamRx::new(meta_rx, data_rx)));
             *channel = Some((tx, rx));
         }
         channel.as_ref().expect("internal error").0.clone()
@@ -740,8 +720,8 @@ impl<T: StreamItem> LazyStream<T> {
             let (meta_tx, meta_rx) = meta_builder.eager_build_internal();
             let (data_tx, data_rx) = data_builder.eager_build_internal();
 
-            let tx = Arc::new(Mutex::new(StreamTx::new(meta_tx, data_tx, self.stream_id)));
-            let rx = Arc::new(Mutex::new(StreamRx::new(meta_rx, data_rx, self.stream_id)));
+            let tx = Arc::new(Mutex::new(StreamTx::new(meta_tx, data_tx)));
+            let rx = Arc::new(Mutex::new(StreamRx::new(meta_rx, data_rx)));
             *channel = Some((tx, rx));
         }
         channel.as_ref().expect("internal error").1.clone()

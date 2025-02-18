@@ -21,7 +21,7 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
         threading: &mut Threading,
     ) {
         match tech {
-            AqueTech::Aeron(media_driver, channel) => {
+            AqueTech::Aeron(media_driver, channel, stream_id) => {
                 let actor_builder = actor_builder.clone();
                 if let Some(aeron) = media_driver {
                     let state = new_state();
@@ -29,6 +29,7 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
                                    aeron_publish::run(context
                                                       , self.clone()
                                                       , channel.clone()
+                                                      , stream_id
                                                       , aeron.clone()
                                                       , state.clone())
                                , threading)
@@ -49,7 +50,7 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
         threading: &mut Threading,
     ) {
         match tech {
-            AqueTech::Aeron(media_driver, channel) => {
+            AqueTech::Aeron(media_driver, channel, stream_id) => {
                 let actor_builder = actor_builder.clone();
                 if let Some(aeron) = media_driver {
                     let state = new_state();
@@ -57,6 +58,7 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
                                    aeron_subscribe::run(context
                                                         , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
                                                         , channel.clone()
+                                                        , stream_id
                                                         , aeron.clone()
                                                         , state.clone())
                                , threading);
@@ -76,7 +78,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
         threading: &mut Threading,
     ) {
         match tech {
-            AqueTech::Aeron(media_driver, channel) => {
+            AqueTech::Aeron(media_driver, channel, stream_id) => {
                 let actor_builder = actor_builder.clone();
                 if let Some(aeron) = media_driver {
                     let state = new_state();
@@ -84,6 +86,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
                                    aeron_publish_bundle::run(context
                                                              , self.clone()
                                                              , channel.clone()
+                                                             , stream_id
                                                              , aeron.clone()
                                                              , state.clone())
                                , threading)
@@ -104,7 +107,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
         threading: &mut Threading,
     ) {
         match tech {
-            AqueTech::Aeron(media_driver, channel) => {
+            AqueTech::Aeron(media_driver, channel, stream_id) => {
                 let actor_builder = actor_builder.clone();
                 if let Some(aeron) = media_driver {
                     let state = new_state();
@@ -112,6 +115,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
                                    aeron_subscribe_bundle::run(context
                                                                , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
                                                                , channel.clone()
+                                                               , stream_id
                                                                , aeron.clone()
                                                                , state.clone())
                                , threading);

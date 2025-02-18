@@ -60,8 +60,7 @@ fn main() {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
         .with_capacity(4*1024*1024)
-        .build_as_stream_bundle::<StreamSessionMessage,1>(STREAM_ID
-                                                          ,8);
+        .build_as_stream_bundle::<StreamSessionMessage,1>(8);
 
 
     let base = from_aeron_rx.clone();
@@ -73,7 +72,7 @@ fn main() {
         .build(move |context| actor::subscriber::run(context, base.clone())
                , &mut Threading::Spawn);
 
-    from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(),aeron_channel)
+    from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(),aeron_channel, STREAM_ID)
                                         , &graph.actor_builder().with_name("ReceiverTest")
                                         , &mut Threading::Spawn);
 

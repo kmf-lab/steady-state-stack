@@ -26,15 +26,17 @@ pub struct AeronSubscribeSteadyState {
 pub async fn run(context: SteadyContext
                  , tx: SteadyStreamTx<StreamSessionMessage>
                  , aeron_connect: Channel
+                 , stream_id: i32
                  , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                  , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
     internal_behavior(into_monitor!(context, [], [tx.meta_data().control])
-                      , tx, aeron_connect, aeron, state).await
+                      , tx, aeron_connect, stream_id, aeron, state).await
 }
 
 async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                  , tx: SteadyStreamTx<StreamSessionMessage>
                  , aeron_channel: Channel
+                 , stream_id: i32
                  , aeron: Arc<futures_util::lock::Mutex<Aeron>>
                  , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
 
@@ -46,8 +48,8 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         {
             let mut aeron = aeron.lock().await;
                 if state.sub_reg_id.is_none() { //only add if we have not already done this
-                    warn!("adding new sub {} {:?}", tx.stream_id, aeron_channel.cstring() );
-                    match aeron.add_subscription(aeron_channel.cstring(), tx.stream_id) {
+                    warn!("adding new sub {} {:?}", stream_id, aeron_channel.cstring() );
+                    match aeron.add_subscription(aeron_channel.cstring(), stream_id) {
                         Ok(reg_id) => {
                             warn!("new subscription found: {}",reg_id);
                             state.sub_reg_id = Some(reg_id)},
@@ -266,6 +268,7 @@ pub(crate) mod aeron_media_driver_tests {
     use async_std::sync::Mutex;
     use once_cell::sync::Lazy;
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
+    use crate::distributed::aeron_publish::aeron_tests::STREAM_ID;
     use crate::distributed::distributed_builder::AqueductBuilder;
 
     pub(crate) static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -295,7 +298,7 @@ pub(crate) mod aeron_media_driver_tests {
         const STREAMS_COUNT:usize = 1;
         let (to_aeron_tx,to_aeron_rx) = channel_builder
             .with_capacity(500)
-            .build_as_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>(0, 6);
+            .build_as_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>( 6);
 
         let aeron_config = AeronConfig::new()
             .with_media_type(MediaType::Ipc) //for testing
@@ -308,7 +311,7 @@ pub(crate) mod aeron_media_driver_tests {
             .build();
 
 
-        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone())
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(), STREAM_ID)
                                , &graph.actor_builder().with_name("SenderTest")
                                , &mut Threading::Spawn);
 
@@ -324,9 +327,9 @@ pub(crate) mod aeron_media_driver_tests {
 
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_capacity(500)
-            .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(0, 6);
+            .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(6);
 
-        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config)
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config, STREAM_ID)
                                      , &graph.actor_builder().with_name( "ReceiverTest")
                                      , &mut Threading::Spawn);
 

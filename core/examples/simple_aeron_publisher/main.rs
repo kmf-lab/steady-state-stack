@@ -53,8 +53,7 @@ fn main() {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
         .with_capacity(4*1024*1024)
-        .build_as_stream_bundle::<StreamSimpleMessage,1>(STREAM_ID
-                                                         ,8);
+        .build_as_stream_bundle::<StreamSimpleMessage,1>(8);
 
 
 
@@ -67,7 +66,7 @@ fn main() {
                , &mut Threading::Spawn);
 
 
-    to_aeron_rx.build_aqueduct( AqueTech::Aeron(graph.aeron_md(), aeron_channel)
+    to_aeron_rx.build_aqueduct( AqueTech::Aeron(graph.aeron_md(), aeron_channel, STREAM_ID)
                              , &graph.actor_builder().with_name("SenderTest")
                              , &mut Threading::Spawn);
 

@@ -331,11 +331,8 @@ impl ChannelBuilder {
     }
 
     pub fn build_as_stream_bundle<T: StreamItem, const GIRTH: usize>(&self
-                                                                     , base_stream_id: i32
                                                                      , bytes_per_item: usize
                                                ) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
-        assert!(base_stream_id>=0, "Stream Id must be positive");
-        assert!((base_stream_id+GIRTH as i32)<i32::MAX, "Stream Id of all channels must fit in i32");
 
         let mut tx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
         let mut rx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
@@ -343,8 +340,7 @@ impl ChannelBuilder {
         let payload_channel_builder = &self.with_capacity(self.capacity*bytes_per_item);
         (0..GIRTH).for_each(|i| { //TODO: later add custom builders for items vs payload
             let lazy = Arc::new(LazyStream::new(self
-                                              , payload_channel_builder
-                                              , base_stream_id+i as i32));           
+                                              , payload_channel_builder));
             tx_vec.push(LazyStreamTx::<T>::new(lazy.clone()));
             rx_vec.push(LazyStreamRx::<T>::new(lazy.clone()));
         });
@@ -365,8 +361,7 @@ impl ChannelBuilder {
     pub fn build_as_stream<T: StreamItem>(&self, stream_id: i32, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
         let bytes_capacity = self.capacity*bytes_per_item;
         let lazy_stream = Arc::new(LazyStream::new(self
-                                                   , &self.with_capacity(bytes_capacity)
-                                                   , stream_id));
+                                                   , &self.with_capacity(bytes_capacity)));
         (LazyStreamTx::<T>::new(lazy_stream.clone()), LazyStreamRx::<T>::new(lazy_stream.clone()))
     }
 
