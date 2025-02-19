@@ -116,6 +116,7 @@ pub use distributed::distributed_stream::{LazyStreamRx, LazyStreamTx};
 pub use distributed::distributed_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
 pub use distributed::distributed_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
 pub use distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
+pub use distributed::distributed_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamRxDef, StreamTx, StreamTxDef};
 
 
 pub use log::{debug, error, info, trace, warn};

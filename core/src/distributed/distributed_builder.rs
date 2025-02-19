@@ -20,9 +20,18 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
         actor_builder: &ActorBuilder,
         threading: &mut Threading,
     ) {
+        let remotes = tech.to_remotes();
+        let match_me = tech.to_match_me();
+        let tech_string = tech.to_tech();
+
         match tech {
             AqueTech::Aeron(media_driver, channel, stream_id) => {
-                let actor_builder = actor_builder.clone();
+                let actor_builder = actor_builder
+                    .with_remote_details(remotes
+                                         ,match_me
+                                         ,true
+                                         ,tech_string
+                    );
                 if let Some(aeron) = media_driver {
                     let state = new_state();
                     actor_builder.build(move |context|

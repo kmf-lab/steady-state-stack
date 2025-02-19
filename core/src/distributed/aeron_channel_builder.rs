@@ -13,6 +13,39 @@ pub enum AqueTech {
     // Add more types here as needed
 }
 
+impl AqueTech {
+    pub(crate) fn to_tech(&self) -> &'static str {
+        match self {
+            AqueTech::None => "none",
+            AqueTech::Aeron(Some(aeron), channel, stream_id) => "Aeron",
+            _ => "Unknown"
+        }
+    }
+
+    pub(crate) fn to_match_me(&self) -> String {
+        match self {
+            AqueTech::None => "none".to_string(),
+            AqueTech::Aeron(Some(aeron), channel, stream_id) => {
+                channel.cstring().into_string().expect("cstring")
+            },
+            _ => "Unknown".to_string()
+        }
+    }
+    pub(crate) fn to_remotes(&self) -> Vec<String> {
+        let mut result = Vec::new();
+        match self {
+            AqueTech::Aeron(Some(aeron), channel, stream_id) => {
+                //TODO: get the IP? when we use MQTT gather all the IPs of known peers?
+                result.push("127.0.0.1".to_string());
+
+            },
+            _ => {}
+        }
+        result
+    }
+
+}
+
 
 /////////////////////////////////////
 

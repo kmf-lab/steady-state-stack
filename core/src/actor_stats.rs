@@ -628,6 +628,7 @@ mod test_actor_stats {
     fn create_mock_metadata() -> Arc<ActorMetaData> {
         Arc::new(ActorMetaData {
             ident: ActorIdentity::new(1,"test_actor", None),
+            remote_details: None,
             avg_mcpu: true,
             avg_work: true,
             percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
@@ -734,6 +735,7 @@ mod test_actor_stats_triggers {
     fn create_mock_metadata() -> Arc<ActorMetaData> {
         Arc::new(ActorMetaData {
             ident: ActorIdentity::new(1, "test_actor", None),
+            remote_details: None,
             avg_mcpu: true,
             avg_work: true,
             percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],

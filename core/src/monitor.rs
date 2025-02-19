@@ -8,6 +8,7 @@ use std::thread::ThreadId;
 use crate::*;
 use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
+use crate::dot::RemoteDetails;
 use crate::graph_liveliness::{ActorIdentity};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 
@@ -50,6 +51,9 @@ pub struct ActorMetaData {
     ///
     pub(crate) ident: ActorIdentity,
 
+    /// If this actor is part of an aqueduct spanning to other machines this will be populated
+    /// To indicate where this actor is sending or receiving data.
+    pub(crate) remote_details: Option<RemoteDetails>,
 
     /// Indicates whether the average microcontroller processing unit (MCPU) usage is monitored.
     ///

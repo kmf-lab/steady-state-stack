@@ -11,7 +11,7 @@ repository = "https://github.com/kmf-lab/steady-state-stack"
 include = ["templates/**", "src/**", "Cargo.toml", "README.md", "build.rs", "static/telemetry/**", "**/*.gz.b64"]
 exclude = ["**/*.txt", "**/*.sh", "notes/", "temp/", "target/**"]
 
-[worspace.lints.clippy]
+
 
 [lib]
 name = "steady_state"

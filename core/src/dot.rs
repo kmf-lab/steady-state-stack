@@ -6,6 +6,7 @@ use log::*;
 use num_traits::Zero;
 use std::fmt::Write;
 use std::fs::{create_dir_all, File, OpenOptions};
+use std::net::IpAddr;
 use std::path::PathBuf;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -32,9 +33,18 @@ pub struct MetricState {
     pub seq: u64,
 }
 
+#[derive(Default,Clone,Debug)]
+pub struct RemoteDetails {
+   pub(crate) ips: String,
+   pub(crate) match_on: String,
+   pub(crate) tech:  &'static str,
+   pub(crate) direction: &'static str, //  in OR out
+}
+
 /// Represents a node in the graph, including metrics and display information.
 pub(crate) struct Node {
     pub(crate) id: Option<ActorName>,
+    pub(crate) remote_details: Option<RemoteDetails>,
     pub(crate) color: &'static str,
     pub(crate) pen_width: &'static str,
     pub(crate) stats_computer: ActorStatsComputer,
@@ -55,7 +65,7 @@ impl Node {
         assert!(den.ge(&num), "num: {} den: {}", num, den);
         let mcpu = if den.is_zero() || num.is_zero() || 0==actor_status.iteration_start { 0 } else { 1024 - ((num * 1024) / den) };
         let load = if 0==total_work_ns || 0==actor_status.iteration_start {0} else {
-                          (100u64 * (actor_status.unit_total_ns - actor_status.await_total_ns)) 
+                          (100u64 * (actor_status.unit_total_ns - actor_status.await_total_ns))
                          / total_work_ns as u64
         };
 
@@ -69,7 +79,7 @@ impl Node {
             actor_status.bool_stop,
             actor_status.thread_info
         );
-        
+
         self.color = color;
         self.pen_width = pen_width;
     }
@@ -137,17 +147,17 @@ pub(crate) fn build_metric(state: &MetricState, txt_metric: &mut BytesMut) {
 pub(crate) struct Config {
     pub(crate) rankdir: String
     //pub(crate) labels  // labels and boolen on each Y/N  T/F ?
-    
+
 }
 
 // TODO: Labels feature
 // impl Config {
 //     pub(crate) fn apply_labels(&mut self, show: Option<Split<&str>>, hide: Option<Split<&str>>) -> bool {
-// 
+//
 //         //let labesl = b"hello,world";
-//         
-// 
-// 
+//
+//
+//
 //         true  //return false if some show or hide labels are not found
 //     }
 // }
@@ -169,7 +179,7 @@ pub(crate) fn build_dot(state: &MetricState, dot_graph: &mut BytesMut, config: &
     // dot_graph.put_slice(b"/*\n"); // from config, will break test_build_dot test
     // dot_graph.put_slice(b"  This graph is a representation of the actors and channels in the system. let me tell you about your labels.\n");
     // dot_graph.put_slice(b"*/\n");
-    
+
     // Keep sidecars near with nodesep and ranksep spreads the rest out for label room.
     dot_graph.put_slice(b"graph [nodesep=.5, ranksep=2.5];\n");
     dot_graph.put_slice(b"node [margin=0.1];\n"); // Gap around text inside the circle
@@ -199,7 +209,21 @@ pub(crate) fn build_dot(state: &MetricState, dot_graph: &mut BytesMut, config: &
         dot_graph.put_slice(node.color.as_bytes());
         dot_graph.put_slice(b", penwidth=");
         dot_graph.put_slice(node.pen_width.as_bytes());
+        dot_graph.put_slice(b" ");
+
+        if let Some(remote) = &node.remote_details {
+            dot_graph.put_slice(b"/* remote_ips='");
+            dot_graph.put_slice(remote.ips.as_bytes());
+            dot_graph.put_slice(b"', match_on='");
+            dot_graph.put_slice(remote.match_on.as_bytes());
+            dot_graph.put_slice(b"', direction='");
+            dot_graph.put_slice(remote.direction.as_bytes());
+            dot_graph.put_slice(b"', tech='");
+            dot_graph.put_slice(remote.tech.as_bytes());
+            dot_graph.put_slice(b"' */");
+        };
         dot_graph.put_slice(b"];\n");
+
     });
 
     state.edges.iter()
@@ -210,9 +234,9 @@ pub(crate) fn build_dot(state: &MetricState, dot_graph: &mut BytesMut, config: &
         .for_each(|edge| {
 
             // we have a vec of labels
-            
+
             //config.
-            
+
             //let show = edge.ctl_labels.iter().any(|f| steady_config::is_visible(f));
             //let hide = edge.ctl_labels.iter().any(|f| steady_config::is_hidden(f));
 
@@ -310,10 +334,12 @@ pub fn apply_node_def(
                 stats_computer: ActorStatsComputer::default(),
                 display_label: String::new(), // Defined when the content arrives
                 metric_text: String::new(),
+                remote_details: None
             }
         });
     }
     local_state.nodes[id].id = Some(actor.ident.label);
+    local_state.nodes[id].remote_details = actor.remote_details.clone();
     local_state.nodes[id].display_label = if let Some(suf) = actor.ident.label.suffix {
         format!("{}{}",actor.ident.label.name,suf)
     } else {
@@ -703,6 +729,7 @@ mod dot_tests {
             stats_computer: ActorStatsComputer::default(),
             display_label: String::new(),
             metric_text: String::new(),
+            remote_details: None
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         assert_eq!(node.color, "grey");
@@ -739,6 +766,7 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: String::new(),
                     metric_text: "node_metric".to_string(),
+                    remote_details: None
                 }
             ],
             edges: vec![
@@ -780,6 +808,7 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "node1".to_string(),
                     metric_text: String::new(),
+                    remote_details: None
                 }
             ],
             edges: vec![
@@ -802,7 +831,7 @@ mod dot_tests {
         let config = Config {
             rankdir: "LR".to_string()
         };
-        
+
         build_dot(&state, &mut dot_graph, &config);
         let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1];\n}\n";
 
@@ -816,7 +845,7 @@ mod dot_tests {
             },
             Err(e) => println!("Error: {}", e),
         }
-        
+
         assert_eq!(dot_graph.to_vec(), expected, "dot_graph: {:?}\n vs {:?}", dot_graph, expected);
     }
 

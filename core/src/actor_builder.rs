@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use core::default::Default;
 use std::collections::VecDeque;
-
+use std::net::IpAddr;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::lock::{Mutex, MutexGuard};
@@ -19,7 +19,7 @@ use log::*;
 use futures_util::future::select_all;
 
 
-use crate::{abstract_executor, steady_config, ActorName, AlertColor, Graph, Metric, StdDev, Trigger};
+use crate::{abstract_executor, steady_config, ActorName, AlertColor, AqueTech, Graph, Metric, StdDev, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, SideChannelHub};
 use crate::monitor::ActorMetaData;
@@ -31,6 +31,7 @@ use std::pin::Pin;
 #[cfg(feature = "core_affinity")]
 use libc::pthread_setaffinity_np;
 use crate::commander_context::SteadyContext;
+use crate::dot::RemoteDetails;
 
 /// The `ActorBuilder` struct is responsible for building and configuring actors.
 /// It contains various settings related to telemetry, triggers, and actor identification.
@@ -63,6 +64,7 @@ pub struct ActorBuilder {
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     backplane: Arc<Mutex<Option<SideChannelHub>>>,
     team_count: Arc<AtomicUsize>,
+    remote_details: Option<RemoteDetails>
 }
 
 #[derive(Clone)]
@@ -416,6 +418,7 @@ impl ActorBuilder {
             frame_rate_ms: graph.telemetry_production_rate_ms,
             usage_review: false,
             core_balancer: None,
+            remote_details: None,
         }
     }
 
@@ -583,7 +586,21 @@ impl ActorBuilder {
         result.trigger_load.push((bound, color));
         result
     }
-    
+
+
+    pub(crate) fn with_remote_details(&self, ip_vec: Vec<String>, match_on: String, is_input:bool, tech: &'static str) -> Self {
+        let mut result = self.clone();
+        result.remote_details=Some(RemoteDetails {
+            ips: ip_vec.join(","),
+            match_on,
+            tech,
+            direction: if is_input {"in"} else {"out"}
+        });
+        result
+    }
+
+
+
     /// Show the thread on the telemetry
     pub fn with_thread_info(&self) -> Self {
         let mut result = self.clone();
@@ -849,6 +866,7 @@ impl ActorBuilder {
     fn build_actor_metadata(&self, ident: ActorIdentity) -> Arc<ActorMetaData> {
         Arc::new(ActorMetaData {
             ident,
+            remote_details: self.remote_details.clone(),
             avg_mcpu: self.avg_mcpu,
             avg_work: self.avg_load,
             percentiles_mcpu: self.percentiles_mcpu.clone(),
