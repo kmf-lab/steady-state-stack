@@ -6,7 +6,6 @@ use log::*;
 use num_traits::Zero;
 use std::fmt::Write;
 use std::fs::{create_dir_all, File, OpenOptions};
-use std::net::IpAddr;
 use std::path::PathBuf;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
