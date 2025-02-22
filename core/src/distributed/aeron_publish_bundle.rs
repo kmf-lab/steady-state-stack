@@ -134,7 +134,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
 
         let wait_for = (512*1024).min(rx.capacity());
-        let mut backoff = true;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
     
             let _clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
@@ -145,7 +144,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             let mut count_done = 0;
             let mut count_bytes = 0;
 
-                backoff = false;
                 for i in 0..GIRTH {
                     //buld a working batch solution first and then extract to functions later
                     //peek a block ahead, 
@@ -184,7 +182,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         }
                                         Err(aeron_error) => {
                                             error!("{:?}", aeron_error);
-                                            backoff = true;
                                             false
                                         }
                                     }
@@ -206,12 +203,10 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
 
 #[cfg(test)]
-#[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
 pub(crate) mod aeron_tests {
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-    use crate::distributed::aeron_subscribe_bundle;
     use crate::distributed::distributed_builder::AqueductBuilder;
     use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
     use crate::monitor::TxMetaDataHolder;
@@ -225,7 +220,7 @@ pub(crate) mod aeron_tests {
     pub const STREAM_ID: i32 = 11;
     //TODO: review the locking and init of terms in shared context??
     // The max length of a term buffer is 1GB (ie 1024MB) Imposed by the media driver.
-    pub const TERM_MB: i32 = 64; //at 1MB we are targeting 12M messages per second
+    pub const _TERM_MB: i32 = 64; //at 1MB we are targeting 12M messages per second
        //our goal is to clear 39M messages per second requiring 4MB
        // a single stream at 64 maps 400MB of live shared memory
     // https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
@@ -238,7 +233,7 @@ pub(crate) mod aeron_tests {
     // sudo ss -tulnpe | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
     // sudo ss -m -p | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
 
-    pub async fn mock_sender_run<const GIRTH: usize>(mut context: SteadyContext
+    pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyContext
                                                      , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
         let mut cmd = into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data()));
@@ -248,7 +243,7 @@ pub(crate) mod aeron_tests {
         let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
 
         const BATCH_SIZE:usize = 5000;
-        let mut items: [StreamSimpleMessage; BATCH_SIZE] = [StreamSimpleMessage::new(8);BATCH_SIZE];
+        let items: [StreamSimpleMessage; BATCH_SIZE] = [StreamSimpleMessage::new(8);BATCH_SIZE];
         let mut data: [[u8;8]; BATCH_SIZE] = [data1; BATCH_SIZE];
         for i in 0..BATCH_SIZE {
             if i % 2 == 0 {
@@ -298,14 +293,14 @@ pub(crate) mod aeron_tests {
         Ok(())
     }
 
-    pub async fn mock_receiver_run<const GIRTH:usize>(mut context: SteadyContext
+    pub async fn mock_receiver_run<const GIRTH:usize>(context: SteadyContext
                                                       , rx: SteadyStreamRxBundle<StreamSessionMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
         let mut cmd = into_monitor!(context, RxMetaDataHolder::new(rx.control_meta_data()), []);
         let mut rx = rx.lock().await;
 
-        let data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
+        let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
+        let _data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
 
         const LEN:usize = 100_000;
 

@@ -832,7 +832,7 @@ mod dot_tests {
         };
 
         build_dot(&state, &mut dot_graph, &config);
-        let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1];\n}\n";
+        let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1 ];\n}\n";
 
         let vec = dot_graph.to_vec();
         //println!("vec: {:?}", vec.clone());

@@ -338,9 +338,8 @@ impl ChannelBuilder {
         let mut rx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
 
         let payload_channel_builder = &self.with_capacity(self.capacity*bytes_per_item);
-        (0..GIRTH).for_each(|i| { //TODO: later add custom builders for items vs payload
-            let lazy = Arc::new(LazyStream::new(self
-                                              , payload_channel_builder));
+        (0..GIRTH).for_each(|_| { //TODO: later add custom builders for items vs payload
+            let lazy = Arc::new(LazyStream::new(self, payload_channel_builder));
             tx_vec.push(LazyStreamTx::<T>::new(lazy.clone()));
             rx_vec.push(LazyStreamRx::<T>::new(lazy.clone()));
         });
@@ -358,7 +357,7 @@ impl ChannelBuilder {
             ,
         )
     }
-    pub fn build_as_stream<T: StreamItem>(&self, stream_id: i32, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
+    pub fn build_as_stream<T: StreamItem>(&self, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
         let bytes_capacity = self.capacity*bytes_per_item;
         let lazy_stream = Arc::new(LazyStream::new(self
                                                    , &self.with_capacity(bytes_capacity)));

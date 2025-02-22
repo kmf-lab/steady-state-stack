@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::time::{Duration, Instant};
 use steady_state::*;
 
 pub const TEST_ITEMS: usize = 20_000_000_000;

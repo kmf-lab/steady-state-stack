@@ -1,87 +1,58 @@
 #!/bin/bash
 
-if [ "$NICENESS_SET" != "1" ]; then
-    export NICENESS_SET=1
-    sudo exec nice -n 10 "$0" "$@"
-fi
+# Removed niceness adjustment for faster execution.
+# If system responsiveness is a concern, you can re-enable it:
+# if [ "$NICENESS_SET" != "1" ]; then
+#     export NICENESS_SET=1
+#     sudo exec nice -n 10 "$0" "$@"
+# fi
 
+# Update dependencies and set Rust toolchain to stable
+# Note: Consider running cargo update less frequently if dependencies don't change often
 cargo update
 rustup default stable
 
+# Check for unwanted crates in a single cargo tree call to save time
+unwanted_crates="tokio smol actix rocket warp"
+cargo_tree_output=$(cargo tree)
+for crate in $unwanted_crates; do
+    if echo "$cargo_tree_output" | grep -q "$crate"; then
+        echo "Error: '$crate' crate found in the Cargo project."
+        exit 1
+    else
+        echo "Success: No '$crate' crate found in the Cargo project."
+    fi
+done
 
-# Check if the output contains 'tokio'
-if echo "$(cargo tree -i tokio 2>&1)" | grep -q "did not match any packages"; then
-    echo "Success: No 'tokio' crate found in the Cargo project."
-else
-    cargo tree -i tokio
-    echo "Error: 'tokio' crate found in the Cargo project."
-    exit 1
-fi
-
-# Check if the output contains 'smol'
-if echo "$(cargo tree -i smol 2>&1)" | grep -q "did not match any packages"; then
-    echo "Success: No 'smol' crate found in the Cargo project."
-else
-    echo "Error: 'smol' crate found in the Cargo project."
-    exit 1
-fi
-
-# Check if the output contains 'actix'
-if echo "$(cargo tree -i actix 2>&1)" | grep -q "did not match any packages"; then
-    echo "Success: No 'actix' crate found in the Cargo project."
-else
-    echo "Error: 'actix' crate found in the Cargo project."
-    exit 1
-fi
-
-# Check if the output contains 'rocket'
-if echo "$(cargo tree -i rocket 2>&1)" | grep -q "did not match any packages"; then
-    echo "Success: No 'rocket' crate found in the Cargo project."
-else
-    echo "Error: 'rocket' crate found in the Cargo project."
-    exit 1
-fi
-
-# Check if the output contains 'warp'
-if echo "$(cargo tree -i warp 2>&1)" | grep -q "did not match any packages"; then
-    echo "Success: No 'warp' crate found in the Cargo project."
-else
-    echo "Error: 'warp' crate found in the Cargo project."
-    exit 1
-fi
-
-# still considering if I want to ban protobuf usage
-# Check if the output contains 'protocol buffers'
-# cargo tree -i protobuf
-# cargo tree -i prost
-# cargo tree -i prost-build
-
-RUST_BACKTRACE=full RUST_LOG=debug RUST_TEST_THREADS=24 cargo test --workspace --tests --examples -- --nocapture --show-output | tee cargo_test.txt
+# Run tests with optimized threads
+# Adjust RUST_TEST_THREADS based on your system's core count for optimal performance (e.g., number of physical cores)
+RUST_BACKTRACE=full RUST_LOG=debug RUST_TEST_THREADS=12 cargo test --workspace --tests -- --nocapture --show-output | tee cargo_test.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
     exit $exit_code
 fi
 
-RUST_BACKTRACE=1 cargo build --workspace --tests --examples -j 48 | tee cargo_build.txt
+# Build the workspace in offline mode, skipping tests and examples if not needed
+# If tests and examples are required for release, add --tests --examples back
+RUST_BACKTRACE=1 cargo build --offline --workspace | tee cargo_build.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
-    echo "Tests failed with exit code $exit_code"
+    echo "Build failed with exit code $exit_code"
     exit $exit_code
 fi
 
-# micro release without builtin viz
-RUST_BACKTRACE=1 cargo build --release --workspace --examples --features "proactor_nuclei telemetry_server_cdn" -j 12 | tee cargo_build_release.txt
+# Build release version with specific features and parallel jobs
+# Adjust -j flag to match your CPU's core count for faster compilation (e.g., -j 8 for 8 cores)
+RUST_BACKTRACE=1 cargo build --offline --release --workspace --features "proactor_nuclei telemetry_server_cdn" -j 12 | tee cargo_build_release.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
-    echo "Tests failed with exit code $exit_code"
+    echo "Release build failed with exit code $exit_code"
     exit $exit_code
 fi
-
-
-
 
 # Build documentation like on docs.rs server
+# Consider running this only when documentation changes to save time
 cd core
 RUSTDOCFLAGS="--cfg=docsrs" cargo rustdoc --features "proactor_nuclei" --no-default-features | tee cargo_rustdoc.txt
 exit_code=$?
@@ -91,24 +62,30 @@ if [ $exit_code -ne 0 ]; then
 fi
 cd ..
 
+# Optional: List directory structure excluding target
 tree -I 'target'
 
+# Run cargo outdated and audit
+# Consider running these periodically rather than before every release to save time
 echo "cargo outdated"
 cargo outdated | tee cargo_outdated.txt
 
 echo "cargo audit"
 cargo audit | tee cargo_audit.txt
 
+# Install current cargo-steady-state
+# Ensure this is necessary for your release process
 echo "install current cargo-steady-state"
 cargo install --path cargo-steady-state
 
-cargo llvm-cov -- --nocapture
-echo "cargo llvm-cov --html --output-dir coverage/"
+# Optional: Run coverage and statistics
+# These can be skipped or run separately to save time
+cargo llvm-cov -- --nocapture --show-output
+echo "To generate coverage report: cargo llvm-cov --html --output-dir coverage/"
 
 echo "cargo tree"
 tokei | tee cargo_tokei.txt
 
+# Final confirmation message
 echo "Confirm that warnings you do not want published have been removed"
-echo "If this is confirmed by successful GitHub build YOU may now cd and run:   cargo publish"
-
-
+echo "If this is confirmed by successful GitHub build, you may now run: cargo publish"

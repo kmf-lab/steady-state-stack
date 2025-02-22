@@ -11,7 +11,6 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use core::default::Default;
 use std::collections::VecDeque;
-use std::net::IpAddr;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::lock::{Mutex, MutexGuard};
@@ -19,7 +18,7 @@ use log::*;
 use futures_util::future::select_all;
 
 
-use crate::{abstract_executor, steady_config, ActorName, AlertColor, AqueTech, Graph, Metric, StdDev, Trigger};
+use crate::{abstract_executor, steady_config, ActorName, AlertColor, Graph, Metric, StdDev, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, SideChannelHub};
 use crate::monitor::ActorMetaData;

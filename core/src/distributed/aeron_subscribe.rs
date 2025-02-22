@@ -115,7 +115,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         while cmd.is_running(&mut || tx.mark_closed()) {
 
             // only poll this often
-            let clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
+            let _clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
 
                 let mut found_data = false;
                         match &mut my_sub {
@@ -132,7 +132,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                         let mut sent_count = 0;
                                         let mut sent_bytes = 0;
 
-                                        let frags = {
+                                        let _frags = {
                                             //NOTE: aeron is NOT thread safe so we are forced to lock across the entire app
                                             let mut total = 0;
                                             //each call to this is no more than one full SOCKET_SO_RCVBUF
@@ -199,7 +199,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                     tx.fragment_flush_ready(&mut cmd);
                                 }
                             }
-                            Err(e) => {
+                            Err(_) => {
                                 if let Some(id) = state.sub_reg_id {
                                     let sub = {
                                         let mut aeron = aeron.lock().await; //caution other actors need this so do jit
@@ -261,17 +261,13 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod aeron_media_driver_tests {
-    use std::net::{IpAddr, Ipv4Addr};
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::distributed_stream::StreamSimpleMessage;
-    use async_std::sync::Mutex;
-    use once_cell::sync::Lazy;
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aeron_publish::aeron_tests::STREAM_ID;
     use crate::distributed::distributed_builder::AqueductBuilder;
 
-    pub(crate) static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 
     #[async_std::test]

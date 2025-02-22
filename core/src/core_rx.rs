@@ -11,7 +11,7 @@ use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{steady_config, Rx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamRx};
 use crate::steady_rx::RxDone;
-use futures_util::{task, FutureExt};
+use futures_util::{FutureExt};
 
 pub trait RxCore {
     type MsgOut;

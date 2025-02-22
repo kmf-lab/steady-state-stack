@@ -1,7 +1,5 @@
-use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
-use async_ringbuf::AsyncRb;
 use futures_timer::Delay;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
@@ -12,11 +10,7 @@ use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
-use ringbuf::storage::Heap;
-use async_ringbuf::traits::Split;
-use async_ringbuf::wrap::AsyncWrap;
 use crate::monitor::TxMetaDataHolder;
-use ahash::AHashMap;
 use num_traits::Zero;
 use crate::commander_context::SteadyContext;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
@@ -26,16 +20,7 @@ pub struct AeronSubscribeSteadyState {
     sub_reg_id: Vec<Option<i64>>,
 }
 
-fn test() {
-   let rb = AsyncRb::<Heap<u8>>::new(1000).split();
-   let mut p: HashMap<i32, (AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<u8>>>,false, true>) > = HashMap::default();
 
-   p.insert(123 as i32, rb);
-
-   let map: AHashMap<i32, (AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<u8>>>,false, true>)> = AHashMap::new();
-
-  //TODO: make channel have TERM const we can use here for async buffer
-}
 
 // In Aeron, the maximum message length is determined by the term buffer length.
 // Specifically, the maximum message size is calculated as the
@@ -146,7 +131,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
             //warn!("looping");
             // only poll this often
-            let clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
+            let _clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
 
                 let mut found_data = false;
                 for i in 0..GIRTH {
@@ -164,15 +149,15 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         let mut sent_count = 0;
                                         let mut sent_bytes = 0;
 
-                                        let frags = {
+                                        let _frags = {
                                             //NOTE: aeron is NOT thread safe so we are forced to lock across the entire app
                                             let mut total = 0;
                                             //each call to this is no more than one full SOCKET_SO_RCVBUF
-                                            for z in 0..16 { //16
+                                            for _ in 0..16 { //16
 
                                                 let c = {
                                                     let now = Instant::now();
-                                                    let mut stream = &mut tx[i];
+                                                    let stream = &mut tx[i];
                                                     //TODO: we need to wait on this lock butalso track it.
                                            //         let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
                                                     sub.poll(&mut |buffer: &AtomicBuffer
@@ -233,7 +218,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                     tx[i].fragment_flush_ready(&mut cmd);
                                 }
                             }
-                            Err(e) => {
+                            Err(_) => {
                                 if let Some(id) = state.sub_reg_id[i] {
                                     let sub = {
                                         let mut aeron = aeron.lock().await; //caution other actors need this so do jit
@@ -264,9 +249,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                 Ok(mutex) => {
                                                     // Take ownership of the inner Mutex
                                                     match mutex.into_inner() {
-                                                        Ok(subscription) => {
+                                                        Ok(_subscription) => {
                                                             // Successfully extracted the ExclusivePublication
-                                                            //warn!("unwrap");
                                                            //0 subs[i] = Ok(subscription);
                                                             break;
                                                         }
@@ -304,13 +288,8 @@ pub(crate) mod aeron_media_driver_tests {
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::distributed_stream::StreamSimpleMessage;
-    use async_std::sync::Mutex;
-    use once_cell::sync::Lazy;
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::distributed_builder::AqueductBuilder;
-
-    pub(crate) static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
-
 
     #[async_std::test]
     async fn test_bytes_process() {

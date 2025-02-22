@@ -162,7 +162,7 @@ impl<T> TxDef for SteadyTx<T> {
             //only print once we have tried for a while
             if 10000 == count {
                 let backtrace = Backtrace::capture();
-                eprintln!("{:?}", backtrace);
+                error!("{:?}", backtrace);
                 error!("got stuck on meta_data, unable to get lock on ChannelMetaData");
             }
         }

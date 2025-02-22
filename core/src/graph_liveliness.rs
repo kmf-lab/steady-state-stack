@@ -25,7 +25,6 @@ use futures_util::lock::{MutexGuard, MutexLockFuture};
 use nuclei::config::IoUringConfiguration;
 use aeron::aeron::Aeron;
 use aeron::context::Context;
-use structopt::StructOpt;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
@@ -639,39 +638,64 @@ impl Graph {
         T: Debug,
         W: Write,
     {
+        // Write panic information with a header
+        writeln!(writer, "\n=== Panic Occurred ===").unwrap();
+        writeln!(writer, "Details: {:?}", panic_info).unwrap();
+
         // Capture the backtrace
         let backtrace = Backtrace::capture();
 
-        // Write the backtrace information to the given writer
         match backtrace.status() {
             BacktraceStatus::Captured => {
-                writeln!(writer, "{:?}", panic_info).unwrap();
-                writeln!(writer, "{:?}", backtrace.status()).unwrap();
-
+                writeln!(writer, "\nStack Trace:").unwrap();
                 let backtrace_str = format!("{:#?}", backtrace);
+                let lines: Vec<&str> = backtrace_str.lines().collect();
+                let mut i = 0;
 
-                for line in backtrace_str.lines() {
-                    if line.contains("steady_state") || line.contains("Backtrace [") || line.contains("nuclei::proactor::") {
-                        if !line.contains("graph_liveliness::<impl steady_state::Graph>::enable_fail_fast") {
-                            writeln!(writer, "{}", line).unwrap(); // Here you'd add color formatting if needed
-                            if line.contains("steady_state::actor_builder::launch_actor") {
-                                writeln!(writer, "]").unwrap();
-                                break;
+                while i < lines.len() {
+                    let line = lines[i].trim();
+                    // Identify frame start (lines beginning with a digit followed by ':')
+                    if line.starts_with(|c: char| c.is_digit(10)) && line.contains(':') {
+                        let colon_pos = line.find(':').unwrap();
+                        let frame_num = &line[..colon_pos].trim();
+                        let fn_name = line[colon_pos + 1..].trim();
+
+                        // Find the location line (starts with "at")
+                        let mut j = i + 1;
+                        let mut location = "unknown location";
+                        while j < lines.len() && !lines[j].trim().starts_with("at") {
+                            j += 1;
+                        }
+                        if j < lines.len() {
+                            let location_line = lines[j].trim();
+                            location = location_line.strip_prefix("at ").unwrap_or(location_line);
+                        }
+
+                        // Apply filtering
+                        let is_user_code = fn_name.contains("steady_state") || fn_name.contains("nuclei::proactor::") ||
+                            location.contains("steady_state") || location.contains("nuclei::proactor::");
+                        let is_panic_related = fn_name.contains("::panicking::") || fn_name.contains("begin_unwind");
+                        let is_excluded = fn_name.contains("graph_liveliness::<impl steady_state::Graph>::enable_fail_fast");
+                        let is_launch_actor = fn_name.contains("steady_state::actor_builder::launch_actor");
+
+                        if (is_user_code && !is_excluded) || is_panic_related {
+                            writeln!(writer, "  {}: {} at {}", frame_num, fn_name, location).unwrap();
+                            if is_launch_actor {
+                                break; // Stop after launch_actor, matching original behavior
                             }
                         }
+
+                        i = j; // Move to the location line or next frame
                     } else {
-                       // if is_first_unknown_line || line.contains("::panicking::") || line.contains("::backtrace::") || line.contains("begin_unwind") {
-                            writeln!(writer, "{}", line).unwrap();
-                       // } else {
-                       //     writeln!(writer, "{}", line).unwrap();
-                       // }
+                        i += 1; // Skip non-frame lines
                     }
                 }
             }
             _ => {
-                writeln!(writer, "Backtrace could not be captured: {:?}", panic_info).unwrap();
+                writeln!(writer, "\nStack Trace: Could not be captured.").unwrap();
             }
         }
+        writeln!(writer, "=== End of Trace ===").unwrap();
     }
 
     /// Returns a future that locks the side channel hub.
