@@ -56,7 +56,7 @@ fi
 # cargo tree -i prost
 # cargo tree -i prost-build
 
-RUST_BACKTRACE=full RUST_LOG=debug RUST_TEST_THREADS=24 cargo test --workspace --tests --examples -j 24 -- --nocapture --show-output | tee cargo_test.txt
+RUST_BACKTRACE=full RUST_LOG=debug RUST_TEST_THREADS=24 cargo test --workspace --tests --examples -- --nocapture --show-output | tee cargo_test.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
@@ -102,7 +102,7 @@ cargo audit | tee cargo_audit.txt
 echo "install current cargo-steady-state"
 cargo install --path cargo-steady-state
 
-cargo llvm-cov
+cargo llvm-cov -- --nocapture
 echo "cargo llvm-cov --html --output-dir coverage/"
 
 echo "cargo tree"

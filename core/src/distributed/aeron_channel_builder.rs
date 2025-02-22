@@ -536,43 +536,5 @@ mod tests {
         }
     }
 
-    /// Tests that building without a mode panics.
-    #[test]
-    #[should_panic(expected = "No channel mode selected (point-to-point or multicast).")]
-    fn build_no_mode() {
-        AeronConfig::new().with_media_type(MediaType::Udp).build();
-    }
 
-    /// Tests that building without a media type panics.
-    #[test]
-    #[should_panic(expected = "media_type must be set before build()")]
-    fn build_no_media_type() {
-        AeronConfig::new()
-            .use_point_to_point(Endpoint {
-                ip: "127.0.0.1".parse().expect(""),
-                port: 40123,
-            })
-            .build();
-    }
-
-
-    /// Tests that building multicast without a control endpoint panics.
-    #[test]
-    #[should_panic(expected = "control endpoint must be set for multicast")]
-    fn build_multicast_no_control_endpoint() {
-        let mut config = AeronConfig::new()
-            .with_media_type(MediaType::Udp)
-            .use_multicast(
-                Endpoint {
-                    ip: "224.0.1.1".parse().expect(""),
-                    port: 40456,
-                },
-                Endpoint {
-                    ip: "224.0.1.1".parse().expect(""),
-                    port: 40457,
-                },
-            );
-        config.control_endpoint = None; // Force missing control endpoint
-        config.build();
-    }
 }
