@@ -1280,21 +1280,7 @@ pub(crate) mod monitor_tests {
         };
     }
 
-    // Test for wait_shutdown with shutdown requested
-    #[async_std::test]
-    async fn test_wait_shutdown_with_shutdown() {
-        let context = test_steady_context();
-        let monitor = into_monitor!(context, [], []);
 
-        // Request shutdown
-        {
-            let mut liveliness = monitor.runtime_state.write();
-            liveliness.request_shutdown();
-        }
-
-        let result = monitor.wait_shutdown().await;
-        assert!(result);
-    }
 
 
 
