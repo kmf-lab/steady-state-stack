@@ -4,7 +4,7 @@ use clap::*;
 pub struct Args {
 
     #[arg(short = 'l', long = "loglevel"
-                , default_value = "info")]
+                , default_value = "Info")]
     pub(crate) loglevel: LogLevel,
 
     #[arg(short = 'i', long = "install")]

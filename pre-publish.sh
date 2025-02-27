@@ -26,7 +26,7 @@ done
 
 # Run tests with optimized threads
 # Adjust RUST_TEST_THREADS based on your system's core count for optimal performance (e.g., number of physical cores)
-RUST_BACKTRACE=full RUST_LOG=debug RUST_TEST_THREADS=12 cargo test --workspace --tests -- --nocapture --show-output | tee cargo_test.txt
+RUST_BACKTRACE=full RUST_LOG=debug RUST_TEST_THREADS=4 cargo test --workspace --tests -- --nocapture --show-output | tee cargo_test.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
@@ -44,7 +44,7 @@ fi
 
 # Build release version with specific features and parallel jobs
 # Adjust -j flag to match your CPU's core count for faster compilation (e.g., -j 8 for 8 cores)
-RUST_BACKTRACE=1 cargo build --offline --release --workspace --features "proactor_nuclei telemetry_server_cdn" -j 12 | tee cargo_build_release.txt
+RUST_BACKTRACE=1 cargo build --offline --release --workspace --features "proactor_nuclei telemetry_server_cdn" -j 4 | tee cargo_build_release.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Release build failed with exit code $exit_code"

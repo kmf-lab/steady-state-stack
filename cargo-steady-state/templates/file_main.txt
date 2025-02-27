@@ -1,10 +1,10 @@
 mod args;
-use structopt::StructOpt;
 #[allow(unused_imports)]
 use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
+use clap::*;
 
 mod actor {
     {% for mod in actor_mods %}
@@ -12,12 +12,11 @@ mod actor {
 }
 
 fn main() {
-    let opt = Args::from_args();
+    let opt = Args::parse();
 
     let service_executable_name = "{{project_name}}";
     let service_user = "{{project_name}}_user";
     let systemd_command = SystemdBuilder::process_systemd_commands(  opt.systemd_action()
-                                                   , opt.to_cli_string(service_executable_name)
                                                    , service_executable_name
                                                    , service_user);
 
@@ -98,7 +97,7 @@ mod graph_tests {
     async fn test_graph_one() {
 
             let test_ops = Args {
-                loglevel: "debug".to_string(),
+                loglevel: LogLevel::Debug,
                 systemd_install: false,
                 systemd_uninstall: false,
             };
