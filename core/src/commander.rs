@@ -126,7 +126,7 @@ pub trait SteadyCommander {
 
 
     /// set log level for the entire application
-    fn loglevel(&self, loglevel: &str);
+    fn loglevel(&self, loglevel: &crate::LogLevel);
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     /// NOTE: This does NOTHING unless called on the LocalMonitor instance

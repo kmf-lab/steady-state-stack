@@ -1,6 +1,6 @@
 [package]
 name = "cargo-steady-state" # This name is crucial for Cargo to recognize the subcommand.
-version = "0.1.1"
+version = "0.1.2"
 documentation = "https://docs.rs/cargo-steady-state/0.0.5/cargo-steady-state/"
 edition = "2021"
 description = "Code generator for steady_state projects based on a structured dot file."

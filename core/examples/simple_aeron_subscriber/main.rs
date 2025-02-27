@@ -1,19 +1,19 @@
 use std::env;
 use std::time::Duration;
 use steady_state::*;
-use structopt::*;
 use steady_state::distributed::distributed_builder::AqueductBuilder;
+use clap::*;
+use clap_derive::*;
 
 pub(crate) mod actor {
    pub(crate) mod subscriber;
 }
 
-
-#[derive(StructOpt, Debug, PartialEq, Clone)]
+#[derive(Parser, Debug, Clone, PartialEq)]
 pub(crate) struct MainArg {
-    #[structopt(short = "r", long = "rate", default_value = "1000")]
+    #[arg(short = 'r', long = "rate", default_value = "1000")]
     pub(crate) rate_ms: u64,
-    #[structopt(short = "b", long = "beats", default_value = "60")]
+    #[arg(short = 'b', long = "beats", default_value = "60")]
     pub(crate) beats: u64,
 }
 
@@ -26,8 +26,8 @@ fn main() {
     env::set_var("TELEMETRY_SERVER_PORT", "9102");
     env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
 
-    let cli_args = MainArg::from_args();
-    let _ = init_logging("info");
+    let cli_args = MainArg::parse();
+    let _ = init_logging(&LogLevel::Info);
     let mut graph = GraphBuilder::default()
            .with_telemtry_production_rate_ms(200)
            .build(cli_args); //or pass () if no args

@@ -3,7 +3,6 @@ use steady_state::{Percentile, MCPU};
 use steady_state::StdDev;
 use std::sync::Arc;
 use std::thread::sleep;
-use structopt::*;
 #[allow(unused_imports)]
 use log::*;
 use args::Args;
@@ -21,6 +20,7 @@ mod actor {
 
 use steady_state::channel_builder::Filled;
 use crate::actor::data_consumer::InternalState;
+use clap::*;
 
 // This is a good template for your future main function. It should me minimal and just
 // get the command line args and start the graph. The graph is built in a separate function.
@@ -34,17 +34,17 @@ use crate::actor::data_consumer::InternalState;
 // Further note the main function is not a test. It is not run by any test. Keep it small.
 fn main() {
     // a typical begging by fetching the command line args and starting logging
-    let opt = Args::from_args();
+    let opt = Args::parse();
 
     if let Err(e) = steady_state::init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
+
     //TODO: 2025 add this as a feature to the code generator
     let service_executable_name = "simple_widgets";
     let service_user = "simple_widgets_user";
     let systemd_command = steady_state::SystemdBuilder::process_systemd_commands(  opt.systemd_action()
-                                                   , opt.to_cli_string(service_executable_name)
                                                    , service_executable_name
                                                    , service_user);
 

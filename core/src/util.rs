@@ -100,6 +100,7 @@ pub mod logger {
     use std::sync::Mutex;
     use flexi_logger::{LogSpecBuilder, LoggerHandle};
     use lazy_static::lazy_static;
+    use log::LevelFilter;
     use crate::util;
 
     lazy_static! {
@@ -130,10 +131,10 @@ pub mod logger {
     /// This function initializes the logging system for the Steady State framework. It ensures
     /// that the logging system is initialized only once, even if this function is called multiple times.
     /// If the initialization fails, a warning message is printed.
-    pub fn initialize_with_level(level: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn initialize_with_level(level: &crate::LogLevel) -> Result<(), Box<dyn std::error::Error>> {
         let mut logger_handle = LOGGER_HANDLE.lock().expect("internal error");
         if logger_handle.is_none() {
-            match util::steady_logging_init(level) {
+            match util::steady_logging_init(&format!("{:?}",level)) {
                 Ok(handle) => {
                     *logger_handle = Some(handle);
                     Ok(())
@@ -144,25 +145,19 @@ pub mod logger {
                 }
             }
         }  else if let Some(handle) = logger_handle.as_ref() {
-                match level.parse() {
-                    Ok(level) => {
-                        handle.set_new_spec(
-                            LogSpecBuilder::new()
-                                .default(level)
-                                .build()
-                        );
-                        // println!("Logger level updated to: {:?}", level);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        print!("Warning: Logger level change to {} failed.", level);
-                        Err(e.into())
-                    }
-                }
-            } else {
-                print!("Warning: Logger level change to {} failed.", level);
-                Err("Logger level change failed.".into())
-            }
+            let x: LevelFilter = LevelFilter::Debug;
+
+            handle.set_new_spec(
+                LogSpecBuilder::new()
+                    .default(level.to_level_filter())
+                    .build()
+            );
+
+            Ok(())
+        } else {
+            print!("Warning: Logger level change to {:?} failed.", level);
+            Err("Logger level change failed.".into())
+        }
 
     }
 }

@@ -1,11 +1,12 @@
 mod args;
-use structopt::StructOpt;
+
 #[allow(unused_imports)]
 use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
 use steady_state::actor_builder::ActorTeam;
+use clap::*;
 
 mod actor {
         pub mod final_consumer;
@@ -15,7 +16,7 @@ mod actor {
 }
 
 fn main() {
-    let opt = Args::from_args();
+    let opt = Args::parse();
     if let Err(e) = steady_state::init_logging(&opt.loglevel) {
         //do not use logger to report logger could not start
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);

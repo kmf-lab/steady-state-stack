@@ -42,16 +42,21 @@ impl SystemdBuilder {
 
     /// for main systemd processing to install and uninstall process
     ///
-    pub fn process_systemd_commands(command: SystemdCommand , opt_cli_string: String, service_executable_name: &str, service_user: &str) -> bool {
+    pub fn process_systemd_commands(command: SystemdCommand , service_executable_name: &str, service_user: &str) -> bool {
 
         if command == SystemdCommand::None {
             false
         } else {
+            let raw_args: Vec<String> = env::args()
+                .filter(|f| ! (f.eq("-i")||f.eq("-u")||f.eq("--install")||f.eq("--uninstall")||f.eq(service_executable_name) ))
+                .collect();
+            let raw_string = raw_args.join(" ");
+
             let systemd = SystemdBuilder::new(service_executable_name.into(), service_user.into())
                                     .with_on_boot(true)
                                     .build();
             match command {
-                SystemdCommand::Install => {if let Err(e) = systemd.install(true, opt_cli_string) {
+                SystemdCommand::Install => {if let Err(e) = systemd.install(true, raw_string) {
                     eprintln!("Failed to install systemd service: {:?}", e);
                 }}
                 SystemdCommand::Uninstall => {if let Err(e) = systemd.uninstall() {

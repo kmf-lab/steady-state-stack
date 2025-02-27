@@ -83,6 +83,7 @@ mod core_tx;
 pub mod commander_context;
 pub mod commander_monitor;
 
+use clap::ValueEnum;
 pub use commander_context::*;
 
 pub use graph_testing::GraphTestResult;
@@ -117,7 +118,6 @@ pub use distributed::distributed_stream::{SteadyStreamRxBundleTrait, StreamRxBun
 pub use distributed::distributed_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
 pub use distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
 pub use distributed::distributed_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamRxDef, StreamTx, StreamTxDef};
-
 
 pub use log::{debug, error, info, trace, warn};
 
@@ -301,8 +301,37 @@ pub fn steady_rx_bundle<T, const GIRTH: usize>(internal_array: [SteadyRx<T>; GIR
 ///
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
-pub fn init_logging(loglevel: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn init_logging(loglevel: &LogLevel) -> Result<(), Box<dyn std::error::Error>> {
     logger::initialize_with_level(loglevel)
+}
+
+
+#[derive(Clone, Debug, PartialEq, ValueEnum)]
+pub enum LogLevel {
+    /// A level lower than all log levels.
+    Off,
+    /// Corresponds to the `Error` log level.
+    Error,
+    /// Corresponds to the `Warn` log level.
+    Warn,
+    /// Corresponds to the `Info` log level.
+    Info,
+    /// Corresponds to the `Debug` log level.
+    Debug,
+    /// Corresponds to the `Trace` log level.
+    Trace,
+}
+impl LogLevel {
+    pub fn to_level_filter(&self) -> log::LevelFilter {
+        match self {
+            LogLevel::Off => log::LevelFilter::Off,
+            LogLevel::Error => log::LevelFilter::Error,
+            LogLevel::Warn => log::LevelFilter::Warn,
+            LogLevel::Info => log::LevelFilter::Info,
+            LogLevel::Debug => log::LevelFilter::Debug,
+            LogLevel::Trace => log::LevelFilter::Trace,
+        }
+    }
 }
 
 

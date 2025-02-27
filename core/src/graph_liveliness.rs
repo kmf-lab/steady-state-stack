@@ -547,11 +547,13 @@ impl Graph {
         self.aeron.get_or_init(|| aeron_context(Context::new())).clone()
     }
 
-    pub fn loglevel(&self, loglevel: &str) {
+    pub fn loglevel(&self, loglevel: &crate::LogLevel) {
         let _ = logger::initialize_with_level(loglevel);
     }
 
-
+    fn args<A: Any>(&self) -> Option<&A> {
+        self.args.downcast_ref::<A>()
+    }
 
     /// Returns the telemetry production rate in milliseconds.
     pub fn telemetry_production_rate_ms(&self) -> u64 {

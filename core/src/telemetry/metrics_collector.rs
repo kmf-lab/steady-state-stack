@@ -109,22 +109,12 @@ async fn internal_behavior<const GIRTH: usize>(
     let mut rebuild_scan_requested: bool = false;
     let mut is_shutting_down = false;
 
-
-
     loop {
-
-        let confirm_shutdown = &mut || {
-            is_shutting_down = true;
-            is_all_empty_and_closed(Ok(dynamic_senders_vec.read()))
-                && locked_servers.mark_closed()
-        };
-
-        // #[cfg(feature = "telemetry_on_telemetry")]
-        // ctrl.relay_stats_smartly();
-
-        //  ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed())
-        //let _clean = wait_for_all!(ctrl.wait_vacant_units(&mut tick_counts_tx,1)  ).await;
-        if !ctrl.is_running(confirm_shutdown) {
+        if !ctrl.is_running(&mut || {
+                            is_shutting_down = true;
+                            is_all_empty_and_closed(Ok(dynamic_senders_vec.read()))
+                                && locked_servers.mark_closed()
+                        }) {
             break;
         }
         let instance_id = ctrl.instance_id;

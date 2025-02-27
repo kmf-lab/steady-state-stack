@@ -11,7 +11,7 @@ steady_state     = { path = "../../../core", features = ["proactor_nuclei", "pro
 # for local testing
 #steady_state     = { path = "../../../steady-state-stack/core", features = ["proactor_nuclei", "prometheus_metrics"], default-features = true }
 
-#steady_state     = "0.1.1"
+#steady_state     = "0.1.2"
 structopt        = "0.3.26"
 structopt-derive = "0.4.18"
 flexi_logger     = "0.29.6"

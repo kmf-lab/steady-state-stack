@@ -1,13 +1,13 @@
 mod args;
 
 use std::thread::sleep;
-use structopt::*;
 #[allow(unused_imports)]
 use log::*;
 use args::Args;
 use std::time::Duration;
 use steady_state::*;
 use steady_state::actor_builder::{ActorTeam, Threading};
+use clap::*;
 
 
 // here are the actors that will be used in the graph.
@@ -37,7 +37,7 @@ use steady_state::channel_builder::Filled;
 // Further note the main function is not a test. It is not run by any test. Keep it small.
 fn main() {
     // a typical begging by fetching the command line args and starting logging
-    let opt = Args::from_args();
+    let opt = Args::parse();
 
     if let Err(e) = init_logging(&opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
@@ -269,7 +269,8 @@ fn build_graph<const LEVEL_1: usize,
 
 #[cfg(test)]
 mod large_tests {
-    use std::ops::DerefMut;
+    use crate::LogLevel;
+use std::ops::DerefMut;
     use std::time::Duration;
     use bytes::Bytes;
     use futures_timer::Delay;
@@ -287,7 +288,7 @@ mod large_tests {
 
         let test_ops = Args {
             duration: 21,
-            loglevel: "debug".to_string(),
+            loglevel: LogLevel::Debug,
             gen_rate_micros: 100,
         };
 

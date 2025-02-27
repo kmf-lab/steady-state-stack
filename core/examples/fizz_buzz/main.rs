@@ -1,12 +1,13 @@
 mod args;
 
-use structopt::StructOpt;
+use std::any::Any;
 #[allow(unused_imports)]
 use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
 use steady_state::actor_builder::{ActorTeam, Threading};
+use clap::*;
 
 mod actor {
         pub mod console_printer;
@@ -18,16 +19,18 @@ mod actor {
 }
 
 fn main() {
-    let opt = Args::from_args();
+
+    let opt = Args::parse();
     if let Err(e) = init_logging(&opt.loglevel) {
         //do not use logger to report logger could not start
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 
+
+
     let service_executable_name = "fizz_buzz";
     let service_user = "fizz_buzz_user";
     let systemd_command = SystemdBuilder::process_systemd_commands(  opt.systemd_action()
-                                                   , opt.to_cli_string(service_executable_name)
                                                    , service_executable_name
                                                    , service_user);
 
@@ -167,7 +170,7 @@ mod graph_tests {
     async fn test_graph_one() {
 
         let test_ops = Args {
-            loglevel: "debug".to_string(),
+            loglevel: LogLevel::Debug,
             systemd_install: false,
             systemd_uninstall: false,
         };

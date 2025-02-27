@@ -147,7 +147,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
 
     /// set loglevel for the application
-    fn loglevel(&self, loglevel: &str) {
+    fn loglevel(&self, loglevel: &crate::LogLevel) {
         let _ = logger::initialize_with_level(loglevel);
     }
 
