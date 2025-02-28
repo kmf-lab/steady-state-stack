@@ -14,7 +14,7 @@ use dot_parser::{ast, canonical};
 use flexi_logger::{Logger, LogSpecBuilder};
 #[allow(unused_imports)]
 use log::*;
-use structopt::StructOpt;
+use clap::*;
 use crate::args::Args;
 use crate::templates::*;
 
@@ -28,7 +28,7 @@ struct ProjectModel {
 //TODO: code gen organize by flow. take actors and create them from inputs down to outputs???
 
 fn main() {
-    let opt = Args::from_args();
+    let opt = Args::parse();
 
     if let Ok(s) = LevelFilter::from_str(&opt.loglevel) {
         let mut builder = LogSpecBuilder::new();

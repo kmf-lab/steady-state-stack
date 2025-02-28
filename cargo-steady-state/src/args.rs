@@ -1,20 +1,17 @@
-use structopt_derive::StructOpt;
+use clap::*;
 
-#[derive(StructOpt, Debug, PartialEq, Clone)]
+#[derive(Parser, Debug, PartialEq, Clone)]
 pub struct Args {
 
-    #[structopt(short = "l", long = "loglevel"
-                , default_value = "info"
-                , possible_values = log_variants()
-                , validator = validate_logging_level
-                , case_insensitive = true)]
+    #[arg(short = 'l', long = "loglevel"
+                , default_value = "Info")]
     pub(crate) loglevel: String,
 
-    #[structopt(short = "d", long = "dotfile"
+    #[arg(short = 'd', long = "dotfile"
                              , default_value = "graph.dot")]
     pub(crate) dotfile: String,
 
-    #[structopt(short = "n", long = "name"
+    #[arg(short = 'n', long = "name"
                 , default_value = "unnamed")]
     pub(crate) name: String,
 
@@ -39,11 +36,10 @@ fn validate_logging_level(level: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use structopt::StructOpt;
 
     #[test]
     fn test_default_values() {
-        let args = Args::from_iter_safe(&[""]).unwrap();
+        let args = Args::parse_from(&[""]);
         assert_eq!(args.loglevel, "info");
         assert_eq!(args.dotfile, "graph.dot");
         assert_eq!(args.name, "unnamed");
@@ -51,12 +47,12 @@ mod tests {
 
     #[test]
     fn test_custom_values() {
-        let args = Args::from_iter_safe(&[
+        let args = Args::parse_from(&[
             "",
             "-l", "debug",
             "-d", "custom.dot",
             "-n", "custom_name"
-        ]).unwrap();
+        ]);
         assert_eq!(args.loglevel, "debug");
         assert_eq!(args.dotfile, "custom.dot");
         assert_eq!(args.name, "custom_name");
@@ -64,7 +60,7 @@ mod tests {
 
     #[test]
     fn test_invalid_logging_level() {
-        let result = Args::from_iter_safe(&["", "-l", "invalid_level"]);
+        let result = Args::try_parse_from(&["", "-l", "invalid_level"]);
         assert!(result.is_err());
     }
 
