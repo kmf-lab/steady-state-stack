@@ -551,7 +551,7 @@ impl Graph {
         let _ = logger::initialize_with_level(loglevel);
     }
 
-    fn args<A: Any>(&self) -> Option<&A> {
+    pub fn args<A: Any>(&self) -> Option<&A> {
         self.args.downcast_ref::<A>()
     }
 
