@@ -485,18 +485,13 @@ pub trait RxDef: Debug + Send + Sync {
     /// An `RxMetaData` object containing the metadata.
     fn meta_data(&self) -> RxMetaData;
 
-    /// Asynchronously waits for a specified number of units to be available in the receiver.
-    ///
-    /// # Parameters
-    /// - `count`: The number of units to wait for.
-    ///
-    /// # Returns
-    /// A `BoxFuture` that resolves to a tuple containing a boolean indicating success and an optional channel ID.
     fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, (bool, Option<usize>)>;
+// TODO: can we remove this? and add RxDef to streams?
+
 }
 
 impl<T: Send + Sync> RxDef for SteadyRx<T> {
-    fn meta_data(&self) -> RxMetaData {               
+    fn meta_data(&self) -> RxMetaData {
         loop {
             if let Some(guard) = self.try_lock() {
                 return RxMetaData(guard.deref().channel_meta_data.clone());
@@ -506,8 +501,9 @@ impl<T: Send + Sync> RxDef for SteadyRx<T> {
         }
     }
 
-    #[inline]
-    fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, (bool, Option<usize>)> {
+
+#[inline]
+fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, (bool, Option<usize>)> {
         async move {
             let mut guard = self.lock().await;
             let is_closed = guard.deref_mut().is_closed();
