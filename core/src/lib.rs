@@ -301,12 +301,12 @@ pub fn steady_rx_bundle<T, const GIRTH: usize>(internal_array: [SteadyRx<T>; GIR
 ///
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
-pub fn init_logging(loglevel: &LogLevel) -> Result<(), Box<dyn std::error::Error>> {
+pub fn init_logging(loglevel: LogLevel) -> Result<(), Box<dyn std::error::Error>> {
     logger::initialize_with_level(loglevel)
 }
 
 
-#[derive(Clone, Debug, PartialEq, ValueEnum)]
+#[derive(Copy, Clone, Debug, PartialEq, ValueEnum)]
 pub enum LogLevel {
     /// A level lower than all log levels.
     Off,

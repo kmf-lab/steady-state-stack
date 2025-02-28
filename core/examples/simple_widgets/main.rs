@@ -36,7 +36,7 @@ fn main() {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::parse();
 
-    if let Err(e) = steady_state::init_logging(&opt.loglevel) {
+    if let Err(e) = steady_state::init_logging(opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
 

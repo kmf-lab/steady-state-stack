@@ -39,7 +39,7 @@ fn main() {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::parse();
 
-    if let Err(e) = init_logging(&opt.loglevel) {
+    if let Err(e) = init_logging(opt.loglevel) {
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }
     let large_scale = 45; //47-> 1056  40 ->888 // 13->400  // (24* (N+3)) TODO: run profiler and confirm threads needed !!

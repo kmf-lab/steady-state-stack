@@ -131,7 +131,7 @@ pub mod logger {
     /// This function initializes the logging system for the Steady State framework. It ensures
     /// that the logging system is initialized only once, even if this function is called multiple times.
     /// If the initialization fails, a warning message is printed.
-    pub fn initialize_with_level(level: &crate::LogLevel) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn initialize_with_level(level: crate::LogLevel) -> Result<(), Box<dyn std::error::Error>> {
         let mut logger_handle = LOGGER_HANDLE.lock().expect("internal error");
         if logger_handle.is_none() {
             match util::steady_logging_init(&format!("{:?}",level)) {

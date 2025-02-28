@@ -547,7 +547,7 @@ impl Graph {
         self.aeron.get_or_init(|| aeron_context(Context::new())).clone()
     }
 
-    pub fn loglevel(&self, loglevel: &crate::LogLevel) {
+    pub fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = logger::initialize_with_level(loglevel);
     }
 

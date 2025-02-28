@@ -17,7 +17,7 @@ mod actor {
 
 fn main() {
     let opt = Args::parse();
-    if let Err(e) = steady_state::init_logging(&opt.loglevel) {
+    if let Err(e) = steady_state::init_logging(opt.loglevel) {
         //do not use logger to report logger could not start
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }

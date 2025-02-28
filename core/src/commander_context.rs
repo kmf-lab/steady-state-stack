@@ -73,7 +73,7 @@ impl Clone for SteadyContext {
 impl SteadyCommander for SteadyContext {
 
     /// Initializes the logger with the specified log level.
-    fn loglevel(&self, loglevel: &crate::LogLevel) {
+    fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = logger::initialize_with_level(loglevel);
     }
 
