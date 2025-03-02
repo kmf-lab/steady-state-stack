@@ -33,7 +33,7 @@ use async_ringbuf::traits::Split;
 use futures_timer::Delay;
 use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
-use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, StreamItem};
+use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamItem, TxChannelMetaDataWrapper};
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
@@ -693,7 +693,7 @@ impl ChannelBuilder {
         (
             Tx {
                 tx,
-                channel_meta_data: channel_meta_data.clone(),
+                channel_meta_data: TxChannelMetaDataWrapper{ meta_data: Arc::clone(&channel_meta_data)},
                 local_index: MONITOR_UNKNOWN,
                 make_closed: Some(sender_is_closed),
                 last_error_send: noise_threshold,
@@ -701,7 +701,7 @@ impl ChannelBuilder {
             },
             Rx {
                 rx,
-                channel_meta_data,
+                channel_meta_data: RxChannelMetaDataWrapper{ meta_data: Arc::clone(&channel_meta_data)},
                 local_monitor_index: MONITOR_UNKNOWN,
                 is_closed: receiver_is_closed,
                 last_error_send: noise_threshold,

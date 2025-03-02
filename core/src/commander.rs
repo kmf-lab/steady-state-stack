@@ -3,12 +3,13 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 use futures_util::future::FusedFuture;
 use std::any::Any;
-use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
+use std::sync::Arc;
+use crate::{steady_config, steady_rx, steady_tx, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
 use crate::graph_testing::SideChannelResponder;
-use crate::monitor::{RxMetaData, TxMetaData};
+use crate::monitor::{ChannelMetaData, RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
-use crate::steady_rx::RxDef;
-use crate::steady_tx::TxDef;
+use crate::steady_rx::RxMetaDataProvider;
+use crate::steady_tx::TxMetaDataProvider;
 use crate::telemetry::setup;
 use crate::commander_context::SteadyContext;
 use crate::commander_monitor::LocalMonitor;
@@ -26,8 +27,8 @@ impl SteadyContext {
     /// A `LocalMonitor` instance.
     pub fn into_monitor<const RX_LEN: usize, const TX_LEN: usize>(
         self,
-        rx_mons: [&dyn RxDef; RX_LEN],
-        tx_mons: [&dyn TxDef; TX_LEN],
+        rx_mons: [&dyn RxMetaDataProvider; RX_LEN], //todo T: RxDef and TxDef
+        tx_mons: [&dyn TxMetaDataProvider; TX_LEN],
     ) -> LocalMonitor<RX_LEN, TX_LEN> {
         let rx_meta = rx_mons
             .iter()
@@ -63,17 +64,17 @@ impl SteadyContext {
             let mut rx_meta_data = Vec::new();
             let mut rx_inverse_local_idx = [0; RX_LEN];
             rx_mons.iter().enumerate().for_each(|(c, md)| {
-                assert!(md.0.id < usize::MAX);
-                rx_inverse_local_idx[c] = md.0.id;
-                rx_meta_data.push(md.0.clone());
+                assert!(md.id < usize::MAX);
+                rx_inverse_local_idx[c] = md.id;
+                rx_meta_data.push(md.clone());
             });
 
             let mut tx_meta_data = Vec::new();
             let mut tx_inverse_local_idx = [0; TX_LEN];
             tx_mons.iter().enumerate().for_each(|(c, md)| {
-                assert!(md.0.id < usize::MAX);
-                tx_inverse_local_idx[c] = md.0.id;
-                tx_meta_data.push(md.0.clone());
+                assert!(md.id < usize::MAX);
+                tx_inverse_local_idx[c] = md.id;
+                tx_meta_data.push(md.clone());
             });
 
             setup::construct_telemetry_channels(

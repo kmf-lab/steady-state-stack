@@ -88,4 +88,4 @@ tokei | tee cargo_tokei.txt
 
 # Final confirmation message
 echo "Confirm that warnings you do not want published have been removed"
-echo "If this is confirmed by successful GitHub build, you may now run: cargo publish"
+echo "If this is confirmed by successful GitHub build !!, you may now run: cargo publish"

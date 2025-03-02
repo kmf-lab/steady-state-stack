@@ -5,6 +5,7 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
+use steady_state::steady_tx::TxMetaDataProvider;
 use crate::actor::fizz_buzz_processor;
 
 #[derive(Default, Clone, Copy, PartialOrd, PartialEq, Debug)]
@@ -17,7 +18,7 @@ pub(crate) struct NumberMessage {
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
         ,numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
-  internal_behavior(into_monitor!(context, [],[numbers_tx]),numbers_tx).await
+  internal_behavior(context.into_monitor( [],[&numbers_tx]),numbers_tx).await
 }
 
 const BATCH_SIZE: usize = 4000;
@@ -56,11 +57,11 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 ,numbers_tx: SteadyTx<NumberMessage>
+                 , tx: SteadyTx<NumberMessage>
 ) -> Result<(),Box<dyn Error>> {
-    let mut cmd =  into_monitor!(context, [],[numbers_tx]);
+    let mut cmd =  context.into_monitor([],[&tx]);
     if let Some(responder) = cmd.sidechannel_responder() {
-        let mut numbers_tx = numbers_tx.lock().await;
+        let mut numbers_tx = tx.lock().await;
         while cmd.is_running(&mut ||numbers_tx.mark_closed()) {
             // in main use graph.sidechannel_director node_call(msg,"DivBy3Producer")
             let _did_echo = responder.echo_responder(&mut cmd,&mut numbers_tx).await;

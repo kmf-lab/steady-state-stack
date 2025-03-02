@@ -2,6 +2,8 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
+use steady_state::steady_rx::RxMetaDataProvider;
+use steady_state::steady_tx::TxMetaDataProvider;
 use steady_state::SteadyRx;
 use steady_state::SteadyTx;
 
@@ -19,7 +21,7 @@ pub struct FailureFeedback {
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<FailureFeedback>
                  , tx: SteadyTx<ChangeRequest>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(into_monitor!(context, [rx], [tx]), rx, tx).await
+    internal_behavior(context.into_monitor([&rx], [&tx]), rx, tx).await
 }
 
 async fn internal_behavior<C: SteadyCommander>(mut cmd:C, rx: SteadyRx<FailureFeedback>, tx: SteadyTx<ChangeRequest>) -> Result<(), Box<dyn Error>> {

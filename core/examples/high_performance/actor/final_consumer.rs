@@ -21,7 +21,7 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
 #[cfg(test)]
 pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
                                                     ,rx: SteadyRxBundle<TickCount, TICK_COUNTS_RX_GIRTH>) -> Result<(),Box<dyn Error>> {
-    let mut monitor = into_monitor!(context,rx,[]);
+    let mut monitor = context.into_monitor(rx.meta_data(),[]);
     let mut rx = rx.lock().await;
 
     if let Some(simulator) = monitor.sidechannel_responder() {
@@ -59,7 +59,7 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
 async fn internal_behavior<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext, tick_counts_rx: SteadyRxBundle<TickCount, { TICK_COUNTS_RX_GIRTH }>) -> Result<(), Box<dyn Error>> {
     let _cli_args = context.args::<Args>();
 
-    let mut monitor = into_monitor!(context, tick_counts_rx, []);
+    let mut monitor = context.into_monitor( tick_counts_rx.meta_data(), []);
 
     let mut tick_counts_rx = tick_counts_rx.lock().await;
     let mut buffer = [TickCount::default(); BATCH];

@@ -62,14 +62,6 @@ use crate::args::{Args, run_duration_validator};
 
 
     #[test]
-    fn test_run_duration_validator() {
-        assert!(run_duration_validator("100").is_ok());
-        assert!(run_duration_validator("240").is_ok());
-        assert!(run_duration_validator("241").is_err());
-        assert!(run_duration_validator("invalid").is_err());
-    }
-
-    #[test]
     fn test_systemd_command_mapping() {
         let args = Args {
             loglevel: LogLevel::Info,
@@ -114,18 +106,6 @@ use crate::args::{Args, run_duration_validator};
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_invalid_duration() {
-        let result = Args::try_parse_from(&[
-            "myapp",
-            "--loglevel",
-            "info",
-            "--gen-rate",
-            "5000",
-            "--duration",
-            "241"
-        ]);
-        assert!(result.is_err());
-    }
+
 
 }

@@ -6,7 +6,7 @@ use crate::actor::data_generator::Packet;
 
 //use futures::future::FutureExt;
 use std::time::Duration;
-
+use steady_state::steady_rx::RxMetaDataProvider;
 use steady_state::SteadyRx;
 use steady_state::SteadyTxBundle;
 
@@ -16,7 +16,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                                     , tx: SteadyTxBundle<Packet,GIRTH>
                 ) -> Result<(),Box<dyn Error>> {
 
-    internal_behavior(into_monitor!(context,[rx],tx), one_of, rx, tx).await
+    internal_behavior(context.into_monitor([&rx],tx.meta_data()), one_of, rx, tx).await
 }
 
 async fn internal_behavior<C:SteadyCommander, const GIRTH:usize>(mut cmd: C, one_of: usize, rx: SteadyRx<Packet>, tx: SteadyTxBundle<Packet, { GIRTH }>) -> Result<(), Box<dyn Error>> {

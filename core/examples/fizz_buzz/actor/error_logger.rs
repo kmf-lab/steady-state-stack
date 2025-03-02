@@ -5,13 +5,14 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
+use steady_state::steady_rx::RxMetaDataProvider;
 use crate::actor::fizz_buzz_processor::ErrorMessage;
 
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
         ,errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
-  internal_behavior(into_monitor!(context, [errors_rx],[]),errors_rx).await
+  internal_behavior(context.into_monitor([&errors_rx],[]),errors_rx).await
 }
 
 async fn internal_behavior<C:SteadyCommander>(mut cmd: C
@@ -41,11 +42,11 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 ,errors_rx: SteadyRx<ErrorMessage>
+                 , rx: SteadyRx<ErrorMessage>
 ) -> Result<(),Box<dyn Error>> {
-    let mut cmd =  into_monitor!(context, [errors_rx],[]);
+    let mut cmd =  context.into_monitor([&rx], []);
     if let Some(responder) = cmd.sidechannel_responder() {
-        let mut errors_rx = errors_rx.lock().await;
+        let mut errors_rx = rx.lock().await;
         while cmd.is_running(&mut ||
             errors_rx.is_closed_and_empty()) {
             // in main use graph.sidechannel_director node_call(msg,"ErrorLogger")

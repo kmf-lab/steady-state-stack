@@ -6,7 +6,8 @@ use crate::actor::data_generator::WidgetInventory;
 use log::*;
 
 use steady_state::*;
-
+use steady_state::steady_rx::RxMetaDataProvider;
+use steady_state::steady_tx::TxMetaDataProvider;
 use steady_state::SteadyRx;
 use steady_state::SteadyTx;
 use crate::actor::data_feedback::FailureFeedback;
@@ -25,7 +26,7 @@ pub async fn run(context: SteadyContext
                  , tx: SteadyTx<ApprovedWidgets>
                  , feedback: SteadyTx<FailureFeedback>
                 ) -> Result<(),Box<dyn Error>> {
-    internal_behavior(into_monitor!(context,[rx],[tx,feedback]), rx, tx, feedback).await
+    internal_behavior(context.into_monitor([&rx],[&tx,&feedback]), rx, tx, feedback).await
 }
 
 async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<WidgetInventory>, tx: SteadyTx<ApprovedWidgets>, feedback: SteadyTx<FailureFeedback>) -> Result<(), Box<dyn Error>> {

@@ -5,7 +5,7 @@ use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamRx, StreamRxDef, StreamSimpleMessage};
+use crate::distributed::distributed_stream::{SteadyStreamRx, StreamSimpleMessage};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
@@ -25,7 +25,7 @@ pub async fn run(context: SteadyContext
              , aeron:Arc<futures_util::lock::Mutex<Aeron>>
              , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
 
-    internal_behavior(into_monitor!(context, [rx.meta_data().control], [])
+    internal_behavior(context.into_monitor([&rx], [])
                       , rx, aeron_connect, stream_id, aeron, state).await
 }
 
@@ -217,7 +217,7 @@ pub(crate) mod aeron_tests {
     pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyContext
                                                      , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
-        let mut cmd = into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data()));
+        let mut cmd = context.into_monitor([], tx.control_meta_data());
         let mut tx = tx.lock().await;
 
         let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -277,7 +277,7 @@ pub(crate) mod aeron_tests {
     pub async fn mock_receiver_run<const GIRTH:usize>(context: SteadyContext
                                                       , rx: SteadyStreamRxBundle<StreamSessionMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
-        let mut cmd = into_monitor!(context, RxMetaDataHolder::new(rx.control_meta_data()), []);
+        let mut cmd = context.into_monitor(rx.control_meta_data(), []);
         let mut rx = rx.lock().await;
 
         let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);

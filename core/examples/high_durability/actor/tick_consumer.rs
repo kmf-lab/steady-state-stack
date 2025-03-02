@@ -6,6 +6,8 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 use std::error::Error;
+use steady_state::steady_rx::RxMetaDataProvider;
+use steady_state::steady_tx::TxMetaDataProvider;
 use crate::actor::tick_generator::Tick;
 
 
@@ -26,7 +28,7 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
     let _cli_args = context.args::<Args>();
 
     // create the monitor for doing all channel work
-    let mut monitor = into_monitor!(context, [ticks_rx],[tick_counts_tx]);
+    let mut monitor = context.into_monitor( [&ticks_rx],[&tick_counts_tx]);
 
     // lock the channels for use in this instance
     let mut ticks_rx = ticks_rx.lock().await;

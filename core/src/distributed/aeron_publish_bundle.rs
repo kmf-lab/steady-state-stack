@@ -28,7 +28,7 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , stream_id: i32
                                      , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                                      , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
-    internal_behavior(into_monitor!(context, RxMetaDataHolder::new(rx.control_meta_data()), []), rx, aeron_connect, stream_id, aeron, state).await
+    internal_behavior(context.into_monitor( rx.control_meta_data(), []), rx, aeron_connect, stream_id, aeron, state).await
 }
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
@@ -236,7 +236,7 @@ pub(crate) mod aeron_tests {
     pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyContext
                                                      , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
-        let mut cmd = into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data()));
+        let mut cmd = context.into_monitor([], tx.control_meta_data());
         let mut tx = tx.lock().await;
 
         let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -296,7 +296,7 @@ pub(crate) mod aeron_tests {
     pub async fn mock_receiver_run<const GIRTH:usize>(context: SteadyContext
                                                       , rx: SteadyStreamRxBundle<StreamSessionMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
 
-        let mut cmd = into_monitor!(context, RxMetaDataHolder::new(rx.control_meta_data()), []);
+        let mut cmd = context.into_monitor(rx.control_meta_data(), []);
         let mut rx = rx.lock().await;
 
         let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);

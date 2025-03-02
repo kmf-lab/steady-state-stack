@@ -95,10 +95,10 @@ impl <T>RxCore for Rx<T> {
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         self.local_monitor_index = match done_count {
             RxDone::Normal(d) =>
-                tel.process_event(self.local_monitor_index, self.channel_meta_data.id, d as isize),
+                tel.process_event(self.local_monitor_index, self.channel_meta_data.meta_data.id, d as isize),
             RxDone::Stream(i,_p) => {
                 warn!("internal error should have gotten Normal");
-                tel.process_event(self.local_monitor_index, self.channel_meta_data.id, i as isize)
+                tel.process_event(self.local_monitor_index, self.channel_meta_data.meta_data.id, i as isize)
             },
         }
     }
@@ -226,11 +226,11 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
             RxDone::Normal(i) => {
-                self.item_channel.local_monitor_index = tel.process_event(self.item_channel.local_monitor_index, self.item_channel.channel_meta_data.id, i as isize);
+                self.item_channel.local_monitor_index = tel.process_event(self.item_channel.local_monitor_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
                 warn!("internal error should have gotten Stream")},
             RxDone::Stream(i,p) => {
-                self.item_channel.local_monitor_index = tel.process_event(self.item_channel.local_monitor_index, self.item_channel.channel_meta_data.id, i as isize);
-                self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.channel_meta_data.id, p as isize);
+                self.item_channel.local_monitor_index = tel.process_event(self.item_channel.local_monitor_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+                self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
             },
         }
     }

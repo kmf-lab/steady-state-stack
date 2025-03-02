@@ -24,7 +24,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
 async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
                                     , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = into_monitor!(context,[],tx);
+    let mut monitor = context.into_monitor([],tx.meta_data());
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
 
@@ -75,7 +75,7 @@ pub(crate) fn compute_index(tx: &mut TxBundle<Packet>, packet: &Packet) -> usize
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , tx: SteadyTxBundle<Packet,GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = into_monitor!(context,[], tx);
+    let mut monitor = context.into_monitor([], tx.meta_data());
     let mut tx:TxBundle<Packet> = tx.lock().await;
 
     if let Some(mut responder) = monitor.sidechannel_responder() { //outside

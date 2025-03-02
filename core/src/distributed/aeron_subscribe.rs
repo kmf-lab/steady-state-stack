@@ -6,7 +6,7 @@ use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamTx, StreamSessionMessage, StreamTxDef};
+use crate::distributed::distributed_stream::{SteadyStreamTx, StreamSessionMessage};
 use crate::{into_monitor, SteadyCommander, SteadyState};
 use crate::*;
 use num_traits::Zero;
@@ -29,7 +29,7 @@ pub async fn run(context: SteadyContext
                  , stream_id: i32
                  , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                  , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
-    internal_behavior(into_monitor!(context, [], [tx.meta_data().control])
+    internal_behavior(context.into_monitor([], [&tx])
                       , tx, aeron_connect, stream_id, aeron, state).await
 }
 

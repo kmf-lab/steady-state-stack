@@ -25,7 +25,7 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
 pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                                               ,tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = into_monitor!(context, [], tx);
+    let mut monitor = context.into_monitor( [], tx.meta_data());
     if let Some(responder) = monitor.sidechannel_responder() {
 
         let mut tx = tx.lock().await;
@@ -51,7 +51,7 @@ async fn internal_behavior<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
         ,ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
     let _cli_args = context.args::<Args>();
-    let mut monitor =  into_monitor!(context, [],ticks_tx);
+    let mut monitor =  context.into_monitor( [],ticks_tx.meta_data());
  
     let mut ticks_tx = ticks_tx.lock().await;
     let batch = ticks_tx.capacity()/4;

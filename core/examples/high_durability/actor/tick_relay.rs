@@ -6,6 +6,8 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 use std::error::Error;
+use steady_state::steady_rx::RxMetaDataProvider;
+use steady_state::steady_tx::TxMetaDataProvider;
 use crate::actor::tick_generator::Tick;
 
 const BATCH:usize = 1000;
@@ -19,7 +21,7 @@ pub async fn run(context: SteadyContext
 async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {
     let _cli_args = context.args::<Args>();
 
-    let mut monitor = into_monitor!(context, [ticks_rx], [ticks_tx]);
+    let mut monitor = context.into_monitor( [&ticks_rx], [&ticks_tx]);
 
     let mut ticks_rx = ticks_rx.lock().await;
     let mut ticks_tx = ticks_tx.lock().await;

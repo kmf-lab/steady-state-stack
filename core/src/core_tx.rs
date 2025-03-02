@@ -70,10 +70,10 @@ impl<T> TxCore for Tx<T> {
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
             TxDone::Normal(d) =>
-              self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, d as isize),
+              self.local_index = tel.process_event(self.local_index, self.channel_meta_data.meta_data.id, d as isize),
             TxDone::Stream(i,_p) => {
                 warn!("internal error should have gotten Normal");
-                self.local_index = tel.process_event(self.local_index, self.channel_meta_data.id, i as isize)
+                self.local_index = tel.process_event(self.local_index, self.channel_meta_data.meta_data.id, i as isize)
             },
         }
     }
@@ -291,11 +291,11 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
         match done_count {
             TxDone::Normal(i) => {
                 warn!("internal error should have gotten Stream");
-                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.id, i as isize);
+                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
             },
             TxDone::Stream(i,p) => {
-                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.id, i as isize);
-                self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.id, p as isize);
+                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+                self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
             },
         }
     }

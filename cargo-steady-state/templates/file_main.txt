@@ -23,7 +23,7 @@ fn main() {
     if !systemd_command {
         info!("Starting up");
         let mut graph = build_graph(GraphBuilder::default().build(opt.clone()) );
-        graph.loglevel(&opt.loglevel);
+        graph.loglevel(opt.loglevel);
         graph.start();
 
         {  //remove this block to run forever.

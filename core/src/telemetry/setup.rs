@@ -280,7 +280,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                             }
                                         }
                                     } else if tx.local_index.eq(&MONITOR_UNKNOWN) {
-                                        tx.local_index = find_my_index(send_tx, tx.channel_meta_data.id);
+                                        tx.local_index = find_my_index(send_tx, tx.channel_meta_data.meta_data.id);
                                         if tx.local_index.lt(&MONITOR_NOT) {
                                             send_tx.count[tx.local_index] += 1;
                                         }
@@ -328,7 +328,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                 if tx.local_index.lt(&MONITOR_NOT) {
                                     send_tx.count[tx.local_index] = 1;
                                 } else if tx.local_index.eq(&MONITOR_UNKNOWN) {
-                                    tx.local_index = find_my_index(send_tx, tx.channel_meta_data.id);
+                                    tx.local_index = find_my_index(send_tx, tx.channel_meta_data.meta_data.id);
                                     if tx.local_index.lt(&MONITOR_NOT) {
                                         send_tx.count[tx.local_index] = 1;
                                     }
@@ -359,7 +359,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                 if rx.local_index.lt(&MONITOR_NOT) {
                                     send_rx.count[rx.local_index] = 1;
                                 } else if rx.local_index.eq(&MONITOR_UNKNOWN) {
-                                    rx.local_index = find_my_index(send_rx, rx.channel_meta_data.id);
+                                    rx.local_index = find_my_index(send_rx, rx.channel_meta_data.meta_data.id);
                                     if rx.local_index.lt(&MONITOR_NOT) {
                                         send_rx.count[rx.local_index] = 1;
                                     }

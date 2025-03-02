@@ -1,21 +1,23 @@
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use futures_util::{select, task, FutureExt};
 use std::sync::Arc;
-use futures_util::lock::MutexLockFuture;
+use futures_util::lock::{Mutex, MutexLockFuture};
 use std::time::{Duration, Instant};
-use log::{error};
+use log::error;
 use futures::channel::oneshot;
 use futures_util::future::{select_all, BoxFuture, FusedFuture};
 use async_ringbuf::consumer::AsyncConsumer;
 use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 use futures_timer::Delay;
 use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData, RxMetaData};
 use crate::core_rx::RxCore;
 use crate::{RxBundle, SteadyRx, SteadyRxBundle};
+use crate::distributed::distributed_stream::RxChannelMetaDataWrapper;
+use crate::steady_tx::TxMetaDataProvider;
 
 /// Represents a receiver that consumes messages from a channel.
 ///
@@ -23,7 +25,7 @@ use crate::{RxBundle, SteadyRx, SteadyRxBundle};
 /// - `T`: The type of messages in the channel.
 pub struct Rx<T> {
     pub(crate) rx: InternalReceiver<T>,
-    pub(crate) channel_meta_data: Arc<ChannelMetaData>,
+    pub(crate) channel_meta_data: RxChannelMetaDataWrapper,
     pub(crate) local_monitor_index: usize,  // Set on first usage
     pub(crate) is_closed: oneshot::Receiver<()>,
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
@@ -36,6 +38,11 @@ pub struct Rx<T> {
     pub(crate) peek_repeats: AtomicUsize, // count of repeats, For bad message detection
 
     pub(crate) iterator_count_drift: Arc<AtomicIsize>, //for RX iterator drift detection to keep telemetry right
+}
+impl<T> Debug for Rx<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Rx") //TODO: add more details
+    }
 }
 
 impl <T> Rx<T> {
@@ -222,7 +229,7 @@ impl<T> Rx<T> {
     /// # Returns
     /// A `usize` representing the channel's unique ID.
     pub fn id(&self) -> usize {
-        self.channel_meta_data.id
+        self.channel_meta_data.meta_data.id
     }
 
     /// Checks if the Tx instance has changed since the last check.
@@ -478,43 +485,35 @@ where
 
 
 /// Trait defining the required methods for a receiver definition.
-pub trait RxDef: Debug + Send + Sync {
+pub trait RxMetaDataProvider: Debug {
     /// Retrieves metadata associated with the receiver.
     ///
     /// # Returns
     /// An `RxMetaData` object containing the metadata.
-    fn meta_data(&self) -> RxMetaData;
-
-    fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, (bool, Option<usize>)>;
-// TODO: can we remove this? and add RxDef to streams?
-
+    fn meta_data(&self) -> Arc<ChannelMetaData>;
 }
 
-impl<T: Send + Sync> RxDef for SteadyRx<T> {
-    fn meta_data(&self) -> RxMetaData {
+
+impl<T: Send + Sync> RxMetaDataProvider for Mutex<Rx<T>> {
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
         loop {
             if let Some(guard) = self.try_lock() {
-                return RxMetaData(guard.deref().channel_meta_data.clone());
+                return Arc::clone(&guard.deref().channel_meta_data.meta_data);
             }
             std::thread::yield_now();
             error!("got stuck");
         }
     }
-
-
-#[inline]
-fn wait_avail_units(&self, count: usize) -> BoxFuture<'_, (bool, Option<usize>)> {
-        async move {
-            let mut guard = self.lock().await;
-            let is_closed = guard.deref_mut().is_closed();
-            if !is_closed {
-                let result:bool = guard.deref_mut().shared_wait_shutdown_or_avail_units(count).await;
-                (result,  Some(guard.deref().id()))
-            } else {
-                (false, None)
+}
+impl<T: Send + Sync> RxMetaDataProvider for Arc<Mutex<Rx<T>>> {
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
+        loop {
+            if let Some(guard) = self.try_lock() {
+                return Arc::clone(&guard.deref().channel_meta_data.meta_data);
             }
+            std::thread::yield_now();
+            error!("got stuck");
         }
-            .boxed()
     }
 }
 
@@ -530,7 +529,7 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     ///
     /// # Returns
     /// An array of `RxMetaData` objects containing metadata for each receiver.
-    fn meta_data(&self) -> [RxMetaData; GIRTH];
+    fn meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH];
 
     /// Asynchronously waits for a specified number of units to be available in the bundle.
     ///
@@ -549,12 +548,11 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
-    fn meta_data(&self) -> [RxMetaData; GIRTH] {
+    fn meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x.meta_data())
-            .collect::<Vec<RxMetaData>>()
-            .try_into()
-            .expect("Internal Error")
+            .map(|x| x as &dyn RxMetaDataProvider)
+            .collect::<Vec<_>>()
+            .try_into().expect("Wrong number of elements")
     }
 
     async fn wait_avail_units(&self, avail_count: usize, ready_channels: usize) {
@@ -673,9 +671,9 @@ mod rx_tests {
 
         let array_tx_meta_data = steady_tx_bundle.meta_data();
         let array_rx_meta_data = steady_rx_bundle.meta_data();
-        assert_eq!(array_rx_meta_data[0].0.id,array_tx_meta_data[0].0.id);
-        assert_eq!(array_rx_meta_data[1].0.id,array_tx_meta_data[1].0.id);
-        assert_eq!(array_rx_meta_data[2].0.id,array_tx_meta_data[2].0.id);
+        assert_eq!(array_rx_meta_data[0].meta_data(),array_tx_meta_data[0].meta_data());
+        assert_eq!(array_rx_meta_data[1].meta_data(),array_tx_meta_data[1].meta_data());
+        assert_eq!(array_rx_meta_data[2].meta_data(),array_tx_meta_data[2].meta_data());
 
 
         let mut vec_tx_bundle = steady_tx_bundle.lock().await;

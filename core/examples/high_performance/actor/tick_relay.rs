@@ -6,14 +6,16 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 use std::error::Error;
+use steady_state::steady_rx::RxMetaDataProvider;
+use steady_state::steady_tx::TxMetaDataProvider;
 use crate::actor::tick_generator::Tick;
 
 const BATCH:usize = 2000;
 
 pub async fn run(context: SteadyContext
-                    ,ticks_rx: SteadyRx<Tick>
-                    ,ticks_tx: SteadyTx<Tick>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(into_monitor!(context, [ticks_rx],[ticks_tx]), ticks_rx, ticks_tx).await
+                 , rx: SteadyRx<Tick>
+                 , tx: SteadyTx<Tick>) -> Result<(),Box<dyn Error>> {
+    internal_behavior(context.into_monitor([&rx], [&tx]), rx, tx).await
 }
 
 async fn internal_behavior<CMD: SteadyCommander>(mut context: CMD, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {

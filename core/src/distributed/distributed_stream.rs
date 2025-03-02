@@ -18,6 +18,9 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
 use crate::core_rx::RxCore;
+use crate::monitor::ChannelMetaData;
+use crate::steady_rx::RxMetaDataProvider;
+use crate::steady_tx::TxMetaDataProvider;
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
 pub type IdType = i32;
@@ -80,8 +83,8 @@ pub trait SteadyStreamRxBundleTrait<T: StreamItem, const GIRTH: usize> {
     ///
     /// # Returns
     /// An array of `RxMetaData` objects containing metadata for each receiver.
-    fn control_meta_data(&self) -> [RxMetaData; GIRTH];
-    fn payload_meta_data(&self) -> [RxMetaData; GIRTH];
+    fn control_meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH];
+    fn payload_meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH];
 
 }
 
@@ -91,18 +94,18 @@ impl<T: StreamItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRTH> for 
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
-    fn control_meta_data(&self) -> [RxMetaData; GIRTH] {
+    fn control_meta_data(& self) -> [& dyn RxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x.meta_data().control)
-            .collect::<Vec<RxMetaData>>()
+            .map(|x| x as &dyn RxMetaDataProvider)
+            .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
     }
 
-    fn payload_meta_data(&self) -> [RxMetaData; GIRTH] {
+    fn payload_meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x.meta_data().payload)
-            .collect::<Vec<RxMetaData>>()
+            .map(|x| x as &dyn RxMetaDataProvider)
+            .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
     }
@@ -120,8 +123,8 @@ pub trait SteadyStreamTxBundleTrait<T: StreamItem, const GIRTH: usize> {
     ///
     /// # Returns
     /// An array of `RxMetaData` objects containing metadata for each receiver.
-    fn control_meta_data(&self) -> [TxMetaData; GIRTH];
-    fn payload_meta_data(&self) -> [TxMetaData; GIRTH];
+    fn control_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH];
+    fn payload_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH];
 
 
 }
@@ -132,18 +135,18 @@ impl<T: StreamItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRTH> for 
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
-    fn control_meta_data(&self) -> [TxMetaData; GIRTH] {
+    fn control_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x.meta_data().control)
-            .collect::<Vec<TxMetaData>>()
+            .map(|x| x as &dyn TxMetaDataProvider)
+            .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
     }
 
-    fn payload_meta_data(&self) -> [TxMetaData; GIRTH] {
+    fn payload_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x.meta_data().payload)
-            .collect::<Vec<TxMetaData>>()
+            .map(|x| x as &dyn TxMetaDataProvider)
+            .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
     }
@@ -304,18 +307,38 @@ impl StreamItem for StreamSimpleMessage {
 /// introspection or debugging information.
 pub struct StreamRxMetaData {
     /// Metadata about the control channel.
-    pub control: RxMetaData,
+    pub control: RxChannelMetaDataWrapper,
     /// Metadata about the payload channel.
-    pub payload: RxMetaData,
+    pub payload: RxChannelMetaDataWrapper,
+}
+
+#[derive(Debug)]
+pub struct RxChannelMetaDataWrapper {
+    pub(crate) meta_data: Arc<ChannelMetaData>
+}
+impl RxMetaDataProvider for RxChannelMetaDataWrapper {
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
+        Arc::clone(&self.meta_data)
+    }
 }
 
 /// Metadata about control and payload channels for a transmitter,
 /// often used for diagnostics or debugging.
 pub struct StreamTxMetaData {
     /// Metadata about the control channel.
-    pub control: TxMetaData,
+    pub(crate) control: TxChannelMetaDataWrapper,
     /// Metadata about the payload channel.
-    pub payload: TxMetaData,
+    pub(crate) payload: TxChannelMetaDataWrapper,
+}
+
+#[derive(Debug)]
+pub struct TxChannelMetaDataWrapper {
+    pub(crate) meta_data: Arc<ChannelMetaData>
+}
+impl TxMetaDataProvider for TxChannelMetaDataWrapper {
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
+        Arc::clone(&self.meta_data)
+    }
 }
 
 
@@ -835,65 +858,15 @@ impl<T: StreamItem> LazyStreamRx<T> {
     }
 }
 
-
-
-
-/// A trait defining how to retrieve metadata from a receiver channel.
-pub trait StreamRxDef {
-    /// Retrieves metadata from the underlying channels, locking if necessary.
-    fn meta_data(&self) -> StreamRxMetaData;
-}
-
-impl<T: StreamItem> StreamRxDef for SteadyStreamRx<T> {
-    fn meta_data(&self) -> StreamRxMetaData {
-        match self.try_lock() {
-            Some(locked) => {
-                let m1 = RxMetaData(locked.item_channel.channel_meta_data.clone());
-                let d2 = RxMetaData(locked.payload_channel.channel_meta_data.clone());
-                StreamRxMetaData {
-                    control: m1,
-                    payload: d2,
-                }
-            }
-            None => {
-                let locked = nuclei::block_on(self.lock());
-                let m1 = RxMetaData(locked.item_channel.channel_meta_data.clone());
-                let d2 = RxMetaData(locked.payload_channel.channel_meta_data.clone());
-                StreamRxMetaData {
-                    control: m1,
-                    payload: d2,
-                }
-            }
-        }
+impl<T: StreamItem> RxMetaDataProvider for SteadyStreamRx<T> {
+    fn meta_data(&self) -> RxMetaData {
+        self.meta_data()
     }
 }
 
-/// A trait defining how to retrieve metadata from a transmitter channel.
-pub trait StreamTxDef {
-    /// Retrieves metadata from the underlying channels, locking if necessary.
-    fn meta_data(&self) -> StreamTxMetaData;
-}
-
-impl<T: StreamItem> StreamTxDef for SteadyStreamTx<T> {
-    fn meta_data(&self) -> StreamTxMetaData {
-        match self.try_lock() {
-            Some(locked) => {
-                let m1 = TxMetaData(locked.item_channel.channel_meta_data.clone());
-                let d2 = TxMetaData(locked.payload_channel.channel_meta_data.clone());
-                StreamTxMetaData {
-                    control: m1,
-                    payload: d2,
-                }
-            }
-            None => {
-                let locked = nuclei::block_on(self.lock());
-                let m1 = TxMetaData(locked.item_channel.channel_meta_data.clone());
-                let d2 = TxMetaData(locked.payload_channel.channel_meta_data.clone());
-                StreamTxMetaData {
-                    control: m1,
-                    payload: d2,
-                }
-            }
-        }
+impl<T: StreamItem> TxMetaDataProvider for SteadyStreamTx<T> {
+    fn meta_data(&self) -> TxMetaData {
+        self.meta_data()
     }
 }
+

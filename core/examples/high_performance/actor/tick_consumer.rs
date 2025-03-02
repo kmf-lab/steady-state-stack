@@ -9,6 +9,8 @@ use crate::Args;
 
 
 use std::error::Error;
+use steady_state::steady_rx::RxMetaDataProvider;
+use steady_state::steady_tx::TxMetaDataProvider;
 use crate::actor::tick_generator::Tick;
 
 
@@ -28,13 +30,13 @@ pub async fn run(context: SteadyContext
 const BATCH: usize = 2000;
 const WAIT_AVAIL: usize = 250;
 
-async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tick_counts_tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Tick>, tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
     let _cli_args = context.args::<Args>();
 
-    let mut monitor = into_monitor!(context, [ticks_rx],[tick_counts_tx]);
+    let mut monitor = context.into_monitor([&rx], [&tx]);
 
-    let mut ticks_rx = ticks_rx.lock().await;
-    let mut tick_counts_tx = tick_counts_tx.lock().await;
+    let mut ticks_rx = rx.lock().await;
+    let mut tick_counts_tx = tx.lock().await;
     let mut buffer = [Tick::default(); BATCH];
 
     while monitor.is_running(&mut || ticks_rx.is_closed_and_empty() && tick_counts_tx.mark_closed()) {

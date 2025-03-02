@@ -6,6 +6,7 @@ use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
 use std::ops::DerefMut;
+use steady_state::steady_rx::RxMetaDataProvider;
 use crate::actor::fizz_buzz_processor::FizzBuzzMessage;
 use crate::actor::timer_actor::PrintSignal;
 
@@ -14,7 +15,7 @@ pub async fn run(context: SteadyContext
         ,fizzbuzz_messages_rx: SteadyRx<FizzBuzzMessage>
         ,print_signal_rx: SteadyRx<PrintSignal>) -> Result<(),Box<dyn Error>> {
 
-    internal_behavior(into_monitor!(context, [fizzbuzz_messages_rx, print_signal_rx],[] )
+    internal_behavior(context.into_monitor([fizzbuzz_messages_&rx, print_signal_&rx],[] )
                       ,fizzbuzz_messages_rx
                       ,print_signal_rx).await
 }
@@ -77,13 +78,13 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 ,fizzbuzz_messages_rx: SteadyRx<FizzBuzzMessage>
-                 ,print_signal_rx: SteadyRx<PrintSignal>
+                 , fizzbuzz_rx: SteadyRx<FizzBuzzMessage>
+                 , print_rx: SteadyRx<PrintSignal>
 ) -> Result<(),Box<dyn Error>> {
-    let mut cmd =  into_monitor!(context, [fizzbuzz_messages_rx,print_signal_rx],[]);
+    let mut cmd =  context.into_monitor([&fizzbuzz_rx,&print_rx], []);
     if let Some(responder) = cmd.sidechannel_responder() {
-        let mut fizzbuzz_messages_rx = fizzbuzz_messages_rx.lock().await;
-        let mut print_signal_rx = print_signal_rx.lock().await;
+        let mut fizzbuzz_messages_rx = fizzbuzz_rx.lock().await;
+        let mut print_signal_rx = print_rx.lock().await;
         while cmd.is_running(&mut ||
             fizzbuzz_messages_rx.is_closed_and_empty() &&
                 print_signal_rx.is_closed_and_empty()) {

@@ -117,7 +117,7 @@ pub use distributed::distributed_stream::{LazyStreamRx, LazyStreamTx};
 pub use distributed::distributed_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
 pub use distributed::distributed_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
 pub use distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
-pub use distributed::distributed_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamRxDef, StreamTx, StreamTxDef};
+pub use distributed::distributed_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamTx};
 
 pub use log::{debug, error, info, trace, warn};
 
@@ -369,26 +369,26 @@ impl LogLevel {
 macro_rules! into_monitor {
     ($self:expr, [$($rx:expr),*], [$($tx:expr),*]) => {{
         #[allow(unused_imports)]
-        use steady_rx::RxDef;
+        use steady_rx::RxMetaDataProvider;
         #[allow(unused_imports)]
-        use steady_tx::TxDef;
+        use steady_tx::TxMetaDataProvider;
         let rx_meta = [$($rx.meta_data(),)*];
         let tx_meta = [$($tx.meta_data(),)*];
         $self.into_monitor_internal(rx_meta, tx_meta)
     }};
     ($self:expr, [$($rx:expr),*], $tx_bundle:expr) => {{
         #[allow(unused_imports)]
-        use steady_rx::RxDef;
+        use steady_rx::RxMetaDataProvider;
         #[allow(unused_imports)]
-        use steady_tx::TxDef;
+        use steady_tx::TxMetaDataProvider;
         let rx_meta = [$($rx.meta_data(),)*];
         $self.into_monitor_internal(rx_meta, $tx_bundle.meta_data())
     }};
     ($self:expr, $rx_bundle:expr, [$($tx:expr),*]) => {{
         #[allow(unused_imports)]
-        use steady_rx::RxDef;
+        use steady_rx::RxMetaDataProvider;
         #[allow(unused_imports)]
-        use steady_tx::TxDef;
+        use steady_tx::TxMetaDataProvider;
         let tx_meta = [$($tx.meta_data(),)*];
         $self.into_monitor_internal($rx_bundle.meta_data(), tx_meta)
     }};
@@ -397,9 +397,9 @@ macro_rules! into_monitor {
     }};
     ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*], $($rx_bundle:expr),* ), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
         #[allow(unused_imports)]
-        use steady_rx::RxDef;
+        use steady_rx::RxMetaDataProvider;
         #[allow(unused_imports)]
-        use steady_tx::TxDef;
+        use steady_tx::TxMetaDataProvider;
         let mut rx_count = [$( { $rx; 1 } ),*].len();
         $(
             rx_count += $rx_bundle.meta_data().len();
@@ -442,9 +442,9 @@ macro_rules! into_monitor {
     }};
    ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*]), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
         #[allow(unused_imports)]
-        use steady_rx::RxDef;
+        use steady_rx::RxMetaDataProvider;
         #[allow(unused_imports)]
-        use steady_tx::TxDef;
+        use steady_tx::TxMetaDataProvider;
         let mut rx_count = [$( { $rx; 1 } ),*].len();
         assert_eq!(rx_count, $rx_channels_to_monitor, "Mismatch in RX channel count");
 
@@ -616,7 +616,7 @@ impl StdDev {
 }
 
 /// Base Trait for all metrics for use on Telemetry and Prometheus.
-pub trait Metric {}
+pub trait Metric: PartialEq {}
 
 /// Represents a Metric suitable for channels which transfer data.
 pub trait DataMetric: Metric {}
@@ -629,7 +629,7 @@ impl Metric for Duration {}
 /// Represents the color of an alert in the Steady State framework.
 ///
 /// The `AlertColor` enum is used to indicate the severity level of an alert.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AlertColor {
     /// Indicates a warning level alert.
     ///
@@ -651,7 +651,7 @@ pub enum AlertColor {
 ///
 /// The `Trigger` enum is used to define various conditions that, when met, will trigger an alert.
 /// Each variant specifies a different type of condition.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Trigger<T>
     where
         T: Metric,
@@ -700,6 +700,8 @@ mod lib_tests {
     use commander::SteadyCommander;
     use crate::commander_context::SteadyContext;
     use crate::core_tx::TxCore;
+    use crate::steady_rx::RxMetaDataProvider;
+    use crate::steady_tx::TxMetaDataProvider;
 
     #[test]
     fn test_std_dev_valid_values() {
@@ -850,8 +852,10 @@ mod lib_tests {
         // Prepare context and channels
         let context = test_steady_context();
         let (tx, rx) = create_test_channel::<i32>();
+        let tx = tx.clone();
+        let rx = rx.clone();
         // Use the macro
-        let _monitor = into_monitor!(context, [rx.clone()], [tx.clone()]);
+        let _monitor = context.into_monitor([&rx], [&tx]);
         // Since we cannot directly test the internal state of the monitor,
         // we ensure that the macro compiles and runs without errors
         assert!(true);

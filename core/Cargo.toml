@@ -114,8 +114,7 @@ aeron = "0.2.0"
 # steady_state_aeron    = { path = "../../aeron-rs", version="0.1.6-kmf1" }
 
 
-
-# Release Plan
+# Release Notes::
 # 0.1.0 - one year aniversary (12/04/24) relase single machine
 #         75% function test coverage
 #      Transparency
@@ -136,9 +135,15 @@ aeron = "0.2.0"
 #          Clean deterministic orderly shutdown
 #          Peek and 'Take after process' for lossless messaging
 #          Unit testing for both Actors and Graphs
+# 0.1.1 -  Januay 2025
+#          Send trait NO LONGER required for actors !! Use more of your favorite crates.
 #
-# 0.1.1 - (ETA 01/04/25)
-#         Send trait NO LONGER required for actors !! Use more of your favorite crates.
+# 0.1.2 -  02/02/25
+#          Removed confusing macro now use  context.into_monitor(
+#          Updated to new Clap with integrated declaritive type checking
+#          More unified methods for both streams and channels
+#
+#   We are here doing more work on 0.1.3
 #
 # 0.2.0 - distributed features ready for use (ETA 06/04/25)
 #         Aeron

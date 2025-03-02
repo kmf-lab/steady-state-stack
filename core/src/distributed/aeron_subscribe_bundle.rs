@@ -32,7 +32,7 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , stream_id: i32
                                      , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                                      , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
-    internal_behavior(into_monitor!(context, [], TxMetaDataHolder::new(tx.control_meta_data())), tx, aeron_connect, stream_id, aeron, state).await
+    internal_behavior(context.into_monitor([], tx.control_meta_data()), tx, aeron_connect, stream_id, aeron, state).await
 }
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C

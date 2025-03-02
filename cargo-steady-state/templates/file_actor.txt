@@ -48,9 +48,9 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
   let _cli_args = context.args::<Args>();
   // monitor consumes context and ensures all the traffic on the chosen channels is monitored
   // monitor and context both implement SteadyCommander. SteadyContext is used to avoid monitoring
-  let cmd =  into_monitor!(context, [{%- for def in rx_monitor_defs -%}
-                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
-                        {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
+  let cmd =  context.into_monitor([{%- for def in rx_monitor_defs -%}
+                        &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
+                        &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
   internal_behavior(cmd {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx{%- endfor -%}, state).await
 }
 
@@ -164,9 +164,9 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
                                   {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
     , state: SteadyState<{{ display_name|capitalize }}InternalState>
     ) -> Result<(),Box<dyn Error>> {
-    let mut cmd =  into_monitor!(context, [{% for def in rx_monitor_defs -%}
-                            {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
-                            {{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
+    let mut cmd =  context.into_monitor([{% for def in rx_monitor_defs -%}
+                            &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
+                            &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
     if let Some(responder) = cmd.sidechannel_responder() {
          {%- for channel in rx_channels %}
          let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;

@@ -5,7 +5,7 @@ use std::any::type_name;
 use std::backtrace::Backtrace;
 use std::time::{Instant};
 use futures::channel::oneshot;
-use futures_util::lock::{MutexLockFuture};
+use futures_util::lock::{Mutex, MutexLockFuture};
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use futures_util::future::{select_all};
@@ -13,22 +13,29 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::thread;
 
-use crate::{steady_config, ActorIdentity, SteadyTx, SteadyTxBundle, TxBundle};
+use crate::{steady_config, ActorIdentity, Rx, SteadyTx, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::core_tx::TxCore;
+use crate::distributed::distributed_stream::{RxChannelMetaDataWrapper, TxChannelMetaDataWrapper};
 use crate::monitor::{ChannelMetaData, TxMetaData};
+use crate::steady_rx::RxMetaDataProvider;
 
 /// The `Tx` struct represents a transmission channel for messages of type `T`.
 /// It provides methods to send messages to the channel, check the channel's state, and handle the transmission lifecycle.
 pub struct Tx<T> {
     pub(crate) tx: InternalSender<T>,
-    pub(crate) channel_meta_data: Arc<ChannelMetaData>,
+    pub(crate) channel_meta_data: TxChannelMetaDataWrapper,
     pub(crate) local_index: usize, //set on first usage
     pub(crate) last_error_send: Instant,
     pub(crate) make_closed: Option<oneshot::Sender<()>>,
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
 }
 
+impl<T> Debug for Tx<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Tx") //TODO: add more details
+    }
+}
 
 
 impl<T> Tx<T> {
@@ -38,7 +45,7 @@ impl<T> Tx<T> {
     /// # Returns
     /// A `usize` representing the channel's unique ID.
     pub fn id(&self) -> usize {
-        self.channel_meta_data.id
+        self.channel_meta_data.meta_data.id
     }
 
     /// Marks the channel as closed, indicating no more messages are expected.
@@ -74,7 +81,7 @@ impl<T> Tx<T> {
         if self.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             let type_name = type_name::<T>().split("::").last();
             warn!("{:?} tx full channel #{} {:?} cap:{:?} type:{:?} ",
-                  ident, self.channel_meta_data.id, self.channel_meta_data.labels,
+                  ident, self.channel_meta_data.meta_data.id, self.channel_meta_data.meta_data.labels,
                   self.tx.capacity(), type_name);
             self.last_error_send = Instant::now();
         }
@@ -144,17 +151,36 @@ impl<T> Tx<T> {
 }
 
 /// A trait representing a definition for a transmission channel.
-pub trait TxDef: Debug {
+pub trait TxMetaDataProvider: Debug {
     /// Retrieves the metadata for the transmission channel.
-    fn meta_data(&self) -> TxMetaData;
+    fn meta_data(&self) -> Arc<ChannelMetaData>;
 }
 
-impl<T> TxDef for SteadyTx<T> {
-    fn meta_data(&self) -> TxMetaData {
+impl<T: Send + Sync> TxMetaDataProvider for Mutex<Tx<T>> {
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
         let mut count = 0;
         loop {
             if let Some(guard) = self.try_lock() {
-                return TxMetaData(guard.deref().channel_meta_data.clone());
+                return Arc::clone(&guard.deref().channel_meta_data.meta_data);
+            }
+            thread::yield_now();
+            count += 1;
+
+            //only print once we have tried for a while
+            if 10000 == count {
+                let backtrace = Backtrace::capture();
+                error!("{:?}", backtrace);
+                error!("got stuck on meta_data, unable to get lock on ChannelMetaData");
+            }
+        }
+    }
+}
+impl<T: Send + Sync> TxMetaDataProvider for Arc<Mutex<Tx<T>>> {
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
+        let mut count = 0;
+        loop {
+            if let Some(guard) = self.try_lock() {
+                return Arc::clone(&guard.deref().channel_meta_data.meta_data);
             }
             thread::yield_now();
             count += 1;
@@ -175,7 +201,7 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>>;
 
     /// Retrieves the metadata for all transmission channels in the bundle.
-    fn meta_data(&self) -> [TxMetaData; GIRTH];
+    fn meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH];
 
     /// Waits until a specified number of units are vacant in the channels.
     ///
@@ -190,10 +216,10 @@ impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for Stead
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
-    fn meta_data(&self) -> [TxMetaData; GIRTH] {
+    fn meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x.meta_data())
-            .collect::<Vec<TxMetaData>>()
+            .map(|x| x as &dyn TxMetaDataProvider)
+            .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
     }

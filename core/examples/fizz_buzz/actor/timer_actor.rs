@@ -5,6 +5,7 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
+use steady_state::steady_tx::TxMetaDataProvider;
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct PrintSignal {
@@ -14,7 +15,7 @@ pub(crate) struct PrintSignal {
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
         ,print_signal_tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
-  internal_behavior(into_monitor!(context, [],[print_signal_tx]),print_signal_tx).await
+  internal_behavior(context.into_monitor([],[&print_signal_tx]),print_signal_tx).await
 }
 
 async fn internal_behavior<C:SteadyCommander>(mut cmd: C
@@ -38,11 +39,11 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub async fn run(context: SteadyContext
-                 ,print_signal_tx: SteadyTx<PrintSignal>
+                 , tx: SteadyTx<PrintSignal>
 ) -> Result<(),Box<dyn Error>> {
-    let mut cmd =  into_monitor!(context, [],[print_signal_tx]);
+    let mut cmd =  context.into_monitor([],[&tx]);
     if let Some(responder) = cmd.sidechannel_responder() {
-        let mut print_signal_tx = print_signal_tx.lock().await;
+        let mut print_signal_tx = tx.lock().await;
         while cmd.is_running(&mut ||print_signal_tx.mark_closed()) {
             // in main use graph.sidechannel_director node_call(msg,"TimerActor")
             let _did_echo = responder.echo_responder(&mut cmd,&mut print_signal_tx).await;

@@ -3,6 +3,8 @@ use std::time::Duration;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
+use steady_state::steady_rx::RxMetaDataProvider;
+use steady_state::steady_tx::TxMetaDataProvider;
 use steady_state::SteadyRx;
 use steady_state::SteadyTx;
 use crate::actor::data_generator::Packet;
@@ -16,7 +18,7 @@ pub async fn run(context: SteadyContext
 async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: SteadyTx<Packet>) -> Result<(), Box<dyn Error>> {
     //info!("running {:?} {:?}",context.id(),context.name());
 
-    let mut monitor = into_monitor!(context, [rx], [tx]);
+    let mut monitor = context.into_monitor([&rx], [&tx]);
 
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;

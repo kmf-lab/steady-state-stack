@@ -19,10 +19,11 @@ use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
 use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
-use crate::{GraphLivelinessState, SteadyRx};
+use crate::{steady_rx, GraphLivelinessState, SteadyRx};
 use crate::commander::SteadyCommander;
 #[allow(unused_imports)]
 use crate::commander_context::SteadyContext;
+use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::steady_rx::*;
 use crate::steady_tx::*;
@@ -97,7 +98,7 @@ async fn internal_behavior<const GIRTH: usize>(
     // #[cfg(all(feature = "telemetry_on_telemetry", any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
     // let mut ctrl = {
     //     info!("should not happen");
-    //     into_monitor!(ctrl, [], optional_servers)
+    //     context.into_monitor((ctrl, [], optional_servers)
     // };
 
     let mut state = RawDiagramState::default();
@@ -143,7 +144,7 @@ async fn internal_behavior<const GIRTH: usize>(
                 assert!(!timelords.is_empty(), "internal error, timelords should not be empty");
 
                 timelords.iter().for_each(|f|
-                    futures_unordered.push(f.wait_avail_units(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))
+                    futures_unordered.push(future_checking_avail(f, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))
                 );
 
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
@@ -158,7 +159,7 @@ async fn internal_behavior<const GIRTH: usize>(
             } else {
                 _trigger = "selecting timelords";
                 // reminder: scan is flat mapped so the index is NOT the channel id
-                scan.iter().for_each(|f| futures_unordered.push(f.1.wait_avail_units(steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))   );
+                scan.iter().for_each(|f| futures_unordered.push(future_checking_avail(&*f.1, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))   );
                 let count = futures_unordered.len().min(5);
                 let mut timelord_collector = Vec::new();
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
@@ -303,7 +304,7 @@ fn gather_valid_actor_telemetry_to_scan(
         .iter()
         .filter(|f| f.ident.label.name != metrics_collector::NAME)
         .flat_map(|f| f.telemetry_take.iter().filter_map(|g| g.actor_rx(version)))
-        .map(|f| (f.meta_data().0.id, f))
+        .map(|f| (f.meta_data().id, f))
         .collect();
 
     if !v.is_empty() {
@@ -728,3 +729,18 @@ mod metric_collector_tests {
     }
 
 }
+
+#[inline]
+pub(crate) fn future_checking_avail<T: Send + Sync>(steady_rx: &SteadyRx<T>, count: usize) -> BoxFuture<'_, (bool, Option<usize>)> {
+        async move {
+            let mut guard = steady_rx.lock().await;
+            let is_closed = guard.deref_mut().is_closed();
+            if !is_closed {
+                let result:bool = guard.deref_mut().shared_wait_shutdown_or_avail_units(count).await;
+                (result,  Some(guard.deref().id()))
+            } else {
+                (false, None)
+            }
+        }
+            .boxed()
+    }

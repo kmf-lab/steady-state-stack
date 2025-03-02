@@ -6,6 +6,7 @@ use futures_util::lock::Mutex;
 use log::*;
 use crate::actor::data_approval::ApprovedWidgets;
 use steady_state::*;
+use steady_state::steady_rx::RxMetaDataProvider;
 use crate::args::Args;
 
 const BATCH_SIZE: usize = 1000;
@@ -29,7 +30,7 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>
                  , state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
 
-    internal_behavior(into_monitor!(context,[rx],[]), rx, state).await
+    internal_behavior(context.into_monitor([&rx],[]), rx, state).await
 }
 
 pub(crate) async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<ApprovedWidgets>, state: Arc<Mutex<InternalState>>) -> Result<(), Box<dyn Error>> {
@@ -69,7 +70,7 @@ pub(crate) async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: Steady
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>
                  , _state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
-    let monitor = into_monitor!(context,[rx],[]);
+    let monitor = context.into_monitor([&rx],[]);
     internal_behavior_test(monitor, rx, _state).await    
 }
 

@@ -60,7 +60,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
 
     let mut ctrl = context;
     #[cfg(feature = "telemetry_on_telemetry")]
-    let mut ctrl = into_monitor!(ctrl, [rx], []);
+    let mut ctrl = ctrl.into_monitor([&rx], []);
 
     let mut rxg = rx.lock().await;
     let mut metrics_state = MetricState::default();

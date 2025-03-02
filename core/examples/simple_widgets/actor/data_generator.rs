@@ -3,6 +3,8 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
+use steady_state::steady_rx::RxMetaDataProvider;
+use steady_state::steady_tx::TxMetaDataProvider;
 use crate::actor::data_feedback::ChangeRequest;
 
 #[derive(Clone, Debug, Copy)]
@@ -15,7 +17,7 @@ pub struct WidgetInventory {
 pub async fn run(context: SteadyContext
                                , feedback: SteadyRx<ChangeRequest>
                                , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
-    internal_behavior(into_monitor!(context, [feedback], [tx]), feedback, tx).await
+    internal_behavior(context.into_monitor([feedback.meta_data()], [&tx]), feedback, tx).await
 }
 
 async fn internal_behavior<C:SteadyCommander>(mut cmd:C
@@ -71,7 +73,7 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ChangeRequest>
                  , tx: SteadyTx<WidgetInventory>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = into_monitor!(context, [&rx], [&tx]);
+    let mut monitor = context.into_monitor([&rx], [&tx]);
     if let Some(responder) = monitor.sidechannel_responder() {
 
         let _rx = rx.lock().await;

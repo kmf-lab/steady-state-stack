@@ -444,7 +444,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let done = this.shared_send_slice_until_full(slice);
 
         this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-            tel.process_event(this.local_index, this.channel_meta_data.id, done as isize)
+            tel.process_event(this.local_index, this.channel_meta_data.meta_data.id, done as isize)
         } else {
             MONITOR_NOT
         };
@@ -468,7 +468,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let done = this.shared_send_iter_until_full(iter);
 
         this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-            tel.process_event(this.local_index, this.channel_meta_data.id, done as isize)
+            tel.process_event(this.local_index, this.channel_meta_data.meta_data.id, done as isize)
         } else {
             MONITOR_NOT
         };
@@ -564,8 +564,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         if msg_count>0 {
             //warn!("update send telmetry {} {}",msg_count,total_bytes);
             if let Some(ref mut tel) = self.telemetry.send_tx {
-                out_item.local_index = tel.process_event(out_item.local_index, out_item.channel_meta_data.id, msg_count as isize);
-                out_data.local_index = tel.process_event(out_data.local_index, out_data.channel_meta_data.id, total_bytes as isize);
+                out_item.local_index = tel.process_event(out_item.local_index, out_item.channel_meta_data.meta_data.id, msg_count as isize);
+                out_data.local_index = tel.process_event(out_data.local_index, out_data.channel_meta_data.meta_data.id, total_bytes as isize);
             } else {
                 out_item.local_index = MONITOR_NOT;
                 out_data.local_index = MONITOR_NOT;
@@ -796,7 +796,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         match result {
             Ok(_) => {
                 this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-                    tel.process_event(this.local_index, this.channel_meta_data.id, 1)
+                    tel.process_event(this.local_index, this.channel_meta_data.meta_data.id, 1)
                 } else {
                     MONITOR_NOT
                 };

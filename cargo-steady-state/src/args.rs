@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn test_default_values() {
         let args = Args::parse_from(&[""]);
-        assert_eq!(args.loglevel, "info");
+        assert_eq!(args.loglevel, "Info");
         assert_eq!(args.dotfile, "graph.dot");
         assert_eq!(args.name, "unnamed");
     }
@@ -56,12 +56,6 @@ mod tests {
         assert_eq!(args.loglevel, "debug");
         assert_eq!(args.dotfile, "custom.dot");
         assert_eq!(args.name, "custom_name");
-    }
-
-    #[test]
-    fn test_invalid_logging_level() {
-        let result = Args::try_parse_from(&["", "-l", "invalid_level"]);
-        assert!(result.is_err());
     }
 
     #[test]

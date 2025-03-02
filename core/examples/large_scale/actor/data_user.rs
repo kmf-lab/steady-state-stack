@@ -3,13 +3,14 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
+use steady_state::steady_rx::RxMetaDataProvider;
 use steady_state::SteadyRx;
 use crate::actor::data_generator::Packet;
 
 #[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(into_monitor!(context,[rx], []), rx).await
+    internal_behavior(context.into_monitor([&rx], []), rx).await
 }
 
 #[cfg(not(test))]
@@ -41,7 +42,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>)
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = into_monitor!(context, [&rx], []);
+    let mut monitor = context.into_monitor( [&rx], []);
 
     if let Some(mut reponder) = monitor.sidechannel_responder() {
 
