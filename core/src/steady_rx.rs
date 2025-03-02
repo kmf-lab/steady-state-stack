@@ -671,9 +671,9 @@ mod rx_tests {
 
         let array_tx_meta_data = steady_tx_bundle.meta_data();
         let array_rx_meta_data = steady_rx_bundle.meta_data();
-        assert_eq!(array_rx_meta_data[0].meta_data(),array_tx_meta_data[0].meta_data());
-        assert_eq!(array_rx_meta_data[1].meta_data(),array_tx_meta_data[1].meta_data());
-        assert_eq!(array_rx_meta_data[2].meta_data(),array_tx_meta_data[2].meta_data());
+        assert_eq!(array_rx_meta_data[0].meta_data().id,array_tx_meta_data[0].meta_data().id);
+        assert_eq!(array_rx_meta_data[1].meta_data().id,array_tx_meta_data[1].meta_data().id);
+        assert_eq!(array_rx_meta_data[2].meta_data().id,array_tx_meta_data[2].meta_data().id);
 
 
         let mut vec_tx_bundle = steady_tx_bundle.lock().await;

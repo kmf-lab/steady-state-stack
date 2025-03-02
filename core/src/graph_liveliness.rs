@@ -572,13 +572,8 @@ impl Graph {
     ///
     /// A new `SteadyContext` for testing.
     ///
-    /// # Panics
-    ///
-    /// Panics if called in release mode.
-    pub fn new_test_monitor(&self, name: &'static str) -> SteadyContext {
-        // Assert that we are NOT in release mode
-        assert!(cfg!(debug_assertions), "This function is only for testing");
-
+    pub fn new_testing_test_monitor(&self, name: &'static str) -> SteadyContext {
+        info!("this is for testing only, never run as part of your release");
         let channel_count = self.channel_count.clone();
         let all_telemetry_rx = self.all_telemetry_rx.clone();
 

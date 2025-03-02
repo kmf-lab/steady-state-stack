@@ -618,7 +618,7 @@ pub(crate) mod monitor_tests {
         let tx_string = tx_string.clone();
         let rx_string = rx_string.clone();
 
-        let context = graph.new_test_monitor("test");
+        let context = graph.new_testing_test_monitor("test");
         let mut monitor = context.into_monitor([&rx_string], [&tx_string]);
 
         let mut rxd = rx_string.lock().await;
@@ -667,7 +667,7 @@ pub(crate) mod monitor_tests {
         util::logger::initialize();
 
         let mut graph = GraphBuilder::for_testing().build("");
-        let monitor = graph.new_test_monitor("test");
+        let monitor = graph.new_testing_test_monitor("test");
 
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build();
         let tx_string = tx_string.clone();
