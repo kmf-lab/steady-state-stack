@@ -17,7 +17,7 @@ pub struct WidgetInventory {
 pub async fn run(context: SteadyContext
                                , feedback: SteadyRx<ChangeRequest>
                                , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context.into_monitor([feedback.meta_data()], [&tx]), feedback, tx).await
+    internal_behavior(context.into_monitor([&feedback], [&tx]), feedback, tx).await
 }
 
 async fn internal_behavior<C:SteadyCommander>(mut cmd:C

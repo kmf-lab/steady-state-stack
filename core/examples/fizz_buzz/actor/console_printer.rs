@@ -15,7 +15,7 @@ pub async fn run(context: SteadyContext
         ,fizzbuzz_messages_rx: SteadyRx<FizzBuzzMessage>
         ,print_signal_rx: SteadyRx<PrintSignal>) -> Result<(),Box<dyn Error>> {
 
-    internal_behavior(context.into_monitor([fizzbuzz_messages_&rx, print_signal_&rx],[] )
+    internal_behavior(context.into_monitor([&fizzbuzz_messages_rx, &print_signal_rx],[] )
                       ,fizzbuzz_messages_rx
                       ,print_signal_rx).await
 }

@@ -247,7 +247,7 @@ pub(crate) mod aeron_tests {
                                        , (vacant_items, vacant_bytes), 1));
 
             let mut remaining = TEST_ITEMS;
-            let idx:usize = (STREAM_ID - STREAM_ID) as usize;
+            let idx:usize = (11 - STREAM_ID) as usize;
             while remaining > 0 && cmd.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
 
                 //cmd.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
@@ -343,7 +343,7 @@ pub(crate) mod aeron_tests {
     #[async_std::test]
    // #[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
     async fn test_bytes_process() {
-       if true || std::env::var("GITHUB_ACTIONS").is_ok() {
+       if std::env::var("GITHUB_ACTIONS").is_ok() {
            return;
        }
 

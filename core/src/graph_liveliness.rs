@@ -658,7 +658,7 @@ impl Graph {
                     let line = lines[i].trim();
                     // Identify frame start (lines beginning with a digit followed by ':')
                     if line.starts_with(|c: char| c.is_digit(10)) && line.contains(':') {
-                        let colon_pos = line.find(':').unwrap();
+                        let colon_pos = line.find(':').expect("bad line did not contain : ");
                         let frame_num = &line[..colon_pos].trim();
                         let fn_name = line[colon_pos + 1..].trim();
 
