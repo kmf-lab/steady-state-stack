@@ -5,7 +5,7 @@ use bytes::Bytes;
 
 #[allow(unused_imports)]
 use log::*;
-use rand::{thread_rng, Rng};
+use rand::{random, thread_rng, Rng};
 use steady_state::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -43,7 +43,7 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
 
 
         loop {
-            let route = thread_rng().gen::<u16>();
+            let route = random::<u16>();
             let packet = Packet {
                 route,
                 data: Bytes::from_static(&[0u8; 62]),

@@ -3,7 +3,7 @@ name = "steady_state"   # rename from sss
 version = "0.1.2"
 documentation = "https://docs.rs/steady_state/0.0.21/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
-edition = "2021"
+edition = "2024"
 description = "Framework for building long running low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses Erlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
 license = "MIT"
 build = "build.rs" # assumes we have gzip and base64 installed, the base64 crate is very broken and must not be used.
@@ -142,6 +142,7 @@ aeron = "0.2.0"
 #          Removed confusing macro now use  context.into_monitor(
 #          Updated to new Clap with integrated declaritive type checking
 #          More unified methods for both streams and channels
+#          Upgrade to edition = "2024"
 #
 #   We are here doing more work on 0.1.3
 #

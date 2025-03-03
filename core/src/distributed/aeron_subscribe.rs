@@ -119,7 +119,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
                 let mut found_data = false;
                         match &mut my_sub {
-                            Ok(ref mut sub) => {
+                            Ok(sub) => {
                                 if tx.ready.is_empty() {
                                     let mut no_count = 0;
                                     tx.fragment_flush_all(&mut cmd);

@@ -186,7 +186,7 @@ impl<T: Send + Sync> TxMetaDataProvider for Arc<Mutex<Tx<T>>> {
             count += 1;
 
             //only print once we have tried for a while
-            if 10000 == count {
+            if 100_000 == count {
                 let backtrace = Backtrace::capture();
                 error!("{:?}", backtrace);
                 error!("got stuck on meta_data, unable to get lock on ChannelMetaData");

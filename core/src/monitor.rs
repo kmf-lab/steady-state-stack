@@ -229,7 +229,7 @@ pub(crate) fn find_my_index<const LEN: usize>(telemetry: &SteadyTelemetrySend<LE
     let (idx, _) = telemetry.inverse_local_index
         .iter()
         .enumerate()
-        .find(|(_, &value)| value == goal)
+        .find(|(_, value)| **value == goal)
         .unwrap_or((MONITOR_NOT, &MONITOR_NOT));
     idx
 }

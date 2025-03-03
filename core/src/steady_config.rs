@@ -108,23 +108,22 @@ mod steady_config_tests {
     use std::env;
 
     #[test]
-    fn test_telemetry_server_port_env_var() {
-        env::remove_var("TELEMETRY_SERVER_PORT");
-        assert_eq!(telemetry_server_port(), 9100);
-        env::set_var("TELEMETRY_SERVER_PORT", "9200");
-        assert_eq!(telemetry_server_port(), 9200);
-        env::remove_var("TELEMETRY_SERVER_PORT");
-        assert_eq!(telemetry_server_port(), 9100);
-
+    fn test_telemetry_server_port_and_ip_env_var() {
+        unsafe {
+            env::remove_var("TELEMETRY_SERVER_PORT");
+            assert_eq!(telemetry_server_port(), 9100);
+            env::set_var("TELEMETRY_SERVER_PORT", "9200");
+            assert_eq!(telemetry_server_port(), 9200);
+            env::remove_var("TELEMETRY_SERVER_PORT");
+            assert_eq!(telemetry_server_port(), 9100);
+        }
+        unsafe {
+            env::remove_var("TELEMETRY_SERVER_IP");
+            assert_eq!(telemetry_server_ip(), "0.0.0.0");
+            env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+            assert_eq!(telemetry_server_ip(), "127.0.0.1");
+            env::remove_var("TELEMETRY_SERVER_IP");
+        }
     }
 
-    #[test]
-    fn test_telemetry_server_ip_env_var() {
-        env::remove_var("TELEMETRY_SERVER_IP");
-        assert_eq!(telemetry_server_ip(), "0.0.0.0");
-        env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
-        assert_eq!(telemetry_server_ip(), "127.0.0.1");
-        env::remove_var("TELEMETRY_SERVER_IP");
-
-    }
 }

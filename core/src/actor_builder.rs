@@ -84,7 +84,7 @@ impl CoreBalancer {
             .iter()
             .enumerate()
             .filter(|(i, _)| !excluded_cores.contains(i))
-            .min_by_key(|(_, &count)| count)
+            .min_by_key(|(_, count)| *count)
             .map(|(core, _)| core)
             .expect("No available cores");
 
@@ -246,7 +246,7 @@ impl ActorTeam {
                     .collect();
                 
                 
-                let actor_future_vec: Vec<_> = triplet_vec.iter().map(|(ref fun,ctx,_drive_io)| {
+                let actor_future_vec: Vec<_> = triplet_vec.iter().map(|(fun,ctx,_drive_io)| {
                     let ctx = ctx.clone();
                     Self::build_async_fun(fun, ctx)
                 }).collect();
@@ -261,7 +261,7 @@ impl ActorTeam {
                     match result {
                         // The closure ran without panicking, so we got (Result<..., ...>, index, leftover)
                         Ok((actor_result, index, mut leftover_futures)) => {
-                            let (ref fun, ctx, _drive_io) = &triplet_vec[index];
+                            let (fun, ctx, _drive_io) = &triplet_vec[index];
                             // Check if the actor_result was Err(...)
                             if let Err(e) = actor_result {
                                 error!("Actor at index {index} got error: {e:?}");
@@ -288,7 +288,7 @@ impl ActorTeam {
                         Err(e) => {
                             error!("Actor panic: {e:?}");
 
-                            let actor_future_vec: Vec<_> = triplet_vec.iter().map(|(ref fun,ctx,_drive_io)| {
+                            let actor_future_vec: Vec<_> = triplet_vec.iter().map(|(fun,ctx,_drive_io)| {
                                  let ctx = ctx.clone();
                                 Self::build_async_fun(fun, ctx)
 

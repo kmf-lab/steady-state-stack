@@ -177,7 +177,7 @@ impl SideChannelResponder {
     /// True if the count is met and False if we must return because a shutdown is in process
     pub async fn wait_available_units(&mut self, count: usize) -> bool {
         let mut guard = self.arc.lock().await;
-        let ((ref mut _tx, ref mut rx), ref mut shutdown) = guard.deref_mut();
+        let ((_tx, rx), shutdown) = guard.deref_mut();
 
         if rx.occupied_len() >= count {
             true
@@ -359,7 +359,7 @@ impl SideChannelResponder {
         M: 'static + Send,
     {
         let mut guard = self.arc.lock().await;
-        let ((_, ref mut rx), _) = guard.deref_mut();
+        let ((_, rx), _) = guard.deref_mut();
 
         // Attempt to peek at the next message
         if let Some(q) = rx.try_peek() {
@@ -386,7 +386,7 @@ impl SideChannelResponder {
             F: FnMut(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync>,
     {
         let mut guard = self.arc.lock().await;
-        let ((ref mut tx, ref mut rx),_shutdown) = guard.deref_mut();
+        let ((tx, rx),_shutdown) = guard.deref_mut();
         if let Some(q) = rx.try_pop() {
             //NOTE: if a shutdown is called for and we are not able to push this message
             //      it will result in a timeout and error by design for testing. This will

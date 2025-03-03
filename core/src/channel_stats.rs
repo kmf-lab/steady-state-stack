@@ -208,7 +208,7 @@ impl ChannelStatsComputer {
     /// *
     pub(crate) fn accumulate_data_frame(&mut self, filled: u64, rate: u64) {
         self.history_filled.iter_mut().for_each(|f| {
-            if let Some(ref mut h) = &mut f.histogram {
+            if let Some(h) = &mut f.histogram {
                 if let Err(e) = h.record(filled) {
                     error!("unexpected, unable to record filled {} err: {}", filled, e);
                 }
@@ -219,7 +219,7 @@ impl ChannelStatsComputer {
         });
 
         self.history_rate.iter_mut().for_each(|f| {
-            if let Some(ref mut h) = &mut f.histogram {
+            if let Some(h) = &mut f.histogram {
                 if let Err(e) = h.record(rate) {
                     // Histogram only does raw values
                     error!("unexpected, unable to record rate {} err: {}", rate, e);
@@ -236,7 +236,7 @@ impl ChannelStatsComputer {
                 (filled * self.frame_rate_ms) / rate
             };
 
-            if let Some(ref mut h) = &mut f.histogram {
+            if let Some(h) = &mut f.histogram {
                 if let Err(e) = h.record(latency_micros) {
                     error!("unexpected, unable to record inflight {} err: {}", latency_micros, e);
                 }

@@ -101,7 +101,7 @@ pub struct SteadyTelemetrySend<const LENGTH: usize> {
 
 impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     fn is_empty_and_closed(&self) -> bool {
-        let s = if let Some(ref send) = &self.send {
+        let s = if let Some(send) = &self.send {
             if let Some(mut rx) = send.rx.try_lock() {
                 rx.is_empty() && rx.is_closed()
             } else {
@@ -111,7 +111,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             true
         };
     
-        let a = if let Some(ref actor) = &self.actor {
+        let a = if let Some(actor) = &self.actor {
             if let Some(mut rx) = actor.try_lock() {
                 rx.is_empty() && rx.is_closed()
             } else {
@@ -121,7 +121,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             true
         };
     
-        let t = if let Some(ref take) = &self.take {
+        let t = if let Some(take) = &self.take {
             if let Some(mut rx) = take.rx.try_lock() {
                 rx.is_empty() && rx.is_closed()
             } else {
@@ -157,7 +157,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     }
 
     fn actor_rx(&self, version: u32) -> Option<Box<SteadyRx<ActorStatus>>> {
-        if let Some(ref act) = &self.actor {
+        if let Some(act) = &self.actor {
             if let Some(mut act) = act.try_lock() {
                 act.deref_mut().rx_version.store(version, Ordering::SeqCst);
             } else {
@@ -170,7 +170,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     }
 
     fn consume_actor(&self) -> Option<ActorStatus> {
-        if let Some(ref act) = &self.actor {
+        if let Some(act) = &self.actor {
             let mut buffer = [ActorStatus::default(); steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
             let count = {
                 if let Some(mut guard) = act.try_lock() {
@@ -230,7 +230,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         future_take: &mut Vec<i64>,
         future_send: &mut Vec<i64>,
     ) -> bool {
-        if let Some(ref take) = &self.take {
+        if let Some(take) = &self.take {
             let mut buffer = [[0usize; RXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
 
             let count = {
@@ -284,7 +284,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         take_send_target: &mut Vec<(i64, i64)>,
         future_send: &mut Vec<i64>,
     ) -> bool {
-        if let Some(ref send) = &self.send {
+        if let Some(send) = &self.send {
             let mut buffer = [[0usize; TXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
 
             let count = {

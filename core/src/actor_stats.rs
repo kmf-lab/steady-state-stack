@@ -148,7 +148,7 @@ impl ActorStatsComputer {
             dot_label.push('\n');
         }
 
-        if let Some(ref current_work) = &self.current_work {
+        if let Some(current_work) = &self.current_work {
             let config = ComputeLabelsConfig::actor_config(self, (1, 1), 100, self.show_avg_work);
             let labels = ComputeLabelsLabels {
                 label: "load",
@@ -158,7 +158,7 @@ impl ActorStatsComputer {
             compute_labels(config, current_work, labels, &self.std_dev_work, &self.percentiles_work, metric_text, dot_label);
         }
 
-        if let Some(ref current_mcpu) = &self.current_mcpu {
+        if let Some(current_mcpu) = &self.current_mcpu {
             let config = ComputeLabelsConfig::actor_config(self, (1000, 1), 1024, self.show_avg_mcpu);
             let labels = ComputeLabelsLabels {
                 label: "mCPU",
@@ -284,7 +284,7 @@ impl ActorStatsComputer {
         assert!(mcpu <= 1024, "mcpu out of range {}", mcpu);
 
         self.history_mcpu.iter_mut().for_each(|f| {
-            if let Some(ref mut h) = &mut f.histogram {
+            if let Some(h) = &mut f.histogram {
                 if let Err(e) = h.record(mcpu) {
                     error!("unexpected, unable to record inflight {} err: {}", mcpu, e);
                 }
@@ -294,7 +294,7 @@ impl ActorStatsComputer {
         });
 
         self.history_work.iter_mut().for_each(|f| {
-            if let Some(ref mut h) = &mut f.histogram {
+            if let Some(h) = &mut f.histogram {
                 if let Err(e) = h.record(work) {
                     error!("unexpected, unable to record inflight {} err: {}", work, e);
                 }

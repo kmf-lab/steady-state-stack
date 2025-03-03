@@ -136,7 +136,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                 let mut found_data = false;
                 for i in 0..GIRTH {
                         match &mut subs[i] {
-                            Ok(ref mut sub) => {
+                            Ok(sub) => {
                                 if tx[i].ready.is_empty() {
                                     let mut no_count = 0;
                                     tx[i].fragment_flush_all(&mut cmd);

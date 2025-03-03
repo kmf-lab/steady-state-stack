@@ -23,9 +23,10 @@ pub const STREAM_ID: i32 = 1234;
 
 
 fn main() {
-
-    env::set_var("TELEMETRY_SERVER_PORT", "9101");
-    env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+    unsafe {
+        env::set_var("TELEMETRY_SERVER_PORT", "9101");
+        env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+    }
 
     let cli_args = MainArg::parse();
     let _ = init_logging(LogLevel::Info);
