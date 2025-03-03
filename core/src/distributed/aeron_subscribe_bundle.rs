@@ -285,6 +285,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod aeron_media_driver_tests {
+    use std::env;
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::distributed_stream::StreamSimpleMessage;
@@ -299,7 +300,9 @@ pub(crate) mod aeron_media_driver_tests {
         if std::env::var("GITHUB_ACTIONS").is_ok() {
             return;
         }
-
+        unsafe {
+            env::set_var("TELEMETRY_SERVER_PORT", "9301");
+        }
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(false)
             .build(());

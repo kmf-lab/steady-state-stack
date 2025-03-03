@@ -186,6 +186,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod aeron_tests {
+    use std::env;
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
@@ -347,6 +348,9 @@ pub(crate) mod aeron_tests {
            return;
        }
 
+        unsafe {
+            env::set_var("TELEMETRY_SERVER_PORT", "9201");
+        }
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(true)
             .build(());
