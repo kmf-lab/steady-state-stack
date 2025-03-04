@@ -48,7 +48,6 @@ pub mod install {
     pub mod serviced;
     /// module with support for creating local command line applications
     pub mod local_cli;
-
 }
 
 pub mod distributed {
@@ -68,6 +67,7 @@ pub mod distributed {
     pub mod distributed_builder;
 }
 
+
 /// module for testing full graphs of actors
 pub mod graph_testing;
     /// module for all tx channel features
@@ -85,7 +85,7 @@ pub mod commander_monitor;
 
 use clap::ValueEnum;
 pub use commander_context::*;
-
+pub use futures_timer::Delay; //for easy use
 pub use graph_testing::GraphTestResult;
 pub use monitor::{RxMetaDataHolder, TxMetaDataHolder};
 pub use channel_builder::Rate;
