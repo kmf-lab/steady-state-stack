@@ -18,6 +18,10 @@ macro_rules! await_for_all {
         }.await
     };
 }
+async fn await_for_all<T: Future<Output = bool>>(futures: &[T]) -> bool {
+    let results = futures::future::join_all(futures).await;
+    results.into_iter().all(|result| result)
+}
 
 /// This macro waits for either the first future to complete, or all of the rest to complete.
 /// It returns a boolean indicating if all futures (or the rest of the futures if the first completes) returned true.
@@ -159,6 +163,23 @@ macro_rules! await_for_any {
     // Add more cases as needed
 }
 
+// use futures::future::{FutureExt, SelectAll};
+// use futures::pin_mut;
+// use futures::select;
+// async fn await_for_any<T: Future<Output = bool>>(futures: Vec<T>) -> bool {
+//     let mut select_all = SelectAll::new();
+//     for future in futures {
+//         select_all.push(future.fuse());
+//     }
+//
+//     pin_mut!(select_all);
+//
+//     let result = select! {
+//         res = select_all.next() => res.unwrap(),
+//     };
+//
+//     result
+// }
 
 
 #[cfg(test)]

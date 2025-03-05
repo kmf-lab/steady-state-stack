@@ -1,6 +1,6 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.1.2"
+version = "0.1.3"
 documentation = "https://docs.rs/steady_state/0.0.21/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2024"

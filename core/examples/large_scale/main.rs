@@ -88,6 +88,8 @@ fn build_graph<const LEVEL_1: usize,
                            // .with_mcpu_percentile(Percentile::p80())
                             .with_load_avg();
 
+    //TODO:if we can not get our threads do not complin about the channels !!!
+    //TODO: we need better docs on the await_all macro and how it is used singularly.
 
     let mut user_count:usize = 0;
     let mut route_b_count:usize = 0;

@@ -57,7 +57,7 @@ pub const DISABLE_DEBUG_FAIL_FAST: bool = true;
 //////////////////////////////////////////////////////////
 
 /// Default port for the telemetry server.
-const DEFAULT_TELEMETRY_SERVER_PORT: &str = "9100";
+const DEFAULT_TELEMETRY_SERVER_PORT: &str = "9900";
 
 /// Retrieves the telemetry server port from the environment variable `TELEMETRY_SERVER_PORT`.
 /// If not set, it defaults to `DEFAULT_TELEMETRY_SERVER_PORT`.
