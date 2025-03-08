@@ -22,7 +22,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 
     while cmd.is_running(&mut || errors_rx.is_closed_and_empty()) {
 
-         let clean = await_for_all!(cmd.wait_avail(&mut errors_rx,1)  );
+         let clean = await_for_all!(cmd.wait_avail(&mut errors_rx,1) );
 
          match cmd.try_take(&mut errors_rx) {
                 Some(message) => {

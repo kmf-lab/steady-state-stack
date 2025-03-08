@@ -293,7 +293,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Useful for determining if the channel is empty before attempting to consume messages.
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {        
         self.shared_is_empty()
     }
 
@@ -304,7 +304,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Useful for initial configuration and monitoring of channel capacity to ensure it aligns with expected load.
-    pub fn capacity(&self) -> usize {
+    pub fn capacity(&self) -> usize {        
         self.shared_capacity()
     }
 
@@ -316,22 +316,10 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Enables monitoring of the current load or backlog of messages in the channel for adaptive processing strategies.
-    pub fn avail_units(&mut self) -> usize {
+    pub fn avail_units(&mut self) -> usize {        
         self.shared_avail_units()
     }
 
-    // /// Asynchronously waits for a specified number of messages to be available in the channel.
-    // ///
-    // /// # Parameters
-    // /// - `count`: The number of messages to wait for.
-    // ///
-    // /// # Example Usage
-    // /// Suitable for scenarios requiring batch processing where a certain number of messages are needed before processing begins.
-    // #[inline]
-    // pub async fn wait_avail_units(&mut self, count: usize) -> bool {
-    //     self.shared_wait_shutdown_or_avail_units(count).await;
-    //     false
-    // }
 
 
     //TODO: confirm these are moved to RxCore??
@@ -358,6 +346,7 @@ impl<T> Rx<T> {
 
     #[inline]
     pub(crate) fn shared_try_peek_iter(&self) -> impl Iterator<Item = &T> {
+        
         self.rx.iter()
     }
 

@@ -118,7 +118,9 @@ pub use distributed::distributed_stream::{SteadyStreamRxBundleTrait, StreamRxBun
 pub use distributed::distributed_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
 pub use distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
 pub use distributed::distributed_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamTx};
-
+pub use loop_driver::wait_for_all;
+//pub use loop_driver::wait_for_any;
+pub use loop_driver::wait_for_all_or_proceed_upon;
 pub use log::{debug, error, info, trace, warn};
 
 use std::time::{Duration, Instant};

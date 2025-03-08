@@ -9,7 +9,7 @@ use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ChannelMetaData, RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_rx::RxMetaDataProvider;
-use crate::steady_tx::TxMetaDataProvider;
+use crate::steady_tx::{TxDone, TxMetaDataProvider};
 use crate::telemetry::setup;
 use crate::commander_context::SteadyContext;
 use crate::commander_monitor::LocalMonitor;
@@ -430,7 +430,7 @@ pub trait SteadyCommander {
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T>;
+    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> Result<(), T::MsgOut>;
 
     fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize;
 

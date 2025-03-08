@@ -23,6 +23,7 @@ use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
+use crate::steady_tx::TxDone;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::logger;
 use crate::yield_now::yield_now;
@@ -475,10 +476,13 @@ impl SteadyCommander for SteadyContext {
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
-        this.shared_send_async(a, self.ident, saturation).await
+    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> Result<(), T::MsgOut> {
+        match this.shared_send_async(a, self.ident, saturation).await {
+            Ok(_) => Ok(()),
+            Err(a) => Err(a),
+        }
+        
     }
-
 
 
     /// Attempts to take a message from the channel if available.

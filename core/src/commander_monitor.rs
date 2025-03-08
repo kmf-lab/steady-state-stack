@@ -28,6 +28,7 @@ use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::steady_rx::RxDone;
+use crate::steady_tx::TxDone;
 use crate::telemetry::setup;
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::util::logger;
@@ -485,7 +486,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// # Returns
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
-       fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut> {
+    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut> {
 
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -777,7 +778,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
     ///
     /// # Asynchronous
-    async fn send_async<T>(&mut self, this: &mut Tx<T>, a: T, saturation: SendSaturation) -> Result<(), T> {
+    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> Result<(), T::MsgOut> {
         let guard = self.start_profile(CALL_SINGLE_WRITE);
 
         let timeout = if self.telemetry.is_dirty() {
@@ -793,20 +794,16 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
         let result = this.shared_send_async_timeout(a, self.ident, saturation, timeout).await;
         drop(guard);
+
         match result {
-            Ok(_) => {
-                this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-                    tel.process_event(this.local_index, this.channel_meta_data.meta_data.id, 1)
-                } else {
-                    MONITOR_NOT
-                };
+            Ok(done_count) => {
+                if let Some(ref mut tel) = self.telemetry.send_tx {
+                    this.telemetry_inc(done_count, tel); } else { this.monitor_not(); };
                 Ok(())
             }
-            Err(sensitive) => {
-                error!("Unexpected error send_async telemetry: {:?} type: {}", self.ident, type_name::<T>());
-                Err(sensitive)
-            }
+            Err(sensitive) => Err(sensitive),
         }
+
     }
 
 
@@ -876,38 +873,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             None => None,
         }
     }
-
-    // /// Asynchronously waits until a specified number of units are available in the Rx channel.
-    // ///
-    // /// # Parameters
-    // /// - `this`: A mutable reference to an `Rx<T>` instance.
-    // /// - `count`: The number of units to wait for availability.
-    // ///
-    // /// # Returns
-    // /// `true` if the units are available, otherwise `false`.
-    // ///
-    // /// # Asynchronous
-    // async fn wait_shutdown_or_avail_units<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
-    //     let _guard = self.start_profile(CALL_OTHER);
-    //     let count = Self::validate_capacity_rx(this, count);
-    //
-    //     if self.telemetry.is_dirty() {
-    //         let remaining_micros = self.telemetry_remaining_micros();
-    //         if remaining_micros <= 0 {
-    //             false //need a relay now so return
-    //         } else {
-    //             let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-    //             let wat = this.shared_wait_shutdown_or_avail_units(count);
-    //             select! {
-    //                         _ = dur.fuse() => false,
-    //                         x = wat.fuse() => x
-    //                     }
-    //         }
-    //     } else {
-    //         this.shared_wait_shutdown_or_avail_units(count).await
-    //     }
-    // }
-
+  
     /// Asynchronously waits until a specified number of units are available in the Rx channel.
     ///
     /// # Parameters
