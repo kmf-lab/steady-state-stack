@@ -82,6 +82,7 @@ mod core_rx;
 mod core_tx;
 pub mod commander_context;
 pub mod commander_monitor;
+mod stream_iterator;
 
 use clap::ValueEnum;
 pub use commander_context::*;
@@ -1091,18 +1092,7 @@ mod lib_tests {
         };
     }
 
-    // Test for peek_async_iter
-    #[async_std::test]
-    async fn test_peek_async_iter() {
-        let rx = create_rx(vec![1, 2, 3, 4, 5]);
-        let context = test_steady_context();
-        if let Some(mut rx) = rx.try_lock() {
-            let mut iter = context.peek_async_iter(&mut rx, 3).await;
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), Some(&3));
-        };
-    }
+
 
     // Test for peek_async
     #[async_std::test]

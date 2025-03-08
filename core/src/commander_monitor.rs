@@ -349,32 +349,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     }
 
 
-    /// Asynchronously returns an iterator over the messages in the channel,
-    /// waiting for a specified number of messages to be available.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    /// - `wait_for_count`: The number of messages to wait for before returning the iterator.
-    ///
-    /// # Returns
-    /// An iterator over the messages in the channel.
-    ///
-    /// # Asynchronous
-    async fn peek_async_iter<'a, T>(&'a self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item = &'a T> + 'a {
-        let _guard = self.start_profile(CALL_OTHER);
-        let timeout = if self.telemetry.is_dirty() {
-            let remaining_micros = self.telemetry_remaining_micros();
-            if remaining_micros <= 0 {
-                Some(Duration::from_micros(0))
-            } else {
-                Some(Duration::from_micros(remaining_micros as u64))
-            }
-        } else {
-            None
-        };
-        this.shared_peek_async_iter_timeout(wait_for_count, timeout).await
-    }
-
     /// Checks if the channel is currently empty.
     ///
     /// # Parameters

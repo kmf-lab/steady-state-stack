@@ -199,20 +199,7 @@ impl SteadyCommander for SteadyContext {
     fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item=&'a T> + 'a {
         this.shared_try_peek_iter()
     }
-    /// Asynchronously returns an iterator over the messages in the channel,
-    /// waiting for a specified number of messages to be available.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    /// - `wait_for_count`: The number of messages to wait for before returning the iterator.
-    ///
-    /// # Returns
-    /// An iterator over the messages in the channel.
-    ///
-    /// # Asynchronous
-    async fn peek_async_iter<'a, T>(&'a self, this: &'a mut Rx<T>, wait_for_count: usize) -> impl Iterator<Item=&'a T> + 'a {
-        this.shared_peek_async_iter(wait_for_count).await
-    }
+
     /// Checks if the channel is currently empty.
     ///
     /// # Parameters

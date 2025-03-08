@@ -154,21 +154,6 @@ impl <T> Rx<T> {
     }
 
 
-
-    /// Asynchronously returns an iterator over the messages in the channel, waiting for a specified number of messages to be available.
-    ///
-    /// # Parameters
-    /// - `wait_for_count`: The number of messages to wait for before returning the iterator.
-    ///
-    /// # Returns
-    /// An iterator over the messages in the channel.
-    ///
-    /// # Example Usage
-    /// Ideal for async batch processing where a specific number of messages are needed for processing.
-    pub async fn peek_async_iter(&mut self, wait_for_count: usize) -> impl Iterator<Item = &T> {
-        self.shared_peek_async_iter(wait_for_count).await
-    }
-
     /// Returns an iterator over the messages currently in the channel without removing them.
     ///
     /// # Returns
@@ -382,17 +367,6 @@ impl<T> Rx<T> {
         // self.rx.pop_iter()
     }
 
-    //  difficult to move because we have dual iterators
-    pub(crate) async fn shared_peek_async_iter(&mut self, wait_for_count: usize) -> impl Iterator<Item = &T> {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-            select! { _ = one_down => {}
-                    , _ = operation => {}
-                    , }
-        }
-        self.rx.iter()
-    }
 
     //  difficult to move because we have dual iterators and peek
     pub(crate) fn shared_try_peek_iter(&self) -> impl Iterator<Item = &T> {

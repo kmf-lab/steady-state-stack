@@ -472,7 +472,8 @@ pub(crate) mod monitor_tests {
         let monitor = context.into_monitor([&rx],[]);
 
         if let Some(mut rx) = rx.try_lock() {
-            let mut iter = monitor.peek_async_iter(&mut rx, 3).await;
+            monitor.wait_avail(&mut rx,3).await;
+            let mut iter = monitor.try_peek_iter(&mut rx);
             assert_eq!(iter.next(), Some(&1));
             assert_eq!(iter.next(), Some(&2));
             assert_eq!(iter.next(), Some(&3));
