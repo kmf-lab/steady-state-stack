@@ -10,15 +10,15 @@ use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{steady_config, Rx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamRx};
-use crate::steady_rx::RxDone;
+use crate::steady_rx::{CountingIterator, RxDone};
 use futures_util::{FutureExt};
 
 pub trait RxCore {
     type MsgOut;
     type MsgPeek<'a> where Self: 'a;
+    type MsgSize: Copy;
 
     async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'_>>;
-
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>);
 
@@ -43,12 +43,26 @@ pub trait RxCore {
 
     fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)>;
 
+    fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize;
+
 }
 
 impl <T>RxCore for Rx<T> {
 
     type MsgOut = T;
     type MsgPeek<'a> = &'a T where T: 'a;
+    type MsgSize = usize;
+
+    fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize {
+        let avail = self.rx.occupied_len();
+        let idx = if count>avail {
+            avail
+        } else {
+            count
+        };
+        unsafe { self.rx.advance_read_index(idx); }
+        idx
+    }
 
     async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'a>> {
         let mut one_down = &mut self.oneshot_shutdown;
@@ -167,13 +181,36 @@ impl <T>RxCore for Rx<T> {
             None => None
         }
     }
+
+
 }
 
 impl <T: StreamItem> RxCore for StreamRx<T> {
 
     type MsgOut = (T, Box<[u8]>);
-
     type MsgPeek<'a> = (&'a T, &'a[u8],&'a[u8]) where T: 'a;
+    type MsgSize = (usize, usize);
+ 
+   fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize {
+
+       let avail = self.payload_channel.rx.occupied_len();
+       let payload_step = if count.1>avail {
+           avail
+       } else {
+           count.1
+       };
+       unsafe { self.payload_channel.rx.advance_read_index(payload_step); }
+
+       let avail = self.item_channel.rx.occupied_len();
+        let index_step = if count.0>avail {
+            avail
+        } else {
+            count.0
+        };
+        unsafe { self.item_channel.rx.advance_read_index(index_step); }
+
+       (index_step, payload_step)
+    }
 
     async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>)
                         -> Option<Self::MsgPeek<'a>> {
@@ -319,9 +356,9 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
 
 impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     type MsgOut = <T as RxCore>::MsgOut;
-
     type MsgPeek<'a> =  <T as RxCore>::MsgPeek<'a> where Self: 'a;
-
+    type MsgSize = <T as RxCore>::MsgSize;
+ 
     async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'a>> {
         <T as RxCore>::shared_peek_async_timeout(& mut **self
                                                  ,timeout).await
@@ -365,5 +402,9 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
 
     fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)> {
         <T as RxCore>::shared_try_take(&mut **self)
+    }
+
+    fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize {
+        <T as RxCore>::shared_advance_index(&mut **self, count)
     }
 }

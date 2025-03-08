@@ -293,7 +293,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Useful for determining if the channel is empty before attempting to consume messages.
-    pub fn is_empty(&self) -> bool {        
+    pub fn is_empty(&self) -> bool {
         self.shared_is_empty()
     }
 
@@ -304,7 +304,7 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Useful for initial configuration and monitoring of channel capacity to ensure it aligns with expected load.
-    pub fn capacity(&self) -> usize {        
+    pub fn capacity(&self) -> usize {
         self.shared_capacity()
     }
 
@@ -316,39 +316,16 @@ impl<T> Rx<T> {
     ///
     /// # Example Usage
     /// Enables monitoring of the current load or backlog of messages in the channel for adaptive processing strategies.
-    pub fn avail_units(&mut self) -> usize {        
+    pub fn avail_units(&mut self) -> usize {
         self.shared_avail_units()
     }
 
 
 
+
+
     //TODO: confirm these are moved to RxCore??
 
-
-    #[inline]
-    pub(crate) fn shared_advance_index(&mut self, count: usize) -> usize {
-        let avail = self.rx.occupied_len();
-        let idx = if count>avail {
-                      avail
-                   } else {
-                      count
-                   };
-        unsafe { self.rx.advance_read_index(idx); }
-        idx
-    }
-
-    #[inline]
-    pub(crate) fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
-        CountingIterator::new(self.rx.pop_iter(), &self.take_count)
-       // self.rx.pop_iter()
-    }
-
-
-    #[inline]
-    pub(crate) fn shared_try_peek_iter(&self) -> impl Iterator<Item = &T> {
-        
-        self.rx.iter()
-    }
 
     /// Asynchronously retrieves and removes a single message from the channel.
     ///
@@ -358,7 +335,6 @@ impl<T> Rx<T> {
     /// None is ONLY returned if there is no data AND a shutdown was requested!
     ///
     /// # Asynchronous
-    #[inline]
     pub(crate) async fn shared_take_async(&mut self) -> Option<T> {
         let mut one_down = &mut self.oneshot_shutdown;
         let result = if !one_down.is_terminated() {
@@ -374,11 +350,10 @@ impl<T> Rx<T> {
         result
     }
 
-    #[inline]
     pub(crate) async fn shared_take_async_timeout(&mut self, timeout: Option<Duration> ) -> Option<T> {
         let mut one_down = &mut self.oneshot_shutdown;
         let result = if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.pop();            
+            let mut operation = &mut self.rx.pop();
             if let Some(timeout) = timeout {
                 let mut timeout = Delay::new(timeout).fuse();
                 select! { _ = one_down  => self.rx.try_pop()
@@ -387,9 +362,9 @@ impl<T> Rx<T> {
                 }
             } else {
                 select! { _ = one_down  => self.rx.try_pop()
-                        , p = operation => p 
+                        , p = operation => p
                 }
-            }            
+            }
         } else {
             self.rx.try_pop()
         };
@@ -398,9 +373,16 @@ impl<T> Rx<T> {
         }
         result
     }
-    
 
-    #[inline]
+
+
+    //  difficult to move because we have dual iterators
+    pub(crate) fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
+        CountingIterator::new(self.rx.pop_iter(), &self.take_count)
+        // self.rx.pop_iter()
+    }
+
+    //  difficult to move because we have dual iterators
     pub(crate) async fn shared_peek_async_iter(&mut self, wait_for_count: usize) -> impl Iterator<Item = &T> {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
@@ -412,7 +394,12 @@ impl<T> Rx<T> {
         self.rx.iter()
     }
 
-    #[inline]
+    //  difficult to move because we have dual iterators and peek
+    pub(crate) fn shared_try_peek_iter(&self) -> impl Iterator<Item = &T> {
+        self.rx.iter()
+    }
+
+    //  difficult to move because we have dual iterators and peek
     pub(crate) async fn shared_peek_async_iter_timeout(&mut self, wait_for_count: usize, timeout: Option<Duration>) -> impl Iterator<Item = &T> {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
@@ -432,7 +419,7 @@ impl<T> Rx<T> {
         self.rx.iter()
     }
 
-    #[inline]
+    //  very difficult to move because we have copy on T plus dual slice
     pub(crate) fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
     where T: Copy {
         let count = self.rx.pop_slice(elems);
