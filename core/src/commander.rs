@@ -16,6 +16,8 @@ use crate::commander_monitor::LocalMonitor;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
+
+
 impl SteadyContext {
     /// Converts the context into a local monitor.
     ///
@@ -120,12 +122,6 @@ impl SteadyContext {
 pub trait SteadyCommander {
 
 
-    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
-
-    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool;
-
-
-
     /// set log level for the entire application
     fn loglevel(&self, loglevel: crate::LogLevel);
 
@@ -199,6 +195,13 @@ pub trait SteadyCommander {
     /// * `false` if a shutdown signal was detected during the waiting period.
     ///
     async fn wait_periodic(&self, duration_rate: Duration) -> bool;
+
+
+
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
+
+    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool;
+
 
     /// Waits for a future to complete or until a shutdown signal is received.
     ///

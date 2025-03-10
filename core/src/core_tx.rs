@@ -11,7 +11,7 @@ use nuclei::block_on;
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
-use crate::{steady_config, ActorIdentity, SendSaturation, Tx, MONITOR_NOT};
+use crate::{steady_config, ActorIdentity, SendSaturation, StreamSessionMessage, StreamSimpleMessage, Tx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 
 
@@ -246,9 +246,9 @@ impl<T> TxCore for Tx<T> {
 
 }
 
-impl<T: StreamItem> TxCore for StreamTx<T> {
-    type MsgIn<'a> = (T, &'a[u8]);
-    type MsgOut = T;
+impl TxCore for StreamTx<StreamSessionMessage> {
+    type MsgIn<'a> = (StreamSessionMessage, &'a[u8]); //TODO: make this just the array or auto converat
+    type MsgOut = StreamSessionMessage;
     type MsgSize = (usize, usize);
 
 
@@ -560,6 +560,318 @@ impl<T: StreamItem> TxCore for StreamTx<T> {
     }
 
 }
+
+
+
+impl TxCore for StreamTx<StreamSimpleMessage> {
+    type MsgIn<'a> = &'a[u8]; 
+    type MsgOut = StreamSimpleMessage;
+    type MsgSize = (usize, usize);
+
+
+    fn log_perodic(&mut self) -> bool {
+        if self.item_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+            false
+        } else {
+            self.item_channel.last_error_send = Instant::now();
+            true
+        }
+    }
+
+    fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
+        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
+
+        let mut count = 0;
+
+        //while we have room keep going.
+        let item_limit = self.item_channel.tx.vacant_len();
+        let limited_iter = iter
+            .take(item_limit);
+
+        for payload in limited_iter {
+            if payload.len() > self.payload_channel.tx.vacant_len() {
+                warn!("the payload of the stream should be larger we need {} but found {}",payload.len(),self.payload_channel.tx.vacant_len());
+                block_on(self.payload_channel.tx.wait_vacant(payload.len()));
+            }
+            let _ = self.payload_channel.tx.push_slice(payload);
+            let _ = self.item_channel.tx.try_push(StreamSimpleMessage{ length: payload.len() as i32 });
+            count += 1;
+        }
+        count
+
+    }
+
+    fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
+        match done_count {
+            TxDone::Normal(i) => {
+                warn!("internal error should have gotten Stream");
+                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+            },
+            TxDone::Stream(i,p) => {
+                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+                self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
+            },
+        }
+    }
+
+    #[inline]
+    fn monitor_not(&mut self) {
+        self.item_channel.local_index = MONITOR_NOT;
+        self.payload_channel.local_index = MONITOR_NOT;
+    }
+
+    #[inline]
+    fn shared_capacity(&self) -> usize {
+        self.item_channel.tx.capacity().get()
+    }
+
+    #[inline]
+    fn shared_is_full(&self) -> bool {
+        self.item_channel.tx.is_full()
+    }
+
+    #[inline]
+    fn shared_is_empty(&self) -> bool {
+        self.item_channel.tx.is_empty()
+    }
+
+    #[inline]
+    fn shared_vacant_units(&self) -> usize {
+        self.item_channel.tx.vacant_len()
+    }
+
+    #[inline]
+    async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool {
+        if self.item_channel.tx.vacant_len() >= count.0 &&
+            self.payload_channel.tx.vacant_len() >= count.1 {
+            true
+        } else {
+            let icap = self.item_channel.capacity();
+            let pcap = self.payload_channel.capacity();
+
+            let mut one_down = &mut self.item_channel.oneshot_shutdown;
+            if !one_down.is_terminated() {
+                let operation = async {
+                    self.item_channel.tx.wait_vacant(count.0.min(icap)).await;
+                    self.payload_channel.tx.wait_vacant(count.1.min(pcap)).await;
+                };
+                select! { _ = one_down => false, _ = operation.fuse() => true, }
+            } else {
+                false
+            }
+        }
+    }
+    #[inline]
+    async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool {
+        if self.item_channel.tx.vacant_len() >= count.0 &&
+            self.payload_channel.tx.vacant_len() >= count.1 {
+            true
+        } else {
+            self.item_channel.tx.wait_vacant(count.0.min(self.item_channel.capacity())).await;
+            self.payload_channel.tx.wait_vacant(count.1.min(self.payload_channel.capacity())).await;
+            true
+        }
+    }
+
+    #[inline]
+    async fn shared_wait_empty(&mut self) -> bool {
+        let mut one_down = &mut self.item_channel.oneshot_shutdown;
+        if !one_down.is_terminated() {
+            let mut operation = &mut self.item_channel.tx.wait_vacant(usize::from(self.item_channel.tx.capacity()));
+            select! { _ = one_down => false, _ = operation => true, }
+        } else {
+            self.item_channel.tx.capacity().get() == self.item_channel.tx.vacant_len()
+        }
+    }
+
+    #[inline]
+    fn shared_try_send(&mut self, payload: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
+
+        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
+
+        if self.payload_channel.tx.vacant_len() >= payload.len() as usize &&
+            self.item_channel.tx.vacant_len() >= 1 {
+            let _ = self.payload_channel.tx.push_slice(payload);
+            let _ = self.item_channel.tx.try_push(StreamSimpleMessage{ length: payload.len() as i32 });
+            Ok(TxDone::Stream(1,payload.len()))
+        } else {
+            Err(StreamSimpleMessage{ length: payload.len() as i32 })
+        }
+    }
+
+    #[inline]
+    async fn shared_send_async_timeout(
+        &mut self,
+        payload: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+        timeout: Option<Duration>,
+    ) -> Result<TxDone, Self::MsgOut> {
+
+        debug_assert!(
+            self.item_channel.make_closed.is_some(),
+            "Send called after channel marked closed"
+        );
+        debug_assert!(
+            self.payload_channel.make_closed.is_some(),
+            "Send called after channel marked closed"
+        );
+
+        // Do the quick push attempt in a block so that the mutable borrows end before any await.
+        let push_result = {
+            let payload_tx = &mut self.payload_channel.tx;
+            let item_tx = &mut self.item_channel.tx;
+            if payload_tx.vacant_len() >= payload.len() as usize && item_tx.vacant_len() >= 1 {
+                let payload_size = payload_tx.push_slice(payload);
+                debug_assert_eq!(payload_size, payload.len() as usize);
+                let _ = item_tx.try_push(StreamSimpleMessage{ length: payload.len() as i32 });
+                Ok(TxDone::Stream(1,payload_size))
+            } else {
+                Err(StreamSimpleMessage{ length: payload.len() as i32 })
+            }
+        };
+
+        match push_result {
+            Ok(done) => Ok(done),
+            Err(item) => {
+                match saturation {
+                    SendSaturation::IgnoreAndWait => { /* fallthrough */ }
+                    SendSaturation::IgnoreAndErr => {
+                        return Err(item);
+                    }
+                    SendSaturation::Warn => {
+                        self.item_channel.report_tx_full_warning(ident);
+                        self.payload_channel.report_tx_full_warning(ident);
+                    }
+                    SendSaturation::IgnoreInRelease => {
+                        #[cfg(debug_assertions)]
+                        {
+                            self.item_channel.report_tx_full_warning(ident);
+                            self.payload_channel.report_tx_full_warning(ident);
+                        }
+                    }
+                }
+                if let Some(timeout) = timeout {
+                    let has_room = async {
+                        self.payload_channel.tx.wait_vacant(payload.len()).await;
+                        self.item_channel.tx.wait_vacant(1).await;
+                    }.fuse();
+                    pin_mut!(has_room);
+                    let mut timeout_future = Delay::new(timeout).fuse();
+
+                    select! {
+                    _ = has_room => {
+                        {
+                            // Borrow the payload channel in its own block:
+                            let got_all = self.payload_channel.tx.push_slice(payload) == payload.len();
+                            if !got_all {
+                                error!("channel is closed");
+                                return Err(item);
+                            }
+                        } // payload_tx borrow dropped here
+
+                        {
+                            // Now borrow the item channel:
+                            let item_tx = &mut self.item_channel.tx;
+                            match item_tx.push(item).await {
+                                Ok(_) => Ok(TxDone::Stream(1,payload.len())),
+                                Err(t) => {
+                                    error!("channel is closed");
+                                    Err(t)
+                                }
+                            }
+                        }
+                    },
+                    _ = timeout_future => Err(item),
+                }
+                } else {
+                    {
+                        let payload_tx = &mut self.payload_channel.tx;
+                        payload_tx.wait_vacant(payload.len()).await;
+                        let pushed = payload_tx.push_slice(payload) == payload.len();
+                        if !pushed {
+                            error!("channel is closed");
+                            return Err(item);
+                        }
+                    }
+                    {
+                        let item_tx = &mut self.item_channel.tx;
+                        match item_tx.push(item).await {
+                            Ok(_) => Ok(TxDone::Stream(1,payload.len())),
+                            Err(t) => {
+                                error!("channel is closed");
+                                Err(t)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    #[inline]
+    async fn shared_send_async(&mut self, payload: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<TxDone, Self::MsgOut> {
+
+        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
+
+        let push_result = if self.payload_channel.tx.vacant_len() >= payload.len() as usize &&
+            self.item_channel.tx.vacant_len() >= 1 {
+            let _ = self.payload_channel.tx.push_slice(payload);
+            let _ = self.item_channel.tx.try_push(StreamSimpleMessage{ length: payload.len() as i32 });
+            Ok(())
+        } else {
+            Err(StreamSimpleMessage{ length: payload.len() as i32 })
+        };
+
+        match push_result {
+            Ok(_) => Ok(TxDone::Stream(1,payload.len()) ),
+            Err(item) => {
+                match saturation {
+                    SendSaturation::IgnoreAndWait => {
+                    }
+                    SendSaturation::IgnoreAndErr => {
+                        return Err(item);
+                    }
+                    SendSaturation::Warn => {
+                        self.item_channel.report_tx_full_warning(ident);
+                        self.payload_channel.report_tx_full_warning(ident);
+                    }
+                    SendSaturation::IgnoreInRelease => {
+                        #[cfg(debug_assertions)]
+                        {
+                            self.item_channel.report_tx_full_warning(ident);
+                            self.payload_channel.report_tx_full_warning(ident);
+                        }
+                    }
+                }
+                //NOTE: may block here on shutdown if graph is built poorly
+                self.payload_channel.tx.wait_vacant(payload.len()).await;
+                match self.payload_channel.tx.push_slice(payload)==payload.len() {
+                    true => {
+                        match self.item_channel.tx.push(item).await {
+                            Ok(_) => Ok(TxDone::Stream(1,payload.len())),
+                            Err(t) => {
+                                error!("channel is closed");
+                                Err(t)
+                            }
+                        }
+                    }
+                    false => {
+                        error!("channel is closed");
+                        Err(item)
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+
 
 impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;

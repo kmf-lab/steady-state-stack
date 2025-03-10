@@ -39,11 +39,9 @@ pub async fn run<const GIRTH: usize>(context: SteadyContext
              let actual_vacant = cmd.vacant_units(&mut tx[idx]);
 
              // TODO: auto convert to item..
-             for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
-                                                              // item!(&data)
-                 let _result = cmd.try_send(&mut tx[idx], StreamSimpleMessage::wrap(&data1) );
-                 let _result = cmd.try_send(&mut tx[idx], (item,&data2));
-
+             for _i in 0..(actual_vacant >> 1) { 
+                 let _result = cmd.try_send(&mut tx[idx], &data1);
+                 let _result = cmd.try_send(&mut tx[idx], &data2);
              }
             sent_count += BATCH_SIZE;
             remaining -= BATCH_SIZE

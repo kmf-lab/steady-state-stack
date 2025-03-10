@@ -268,7 +268,7 @@ impl StreamItem for StreamSessionMessage {
 /// A simple stream message, typically for outgoing single-part messages.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StreamSimpleMessage {
-    pub length: i32,
+    pub(crate) length: i32,
 }
 
 impl StreamSimpleMessage {
