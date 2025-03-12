@@ -64,7 +64,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
     errors_tx: SteadyTx<ErrorMessage>,
     state: SteadyState<RuntimeState>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut state_guard = cmd.steady_state(&state, || RuntimeState::new(1)).await;
+    let mut state_guard = C::steady_state(&state, || RuntimeState::new(1)).await;
     if let Some(state) = state_guard.as_mut() {
         let mut numbers_rx = numbers_rx.lock().await;
         let mut fizzbuzz_messages_tx = fizzbuzz_messages_tx.lock().await;

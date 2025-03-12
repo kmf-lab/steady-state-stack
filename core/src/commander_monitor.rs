@@ -147,17 +147,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
 
 
-    async fn steady_state<F,S>(steadystate: & SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
-    where
-        F: FnOnce() -> S {
-        let mut state_guard = steadystate.lock().await;
-        *state_guard = Some(match state_guard.take() {
-            Some(s) => s,
-            None => build_new_state()
-        });
-        state_guard
-    }
-
     /// set loglevel for the application
     fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = logger::initialize_with_level(loglevel);

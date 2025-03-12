@@ -153,7 +153,7 @@ pub type SteadyState<S> = Arc<Mutex<Option<S>>>;
 /// Create new SteadyState struct for holding state of actors across panics restarts.
 /// Should only be called in main when creating the actors
 ///
-pub fn new_state<S>() -> SteadyState<S> {    
+pub fn new_state<S>() -> SteadyState<S> {
     Arc::new(Mutex::new(None))
 }
 
@@ -758,18 +758,6 @@ mod lib_tests {
         assert!(guard.is_none());
     }
 
-    #[async_std::test]
-    async fn test_steady_state_function() {
-        let state: SteadyState<i32> = new_state();
-        let guard = steady_state(&state, || 42).await;
-        assert_eq!(*guard, Some(42));
-    }
-    // 
-    // #[test]
-    // fn test_init_logging() {
-    //     let result = init_logging("info");
-    //     assert!(result.is_ok());
-    // }
 
     #[test]
     fn test_args_method() {
