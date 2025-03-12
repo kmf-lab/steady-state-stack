@@ -18,7 +18,7 @@ use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
-use crate::{yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle, MONITOR_NOT};
+use crate::{yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, SteadyState, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
@@ -145,6 +145,18 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
+
+
+    async fn steady_state<F,S>(steadystate: & SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
+    where
+        F: FnOnce() -> S {
+        let mut state_guard = steadystate.lock().await;
+        *state_guard = Some(match state_guard.take() {
+            Some(s) => s,
+            None => build_new_state()
+        });
+        state_guard
+    }
 
     /// set loglevel for the application
     fn loglevel(&self, loglevel: crate::LogLevel) {

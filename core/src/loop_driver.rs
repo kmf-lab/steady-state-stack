@@ -230,7 +230,6 @@ mod await_for_tests {
     use futures::future::ready;
     use std::time::Duration;
     use futures_timer::Delay;
-    use crate::{wait_for_all};
     //
     // #[async_std::test]
     // async fn test_wait_for_all_true() {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use std::any::Any;
-use futures_util::lock::Mutex;
+use futures_util::lock::{Mutex, MutexGuard};
 use futures::channel::oneshot;
 use futures_util::stream::FuturesUnordered;
 use log::warn;
@@ -16,7 +16,7 @@ use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use std::ops::DerefMut;
-use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
+use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, SteadyState, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
@@ -73,6 +73,17 @@ impl Clone for SteadyContext {
 
 impl SteadyCommander for SteadyContext {
 
+    async fn steady_state<F,S>(steadystate: & SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
+    where
+        F: FnOnce() -> S {
+        let mut state_guard = steadystate.lock().await;
+        *state_guard = Some(match state_guard.take() {
+            Some(s) => s,
+            None => build_new_state()
+        });
+        state_guard
+    }
+    
     /// Initializes the logger with the specified log level.
     fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = logger::initialize_with_level(loglevel);

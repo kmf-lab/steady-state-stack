@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 use futures_util::future::FusedFuture;
 use std::any::Any;
 use std::sync::Arc;
-use crate::{steady_config, steady_rx, steady_tx, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
+use futures_util::lock::MutexGuard;
+use crate::{steady_config, steady_rx, steady_tx, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyState, Tx, TxCoreBundle};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ChannelMetaData, RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
@@ -114,13 +115,16 @@ impl SteadyContext {
 }
 
 
-
 /// NOTE this trait is passed into actors and actors are tied to a single thread. As a result
 ///      we need not worry about these methods needing Send. We also know that T will come
 ///      from other actors so we can assume that T is Send + Sync
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
+    /// grab the state struct for use
+    async fn steady_state<F,S>(steadystate: & SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
+    where
+        F: FnOnce() -> S;
 
     /// set log level for the entire application
     fn loglevel(&self, loglevel: crate::LogLevel);

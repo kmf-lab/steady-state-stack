@@ -84,7 +84,8 @@ pub mod commander_context;
 pub mod commander_monitor;
 mod stream_iterator;
 
-use clap::ValueEnum;
+pub use clap::*;
+
 pub use commander_context::*;
 pub use futures_timer::Delay; //for easy use
 pub use graph_testing::GraphTestResult;
@@ -119,9 +120,9 @@ pub use distributed::distributed_stream::{SteadyStreamRxBundleTrait, StreamRxBun
 pub use distributed::distributed_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
 pub use distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
 pub use distributed::distributed_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamTx};
-pub use loop_driver::wait_for_all;
+//pub use loop_driver::wait_for_all;
 //pub use loop_driver::wait_for_any;
-pub use loop_driver::wait_for_all_or_proceed_upon;
+//pub use loop_driver::wait_for_all_or_proceed_upon;
 pub use log::{debug, error, info, trace, warn};
 
 use std::time::{Duration, Instant};
@@ -152,21 +153,13 @@ pub type SteadyState<S> = Arc<Mutex<Option<S>>>;
 /// Create new SteadyState struct for holding state of actors across panics restarts.
 /// Should only be called in main when creating the actors
 ///
-pub fn new_state<S>() -> SteadyState<S> {
+pub fn new_state<S>() -> SteadyState<S> {    
     Arc::new(Mutex::new(None))
 }
 
-/// Lock for use the SteadyState struct which holds state of an actor across panics restarts.
-pub async fn steady_state<F,S>(steadystate: & SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
-where
-    F: FnOnce() -> S {
-    let mut state_guard = steadystate.lock().await;
-    *state_guard = Some(match state_guard.take() {
-                            Some(s) => s,
-                            None => build_new_state()
-                        });
-    state_guard
-}
+
+
+
 
 /// Type alias for a thread-safe transmitter (Tx) wrapped in an `Arc` and `Mutex`.
 ///
