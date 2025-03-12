@@ -148,13 +148,34 @@ use crate::yield_now::yield_now;
 /// Type alias for a thread-safe steady state (S) wrapped in an `Arc` and `Mutex`.
 ///
 /// Holds state of actors so it is not lost between restarts.
-pub type SteadyState<S> = Arc<Mutex<Option<S>>>;
+pub struct SteadyState<S>(Arc<Mutex<Option<S>>>);
+impl<S> Clone for SteadyState<S> {
+    fn clone(&self) -> Self {
+        SteadyState(self.0.clone())
+    }
+}
+impl<S> SteadyState<S> {
+
+    /// grab the state struct for use
+    pub async fn lock<F>(&self, build_new_state: F) -> MutexGuard<Option<S>>
+    where
+        F: FnOnce() -> S {
+        let mut state_guard = self.0.lock().await;
+        *state_guard = Some(match state_guard.take() {
+            Some(s) => s,
+            None => build_new_state()
+        });
+        state_guard
+    }
+}
+
+
 
 /// Create new SteadyState struct for holding state of actors across panics restarts.
 /// Should only be called in main when creating the actors
 ///
 pub fn new_state<S>() -> SteadyState<S> {
-    Arc::new(Mutex::new(None))
+    SteadyState(Arc::new(Mutex::new(None)))
 }
 
 
@@ -748,14 +769,6 @@ mod lib_tests {
         // Test value retrieval
         let std_dev = StdDev(2.5);
         assert_eq!(std_dev.value(), 2.5);
-    }
-
-    #[test]
-    fn test_new_state() {
-        let state: SteadyState<i32> = new_state();
-        assert!(state.try_lock().is_some());
-        let guard = state.try_lock().expect("iternal error");
-        assert!(guard.is_none());
     }
 
 

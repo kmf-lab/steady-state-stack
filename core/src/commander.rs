@@ -121,17 +121,6 @@ impl SteadyContext {
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
-    /// grab the state struct for use
-    async fn steady_state<F,S>(steadystate: & SteadyState<S>, build_new_state: F) -> MutexGuard<Option<S>>
-    where
-        F: FnOnce() -> S {
-        let mut state_guard = steadystate.lock().await;
-        *state_guard = Some(match state_guard.take() {
-            Some(s) => s,
-            None => build_new_state()
-        });
-        state_guard
-    }
 
     /// set log level for the entire application
     fn loglevel(&self, loglevel: crate::LogLevel);

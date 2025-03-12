@@ -39,7 +39,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                                  , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
 
     let mut rx = rx.lock().await;
-    let mut state_guard = C::steady_state(&state, || AeronPublishSteadyState::default()).await;
+    let mut state_guard = state.lock(|| AeronPublishSteadyState::default()).await;
     if let Some(state) = state_guard.as_mut() {
         let mut pubs: [ Result<ExclusivePublication, Box<dyn Error> >;GIRTH] = std::array::from_fn(|_| Err("Not Found".into())  );
                
