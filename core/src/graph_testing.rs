@@ -7,7 +7,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
@@ -200,7 +200,7 @@ impl SideChannelResponder {
     ///
     /// # Returns
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn echo_responder<M: 'static + Clone + Debug + Send, C: SteadyCommander>(
+    pub async fn echo_responder<M: Debug + Send, C: SteadyCommander>(
         &self,
         cmd: &mut C,
         target_tx: &mut Tx<M>,
@@ -209,9 +209,9 @@ impl SideChannelResponder {
             if cmd.wait_vacant(target_tx, 1).await {
                 self.respond_with(|message| {
                     // Attempt to downcast to the expected message type
-                    let msg = message.downcast_ref::<M>().expect("error casting");
+                    let msg = message.downcast::<M>().expect("error casting");
                     // Try sending the message to the target channel
-                    match cmd.try_send(target_tx, msg.clone()) {
+                    match cmd.try_send(target_tx, msg) {
                         Ok(()) => Box::new("ok".to_string()),
                         Err(m) => Box::new(format!("Failed to send message: {:?}", m)),
                     }

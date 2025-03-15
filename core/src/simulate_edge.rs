@@ -10,7 +10,7 @@ pub enum Simulate<T, C: SteadyCommander> {
     Equals(C,SteadyRx<T>),
 }
 
-pub async fn external_behavior<T: Clone + Debug + Send + Eq, C: SteadyCommander >(context: SteadyContext, testing: Simulate<T, C>) -> Result<(), Box<dyn Error>> {
+pub async fn external_behavior<T: Clone + Debug + Send + Eq, C: SteadyCommander >(testing: Simulate<T, C>) -> Result<(), Box<dyn Error>> {
     match testing {
         Simulate::Echo(mut cmd, tx) => {
             if let Some(responder) = cmd.sidechannel_responder() {
