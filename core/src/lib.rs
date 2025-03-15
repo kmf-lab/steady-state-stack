@@ -67,7 +67,7 @@ pub mod distributed {
     pub mod distributed_builder;
 }
 
-
+pub mod simulate_edge;
 /// module for testing full graphs of actors
 pub mod graph_testing;
     /// module for all tx channel features
