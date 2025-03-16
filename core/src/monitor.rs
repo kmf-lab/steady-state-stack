@@ -320,6 +320,7 @@ pub(crate) mod monitor_tests {
     use std::time::Instant;
     use std::sync::atomic::AtomicUsize;
     use crate::channel_builder::ChannelBuilder;
+    use crate::commander::SendOutcome;
     use crate::commander_context::SteadyContext;
     use crate::core_tx::TxCore;
     use crate::steady_tx::TxDone;
@@ -525,8 +526,11 @@ pub(crate) mod monitor_tests {
         let mut monitor = context.into_monitor([],[&tx]);
 
         if let Some(mut tx) = tx.try_lock() {
-            let result = monitor.try_send(&mut tx, 42);
-            assert!(result.is_ok());
+            let result = match monitor.try_send(&mut tx, 42) {
+                SendOutcome::Success => {true}
+                SendOutcome::Blocked(_) => {false}
+            };
+            assert!(result);
         };
     }
 
@@ -1031,7 +1035,7 @@ pub(crate) mod monitor_tests {
 
         if let Some(mut tx) = tx.try_lock() {
             let result = monitor.send_async(&mut tx, 42, SendSaturation::Warn).await;
-            assert!(result.is_ok());
+            assert!(result.is_sent());
         };
     }
 

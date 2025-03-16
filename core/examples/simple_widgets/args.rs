@@ -56,7 +56,7 @@ mod tests {
 use clap::Parser;
 use steady_state::LogLevel;
 use steady_state::SystemdCommand;
-use crate::args::{Args, run_duration_validator};
+use crate::args::{Args};
 
 
 

@@ -2,8 +2,6 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::steady_rx::RxMetaDataProvider;
-use steady_state::steady_tx::TxMetaDataProvider;
 use steady_state::SteadyRx;
 use steady_state::SteadyTx;
 

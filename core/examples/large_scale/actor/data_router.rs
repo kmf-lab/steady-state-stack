@@ -6,7 +6,7 @@ use crate::actor::data_generator::Packet;
 
 //use futures::future::FutureExt;
 use std::time::Duration;
-use steady_state::steady_rx::RxMetaDataProvider;
+use steady_state::commander::SendOutcome;
 use steady_state::SteadyRx;
 use steady_state::SteadyTxBundle;
 
@@ -44,9 +44,9 @@ async fn internal_behavior<C:SteadyCommander, const GIRTH:usize>(mut cmd: C, one
 
          //   info!("name: {:?} one_of: {:?} block_size: {:?} route: {:?} index: {:?}", monitor.ident(), one_of, block_size, t.route, index);
 
-            if let Err(e) = cmd.try_send(&mut tx[index], t) {
-                  let _ = cmd.send_async(&mut tx[index], e, SendSaturation::IgnoreAndWait).await;
-                  break;
+            match cmd.try_send(&mut tx[index], t) {
+                SendOutcome::Success => {}
+                SendOutcome::Blocked(t) => {cmd.send_async(&mut tx[index], t, SendSaturation::IgnoreAndWait).await;}
             }
         }
     }

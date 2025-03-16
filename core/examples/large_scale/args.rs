@@ -1,6 +1,5 @@
 use crate::LogLevel;
 use clap::*;
-use clap_derive::*;
 
 #[derive(Parser, Debug, PartialEq, Clone)]
 pub struct Args {

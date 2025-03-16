@@ -5,7 +5,6 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
-use steady_state::steady_tx::TxMetaDataProvider;
 use crate::actor::fizz_buzz_processor;
 
 #[derive(Default, Clone, Copy, PartialOrd, PartialEq, Debug)]

@@ -10,7 +10,7 @@ use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{steady_config, Rx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamRx};
-use crate::steady_rx::{CountingIterator, RxDone};
+use crate::steady_rx::{RxDone};
 use futures_util::{FutureExt};
 
 pub trait RxCore {

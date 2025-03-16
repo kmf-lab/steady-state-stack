@@ -20,6 +20,7 @@ use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, SteadyState, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
+use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
@@ -459,8 +460,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// - `msg`: The message to be sent.
     ///
     /// # Returns
-    /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
-    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut> {
+    /// A SendOutcome<T>
+    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut> {
 
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -470,9 +471,9 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             Ok(done_count) => {
                 if let Some(ref mut tel) = self.telemetry.send_tx {
                     this.telemetry_inc(done_count, tel); } else { this.monitor_not(); };
-                Ok(())
+                SendOutcome::Success
             }
-            Err(sensitive) => Err(sensitive),
+            Err(sensitive) => SendOutcome::Blocked(sensitive),
         }
     }
 
@@ -752,7 +753,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
     ///
     /// # Asynchronous
-    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> Result<(), T::MsgOut> {
+    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut> {
         let guard = self.start_profile(CALL_SINGLE_WRITE);
 
         let timeout = if self.telemetry.is_dirty() {
@@ -773,9 +774,9 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             Ok(done_count) => {
                 if let Some(ref mut tel) = self.telemetry.send_tx {
                     this.telemetry_inc(done_count, tel); } else { this.monitor_not(); };
-                Ok(())
+                SendOutcome::Success
             }
-            Err(sensitive) => Err(sensitive),
+            Err(sensitive) => SendOutcome::Blocked(sensitive),
         }
 
     }

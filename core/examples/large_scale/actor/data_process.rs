@@ -3,8 +3,8 @@ use std::time::Duration;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::steady_rx::RxMetaDataProvider;
-use steady_state::steady_tx::TxMetaDataProvider;
+use steady_state::commander::SendOutcome;
+
 use steady_state::SteadyRx;
 use steady_state::SteadyTx;
 use crate::actor::data_generator::Packet;
@@ -38,9 +38,9 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: Ste
         if count > 0 {
             for _ in 0..count {
                 if let Some(packet) = monitor.try_take(&mut rx) {
-                    if let Err(e) = monitor.try_send(&mut tx, packet) {
-                        error!("Error sending packet: {:?}",e);
-                        break;
+                    match monitor.try_send(&mut tx, packet) {
+                        SendOutcome::Success => {}
+                        SendOutcome::Blocked(packet) => {error!("Error sending packet: {:?}",packet); break;}
                     }
                 } else {
                     error!("Error reading packet");

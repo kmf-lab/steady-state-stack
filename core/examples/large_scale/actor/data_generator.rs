@@ -5,8 +5,9 @@ use bytes::Bytes;
 
 #[allow(unused_imports)]
 use log::*;
-use rand::{random, thread_rng, Rng};
+use rand::{random};
 use steady_state::*;
+use steady_state::commander::SendOutcome;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Packet {
@@ -75,12 +76,12 @@ pub(crate) fn compute_index(tx: &mut TxBundle<Packet>, packet: &Packet) -> usize
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                  , tx: SteadyTxBundle<Packet,GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = context.into_monitor([], tx.meta_data());
+    let mut control = context.into_monitor([], tx.meta_data());
     let mut tx:TxBundle<Packet> = tx.lock().await;
 
-    if let Some(mut responder) = monitor.sidechannel_responder() { //outside
+    if let Some(mut responder) = control.sidechannel_responder() { //outside
         //info!("test generator running");
-        while monitor.is_running(&mut || tx.mark_closed()) {
+        while control.is_running(&mut || tx.mark_closed()) {
 
             let now = Instant::now();
             //info!("waiting for responder units");
@@ -88,24 +89,22 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
                // monitor.wait_periodic(Duration::from_millis(500))
                 responder.wait_available_units(1)
                 ,
-                monitor.wait_vacant_bundle(&mut tx, 1, GIRTH)
+                control.wait_vacant_bundle(&mut tx, 1, GIRTH)
             );
             let _duration = now.elapsed();
             //info!("got a responder and we have room to write, clean: {} duration:{:?}",clean,duration);
 
            if clean {
                let _ok = responder.respond_with(|message| {
-                   let msg: &Packet = message.downcast_ref::<Packet>().expect("error casting");
-                   let index = compute_index(&mut tx, msg);
-                   match monitor.try_send(&mut tx[index], msg.clone()) {
-                       Ok(()) => Box::new("ok".to_string()),
-                       Err(m) => Box::new(format!("{:?}", m)),
+                   let msg: Packet = *message.downcast::<Packet>().expect("error casting");
+                   let index = compute_index(&mut tx, &msg);
+                   match control.try_send(&mut tx[index], msg) {
+                       SendOutcome::Success => {Box::new("ok".to_string())}
+                       SendOutcome::Blocked(msg) => {Box::new(format!("{:?}", msg))}
                    }
                }).await;
            }
 
-
-          monitor.relay_stats_smartly();
         }
       //  info!("shutdown generator");
     }

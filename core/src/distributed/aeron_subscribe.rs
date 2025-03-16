@@ -7,7 +7,7 @@ use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTx, StreamSessionMessage};
-use crate::{into_monitor, SteadyCommander, SteadyState};
+use crate::{SteadyCommander, SteadyState};
 use crate::*;
 use num_traits::Zero;
 use crate::commander_context::SteadyContext;

@@ -5,19 +5,17 @@ use futures_util::lock::{Mutex, MutexLockFuture};
 use std::time::{Duration, Instant};
 use log::error;
 use futures::channel::oneshot;
-use futures_util::future::{select_all, BoxFuture, FusedFuture};
+use futures_util::future::{select_all, FusedFuture};
 use async_ringbuf::consumer::AsyncConsumer;
 use ringbuf::consumer::Consumer;
-use ringbuf::traits::Observer;
 use std::fmt::{Debug, Formatter};
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref};
 use futures_timer::Delay;
 use crate::channel_builder::InternalReceiver;
-use crate::monitor::{ChannelMetaData, RxMetaData};
+use crate::monitor::{ChannelMetaData};
 use crate::core_rx::RxCore;
-use crate::{RxBundle, SteadyRx, SteadyRxBundle};
+use crate::{RxBundle, SteadyRxBundle};
 use crate::distributed::distributed_stream::RxChannelMetaDataWrapper;
-use crate::steady_tx::TxMetaDataProvider;
 
 /// Represents a receiver that consumes messages from a channel.
 ///

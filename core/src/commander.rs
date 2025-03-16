@@ -3,14 +3,12 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 use futures_util::future::FusedFuture;
 use std::any::Any;
-use std::sync::Arc;
-use futures_util::lock::MutexGuard;
-use crate::{steady_config, steady_rx, steady_tx, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyState, Tx, TxCoreBundle};
+use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
 use crate::graph_testing::SideChannelResponder;
-use crate::monitor::{ChannelMetaData, RxMetaData, TxMetaData};
+use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_rx::RxMetaDataProvider;
-use crate::steady_tx::{TxDone, TxMetaDataProvider};
+use crate::steady_tx::{TxMetaDataProvider};
 use crate::telemetry::setup;
 use crate::commander_context::SteadyContext;
 use crate::commander_monitor::LocalMonitor;
@@ -113,7 +111,20 @@ impl SteadyContext {
         }
     }
 }
+pub enum SendOutcome<X> {
+    Success,
+    Blocked(X),
+}
 
+impl<X> SendOutcome<X> {
+    /// Returns `true` if the write was successful (i.e., the enum is `Written`), otherwise `false`.
+    pub fn is_sent(&self) -> bool {
+        match self {
+            SendOutcome::Success => true,
+            SendOutcome::Blocked(_) => false,
+        }
+    }
+}
 
 /// NOTE this trait is passed into actors and actors are tied to a single thread. As a result
 ///      we need not worry about these methods needing Send. We also know that T will come
@@ -357,8 +368,8 @@ pub trait SteadyCommander {
     /// - `msg`: The message to be sent.
     ///
     /// # Returns
-    /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
-    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut>;
+    /// A SendOutcome<T>
+    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut>;
 
     /// Attempts to take a message from the channel if available.
     ///
@@ -417,12 +428,12 @@ pub trait SteadyCommander {
     /// - `msg`: The message to be sent.
     ///
     /// # Returns
-    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
+    /// A SendOutcome<T>
     ///
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> Result<(), T::MsgOut>;
+    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut>;
 
     fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize;
 

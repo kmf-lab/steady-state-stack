@@ -717,8 +717,7 @@ mod lib_tests {
     use commander::SteadyCommander;
     use crate::commander_context::SteadyContext;
     use crate::core_tx::TxCore;
-    use crate::steady_rx::RxMetaDataProvider;
-    use crate::steady_tx::TxMetaDataProvider;
+
 
     #[test]
     fn test_std_dev_valid_values() {
@@ -832,7 +831,7 @@ mod lib_tests {
             let result = context
                 .send_async(&mut tx_guard, 42, SendSaturation::Warn)
                 .await;
-            assert!(result.is_ok());
+            assert!(result.is_sent());
         }
     }
 
@@ -1132,8 +1131,8 @@ mod lib_tests {
         let mut context = test_steady_context();
         let tx = tx.clone();
         if let Some(mut tx) = tx.try_lock() {
-            let result = context.try_send(&mut tx, 42);
-            assert!(result.is_ok());
+            let result = context.try_send(&mut tx, 42).is_sent();
+            assert!(result);
         };
     }
 

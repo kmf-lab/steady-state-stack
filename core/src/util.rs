@@ -100,7 +100,6 @@ pub mod logger {
     use std::sync::Mutex;
     use flexi_logger::{LogSpecBuilder, LoggerHandle};
     use lazy_static::lazy_static;
-    use log::LevelFilter;
     use crate::util;
 
     lazy_static! {
@@ -145,8 +144,6 @@ pub mod logger {
                 }
             }
         }  else if let Some(handle) = logger_handle.as_ref() {
-            let x: LevelFilter = LevelFilter::Debug;
-
             handle.set_new_spec(
                 LogSpecBuilder::new()
                     .default(level.to_level_filter())

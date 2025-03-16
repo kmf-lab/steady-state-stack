@@ -3,7 +3,6 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::steady_rx::RxMetaDataProvider;
 use steady_state::SteadyRx;
 use crate::actor::data_generator::Packet;
 

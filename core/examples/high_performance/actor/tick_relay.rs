@@ -6,8 +6,6 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 use std::error::Error;
-use steady_state::steady_rx::RxMetaDataProvider;
-use steady_state::steady_tx::TxMetaDataProvider;
 use crate::actor::tick_generator::Tick;
 
 const BATCH:usize = 2000;

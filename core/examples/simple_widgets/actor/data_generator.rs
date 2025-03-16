@@ -3,8 +3,8 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::steady_rx::RxMetaDataProvider;
-use steady_state::steady_tx::TxMetaDataProvider;
+use steady_state::commander::SendOutcome;
+
 use crate::actor::data_feedback::ChangeRequest;
 
 #[derive(Clone, Debug, Copy)]
@@ -83,8 +83,8 @@ pub async fn run(context: SteadyContext
             let _responder = responder.respond_with(|message| {
                 let msg: &WidgetInventory = message.downcast_ref::<WidgetInventory>().expect("error casting");
                 match monitor.try_send(&mut tx, msg.clone()) {
-                    Ok(()) => Box::new("ok".to_string()),
-                    Err(m) => Box::new(m),
+                    SendOutcome::Success => {Box::new("ok".to_string())}
+                    SendOutcome::Blocked(msg) => { Box::new(msg)}
                 }
             }).await;
             monitor.relay_stats_smartly();

@@ -5,7 +5,7 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
-use steady_state::steady_tx::TxMetaDataProvider;
+use steady_state::commander::SendOutcome;
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct PrintSignal {
@@ -27,9 +27,10 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
          let clean = await_for_any!(cmd.wait_periodic(Duration::from_secs(2)));
          if clean {
              tick += 1;
-             if let Err(t) = cmd.try_send(&mut print_signal_tx, PrintSignal { tick }) {
-                 error!("channel backed up, failed to send tick: {:?}",t.tick);
-             };
+             match cmd.try_send(&mut print_signal_tx, PrintSignal { tick }) {
+                 SendOutcome::Success => {}
+                 SendOutcome::Blocked(signal) => {error!("channel backed up, failed to send tick: {:?}",signal.tick);}
+             }
              cmd.relay_stats();
          }
     }

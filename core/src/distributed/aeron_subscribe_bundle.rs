@@ -8,9 +8,8 @@ use aeron::concurrent::logbuffer::header::Header;
 use aeron::subscription::Subscription;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
-use crate::{into_monitor, SteadyCommander, SteadyState};
+use crate::{SteadyCommander, SteadyState};
 use crate::*;
-use crate::monitor::TxMetaDataHolder;
 use num_traits::Zero;
 use crate::commander_context::SteadyContext;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide

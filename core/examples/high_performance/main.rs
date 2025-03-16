@@ -6,8 +6,6 @@ use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
 use steady_state::actor_builder::ActorTeam;
-use clap::*;
-
 mod actor {
         pub mod final_consumer;
         pub mod tick_consumer;

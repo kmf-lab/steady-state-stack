@@ -29,8 +29,6 @@ pub async fn run<const GIRTH: usize>(context: SteadyContext
                                        , (vacant_items, vacant_bytes), 1));
 
 
-        let item = StreamSimpleMessage::new(8);
-
         let mut remaining = TEST_ITEMS;
          let idx:usize = (0 - STREAM_ID) as usize;
          // trace!("index of {} out of {}",idx, tx.len());

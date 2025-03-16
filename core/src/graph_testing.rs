@@ -7,7 +7,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::ops::{Deref, DerefMut};
+use std::ops::{DerefMut};
 use std::sync::Arc;
 use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
@@ -23,6 +23,7 @@ use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyCommander, Tx, TxBundl
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
 use crate::actor_builder::NodeTxRx;
+use crate::commander::SendOutcome;
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
 /// or `Err` with a value of type `E`.
@@ -200,20 +201,20 @@ impl SideChannelResponder {
     ///
     /// # Returns
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn echo_responder<M: Debug + Send, C: SteadyCommander>(
+    pub async fn echo_responder<M: 'static + Clone + Debug + Send + Sync, C: SteadyCommander>(
         &self,
         cmd: &mut C,
         target_tx: &mut Tx<M>,
     ) -> bool {
         if self.should_apply::<M>().await {
             if cmd.wait_vacant(target_tx, 1).await {
-                self.respond_with(|message| {
+                self.respond_with(move |message| {
                     // Attempt to downcast to the expected message type
-                    let msg = message.downcast::<M>().expect("error casting");
+                    let msg = message.downcast_ref::<M>().expect("error casting");
                     // Try sending the message to the target channel
-                    match cmd.try_send(target_tx, msg) {
-                        Ok(()) => Box::new("ok".to_string()),
-                        Err(m) => Box::new(format!("Failed to send message: {:?}", m)),
+                    match cmd.try_send(target_tx, msg.clone()) {
+                        SendOutcome::Success => {Box::new("ok".to_string())}
+                        SendOutcome::Blocked(msg) => {Box::new(msg)}
                     }
                 }).await
             } else {
@@ -249,7 +250,7 @@ impl SideChannelResponder {
                 let msg = message.downcast_ref::<M>().expect("error casting");
                 let total: usize = (0..girth)
                     .filter(|&c| {
-                        cmd.try_send(&mut target_tx_bundle[c], msg.clone()).is_ok()
+                        cmd.try_send(&mut target_tx_bundle[c], msg.clone()).is_sent()
                     })
                     .count();
     
@@ -280,13 +281,13 @@ impl SideChannelResponder {
     ) -> bool {
         if self.should_apply::<M>().await {
             if cmd.wait_avail(source_rx, 1).await {
-                self.respond_with(|message| {
+                self.respond_with(move |message| {
                     // Attempt to downcast to the expected message type
-                    let msg: &M = message.downcast_ref::<M>().expect("error casting");
+                    let msg = *message.downcast::<M>().expect("error casting");
 
                     match cmd.try_take(source_rx) {
                         Some(measured) => {
-                            if measured.eq(msg) {
+                            if measured.eq(&msg) {
                                 Box::new("ok".to_string())
                             } else {
                                 let failure = format!("no match {:?} {:?}", msg, measured);
@@ -354,9 +355,7 @@ impl SideChannelResponder {
     /// # Returns
     /// - `true` if the next message matches the expected type.
     /// - `false` otherwise.
-    pub async fn should_apply<M>(&self) -> bool
-    where
-        M: 'static + Send,
+    pub async fn should_apply<M: 'static>(&self) -> bool
     {
         let mut guard = self.arc.lock().await;
         let ((_, rx), _) = guard.deref_mut();

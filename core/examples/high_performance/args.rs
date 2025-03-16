@@ -1,6 +1,5 @@
 
 use clap::*;
-use clap_derive::*;
 use steady_state::*;
 
 #[derive(Parser, Debug, PartialEq, Clone)]

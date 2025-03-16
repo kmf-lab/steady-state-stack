@@ -19,7 +19,7 @@ use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
 use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
-use crate::{steady_rx, GraphLivelinessState, SteadyRx};
+use crate::{GraphLivelinessState, SteadyRx};
 use crate::commander::SteadyCommander;
 #[allow(unused_imports)]
 use crate::commander_context::SteadyContext;

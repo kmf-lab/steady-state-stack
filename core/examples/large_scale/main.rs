@@ -7,7 +7,6 @@ use args::Args;
 use std::time::Duration;
 use steady_state::*;
 use steady_state::actor_builder::{ActorTeam, Threading};
-use clap::*;
 
 
 // here are the actors that will be used in the graph.

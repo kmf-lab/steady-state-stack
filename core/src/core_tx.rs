@@ -247,7 +247,7 @@ impl<T> TxCore for Tx<T> {
 }
 
 impl TxCore for StreamTx<StreamSessionMessage> {
-    type MsgIn<'a> = (StreamSessionMessage, &'a[u8]); //TODO: make this just the array or auto converat
+    type MsgIn<'a> = (StreamSessionMessage, &'a[u8]);
     type MsgOut = StreamSessionMessage;
     type MsgSize = (usize, usize);
 

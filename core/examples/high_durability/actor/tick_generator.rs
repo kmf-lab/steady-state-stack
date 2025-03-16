@@ -6,6 +6,7 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 use std::error::Error;
+use steady_state::commander::SendOutcome;
 
 #[derive(Default,Clone,Copy)]
 pub struct Tick {
@@ -29,10 +30,14 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
 
         while monitor.is_running(&mut || tx.mark_closed() ) {
             let _responder = responder.respond_with(|message| {
-                let msg: &Tick = message.downcast_ref::<Tick>().expect("error casting");
-                match monitor.try_send(&mut tx[0], msg.clone()) {
-                    Ok(()) => Box::new("ok".to_string()),
-                    Err(m) => Box::new(m),
+                let msg: Tick = *message.downcast::<Tick>().expect("error casting");
+                match monitor.try_send(&mut tx[0], msg) {
+                    SendOutcome::Success => {
+                        Box::new("ok".to_string())
+                    }
+                    SendOutcome::Blocked(msg) => {
+                        Box::new(msg)
+                    }
                 }
             }).await;
         }

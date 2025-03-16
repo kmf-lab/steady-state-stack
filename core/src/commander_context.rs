@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use std::any::Any;
-use futures_util::lock::{Mutex, MutexGuard};
+use futures_util::lock::{Mutex};
 use futures::channel::oneshot;
 use futures_util::stream::FuturesUnordered;
 use log::warn;
@@ -16,14 +16,14 @@ use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use std::ops::DerefMut;
-use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, SteadyState, Tx, TxCoreBundle};
+use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
+use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
-use crate::steady_tx::TxDone;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::logger;
 use crate::yield_now::yield_now;
@@ -271,10 +271,10 @@ impl SteadyCommander for SteadyContext {
     ///
     /// # Returns
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
-    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> Result<(), T::MsgOut> {
+    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut> {
         match this.shared_try_send(msg) {
-            Ok(_d) => Ok(()),
-            Err(msg) => Err(msg),
+            Ok(_d) => SendOutcome::Success,
+            Err(msg) => SendOutcome::Blocked(msg),
         }
     }
 
@@ -465,10 +465,10 @@ impl SteadyCommander for SteadyContext {
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> Result<(), T::MsgOut> {
+    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut> {
         match this.shared_send_async(a, self.ident, saturation).await {
-            Ok(_) => Ok(()),
-            Err(a) => Err(a),
+            Ok(_) => SendOutcome::Success,
+            Err(a) => SendOutcome::Blocked(a),
         }
         
     }

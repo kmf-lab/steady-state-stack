@@ -13,12 +13,11 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::thread;
 
-use crate::{steady_config, ActorIdentity, Rx, SteadyTx, SteadyTxBundle, TxBundle};
+use crate::{steady_config, ActorIdentity, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{RxChannelMetaDataWrapper, TxChannelMetaDataWrapper};
-use crate::monitor::{ChannelMetaData, TxMetaData};
-use crate::steady_rx::RxMetaDataProvider;
+use crate::distributed::distributed_stream::{TxChannelMetaDataWrapper};
+use crate::monitor::{ChannelMetaData};
 
 /// The `Tx` struct represents a transmission channel for messages of type `T`.
 /// It provides methods to send messages to the channel, check the channel's state, and handle the transmission lifecycle.

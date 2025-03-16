@@ -7,7 +7,7 @@ use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamSimpleMessage};
-use crate::{into_monitor, SteadyCommander, SteadyState};
+use crate::{SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
 use crate::monitor::RxMetaDataHolder;

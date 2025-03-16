@@ -9,8 +9,9 @@ use crate::Args;
 
 
 use std::error::Error;
+use steady_state::commander::SendOutcome;
 
-#[derive(Default,Clone,Copy)]
+#[derive(Default, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tick {
   pub value: u128
 }
@@ -25,20 +26,22 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
 pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                                               ,tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = context.into_monitor( [], tx.meta_data());
-    if let Some(responder) = monitor.sidechannel_responder() {
+    let mut ctrl = context.into_monitor([], tx.meta_data());
+    let mut tx = tx.lock().await;
+    //external_behavior(Simulate::Echo(ctrl, &mut tx[0])).await //need new enum for this
+    
+    
+    if let Some(responder) = ctrl.sidechannel_responder() {
 
-        let mut tx = tx.lock().await;
-
-        while monitor.is_running(&mut || tx.mark_closed() ) {
+    
+        while ctrl.is_running(&mut || tx.mark_closed() ) {
             let _responder = responder.respond_with(|message| {
-                let msg: &Tick = message.downcast_ref::<Tick>().expect("error casting");
-                match monitor.try_send(&mut tx[0], msg.clone()) {
-                    Ok(()) => Box::new("ok".to_string()),
-                    Err(m) => Box::new(m),
+                let msg: Tick = *message.downcast::<Tick>().expect("error casting");
+                match ctrl.try_send(&mut tx[0], msg) {
+                    SendOutcome::Success => {Box::new("ok".to_string())}
+                    SendOutcome::Blocked(msg) => {Box::new(msg)}
                 }
             }).await;
-            monitor.relay_stats_smartly();
         }
     }
     Ok(())
