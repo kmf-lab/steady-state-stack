@@ -4,6 +4,7 @@
 //! This enables simulation of real-world scenarios and makes SteadyState stand out from other solutions
 //! by providing a robust way to test graphs.
 
+use crate::core_tx;
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -24,6 +25,8 @@ use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
 use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
+use crate::core_rx::RxCore;
+use crate::core_tx::TxCore;
 
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
 /// or `Err` with a value of type `E`.
@@ -148,12 +151,66 @@ impl SideChannelHub {
 }
 
 /// The `SideChannelResponder` struct provides a way to respond to messages from a side channel.
+#[derive(Clone)]
 pub struct SideChannelResponder {
     pub(crate) arc: Arc<Mutex<(SideChannel,Receiver<()>)>>,
     pub(crate) identity: ActorIdentity,
 }
 
 impl SideChannelResponder {
+
+    pub async fn simulate_echo<'a, T: 'static, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self, tx_core: &mut X, cmd: & Arc<Mutex<C>>) -> bool
+    where <X as TxCore>::MsgOut: std::marker::Send, <X as TxCore>::MsgOut: Sync, <X as core_tx::TxCore>::MsgOut: 'static {
+        if self.should_apply::<T>().await { //we got a message and now confirm we have room to send it
+            
+            if tx_core.shared_wait_vacant_units(tx_core.one()).await {
+                //we hold cmd just as long as it takes us to respond.
+                let mut cmd_guard = cmd.lock().await;
+                self.respond_with(move |message| {
+                    match cmd_guard.try_send(tx_core,*message.downcast::<T>().expect("error casting")) {
+                        SendOutcome::Success => {Box::new("ok".to_string())}
+                        SendOutcome::Blocked(msg) => {Box::new(msg)}
+                    }
+                }).await
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    pub async fn simulate_equals<T: Debug + Eq + 'static, X: RxCore<MsgOut = T>, C: SteadyCommander>(&self, rx_core: &mut X, cmd: & Arc<Mutex<C>>) -> bool where <X as RxCore>::MsgOut: std::fmt::Debug {
+        if self.should_apply::<T>().await { //we have a message and now block until a unit arrives
+            if rx_core.shared_wait_avail_units(1).await {
+                //for testing we hold the cmd lock only while we check equals and respond
+                let mut cmd_guard = cmd.lock().await;
+                self.respond_with(move |message| {
+                    // Attempt to downcast to the expected message type
+                    let msg = *message.downcast::<T>().expect("error casting");
+                    match cmd_guard.try_take(rx_core) {
+                        Some(measured) => {
+                            if msg.eq(&measured) {
+                                Box::new("ok".to_string())
+                            } else {
+                                let failure = format!("no match {:?} {:?}", msg, measured);
+                                Box::new(failure)
+                            }
+                        }
+                        None => {
+                            Box::new("no message".to_string())
+                        }
+                    }
+                }).await
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+
     /// Creates a new `SideChannelResponder`.
     ///
     /// # Arguments
@@ -201,7 +258,7 @@ impl SideChannelResponder {
     ///
     /// # Returns
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn echo_responder<M: 'static + Clone + Debug + Send + Sync, C: SteadyCommander>(
+    pub async fn echo_responder<M: 'static + Debug + Send + Sync, C: SteadyCommander>(
         &self,
         cmd: &mut C,
         target_tx: &mut Tx<M>,
@@ -209,10 +266,7 @@ impl SideChannelResponder {
         if self.should_apply::<M>().await {
             if cmd.wait_vacant(target_tx, 1).await {
                 self.respond_with(move |message| {
-                    // Attempt to downcast to the expected message type
-                    let msg = message.downcast_ref::<M>().expect("error casting");
-                    // Try sending the message to the target channel
-                    match cmd.try_send(target_tx, msg.clone()) {
+                    match cmd.try_send(target_tx,  *message.downcast::<M>().expect("error casting")) {
                         SendOutcome::Success => {Box::new("ok".to_string())}
                         SendOutcome::Blocked(msg) => {Box::new(msg)}
                     }
@@ -274,7 +328,7 @@ impl SideChannelResponder {
     ///
     /// # Returns
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn equals_responder<M: 'static + Clone + Debug + Send + Eq, C: SteadyCommander>(
+    pub async fn equals_responder<M: 'static + Debug + Send + Eq, C: SteadyCommander>(
         &self,
         cmd: &mut C,
         source_rx: &mut Rx<M>,
@@ -284,7 +338,6 @@ impl SideChannelResponder {
                 self.respond_with(move |message| {
                     // Attempt to downcast to the expected message type
                     let msg = *message.downcast::<M>().expect("error casting");
-
                     match cmd.try_take(source_rx) {
                         Some(measured) => {
                             if measured.eq(&msg) {

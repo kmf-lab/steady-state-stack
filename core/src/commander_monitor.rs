@@ -6,6 +6,8 @@ use parking_lot::RwLock;
 use futures_util::lock::{Mutex, MutexGuard};
 use futures::channel::oneshot;
 use std::any::{type_name, Any};
+use std::error::Error;
+use std::fmt::Debug;
 use futures_util::future::{FusedFuture};
 use futures_timer::Delay;
 use futures_util::{select, FutureExt, StreamExt};
@@ -18,7 +20,7 @@ use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
-use crate::{yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, SteadyState, Tx, TxCoreBundle, MONITOR_NOT};
+use crate::{simulate_edge, yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, SteadyContext, SteadyState, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
@@ -26,6 +28,7 @@ use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
+use crate::simulate_edge::{Behavior, IntoSymRunner, SymRunner};
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
@@ -78,7 +81,10 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 /// Implementation of `LocalMonitor`.
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
-
+     async fn simulated_behavior< const LEN: usize >(self, sims: [&dyn IntoSymRunner<Self>;LEN]
+    ) -> Result<(), Box<dyn Error>> {
+        simulate_edge::simulated_behavior::<Self, LEN>(self,sims).await
+    }
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
     ///
@@ -147,6 +153,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
 
+    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSymRunner<Self>;LEN]
+    ) -> Result<(), Box<dyn Error>> {
+        simulate_edge::simulated_behavior::<LocalMonitor<RX_LEN, TX_LEN>, LEN>(self,sims).await
+    }
 
     /// set loglevel for the application
     fn loglevel(&self, loglevel: crate::LogLevel) {
@@ -470,7 +480,10 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         match this.shared_try_send(msg) {
             Ok(done_count) => {
                 if let Some(ref mut tel) = self.telemetry.send_tx {
-                    this.telemetry_inc(done_count, tel); } else { this.monitor_not(); };
+                    this.telemetry_inc(done_count, tel);
+                } else {
+                    this.monitor_not();
+                };
                 SendOutcome::Success
             }
             Err(sensitive) => SendOutcome::Blocked(sensitive),

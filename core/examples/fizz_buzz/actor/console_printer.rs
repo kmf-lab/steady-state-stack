@@ -6,6 +6,7 @@ use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
 use std::ops::DerefMut;
+use steady_state::simulate_edge::Behavior::Equals;
 use crate::actor::fizz_buzz_processor::FizzBuzzMessage;
 use crate::actor::timer_actor::PrintSignal;
 
@@ -80,20 +81,10 @@ pub async fn run(context: SteadyContext
                  , fizzbuzz_rx: SteadyRx<FizzBuzzMessage>
                  , print_rx: SteadyRx<PrintSignal>
 ) -> Result<(),Box<dyn Error>> {
-    let mut cmd =  context.into_monitor([&fizzbuzz_rx,&print_rx], []);
-    if let Some(responder) = cmd.sidechannel_responder() {
-        let mut fizzbuzz_messages_rx = fizzbuzz_rx.lock().await;
-        let mut print_signal_rx = print_rx.lock().await;
-        while cmd.is_running(&mut ||
-            fizzbuzz_messages_rx.is_closed_and_empty() &&
-                print_signal_rx.is_closed_and_empty()) {
-            // in main use graph.sidechannel_director node_call(msg,"ConsolePrinter")
-            let _did_check = responder.equals_responder(&mut cmd,&mut fizzbuzz_messages_rx).await;
-            // in main use graph.sidechannel_director node_call(msg,"ConsolePrinter")
-            let _did_check = responder.equals_responder(&mut cmd,&mut print_signal_rx).await;
-        }
-    }
-    Ok(())
+
+    context.into_monitor([&fizzbuzz_rx,&print_rx], [])
+           .simulated_behavior([&Equals(fizzbuzz_rx),&Equals(print_rx)]).await
+
 }
 
 

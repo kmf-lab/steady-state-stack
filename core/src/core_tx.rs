@@ -12,8 +12,9 @@ use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
 use crate::{steady_config, ActorIdentity, SendSaturation, StreamSessionMessage, StreamSimpleMessage, Tx, MONITOR_NOT};
+use crate::commander::SendOutcome;
 use crate::distributed::distributed_stream::{StreamItem, StreamTx};
-
+use crate::graph_testing::SideChannelResponder;
 
 pub trait TxCore {
     type MsgIn<'a>;
@@ -24,6 +25,7 @@ pub trait TxCore {
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize;
     fn log_perodic(&mut self) -> bool;
 
+    fn one(&self) -> Self::MsgSize;
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>);
     fn monitor_not(&mut self);
     fn shared_capacity(&self) -> usize;
@@ -49,6 +51,11 @@ impl<T> TxCore for Tx<T> {
     type MsgIn<'a> = T;
     type MsgOut = T;
     type MsgSize = usize;
+
+
+    fn one(&self) -> Self::MsgSize {
+        1
+    }
 
     fn log_perodic(&mut self) -> bool {
         if self.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
@@ -251,7 +258,9 @@ impl TxCore for StreamTx<StreamSessionMessage> {
     type MsgOut = StreamSessionMessage;
     type MsgSize = (usize, usize);
 
-
+    fn one(&self) -> Self::MsgSize {
+        (1,self.payload_channel.capacity()/self.item_channel.capacity())
+    }
     fn log_perodic(&mut self) -> bool {
         if self.item_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
@@ -569,6 +578,10 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
     type MsgSize = (usize, usize);
 
 
+    fn one(&self) -> Self::MsgSize {
+        (1,self.payload_channel.capacity()/self.item_channel.capacity())      
+    }
+
     fn log_perodic(&mut self) -> bool {
         if self.item_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
@@ -877,6 +890,11 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;
     type MsgOut = <T as TxCore>::MsgOut;
     type MsgSize =  <T as TxCore>::MsgSize;
+
+
+    fn one(&self) -> Self::MsgSize {
+        <T as TxCore>::one(& **self)
+    }
 
     fn log_perodic(&mut self) -> bool {
         <T as TxCore>::log_perodic(&mut **self)

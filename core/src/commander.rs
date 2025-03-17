@@ -3,6 +3,8 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 use futures_util::future::FusedFuture;
 use std::any::Any;
+use std::error::Error;
+use std::fmt::Debug;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
@@ -15,7 +17,7 @@ use crate::commander_monitor::LocalMonitor;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
-
+use crate::simulate_edge::{Behavior, IntoSymRunner, SymRunner};
 
 impl SteadyContext {
     /// Converts the context into a local monitor.
@@ -132,8 +134,9 @@ impl<X> SendOutcome<X> {
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
+    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSymRunner<Self>;LEN]) -> Result<(), Box<dyn Error>>;
 
-    /// set log level for the entire application
+        /// set log level for the entire application
     fn loglevel(&self, loglevel: crate::LogLevel);
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.

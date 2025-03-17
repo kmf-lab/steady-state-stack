@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use std::any::Any;
+use std::error::Error;
+use std::fmt::Debug;
 use futures_util::lock::{Mutex};
 use futures::channel::oneshot;
 use futures_util::stream::FuturesUnordered;
@@ -16,7 +18,7 @@ use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use std::ops::DerefMut;
-use crate::{ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
+use crate::{simulate_edge, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
@@ -24,6 +26,7 @@ use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
+use crate::simulate_edge::{Behavior, IntoSymRunner, SymRunner};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::logger;
 use crate::yield_now::yield_now;
@@ -74,6 +77,9 @@ impl Clone for SteadyContext {
 impl SteadyCommander for SteadyContext {
 
 
+    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSymRunner<SteadyContext>;LEN]) -> Result<(), Box<dyn Error>> {
+        simulate_edge::simulated_behavior::<SteadyContext, LEN>(self, sims).await
+    }
 
     /// Initializes the logger with the specified log level.
     fn loglevel(&self, loglevel: crate::LogLevel) {
