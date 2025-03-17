@@ -9,9 +9,14 @@ use crate::actor::div_by_3_producer::NumberMessage;
 use crate::actor::fizz_buzz_processor;
 
 #[cfg(not(test))]
-pub async fn run(context: SteadyContext
-        ,numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
+pub async fn run(context: SteadyContext, numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
   internal_behavior(context.into_monitor([],[&numbers_tx]),numbers_tx).await
+}
+
+#[cfg(test)]
+pub async fn run(context: SteadyContext, tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
+    context.into_monitor( [],[&tx])
+        .simulated_behavior([&EchoBehavior(tx)]).await
 }
 
 const BATCH_SIZE: usize = 4000;
@@ -49,20 +54,6 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 }
 
 
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , tx: SteadyTx<NumberMessage>
-) -> Result<(),Box<dyn Error>> {
-    let mut cmd =  context.into_monitor( [],[&tx]);
-    if let Some(responder) = cmd.sidechannel_responder() {
-        let mut numbers_tx = tx.lock().await;
-        while cmd.is_running(&mut ||numbers_tx.mark_closed()) {
-            // in main use graph.sidechannel_director node_call(msg,"DivBy5Producer")
-            let _did_echo = responder.echo_responder(&mut cmd,&mut numbers_tx).await;
-        }
-    }
-    Ok(())
-}
 
 
 #[cfg(test)]

@@ -6,9 +6,9 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 use std::error::Error;
-use steady_state::commander::SendOutcome;
+use steady_state::steady_tx::TxMetaDataProvider;
 
-#[derive(Default,Clone,Copy)]
+#[derive(Default,Clone,Copy,Debug,Eq,PartialEq)]
 pub struct Tick {
   pub value: u128
 }
@@ -24,25 +24,7 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                                               ,tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
     let mut monitor = context.into_monitor( [], tx.meta_data());
-    if let Some(responder) = monitor.sidechannel_responder() {
-
-        let mut tx = tx.lock().await;
-
-        while monitor.is_running(&mut || tx.mark_closed() ) {
-            let _responder = responder.respond_with(|message| {
-                let msg: Tick = *message.downcast::<Tick>().expect("error casting");
-                match monitor.try_send(&mut tx[0], msg) {
-                    SendOutcome::Success => {
-                        Box::new("ok".to_string())
-                    }
-                    SendOutcome::Blocked(msg) => {
-                        Box::new(msg)
-                    }
-                }
-            }).await;
-        }
-    }
-    Ok(())
+    monitor.simulated_behavior([&EchoBehavior(tx[0].clone())]).await
 }
 
 #[allow(unused)]

@@ -17,7 +17,7 @@ use crate::commander_monitor::LocalMonitor;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
-use crate::simulate_edge::{Behavior, IntoSymRunner, SymRunner};
+use crate::simulate_edge::{IntoSimRunner};
 
 impl SteadyContext {
     /// Converts the context into a local monitor.
@@ -134,7 +134,7 @@ impl<X> SendOutcome<X> {
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
-    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSymRunner<Self>;LEN]) -> Result<(), Box<dyn Error>>;
+    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSimRunner<Self>;LEN]) -> Result<(), Box<dyn Error>>;
 
         /// set log level for the entire application
     fn loglevel(&self, loglevel: crate::LogLevel);

@@ -14,6 +14,14 @@ pub async fn run(context: SteadyContext
   internal_behavior(context.into_monitor([&errors_rx],[]),errors_rx).await
 }
 
+#[cfg(test)]
+pub async fn run(context: SteadyContext
+                 , rx: SteadyRx<ErrorMessage>
+) -> Result<(),Box<dyn Error>> {
+    context.into_monitor([&rx], [])
+        .simulated_behavior([&EqualsBehavior(rx)]).await
+}
+
 async fn internal_behavior<C:SteadyCommander>(mut cmd: C
                 ,errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
 
@@ -39,21 +47,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 }
 
 
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<ErrorMessage>
-) -> Result<(),Box<dyn Error>> {
-    let mut cmd =  context.into_monitor([&rx], []);
-    if let Some(responder) = cmd.sidechannel_responder() {
-        let mut errors_rx = rx.lock().await;
-        while cmd.is_running(&mut ||
-            errors_rx.is_closed_and_empty()) {
-            // in main use graph.sidechannel_director node_call(msg,"ErrorLogger")
-            let _did_check = responder.equals_responder(&mut cmd,&mut errors_rx).await;
-        }
-    }
-    Ok(())
-}
+
 
 #[cfg(test)]
 pub(crate) mod tests {

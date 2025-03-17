@@ -85,7 +85,11 @@ pub mod commander_monitor;
 mod stream_iterator;
 
 pub use clap::*;
-
+pub use commander::SendOutcome;
+pub use simulate_edge::EchoBehavior;
+pub use simulate_edge::EqualsBehavior;
+pub use simulate_edge::IntoSimRunner;
+pub use simulate_edge::SimRunner;
 pub use commander_context::*;
 pub use futures_timer::Delay; //for easy use
 pub use graph_testing::GraphTestResult;

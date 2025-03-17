@@ -4,7 +4,6 @@ use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
-use clap::*;
 
 mod actor {
     {% for mod in actor_mods %}

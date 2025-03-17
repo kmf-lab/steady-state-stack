@@ -6,7 +6,6 @@ use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
 use std::ops::DerefMut;
-use steady_state::simulate_edge::Behavior::Equals;
 use crate::actor::fizz_buzz_processor::FizzBuzzMessage;
 use crate::actor::timer_actor::PrintSignal;
 
@@ -18,6 +17,18 @@ pub async fn run(context: SteadyContext
     internal_behavior(context.into_monitor([&fizzbuzz_messages_rx, &print_signal_rx],[] )
                       ,fizzbuzz_messages_rx
                       ,print_signal_rx).await
+}
+
+
+#[cfg(test)]
+pub async fn run(context: SteadyContext
+                 , fizzbuzz_rx: SteadyRx<FizzBuzzMessage>
+                 , print_rx: SteadyRx<PrintSignal>
+) -> Result<(),Box<dyn Error>> {
+
+    context.into_monitor([&fizzbuzz_rx,&print_rx], [])
+        .simulated_behavior([&EqualsBehavior(fizzbuzz_rx),&EqualsBehavior(print_rx)]).await
+
 }
 
 const BATCH_SIZE: usize = 20000;
@@ -75,17 +86,6 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
     Ok(())
 }
 
-
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , fizzbuzz_rx: SteadyRx<FizzBuzzMessage>
-                 , print_rx: SteadyRx<PrintSignal>
-) -> Result<(),Box<dyn Error>> {
-
-    context.into_monitor([&fizzbuzz_rx,&print_rx], [])
-           .simulated_behavior([&Equals(fizzbuzz_rx),&Equals(print_rx)]).await
-
-}
 
 
 #[cfg(test)]

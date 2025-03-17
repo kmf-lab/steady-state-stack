@@ -28,7 +28,7 @@ use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
-use crate::simulate_edge::{Behavior, IntoSymRunner, SymRunner};
+use crate::simulate_edge::{ IntoSimRunner, SimRunner};
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
@@ -81,7 +81,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 /// Implementation of `LocalMonitor`.
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
-     async fn simulated_behavior< const LEN: usize >(self, sims: [&dyn IntoSymRunner<Self>;LEN]
+     async fn simulated_behavior< const LEN: usize >(self, sims: [&dyn IntoSimRunner<Self>;LEN]
     ) -> Result<(), Box<dyn Error>> {
         simulate_edge::simulated_behavior::<Self, LEN>(self,sims).await
     }
@@ -153,7 +153,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
 
-    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSymRunner<Self>;LEN]
+    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSimRunner<Self>;LEN]
     ) -> Result<(), Box<dyn Error>> {
         simulate_edge::simulated_behavior::<LocalMonitor<RX_LEN, TX_LEN>, LEN>(self,sims).await
     }

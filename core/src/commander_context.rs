@@ -26,7 +26,7 @@ use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
-use crate::simulate_edge::{Behavior, IntoSymRunner, SymRunner};
+use crate::simulate_edge::{IntoSimRunner, SimRunner};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::logger;
 use crate::yield_now::yield_now;
@@ -77,7 +77,7 @@ impl Clone for SteadyContext {
 impl SteadyCommander for SteadyContext {
 
 
-    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSymRunner<SteadyContext>;LEN]) -> Result<(), Box<dyn Error>> {
+    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSimRunner<SteadyContext>;LEN]) -> Result<(), Box<dyn Error>> {
         simulate_edge::simulated_behavior::<SteadyContext, LEN>(self, sims).await
     }
 
