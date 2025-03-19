@@ -77,15 +77,15 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
     context.into_monitor([{% for def in rx_monitor_defs -%}
                             &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
                             &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}])
-      .simulated_behavior([
+      .simulated_behavior(vec!(
    {%- for channel in tx_channels -%}
-         &Behavior::Echo({{channel[0].name}}_tx){%- if loop.last %}{% else -%},{%- endif %}
+         &TestEcho({{channel[0].name}}_tx){%- if loop.last %}{% else -%},{%- endif %}
      {%- endfor -%}
      {%- if !rx_channels.is_empty() && !tx_channels.is_empty() -%},{%- endif %}
      {%- for channel in rx_channels -%}
-         &Behavior::Equals({{channel[0].name}}_rx){%- if loop.last %}{% else -%},{%- endif %}
+         &TestEquals({{channel[0].name}}_rx){%- if loop.last %}{% else -%},{%- endif %}
      {%- endfor -%}
-       ]).await
+       )).await
 
 }{% endif %}
 

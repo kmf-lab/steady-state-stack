@@ -89,3 +89,17 @@ tokei | tee cargo_tokei.txt
 # Final confirmation message
 echo "Confirm that warnings you do not want published have been removed"
 echo "If this is confirmed by successful GitHub build !!, you may now run: cargo publish"
+
+# cargo install sccache
+# export RUSTC_WRAPPER=sccache
+#[build]
+#rustc-wrapper = "sccache"
+
+# sudo apt install mold
+# export RUSTFLAGS="-C link-arg=-fuse-ld=mold"
+#[target.x86_64-unknown-linux-gnu]
+#linker = "mold"
+
+
+# cargo install cargo-nextest
+# cargo nextest run

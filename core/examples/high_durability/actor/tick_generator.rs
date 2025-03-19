@@ -23,7 +23,7 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                                               ,tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
     let monitor = context.into_monitor( [], tx.meta_data());
-    monitor.simulated_behavior([&TestEcho(tx[0].clone())]).await
+    monitor.simulated_behavior(vec!(&TestEcho(tx[0].clone()))).await
 }
 
 #[allow(unused)]

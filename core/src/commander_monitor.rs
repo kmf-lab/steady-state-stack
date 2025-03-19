@@ -79,9 +79,9 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 /// Implementation of `LocalMonitor`.
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
-     async fn simulated_behavior< const LEN: usize >(self, sims: [&dyn IntoSimRunner<Self>;LEN]
+     async fn simulated_behavior< const LEN: usize >(self, sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>> {
-        simulate_edge::simulated_behavior::<Self, LEN>(self,sims).await
+        simulate_edge::simulated_behavior::<Self>(self,sims).await
     }
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
@@ -151,9 +151,9 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
 
-    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSimRunner<Self>;LEN]
+    async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>> {
-        simulate_edge::simulated_behavior::<LocalMonitor<RX_LEN, TX_LEN>, LEN>(self,sims).await
+        simulate_edge::simulated_behavior::<LocalMonitor<RX_LEN, TX_LEN>>(self, sims).await
     }
 
     /// set loglevel for the application

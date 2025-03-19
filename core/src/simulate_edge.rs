@@ -118,8 +118,8 @@ impl<T: SimulateRx> Clone for TestEquals<T> {
 
 
 
-pub(crate) async fn simulated_behavior< C: SteadyCommander + 'static, const LEN: usize,>(
-    cmd: C, sims: [&dyn IntoSimRunner<C>; LEN],
+pub(crate) async fn simulated_behavior< C: SteadyCommander + 'static>(
+    cmd: C, sims: Vec<&dyn IntoSimRunner<C>>,
 ) -> Result<(), Box<dyn Error>> {
     if let Some(responder) = cmd.sidechannel_responder() {
         let cmd_mutex = Arc::new(Mutex::new(cmd));

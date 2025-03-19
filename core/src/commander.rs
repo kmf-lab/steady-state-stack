@@ -133,7 +133,7 @@ impl<X> SendOutcome<X> {
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
-    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSimRunner<Self>;LEN]) -> Result<(), Box<dyn Error>>;
+    async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>) -> Result<(), Box<dyn Error>>;
 
         /// set log level for the entire application
     fn loglevel(&self, loglevel: crate::LogLevel);

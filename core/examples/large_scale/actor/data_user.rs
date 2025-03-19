@@ -16,7 +16,7 @@ pub async fn run(context: SteadyContext
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
     let monitor = context.into_monitor( [&rx], []);
-    monitor.simulated_behavior([&TestEquals(rx)]).await
+    monitor.simulated_behavior( vec!(&TestEquals(rx)) ).await
 }
 
 #[cfg(not(test))]

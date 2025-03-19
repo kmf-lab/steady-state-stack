@@ -76,8 +76,8 @@ impl Clone for SteadyContext {
 impl SteadyCommander for SteadyContext {
 
 
-    async fn simulated_behavior<const LEN: usize >(self, sims: [&dyn IntoSimRunner<SteadyContext>;LEN]) -> Result<(), Box<dyn Error>> {
-        simulate_edge::simulated_behavior::<SteadyContext, LEN>(self, sims).await
+    async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<SteadyContext>>) -> Result<(), Box<dyn Error>> {
+        simulate_edge::simulated_behavior::<SteadyContext>(self, sims).await
     }
 
     /// Initializes the logger with the specified log level.

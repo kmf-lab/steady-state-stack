@@ -20,7 +20,7 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
 pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
                                                     ,rx: SteadyRxBundle<TickCount, TICK_COUNTS_RX_GIRTH>) -> Result<(),Box<dyn Error>> {
     let monitor = context.into_monitor(rx.meta_data(),[]);
-    monitor.simulated_behavior([&TestEquals(rx[0].clone())]).await
+    monitor.simulated_behavior(vec!(&TestEquals(rx[0].clone()))).await
              
 }
 

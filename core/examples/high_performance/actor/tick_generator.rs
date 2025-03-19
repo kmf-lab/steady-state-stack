@@ -24,7 +24,7 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                                               ,tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
     let ctrl = context.into_monitor([], tx.meta_data());
-    ctrl.simulated_behavior([&TestEcho(tx[0].clone())]).await
+    ctrl.simulated_behavior(vec!(&TestEcho(tx[0].clone()))).await
 }
 
 const BUFFER_SIZE:usize = 2000;
