@@ -1,13 +1,12 @@
 use std::error::Error;
 use std::mem;
-use std::time::{Duration, Instant};
+use std::time::{Duration};
 use bytes::Bytes;
 
 #[allow(unused_imports)]
 use log::*;
 use rand::{random};
 use steady_state::*;
-use steady_state::commander::SendOutcome;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Packet {
@@ -20,6 +19,51 @@ pub struct Packet {
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                                                   , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
     internal_behavior(context, tx).await
+}
+
+#[cfg(test)]
+pub async fn run<const GIRTH:usize>(context: SteadyContext
+                                    , tx: SteadyTxBundle<Packet,GIRTH>) -> Result<(),Box<dyn Error>> {
+
+    let mut control = context.into_monitor([], tx.meta_data());
+    
+    //TODO: neeed special echo
+    //control.simulated_behavior([&TestEcho(tx[0].clone())]).await
+
+    
+        
+    let mut tx:TxBundle<Packet> = tx.lock().await;
+    
+    if let Some(mut responder) = control.sidechannel_responder() { //outside
+        //info!("test generator running");
+        while control.is_running(&mut || tx.mark_closed()) {
+    
+            let now = Instant::now();
+            //info!("waiting for responder units");
+            let clean = await_for_all!(
+               // monitor.wait_periodic(Duration::from_millis(500))
+                responder.wait_available_units(1)
+                ,
+                control.wait_vacant_bundle(&mut tx, 1, GIRTH)
+            );
+            let _duration = now.elapsed();
+            //info!("got a responder and we have room to write, clean: {} duration:{:?}",clean,duration);
+    
+            if clean {
+                let _ok = responder.respond_with(|message| {
+                    let msg: Packet = *message.downcast::<Packet>().expect("error casting");
+                    let index = compute_index(&mut tx, &msg);
+                    match control.try_send(&mut tx[index], msg) {
+                        SendOutcome::Success => {Box::new("ok".to_string())}
+                        SendOutcome::Blocked(msg) => {Box::new(format!("{:?}", msg))}
+                    }
+                }).await;
+            }
+    
+        }
+        //  info!("shutdown generator");
+    }
+    Ok(())
 }
 
 async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
@@ -72,44 +116,6 @@ pub(crate) fn compute_index(tx: &mut TxBundle<Packet>, packet: &Packet) -> usize
     (packet.route as usize) % tx.len()
 }
 
-#[cfg(test)]
-pub async fn run<const GIRTH:usize>(context: SteadyContext
-                 , tx: SteadyTxBundle<Packet,GIRTH>) -> Result<(),Box<dyn Error>> {
-
-    let mut control = context.into_monitor([], tx.meta_data());
-    let mut tx:TxBundle<Packet> = tx.lock().await;
-
-    if let Some(mut responder) = control.sidechannel_responder() { //outside
-        //info!("test generator running");
-        while control.is_running(&mut || tx.mark_closed()) {
-
-            let now = Instant::now();
-            //info!("waiting for responder units");
-            let clean = await_for_all!(
-               // monitor.wait_periodic(Duration::from_millis(500))
-                responder.wait_available_units(1)
-                ,
-                control.wait_vacant_bundle(&mut tx, 1, GIRTH)
-            );
-            let _duration = now.elapsed();
-            //info!("got a responder and we have room to write, clean: {} duration:{:?}",clean,duration);
-
-           if clean {
-               let _ok = responder.respond_with(|message| {
-                   let msg: Packet = *message.downcast::<Packet>().expect("error casting");
-                   let index = compute_index(&mut tx, &msg);
-                   match control.try_send(&mut tx[index], msg) {
-                       SendOutcome::Success => {Box::new("ok".to_string())}
-                       SendOutcome::Blocked(msg) => {Box::new(format!("{:?}", msg))}
-                   }
-               }).await;
-           }
-
-        }
-      //  info!("shutdown generator");
-    }
-    Ok(())
-}
 
 
 #[cfg(test)]

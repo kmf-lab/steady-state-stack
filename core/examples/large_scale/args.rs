@@ -22,10 +22,3 @@ fn run_duration_validator(val: &str) -> Result<u64, String> {
         Err(_) => Err("Duration must be a valid u64 number.".to_string()),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use clap::Parser;
-    use crate::LogLevel;
-    use log::*;
-}

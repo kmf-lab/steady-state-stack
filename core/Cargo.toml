@@ -32,11 +32,14 @@ unwrap_used = "deny" # forbid use of unwrap
 
 
 [features]
-default = ["proactor_nuclei", "telemetry_server_builtin", "prometheus_metrics", "core_display", "core_affinity"] 
+default = ["proactor_nuclei", "telemetry_server_builtin", "prometheus_metrics", "core_display", "core_affinity"]
 # Use the nuclei async runtime (proactor_? exclusive one or the other) (default)
 proactor_nuclei = ["nuclei/async-exec", "nuclei/iouring"]
 # Use the tokio async runtime (proactor_? exclusive one or the other)
 proactor_tokio = ["nuclei/tokio", "nuclei/iouring"]
+
+proactor_windows = ["nuclei/async-exec"]
+
 # provide prometheus compatible pullable metrics
 prometheus_metrics = [] # (default)
 # default telemetry_server_bultin is used for telemetry
@@ -234,6 +237,7 @@ optional = true
 isahc            = "1.7.2"
 askama           = "0.12.1"
 tempfile         = "3.13.0"  # for testing
+flate2           = "1.1.0"
 regex            = "1.11.1" # future testing
 daachorse        = "1.0.0" # future testing
 xz2              = "0.1.7" # future testing

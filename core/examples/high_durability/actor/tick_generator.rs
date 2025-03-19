@@ -6,7 +6,6 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 use std::error::Error;
-use steady_state::steady_tx::TxMetaDataProvider;
 
 #[derive(Default,Clone,Copy,Debug,Eq,PartialEq)]
 pub struct Tick {
@@ -23,8 +22,8 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
 pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                                               ,tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let mut monitor = context.into_monitor( [], tx.meta_data());
-    monitor.simulated_behavior([&EchoBehavior(tx[0].clone())]).await
+    let monitor = context.into_monitor( [], tx.meta_data());
+    monitor.simulated_behavior([&TestEcho(tx[0].clone())]).await
 }
 
 #[allow(unused)]

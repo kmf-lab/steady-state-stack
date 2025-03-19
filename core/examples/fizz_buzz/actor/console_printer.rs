@@ -27,7 +27,7 @@ pub async fn run(context: SteadyContext
 ) -> Result<(),Box<dyn Error>> {
 
     context.into_monitor([&fizzbuzz_rx,&print_rx], [])
-        .simulated_behavior([&EqualsBehavior(fizzbuzz_rx),&EqualsBehavior(print_rx)]).await
+        .simulated_behavior([&TestEquals(fizzbuzz_rx),&TestEquals(print_rx)]).await
 
 }
 

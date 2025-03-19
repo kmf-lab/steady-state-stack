@@ -4,7 +4,6 @@
 //! This enables simulation of real-world scenarios and makes SteadyState stand out from other solutions
 //! by providing a robust way to test graphs.
 
-use crate::core_tx;
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -159,8 +158,13 @@ pub struct SideChannelResponder {
 
 impl SideChannelResponder {
 
-    pub async fn simulate_echo<'a, T: 'static, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self, tx_core: &mut X, cmd: & Arc<Mutex<C>>) -> bool
-    where <X as TxCore>::MsgOut: std::marker::Send, <X as TxCore>::MsgOut: Sync, <X as core_tx::TxCore>::MsgOut: 'static {
+      
+    
+    
+    
+    pub async fn simulate_echo<'a, T: 'static, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self
+                        , tx_core: &mut X, cmd: & Arc<Mutex<C>>) -> bool
+    where <X as TxCore>::MsgOut: Send, <X as TxCore>::MsgOut: Sync, <X as TxCore>::MsgOut: 'static {
         if self.should_apply::<T>().await { //we got a message and now confirm we have room to send it
             
             if tx_core.shared_wait_vacant_units(tx_core.one()).await {

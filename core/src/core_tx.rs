@@ -1,9 +1,9 @@
-use log::{error, warn};
+use log::{error, trace, warn};
 use futures_util::{select, FutureExt};
 use std::time::{Duration, Instant};
 use futures::pin_mut;
 use futures_timer::Delay;
-use futures_util::lock::MutexGuard;
+use futures_util::lock::{MutexGuard};
 use ringbuf::traits::Observer;
 use futures_util::future::FusedFuture;
 use async_ringbuf::producer::AsyncProducer;
@@ -12,15 +12,14 @@ use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
 use crate::{steady_config, ActorIdentity, SendSaturation, StreamSessionMessage, StreamSimpleMessage, Tx, MONITOR_NOT};
-use crate::commander::SendOutcome;
 use crate::distributed::distributed_stream::{StreamItem, StreamTx};
-use crate::graph_testing::SideChannelResponder;
 
 pub trait TxCore {
     type MsgIn<'a>;
     type MsgOut;
     type MsgSize: Copy;
 
+    fn shared_mark_closed(&mut self) -> bool;
 
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize;
     fn log_perodic(&mut self) -> bool;
@@ -52,6 +51,17 @@ impl<T> TxCore for Tx<T> {
     type MsgOut = T;
     type MsgSize = usize;
 
+
+    fn shared_mark_closed(&mut self) -> bool {
+        if let Some(c) = self.make_closed.take() {
+            let result = c.send(());
+            if result.is_err() {
+                //not a serious issue, may happen with bundles
+                trace!("close called but the receiver already dropped");
+            }
+        }
+        true // always returns true, close request is never rejected by this method.
+    }
 
     fn one(&self) -> Self::MsgSize {
         1
@@ -257,6 +267,24 @@ impl TxCore for StreamTx<StreamSessionMessage> {
     type MsgIn<'a> = (StreamSessionMessage, &'a[u8]);
     type MsgOut = StreamSessionMessage;
     type MsgSize = (usize, usize);
+
+    fn shared_mark_closed(&mut self) -> bool {
+        if let Some(c) = self.item_channel.make_closed.take() {
+            let result = c.send(());
+            if result.is_err() {
+                //not a serious issue, may happen with bundles
+                trace!("close called but the receiver already dropped");
+            }
+        }
+        if let Some(c) = self.payload_channel.make_closed.take() {
+            let result = c.send(());
+            if result.is_err() {
+                //not a serious issue, may happen with bundles
+                trace!("close called but the receiver already dropped");
+            }
+        }
+        true // always returns true, close request is never rejected by this method.
+    }
 
     fn one(&self) -> Self::MsgSize {
         (1,self.payload_channel.capacity()/self.item_channel.capacity())
@@ -577,6 +605,23 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
     type MsgOut = StreamSimpleMessage;
     type MsgSize = (usize, usize);
 
+    fn shared_mark_closed(&mut self) -> bool {
+        if let Some(c) = self.item_channel.make_closed.take() {
+            let result = c.send(());
+            if result.is_err() {
+                //not a serious issue, may happen with bundles
+                trace!("close called but the receiver already dropped");
+            }
+        }
+        if let Some(c) = self.payload_channel.make_closed.take() {
+            let result = c.send(());
+            if result.is_err() {
+                //not a serious issue, may happen with bundles
+                trace!("close called but the receiver already dropped");
+            }
+        }
+        true // always returns true, close request is never rejected by this method.
+    }
 
     fn one(&self) -> Self::MsgSize {
         (1,self.payload_channel.capacity()/self.item_channel.capacity())      
@@ -891,6 +936,7 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgOut = <T as TxCore>::MsgOut;
     type MsgSize =  <T as TxCore>::MsgSize;
 
+    fn shared_mark_closed(&mut self) -> bool {<T as TxCore>::shared_mark_closed(&mut **self)}
 
     fn one(&self) -> Self::MsgSize {
         <T as TxCore>::one(& **self)

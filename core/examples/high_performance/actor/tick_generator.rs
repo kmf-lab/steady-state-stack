@@ -6,10 +6,7 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 
-
-
 use std::error::Error;
-use steady_state::commander::SendOutcome;
 
 #[derive(Default, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tick {
@@ -26,27 +23,9 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
 pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                                               ,tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let mut ctrl = context.into_monitor([], tx.meta_data());
-    let mut tx = tx.lock().await;
-    //external_behavior(Simulate::Echo(ctrl, &mut tx[0])).await //need new enum for this
-    
-    
-    if let Some(responder) = ctrl.sidechannel_responder() {
-
-    
-        while ctrl.is_running(&mut || tx.mark_closed() ) {
-            let _responder = responder.respond_with(|message| {
-                let msg: Tick = *message.downcast::<Tick>().expect("error casting");
-                match ctrl.try_send(&mut tx[0], msg) {
-                    SendOutcome::Success => {Box::new("ok".to_string())}
-                    SendOutcome::Blocked(msg) => {Box::new(msg)}
-                }
-            }).await;
-        }
-    }
-    Ok(())
+    let ctrl = context.into_monitor([], tx.meta_data());
+    ctrl.simulated_behavior([&TestEcho(tx[0].clone())]).await
 }
-
 
 const BUFFER_SIZE:usize = 2000;
 

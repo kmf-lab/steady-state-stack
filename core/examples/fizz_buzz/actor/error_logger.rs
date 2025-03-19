@@ -19,7 +19,7 @@ pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ErrorMessage>
 ) -> Result<(),Box<dyn Error>> {
     context.into_monitor([&rx], [])
-        .simulated_behavior([&EqualsBehavior(rx)]).await
+        .simulated_behavior([&TestEquals(rx)]).await
 }
 
 async fn internal_behavior<C:SteadyCommander>(mut cmd: C

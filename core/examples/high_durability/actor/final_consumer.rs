@@ -19,38 +19,9 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
 #[cfg(test)]
 pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
                                                     ,rx: SteadyRxBundle<TickCount, TICK_COUNTS_RX_GIRTH>) -> Result<(),Box<dyn Error>> {
-    let mut monitor = context.into_monitor(rx.meta_data(),[]);
-    let mut rx = rx.lock().await;
-
-    if let Some(simulator) = monitor.sidechannel_responder() {
-        while monitor.is_running(&mut || rx.is_closed_and_empty()) {
-
-            let _clean = await_for_all!(monitor.wait_avail(&mut rx[0],1));
-            simulator.respond_with(|expected| {
-                match monitor.try_take(&mut rx[0]) {
-                    Some(measured) => {
-                        let expected: &TickCount = expected.downcast_ref::<TickCount>().expect("error casting");
-
-                        if expected.cmp(&measured).is_eq() {
-                            Box::new("ok".to_string())
-                        } else {
-                            let failure = format!("no match {:?} {:?}"
-                                                  , expected
-                                                  , measured).to_string();
-                            error!("failure: {}", failure);
-                            Box::new(failure)
-                        }
-
-                    },
-                    None => Box::new("no data".to_string()),
-                }
-
-            }).await;
-        }
-
-    }
-
-    Ok(())
+    let monitor = context.into_monitor(rx.meta_data(),[]);
+    monitor.simulated_behavior([&TestEquals(rx[0].clone())]).await
+             
 }
 
 

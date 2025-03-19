@@ -3,13 +3,14 @@ use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::Arc;
 use futures_util::future::join_all;
-use futures_util::lock::Mutex;
-use crate::{steady_rx, steady_tx, yield_now, SteadyCommander, SteadyTx, SteadyTxBundle};
+use futures_util::lock::{Mutex};
+use crate::{yield_now, Rx, SteadyCommander, Tx};
+use crate::core_tx::TxCore;
 use crate::graph_testing::SideChannelResponder;
-use crate::SteadyRx;
 
-pub type SimRunner<'a, C> = Box<
-    dyn Fn(Arc<Mutex<C>>, SideChannelResponder) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> + Send + 'a
+
+pub type SimRunner<C> = Box<
+    dyn Fn(Arc<Mutex<C>>, SideChannelResponder) -> Pin<Box<dyn Future<Output = ()> >>
 >;
 
 
@@ -18,99 +19,112 @@ pub trait IntoSimRunner<C: SteadyCommander + 'static> {
 }
 
 
-impl<T, C> IntoSimRunner<C> for EqualsBehavior<T>
+impl<T, C> IntoSimRunner<C> for TestEquals<T>
 where
-    T: 'static + Debug + Send + Sync + Clone + Eq,
-    C: SteadyCommander + 'static + Send,
+    T: 'static + Debug + Send + Sync + SimulateRx,
+    C: SteadyCommander + 'static,
 {
     fn into_sim_runner(&self) -> SimRunner<C> {
+
+         let this= <TestEquals<T> as Clone>::clone(self);
+         Box::new( move |cmd_mutex, responder| {
+             Box::pin(
+                 <TestEquals<T> as Clone>::clone(&this).run_it(cmd_mutex, responder)
+             )
+         })
+    }
+}
+
+impl<T, C> IntoSimRunner<C> for TestEcho<T>
+where
+    T: 'static + Debug + Send + Sync + SimulateTx,
+    C: SteadyCommander + 'static ,
+{
+    fn into_sim_runner(&self) -> SimRunner<C> {
+        let this = <TestEcho<T> as Clone>::clone(&self);
         Box::new(move |cmd_mutex, responder| {
             Box::pin(
-                self.clone().run_it(cmd_mutex, responder)
+                <TestEcho<T> as Clone>::clone(&this).run_it(cmd_mutex, responder)
             )
         })
     }
 }
 
-impl<T, C> IntoSimRunner<C> for EchoBehavior<T>
-where
-    T: 'static + Debug + Send + Sync + Clone,
-    C: SteadyCommander + 'static + Send,
-{
-    fn into_sim_runner(&self) -> SimRunner<C> {
-        Box::new(move |cmd_mutex, responder| {
-            Box::pin(
-                self.clone().run_it(cmd_mutex, responder)
-            )
-        })
-    }
+pub trait SimulateTx {
+    async fn simulate_echo<C: SteadyCommander>( &mut self
+                                         , cmd_mutex: Arc<Mutex<C>>
+                                         , responder: SideChannelResponder) ;
+}
+pub trait SimulateRx {
+    async fn simulate_equals<C: SteadyCommander>( &mut self
+                                                , cmd_mutex: Arc<Mutex<C>>
+                                                , responder: SideChannelResponder) ;
 }
 
 
-// -----------------------------------------------------------------------------
-// 2) EchoBehavior: does NOT require T: Eq
-//    - simple tuple struct: EchoBehavior(tx)
-// -----------------------------------------------------------------------------
-#[derive(Clone)]
-pub struct EchoBehavior<T>(pub SteadyTx<T>);
-pub struct EchoBehaviorBundle<T, const GIRTH: usize>(pub SteadyTxBundle<T, GIRTH>);
+impl<T: Send + Sync + Clone + 'static> SimulateTx for Tx<T>
+ {
+    async fn simulate_echo<C: SteadyCommander>(&mut self
+                         , cmd_mutex: Arc<Mutex<C>>
+                         , responder: SideChannelResponder) {
 
-
-impl<T> EchoBehavior<T>
-where
-    T: 'static + Debug + Send + Sync,
+         while cmd_mutex.lock().await.is_running(&mut || self.shared_mark_closed()) {
+             responder.simulate_echo(self, &cmd_mutex).await;
+             yield_now::yield_now().await;
+         }
+    }
+}
+impl<T: Send + Sync + Debug + Clone + Eq + 'static> SimulateRx for Rx<T>
 {
-    async fn run_it<C: SteadyCommander>(
-        self,
-        cmd_mutex: Arc<Mutex<C>>,
-        responder: SideChannelResponder,
-    ) {
-        let mut tx_guard = self.0.lock().await;
-        while cmd_mutex.lock().await.is_running(&mut || tx_guard.mark_closed()) {
-            responder
-                .simulate_echo::<T, _, C>(&mut tx_guard, &cmd_mutex)
-                .await;
+    async fn simulate_equals<C: SteadyCommander>(&mut self
+                                               , cmd_mutex: Arc<Mutex<C>>
+                                               , responder: SideChannelResponder) {
+
+        while cmd_mutex.lock().await.is_running(&mut || self.is_closed_and_empty()) {
+            responder.simulate_equals(self, &cmd_mutex).await;
             yield_now::yield_now().await;
         }
     }
 }
-
-
 // -----------------------------------------------------------------------------
-// 3) EqualsBehavior: DOES require T: Eq
-//    - simple tuple struct: EqualsBehavior(rx)
-// -----------------------------------------------------------------------------
-#[derive(Clone)]
-pub struct EqualsBehavior<T>(pub SteadyRx<T>);
 
-impl<T> EqualsBehavior<T>
-where
-    T: 'static + Debug + Send + Sync + Eq,
+pub struct TestEcho<T: SimulateTx >(pub Arc<Mutex<T>>);
+impl<T: SimulateTx> TestEcho<T>
 {
-    async fn run_it<C: SteadyCommander>(
-        self,
-        cmd_mutex: Arc<Mutex<C>>,
-        responder: SideChannelResponder,
+    async fn run_it<C: SteadyCommander>( self, cmd_mutex: Arc<Mutex<C>>, responder: SideChannelResponder,
     ) {
-        let mut rx_guard = self.0.lock().await;
-        while cmd_mutex.lock().await.is_running(&mut || rx_guard.is_closed_and_empty()) {
-            responder
-                .simulate_equals::<T, _, C>(&mut rx_guard, &cmd_mutex)
-                .await;
-            yield_now::yield_now().await;
-        }
+        self.0.lock().await.simulate_echo(cmd_mutex,responder).await;
+    }
+}
+impl<T: SimulateTx> Clone for TestEcho<T> {
+    fn clone(&self) -> Self {
+        TestEcho(self.0.clone())
+    }
+}
+
+pub struct TestEquals<T: SimulateRx >(pub Arc<Mutex<T>>);
+impl<T: SimulateRx> TestEquals<T>
+{
+    async fn run_it<C: SteadyCommander>( self, cmd_mutex: Arc<Mutex<C>>, responder: SideChannelResponder,
+    ) {
+        self.0.lock().await.simulate_equals(cmd_mutex,responder).await;
+    }
+}
+impl<T: SimulateRx> Clone for TestEquals<T> {
+    fn clone(&self) -> Self {
+        TestEquals(self.0.clone())
     }
 }
 
 
 
 pub(crate) async fn simulated_behavior< C: SteadyCommander + 'static, const LEN: usize,>(
-    mut cmd: C, sims: [&dyn IntoSimRunner<C>; LEN],
+    cmd: C, sims: [&dyn IntoSimRunner<C>; LEN],
 ) -> Result<(), Box<dyn Error>> {
     if let Some(responder) = cmd.sidechannel_responder() {
         let cmd_mutex = Arc::new(Mutex::new(cmd));
-        let mut tasks: Vec<Pin<Box<dyn Future<Output = ()> + Send >>> = Vec::new();
-        for behave in sims {
+        let mut tasks: Vec<Pin<Box<dyn Future<Output = ()>  >>> = Vec::new();
+        for behave in sims.into_iter() {
             let cmd_mutex = cmd_mutex.clone();
             let sim = behave.into_sim_runner();
             let task = sim(cmd_mutex, responder.clone());

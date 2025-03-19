@@ -21,7 +21,6 @@ pub struct Args {
 
 #[cfg(test)]
 mod arg_tests {
-    use log::trace;
     use super::*;
 
     #[test]

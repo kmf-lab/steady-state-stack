@@ -1,13 +1,11 @@
 mod args;
 
-use std::any::Any;
 #[allow(unused_imports)]
 use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
 use steady_state::actor_builder::{ActorTeam, Threading};
-use clap::*;
 
 mod actor {
         pub mod console_printer;

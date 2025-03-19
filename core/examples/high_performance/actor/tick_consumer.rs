@@ -14,7 +14,6 @@ pub struct TickCount {
 }
 
 
-
 pub async fn run(context: SteadyContext
         ,ticks_rx: SteadyRx<Tick>
         ,tick_counts_tx: SteadyTx<TickCount>) -> Result<(),Box<dyn Error>> {

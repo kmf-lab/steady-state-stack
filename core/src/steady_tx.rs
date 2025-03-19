@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use log::{error, trace, warn};
+use log::{error, warn};
 use futures_util::{FutureExt};
 use std::any::type_name;
 use std::backtrace::Backtrace;
@@ -52,14 +52,7 @@ impl<T> Tx<T> {
     /// # Returns
     /// `true` if the channel was successfully marked as closed, otherwise `false`.
     pub fn mark_closed(&mut self) -> bool {
-        if let Some(c) = self.make_closed.take() {
-            let result = c.send(());
-            if result.is_err() {
-                //not a serious issue, may happen with bundles
-                trace!("close called but the receiver already dropped");
-            }
-        } 
-        true // always returns true, close request is never rejected by this method.        
+        self.shared_mark_closed()
     }
 
     /// Returns the total capacity of the channel.

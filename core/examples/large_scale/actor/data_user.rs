@@ -12,6 +12,13 @@ pub async fn run(context: SteadyContext
     internal_behavior(context.into_monitor([&rx], []), rx).await
 }
 
+#[cfg(test)]
+pub async fn run(context: SteadyContext
+                 , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
+    let monitor = context.into_monitor( [&rx], []);
+    monitor.simulated_behavior([&TestEquals(rx)]).await
+}
+
 #[cfg(not(test))]
 async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>) -> Result<(), Box<dyn Error>> {
     
@@ -32,55 +39,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>)
             //    info!("hello");
             //    panic!("go");
             // }
-        }
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
-
-    let mut monitor = context.into_monitor( [&rx], []);
-
-    if let Some(mut reponder) = monitor.sidechannel_responder() {
-
-        //guards for the channels, NOTE: we could share one channel across actors.
-        let mut rx = rx.lock().await;
-        while monitor.is_running(&mut || rx.is_closed_and_empty()) {
-
-            let clean = await_for_all!(
-                  reponder.wait_available_units(1),
-                  monitor.wait_avail(&mut rx, 1)
-            );
-
-            if clean  {
-               // info!("user respond");
-                reponder.respond_with(|expected| {
-                    match monitor.try_take(&mut rx) {
-                        Some(measured) => {
-
-                            let expected: &Packet = expected.downcast_ref::<Packet>().expect("error casting");
-                            //do not check the route id since it could be any random one of the users and is expected to not match
-                            if expected.data.eq(&measured.data) {
-                                Box::new("ok".to_string())
-                            } else {
-                                let failure = format!("no match {:?} {:?}"
-                                                      , expected
-                                                      , measured).to_string();
-                                error!("failure: {}", failure);
-                                Box::new(failure)
-                            }
-
-                        },
-                        None => Box::new("no data, should await until rx has data before response ".to_string()),
-                    }
-                }).await;
-               //TODO: add this feature  return Ok(()); //TODO: if we leave early do we get a vote on shutdown??  BUG to fix..
-            }
-
-            monitor.relay_stats_smartly();
-
         }
     }
     Ok(())

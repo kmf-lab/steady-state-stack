@@ -3,7 +3,6 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::commander::SendOutcome;
 
 use crate::actor::data_feedback::ChangeRequest;
 

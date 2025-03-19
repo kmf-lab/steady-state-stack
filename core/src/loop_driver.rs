@@ -2,7 +2,6 @@ use std::pin::{Pin};
 use futures::future::Future;
 use futures::future::FutureExt;
 use futures::select;
-use futures::StreamExt;
 use futures::pin_mut;
 
 /// This macro waits for all the provided futures to complete.

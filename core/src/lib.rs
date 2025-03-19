@@ -86,8 +86,8 @@ mod stream_iterator;
 
 pub use clap::*;
 pub use commander::SendOutcome;
-pub use simulate_edge::EchoBehavior;
-pub use simulate_edge::EqualsBehavior;
+pub use simulate_edge::TestEcho;
+pub use simulate_edge::TestEquals;
 pub use simulate_edge::IntoSimRunner;
 pub use simulate_edge::SimRunner;
 pub use commander_context::*;

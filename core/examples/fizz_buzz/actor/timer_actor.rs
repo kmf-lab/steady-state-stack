@@ -20,7 +20,7 @@ pub async fn run(context: SteadyContext, print_signal_tx: SteadyTx<PrintSignal>)
 #[cfg(test)]
 pub async fn run(context: SteadyContext, tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
     context.into_monitor([],[&tx])
-       .simulated_behavior([&EchoBehavior(tx)]).await
+       .simulated_behavior([&TestEcho(tx)]).await
 }
 
 async fn internal_behavior<C:SteadyCommander>(mut cmd: C

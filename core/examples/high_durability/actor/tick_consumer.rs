@@ -14,7 +14,6 @@ pub struct TickCount {
    pub count: u128
 }
 
-const WAIT_AVAIL: usize = 250;
 
 pub async fn run(context: SteadyContext
         ,ticks_rx: SteadyRx<Tick>
@@ -61,9 +60,10 @@ pub(crate) mod hd_actor_tests {
     #[allow(unused_imports)]
     use log::*;
     use steady_state::*;
-    use crate::actor::tick_consumer::{internal_behavior, WAIT_AVAIL};
+    use crate::actor::tick_consumer::{internal_behavior};
     use crate::actor::tick_generator::Tick;
 
+    const WAIT_AVAIL: usize = 250;
     #[test]
     pub(crate) async fn test_simple_process() {
         //build test graph, the input and output channels and our actor

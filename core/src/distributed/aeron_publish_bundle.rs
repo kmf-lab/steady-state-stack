@@ -10,7 +10,6 @@ use crate::distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamR
 use crate::{SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
-use crate::monitor::RxMetaDataHolder;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 // TODO: what if we have to aeron clients talking to the same media driver? seems bad?
@@ -22,6 +21,7 @@ pub struct AeronPublishSteadyState {
     pub(crate) items_taken: usize,
 }
 
+
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
                                      , aeron_connect: Channel
@@ -30,6 +30,17 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
     internal_behavior(context.into_monitor( rx.control_meta_data(), []), rx, aeron_connect, stream_id, aeron, state).await
 }
+
+// #[cfg(test)]
+// pub async fn run<const GIRTH:usize,>(context: SteadyContext
+//                                      , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
+//                                      , aeron_connect: Channel
+//                                      , stream_id: i32
+//                                      , aeron:Arc<futures_util::lock::Mutex<Aeron>>
+//                                      , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
+//     context.into_monitor( rx.control_meta_data(), [])
+//         .simulated_behavior([&TestEquals(rx)]).await    
+// }
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                                  , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
@@ -209,7 +220,6 @@ pub(crate) mod aeron_tests {
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::distributed_builder::AqueductBuilder;
     use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
-    use crate::monitor::TxMetaDataHolder;
     use crate::distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
 
     //NOTE: bump this up for longer running load tests

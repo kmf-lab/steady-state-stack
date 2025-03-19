@@ -25,6 +25,7 @@ pub struct AeronSubscribeSteadyState {
 // Specifically, the maximum message size is calculated as the
 // lesser of 16 MB or one-eighth of the term buffer length.
 
+
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
                                      , aeron_connect: Channel
@@ -33,6 +34,21 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
     internal_behavior(context.into_monitor([], tx.control_meta_data()), tx, aeron_connect, stream_id, aeron, state).await
 }
+
+// 
+// pub async fn run<const GIRTH:usize,>(context: SteadyContext
+//                                      , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
+//                                      , aeron_connect: Channel
+//                                      , stream_id: i32
+//                                      , aeron:Arc<futures_util::lock::Mutex<Aeron>>
+//                                      , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
+// 
+//     //TODO: need a new special function for this.
+//     context.into_monitor([], tx.control_meta_data())
+//            .simulated_behavior([&TestEcho(tx)]).await
+//         
+// }
+
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                                  , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>

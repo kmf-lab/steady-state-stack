@@ -16,7 +16,7 @@ pub async fn run(context: SteadyContext, numbers_tx: SteadyTx<NumberMessage>) ->
 #[cfg(test)]
 pub async fn run(context: SteadyContext, tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
     context.into_monitor( [],[&tx])
-        .simulated_behavior([&EchoBehavior(tx)]).await
+        .simulated_behavior([&TestEcho(tx)]).await
 }
 
 const BATCH_SIZE: usize = 4000;
