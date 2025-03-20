@@ -216,7 +216,7 @@ pub trait StreamItem: Copy + Send + Sync {
 /// A stream fragment, typically for incoming multi-part messages.
 ///
 /// `StreamFragment` includes metadata about the session and arrival time.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StreamSessionMessage {
     pub length: i32,
     pub session_id: IdType,
@@ -266,7 +266,7 @@ impl StreamItem for StreamSessionMessage {
 }
 
 /// A simple stream message, typically for outgoing single-part messages.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StreamSimpleMessage {
     pub(crate) length: i32,
 }
@@ -344,6 +344,7 @@ impl TxMetaDataProvider for TxChannelMetaDataWrapper {
 
 /// A transmitter for a steady stream. Holds two channels:
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
+#[derive(Debug)]
 pub struct StreamTx<T: StreamItem> {
     pub(crate) item_channel: Tx<T>,
     pub(crate) payload_channel: Tx<u8>,
@@ -498,6 +499,7 @@ impl<T: StreamItem> StreamTx<T> {
 
 /// A receiver for a steady stream. Holds two channels:
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
+#[derive(Debug)]
 pub struct StreamRx<T: StreamItem> {
     pub(crate) item_channel: Rx<T>,
     pub(crate) payload_channel: Rx<u8>
