@@ -15,6 +15,7 @@ use ringbuf::producer::Producer;
 use ringbuf::storage::Heap;
 use ringbuf::traits::{Observer, Split};
 use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 use std::time::Instant;
 use crate::core_rx::RxCore;
@@ -344,13 +345,23 @@ impl TxMetaDataProvider for TxChannelMetaDataWrapper {
 
 /// A transmitter for a steady stream. Holds two channels:
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
-#[derive(Debug)]
 pub struct StreamTx<T: StreamItem> {
     pub(crate) item_channel: Tx<T>,
     pub(crate) payload_channel: Tx<u8>,
     defrag: AHashMap<i32, Defrag<T>>,
     pub(crate) ready: VecDeque<i32>
 }
+impl<T: StreamItem> Debug for StreamTx<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StreamTx")
+            .field("item_channel", &"Tx<T>")
+            .field("payload_channel", &"Tx<u8>")
+            .field("defrag_keys", &self.defrag.keys().collect::<Vec<_>>())
+            .field("ready", &self.ready)
+            .finish()
+    }
+}
+
 
 pub struct Defrag<T: StreamItem> {
     pub(crate) arrival: Option<Instant>,

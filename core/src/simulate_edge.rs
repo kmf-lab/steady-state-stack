@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use futures_util::future::join_all;
 use futures_util::lock::{Mutex};
-use crate::{yield_now, Rx, SteadyCommander, StreamRx, StreamTx, Tx};
+use crate::{yield_now, Rx, SteadyCommander, StreamRx, StreamSessionMessage, StreamSimpleMessage, StreamTx, Tx};
 use crate::core_tx::TxCore;
 use crate::graph_testing::SideChannelResponder;
 
@@ -72,7 +72,17 @@ impl<T: Send + Sync + Clone + 'static> SimulateTx for Tx<T> {
          }
     }
 }
-impl<T: Send + Sync + Clone + 'static> SimulateTx for StreamTx<T> {
+impl SimulateTx for StreamTx<StreamSimpleMessage> {
+    async fn simulate_echo<C: SteadyCommander>(&mut self
+                                               , cmd_mutex: Arc<Mutex<C>>
+                                               , responder: SideChannelResponder) {
+        while cmd_mutex.lock().await.is_running(&mut || self.shared_mark_closed()) {
+            responder.simulate_echo(self, &cmd_mutex).await;
+            yield_now::yield_now().await;
+        }
+    }
+}
+impl SimulateTx for StreamTx<StreamSessionMessage> {
     async fn simulate_echo<C: SteadyCommander>(&mut self
                                                , cmd_mutex: Arc<Mutex<C>>
                                                , responder: SideChannelResponder) {
@@ -95,7 +105,7 @@ impl<T: Send + Sync + Debug + Clone + Eq + 'static> SimulateRx for Rx<T> {
         }
     }
 }
-impl<T: Send + Sync + Debug + Clone + Eq + 'static> SimulateRx for StreamRx<T> {
+impl SimulateRx for StreamRx<StreamSimpleMessage> {
     async fn simulate_equals<C: SteadyCommander>(&mut self
                                                  , cmd_mutex: Arc<Mutex<C>>
                                                  , responder: SideChannelResponder) {
@@ -105,7 +115,16 @@ impl<T: Send + Sync + Debug + Clone + Eq + 'static> SimulateRx for StreamRx<T> {
         }
     }
 }
-
+impl SimulateRx for StreamRx<StreamSessionMessage> {
+    async fn simulate_equals<C: SteadyCommander>(&mut self
+                                                 , cmd_mutex: Arc<Mutex<C>>
+                                                 , responder: SideChannelResponder) {
+        while cmd_mutex.lock().await.is_running(&mut || self.is_closed_and_empty()) {
+            responder.simulate_equals(self, &cmd_mutex).await;
+            yield_now::yield_now().await;
+        }
+    }
+}
 // -----------------------------------------------------------------------------
 
 pub struct TestEcho<T: SimulateTx >(pub Arc<Mutex<T>>);
@@ -154,3 +173,11 @@ pub(crate) async fn simulated_behavior< C: SteadyCommander + 'static>(
     }
     Ok(())
 }
+
+
+
+struct SimRunnerCollection<T: 'static> {
+    storage: Vec<Box<dyn IntoSimRunner<T>>>, // Owns different test types
+    references: Vec<&'static mut dyn IntoSimRunner<T>>, // References for usage
+}
+
