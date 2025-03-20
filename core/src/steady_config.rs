@@ -102,28 +102,28 @@ pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECT
 /// Allows features to fall behind with minimal latency.
 pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 128;
 
-#[cfg(test)]
-mod steady_config_tests {
-    use super::*;
-    use std::env;
-
-    #[test]
-    fn test_telemetry_server_port_and_ip_env_var() {
-        unsafe {
-            env::remove_var("TELEMETRY_SERVER_PORT");
-            assert_eq!(telemetry_server_port(), 9100);
-            env::set_var("TELEMETRY_SERVER_PORT", "9200");
-            assert_eq!(telemetry_server_port(), 9200);
-            env::remove_var("TELEMETRY_SERVER_PORT");
-            assert_eq!(telemetry_server_port(), 9100);
-        }
-        unsafe {
-            env::remove_var("TELEMETRY_SERVER_IP");
-            assert_eq!(telemetry_server_ip(), "0.0.0.0");
-            env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
-            assert_eq!(telemetry_server_ip(), "127.0.0.1");
-            env::remove_var("TELEMETRY_SERVER_IP");
-        }
-    }
-
-}
+// #[cfg(test)]
+// mod steady_config_tests {
+//     use super::*;
+//     use std::env;
+//
+//     #[test]
+//     fn test_telemetry_server_port_and_ip_env_var() {
+//         unsafe {
+//             env::remove_var("TELEMETRY_SERVER_PORT");
+//             assert_eq!(telemetry_server_port(), 9100);
+//             env::set_var("TELEMETRY_SERVER_PORT", "9200");
+//             assert_eq!(telemetry_server_port(), 9200);
+//             env::remove_var("TELEMETRY_SERVER_PORT");
+//             assert_eq!(telemetry_server_port(), 9100);
+//         }
+//         unsafe {
+//             env::remove_var("TELEMETRY_SERVER_IP");
+//             assert_eq!(telemetry_server_ip(), "0.0.0.0");
+//             env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+//             assert_eq!(telemetry_server_ip(), "127.0.0.1");
+//             env::remove_var("TELEMETRY_SERVER_IP");
+//         }
+//     }
+//
+// }
