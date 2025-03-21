@@ -5,7 +5,7 @@
 //! `aeron_subscribe`.
 
 use crate::core_tx::TxCore;
-use crate::{channel_builder::ChannelBuilder, monitor::{RxMetaData, TxMetaData}, Rx, SteadyCommander, Tx};
+use crate::{abstract_executor, channel_builder::ChannelBuilder, monitor::{RxMetaData, TxMetaData}, Rx, SteadyCommander, Tx};
 use ahash::AHashMap;
 use async_ringbuf::wrap::AsyncWrap;
 use async_ringbuf::AsyncRb;
@@ -775,7 +775,7 @@ impl<T: StreamItem> LazyStreamTx<T> {
     /// This blocks the current task if the lock is contended.
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyStreamTx<T> {
-        nuclei::block_on(self.lazy_channel.get_tx_clone())
+        abstract_executor::block_on(self.lazy_channel.get_tx_clone())
     }
 
     /// Sends a frame (payload) and then pushes a metadata fragment (length) to the control channel.
@@ -840,7 +840,7 @@ impl<T: StreamItem> LazyStreamRx<T> {
     /// This blocks the current task if the lock is contended.
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyStreamRx<T> {
-        nuclei::block_on(self.lazy_channel.get_rx_clone())
+        abstract_executor::block_on(self.lazy_channel.get_rx_clone())
     }
 
     /// Takes a frame of data from the payload channel, after reading a fragment from the control channel.

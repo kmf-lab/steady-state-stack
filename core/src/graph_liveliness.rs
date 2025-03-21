@@ -22,7 +22,6 @@ use futures::channel::oneshot;
 use futures::channel::oneshot::Sender;
 
 use futures_util::lock::{MutexGuard, MutexLockFuture};
-use nuclei::config::IoUringConfiguration;
 use aeron::aeron::Aeron;
 use aeron::context::Context;
 use crate::actor_builder::ActorBuilder;
@@ -669,8 +668,8 @@ impl Graph {
                         }
 
                         // Apply filtering
-                        let is_user_code = fn_name.contains("steady_state") || fn_name.contains("nuclei::proactor::") ||
-                            location.contains("steady_state") || location.contains("nuclei::proactor::");
+                        let is_user_code = fn_name.contains("steady_state") || fn_name.contains("i::proactor::") ||
+                            location.contains("steady_state") || location.contains("i::proactor::");
                         let is_panic_related = fn_name.contains("::panicking::") || fn_name.contains("begin_unwind");
                         let is_excluded = fn_name.contains("graph_liveliness::<impl steady_state::Graph>::enable_fail_fast");
                         let is_launch_actor = fn_name.contains("steady_state::actor_builder::launch_actor");
@@ -830,14 +829,7 @@ impl Graph {
         };
 
 
-        //setup our threading and IO driver
-        let nuclei_config = match proactor_config {
-            ProactorConfig::InterruptDriven => IoUringConfiguration::interrupt_driven(builder.iouring_queue_length),
-            ProactorConfig::KernelPollDriven => IoUringConfiguration::kernel_poll_only(builder.iouring_queue_length),
-            ProactorConfig::LowLatencyDriven => IoUringConfiguration::low_latency_driven(builder.iouring_queue_length),
-            ProactorConfig::IoPoll => IoUringConfiguration::io_poll(builder.iouring_queue_length),
-        };
-        abstract_executor::init(builder.enable_io_driver, nuclei_config);
+        abstract_executor::init(builder.enable_io_driver, proactor_config, builder.iouring_queue_length);
 
         let channel_count = Arc::new(AtomicUsize::new(0));
         let actor_count = Arc::new(AtomicUsize::new(0));

@@ -7,11 +7,10 @@ use futures_util::lock::{MutexGuard};
 use ringbuf::traits::Observer;
 use futures_util::future::FusedFuture;
 use async_ringbuf::producer::AsyncProducer;
-use nuclei::block_on;
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
-use crate::{steady_config, ActorIdentity, SendSaturation, StreamSessionMessage, StreamSimpleMessage, Tx, MONITOR_NOT};
+use crate::{abstract_executor, steady_config, ActorIdentity, SendSaturation, StreamSessionMessage, StreamSimpleMessage, Tx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 
 pub trait TxCore {
@@ -313,7 +312,7 @@ impl TxCore for StreamTx<StreamSessionMessage> {
             assert_eq!(item.length(),payload.len() as i32);
             if payload.len() > self.payload_channel.tx.vacant_len() {
                 warn!("the payload of the stream should be larger we need {} but found {}",payload.len(),self.payload_channel.tx.vacant_len());
-                block_on(self.payload_channel.tx.wait_vacant(payload.len()));
+                abstract_executor::block_on(self.payload_channel.tx.wait_vacant(payload.len()));
             }
             let _ = self.payload_channel.tx.push_slice(payload);
             let _ = self.item_channel.tx.try_push(item);
@@ -650,7 +649,7 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
         for payload in limited_iter {
             if payload.len() > self.payload_channel.tx.vacant_len() {
                 warn!("the payload of the stream should be larger we need {} but found {}",payload.len(),self.payload_channel.tx.vacant_len());
-                block_on(self.payload_channel.tx.wait_vacant(payload.len()));
+                abstract_executor::block_on(self.payload_channel.tx.wait_vacant(payload.len()));
             }
             let _ = self.payload_channel.tx.push_slice(payload);
             let _ = self.item_channel.tx.try_push(StreamSimpleMessage{ length: payload.len() as i32 });

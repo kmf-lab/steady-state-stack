@@ -4,9 +4,7 @@ use flexi_logger::{Logger, LogSpecBuilder, WriteMode, LoggerHandle};
 
 use log::*;
 
-// new Proactive IO
-#[allow(unused_imports)]
-use nuclei::*;
+
 #[allow(unused_imports)]
 use futures::io::SeekFrom;
 #[allow(unused_imports)]

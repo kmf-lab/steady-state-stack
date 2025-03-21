@@ -754,7 +754,7 @@ impl <T> LazySteadyTx<T> {
     /// This allows for channels to be created more near to their actors.
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyTx<T> {
-        nuclei::block_on(self.lazy_channel.get_tx_clone())
+        abstract_executor::block_on(self.lazy_channel.get_tx_clone())
     }
 
 
@@ -800,7 +800,7 @@ impl <T> LazySteadyRx<T> {
     /// Returns a clone of the SteadyRx which is the same one used going forward
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyRx<T> {
-        nuclei::block_on(self.lazy_channel.get_rx_clone())
+        abstract_executor::block_on(self.lazy_channel.get_rx_clone())
     }
 
     /// For testing simulates taking data from the actor in a controlled manner.

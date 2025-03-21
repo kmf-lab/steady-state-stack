@@ -275,7 +275,7 @@ impl ActorTeam {
 
                             // If actor_result was Ok(...), that actor finished successfully,
                             // so remove it from the vector. If none left, break:
-                            drop(nuclei::block_on(leftover_futures.remove(index)));
+                            drop(abstract_executor::block_on(leftover_futures.remove(index)));
                             // this actor is done and must not be part of the shutdown vote anymore
                             exit_actor_registration(&self.future_builder[index].fun);
                             if leftover_futures.is_empty() {
@@ -301,16 +301,16 @@ impl ActorTeam {
             }
         };
         let thread_lock = self.thread_lock;
-        nuclei::block_on(async move {
+        abstract_executor::block_on(async move {
            let _guard = thread_lock.lock().await;
-           match nuclei::spawn_more_threads(1).await {
+           match abstract_executor::spawn_more_threads(1).await {
                Ok(c) => {if c>=12 {info!("Threads: {}",c);} }
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
            }
-           nuclei::spawn( super_task ).detach();
+           abstract_executor::spawn( super_task ).detach();
         });
         //only continue after startup has finished
-        let _ = nuclei::block_on(local_take);
+        let _ = abstract_executor::block_on(local_take);
         count.load(Ordering::SeqCst)
     }
 
@@ -324,7 +324,7 @@ impl ActorTeam {
 
 /// WARNING: do not rename this function without change of backtrace printing since we use this as a "stop" to shorten traces.
 pub fn launch_actor<F: Future<Output = T>, T>(future: F) -> T {
-    nuclei::block_on(future)
+    abstract_executor::block_on(future)
 }
 
 pub(crate) type NodeTxRx = Mutex<(SideChannel,Receiver<()>)>;
@@ -633,16 +633,16 @@ impl ActorBuilder {
         let context_archetype = self.single_actor_exec_archetype(build_actor_exec);
 
         
-        nuclei::block_on(async move {
+        abstract_executor::block_on(async move {
            let _guard = thread_lock.lock().await;
-           match nuclei::spawn_more_threads(1).await {
+           match abstract_executor::spawn_more_threads(1).await {
                Ok(c) => {if c>=12 {info!("Threads: {}",c);} }
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
            }
             let fun:NonSendWrapper<DynCall> =  build_actor_registration(&context_archetype);
             let master_ctx:SteadyContext = build_actor_context(&context_archetype, rate_ms, default_core);
 
-            nuclei::spawn(async move {
+            abstract_executor::spawn(async move {
                 // Determine the core to use based on the provided options
                 let default = if let Some(exp) = explicit_core {exp} else {default_core};
                 let core = if let Some(mut balancer) = core_balancer {

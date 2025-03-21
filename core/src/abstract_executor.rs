@@ -5,7 +5,7 @@
 //! utilities for initialization, spawning detached tasks, and blocking on futures.
 
 use std::future::Future;
-use std::thread;
+use std::{io, thread};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -16,6 +16,23 @@ use nuclei::config::{IoUringConfiguration, NucleiConfig};
 #[allow(unused_imports)]
 use log::*;
 use parking_lot::Once;
+use crate::ProactorConfig;
+
+use nuclei::Task;
+
+pub fn spawn_local<F: Future<Output = T> + 'static, T: 'static>(f: F) -> Task<T> {
+    nuclei::spawn_local(f)
+}
+pub fn spawn_blocking<F: FnOnce() -> T + Send + 'static, T: Send + 'static>(f: F) -> Task<T> {
+    nuclei::spawn_blocking(f)
+}
+pub fn spawn<F: Future<Output = T> + Send + 'static, T: Send + 'static>(future: F) -> Task<T> {
+    nuclei::spawn(future)
+}
+pub async fn spawn_more_threads(count: usize) -> io::Result<usize> {
+    nuclei::spawn_more_threads(count).await
+}
+
 
 lazy_static! {
     static ref INIT: Once = Once::new();
@@ -70,7 +87,15 @@ impl Future for InfiniteSleep {
 /// * `enable_driver` - A boolean indicating whether to start the IOUring driver.
 /// * `nuclei_config` - The configuration for IOUring.
 ///
-pub(crate) fn init(enable_driver: bool, nuclei_config: IoUringConfiguration) {
+pub(crate) fn init(enable_driver: bool, proactor_config: ProactorConfig, queue_length: u32) {
+    //setup our threading and IO driver
+    let nuclei_config = match proactor_config {
+        ProactorConfig::InterruptDriven => IoUringConfiguration::interrupt_driven(queue_length),
+        ProactorConfig::KernelPollDriven => IoUringConfiguration::kernel_poll_only(queue_length),
+        ProactorConfig::LowLatencyDriven => IoUringConfiguration::low_latency_driven(queue_length),
+        ProactorConfig::IoPoll => IoUringConfiguration::io_poll(queue_length),
+    };
+
     INIT.call_once(|| {
     //TODO: none of this works, we must submit an issue and example..
         // //set the enviornment variable t0 127
@@ -121,11 +146,7 @@ pub(crate) fn init(enable_driver: bool, nuclei_config: IoUringConfiguration) {
 ///
 /// The result of the future.
 ///
-pub(crate) fn block_on<F, T>(future: F) -> T
-    where
-        F: Future<Output = T> + 'static,
-        T: Send,
-{
+pub fn block_on<F: Future<Output = T>, T>(future: F) -> T {
     nuclei::block_on(future) // Block until the future is resolved
 }
 
@@ -165,11 +186,10 @@ mod tests {
 
     #[test]
     fn test_init_without_driver() {
-        // Define a sample IoUringConfiguration
-        let config = IoUringConfiguration::default();
+        let config = ProactorConfig::InterruptDriven;
 
         // Initialize the executor without the IOUring driver
-        init(false, config);
+        init(false, config, 256);
 
         // Ensure the INIT Once is initialized
         //assert!(INIT.is_completed());
@@ -177,11 +197,10 @@ mod tests {
 
     #[test]
     fn test_init_with_driver() {
-        // Define a sample IoUringConfiguration
-        let config = IoUringConfiguration::default();
+        let config = ProactorConfig::InterruptDriven;
 
         // Initialize the executor with the IOUring driver
-        init(true, config);
+        init(true, config,256);
 
         // Wait for a moment to let the driver start
         thread::sleep(Duration::from_millis(100));

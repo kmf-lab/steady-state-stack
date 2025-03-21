@@ -6,6 +6,7 @@ use log::*;
 use num_traits::Zero;
 use std::fmt::Write;
 use std::fs::{create_dir_all, File, OpenOptions};
+use std::io::Error;
 use std::path::PathBuf;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -13,12 +14,11 @@ use std::sync::Arc;
 use std::time::Instant;
 use bytes::{BufMut, BytesMut};
 use futures::{AsyncWriteExt};
-use nuclei::{self, Handle};
 use time::macros::format_description;
 use time::OffsetDateTime;
 
 use crate::actor_stats::ActorStatsComputer;
-use crate::{ActorName};
+use crate::{abstract_executor, ActorName};
 use crate::channel_stats::{ChannelStatsComputer};
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
@@ -593,7 +593,7 @@ impl FrameHistory {
 
                 // Let the file write happen in the background so we can get back to data updates
                 // This is not a new thread so it is lightweight
-                nuclei::spawn_local(async move {
+                abstract_executor::spawn_local(async move {
                     if let Err(e) = Self::append_to_file(path, to_be_written, flush_all).await {
                         error!("Error writing to file: {}", e);
                         error!("Due to the above error some history has been lost");
@@ -653,47 +653,21 @@ impl FrameHistory {
             .create(true)
             .truncate(true)
             .open(&path)?;
-
-        let h = Handle::<File>::new(file)?;
-        Self::all_to_file_async(h, data).await
+        Self::async_write_all(data, false, file).await
     }
-
-    /// Writes all provided data to the file asynchronously.
-    ///
-    /// # Arguments
-    ///
-    /// * `h` - The file handle.
-    /// * `data` - The data to write.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` indicating success or failure.
-    async fn all_to_file_async(mut h: Handle<File>, data: BytesMut) -> Result<(), std::io::Error> {
-        h.write_all(data.as_ref()).await?;
-        Ok(())
-    }
-
-    /// Appends the provided data to the file at the given path asynchronously.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The file path.
-    /// * `data` - The data to write.
-    /// * `flush` - A boolean indicating if the file should be flushed.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` indicating success or failure.
     async fn append_to_file(path: PathBuf, data: BytesMut, flush: bool) -> Result<(), std::io::Error> {
         let file = OpenOptions::new()
             .append(true)
             .create(true)
             .open(&path)?;
+        Self::async_write_all(data, flush, file).await
+    }
 
-        let mut h = Handle::<File>::new(file)?;
+    pub(crate) async fn async_write_all(data: BytesMut, flush: bool, file: File) -> Result<(), Error> {
+        let mut h = nuclei::Handle::<File>::new(file)?;
         h.write_all(data.as_ref()).await?;
         if flush {
-            Handle::<File>::flush(&mut h).await?;
+            nuclei::Handle::<File>::flush(&mut h).await?;
         }
         Ok(())
     }
@@ -706,7 +680,6 @@ mod dot_tests {
     use std::sync::Arc;
     use bytes::BytesMut;
     use std::path::PathBuf;
-    use nuclei::block_on;
 
     #[test]
     fn test_node_compute_and_refresh() {
@@ -911,13 +884,14 @@ mod dot_tests {
         let mut frame_history = FrameHistory::new(1000);
         frame_history.mark_position();
 
-        block_on(frame_history.update(true));
+        abstract_executor::block_on(frame_history.update(true));
 
         assert_eq!(frame_history.history_buffer.len(), 0);
     }
 
     #[test]
     fn test_frame_history_all_to_file_async() {
+
         let data = BytesMut::from("test data");
         let path = PathBuf::from("test_all_to_file.dat");
         let file = OpenOptions::new()
@@ -925,19 +899,13 @@ mod dot_tests {
             .create(true)
             .open(&path)
             .expect("Failed to open file");
-        let handle = nuclei::Handle::new(file).expect("Failed to create handle");
-        let _ = nuclei::drive(FrameHistory::all_to_file_async(handle, data.clone()));
+
+        let _ = nuclei::drive(FrameHistory::async_write_all(data, true, file));
+
         let result = std::fs::read_to_string(path).expect("Failed to read written file");
         assert_eq!(result, "test data");
     }
 
-    // #[test]
-    // fn test_frame_history_append_to_file() {
-    //     let data = BytesMut::from("test data");
-    //     let path = PathBuf::from("test_append_file.dat");
-    //     nuclei::drive(FrameHistory::append_to_file(path.clone(), data.clone(), true));
-    //     let result = std::fs::read_to_string(path).expect("Failed to read appended file");
-    //     assert_eq!(result, "test data");
-    // }
+
 }
 
