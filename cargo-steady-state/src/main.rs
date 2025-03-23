@@ -404,6 +404,7 @@ mod tests {
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
     use std::str::FromStr;
+    use colored::Colorize;
     use flexi_logger::{Logger, LogSpecBuilder};
     use log::{error, info, trace, LevelFilter};
     use crate::process_dot_file;
@@ -474,30 +475,84 @@ mod tests {
                     fs::write(&dot_file, graph_dot).expect("Failed to write dot file");
                     process_dot_file(&dot_file, test_name);
                     fs::remove_file(&dot_file).expect("Failed to remove dot file");
-    
+
+                println!("____________________________________________________________-----------------------------------------------------------");
+                    do_cargo_cache_install(test_name);
+                println!("============================================================-----------------------------------------------------------");
                     do_cargo_build_of_generated_code(test_name);
+                println!("////////////////////////////////////////////////////////////-----------------------------------------------------------");
                     do_cargo_test_of_generated_code(test_name);
                 
             }
         }
 }
 
-fn do_cargo_build_of_generated_code(test_name: &str) {
+fn do_cargo_cache_install(test_name: &str) {
     let build_me = PathBuf::from(test_name);
     let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
-        ////
-        let mut output_child = Command::new("cargo")
-            .arg("build")
-            .arg("--manifest-path")
-            .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
-            .current_dir(build_me_absolute.clone())
-            .stdout(Stdio::inherit()) // This line ensures that stdout from the command is printed directly to the terminal
-            .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal
-            .spawn()
-            .expect("failed to execute process");
-        let output = output_child.wait().expect("failed to wait on child");
 
-        assert!(output.success());
+    // Check if sccache is already installed and executable
+    let sccache_check = Command::new("sccache")
+        .arg("--version")
+        .stdout(Stdio::null()) // Suppress stdout for the version check
+        .stderr(Stdio::null()) // Suppress stderr for the version check
+        .status();
+
+    match sccache_check {
+        Ok(status) if status.success() => {
+            // sccache is already installed and returned a successful version check
+            println!("sccache is already installed, skipping installation.");
+        }
+        _ => {
+            // sccache is not installed or failed the version check, proceed with installation
+            println!("sccache not found or not working, installing...");
+            let mut output_child = Command::new("cargo")
+                .arg("install")
+                .arg("sccache")
+                .current_dir(build_me_absolute.clone())
+                .stdout(Stdio::inherit()) // Print stdout directly to terminal
+                .stderr(Stdio::inherit()) // Print stderr directly to terminal
+                .spawn()
+                .expect("failed to execute process");
+
+            let output = output_child.wait().expect("failed to wait on child");
+            assert!(output.success(), "Failed to install sccache");
+        }
+    }
+}
+    fn do_cargo_build_of_generated_code(test_name: &str) {
+        // Construct the absolute path to the directory containing Cargo.toml
+        let build_me = PathBuf::from(test_name);
+        let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
+
+        // Execute the cargo build command and capture its output
+        let output = Command::new("cargo")
+            .arg("build")
+            .arg("--verbose") // Keep verbose output for detailed build information
+            .arg("--manifest-path")
+            .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Path to Cargo.toml
+            .current_dir(build_me_absolute.clone()) // Set the working directory
+            .env("RUSTC_WRAPPER", "sccache") // Use sccache for compiler caching
+            .stdout(Stdio::piped()) // Capture stdout instead of inheriting it
+            .stderr(Stdio::piped()) // Capture stderr instead of inheriting it
+            .spawn()
+            .expect("failed to execute process")
+            .wait_with_output()
+            .expect("failed to wait on child");
+
+        // Check if the build failed and print the output if so
+        if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("{}", format!("Build failed for {}:", test_name).red());
+            println!("{}", "----- Standard Output -----".magenta());
+            println!("{}", stdout);
+            eprintln!("{}", "----- Standard Error -----".magenta());
+            eprintln!("{}", stderr);
+            panic!("Build failed for {}", test_name); // Panic after printing output
+        } else {
+            println!("Build succeeded for {}", test_name);
+        }
     }
     
     fn do_cargo_test_of_generated_code(test_name: &str) {
@@ -508,6 +563,7 @@ fn do_cargo_build_of_generated_code(test_name: &str) {
             .arg("test")
             .arg("--manifest-path")
             .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Ensure this path points to your generated Cargo.toml
+            .env("RUSTC_WRAPPER","sccache")
             .current_dir(build_me_absolute.clone())
             .stdout(Stdio::inherit()) // This line ensures that stdout from the command is printed directly to the terminal
             .stderr(Stdio::inherit()) // This line ensures that stderr is also printed directly to the terminal

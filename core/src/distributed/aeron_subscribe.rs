@@ -64,9 +64,9 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         Delay::new(Duration::from_millis(4)).await; //back off so our request can get ready
 
     // now lookup when the subscriptions are ready
-        let mut my_sub = Err("");
+        let mut _my_sub = Err("");
             if let Some(id) = state.sub_reg_id {
-                my_sub = loop {
+                _my_sub = loop {
                     let sub = {
                                 let mut aeron = aeron.lock().await; //caution other actors need this so do jit
                                 warn!("holding find_subscription({}) lock",id);
@@ -118,7 +118,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
             let _clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
 
                 let mut found_data = false;
-                        match &mut my_sub {
+                        match &mut _my_sub {
                             Ok(sub) => {
                                 if tx.ready.is_empty() {
                                     let mut no_count = 0;
@@ -231,10 +231,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                                     // Take ownership of the inner Mutex
                                                     match mutex.into_inner() {
                                                         Ok(subscription) => {
-                                                            // Successfully extracted the ExclusivePublication
-                                                            //warn!("unwrap");
-                                                           //0 subs[i] = Ok(subscription);
-                                                            break;
+                                                           // ?? sub[0] = subscription;
                                                         }
                                                         Err(_) => panic!("Failed to unwrap Mutex"),
                                                     }

@@ -18,7 +18,7 @@ use crate::commander_context::SteadyContext;
 #[derive(Default)]
 pub struct AeronPublishSteadyState {
     pub(crate) pub_reg_id: Vec<Option<i64>>,
-    pub(crate) items_taken: usize,
+    pub(crate) _items_taken: usize,
 }
 
 #[cfg(not(test))]

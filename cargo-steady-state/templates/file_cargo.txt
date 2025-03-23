@@ -2,14 +2,9 @@
 name = "{{ name }}"
 version = "0.0.1"
 edition = "2024"
-
 [workspace]
-
 [dependencies]
 steady_state     = { path = "../../../core", features = ["proactor_nuclei", "prometheus_metrics"], default-features = false }
-
-# for local testing
-# steady_state     = { path = "../../../steady-state-stack/core", features = ["proactor_nuclei", "prometheus_metrics"], default-features = true }
 
 #steady_state     = "0.1.3"
 clap             = { version = "4.5.31", features = ["derive"] }  # Use clap with derive feature
@@ -20,4 +15,3 @@ futures          = "0.3.31"
 [dev-dependencies]
 async-std        = {  version = "1.12.0", features = ["attributes"] }
 futures-timer    = "3.0.3"
-

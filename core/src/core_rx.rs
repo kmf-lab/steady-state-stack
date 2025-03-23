@@ -18,7 +18,7 @@ pub trait RxCore {
     type MsgPeek<'a> where Self: 'a;
     type MsgSize: Copy;
 
-    
+    #[allow(async_fn_in_trait)]
     async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'_>>;
 
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>);

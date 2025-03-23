@@ -51,11 +51,15 @@ where
 }
 
 pub trait SimulateTx {
+
+    #[allow(async_fn_in_trait)]
     async fn simulate_echo<C: SteadyCommander>( &mut self
                                          , cmd_mutex: Arc<Mutex<C>>
                                          , responder: SideChannelResponder) ;
 }
 pub trait SimulateRx {
+
+    #[allow(async_fn_in_trait)]
     async fn simulate_equals<C: SteadyCommander>( &mut self
                                                 , cmd_mutex: Arc<Mutex<C>>
                                                 , responder: SideChannelResponder) ;

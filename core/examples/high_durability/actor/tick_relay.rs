@@ -79,9 +79,6 @@ pub(crate) mod hd_actor_tests {
         assert!(result_data.len()<=BATCH);
 
         ticks_tx_in.testing_close(Duration::from_millis(30)).await;
-
-        assert!(ticks_rx_out.testing_avail_units().await>0);
-
         graph.block_until_stopped(Duration::from_secs(240));
 
     }

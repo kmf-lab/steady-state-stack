@@ -6,19 +6,35 @@
 
 use std::future::Future;
 use std::{io, thread};
+use std::fs::File;
+use std::io::Error;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::thread::sleep;
 use std::time::Duration;
+use bytes::BytesMut;
 use lazy_static::lazy_static;
 use nuclei::config::{IoUringConfiguration, NucleiConfig};
 #[allow(unused_imports)]
 use log::*;
 use parking_lot::Once;
-use crate::ProactorConfig;
-
+use crate::{abstract_executor, ProactorConfig};
+use futures::{AsyncWriteExt};
 use nuclei::Task;
+
+
+pub(crate) async fn async_write_all(data: BytesMut, flush: bool, file: File) -> Result<(), Error> {
+    let mut h = nuclei::Handle::<File>::new(file)?;
+    h.write_all(data.as_ref()).await?;
+    if flush {
+        nuclei::Handle::<File>::flush(&mut h).await?;
+    }
+    Ok(())
+}
+pub(crate) fn test_write_all(data: BytesMut, file: File) {
+    let _ = nuclei::drive(abstract_executor::async_write_all(data, true, file));
+}
 
 pub fn spawn_local<F: Future<Output = T> + 'static, T: 'static>(f: F) -> Task<T> {
     nuclei::spawn_local(f)

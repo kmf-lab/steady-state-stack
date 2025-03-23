@@ -12,6 +12,12 @@
 cargo update
 rustup default stable
 
+if sccache --version; then
+  echo "USING sccache ---------------------------------------"
+  export RUSTC_WRAPPER=sccache
+fi
+
+
 # Check for unwanted crates in a single cargo tree call to save time
 unwanted_crates="tokio smol actix rocket warp"
 cargo_tree_output=$(cargo tree)
@@ -26,12 +32,29 @@ done
 
 # Run tests with optimized threads
 # Adjust RUST_TEST_THREADS based on your system's core count for optimal performance (e.g., number of physical cores)
-RUST_BACKTRACE=full RUST_LOG=debug RUST_TEST_THREADS=4 cargo test --workspace --tests -- --nocapture --show-output | tee cargo_test.txt
+#RUST_BACKTRACE=full RUST_LOG=debug RUST_TEST_THREADS=4 cargo test --workspace --tests -- --nocapture --show-output | tee cargo_test.txt
+#exit_code=$?
+#if [ $exit_code -ne 0 ]; then
+#    echo "Tests failed with exit code $exit_code"
+#    exit $exit_code
+#fi
+# Ensure cargo-nextest is installed
+if ! command -v cargo-nextest &> /dev/null; then
+    echo "cargo-nextest not found, installing..."
+    cargo install cargo-nextest
+fi
+
+# Run tests with cargo-nextest, optimizing threads automatically
+# RUST_TEST_THREADS is not needed as nextest manages parallelism itself
+# Use --test-threads to manually override if desired (e.g., --test-threads=4)
+RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --no-capture | tee cargo_test.txt
 exit_code=$?
+
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
     exit $exit_code
 fi
+
 
 # Build the workspace in offline mode, skipping tests and examples if not needed
 # If tests and examples are required for release, add --tests --examples back
@@ -67,6 +90,7 @@ tree -I 'target'
 
 # Run cargo outdated and audit
 # Consider running these periodically rather than before every release to save time
+cargo install cargo-outdated
 echo "cargo outdated"
 cargo outdated | tee cargo_outdated.txt
 
@@ -99,7 +123,6 @@ echo "If this is confirmed by successful GitHub build !!, you may now run: cargo
 # export RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 #[target.x86_64-unknown-linux-gnu]
 #linker = "mold"
-
 
 # cargo install cargo-nextest
 # cargo nextest run

@@ -1,8 +1,8 @@
 use std::pin::{Pin};
 use futures::future::Future;
-use futures::future::FutureExt;
-use futures::select;
-use futures::pin_mut;
+//use futures::future::FutureExt;
+//use futures::select;
+//use futures::pin_mut;
 
 /// This macro waits for all the provided futures to complete.
 /// It returns a boolean indicating if all futures returned true.
@@ -79,32 +79,32 @@ macro_rules! await_for_all_or_proceed_upon {
 }
 
 
-pub async fn wait_for_all_or_proceed_upon<F>(first_future: F, rest_futures: &mut [F]) -> bool
-where
-    F: Future<Output = bool> + Unpin,
-{
-    // Fuse and pin the first future
-    let first = first_future.fuse();
-    pin_mut!(first);
-
-    // Create and fuse the combined future for the rest
-    let rest = async {
-        let mut flag = true;
-        for fut in rest_futures.iter_mut() {
-            let next = fut.fuse();  // Fuse<&mut F>
-            pin_mut!(next);
-            flag &= next.await;
-        }
-        flag
-    }.fuse();
-    pin_mut!(rest);
-
-    // Race the first future against the combined rest
-    select! {
-        b = first => b,
-        b = rest => b,
-    }
-}
+// pub async fn wait_for_all_or_proceed_upon<F>(first_future: F, rest_futures: &mut [F]) -> bool
+// where
+//     F: Future<Output = bool> + Unpin,
+// {
+//     // Fuse and pin the first future
+//     let first = first_future.fuse();
+//     pin_mut!(first);
+//
+//     // Create and fuse the combined future for the rest
+//     let rest = async {
+//         let mut flag = true;
+//         for fut in rest_futures.iter_mut() {
+//             let next = fut.fuse();  // Fuse<&mut F>
+//             pin_mut!(next);
+//             flag &= next.await;
+//         }
+//         flag
+//     }.fuse();
+//     pin_mut!(rest);
+//
+//     // Race the first future against the combined rest
+//     select! {
+//         b = first => b,
+//         b = rest => b,
+//     }
+// }
 
 /// This macro waits for any of the provided futures to complete.
 /// It returns a boolean indicating if any one of the futures returned true.

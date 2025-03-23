@@ -5,15 +5,13 @@
 use log::*;
 use num_traits::Zero;
 use std::fmt::Write;
-use std::fs::{create_dir_all, File, OpenOptions};
-use std::io::Error;
+use std::fs::{create_dir_all, OpenOptions};
 use std::path::PathBuf;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use bytes::{BufMut, BytesMut};
-use futures::{AsyncWriteExt};
 use time::macros::format_description;
 use time::OffsetDateTime;
 
@@ -653,24 +651,16 @@ impl FrameHistory {
             .create(true)
             .truncate(true)
             .open(&path)?;
-        Self::async_write_all(data, false, file).await
+        abstract_executor::async_write_all(data, false, file).await
     }
     async fn append_to_file(path: PathBuf, data: BytesMut, flush: bool) -> Result<(), std::io::Error> {
         let file = OpenOptions::new()
             .append(true)
             .create(true)
             .open(&path)?;
-        Self::async_write_all(data, flush, file).await
+        abstract_executor::async_write_all(data, flush, file).await
     }
 
-    pub(crate) async fn async_write_all(data: BytesMut, flush: bool, file: File) -> Result<(), Error> {
-        let mut h = nuclei::Handle::<File>::new(file)?;
-        h.write_all(data.as_ref()).await?;
-        if flush {
-            nuclei::Handle::<File>::flush(&mut h).await?;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -900,12 +890,11 @@ mod dot_tests {
             .open(&path)
             .expect("Failed to open file");
 
-        let _ = nuclei::drive(FrameHistory::async_write_all(data, true, file));
+        abstract_executor::test_write_all(data, file);
 
         let result = std::fs::read_to_string(path).expect("Failed to read written file");
         assert_eq!(result, "test data");
     }
-
 
 }
 

@@ -58,9 +58,9 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         Delay::new(Duration::from_millis(2)).await; //back off so our request can get ready
 
         // now lookup when the publications are ready
-        let mut my_pub = Err("");
+        let mut _my_pub = Err("");
                 if let Some(id) = state.pub_reg_id {
-                    my_pub = loop {
+                    _my_pub = loop {
                         let ex_pub = {
                             let mut aeron = aeron.lock().await; //other actors need this so jit
                             //trace!("holding find_exclusive_publication({}) lock",id);
@@ -139,7 +139,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                        //provide every message and slice until false is returned at that point
                         //we release everything consumed up to this point and return or if no data
                         //upon return release
-                    match &mut my_pub {
+                    match &mut _my_pub {
                         Ok(p) => {
 
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
@@ -186,7 +186,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod aeron_tests {
-    use std::env;
+    use std::{env, fs};
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
@@ -340,11 +340,19 @@ pub(crate) mod aeron_tests {
         Ok(())
     }
 
+    fn is_wsl() -> bool {
+        if let Ok(version) = fs::read_to_string("/proc/version") {
+            version.contains("Microsoft") || version.contains("WSL")
+        } else {
+            false // If the file can't be read, assume not WSL
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
     #[async_std::test]
-   // #[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
     async fn test_bytes_process() {
-       if std::env::var("GITHUB_ACTIONS").is_ok() {
-           return;
+       if is_wsl() || std::env::var("GITHUB_ACTIONS").is_ok() {
+           return; //skip this test if we are in windows wsl or github actions
        }
 
         unsafe {

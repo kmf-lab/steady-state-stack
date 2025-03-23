@@ -40,6 +40,7 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Re
                             , steady_config::telemetry_server_ip()
                             , steady_config::telemetry_server_port()));
 
+    //TODO: anti pattern move this into our behavior method!!
     let opt_tcp:Arc<Option<nuclei::Handle<TcpListener>>> = if let Some(ref addr) = addr {
         match nuclei::Handle::<TcpListener>::bind(addr) {
             Ok(h) => Arc::new(Some(h)),

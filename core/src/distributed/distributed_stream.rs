@@ -421,10 +421,7 @@ impl<T: StreamItem> StreamTx<T> {
     }
 
         pub(crate) fn fragment_flush_ready<C: SteadyCommander>(&mut self, cmd: &mut C) {
-            let mut count_down = self.ready.len();
-            //warn!("fragment_flush_ready for ready {:?} ", self.ready);
             while let Some(session_id) = self.ready.pop_front() {
-            count_down -= 1;
             if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
                 if let Some(x) = cmd.flush_defrag_messages(  &mut self.item_channel
                                                            , &mut self.payload_channel
