@@ -29,10 +29,13 @@ pub async fn run(context: SteadyContext
                  , stream_id: i32
                  , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                  , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
-    internal_behavior(context.into_monitor([], [&tx])
-                      , tx, aeron_connect, stream_id, aeron, state).await
+    let cmd = context.into_monitor([], [&tx]);
+    if cfg!(not(test)) {
+        internal_behavior(cmd, tx, aeron_connect, stream_id, aeron, state).await
+    } else {
+        cmd.simulated_behavior(vec!(&TestEcho(tx))).await
+    }
 }
-
 async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                  , tx: SteadyStreamTx<StreamSessionMessage>
                  , aeron_channel: Channel
