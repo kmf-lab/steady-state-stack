@@ -616,8 +616,6 @@ mod http_telemetry_tests {
         // Step 1: Set up a minimal graph
         let mut graph = GraphBuilder::for_testing()
             .with_telemtry_production_rate_ms(500)
-            // turn off because I am creating the sever here for testing
-            .with_telemetry_metric_features(false)
             .build(());
 
         // Step 2: Start the metrics_server actor        

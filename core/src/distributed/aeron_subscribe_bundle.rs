@@ -328,9 +328,7 @@ pub(crate) mod aeron_media_driver_tests {
         unsafe {
             env::set_var("TELEMETRY_SERVER_PORT", "9301");
         }
-        let mut graph = GraphBuilder::for_testing()
-            .with_telemetry_metric_features(false)
-            .build(());
+        let mut graph = GraphBuilder::for_testing().build(());
 
         if graph.aeron_md().is_none() {
             info!("aeron test skipped, no media driver present");

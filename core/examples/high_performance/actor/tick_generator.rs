@@ -61,9 +61,7 @@ pub(crate) mod actor_tests {
 
     #[async_std::test]
     pub(crate) async fn test_simple_process() {
-        let mut graph = GraphBuilder::for_testing()
-                        .with_telemetry_metric_features(false)
-                        .build(());
+        let mut graph = GraphBuilder::for_testing().build(());
 
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
             .with_capacity(BUFFER_SIZE)

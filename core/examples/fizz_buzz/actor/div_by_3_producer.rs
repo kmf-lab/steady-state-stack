@@ -68,9 +68,7 @@ pub(crate) mod tests {
 
     #[async_std::test]
     async fn test_simple_process() {
-       let mut graph = GraphBuilder::for_testing()
-           .with_telemetry_metric_features(false)
-           .build(());
+       let mut graph = GraphBuilder::for_testing().build(());
 
        let (numbers_tx, test_numbers_rx) = graph.channel_builder()
                    .with_capacity(50000)
