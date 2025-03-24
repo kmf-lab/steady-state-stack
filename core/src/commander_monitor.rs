@@ -80,7 +80,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     #[allow(async_fn_in_trait)]
-    async fn simulated_behavior< const LEN: usize >(self, sims: Vec<&dyn IntoSimRunner<Self>>
+    pub async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>> {
         simulate_edge::simulated_behavior::<Self>(self,sims).await
     }
@@ -136,17 +136,16 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         true
     }
 
-    //TODO: check usage and add to the SteadyState
-    pub(crate) fn dynamic_event_count(&mut self
-                                      , local_index: usize //this.local_index
-                                      , id: usize //this.channel_meta_data.id
-                                      , count: isize) -> usize {
-        if let Some(ref mut tel) = self.telemetry.send_rx {
-            tel.process_event(local_index, id, count)
-        } else {
-            MONITOR_NOT
-        }
-    }
+    // pub(crate) fn dynamic_event_count(&mut self
+    //                                   , local_index: usize //this.local_index
+    //                                   , id: usize //this.channel_meta_data.id
+    //                                   , count: isize) -> usize {
+    //     if let Some(ref mut tel) = self.telemetry.send_rx {
+    //         tel.process_event(local_index, id, count)
+    //     } else {
+    //         MONITOR_NOT
+    //     }
+    // }
 
 }
 

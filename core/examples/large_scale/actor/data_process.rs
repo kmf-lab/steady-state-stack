@@ -12,33 +12,30 @@ use crate::actor::data_generator::Packet;
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>
                  , tx: SteadyTx<Packet>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, rx, tx).await
+    let cmd = context.into_monitor([&rx], [&tx]);
+
+    internal_behavior(cmd, rx, tx).await
 }
 
-async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Packet>, tx: SteadyTx<Packet>) -> Result<(), Box<dyn Error>> {
-    //info!("running {:?} {:?}",context.id(),context.name());
-
-    let mut monitor = context.into_monitor([&rx], [&tx]);
+async fn internal_behavior<C:SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>, tx: SteadyTx<Packet>) -> Result<(), Box<dyn Error>> {
 
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
     let count = rx.capacity().min(tx.capacity()) / 2;
-
-
-    while monitor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
+    while cmd.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
         let _clean = await_for_all_or_proceed_upon!(
-             monitor.wait_periodic(Duration::from_millis(20))
-            ,monitor.wait_avail(&mut rx,count)
-            ,monitor.wait_vacant(&mut tx,count)
+             cmd.wait_periodic(Duration::from_millis(20))
+            ,cmd.wait_avail(&mut rx,count)
+            ,cmd.wait_vacant(&mut tx,count)
         );
 
-        let count = monitor.avail_units(&mut rx).min(monitor.vacant_units(&mut tx));
+        let count = cmd.avail_units(&mut rx).min(cmd.vacant_units(&mut tx));
         if count > 0 {
             for _ in 0..count {
-                if let Some(packet) = monitor.try_take(&mut rx) {
-                    match monitor.try_send(&mut tx, packet) {
+                if let Some(packet) = cmd.try_take(&mut rx) {
+                    match cmd.try_send(&mut tx, packet) {
                         SendOutcome::Success => {}
                         SendOutcome::Blocked(packet) => {error!("Error sending packet: {:?}",packet); break;}
                     }

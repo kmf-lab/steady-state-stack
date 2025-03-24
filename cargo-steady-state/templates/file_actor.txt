@@ -25,7 +25,6 @@ pub(crate) struct {{ display_name|capitalize }}InternalState {
 {% endif %}{% endfor %}
 }
 
-{% if is_on_graph_edge %}#[cfg(not(test))]{% endif %}
 pub async fn run{%- if has_bundles -%}<{% endif -%}
     {%- for channel in rx_channels -%}
         {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_RX_GIRTH:usize,{% endif -%}
@@ -51,43 +50,22 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
   let cmd =  context.into_monitor([{%- for def in rx_monitor_defs -%}
                         &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
                         &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
-  internal_behavior(cmd {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx{%- endfor -%}, state).await
+  {% if is_on_graph_edge %}
+  if cfg!(not(test)) { {% endif %}
+     internal_behavior(cmd {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx{%- endfor -%}, state).await
+  {% if is_on_graph_edge %}
+  } else {
+     cmd.simulated_behavior(vec!(
+           {%- for channel in tx_channels -%}
+                 &TestEcho({{channel[0].name}}_tx){%- if loop.last %}{% else -%},{%- endif %}
+             {%- endfor -%}
+             {%- if !rx_channels.is_empty() && !tx_channels.is_empty() -%},{%- endif %}
+             {%- for channel in rx_channels -%}
+                 &TestEquals({{channel[0].name}}_rx){%- if loop.last %}{% else -%},{%- endif %}
+             {%- endfor -%}
+               )).await
+  } {% endif %}
 }
-
-{% if is_on_graph_edge %}
-#[cfg(test)]
-pub async fn run{%- if has_bundles -%}<{% endif -%}
-    {%- for channel in rx_channels -%}
-        {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_RX_GIRTH:usize,{% endif -%}
-    {%- endfor -%}
-    {%- for channel in tx_channels -%}
-        {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_TX_GIRTH:usize,{% endif -%}
-    {%- endfor -%}
-  {%- if has_bundles -%}>{% endif -%}
-
-  (context: SteadyContext
-    {%- for channel in rx_channels %}
-        ,{{channel[0].name}}_rx: {% if channel.len()>1 %}SteadyRxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_RX_GIRTH>
-                                  {%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
-    {%- for channel in tx_channels %}
-        ,{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_TX_GIRTH>
-                                  {%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
-    , state: SteadyState<{{ display_name|capitalize }}InternalState>
-    ) -> Result<(),Box<dyn Error>> {
-    context.into_monitor([{% for def in rx_monitor_defs -%}
-                            &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
-                            &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}])
-      .simulated_behavior(vec!(
-   {%- for channel in tx_channels -%}
-         &TestEcho({{channel[0].name}}_tx){%- if loop.last %}{% else -%},{%- endif %}
-     {%- endfor -%}
-     {%- if !rx_channels.is_empty() && !tx_channels.is_empty() -%},{%- endif %}
-     {%- for channel in rx_channels -%}
-         &TestEquals({{channel[0].name}}_rx){%- if loop.last %}{% else -%},{%- endif %}
-     {%- endfor -%}
-       )).await
-
-}{% endif %}
 
 async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
     {%- for channel in rx_channels -%}

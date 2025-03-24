@@ -14,27 +14,20 @@ pub struct Packet {
 }
 
 
-#[cfg(not(test))]
 pub async fn run<const GIRTH:usize>(context: SteadyContext
                                                   , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, tx).await
+    let cmd = context.into_monitor([], tx.meta_data());
+    if cfg!(not(test)) {
+        internal_behavior(cmd, tx).await
+    } else {
+        let test_echos:Vec<_> = tx.iter().map(|f| TestEcho((*f).clone())).collect();
+        let sims: Vec<&dyn IntoSimRunner<_>> = test_echos.iter().map(|te| te as &dyn IntoSimRunner<_>).collect();
+        cmd.simulated_behavior(sims).await
+    }
 }
 
-#[cfg(test)]
-pub async fn run<const GIRTH:usize>(context: SteadyContext
-                                    , tx: SteadyTxBundle<Packet,GIRTH>) -> Result<(),Box<dyn Error>> {
-
-    let mut control = context.into_monitor([], tx.meta_data());
-    let test_echos:Vec<_> = tx.iter().map(|f| TestEcho((*f).clone())).collect();
-    let sims: Vec<&dyn IntoSimRunner<_>> = test_echos.iter().map(|te| te as &dyn IntoSimRunner<_>).collect();
-    control.simulated_behavior(sims).await
-
-}
-
-async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
+async fn internal_behavior<const GIRTH:usize,C:SteadyCommander>(mut cmd: C
                                     , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
-
-    let mut monitor = context.into_monitor([],tx.meta_data());
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
 
@@ -44,11 +37,11 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
     let capacity = tx[0].capacity();
     let limit:usize = capacity/2;
 
-    while monitor.is_running(&mut || tx.mark_closed()) {
+    while cmd.is_running(&mut || tx.mark_closed()) {
 
         let _clean = await_for_all!(
-            monitor.wait_periodic(Duration::from_millis(500)),
-            monitor.wait_vacant_bundle(&mut tx, limit, GIRTH)
+            cmd.wait_periodic(Duration::from_millis(500)),
+            cmd.wait_vacant_bundle(&mut tx, limit, GIRTH)
         );
 
 
@@ -69,9 +62,9 @@ async fn internal_behavior<const GIRTH:usize>(context: SteadyContext
         for i in 0..GIRTH {
             let replace = mem::replace(&mut buffers[i], Vec::with_capacity(limit * 2));
             let iter = replace.into_iter();
-            monitor.send_iter_until_full(&mut tx[i], iter);
+            cmd.send_iter_until_full(&mut tx[i], iter);
         }
-        monitor.relay_stats_smartly();
+        cmd.relay_stats_smartly();
 
     }
     Ok(())

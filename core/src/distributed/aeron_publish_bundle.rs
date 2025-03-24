@@ -21,32 +21,25 @@ pub struct AeronPublishSteadyState {
     pub(crate) _items_taken: usize,
 }
 
-#[cfg(not(test))]
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
                                      , aeron_connect: Channel
                                      , stream_id: i32
                                      , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                                      , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
-    internal_behavior(context.into_monitor( rx.control_meta_data(), []), rx, aeron_connect, stream_id, aeron, state).await
+    let cmd = context.into_monitor( rx.control_meta_data(), []);
+    if cfg!(not(test)) {
+        internal_behavior(cmd, rx, aeron_connect, stream_id, aeron, state).await
+    } else {
+        let te:Vec<_> = rx.iter()
+            .map(|f| TestEquals(f.clone()) ).collect();
+        let sims:Vec<_> = te.iter()
+            .map(|f| f as &dyn IntoSimRunner<_>).collect();
+        cmd.simulated_behavior(sims).await
+    }
 }
 
-#[cfg(test)]
-pub async fn run<const GIRTH:usize,>(context: SteadyContext
-                                     , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
-                                     , _aeron_connect: Channel
-                                     , _stream_id: i32
-                                     , _aeron:Arc<futures_util::lock::Mutex<Aeron>>
-                                     , _state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
 
-    let te:Vec<_> = rx.iter()
-           .map(|f| TestEquals(f.clone()) ).collect();
-    let sims:Vec<_> = te.iter()
-           .map(|f| f as &dyn IntoSimRunner<_>).collect();
-
-    context.into_monitor( rx.control_meta_data(), [])
-        .simulated_behavior(sims).await
-}
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                                  , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>

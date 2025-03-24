@@ -9,27 +9,18 @@ use std::ops::DerefMut;
 use crate::actor::fizz_buzz_processor::FizzBuzzMessage;
 use crate::actor::timer_actor::PrintSignal;
 
-#[cfg(not(test))]
 pub async fn run(context: SteadyContext
-        ,fizzbuzz_messages_rx: SteadyRx<FizzBuzzMessage>
+        ,fizzbuzz_rx: SteadyRx<FizzBuzzMessage>
         ,print_signal_rx: SteadyRx<PrintSignal>) -> Result<(),Box<dyn Error>> {
 
-    internal_behavior(context.into_monitor([&fizzbuzz_messages_rx, &print_signal_rx],[] )
-                      ,fizzbuzz_messages_rx
-                      ,print_signal_rx).await
+    let cmd = context.into_monitor([&fizzbuzz_rx, &print_signal_rx],[] );
+    if cfg!(not(test)) {
+        internal_behavior(cmd, fizzbuzz_rx, print_signal_rx).await
+    } else {
+        cmd.simulated_behavior(vec!(&TestEquals(fizzbuzz_rx),&TestEquals(print_signal_rx))).await
+    }
 }
 
-
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , fizzbuzz_rx: SteadyRx<FizzBuzzMessage>
-                 , print_rx: SteadyRx<PrintSignal>
-) -> Result<(),Box<dyn Error>> {
-
-    context.into_monitor([&fizzbuzz_rx,&print_rx], [])
-        .simulated_behavior(vec!(&TestEquals(fizzbuzz_rx),&TestEquals(print_rx))).await
-
-}
 
 const BATCH_SIZE: usize = 20000;
 async fn internal_behavior<C:SteadyCommander>(mut cmd: C

@@ -12,15 +12,14 @@ pub(crate) struct PrintSignal {
    pub(crate) tick: u32
 }
 
-#[cfg(not(test))]
 pub async fn run(context: SteadyContext, print_signal_tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
-  internal_behavior(context.into_monitor([],[&print_signal_tx]),print_signal_tx).await
-}
+    let cmd = context.into_monitor([], [&print_signal_tx]);
 
-#[cfg(test)]
-pub async fn run(context: SteadyContext, tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
-    context.into_monitor([],[&tx])
-       .simulated_behavior(vec!(&TestEcho(tx))).await
+    if cfg!(not(test)) {
+        internal_behavior(cmd, print_signal_tx).await
+    } else {
+       cmd.simulated_behavior(vec!(&TestEcho(print_signal_tx))).await
+    }
 }
 
 async fn internal_behavior<C:SteadyCommander>(mut cmd: C

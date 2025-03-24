@@ -12,12 +12,17 @@ pub struct WidgetInventory {
     pub(crate) _payload: u64,
 }
 
-#[cfg(not(test))]
 pub async fn run(context: SteadyContext
                                , feedback: SteadyRx<ChangeRequest>
                                , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context.into_monitor([&feedback], [&tx]), feedback, tx).await
+    let cmd = context.into_monitor([&feedback], [&tx]);
+    if cfg!(not(test)) {
+        internal_behavior(cmd, feedback, tx).await
+    } else {
+        cmd.simulated_behavior(vec!(&TestEcho(tx))).await
+    }
 }
+
 
 async fn internal_behavior<C:SteadyCommander>(mut cmd:C
                             , feedback: SteadyRx<ChangeRequest>
@@ -67,30 +72,6 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd:C
     Ok(())
 }
 
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<ChangeRequest>
-                 , tx: SteadyTx<WidgetInventory>) -> Result<(),Box<dyn Error>> {
-
-    let mut monitor = context.into_monitor([&rx], [&tx]);
-    if let Some(responder) = monitor.sidechannel_responder() {
-
-        let _rx = rx.lock().await;
-        let mut tx = tx.lock().await;
-
-        while monitor.is_running(&mut || tx.mark_closed() ) {
-            let _responder = responder.respond_with(|message| {
-                let msg: &WidgetInventory = message.downcast_ref::<WidgetInventory>().expect("error casting");
-                match monitor.try_send(&mut tx, msg.clone()) {
-                    SendOutcome::Success => {Box::new("ok".to_string())}
-                    SendOutcome::Blocked(msg) => { Box::new(msg)}
-                }
-            }).await;
-            monitor.relay_stats_smartly();
-        }
-    }
-    Ok(())
-}
 
 #[cfg(test)]
 mod generator_tests {

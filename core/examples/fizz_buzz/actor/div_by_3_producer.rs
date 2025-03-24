@@ -13,16 +13,15 @@ pub(crate) struct NumberMessage {
 }
 
 
-#[cfg(not(test))]
 pub async fn run(context: SteadyContext, numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
-  internal_behavior(context.into_monitor( [],[&numbers_tx]),numbers_tx).await
-}
+    let cmd = context.into_monitor( [],[&numbers_tx]);
+    if cfg!(not(test)) {
+        internal_behavior(cmd,numbers_tx).await
+    } else {
+        cmd.simulated_behavior(vec!(&TestEcho(numbers_tx))).await
+    }
+  }
 
-#[cfg(test)]
-pub async fn run(context: SteadyContext, tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
-    context.into_monitor([],[&tx])
-        .simulated_behavior(vec!(&TestEcho(tx))).await
-}
 
 const BATCH_SIZE: usize = 4000;
 const STEP_SIZE: u64 = 3;

@@ -6,20 +6,16 @@ use steady_state::*;
 use steady_state::SteadyRx;
 use crate::actor::data_generator::Packet;
 
-#[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context.into_monitor([&rx], []), rx).await
+    let cmd = context.into_monitor([&rx], []);
+    if cfg!(not(test)) {
+        internal_behavior(cmd, rx).await
+    } else {
+        cmd.simulated_behavior( vec!(&TestEquals(rx)) ).await
+    }
 }
 
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
-    let monitor = context.into_monitor( [&rx], []);
-    monitor.simulated_behavior( vec!(&TestEquals(rx)) ).await
-}
-
-#[cfg(not(test))]
 async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>) -> Result<(), Box<dyn Error>> {
     
     let mut rx = rx.lock().await;

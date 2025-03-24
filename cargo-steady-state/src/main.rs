@@ -123,11 +123,6 @@ fn write_project_files(pm: ProjectModel
    let args_rs = folder_src.join("args.rs");
    fs::write(args_rs, templates::ArgsTemplate {}.render()?)?;
 
-    // #[cfg(test)]
-    //     let test_only = "#[allow(unused)]";
-    // #[cfg(not(test))]
-    //     let test_only = "";
-
    let main_rs = folder_src.join("main.rs");
    let mut actor_mods:Vec<String> =  pm.actors.iter().map(|f| f.mod_name.clone()).collect();
    actor_mods.sort();

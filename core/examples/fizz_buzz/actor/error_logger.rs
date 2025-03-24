@@ -8,19 +8,17 @@ use std::error::Error;
 use crate::actor::fizz_buzz_processor::ErrorMessage;
 
 
-#[cfg(not(test))]
 pub async fn run(context: SteadyContext
         ,errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
-  internal_behavior(context.into_monitor([&errors_rx],[]),errors_rx).await
+
+    let cmd = context.into_monitor([&errors_rx],[]);
+    if cfg!(not(test)) {
+        internal_behavior(cmd, errors_rx).await
+    } else {
+        cmd .simulated_behavior(vec!(&TestEquals(errors_rx))).await
+    }
 }
 
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<ErrorMessage>
-) -> Result<(),Box<dyn Error>> {
-    context.into_monitor([&rx], [])
-        .simulated_behavior(vec!(&TestEquals(rx))).await
-}
 
 async fn internal_behavior<C:SteadyCommander>(mut cmd: C
                 ,errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {

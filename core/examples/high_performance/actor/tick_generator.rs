@@ -13,35 +13,30 @@ pub struct Tick {
   pub value: u128
 }
 
-#[cfg(not(test))]
-pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
+pub async fn run<const TICKS_TX_GIRTH:usize>(context: SteadyContext
                                                             ,ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, ticks_tx).await
-}
-
-#[cfg(test)]
-pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
-                                              ,tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
-
-    let ctrl = context.into_monitor([], tx.meta_data());
-    ctrl.simulated_behavior(vec!(&TestEcho(tx[0].clone()))).await
+    let cmd = context.into_monitor([], ticks_tx.meta_data());
+    if cfg!(not(test)) {
+        internal_behavior(cmd, ticks_tx).await
+    } else {
+        cmd.simulated_behavior(vec!(&TestEcho(ticks_tx[0].clone()))).await
+    }
 }
 
 const BUFFER_SIZE:usize = 2000;
 
-async fn internal_behavior<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
+async fn internal_behavior<const TICKS_TX_GIRTH:usize,C:SteadyCommander>(mut cmd: C
         ,ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
-    let _cli_args = context.args::<Args>();
-    let mut monitor =  context.into_monitor( [],ticks_tx.meta_data());
- 
+    let _cli_args = cmd.args::<Args>();
+
     let mut ticks_tx = ticks_tx.lock().await;
     let batch = ticks_tx.capacity()/4;
     let mut buffers:[Tick; BUFFER_SIZE] = [Tick { value: 0 }; BUFFER_SIZE];
 
     let mut count: u128 = 0;
-    while monitor.is_running(&mut || ticks_tx.mark_closed()) {
-         let _clean = await_for_all!(monitor.wait_vacant_bundle(&mut ticks_tx, batch, TICKS_TX_GIRTH)    );
+    while cmd.is_running(&mut || ticks_tx.mark_closed()) {
+         let _clean = await_for_all!(cmd.wait_vacant_bundle(&mut ticks_tx, batch, TICKS_TX_GIRTH)    );
          for i in 0..TICKS_TX_GIRTH {
              
              let c = ticks_tx[i].vacant_units().min(BUFFER_SIZE);
@@ -49,10 +44,10 @@ async fn internal_behavior<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
                  count = count + 1;
                  buffers[n] = Tick { value: count };
              }
-             monitor.send_slice_until_full(&mut ticks_tx[i], &buffers[..c]);
+             cmd.send_slice_until_full(&mut ticks_tx[i], &buffers[..c]);
              
          }
-         monitor.relay_stats_smartly();
+        cmd.relay_stats_smartly();
     }
     Ok(())
 }

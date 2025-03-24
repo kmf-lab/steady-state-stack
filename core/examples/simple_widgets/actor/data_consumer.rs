@@ -24,12 +24,15 @@ impl InternalState {
     }
 }
 
-#[cfg(not(test))]
 pub async fn run(context: SteadyContext
                  , rx: SteadyRx<ApprovedWidgets>
                  , state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
-
-    internal_behavior(context.into_monitor([&rx],[]), rx, state).await
+    let cmd = context.into_monitor([&rx],[]);
+    if cfg!(not(test)) {
+        internal_behavior(cmd, rx, state).await
+    } else {
+        cmd.simulated_behavior(vec!(&TestEquals(rx))).await
+    }
 }
 
 pub(crate) async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<ApprovedWidgets>, state: Arc<Mutex<InternalState>>) -> Result<(), Box<dyn Error>> {
@@ -61,61 +64,6 @@ pub(crate) async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: Steady
     Ok(())
 }
 
-
-
-
-
-#[cfg(test)]
-pub async fn run(context: SteadyContext
-                 , rx: SteadyRx<ApprovedWidgets>
-                 , _state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
-    let monitor = context.into_monitor([&rx],[]);
-    internal_behavior_test(monitor, rx, _state).await    
-}
-
-#[cfg(test)]
-async fn internal_behavior_test<T: SteadyCommander>(mut monitor: T
-                                                    , rx: SteadyRx<ApprovedWidgets>
-                                                    , _state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> 
-{
-    
-    let mut rx = rx.lock().await;
-
-    if let Some(simulator) = monitor.sidechannel_responder() {
-        while monitor.is_running(&mut || rx.is_closed_and_empty()) {
-
-        let _clean = await_for_all!(monitor.wait_avail(&mut rx,1));
-            simulator.respond_with(|expected| {
-                match monitor.try_take(&mut rx) {
-                    Some(measured) => {
-                        let expected: &ApprovedWidgets = expected.downcast_ref::<ApprovedWidgets>().expect("error casting");
-
-                        if expected.cmp(&measured).is_eq() {
-                            Box::new("ok".to_string())
-                        } else {
-                            let failure = format!("no match {:?} {:?}"
-                                                  , expected
-                                                  , measured).to_string();
-                            error!("failure: {}", failure);
-                            Box::new(failure)
-                        }
-
-                    },
-                    None => Box::new("no data".to_string()),
-                }
-
-            }).await;
-        }
-
-    }
-
-    Ok(())
-}
-
-
-
-
-
 #[cfg(test)]
 mod consumer_tests {
     use std::time::Duration;
@@ -144,9 +92,6 @@ mod consumer_tests {
 
         graph.block_until_stopped(Duration::from_secs(240));
 
-
     }
-
-
 
 }
