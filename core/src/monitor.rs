@@ -956,11 +956,15 @@ pub(crate) mod monitor_tests {
         // Simulate shutdown
         {
             let mut liveliness = monitor.runtime_state.write();
+            liveliness.state = GraphLivelinessState::Running;
             liveliness.request_shutdown();
         }
         error!("expecting hang 3");
 
         let result = monitor.wait_shutdown().await;
+
+        error!("expecting hang 4 {}",result);
+
         assert!(result);
     }
 
@@ -1141,6 +1145,7 @@ pub(crate) mod monitor_tests {
     //     // Request shutdown
     //     {
     //         let mut liveliness = monitor.runtime_state.write();
+    //         liveliness.state = GraphLivelinessState::Running;
     //         liveliness.request_shutdown();
     //     }
     //

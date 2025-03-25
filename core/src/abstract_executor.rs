@@ -63,6 +63,9 @@ pub trait AsyncListener {
     fn local_addr(&self) -> Result<SocketAddr, io::Error>;
 }
 
+
+//TODO: telemetry isprobably broken because Handle is not workng abstracted?
+
 impl AsyncListener for nuclei::Handle<TcpListener> {
     fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>), io::Error>> + Send + 'a>> {
         let fut = self.accept(); // Provided by nuclei::Handle<TcpListener>

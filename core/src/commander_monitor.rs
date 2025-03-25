@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use log::{warn};
+use log::{error, warn};
 use std::time::{Duration, Instant};
 use std::sync::Arc;
 use parking_lot::RwLock;
@@ -128,11 +128,21 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     //TODO: check usage and add to the SteadyState
     pub(crate) async fn internal_wait_shutdown(&self) -> bool {
+        error!("expecting hang 8");
+
         let one_shot = &self.oneshot_shutdown;
+
         let mut guard = one_shot.lock().await;
+        error!("expecting hang 9");
+
         if !guard.is_terminated() {
+            error!("expecting hang A");
+
             let _ = guard.deref_mut().await;
+            error!("expecting hang B");
+
         }
+        error!("hep inernal shutdwon conffed");
         true
     }
 
@@ -926,10 +936,15 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// uses opposite boolean as others since we are asking for shutdown
     /// returns true upon shutdown detection
     async fn wait_shutdown(&self) -> bool {
+        error!("expecting hang 5");
+
         let _guard = self.start_profile(CALL_OTHER);
         if self.telemetry.is_dirty() {
+            error!("expecting hang 6.0");
+
             let remaining_micros = self.telemetry_remaining_micros();
-            if remaining_micros <= 0 {
+            if remaining_micros <= 0 && self.is_liveliness_running() {
+                error!("need relay before shutdown?? if so check liveliness");
                 false //need a relay now so return
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
@@ -940,6 +955,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
                         }
             }
         } else {
+            error!("expecting hang 6.1");
+
             self.internal_wait_shutdown().await
         }
     }

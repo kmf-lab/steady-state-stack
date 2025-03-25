@@ -208,7 +208,7 @@ impl GraphLiveliness {
                     //Target actor may have already stopped so this is not an error
                 }
             });
-            //trace!("every actor has had one shot shutdown fired now");
+            error!("every actor has had one shot shutdown fired now");
         } else if self.is_in_state(&[GraphLivelinessState::Building]) {
             warn!("request_stop should only be called after start");
         }
@@ -461,7 +461,7 @@ impl GraphBuilder {
         GraphBuilder {
             block_fail_fast: false,
             telemetry_metric_features: false,
-            enable_io_driver: true,
+            enable_io_driver: false,
             backplane: Some(SideChannelHub::default()),
             proactor_config: Some(ProactorConfig::InterruptDriven),
             iouring_queue_length: 1<<5,
@@ -504,6 +504,9 @@ impl GraphBuilder {
     pub fn with_telemetry_metric_features(&self, enable: bool) -> Self {
         let mut result = self.clone();
         result.telemetry_metric_features = enable;
+        if enable {
+            result.enable_io_driver = true;
+        }
         result
     }
 
