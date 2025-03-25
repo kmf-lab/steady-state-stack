@@ -41,9 +41,9 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Re
                             , steady_config::telemetry_server_port()));
 
     let frame_rate_ms = context.frame_rate_ms;
-    let mut ctrl = context;
+    let ctrl = context;
     #[cfg(feature = "telemetry_on_telemetry")]
-    let mut ctrl = ctrl.into_monitor([&rx], []);
+    let ctrl = ctrl.into_monitor([&rx], []);
 
     internal_behavior(ctrl, frame_rate_ms, rx, addr).await
 }

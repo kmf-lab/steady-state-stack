@@ -5,7 +5,7 @@
 //! `aeron_subscribe`.
 
 use crate::core_tx::TxCore;
-use crate::{abstract_executor, channel_builder::ChannelBuilder, monitor::{RxMetaData, TxMetaData}, Rx, SteadyCommander, Tx};
+use crate::{abstract_executor, channel_builder::ChannelBuilder, Rx, SteadyCommander, Tx};
 use ahash::AHashMap;
 use async_ringbuf::wrap::AsyncWrap;
 use async_ringbuf::AsyncRb;
@@ -867,15 +867,29 @@ impl<T: StreamItem> LazyStreamRx<T> {
     }
 }
 
+//TODO: these two methods control streams showing items not bytes, this may need to be corrected.
+
 impl<T: StreamItem> RxMetaDataProvider for SteadyStreamRx<T> {
-    fn meta_data(&self) -> RxMetaData {
-        self.meta_data()
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
+        match self.try_lock() {
+            Some(guard) => guard.item_channel.channel_meta_data.meta_data(),
+            None => {
+                let guard = abstract_executor::block_on(self.lock());
+                guard.item_channel.channel_meta_data.meta_data()
+            }
+        }
     }
 }
 
 impl<T: StreamItem> TxMetaDataProvider for SteadyStreamTx<T> {
-    fn meta_data(&self) -> TxMetaData {
-        self.meta_data()
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
+        match self.try_lock() {
+            Some(guard) => guard.item_channel.channel_meta_data.meta_data(),
+            None => {
+                let guard = abstract_executor::block_on(self.lock());
+                guard.item_channel.channel_meta_data.meta_data()
+            }
+        }
     }
 }
 

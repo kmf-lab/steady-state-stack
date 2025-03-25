@@ -372,7 +372,7 @@ impl<T> Rx<T> {
     }
 
     //  difficult to move because we have dual iterators and peek
-    pub(crate) async fn shared_peek_async_iter_timeout(&mut self, wait_for_count: usize, timeout: Option<Duration>) -> impl Iterator<Item = &T> {
+    pub(crate) async fn _shared_peek_async_iter_timeout(&mut self, wait_for_count: usize, timeout: Option<Duration>) -> impl Iterator<Item = &T> {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
             let mut operation = &mut self.rx.wait_occupied(wait_for_count);

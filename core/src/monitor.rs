@@ -947,20 +947,22 @@ pub(crate) mod monitor_tests {
     }
 
     // Test for wait_shutdown
-    // #[async_std::test]
-    // async fn test_wait_shutdown() {
-    //     let context = test_steady_context();
-    //     let monitor = context.into_monitor([], []);
-    //
-    //     // Simulate shutdown
-    //     {
-    //         let mut liveliness = monitor.runtime_state.write();
-    //         liveliness.request_shutdown();
-    //     }
-    //
-    //     let result = monitor.wait_shutdown().await;
-    //     assert!(result);
-    // }
+    #[async_std::test]
+    async fn test_wait_shutdown() {
+        let context = test_steady_context();
+        error!("expecting hang 1");
+        let monitor = context.into_monitor([], []);
+       error!("expecting hang 2");
+        // Simulate shutdown
+        {
+            let mut liveliness = monitor.runtime_state.write();
+            liveliness.request_shutdown();
+        }
+        error!("expecting hang 3");
+
+        let result = monitor.wait_shutdown().await;
+        assert!(result);
+    }
 
     // Test for wait_periodic
     #[async_std::test]
