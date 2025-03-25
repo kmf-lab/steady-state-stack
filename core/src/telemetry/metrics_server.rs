@@ -96,10 +96,12 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
         }
         //NOTE: this is probably a mistake this loop could be its own actor.
         abstract_executor::spawn(async move {
-           if let Some(ref listener_new) = *opt_tcp {
-                  handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
-           }
+            if let Some(ref listener_new) = *opt_tcp {
+                handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
+            }
         }).detach();
+
+
     }
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
@@ -127,7 +129,7 @@ async fn handle_new_requests (
     tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
     state: Arc<Mutex<State>>,
     config: Arc<Mutex<Config>>,
-    listener: &Box<dyn abstract_executor::AsyncListener>,
+    listener: &Box<dyn abstract_executor::AsyncListener + Send + Sync>,
 ) {
     //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
     //      for per/second metrics and many telemetry observers with slower refresh rates

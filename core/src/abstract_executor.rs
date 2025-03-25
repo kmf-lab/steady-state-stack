@@ -26,36 +26,39 @@ use crate::{abstract_executor, ProactorConfig};
 use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use nuclei::Task;
 
-pub trait AsyncListener {
-    fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(Box<dyn AsyncReadWrite + Send + 'static>, Option<SocketAddr>), io::Error>> + Send + 'a>>;
-    fn local_addr(&self) -> Result<SocketAddr, io::Error>;
-}
 
-trait AsyncReadWrite: AsyncRead + AsyncWrite {}
+pub trait AsyncReadWrite: AsyncRead + AsyncWrite {}
+
 impl<T: AsyncRead + AsyncWrite> AsyncReadWrite for T {}
 
 
 
+pub trait AsyncListener {
+    fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>), io::Error>> + Send + 'a>>;
+    fn local_addr(&self) -> Result<SocketAddr, io::Error>;
+}
+
+
 impl AsyncListener for nuclei::Handle<TcpListener> {
-    fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(Box<dyn AsyncReadWrite + Send + 'static>, Option<SocketAddr>), io::Error>> + Send + 'a >> {
-        let fut = self.accept(); // Assume this returns a Future outputting (Handle<TcpStream>, Option<SocketAddr>)
+    fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>), io::Error>> + Send + 'a>> {
+        let fut = self.accept(); // Assuming this is an inherent method of Handle<TcpListener>
         Box::pin(async move {
             let (stream, addr) = fut.await?;
-            Ok((Box::new(stream) as Box<dyn AsyncReadWrite + Send + 'static>, addr))
+            Ok((Box::new(stream) as Box<dyn AsyncReadWrite + Send + Unpin + 'static>, addr))
         })
     }
 
     fn local_addr(&self) -> Result<SocketAddr, io::Error> {
-        self.local_addr() // Assume this method exists on Handle<TcpListener>
+        self.local_addr() // Assuming this is an inherent method of Handle<TcpListener>
     }
 }
 
 
-pub fn bind_to_port(addr: &String) -> Arc<Option<Box<dyn AsyncListener>>> {
+pub fn bind_to_port(addr: &String) -> Arc<Option<Box<dyn AsyncListener + Send + Sync>>> {
     match nuclei::Handle::<TcpListener>::bind(addr) {
-        Ok(listener) => Arc::new(Some(Box::new(listener))),
+        Ok(listener) => Arc::new(Some(Box::new(listener) as Box<dyn AsyncListener + Send + Sync>)),
         Err(e) => {
-            eprintln!("Unable to bind to http://{}: {}", addr, e); // Replace with your logging mechanism
+            eprintln!("Unable to bind to http://{}: {}", addr, e);
             Arc::new(None)
         }
     }
