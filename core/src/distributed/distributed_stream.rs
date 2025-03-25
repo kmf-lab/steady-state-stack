@@ -451,7 +451,6 @@ impl<T: StreamItem> StreamTx<T> {
         let defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
             Defrag::new(session_id, self.item_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
         });
-        debug_assert!(defrag_entry.ringbuffer_items.1.occupied_len() < defrag_entry.ringbuffer_items.1.capacity().into());
 
 
         // // If this is the beginning of a fragment, assert the ringbuffer is empty

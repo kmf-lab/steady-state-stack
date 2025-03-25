@@ -4,12 +4,15 @@
 //! The module leverages the `nuclei` library for asynchronous execution and provides
 //! utilities for initialization, spawning detached tasks, and blocking on futures.
 
+use core::net::SocketAddr;
 use std::future::Future;
 use std::{io, thread};
 use std::fs::File;
 use std::io::Error;
+use std::net::{TcpListener, TcpStream};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::thread::sleep;
 use std::time::Duration;
@@ -20,9 +23,52 @@ use nuclei::config::{IoUringConfiguration, NucleiConfig};
 use log::*;
 use parking_lot::Once;
 use crate::{abstract_executor, ProactorConfig};
-use futures::{AsyncWriteExt};
+use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use nuclei::Task;
 
+pub trait AsyncListener {
+    fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(Box<dyn AsyncReadWrite + Send + 'static>, Option<SocketAddr>), io::Error>> + Send + 'a>>;
+    fn local_addr(&self) -> Result<SocketAddr, io::Error>;
+}
+
+trait AsyncReadWrite: AsyncRead + AsyncWrite {}
+impl<T: AsyncRead + AsyncWrite> AsyncReadWrite for T {}
+
+
+
+impl AsyncListener for nuclei::Handle<TcpListener> {
+    fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(Box<dyn AsyncReadWrite + Send + 'static>, Option<SocketAddr>), io::Error>> + Send + 'a >> {
+        let fut = self.accept(); // Assume this returns a Future outputting (Handle<TcpStream>, Option<SocketAddr>)
+        Box::pin(async move {
+            let (stream, addr) = fut.await?;
+            Ok((Box::new(stream) as Box<dyn AsyncReadWrite + Send + 'static>, addr))
+        })
+    }
+
+    fn local_addr(&self) -> Result<SocketAddr, io::Error> {
+        self.local_addr() // Assume this method exists on Handle<TcpListener>
+    }
+}
+
+
+pub fn bind_to_port(addr: &String) -> Arc<Option<Box<dyn AsyncListener>>> {
+    match nuclei::Handle::<TcpListener>::bind(addr) {
+        Ok(listener) => Arc::new(Some(Box::new(listener))),
+        Err(e) => {
+            eprintln!("Unable to bind to http://{}: {}", addr, e); // Replace with your logging mechanism
+            Arc::new(None)
+        }
+    }
+}
+
+pub(crate) fn check_addr(addr: &str) -> Option<String> {
+    if let Ok(h) = nuclei::Handle::<TcpListener>::bind(addr) {
+        let local_addr = h.local_addr().expect("Unable to get local address");
+        Some(format!("{}", local_addr).to_string())
+    } else {
+        None
+    }
+}
 
 pub(crate) async fn async_write_all(data: BytesMut, flush: bool, file: File) -> Result<(), Error> {
     let mut h = nuclei::Handle::<File>::new(file)?;

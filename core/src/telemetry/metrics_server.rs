@@ -6,8 +6,8 @@ use crate::*;
 use crate::dot::{apply_node_def, build_dot, build_metric, Config, DotGraphFrames, FrameHistory, MetricState};
 use crate::telemetry::metrics_collector::*;
 use futures::io;
-use std::net::{TcpListener, TcpStream};
 use futures::channel::oneshot::Receiver;
+use crate::abstract_executor::AsyncListener;
 use crate::commander_context::SteadyContext;
 
 // The name of the metrics server actor
@@ -40,27 +40,17 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Re
                             , steady_config::telemetry_server_ip()
                             , steady_config::telemetry_server_port()));
 
-    //TODO: anti pattern move this into our behavior method!!
-    let opt_tcp:Arc<Option<nuclei::Handle<TcpListener>>> = if let Some(ref addr) = addr {
-        match nuclei::Handle::<TcpListener>::bind(addr) {
-            Ok(h) => Arc::new(Some(h)),
-            Err(e) => {error!("Unable to Bind to http://{} {}", addr, e);
-                       Arc::new(None)}
-        }
-    } else {
-        error!("No address provided: {:?}", &addr);
-        Arc::new(None)
-    };
-
-    //NOTE: we unit test this internal_behavior with and without TcpListener
-    internal_behavior(context, rx, opt_tcp).await
-}
-
-async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, opt_tcp:Arc<Option<nuclei::Handle<TcpListener>>>) -> Result<(), Box<dyn Error>> {
-
+    let frame_rate_ms = context.frame_rate_ms;
     let mut ctrl = context;
     #[cfg(feature = "telemetry_on_telemetry")]
     let mut ctrl = ctrl.into_monitor([&rx], []);
+
+    internal_behavior(ctrl, frame_rate_ms, rx, addr).await
+}
+
+async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64, rx: SteadyRx<DiagramData>, addr: Option<String>) -> Result<(), Box<dyn Error>> {
+
+
 
     let mut rxg = rx.lock().await;
     let mut metrics_state = MetricState::default();
@@ -84,29 +74,30 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
         
     }));
 
-    let mut history = FrameHistory::new(ctrl.frame_rate_ms);
+    let mut history = FrameHistory::new(frame_rate_ms);
 
     let (tcp_sender_tx, tcp_receiver_tx) = oneshot::channel();
     let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
 
 
     //Only spin up server if addr is provided, this allows for unit testing where we cannot open that port.
-    if opt_tcp.is_some() {
+    if let Some(ref addr) = addr {
 
         let state2 = state.clone();
         let config2 = config.clone();
+
+
+        let opt_tcp = abstract_executor::bind_to_port(addr);
         if let Some(ref listener_new) = *opt_tcp {
             #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
             println!("Telemetry on http://{}", listener_new.local_addr().expect("Unable to get local address"));
             #[cfg(feature = "prometheus_metrics")]
             println!("Prometheus can scrape on on http://{}/metrics", listener_new.local_addr().expect("Unable to read local address"));
         }
-        
         //NOTE: this is probably a mistake this loop could be its own actor.
         abstract_executor::spawn(async move {
            if let Some(ref listener_new) = *opt_tcp {
-               //loops and blocks for new connections and shutdown
-               handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
+                  handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
            }
         }).detach();
     }
@@ -120,7 +111,7 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
                         , &mut metrics_state
                         , &mut history
                         , &mut frames
-                        , ctrl.frame_rate_ms
+                        , frame_rate_ms
                         , ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped])
                         , &rxg
                         , state.clone()
@@ -131,22 +122,28 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<DiagramData>, op
     Ok(())
 }
 
-async fn handle_new_requests(tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<()>>>, state: Arc<Mutex<State>>, config: Arc<Mutex<Config>>, listener_new: &nuclei::Handle<TcpListener>) {
+
+async fn handle_new_requests (
+    tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
+    state: Arc<Mutex<State>>,
+    config: Arc<Mutex<Config>>,
+    listener: &Box<dyn abstract_executor::AsyncListener>,
+) {
     //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
     //      for per/second metrics and many telemetry observers with slower refresh rates
     loop {
         let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
         select! {  _ = shutdown.deref_mut() => {  break;  },
-                            result = listener_new.accept().fuse() => {
-                                        match result {
-                                           Ok((stream, _peer_addr)) => {
-                                               let _ = handle_request(stream,state.clone(),config.clone()).await;
-                                           }
-                                           Err(e) => {
-                                               error!("Error accepting connection: {}",e);
-                                           }
-                                       }
-                       } }
+                result = listener.accept().fuse() => {
+                    match result {
+                       Ok((stream, _peer_addr)) => {
+                           let _ = handle_request(stream,state.clone(),config.clone()).await;
+                       }
+                       Err(e) => {
+                           error!("Error accepting connection: {}",e);
+                       }
+                   }
+           } }
     }
 }
 
@@ -310,9 +307,15 @@ const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = "";
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon-disabled.svg") } else { "" };
 
-async fn handle_request(mut stream: nuclei::Handle<TcpStream>,
+//   pub trait AsyncWriteExt: AsyncWrite   for the .read
+//   pub trait AsyncReadExt: AsyncRead     for the .write_all
+
+async fn handle_request<T>(mut stream: T,
                         state: Arc<Mutex<State>>,
-                        _config: Arc<Mutex<Config>>) -> io::Result<()> {
+                        _config: Arc<Mutex<Config>>) -> io::Result<()>
+  where
+    T: AsyncRead + AsyncWrite + Unpin
+    {
     let mut buffer = vec![0; 1024];
     let _ = stream.read(&mut buffer).await?;
     let request = String::from_utf8_lossy(&buffer);
@@ -519,10 +522,11 @@ mod meteric_server_tests {
          let (tx_in, rx_in) = graph.channel_builder()
              .with_capacity(10).build();
 
-   
+        let rate_ms = graph.telemetry_production_rate_ms;
+
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context, rx_in.clone(), Arc::new(None)) );
+            .build_spawn( move |context| internal_behavior(context, rate_ms, rx_in.clone(), None) );
  
         let test_data:Vec<DiagramData> = (0..3).map(|i| DiagramData::NodeDef( i
                  , Box::new((
@@ -612,6 +616,8 @@ mod http_telemetry_tests {
         }
     }
 
+
+
     async fn stand_up_test_server(addr: &str) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
         // Step 1: Set up a minimal graph
         let mut graph = GraphBuilder::for_testing()
@@ -620,14 +626,10 @@ mod http_telemetry_tests {
 
         // Step 2: Start the metrics_server actor        
         let (tx_in, rx_in) = graph.channel_builder().build();
-
         if let Some(ref addr) = Some(addr.to_string()) {
-            //TODO: move this up if we can? so we can determine the port with :0 for testing.
-            if let Ok(h) = nuclei::Handle::<TcpListener>::bind(addr) {
-                let local_addr = h.local_addr().expect("Unable to get local address");
-                let addr = format!("{}", local_addr).to_string();
+            if let Some(addr) = abstract_executor::check_addr(addr) {
                 println!("{}",&addr);                
-                launch_server(graph, Some(addr), tx_in, rx_in, Arc::new(Some(h))).await
+                launch_server(graph, Some(addr), tx_in, rx_in).await
             } else {
                 panic!("Unable to Bind to http://{}", addr);
             }
@@ -636,11 +638,15 @@ mod http_telemetry_tests {
         }        
     }
 
-    async fn launch_server(mut graph: Graph, server_ip: Option<String>, tx_in: LazySteadyTx<DiagramData>, rx_in: LazySteadyRx<DiagramData>, opt_tcp: Arc<Option<nuclei::Handle<TcpListener>>>) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
+    async fn launch_server(mut graph: Graph, server_ip: Option<String>, tx_in: LazySteadyTx<DiagramData>
+                           , rx_in: LazySteadyRx<DiagramData>) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
+
+        let server_ip_out = server_ip.clone();
         graph.actor_builder()
             .with_name("metrics_server")
             .build_spawn(move |context| {
-                internal_behavior(context, rx_in.clone(), opt_tcp.clone())
+                let frame_rate_ms = context.frame_rate_ms;
+                internal_behavior(context, frame_rate_ms, rx_in.clone(), server_ip.clone())
             });
 
         // Step 3: Start the graph
@@ -683,7 +689,7 @@ mod http_telemetry_tests {
         data.push(DiagramData::ChannelVolumeData(1, vec![(15, 20), (30, 30)].into()));
 
         tx_in.testing_send_all(data, false).await;
-        (graph, server_ip, tx_in)
+        (graph, server_ip_out, tx_in)
     }
 
     fn validate_path(addr: &&String, expected_text: Option<&str>, path: &str) {
