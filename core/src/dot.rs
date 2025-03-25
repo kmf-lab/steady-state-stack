@@ -670,6 +670,7 @@ mod dot_tests {
     use std::sync::Arc;
     use bytes::BytesMut;
     use std::path::PathBuf;
+    use crate::abstract_executor::async_write_all;
 
     #[test]
     fn test_node_compute_and_refresh() {
@@ -890,7 +891,7 @@ mod dot_tests {
             .open(&path)
             .expect("Failed to open file");
 
-        abstract_executor::test_write_all(data, file);
+        let _ = abstract_executor::block_on(async_write_all(data, true, file));
 
         let result = std::fs::read_to_string(path).expect("Failed to read written file");
         assert_eq!(result, "test data");

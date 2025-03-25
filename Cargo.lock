@@ -2185,6 +2185,7 @@ dependencies = [
  "aeron",
  "ahash",
  "askama",
+ "async-io",
  "async-ringbuf",
  "async-std",
  "bytes",

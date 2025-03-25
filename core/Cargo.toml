@@ -102,6 +102,7 @@ tempfile         = "3.14.0"
 #smallvec         = "1.13.2"
 #pin-project      = "1.1.7"
 ahash            = "0.8.11" # fastest hash map so far
+async-io         = "2.4.0"
 
 # buldign in MQTT for IoT and Lambdas, for soon 0.2 release
 #mqttrs           = "0.4.1"
