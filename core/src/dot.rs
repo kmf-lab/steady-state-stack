@@ -17,10 +17,11 @@ use time::OffsetDateTime;
 
 use crate::actor_stats::ActorStatsComputer;
 use crate::{abstract_executor, ActorName};
-use crate::channel_stats::{ChannelStatsComputer};
+use crate::channel_stats::ChannelStatsComputer;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
+use crate::telemetry::metrics_server;
 
 /// Represents the state of metrics for the graph, including nodes and edges.
 #[derive(Default)]
@@ -651,14 +652,14 @@ impl FrameHistory {
             .create(true)
             .truncate(true)
             .open(&path)?;
-        abstract_executor::async_write_all(data, false, file).await
+        metrics_server::async_write_all(data, false, file).await
     }
     async fn append_to_file(path: PathBuf, data: BytesMut, flush: bool) -> Result<(), std::io::Error> {
         let file = OpenOptions::new()
             .append(true)
             .create(true)
             .open(&path)?;
-        abstract_executor::async_write_all(data, flush, file).await
+        metrics_server::async_write_all(data, flush, file).await
     }
 
 }
@@ -666,11 +667,11 @@ impl FrameHistory {
 #[cfg(test)]
 mod dot_tests {
     use super::*;
-    use crate::monitor::{ChannelMetaData};
+    use crate::monitor::ChannelMetaData;
     use std::sync::Arc;
     use bytes::BytesMut;
     use std::path::PathBuf;
-    use crate::abstract_executor::async_write_all;
+    use crate::telemetry::metrics_server::async_write_all;
 
     #[test]
     fn test_node_compute_and_refresh() {

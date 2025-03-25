@@ -1,4 +1,7 @@
 use std::error::Error;
+use std::net::{SocketAddr, TcpListener};
+use std::pin::Pin;
+use async_io::Async;
 use bytes::BytesMut;
 #[allow(unused_imports)]
 use log::*;
@@ -7,7 +10,7 @@ use crate::dot::{apply_node_def, build_dot, build_metric, Config, DotGraphFrames
 use crate::telemetry::metrics_collector::*;
 use futures::io;
 use futures::channel::oneshot::Receiver;
-use crate::abstract_executor::AsyncListener;
+use std::io::Write;
 use crate::commander_context::SteadyContext;
 
 // The name of the metrics server actor
@@ -87,7 +90,7 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
         let config2 = config.clone();
 
 
-        let opt_tcp = abstract_executor::bind_to_port(addr);
+        let opt_tcp = bind_to_port(addr);
         if let Some(ref listener_new) = *opt_tcp {
             #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
             println!("Telemetry on http://{}", listener_new.local_addr().expect("Unable to get local address"));
@@ -125,11 +128,72 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
 }
 
 
+/// A trait combining `AsyncRead` and `AsyncWrite` for types that support both.
+pub trait AsyncReadWrite: AsyncRead + AsyncWrite {}
+
+impl<T: AsyncRead + AsyncWrite> AsyncReadWrite for T {}
+
+/// A trait for asynchronous listeners that can accept connections and provide their local address.
+pub trait AsyncListener {
+    /// Accepts a new connection asynchronously.
+    ///
+    /// Returns a future resolving to a stream implementing `AsyncReadWrite` and an optional socket address.
+    fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output =std::io::Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>)>> + Send + 'a>>;
+
+    /// Returns the local socket address of the listener.
+    fn local_addr(&self) -> std::io::Result<SocketAddr>;
+}
+
+/// Implements `AsyncListener` for `Async<TcpListener>` to ensure true asynchronous acceptance.
+impl AsyncListener for Async<TcpListener> {
+    fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output =std::io::Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>)>> + Send + 'a>> {
+        Box::pin(async move {
+            let (stream, addr) = self.accept().await?;
+            Ok((Box::new(stream) as Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Some(addr)))
+        })
+    }
+
+    fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        self.get_ref().local_addr()
+    }
+}
+
+// ## Utility Functions
+
+/// Binds a TCP listener to the specified address using `Async<TcpListener>`.
+///
+/// Returns an `Arc` containing the listener if successful, or `None` if binding fails.
+pub fn bind_to_port(addr: &str) -> Arc<Option<Box<dyn AsyncListener + Send + Sync>>> {
+    match TcpListener::bind(addr) {
+        Ok(listener) => match Async::new(listener) {
+            Ok(async_listener) => Arc::new(Some(Box::new(async_listener) as Box<dyn AsyncListener + Send + Sync>)),
+            Err(e) => {
+                error!("Unable to create async listener: {}", e);
+                Arc::new(None)
+            }
+        },
+        Err(e) => {
+            error!("Unable to bind to http://{}: {}", addr, e);
+            Arc::new(None)
+        }
+    }
+}
+
+/// Checks if an address can be bound to and returns the local address if successful.
+pub(crate) fn check_addr(addr: &str) -> Option<String> {
+    if let Ok(h) = TcpListener::bind(addr) {
+        let local_addr = h.local_addr().expect("Unable to get local address");
+        Some(format!("{}", local_addr))
+    } else {
+        None
+    }
+}
+
 async fn handle_new_requests (
     tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
     state: Arc<Mutex<State>>,
     config: Arc<Mutex<Config>>,
-    listener: &Box<dyn abstract_executor::AsyncListener + Send + Sync>,
+    listener: &Box<dyn AsyncListener + Send + Sync>,
 ) {
     //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
     //      for per/second metrics and many telemetry observers with slower refresh rates
@@ -629,7 +693,7 @@ mod http_telemetry_tests {
         // Step 2: Start the metrics_server actor        
         let (tx_in, rx_in) = graph.channel_builder().build();
         if let Some(ref addr) = Some(addr.to_string()) {
-            if let Some(addr) = abstract_executor::check_addr(addr) {
+            if let Some(addr) = check_addr(addr) {
                 println!("{}",&addr);                
                 launch_server(graph, Some(addr), tx_in, rx_in).await
             } else {
@@ -722,3 +786,15 @@ mod http_telemetry_tests {
 
 }
 
+/// Asynchronously writes data to a file, optionally flushing it.
+///
+/// Uses `spawn_blocking` to perform blocking file I/O in a separate thread.
+pub(crate) async fn async_write_all(data: BytesMut, flush: bool, mut file: std::fs::File) -> std::io::Result<()> {
+    spawn_blocking(move || {
+        file.write_all(&data)?;
+        if flush {
+            file.flush()?;
+        }
+        Ok(())
+    }).await
+}

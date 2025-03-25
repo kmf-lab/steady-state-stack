@@ -83,6 +83,7 @@ mod core_tx;
 pub mod commander_context;
 pub mod commander_monitor;
 mod stream_iterator;
+mod abstract_executor_tests;
 
 pub use clap::*;
 pub use commander::SendOutcome;
