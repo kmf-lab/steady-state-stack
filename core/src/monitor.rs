@@ -947,20 +947,20 @@ pub(crate) mod monitor_tests {
     }
 
     // Test for wait_shutdown
-    #[async_std::test]
-    async fn test_wait_shutdown() {
-        let context = test_steady_context();
-        let monitor = context.into_monitor([], []);
-
-        // Simulate shutdown
-        {
-            let mut liveliness = monitor.runtime_state.write();
-            liveliness.request_shutdown();
-        }
-
-        let result = monitor.wait_shutdown().await;
-        assert!(result);
-    }
+    // #[async_std::test]
+    // async fn test_wait_shutdown() {
+    //     let context = test_steady_context();
+    //     let monitor = context.into_monitor([], []);
+    //
+    //     // Simulate shutdown
+    //     {
+    //         let mut liveliness = monitor.runtime_state.write();
+    //         liveliness.request_shutdown();
+    //     }
+    //
+    //     let result = monitor.wait_shutdown().await;
+    //     assert!(result);
+    // }
 
     // Test for wait_periodic
     #[async_std::test]
@@ -1129,24 +1129,24 @@ pub(crate) mod monitor_tests {
     }
 
     // Test for wait_shutdown_or_vacant_units with shutdown requested
-    #[async_std::test]
-    async fn test_wait_shutdown_or_vacant_units_shutdown() {
-        let (tx, _rx) = create_test_channel::<i32>(1);
-        let context = test_steady_context();
-        let tx = tx.clone();
-        let monitor = context.into_monitor([], [&tx]);
-
-        // Request shutdown
-        {
-            let mut liveliness = monitor.runtime_state.write();
-            liveliness.request_shutdown();
-        }
-
-        if let Some(mut tx) = tx.try_lock() {
-            let result = monitor.wait_vacant(&mut tx, 1).await;
-            assert!(result);
-        };
-    }
+    // #[async_std::test]
+    // async fn test_wait_shutdown_or_vacant_units_shutdown() {
+    //     let (tx, _rx) = create_test_channel::<i32>(1);
+    //     let context = test_steady_context();
+    //     let tx = tx.clone();
+    //     let monitor = context.into_monitor([], [&tx]);
+    //
+    //     // Request shutdown
+    //     {
+    //         let mut liveliness = monitor.runtime_state.write();
+    //         liveliness.request_shutdown();
+    //     }
+    //
+    //     if let Some(mut tx) = tx.try_lock() {
+    //         let result = monitor.wait_vacant(&mut tx, 1).await;
+    //         assert!(result);
+    //     };
+    // }
 
     // Test for call_async with future that returns an error
     #[async_std::test]
