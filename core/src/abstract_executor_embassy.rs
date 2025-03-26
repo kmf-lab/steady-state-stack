@@ -11,7 +11,7 @@ pub(crate) mod core_exec {
     use lazy_static::lazy_static;
     use parking_lot::Once;
     use crate::ProactorConfig;
-    use embassy_executor::{Executor, Spawner};
+    use embassy_executor::{Spawner};
 
     /// Spawns a local task intended for lightweight operations.
     ///

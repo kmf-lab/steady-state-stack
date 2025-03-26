@@ -15,7 +15,7 @@ pub(crate) mod core_exec {
     use log::{error, trace, warn};
     use parking_lot::Once;
     use crate::ProactorConfig;
-    use smol::{spawn, Task, unblock, block_on};
+    use smol::{Task, unblock};
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     /// Spawns a local task intended for lightweight operations.
@@ -23,17 +23,17 @@ pub(crate) mod core_exec {
     /// Note: In `smol`, tasks are scheduled on the global executor, which may not guarantee
     /// execution on the current thread, unlike `nuclei::spawn_local`.
     pub fn spawn_local<F: Future<Output = T> + 'static, T: 'static>(f: F) -> Task<T> {
-        spawn(f)
+        smol::spawn(f)
     }
 
     /// Spawns a blocking task on a separate thread for CPU-bound or blocking operations.
     pub fn spawn_blocking<F: FnOnce() -> T + Send + 'static, T: Send + 'static>(f: F) -> Task<T> {
-        spawn(unblock(f))
+        smol::spawn(unblock(f))
     }
 
     /// Spawns a task that can run on any thread in the pool for parallel execution.
     pub fn spawn<F: Future<Output = T> + Send + 'static, T: Send + 'static>(future: F) -> Task<T> {
-        spawn(future)
+        smol::spawn(future)
     }
 
     /// Asynchronously spawns additional threads in the executor.
@@ -78,7 +78,8 @@ pub(crate) mod core_exec {
 
     /// Blocks the current thread until the given future completes.
     pub fn block_on<F: Future<Output = T>, T>(future: F) -> T {
-        block_on(future)
+
+        smol::block_on(future)
     }
 }
 
