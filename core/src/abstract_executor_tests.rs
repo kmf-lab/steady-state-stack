@@ -1,10 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::core_exec::block_on;
-use crate::abstract_executor_nuclei::*;
+    use crate::core_exec::*;
     use std::thread;
     use std::time::Duration;
-    use crate::ProactorConfig;
+    use crate::*;
 
     #[test]
     fn test_init_without_driver() {

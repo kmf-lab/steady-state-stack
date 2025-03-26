@@ -98,11 +98,11 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
             println!("Prometheus can scrape on on http://{}/metrics", listener_new.local_addr().expect("Unable to read local address"));
         }
         //NOTE: this is probably a mistake this loop could be its own actor.
-        core_exec::spawn(async move {
+        core_exec::spawn_and_detach(async move {
             if let Some(ref listener_new) = *opt_tcp {
                 handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
             }
-        }).detach();
+        });
 
 
     }

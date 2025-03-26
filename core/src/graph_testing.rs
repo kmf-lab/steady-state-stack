@@ -549,12 +549,12 @@ mod graph_testing_tests {
         };
         // Simulates an actor which responds when a message is sent
         //this is our simulated actor to respond to our node_call below
-        core_exec::spawn_local(async move {
+        core_exec::spawn_and_detach(async move {
             responder_inside_actor.expect("should exist").respond_with(|msg| {
                 let received_msg = msg.downcast_ref::<i32>().expect("iternal error");
                 Box::new(received_msg * 2) as Box<dyn Any + Send + Sync>
             }).await;
-        }).detach();
+        });
 
         // Simulates the main test block which makes a call and awaits for the response.
         //test code will call to the actor and only return after above actor responds

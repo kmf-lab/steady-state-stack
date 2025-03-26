@@ -1,85 +1,89 @@
 
-#[cfg(any(feature = "exec_async_std", feature = "exec_async_std"))]
+#[cfg(feature = "exec_async_std")]
 pub(crate) mod core_exec {
-    //! This module provides an abstraction layer for threading solutions, allowing for easier
-    //! swapping of threading implementations in the future.
+    //! This module provides an abstraction layer for threading solutions, enabling seamless
+    //! swapping of threading implementations (e.g., `nuclei` or `async-std`) in the future.
     //!
-    //! The module leverages the `async_std` library for asynchronous execution and provides
-    //! utilities for initialization, spawning detached tasks, and blocking on futures.
+    //! It leverages the `async-std` crate, a lightweight async runtime, for asynchronous execution.
+    //! The module offers utilities for initializing the executor, spawning detached tasks (both
+    //! local and global), handling blocking operations, and synchronously blocking on futures.
+    //! The design ensures flexibility and compatibility with `async-std`’s OS-backed async mechanisms.
 
     // ## Imports
-    use std::future::Future;
-    use std::io::{self, Result};
-    use std::thread;
-    use std::time::Duration;
-    use lazy_static::lazy_static;
-    use log::{error, trace, warn};
-    use parking_lot::Once;
-    use crate::ProactorConfig;
-    use async_std::task::{self, JoinHandle};
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::future::Future; // Core trait for asynchronous operations.
+    use std::io::Result; // Standard IO types for error handling.
+    use std::thread; // For thread management in the driver loop.
+    use std::time::Duration; // For timing operations in driver restart delay.
+    use lazy_static::lazy_static; // For static initialization of `INIT`.
+    use log::{error, trace, warn}; // Logging utilities for debugging and error reporting.
+    use parking_lot::Once; // Synchronization primitive for one-time initialization.
+    use crate::ProactorConfig; // Custom configuration enum, ignored in this impl.
+    use std::panic::{catch_unwind, AssertUnwindSafe}; // Panic handling for driver robustness.
+    use async_std::task; // Core async-std module for task spawning and execution.
 
-    /// Spawns a local task intended for lightweight operations.
+    /// Spawns a future that can be sent across threads and detaches it for independent execution.
     ///
-    /// Note: `async_std` uses a thread pool, so this spawns on the global executor rather than
-    /// strictly on the current thread.
-    pub fn spawn_local<F: Future<Output = T> + 'static, T: 'static>(f: F) -> JoinHandle<T> {
-        task::spawn(f)
-    }
+    /// This function uses `async_std::task::spawn` to schedule the future on the global multi-threaded
+    /// executor. Ignoring the `Task` handle detaches it, allowing thread-safe tasks to run independently.
+    pub fn spawn_and_detach<F: Future<Output=T> + Send + 'static, T: Send + 'static>(future: F) -> () {
+        let _ = task::spawn(future);
+    } // only 5x calls in metric_server and actor_builder
 
     /// Spawns a blocking task on a separate thread for CPU-bound or blocking operations.
-    pub fn spawn_blocking<F: FnOnce() -> T + Send + 'static, T: Send + 'static>(f: F) -> JoinHandle<T> {
-        task::spawn_blocking(f)
-    }
-
-    /// Spawns a task that can run on any thread in the pool for parallel execution.
-    pub fn spawn<F: Future<Output = T> + Send + 'static, T: Send + 'static>(future: F) -> JoinHandle<T> {
-        task::spawn(future)
-    }
-
-    /// Asynchronously spawns additional threads in the executor.
     ///
-    /// Note: `async_std` does not support dynamically adding threads at runtime, so this returns an error.
-    pub async fn spawn_more_threads(_count: usize) -> io::Result<usize> {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "async_std does not support dynamic thread spawning",
-        ))
+    /// This async function uses `async_std::task::spawn_blocking` to run the closure on a thread pool,
+    /// awaiting its result. Ideal for operations like file IO or heavy computation that shouldn’t block
+    /// the async executor.
+    pub async fn spawn_blocking<F: FnOnce() -> T + Send + 'static, T: Send + 'static>(f: F) -> T {
+         task::spawn_blocking(f).await
+    } //only once in metric_server
+
+    /// Blocks the current thread until the provided future completes, returning its result.
+    ///
+    /// This function uses `async_std::task::block_on` to run the future to completion on the current
+    /// thread, useful in synchronous contexts like `main` or tests where an async runtime isn’t running.
+    pub fn block_on<F: Future<Output = T>, T>(future: F) -> T {
+       // futures::executor::block_on(future)
+
+        task::block_on(future)
+    }  // 26 usages confirmed from sync code discovered everywhere
+
+    /// Asynchronously spawns additional threads in the global executor.
+    ///
+    /// Since `async-std` does not support dynamically adding threads to its executor, this function
+    /// returns `Ok(0)` as a no-op, maintaining interface compatibility with the `nuclei` version.
+    pub async fn spawn_more_threads(count: usize) -> Result<usize> {
+        Ok(0) // async-std doesn’t allow dynamic thread addition
     }
 
     lazy_static! {
-        /// Ensures initialization runs only once across all threads.
+        /// Ensures initialization runs only once across all threads using a thread-safe static.
         static ref INIT: Once = Once::new();
     }
 
-    /// Initializes the `async_std` executor with the specified configuration.
+    /// Initializes the `async-std` executor with the specified configuration.
     ///
-    /// If `enable_driver` is true, spawns a blocking task to keep the executor running indefinitely.
-    /// The `proactor_config` and `queue_length` parameters are ignored as `async_std` does not use
-    /// `io_uring` or similar configurable proactors.
+    /// This function optionally starts a driver thread that runs the `async-std` executor indefinitely
+    /// if `enable_driver` is true. The `proactor_config` and `queue_length` parameters are ignored since
+    /// `async-std` doesn’t use `nuclei`’s io_uring-based proactor model. Includes panic handling for robustness.
     pub(crate) fn init(enable_driver: bool, _proactor_config: ProactorConfig, _queue_length: u32) {
         INIT.call_once(|| {
-            if enable_driver {
-                trace!("Starting async_std driver");
-                task::spawn_blocking(|| {
+            //if enable_driver {
+                trace!("Starting async-std driver");
+                thread::spawn(|| {
                     loop {
                         let result = catch_unwind(AssertUnwindSafe(|| {
+                            // Run the async-std executor indefinitely with a pending future
                             task::block_on(std::future::pending::<()>());
                         }));
                         if let Err(e) = result {
-                            error!("async_std driver panicked: {:?}", e);
+                            error!("async-std driver panicked: {:?}", e);
                             thread::sleep(Duration::from_secs(1));
-                            warn!("Restarting async_std driver");
+                            warn!("Restarting async-std driver");
                         }
                     }
-                }).detach();
-            }
-            // No specific executor configuration needed for async_std
+                });
+           // }
         });
-    }
-
-    /// Blocks the current thread until the given future completes.
-    pub fn block_on<F: Future<Output = T>, T>(future: F) -> T {
-        task::block_on(future)
     }
 }

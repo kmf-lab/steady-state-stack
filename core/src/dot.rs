@@ -593,7 +593,8 @@ impl FrameHistory {
 
                 // Let the file write happen in the background so we can get back to data updates
                 // This is not a new thread so it is lightweight
-                core_exec::spawn_local(async move {
+                //TODO: rewrite as a new actor!
+                core_exec::spawn_and_detach(async move {
                     if let Err(e) = Self::append_to_file(path, to_be_written, flush_all).await {
                         error!("Error writing to file: {}", e);
                         error!("Due to the above error some history has been lost");
@@ -603,7 +604,7 @@ impl FrameHistory {
                     }
                     // Change the file_bytes_written to allow for the next spawn.
                     fbw.fetch_add(buf_bytes_count, Ordering::SeqCst);
-                }).detach();
+                });
             }
         }
     }
