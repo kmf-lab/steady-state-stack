@@ -1,7 +1,7 @@
+use async_io::Async;
 use std::error::Error;
 use std::net::{SocketAddr, TcpListener};
 use std::pin::Pin;
-use async_io::Async;
 use bytes::BytesMut;
 #[allow(unused_imports)]
 use log::*;
@@ -98,7 +98,7 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
             println!("Prometheus can scrape on on http://{}/metrics", listener_new.local_addr().expect("Unable to read local address"));
         }
         //NOTE: this is probably a mistake this loop could be its own actor.
-        abstract_executor::spawn(async move {
+        core_exec::spawn(async move {
             if let Some(ref listener_new) = *opt_tcp {
                 handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
             }
@@ -790,7 +790,7 @@ mod http_telemetry_tests {
 ///
 /// Uses `spawn_blocking` to perform blocking file I/O in a separate thread.
 pub(crate) async fn async_write_all(data: BytesMut, flush: bool, mut file: std::fs::File) -> std::io::Result<()> {
-    spawn_blocking(move || {
+    core_exec::spawn_blocking(move || {
         file.write_all(&data)?;
         if flush {
             file.flush()?;

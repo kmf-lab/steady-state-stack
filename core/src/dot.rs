@@ -16,7 +16,8 @@ use time::macros::format_description;
 use time::OffsetDateTime;
 
 use crate::actor_stats::ActorStatsComputer;
-use crate::{abstract_executor, ActorName};
+use crate::{ActorName};
+use crate::core_exec;
 use crate::channel_stats::ChannelStatsComputer;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
@@ -592,7 +593,7 @@ impl FrameHistory {
 
                 // Let the file write happen in the background so we can get back to data updates
                 // This is not a new thread so it is lightweight
-                abstract_executor::spawn_local(async move {
+                core_exec::spawn_local(async move {
                     if let Err(e) = Self::append_to_file(path, to_be_written, flush_all).await {
                         error!("Error writing to file: {}", e);
                         error!("Due to the above error some history has been lost");
@@ -876,7 +877,7 @@ mod dot_tests {
         let mut frame_history = FrameHistory::new(1000);
         frame_history.mark_position();
 
-        abstract_executor::block_on(frame_history.update(true));
+        core_exec::block_on(frame_history.update(true));
 
         assert_eq!(frame_history.history_buffer.len(), 0);
     }
@@ -892,7 +893,7 @@ mod dot_tests {
             .open(&path)
             .expect("Failed to open file");
 
-        let _ = abstract_executor::block_on(async_write_all(data, true, file));
+        let _ = core_exec::block_on(async_write_all(data, true, file));
 
         let result = std::fs::read_to_string(path).expect("Failed to read written file");
         assert_eq!(result, "test data");

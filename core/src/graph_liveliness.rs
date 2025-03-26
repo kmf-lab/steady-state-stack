@@ -2,12 +2,13 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{abstract_executor, steady_config, util};
+use crate::{steady_config, util};
 use std::ops::Sub;
 use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
 use std::time::{Duration, Instant};
 use futures::lock::Mutex;
+use crate::core_exec;
 
 #[allow(unused_imports)]
 use log::{error, info, log_enabled, trace, warn};
@@ -179,7 +180,7 @@ impl GraphLiveliness {
     /// Requests shutdown of the graph.
     /// This call only returns when all listeners have been notified. They may delay in acting
     /// on the request but they are aware.
-    /// 
+    ///
     pub fn request_shutdown(&mut self) {
         if self.state.eq(&GraphLivelinessState::Running) {
             let voters = self.registered_voters.len();
@@ -201,7 +202,7 @@ impl GraphLiveliness {
             self.state = GraphLivelinessState::StopRequested;
 
             let local_oss = self.shutdown_one_shot_vec.clone();
-            abstract_executor::block_on(async move {
+            core_exec::block_on(async move {
                 let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
                 while let Some(f) = one_shots.pop() {
                     let _ignore = f.send(()); //May already been done but we don't care
@@ -212,7 +213,7 @@ impl GraphLiveliness {
         } else if self.is_in_state(&[GraphLivelinessState::Building]) {
             warn!("request_stop should only be called after start");
         }
-        
+
     }
 
     /// ensure all stopped actors are in favor of shutdown
@@ -322,7 +323,7 @@ impl GraphLiveliness {
                     } else if vote.in_favor {
                         error!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
                     }
-                    
+
                     vote.in_favor = in_favor;
                     drop(vote);
                     Some(!in_favor) // Return the opposite to keep running when we vote no
@@ -349,18 +350,18 @@ impl GraphLiveliness {
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash)]
 pub struct ActorIdentity {
     /// unique identifier for this actor
-    pub id: usize,      
+    pub id: usize,
     /// immutable human-readable static name for this actor
-    pub label: ActorName,  
+    pub label: ActorName,
 }
 
 /// Represents the name of an actor with its unique and optional usize suffix
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ActorName {
     /// immutalbe static static name for this actor
-    pub name: &'static str,    
+    pub name: &'static str,
     /// optional suffix for this actor to make it unique
-    pub suffix: Option<usize>, 
+    pub suffix: Option<usize>,
 }
 
 impl ActorIdentity {
@@ -415,7 +416,7 @@ pub enum ProactorConfig {
 }
 
 /// all the preliminary setup for the graph
-/// 
+///
 #[derive(Clone, Debug)]
 pub struct GraphBuilder {
     block_fail_fast: bool,
@@ -425,7 +426,7 @@ pub struct GraphBuilder {
     proactor_config: Option<ProactorConfig>,
     iouring_queue_length: u32,
     telemtry_production_rate_ms: u64
-    
+
 }
 
 impl Default for GraphBuilder {
@@ -468,7 +469,7 @@ impl GraphBuilder {
             telemtry_production_rate_ms: 40, //default
         }
     }
-    
+
     /// for internal testing of the panic recovery
     #[cfg(test)]
     pub(crate) fn with_block_fail_fast(&self) -> Self {
@@ -582,7 +583,7 @@ impl Graph {
         let oneshot_shutdown_rx = {
             let (send_shutdown_notice_to_periodic_wait, rx) = oneshot::channel();
             let local_vec = self.oneshot_shutdown_vec.clone();
-            abstract_executor::block_on(async move {
+            core_exec::block_on(async move {
                 local_vec.lock().await.push(send_shutdown_notice_to_periodic_wait);
             });
             rx
@@ -748,7 +749,7 @@ impl Graph {
             if state.is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
                 let (tx, rx) = oneshot::channel();
                 let v = state.shutdown_one_shot_vec.clone();
-                abstract_executor::block_on(async move {
+                core_exec::block_on(async move {
                     v.lock().await.push(tx);
                 });
                 Some(rx)
@@ -757,7 +758,7 @@ impl Graph {
             }
         } {
             // If we are Running or Building then we block here until shutdown is started.
-            let _ = abstract_executor::block_on(wait_on);
+            let _ = core_exec::block_on(wait_on);
         }
 
         let now = Instant::now();
@@ -832,7 +833,7 @@ impl Graph {
         };
 
 
-        abstract_executor::init(builder.enable_io_driver, proactor_config, builder.iouring_queue_length);
+        core_exec::init(builder.enable_io_driver, proactor_config, builder.iouring_queue_length);
 
         let channel_count = Arc::new(AtomicUsize::new(0));
         let actor_count = Arc::new(AtomicUsize::new(0));

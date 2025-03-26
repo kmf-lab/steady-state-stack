@@ -28,7 +28,14 @@ pub(crate) mod dot;
 
 mod graph_liveliness;
 mod loop_driver;
+
+#[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
 mod abstract_executor;
+
+#[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
+use abstract_executor::*;
+
+
 #[cfg(test)]
 mod test_panic_capture;
 mod monitor_telemetry;
@@ -106,8 +113,8 @@ pub use actor_builder::ActorTeam;
 pub use actor_builder::Threading;
 pub use graph_liveliness::*;
 pub use install::serviced::*;
-pub use abstract_executor::spawn_local;
-pub use abstract_executor::spawn_blocking;
+
+
 pub use steady_rx::Rx;
 pub use steady_tx::Tx;
 pub use steady_rx::SteadyRxBundleTrait;

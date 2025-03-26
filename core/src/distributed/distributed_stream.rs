@@ -5,7 +5,7 @@
 //! `aeron_subscribe`.
 
 use crate::core_tx::TxCore;
-use crate::{abstract_executor, channel_builder::ChannelBuilder, Rx, SteadyCommander, Tx};
+use crate::{channel_builder::ChannelBuilder, Rx, SteadyCommander, Tx};
 use ahash::AHashMap;
 use async_ringbuf::wrap::AsyncWrap;
 use async_ringbuf::AsyncRb;
@@ -22,6 +22,7 @@ use crate::core_rx::RxCore;
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::TxMetaDataProvider;
+use crate::core_exec;
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
 pub type IdType = i32;
@@ -771,7 +772,7 @@ impl<T: StreamItem> LazyStreamTx<T> {
     /// This blocks the current task if the lock is contended.
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyStreamTx<T> {
-        abstract_executor::block_on(self.lazy_channel.get_tx_clone())
+        core_exec::block_on(self.lazy_channel.get_tx_clone())
     }
 
     /// Sends a frame (payload) and then pushes a metadata fragment (length) to the control channel.
@@ -836,7 +837,7 @@ impl<T: StreamItem> LazyStreamRx<T> {
     /// This blocks the current task if the lock is contended.
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyStreamRx<T> {
-        abstract_executor::block_on(self.lazy_channel.get_rx_clone())
+        core_exec::block_on(self.lazy_channel.get_rx_clone())
     }
 
     /// Takes a frame of data from the payload channel, after reading a fragment from the control channel.
@@ -874,7 +875,7 @@ impl<T: StreamItem> RxMetaDataProvider for SteadyStreamRx<T> {
         match self.try_lock() {
             Some(guard) => guard.item_channel.channel_meta_data.meta_data(),
             None => {
-                let guard = abstract_executor::block_on(self.lock());
+                let guard = core_exec::block_on(self.lock());
                 guard.item_channel.channel_meta_data.meta_data()
             }
         }
@@ -886,7 +887,7 @@ impl<T: StreamItem> TxMetaDataProvider for SteadyStreamTx<T> {
         match self.try_lock() {
             Some(guard) => guard.item_channel.channel_meta_data.meta_data(),
             None => {
-                let guard = abstract_executor::block_on(self.lock());
+                let guard = core_exec::block_on(self.lock());
                 guard.item_channel.channel_meta_data.meta_data()
             }
         }

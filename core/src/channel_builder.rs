@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use async_ringbuf::producer::AsyncProducer;
+use crate::core_exec;
 
 pub(crate) type ChannelBacking<T> = Heap<T>;
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
@@ -31,7 +32,7 @@ use futures::channel::oneshot;
 use log::*;
 use async_ringbuf::traits::Split;
 use futures_timer::Delay;
-use crate::{abstract_executor, AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
+use crate::{AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
 use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamItem, TxChannelMetaDataWrapper};
 use crate::monitor::ChannelMetaData;
@@ -678,7 +679,7 @@ impl ChannelBuilder {
                 oneshots.push(sender_tx);
                 oneshots.push(sender_rx);
             };
-            abstract_executor::block_on(oneshots_future);
+            core_exec::block_on(oneshots_future);
         }
 
         let (sender_is_closed, receiver_is_closed) = oneshot::channel();
@@ -754,7 +755,7 @@ impl <T> LazySteadyTx<T> {
     /// This allows for channels to be created more near to their actors.
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyTx<T> {
-        abstract_executor::block_on(self.lazy_channel.get_tx_clone())
+        core_exec::block_on(self.lazy_channel.get_tx_clone())
     }
 
 
@@ -800,7 +801,7 @@ impl <T> LazySteadyRx<T> {
     /// Returns a clone of the SteadyRx which is the same one used going forward
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyRx<T> {
-        abstract_executor::block_on(self.lazy_channel.get_rx_clone())
+        core_exec::block_on(self.lazy_channel.get_rx_clone())
     }
 
     /// For testing simulates taking data from the actor in a controlled manner.

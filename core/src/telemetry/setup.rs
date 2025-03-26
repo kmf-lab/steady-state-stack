@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
 use num_traits::Zero;
-use crate::{abstract_executor, steady_tx_bundle, ActorIdentity, Graph, GraphLivelinessState, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
+use crate::{steady_tx_bundle, ActorIdentity, Graph, GraphLivelinessState, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{find_my_index, ChannelMetaData, RxTel, ThreadInfo};
@@ -19,6 +19,7 @@ use crate::telemetry::metrics_collector::CollectorDetail;
 #[allow(unused_imports)]
 #[cfg(feature = "core_display")]
 use libc::sched_getcpu;
+use crate::core_exec;
 use crate::commander_context::SteadyContext;
 use crate::commander_monitor::LocalMonitor;
 use crate::core_tx::TxCore;
@@ -411,7 +412,7 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
     telemetry_send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
     telemetry_send_rx: Option<SteadyTelemetrySend<RX_LEN>>,
 ) {
-    abstract_executor::block_on(async move {
+    core_exec::block_on(async move {
         if let Some(actor_status) = telemetry_state {
             
             let mut status = actor_status.status_message(iteration_count, None);

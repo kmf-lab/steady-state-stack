@@ -16,9 +16,10 @@ use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::lock::{Mutex, MutexGuard};
 use log::*;
 use futures_util::future::select_all;
+use crate::core_exec;
 
 
-use crate::{abstract_executor, steady_config, ActorName, AlertColor, Graph, Metric, StdDev, Trigger};
+use crate::{steady_config, ActorName, AlertColor, Graph, Metric, StdDev, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, SideChannelHub};
 use crate::monitor::ActorMetaData;
@@ -275,7 +276,7 @@ impl ActorTeam {
 
                             // If actor_result was Ok(...), that actor finished successfully,
                             // so remove it from the vector. If none left, break:
-                            drop(abstract_executor::block_on(leftover_futures.remove(index)));
+                            drop(core_exec::block_on(leftover_futures.remove(index)));
                             // this actor is done and must not be part of the shutdown vote anymore
                             exit_actor_registration(&self.future_builder[index].fun);
                             if leftover_futures.is_empty() {
@@ -301,16 +302,16 @@ impl ActorTeam {
             }
         };
         let thread_lock = self.thread_lock;
-        abstract_executor::block_on(async move {
+        core_exec::block_on(async move {
            let _guard = thread_lock.lock().await;
-           match abstract_executor::spawn_more_threads(1).await {
+           match core_exec::spawn_more_threads(1).await {
                Ok(c) => {if c>=12 {info!("Threads: {}",c);} }
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
            }
-           abstract_executor::spawn( super_task ).detach();
+           core_exec::spawn( super_task ).detach();
         });
         //only continue after startup has finished
-        let _ = abstract_executor::block_on(local_take);
+        let _ = core_exec::block_on(local_take);
         count.load(Ordering::SeqCst)
     }
 
@@ -324,7 +325,7 @@ impl ActorTeam {
 
 /// WARNING: do not rename this function without change of backtrace printing since we use this as a "stop" to shorten traces.
 pub fn launch_actor<F: Future<Output = T>, T>(future: F) -> T {
-    abstract_executor::block_on(future)
+    core_exec::block_on(future)
 }
 
 pub(crate) type NodeTxRx = Mutex<(SideChannel,Receiver<()>)>;
@@ -633,16 +634,16 @@ impl ActorBuilder {
         let context_archetype = self.single_actor_exec_archetype(build_actor_exec);
 
         
-        abstract_executor::block_on(async move {
+        core_exec::block_on(async move {
            let _guard = thread_lock.lock().await;
-           match abstract_executor::spawn_more_threads(1).await {
+           match core_exec::spawn_more_threads(1).await {
                Ok(c) => {if c>=12 {info!("Threads: {}",c);} }
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
            }
             let fun:NonSendWrapper<DynCall> =  build_actor_registration(&context_archetype);
             let master_ctx:SteadyContext = build_actor_context(&context_archetype, rate_ms, default_core);
 
-            abstract_executor::spawn(async move {
+            core_exec::spawn(async move {
                 // Determine the core to use based on the provided options
                 let default = if let Some(exp) = explicit_core {exp} else {default_core};
                 let core = if let Some(mut balancer) = core_balancer {
@@ -798,12 +799,12 @@ impl ActorBuilder {
         // This is used only when run under testing
         ////////////////////////////////////////////
         let oneshot_shutdown_vec_for_node = oneshot_shutdown_vec.clone();
-        let immutable_node_tx_rx = abstract_executor::block_on(async move {
+        let immutable_node_tx_rx = core_exec::block_on(async move {
             let mut backplane = backplane.lock().await;
             // If the backplane is enabled then register every node name for use
             if let Some(pb) = &mut *backplane {
                 let (shutdown_tx,shutdown_rx) = oneshot::channel();
-                abstract_executor::block_on(async move {
+                core_exec::block_on(async move {
                     let mut v = oneshot_shutdown_vec_for_node.lock().await;
                     v.push(shutdown_tx);
                 });
@@ -826,7 +827,7 @@ impl ActorBuilder {
         let immutable_oneshot_shutdown = {
             let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
             let oneshot_shutdown_vec = oneshot_shutdown_vec.clone();
-            abstract_executor::block_on(async move {
+            core_exec::block_on(async move {
                 let mut v = oneshot_shutdown_vec.lock().await;
                 v.push(send_shutdown_notice_to_periodic_wait);
             });
