@@ -30,10 +30,28 @@ mod graph_liveliness;
 mod loop_driver;
 
 #[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
-mod abstract_executor;
+mod abstract_executor_nuclei;
 
 #[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
-use abstract_executor::*;
+use abstract_executor_nuclei::*;
+
+#[cfg(feature = "exec_smol")]
+mod abstract_executor_smol;
+
+#[cfg(feature = "exec_smol")]
+use abstract_executor_smol::*;
+
+#[cfg(feature = "exec_async_std")]
+mod abstract_executor_async_std;
+
+#[cfg(feature = "exec_async_std")]
+use abstract_executor_async_std::*;
+
+#[cfg(any(feature = "exec_embassy"))]
+mod abstract_executor_embassy;
+
+#[cfg(any(feature = "exec_embassy"))]
+use abstract_executor_embassy::*;
 
 
 #[cfg(test)]

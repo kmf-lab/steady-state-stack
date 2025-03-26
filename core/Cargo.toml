@@ -37,6 +37,9 @@ default = ["proactor_nuclei", "telemetry_server_builtin", "prometheus_metrics", 
 proactor_nuclei = ["nuclei/async-exec", "nuclei/iouring"]
 # Use the tokio async runtime (proactor_? exclusive one or the other)
 proactor_tokio = ["nuclei/tokio", "nuclei/iouring"]
+exec_embassy = ["embassy-executor"]
+#exec_smol = ["smol"]
+exec_async_std = ["async-std"]
 
 proactor_windows = ["nuclei/async-exec"]
 
@@ -80,6 +83,9 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
 nuclei           = { version = "0.4.4", optional = true } # foundational proactive runtime
+embassy-executor = { version = "0.5.0", optional = true }
+async-std        = { version = "1.13.1", attributes="", optional = true}
+#smol             = { version = "2.0.2", option = true}
 ringbuf          = "0.4.7"  # foundational bounded message passing
 async-ringbuf    = "0.3.2"  # foundational bounded message passing
 log              = "0.4.25"  # common logging traits

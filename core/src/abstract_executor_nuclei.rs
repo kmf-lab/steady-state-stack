@@ -1,4 +1,5 @@
 
+#[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
 pub(crate) mod core_exec {
     //! This module provides an abstraction layer for threading solutions, allowing for easier
     //! swapping of threading implementations in the future.
