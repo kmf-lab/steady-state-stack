@@ -160,7 +160,7 @@ use std::time::{Duration, Instant};
 use std::fmt::Debug;
 use std::sync::Arc;
 use futures::lock::Mutex;
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 #[allow(unused_imports)]
 use log::*;
 
@@ -169,7 +169,7 @@ use crate::util::logger;
 use futures::*;
 use futures::channel::oneshot;
 use futures::select;
-use futures_util::lock::MutexGuard;
+use futures_util::lock::{MappedMutexGuard, MutexGuard};
 pub use commander_monitor::LocalMonitor;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
@@ -179,24 +179,43 @@ use crate::yield_now::yield_now;
 ///
 /// Holds state of actors so it is not lost between restarts.
 pub struct SteadyState<S>(Arc<Mutex<Option<S>>>);
+
 impl<S> Clone for SteadyState<S> {
     fn clone(&self) -> Self {
         SteadyState(self.0.clone())
     }
 }
+
+pub struct StateGuard<'a, S> {
+    guard: MappedMutexGuard<'a, Option<S>, S>,
+}
+
+impl<'a, S> Deref for StateGuard<'a, S> {
+    type Target = S;
+    fn deref(&self) -> &Self::Target {
+        &*self.guard
+    }
+}
+
+impl<'a, S> DerefMut for StateGuard<'a, S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.guard
+    }
+}
+
 impl<S> SteadyState<S> {
 
-    /// grab the state struct for use
-    pub async fn lock<F>(&self, build_new_state: F) -> MutexGuard<Option<S>>
+    pub async fn lock<F>(&self, init: F) -> StateGuard<'_, S>
     where
-        F: FnOnce() -> S {
-        let mut state_guard = self.0.lock().await;
-        *state_guard = Some(match state_guard.take() {
-            Some(s) => s,
-            None => build_new_state()
-        });
-        state_guard
+        F: FnOnce() -> S,
+        S: Send,
+    {
+        let mut guard = self.0.lock().await;
+        guard.get_or_insert_with(init);
+        let mapped = MutexGuard::map(guard, |opt| opt.as_mut().expect("existing state"));
+        StateGuard { guard: mapped }
     }
+
 }
 
 

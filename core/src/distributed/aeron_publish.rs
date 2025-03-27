@@ -44,9 +44,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut rx = rx.lock().await;
 
 
-    let mut state_guard = state.lock( || AeronPublishSteadyState::default()).await;
-    if let Some(state) = state_guard.as_mut() {
-
+    let mut state = state.lock( || AeronPublishSteadyState::default()).await;
         {
             let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
            //trace!("holding add_exclusive_publication lock");
@@ -185,7 +183,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                         }
                     }
          }        
-    }
+
     Ok(())
 }
 

@@ -64,8 +64,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
     errors_tx: SteadyTx<ErrorMessage>,
     state: SteadyState<RuntimeState>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut state_guard = state.lock(|| RuntimeState::new(1)).await;
-    if let Some(state) = state_guard.as_mut() {
+    let mut state = state.lock(|| RuntimeState::new(1)).await;
         let mut numbers_rx = numbers_rx.lock().await;
         let mut fizzbuzz_messages_tx = fizzbuzz_messages_tx.lock().await;
         let mut errors_tx = errors_tx.lock().await;
@@ -166,9 +165,6 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
                 panic!("planned periodic panic");
             }
         }
-    } else {
-        warn!("missing state, unable to start actor");
-    }
 
     Ok(())
 }

@@ -81,9 +81,7 @@ async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
 , state: SteadyState<{{ display_name|capitalize }}InternalState>
  ) -> Result<(),Box<dyn Error>> {
 
-    let mut state_guard = state.lock( || {{ display_name|capitalize }}InternalState::default()).await;
-    if let Some(mut state) = state_guard.as_mut() {
-
+    let mut state = state.lock( || {{ display_name|capitalize }}InternalState::default()).await;
    //every read and write channel must be locked for this instance use, this is outside before the loop
  {%- for channel in rx_channels %}
    let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;{% endfor %}{% for channel in tx_channels %}
@@ -153,7 +151,7 @@ async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
 {%- endfor %}
 
       }
-    }
+
     Ok(())
 }
 

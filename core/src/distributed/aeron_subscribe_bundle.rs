@@ -69,8 +69,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
     let mut tx = tx.lock().await;
 
-    let mut state_guard = state.lock(|| AeronSubscribeSteadyState::default()).await;
-    if let Some(state) = state_guard.as_mut() {
+    let mut state = state.lock(|| AeronSubscribeSteadyState::default()).await;
         //TODO: better data structure required, need a collecion of subs.
         let mut subs: [Result<Subscription, Box<dyn Error>>; GIRTH] = std::array::from_fn(|_| Err("Not Found".into()));
 
@@ -302,7 +301,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                 }
 
         }
-    }
+
     Ok(())
 }
 

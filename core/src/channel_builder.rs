@@ -39,6 +39,11 @@ use crate::monitor::ChannelMetaData;
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
 
+/// All channels use this capacity unless set, do not change since many apps may assume
+/// this constant and for specific cases you should set your own capacity in a base builder.
+const DEFAULT_CAPACITY: usize = 64; // do not change
+
+
 /// Builder for configuring and creating channels within the Steady State framework.
 ///
 /// The `ChannelBuilder` struct allows for the detailed configuration of channels, including
@@ -185,7 +190,6 @@ pub struct ChannelBuilder {
 
 
 
-const DEFAULT_CAPACITY: usize = 64;
 impl ChannelBuilder {
     /// Creates a new `ChannelBuilder` instance with the specified parameters.
     ///

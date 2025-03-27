@@ -45,8 +45,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
     let mut tx = tx.lock().await;
 
-    let mut state_guard = state.lock( || AeronSubscribeSteadyState::default()).await;
-    if let Some(state) = state_guard.as_mut() {
+    let mut state = state.lock( || AeronSubscribeSteadyState::default()).await;
 
         {
             let mut aeron = aeron.lock().await;
@@ -253,7 +252,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                     cmd.relay_stats_smartly();
                 }
         }
-    }
     Ok(())
 }
 
