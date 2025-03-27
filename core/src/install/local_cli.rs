@@ -3,7 +3,6 @@
 
 use std::env;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use log::*;
 use dirs; // Ensure `dirs` crate is added to your `Cargo.toml`
@@ -17,21 +16,48 @@ pub struct LocalCLIBuilder {
 }
 
 impl LocalCLIBuilder {
-    /// Creates a new `LocalCLIBuilder`.
+    /// Creates a new `LocalCLIBuilder` instance with platform-specific installation directories.
     ///
     /// # Arguments
     ///
-    /// * `path` - The path to the executable.
+    /// * `path` - The path to the executable or a related configuration path.
     /// * `system_wide` - A boolean indicating if the installation should be system-wide.
     ///
     /// # Returns
     ///
-    /// A new `LocalCLIBuilder` instance.
+    /// A new `LocalCLIBuilder` instance configured for the target platform.
+    ///
+    /// # Platform-Specific Behavior
+    ///
+    /// - **Linux (Unix-like systems):**
+    ///   - System-wide: `/usr/local/bin`
+    ///   - User-local: `~/.local/bin`
+    /// - **Windows:**
+    ///   - System-wide: `C:\Program Files\SteadyState`
+    ///   - User-local: `%USERPROFILE%\.local\bin`
+    ///
+    /// # Notes
+    ///
+    /// - On Windows, system-wide installation requires administrative privileges.
+    /// - The user may need to add the installation directory to their PATH manually.
     pub fn new(path: String, system_wide: bool) -> Self {
         let install_dir = if system_wide {
-            PathBuf::from("/usr/local/bin")
+            if cfg!(unix) {
+                PathBuf::from("/usr/local/bin")
+            } else if cfg!(windows) {
+                PathBuf::from(r"C:\Program Files\SteadyState")
+            } else {
+                panic!("Unsupported platform");
+            }
         } else {
-            dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".local/bin")
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            if cfg!(unix) {
+                home.join(".local/bin")
+            } else if cfg!(windows) {
+                home.join(".local").join("bin")
+            } else {
+                panic!("Unsupported platform");
+            }
         };
 
         LocalCLIBuilder {
@@ -41,35 +67,69 @@ impl LocalCLIBuilder {
         }
     }
 
-    /// Sets a custom installation directory.
+    /// Sets a custom installation directory, overriding the default.
     ///
     /// # Arguments
     ///
-    /// * `custom_install_dir` - The custom installation directory.
+    /// * `custom_install_dir` - The custom installation directory as a `PathBuf`.
     ///
     /// # Returns
     ///
-    /// The `LocalCLIBuilder` instance with the updated installation directory.
+    /// The updated `LocalCLIBuilder` instance.
+    ///
+    /// # Behavior
+    ///
+    /// - If the custom directory is in the system's PATH, it is set as the `install_dir`.
+    /// - If not in the PATH, a log message is emitted, and the directory is still set.
+    /// - This method disables system-wide installation (`system_wide` is set to `false`).
     ///
     /// # Warning
     ///
-    /// This should only be used if you know you need it for some custom distribution.
+    /// Use this only if you need a custom distribution setup. The user must ensure the directory
+    /// is in the PATH if they want the CLI tool to be accessible without full path specification.
     pub fn with_custom_location(mut self, custom_install_dir: PathBuf) -> Self {
-        let in_path = env::var_os("PATH").is_some_and(|paths| paths.to_string_lossy().contains(&*custom_install_dir.to_string_lossy()));
         self.system_wide = false;
-        if in_path {
-            self.install_dir = custom_install_dir;
+        if let Ok(path_var) = env::var("PATH") {
+            let paths: Vec<PathBuf> = env::split_paths(&path_var).collect();
+            if paths.contains(&custom_install_dir) {
+                self.install_dir = custom_install_dir;
+            } else {
+                info!("Custom install directory {:?} is not in the PATH", custom_install_dir);
+                self.install_dir = custom_install_dir;
+            }
         } else {
-            info!("Custom install directory {:?} is not in the PATH {:?}", custom_install_dir, env::var_os("PATH"));
+            info!("PATH environment variable not found");
+            self.install_dir = custom_install_dir;
         }
         self
     }
 
-    /// Builds and installs the CLI tool.
+    /// Builds and installs the CLI tool to the specified installation directory.
     ///
     /// # Returns
     ///
-    /// A `Result` indicating success or failure.
+    /// A `Result` indicating success or an I/O error if the operation fails.
+    ///
+    /// # Behavior
+    ///
+    /// - Copies the current executable to the `install_dir` with its original filename.
+    /// - On Unix-like systems, sets executable permissions (0o755).
+    /// - Creates the installation directory if it doesn't exist.
+    /// - Logs the installation process using the `log` crate.
+    ///
+    /// # Platform-Specific Notes
+    ///
+    /// - **Windows:** The executable retains its `.exe` extension (if present), and no permission
+    ///   setting is required.
+    /// - **Linux (Unix):** Sets executable permissions explicitly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The current executable cannot be determined.
+    /// - The installation directory cannot be created.
+    /// - The file copy operation fails.
+    /// - (Unix only) Permissions cannot be set.
     pub fn build(&self) -> std::io::Result<()> {
         let current_exe = env::current_exe()?;
         info!("Current executable path: {:?}", current_exe);
@@ -78,16 +138,24 @@ impl LocalCLIBuilder {
         fs::create_dir_all(&self.install_dir)?;
 
         let dest_path = self.install_dir.join(
-            current_exe.file_name().ok_or(std::io::Error::new(std::io::ErrorKind::NotFound, "Executable name not found"))?
+            current_exe
+                .file_name()
+                .ok_or(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Executable name not found",
+                ))?,
         );
         fs::copy(&current_exe, &dest_path)?;
 
-        let mut perms = fs::metadata(&dest_path)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&dest_path, perms)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&dest_path)?.permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&dest_path, perms)?;
+        }
 
         info!("Executable installed to: {:?}", dest_path);
-
         Ok(())
     }
 }
