@@ -93,9 +93,19 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
         let opt_tcp = bind_to_port(addr);
         if let Some(ref listener_new) = *opt_tcp {
             #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
-            println!("Telemetry on http://{}", listener_new.local_addr().expect("Unable to get local address"));
+            {
+                let addr = listener_new.local_addr().expect("Unable to get local address");
+                let display_addr = if addr.ip().is_unspecified() { &*"127.0.0.1".to_string()
+                                                                    } else { &*addr.ip().to_string() };
+                println!("Telemetry on http://{}:{}", display_addr, addr.port());
+            }
             #[cfg(feature = "prometheus_metrics")]
-            println!("Prometheus can scrape on on http://{}/metrics", listener_new.local_addr().expect("Unable to read local address"));
+            {
+                let addr = listener_new.local_addr().expect("Unable to read local address");
+                let display_addr = if addr.ip().is_unspecified() { &*"127.0.0.1".to_string()
+                                                                      } else { &*addr.ip().to_string() };
+                println!("Prometheus can scrape on http://{}:{}/metrics", display_addr, addr.port());
+            }
         }
         //NOTE: this is probably a mistake this loop could be its own actor.
         core_exec::spawn_and_detach(async move {

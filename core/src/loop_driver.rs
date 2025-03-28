@@ -25,18 +25,18 @@ macro_rules! await_for_all {
 }
 
 
-pub async fn wait_for_all<F, const LEN: usize>(futures: &mut [F; LEN]) -> bool
-where
-    F: Future<Output = bool>,
-{
-    let mut flag = true;
-    for i in 0..LEN {
-        // Use unsafe because F is not Unpin.
-        let pinned_fut: Pin<&mut F> = unsafe { Pin::new_unchecked(&mut futures[i]) };
-        flag &= pinned_fut.await;
-    }
-    flag
-}
+// pub async fn wait_for_all<F, const LEN: usize>(futures: &mut [F; LEN]) -> bool
+// where
+//     F: Future<Output = bool>,
+// {
+//     let mut flag = true;
+//     for i in 0..LEN {
+//         // Use unsafe because F is not Unpin.
+//         let pinned_fut: Pin<&mut F> = unsafe { Pin::new_unchecked(&mut futures[i]) };
+//         flag &= pinned_fut.await;
+//     }
+//     flag
+// }
 
 
 /// This macro waits for either the first future to complete, or all of the rest to complete.

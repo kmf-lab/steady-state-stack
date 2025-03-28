@@ -759,8 +759,12 @@ impl ActorBuilder {
         I: Fn(SteadyContext) -> F + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
+        //TODO: we can set whatever we seem right at the first but later
+        //      when isRunning is called and the actor is started (registerd)
+        //      the best location will be recomputed to be ideal.
+
         match threading {
-            Threading::Spawn =>      {self.build_spawn(build_actor_exec);}
+            Threading::Spawn =>                        {self.build_spawn(build_actor_exec);}
             Threading::Join(team) => {self.build_join(build_actor_exec, team);}
         }
     }
