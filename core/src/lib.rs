@@ -4,6 +4,16 @@
 //!  Guarantee your SLA with telemetry, alerts and Prometheus.
 //!  Build low latency high volume solutions.
 
+#[cfg(all(feature = "proactor_nuclei", feature = "exec_async_std"))]
+compile_error!("Cannot enable both features at the same time");
+#[cfg(all(feature = "proactor_nuclei", feature = "proactor_tokio"))]
+compile_error!("Cannot enable both features at the same time");
+#[cfg(all(feature = "exec_async_std", feature = "proactor_tokio"))]
+compile_error!("Cannot enable both features at the same time");
+
+#[cfg(not(any(feature = "proactor_nuclei", feature = "proactor_tokio", feature = "exec_async_std")))]
+compile_error!("Must enable one executor feature");
+
 pub(crate) mod telemetry {
     /// Telemetry module for monitoring and collecting metrics.
     pub(crate) mod metrics_collector;
