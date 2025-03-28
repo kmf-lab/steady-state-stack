@@ -74,17 +74,15 @@ pub(crate) fn compute_index(tx: &mut TxBundle<Packet>, packet: &Packet) -> usize
     (packet.route as usize) % tx.len()
 }
 
-
-
 #[cfg(test)]
 mod generator_tests {
+    use std::thread::sleep;
     use std::time::Duration;
-    use futures_timer::Delay;
     use steady_state::*;
     use crate::actor::data_generator::{internal_behavior, Packet};
 
-    #[async_std::test]
-    async fn test_generator() {
+    #[test]
+    fn test_generator() {
 
         let mut graph = GraphBuilder::for_testing()
                           .build(());
@@ -98,29 +96,15 @@ mod generator_tests {
             .build_spawn(move |context| internal_behavior(context,approved_widget_tx_out.clone()));
 
         graph.start();
-
-        Delay::new(Duration::from_secs(1)).await;
-
+        sleep(Duration::from_secs(1));
         graph.request_stop();
         graph.block_until_stopped(Duration::from_millis(3000));
 
-        
-        let count0 = approved_widget_rx_out[0].testing_avail_units().await;
-        let count1 = approved_widget_rx_out[1].testing_avail_units().await;
-        let count2 = approved_widget_rx_out[2].testing_avail_units().await;
-        let count3 = approved_widget_rx_out[3].testing_avail_units().await;
-        
-        // println!("count0: {:?} count1: {:?} count2: {:?} count3: {:?}", count0, count1, count2, count3);
-
-        assert_eq!(expected_count, count0);
-        assert_eq!(expected_count, count1);
-        assert_eq!(expected_count, count2);
-        assert_eq!(expected_count, count3);
-
-
+        approved_widget_rx_out[0].assert_eq_count(expected_count);
+        approved_widget_rx_out[1].assert_eq_count(expected_count);
+        approved_widget_rx_out[2].assert_eq_count(expected_count);
+        approved_widget_rx_out[3].assert_eq_count(expected_count);
     }
-
-
 }
 
 

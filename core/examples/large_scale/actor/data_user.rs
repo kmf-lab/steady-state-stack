@@ -43,12 +43,13 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>)
 
 #[cfg(test)]
 mod user_tests {
+    use std::thread::sleep;
     use std::time::Duration;
     use futures_timer::Delay;
     use steady_state::GraphBuilder;
 
-    #[async_std::test]
-    async fn test_user() {
+    #[test]
+    fn test_user() {
         let mut graph = GraphBuilder::for_testing().build(());
  
     //
@@ -69,7 +70,7 @@ mod user_tests {
     //     // approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
         
         graph.start();
-        Delay::new(Duration::from_millis(60)).await;
+        sleep(Duration::from_millis(60));
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(15));
         

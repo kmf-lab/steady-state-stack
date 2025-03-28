@@ -52,13 +52,12 @@ async fn internal_behavior<const TICK_COUNTS_RX_GIRTH:usize,C: SteadyCommander>(
 #[cfg(test)]
 pub(crate) mod hp_actor_tests {
     use std::time::Duration;
-    use async_std::test;
     use steady_state::*;
     use crate::actor::final_consumer::{internal_behavior, BATCH};
     use crate::actor::tick_consumer::TickCount;
 
     #[test]
-    pub(crate) async fn test_simple_process() {
+    fn test_simple_process() {
         //build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
@@ -74,9 +73,9 @@ pub(crate) mod hp_actor_tests {
 
         let test_data:Vec<TickCount> = (0..BATCH).map(|i| TickCount { count: i as u128 }).collect();
 
-        ticks_tx_in[0].testing_send_all(test_data, true).await;
-        ticks_tx_in[1].testing_close(Duration::from_millis(10)).await;
-        ticks_tx_in[2].testing_close(Duration::from_millis(10)).await;
+        ticks_tx_in[0].testing_send_all(test_data, true);
+        ticks_tx_in[1].testing_close();
+        ticks_tx_in[2].testing_close();
         ticks_tx_in.clone();
         graph.block_until_stopped(Duration::from_secs(240));
 

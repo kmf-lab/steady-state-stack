@@ -163,8 +163,8 @@ pub(crate) mod tests {
     use steady_state::*;
     use super::*;
 
-    #[async_std::test]
-    pub(crate) async fn test_simple_process() {
+    #[test]
+    fn test_simple_process() {
        let mut graph = GraphBuilder::for_testing().build(());
        {%- for channel in rx_channels %}
        let (test_{{channel[0].name}}_tx,{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_as_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
@@ -184,10 +184,10 @@ pub(crate) mod tests {
         {%- for channel in rx_channels %}
            {%- if 1==channel.len() %}
        {{note_for_the_user}} adjust this vec content to make a valid test
-       test_{{channel[0].name}}_tx.testing_send_all(vec![{{channel[0].message_type}}::default()],true).await;
+       test_{{channel[0].name}}_tx.testing_send_all(vec![{{channel[0].message_type}}::default()],true);
            {%- else %}
        {{note_for_the_user}} adjust this vec content to make a valid test, further this is only one in the bundle
-       test_{{channel[0].name}}_tx[0].testing_send_all(vec![{{channel[0].message_type}}::default()],true).await;
+       test_{{channel[0].name}}_tx[0].testing_send_all(vec![{{channel[0].message_type}}::default()],true);
            {%- endif %}
 
         {% endfor %}
@@ -197,12 +197,12 @@ pub(crate) mod tests {
         {%- for channel in tx_channels %}
             {%- if 1==channel.len() %}
        {{note_for_the_user}} confirm values on the output channels
-       //    assert_eq!(test_{{channel[0].name}}_rx.testing_avail_units().await, 1); // check expected count
-       let results_{{channel[0].name}}_vec = test_{{channel[0].name}}_rx.testing_take().await;
+       //    test_{{channel[0].name}}_rx.assert_eq_count(1); // check expected count
+       test_{{channel[0].name}}_rx.assert_eq_take(vec!());
             {%- else %}
        {{note_for_the_user}} confirm values on the output channels, further this is only one in the bundle
-       //    assert_eq!(test_{{channel[0].name}}_rx[0].testing_avail_units().await, 1); // check expected count
-       let results_{{channel[0].name}}_vec = test_{{channel[0].name}}_rx[0].testing_take().await;
+       //    test_{{channel[0].name}}_rx[0].assert_eq_count(1); // check expected count
+       test_{{channel[0].name}}_rx[0].assert_eq_take(vec!());
             {%- endif %}
         {% endfor -%}
     }

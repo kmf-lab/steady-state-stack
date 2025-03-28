@@ -75,14 +75,13 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd:C
 
 #[cfg(test)]
 mod generator_tests {
+    use std::thread::sleep;
     use std::time::Duration;
-    use async_std::test;
-    use futures_timer::Delay;
     use steady_state::*;
     use crate::actor::data_generator::internal_behavior;
 
     #[test]
-    async fn test_generator() {
+    fn test_generator() {
         let mut graph = GraphBuilder::for_testing().build(());
         
         let (feedback_tx_out,feedback_rx_out) = graph.channel_builder()
@@ -99,16 +98,13 @@ mod generator_tests {
             .build_spawn(move |context| internal_behavior(context, feedback_rx_out.clone(), approved_widget_tx_out.clone()  ));
         
         graph.start();
-       
-        Delay::new(Duration::from_millis(500)).await;
-        feedback_tx_out.testing_close(Duration::from_millis(10)).await;
+        sleep(Duration::from_millis(500));
+        feedback_tx_out.testing_close();
 
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(20));
 
-        let t = approved_widget_rx_out.testing_take().await;
-        assert_eq!(BATCH_SIZE, t.len());
-      
+        approved_widget_rx_out.assert_eq_count(BATCH_SIZE);
 
     }
 

@@ -799,11 +799,13 @@ impl<T: StreamItem> LazyStreamTx<T> {
     /// Closes the underlying channels by marking them as closed.
     ///
     /// This signals to any receiver that no more data will arrive.
-    pub async fn testing_close(&self) {
-        let s = self.clone();
-        let mut l = s.lock().await;
-        l.payload_channel.mark_closed();
-        l.item_channel.mark_closed();
+    pub fn testing_close(&self) {
+        core_exec::block_on( async {
+            let s = self.clone();
+            let mut l = s.lock().await;
+            l.payload_channel.mark_closed();
+            l.item_channel.mark_closed();
+        });
     }
 }
 

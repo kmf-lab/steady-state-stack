@@ -68,10 +68,9 @@ pub(crate) async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: Steady
 mod consumer_tests {
     use std::time::Duration;
     use super::*;
-    use async_std::test;
 
     #[test]
-    pub(crate) async fn test_consumer() {
+    fn test_consumer() {
         // build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -88,7 +87,7 @@ mod consumer_tests {
         graph.request_stop();
 
         let test_data: Vec<ApprovedWidgets> = (0..BATCH_SIZE).map(|i| ApprovedWidgets { original_count: 0, approved_count: i as u64 }).collect();
-        approved_widget_tx_out.testing_send_all(test_data, true).await;
+        approved_widget_tx_out.testing_send_all(test_data, true);
 
         graph.block_until_stopped(Duration::from_secs(240));
 

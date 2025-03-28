@@ -76,13 +76,12 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<WidgetIn
 #[cfg(test)]
 pub(crate) mod approval_tests {
     use std::time::Duration;
-    use async_std::test;
     use steady_state::*;
     use crate::actor::data_approval::{internal_behavior, BATCH_SIZE};
     use crate::actor::WidgetInventory;
 
     #[test]
-    pub(crate) async fn test_approval() {
+    fn test_approval() {
         // build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -105,14 +104,12 @@ pub(crate) mod approval_tests {
 
        //
        let test_data:Vec<WidgetInventory> = (0..BATCH_SIZE).map(|i| WidgetInventory { count: i as u64, _payload: 0 }).collect();
-       widget_inventory_tx_in.testing_send_all(test_data, true).await;
+       widget_inventory_tx_in.testing_send_all(test_data, true);
        //
        graph.request_stop();
        graph.block_until_stopped(Duration::from_secs(2));
        //
-       //
-       //assert expected results
-       assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
+       approved_widget_rx_out.assert_eq_count(BATCH_SIZE);
     }
 
 

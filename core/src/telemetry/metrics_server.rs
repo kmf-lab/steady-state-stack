@@ -610,7 +610,7 @@ mod meteric_server_tests {
                         ident: ActorIdentity::new(i as usize, "test_actor", None ),
                         ..Default::default() }), Box::new([]),Box::new([])
                 ) ) )).collect();
-        tx_in.testing_send_all(test_data, true).await;
+        tx_in.testing_send_all(test_data, true);
       
         graph.start(); 
         Delay::new(Duration::from_millis(60)).await;
@@ -686,7 +686,7 @@ mod http_telemetry_tests {
                 panic!("Telemetry address not available");
             }
             // Step 6: Stop the graph
-            tx_in.testing_close(Duration::from_millis(10)).await;
+            tx_in.testing_close();
             graph.request_stop();
             graph.block_until_stopped(Duration::from_secs(5));
         }
@@ -764,7 +764,7 @@ mod http_telemetry_tests {
         data.push(DiagramData::NodeProcessData(1, node_status.into()));
         data.push(DiagramData::ChannelVolumeData(1, vec![(15, 20), (30, 30)].into()));
 
-        tx_in.testing_send_all(data, false).await;
+        tx_in.testing_send_all(data, false);
         (graph, server_ip_out, tx_in)
     }
 

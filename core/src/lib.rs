@@ -154,8 +154,9 @@ pub use distributed::distributed_stream::{SteadyStreamRx, SteadyStreamTx, Stream
 //pub use loop_driver::wait_for_any;
 //pub use loop_driver::wait_for_all_or_proceed_upon;
 pub use log::{debug, error, info, trace, warn};
+pub use std::time::{Duration, Instant};
+pub use std::error::Error;
 
-use std::time::{Duration, Instant};
 
 use std::fmt::Debug;
 use std::sync::Arc;

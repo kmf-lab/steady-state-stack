@@ -52,15 +52,14 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>, 
 
 #[cfg(test)]
 mod process_tests {
+    use std::thread::sleep;
     use std::time::Duration;
-    use async_std::test;
-    use futures_timer::Delay;
     use steady_state::GraphBuilder;
     use crate::actor::data_generator::Packet;
     use crate::actor::data_process::internal_behavior;
 
     #[test]
-    pub(crate) async fn test_process() {
+    fn test_process() {
 
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -81,16 +80,12 @@ mod process_tests {
         
         let test_data: Vec<Packet> = (0..bash_size).map(|i| Packet { route: i as u16, data: Default::default() }).collect();
         let _sent = approved_widget_in_tx.testing_send_all(test_data,true);
-
-        Delay::new(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(2));
 
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(2));
 
-        let _took = approved_widget_out_rx.testing_take().await;
-        //println!("took: {:?}", took);
-
-
+        approved_widget_out_rx.assert_gt_count(0);
     }
 
 

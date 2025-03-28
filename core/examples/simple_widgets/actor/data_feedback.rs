@@ -52,13 +52,14 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd:C, rx: SteadyRx<FailureFe
 
 #[cfg(test)]
 mod tests {
+    use std::thread::sleep;
     use std::time::Duration;
     use futures_timer::Delay;
     use steady_state::GraphBuilder;
     use crate::actor::data_feedback::internal_behavior;
 
-    #[async_std::test]
-    async fn test_feedback() {
+    #[test]
+    fn test_feedback() {
         
         const BATCH_SIZE:usize = 200;
         
@@ -76,16 +77,11 @@ mod tests {
              .with_name("UnitTest")
              .build_spawn(move |context| internal_behavior(context, failure_feedback_rx_out.clone(), change_request_tx_out.clone()));
 
-        failure_feedback_tx_out.testing_send_all((0..10).map(|i| crate::actor::data_feedback::FailureFeedback { count: i, message: "test".to_string() }).collect(),true).await;
+        failure_feedback_tx_out.testing_send_all((0..10).map(|i| crate::actor::data_feedback::FailureFeedback { count: i, message: "test".to_string() }).collect(),true);
         graph.start();
-        Delay::new(Duration::from_millis(60)).await;
+        sleep(Duration::from_millis(60));
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(15));
-        
-        assert_eq!(change_request_rx_out.testing_avail_units().await, 10);
-    
+        change_request_rx_out.assert_eq_count(10);
     }
-
-
-
 }

@@ -56,12 +56,13 @@ async fn internal_behavior<C:SteadyCommander, const GIRTH:usize>(mut cmd: C, one
 
 #[cfg(test)]
 mod router_tests {
+    use std::thread::sleep;
     use std::time::Duration;
     use futures_timer::Delay;
     use steady_state::GraphBuilder;
 
-    #[async_std::test]
-    async fn test_router() {
+    #[test]
+    fn test_router() {
         let mut graph = GraphBuilder::for_testing().build(());
 
     //     // let (approved_widget_tx_out, approved_widget_rx_out) = graph.channel_builder()
@@ -81,7 +82,7 @@ mod router_tests {
     //     // approved_widget_tx_out.testing_send(test_data, Duration::from_millis(30), true).await;
 
         graph.start();
-        Delay::new(Duration::from_millis(60)).await;
+        sleep(Duration::from_millis(60));
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(15));
         

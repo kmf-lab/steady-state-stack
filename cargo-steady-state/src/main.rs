@@ -407,7 +407,7 @@ mod tests {
     fn build_and_parse(test_name: &str, graph_dot: &str, clean: bool, show_logs: bool, live_test: bool) {
         if live_test { //this will require open ports and drive access so we do not always run it
 
-            let level = "warn";
+            let level = "info";
             if let Ok(s) = LevelFilter::from_str(&level) {
                 let mut builder = LogSpecBuilder::new();
                 builder.default(s); // Set the default level
@@ -469,7 +469,6 @@ mod tests {
                     let dot_file = format!("{}.dot", test_name);
                     fs::write(&dot_file, graph_dot).expect("Failed to write dot file");
                     process_dot_file(&dot_file, test_name);
-                    fs::remove_file(&dot_file).expect("Failed to remove dot file");
 
                 println!("____________________________________________________________-----------------------------------------------------------");
                     do_cargo_cache_install(test_name);
@@ -477,7 +476,8 @@ mod tests {
                     do_cargo_build_of_generated_code(test_name);
                 println!("////////////////////////////////////////////////////////////-----------------------------------------------------------");
                     do_cargo_test_of_generated_code(test_name);
-                
+                    let _ignore = fs::remove_file(&dot_file);
+
             }
         }
 }
