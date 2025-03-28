@@ -2215,6 +2215,7 @@ dependencies = [
  "tempfile",
  "time",
  "uuid",
+ "winapi",
  "xz2",
 ]
 

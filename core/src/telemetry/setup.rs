@@ -17,9 +17,7 @@ use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
 
 #[allow(unused_imports)]
-#[cfg(feature = "core_display")]
-use libc::sched_getcpu;
-//
+
 
 use crate::core_exec;
 use crate::commander_context::SteadyContext;
@@ -202,10 +200,16 @@ pub(crate) fn is_empty_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>
 
 #[cfg(feature = "core_display")]
 fn get_current_cpu() -> i32 {
+    #[cfg(unix)]
     unsafe {
         // This returns the CPU number the calling thread is running on
         libc::sched_getcpu()+1 // We add 1 to match one based display used by gnome et. all 
     }
+    #[cfg(windows)]
+    {
+        unsafe { winapi::um::processthreadsapi::GetCurrentProcessorNumber() as usize as i32 }
+    }
+
 }
 
 

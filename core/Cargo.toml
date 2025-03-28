@@ -33,7 +33,7 @@ unwrap_used = "deny" # forbid use of unwrap
 
 [features]
 default = ["exec_async_std", "telemetry_server_builtin", "prometheus_metrics", "core_display", "core_affinity"]
-# Use the nuclei async runtime (proactor_? exclusive one or the other) (default)
+    # Use the nuclei async runtime (proactor_? exclusive one or the other) (default)
 proactor_nuclei = ["nuclei/async-exec", "nuclei/iouring"]
 # Use the tokio async runtime (proactor_? exclusive one or the other)
 proactor_tokio = ["nuclei/tokio", "nuclei/iouring"]
@@ -57,12 +57,9 @@ telemetry_server_cdn = [] # (telemetry_server_? exclusive one or the other)
 # records history files usefull for replay of the telemetry offline after the fact
 telemetry_history = []
 
-# lock teams and actors to specific cores
-core_affinity = ["libc"]
-# desplay which core the actor is running on
-core_display = ["libc"]
+core_affinity = ["libc", "winapi"]
+core_display = ["libc", "winapi"]
 
-# tick_generator = ["libc"] # TODO: new stuff
 
 # only set true if you want supervisors to restart actors while debug_assertions is on
 # no need to enable unless you want to see how supervisors work while testing
@@ -97,7 +94,7 @@ num-traits       = "0.2.19" # for num::Zero and other generic math traits
 itoa             = "1.0.14"
 time             = { version = "0.3.36", features = ["macros", "formatting", "parsing"] }
 dirs             = "5.0.1"
-clap = { version = "4.5.31", features = ["derive"] }  # Use clap with derive feature
+clap              = { version = "4.5.31", features = ["derive"] }  # Use clap with derive feature
 futures          = "0.3.31"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3.31"
 parking_lot      = "0.12.3"
@@ -122,6 +119,13 @@ aeron = "0.2.0"
 futures-lite = "2.6.0"
 backtrace = "0.3.74"
 # steady_state_aeron    = { path = "../../aeron-rs", version="0.1.6-kmf1" }
+# Dependencies for Unix-like systems (Linux, macOS, etc.)
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
+
+# Dependencies for Windows
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", optional = true, features = ["winbase", "processthreadsapi"] }
 
 
 # Release Notes::

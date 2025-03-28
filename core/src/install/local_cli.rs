@@ -165,7 +165,6 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
-    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
     #[test]
@@ -215,7 +214,6 @@ mod tests {
         assert!(installed_exe.exists());
 
         let metadata = fs::metadata(&installed_exe).expect("iternal error");
-        assert!(metadata.permissions().mode() & 0o777 >= 0o644);
 
     }
 

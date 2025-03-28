@@ -27,9 +27,9 @@ use crate::telemetry::metrics_collector::CollectorDetail;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
+
 #[allow(unused_imports)]
-#[cfg(feature = "core_affinity")]
-use libc::pthread_setaffinity_np;
+
 use crate::commander_context::SteadyContext;
 use crate::dot::RemoteDetails;
 
@@ -98,35 +98,54 @@ impl CoreBalancer {
 
 #[cfg(feature = "core_affinity")]
 fn get_num_cores() -> usize {
+    #[cfg(unix)]
     unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) as usize }
+    #[cfg(windows)]
+    unsafe {
+        let mut info: winapi::um::sysinfoapi::SYSTEM_INFO = std::mem::zeroed();
+        winapi::um::sysinfoapi::GetSystemInfo(&mut info);
+        info.dwNumberOfProcessors as usize
+    }
 }
 
 #[cfg(feature = "core_affinity")]
 fn pin_thread_to_core(core_id: usize) -> Result<(), String> {
-    let num_cores = get_num_cores(); // Get the number of available cores
-    //println!("Number of cores: {:?} {:?}", num_cores, core_id);
-    let core_id = core_id % num_cores; // Adjust core_id to ensure it's within bounds
+    #[cfg(unix)]
+    {
+        use libc::pthread_setaffinity_np;
+        let num_cores = get_num_cores(); // Get the number of available cores
+        //println!("Number of cores: {:?} {:?}", num_cores, core_id);
+        let core_id = core_id % num_cores; // Adjust core_id to ensure it's within bounds
 
-    let mut cpu_set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
-    unsafe {
-        libc::CPU_ZERO(&mut cpu_set);
-        libc::CPU_SET(core_id, &mut cpu_set);
+        let mut cpu_set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+        unsafe {
+            libc::CPU_ZERO(&mut cpu_set);
+            libc::CPU_SET(core_id, &mut cpu_set);
 
-        let thread_id = libc::pthread_self();
-        //println!("Thread id: {:?}", thread_id);
+            let thread_id = libc::pthread_self();
+            //println!("Thread id: {:?}", thread_id);
 
-        // Set the thread affinity
-        let result = libc::pthread_setaffinity_np(
-            thread_id,
-            std::mem::size_of::<libc::cpu_set_t>(),
-            &cpu_set,
-        );
+            // Set the thread affinity
+            let result = libc::pthread_setaffinity_np(
+                thread_id,
+                std::mem::size_of::<libc::cpu_set_t>(),
+                &cpu_set,
+            );
 
-        if result != 0 {
-            return Err(format!("Failed to set thread affinity: {}", result));
+            if result != 0 {
+                return Err(format!("Failed to set thread affinity: {}", result));
+            }
+        }
+   }
+    #[cfg(windows)]
+    {
+        unsafe {
+            let thread = winapi::um::processthreadsapi::GetCurrentThread();
+            let mask = 1usize << core_id;
+            winapi::um::winbase::SetThreadAffinityMask(thread, mask);
         }
     }
-    Ok(())
+Ok(())
 }
 
 /// The `ActorTeam` struct manages a collection of actors, facilitating their coordinated execution.

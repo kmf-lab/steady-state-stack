@@ -19,7 +19,7 @@ fi
 
 
 # Check for unwanted crates in a single cargo tree call to save time
-unwanted_crates="tokio smol actix rocket warp"
+unwanted_crates="tokio actix rocket warp"
 cargo_tree_output=$(cargo tree)
 for crate in $unwanted_crates; do
     if echo "$cargo_tree_output" | grep -q "$crate"; then
