@@ -52,13 +52,12 @@ async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Tick>, tx: Stead
 #[cfg(test)]
 pub(crate) mod hp_actor_tests {
     use std::time::Duration;
-    use async_std::test;
     use steady_state::*;
     use crate::actor::tick_consumer::{internal_behavior, WAIT_AVAIL};
     use crate::actor::tick_generator::Tick;
 
     #[test]
-    pub(crate) async fn test_simple_process() {
+    fn test_simple_process() {
         // build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing()
                                       .build(());
@@ -77,11 +76,8 @@ pub(crate) mod hp_actor_tests {
 
         let test_data:Vec<Tick> = (0..WAIT_AVAIL).map(|i| Tick { value: i as u128 }).collect();
         
-        ticks_tx_in.testing_send_all(test_data,true).await;
-        
+        ticks_tx_in.testing_send_all(test_data,true);
         graph.block_until_stopped(Duration::from_secs(240));
-
-        // assert expected results
-        assert_eq!(true, ticks_rx_out.testing_avail_units().await>0);
+        ticks_rx_out.assert_gt_count(0);
     }
 }

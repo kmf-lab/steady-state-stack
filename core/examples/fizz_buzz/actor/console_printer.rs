@@ -81,13 +81,13 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::thread::sleep;
     use std::time::Duration;
-    use futures_timer::Delay;
     use steady_state::*;
     use super::*;
 
-    #[async_std::test]
-    pub(crate) async fn test_simple_process() {
+    #[test]
+    fn test_simple_process() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (test_fizzbuzz_messages_tx,fizzbuzz_messages_rx) = graph.channel_builder().with_capacity(40).build();
         let (test_print_signal_tx,print_signal_rx) = graph.channel_builder().with_capacity(4).build();
@@ -115,13 +115,12 @@ pub(crate) mod tests {
             FizzBuzzMessage::Value(13),
             FizzBuzzMessage::Value(14),
             FizzBuzzMessage::FizzBuzz,
-        ],true).await;
-        Delay::new(Duration::from_millis(2)).await;
+        ],true);
+        sleep(Duration::from_millis(2));
 
         test_print_signal_tx.testing_send_all(vec![PrintSignal { tick: 1 },
-                                                       ],true).await;
-
-        Delay::new(Duration::from_millis(1)).await;
+                                                       ],true);
+        sleep(Duration::from_millis(1));
 
         graph.request_stop();
         assert!(graph.block_until_stopped(Duration::from_secs(4)));

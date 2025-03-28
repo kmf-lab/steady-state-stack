@@ -54,13 +54,13 @@ async fn internal_behavior<const TICKS_TX_GIRTH:usize,C:SteadyCommander>(mut cmd
 
 #[cfg(test)]
 pub(crate) mod actor_tests {
+    use std::thread::sleep;
     use std::time::Duration;
-    use futures_timer::Delay;
     use steady_state::*;
     use super::*;
 
-    #[async_std::test]
-    pub(crate) async fn test_simple_process() {
+    #[test]
+    fn test_simple_process() {
         let mut graph = GraphBuilder::for_testing().build(());
 
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
@@ -72,15 +72,14 @@ pub(crate) mod actor_tests {
             .build_spawn( move |context| internal_behavior(context, ticks_tx_out.clone()) );
 
         graph.start(); //startup the graph
-  
-        Delay::new(Duration::from_millis(40)).await; //if too long telemetry will back up
+        sleep(Duration::from_millis(40)); //if too long telemetry will back up
         
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(15));
 
-        assert_eq!(ticks_rx_out[0].testing_avail_units().await, BUFFER_SIZE);
-        assert_eq!(ticks_rx_out[1].testing_avail_units().await, BUFFER_SIZE);
-        assert_eq!(ticks_rx_out[2].testing_avail_units().await, BUFFER_SIZE);
+        ticks_rx_out[0].assert_eq_count(BUFFER_SIZE);
+        ticks_rx_out[1].assert_eq_count(BUFFER_SIZE);
+        ticks_rx_out[2].assert_eq_count(BUFFER_SIZE);
 
     }
 }

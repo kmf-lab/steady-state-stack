@@ -61,13 +61,13 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::thread::sleep;
     use std::time::Duration;
     use steady_state::*;
     use super::*;
-    use futures_timer::Delay;
 
-    #[async_std::test]
-    async fn test_simple_process() {
+    #[test]
+    fn test_simple_process() {
        let mut graph = GraphBuilder::for_testing().build(());
 
        let (numbers_tx, test_numbers_rx) = graph.channel_builder()
@@ -81,15 +81,11 @@ pub(crate) mod tests {
                      );
 
         graph.start(); //startup the graph
-        Delay::new(Duration::from_millis(40)).await;
+        sleep(Duration::from_millis(40));
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1));
 
-        let vec = test_numbers_rx.testing_take().await;
-         
-        assert_eq!(vec[0].value, 3,"vec: {:?}",vec);
-        assert_eq!(vec[1].value, 6,"vec: {:?}",vec);
-        assert_eq!(vec[2].value, 9,"vec: {:?}",vec);
+        test_numbers_rx.assert_eq_take(vec!(NumberMessage{value:3},NumberMessage{value:6},NumberMessage{value:9}));
 
     }
 

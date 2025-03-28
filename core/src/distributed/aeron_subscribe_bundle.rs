@@ -364,7 +364,7 @@ pub(crate) mod aeron_media_driver_tests {
         }
 
         for i in 0..STREAMS_COUNT {
-            to_aeron_tx[i].testing_close().await;
+            to_aeron_tx[i].testing_close();
         }
 
 

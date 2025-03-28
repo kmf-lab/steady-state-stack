@@ -35,14 +35,14 @@ async fn internal_behavior<CMD: SteadyCommander>(mut context: CMD, ticks_rx: Ste
 
 #[cfg(test)]
 pub(crate) mod actor_tests {
+    use std::thread::sleep;
     use std::time::Duration;
-    use futures_timer::Delay;
     use steady_state::*;
     use crate::actor::tick_generator::Tick;
     use crate::actor::tick_relay::{internal_behavior, BATCH};
 
-    #[async_std::test]
-    pub(crate) async fn test_simple_process() {
+    #[test]
+    fn test_simple_process() {
         // build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing()
                          .build(());
@@ -52,20 +52,19 @@ pub(crate) mod actor_tests {
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
                                                .with_capacity(BATCH*3).build();
 
-
         graph.actor_builder()
              .with_name("UnitTest")
              .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );
 
         let test_data:Vec<Tick> = (0..BATCH).map(|i| Tick { value: i as u128 }).collect();
         graph.start();
-        Delay::new(Duration::from_millis(5)).await; //if too long telemetry will back up
+        sleep(Duration::from_millis(5));
 
-        ticks_tx_in.testing_send_all(test_data,true).await;
+        ticks_tx_in.testing_send_all(test_data,true);
 
         graph.request_stop();
         assert_eq!(true,graph.block_until_stopped(Duration::from_secs(2)));
 
-        assert_eq!(ticks_rx_out.testing_avail_units().await, BATCH);
+        ticks_rx_out.assert_eq_count(BATCH);
     }
 }

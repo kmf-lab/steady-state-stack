@@ -41,19 +41,15 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
     Ok(())
 }
 
-
-
-
-
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::thread::sleep;
     use std::time::Duration;
-    use futures_timer::Delay;
     use steady_state::*;
     use super::*;
 
-    #[async_std::test]
-    pub(crate) async fn test_simple_process() {
+    #[test]
+    fn test_simple_process() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (print_signal_tx,test_print_signal_rx) = graph.channel_builder().with_capacity(4).build();
         graph.actor_builder()
@@ -62,14 +58,10 @@ pub(crate) mod tests {
                 internal_behavior(context,print_signal_tx.clone())
             );
         graph.start(); //startup the graph
-
-        //this actor produces one message every 2 seconds
-        Delay::new(Duration::from_secs(5)).await;
-
+        sleep(Duration::from_secs(5));
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1));
 
-        assert_eq!(test_print_signal_rx.testing_avail_units().await, 2);
+        test_print_signal_rx.assert_eq_count(2)
     }
-
 }

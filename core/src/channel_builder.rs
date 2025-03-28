@@ -34,9 +34,10 @@ use async_ringbuf::traits::Split;
 use futures_timer::Delay;
 use crate::{AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
+use crate::core_rx::RxCore;
 use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamItem, TxChannelMetaDataWrapper};
 use crate::monitor::ChannelMetaData;
-use crate::steady_rx::{Rx};
+use crate::steady_rx::{Rx, RxDone};
 use crate::steady_tx::{Tx};
 
 /// All channels use this capacity unless set, do not change since many apps may assume
@@ -764,24 +765,26 @@ impl <T> LazySteadyTx<T> {
 
 
     /// Simple send of all the data in the vec for testing
-    pub async fn testing_send_all(&self, data: Vec<T>, close: bool) {
-        let tx = self.lazy_channel.get_tx_clone().await;
-        let mut tx = tx.lock().await;
-        for d in data.into_iter() {
-            let _ =  tx.tx.push(d).await;     
-        }
-        if close {
-            tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
-        }        
+    pub fn testing_send_all(&self, data: Vec<T>, close: bool) {
+        core_exec::block_on( async {
+            let tx = self.lazy_channel.get_tx_clone().await;
+            let mut tx = tx.lock().await;
+            for d in data.into_iter() {
+                let _ = tx.tx.push(d).await;
+            }
+            if close {
+                tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
+            }
+        });
+
     }
-    
-    /// wait duration and then close and wait again
-    pub async fn testing_close(&self, step_delay: Duration) {
-        Delay::new(step_delay).await;
-        let tx = self.lazy_channel.get_tx_clone().await;
-        let mut tx = tx.lock().await;
-        tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
-        Delay::new(step_delay).await;
+
+    pub fn testing_close(&self) {
+        core_exec::block_on( async {
+            let tx = self.lazy_channel.get_tx_clone().await;
+            let mut tx = tx.lock().await;
+            tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
+        })
     }
 
 
@@ -809,20 +812,37 @@ impl <T> LazySteadyRx<T> {
     }
 
     /// For testing simulates taking data from the actor in a controlled manner.
-    pub async fn testing_avail_units(&self) -> usize {
-        let rx = self.lazy_channel.get_rx_clone().await;
-        let mut rx = rx.lock().await;
-        rx.avail_units()
+    pub fn assert_eq_count(&self, expected: usize) {
+        core_exec::block_on(async move {
+            let rx = self.lazy_channel.get_rx_clone().await;
+            let mut rx = rx.lock().await;
+            assert_eq!(expected,rx.avail_units());
+        });
     }
 
-
-    /// For testing simulates taking data from the actor in a controlled manner.
-    pub async fn testing_take(&self) -> Vec<T> {
-        let rx = self.lazy_channel.get_rx_clone().await;
-        let mut rx = rx.lock().await;
-        let limit = rx.capacity();
-        rx.shared_take_into_iter().take(limit).collect()
+    pub fn assert_gt_count(&self, expected: usize) {
+        core_exec::block_on(async move {
+            let rx = self.lazy_channel.get_rx_clone().await;
+            let mut rx = rx.lock().await;
+            let measured = rx.avail_units();
+            assert!(expected>measured,"{} > {}",expected,measured);
+        });
     }
+
+    pub fn assert_eq_take(&self, expected: Vec<T>)
+    where T: PartialEq + Debug {
+        core_exec::block_on(async move {
+             let rx = self.lazy_channel.get_rx_clone().await;
+             let mut rx = rx.lock().await;
+             for ex in expected.into_iter() {
+                 match rx.shared_try_take() {
+                     None => panic!("expected value"),
+                     Some((_done,taken)) => assert_eq!(ex,taken)
+                 };
+             }
+        });
+    }
+
 
 }
 

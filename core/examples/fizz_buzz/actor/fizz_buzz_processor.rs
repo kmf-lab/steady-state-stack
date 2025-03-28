@@ -176,8 +176,8 @@ pub(crate) mod tests {
     use steady_state::*;
     use super::*;
 
-    #[async_std::test]
-    async fn test_simple_process() {
+    #[test]
+    fn test_simple_process() {
        let mut graph = GraphBuilder::for_testing().with_telemetry_metric_features(false).build(());
 
        let (test_numbers_tx,numbers_rx) = graph.channel_builder().with_capacity(1000).build_as_bundle::<_,2>();
@@ -198,26 +198,23 @@ pub(crate) mod tests {
                                                      ,NumberMessage{value: 9}
                                                      ,NumberMessage{value: 12}
                                                      ,NumberMessage{value: 15}]
-                                        ,true).await;
+                                        ,true);
 
         test_numbers_tx[1].testing_send_all(vec![NumberMessage{value: 5}
                                                      ,NumberMessage{value: 10}
                                                      ,NumberMessage{value: 15}]
-                                        ,true).await;
-
-
+                                        ,true);
 
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(15));
-
-         let vec = test_fizzbuzz_messages_rx.testing_take().await;
-         assert_eq!(14, vec.len());
-         assert_eq!(FizzBuzzMessage::Value(1), vec[0]);
-         assert_eq!(FizzBuzzMessage::Value(2), vec[1]);
-         assert_eq!(FizzBuzzMessage::Fizz, vec[2]);
-         assert_eq!(FizzBuzzMessage::Value(4), vec[3]);
-         assert_eq!(FizzBuzzMessage::Buzz, vec[4]);
-
+        test_fizzbuzz_messages_rx.assert_eq_count(14);
+        test_fizzbuzz_messages_rx.assert_eq_take(vec!(
+            FizzBuzzMessage::Value(1),
+            FizzBuzzMessage::Value(2),
+            FizzBuzzMessage::Fizz,
+            FizzBuzzMessage::Value(4),
+            FizzBuzzMessage::Buzz,
+        ));
     }
 
 }

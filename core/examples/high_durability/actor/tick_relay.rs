@@ -45,15 +45,14 @@ async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, tic
 
 #[cfg(test)]
 pub(crate) mod hd_actor_tests {
+    use std::thread::sleep;
     use std::time::Duration;
-    use async_std::test;
-    use futures_timer::Delay;
     use steady_state::*;
     use crate::actor::tick_generator::Tick;
     use crate::actor::tick_relay::{internal_behavior, BATCH};
 
     #[test]
-    pub(crate) async fn test_simple_process() {
+    fn test_simple_process() {
         //build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
@@ -69,16 +68,15 @@ pub(crate) mod hd_actor_tests {
         //run graph until the actor detects when the input is closed
         //we run this before sending data to the input channels so we can cover both branches
         graph.start(); //startup the graph
-        Delay::new(Duration::from_millis(3)).await;  //wait for actor to start
+        sleep(Duration::from_millis(3));  //wait for actor to start
         let test_data:Vec<Tick> = (0..BATCH).map(|i| Tick { value: i as u128 }).collect();
-        ticks_tx_in.testing_send_all(test_data, false).await;
+        ticks_tx_in.testing_send_all(test_data, false);
 
         graph.request_stop(); //let all actors close when inputs are closed
 
-        let result_data = ticks_rx_out.testing_take().await;
-        assert!(result_data.len()<=BATCH);
+        ticks_rx_out.assert_eq_count(BATCH);
 
-        ticks_tx_in.testing_close(Duration::from_millis(30)).await;
+        ticks_tx_in.testing_close();
         graph.block_until_stopped(Duration::from_secs(240));
 
     }
