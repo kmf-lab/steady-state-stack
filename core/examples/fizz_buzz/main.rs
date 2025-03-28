@@ -96,9 +96,10 @@ fn build_graph(mut graph: Graph) -> Graph {
       
     
        base_actor_builder.with_name("DivBy3Producer")
-                 .build( move |context| actor::div_by_3_producer::run(context
+           .with_explicit_core(8)
+           .build( move |context| actor::div_by_3_producer::run(context
                                             , divby3producer_numbers_tx.clone()),
-                               &mut join
+                   &mut Threading::Spawn
                  );
     }
     {
@@ -107,15 +108,17 @@ fn build_graph(mut graph: Graph) -> Graph {
       
     
        base_actor_builder.with_name("DivBy5Producer")
-                 .build( move |context| actor::div_by_5_producer::run(context
+           .with_explicit_core(8)
+           .build( move |context| actor::div_by_5_producer::run(context
                                             , divby5producer_numbers_tx.clone()),
-                               &mut join
+                   &mut Threading::Spawn
                  );
     }
 
     {
        let state = new_state();
        base_actor_builder.with_name("FizzBuzzProcessor")
+              .with_explicit_core(3)
                  .build( move |context| actor::fizz_buzz_processor::run(context
                                             , fizzbuzzprocessor_numbers_rx.clone()
                                             , fizzbuzzprocessor_fizzbuzz_messages_tx.clone()
@@ -127,14 +130,16 @@ fn build_graph(mut graph: Graph) -> Graph {
 
 
         base_actor_builder.with_name("TimerActor")
+            .with_explicit_core(9)
             .build( move |context| actor::timer_actor::run(context
                                                            , timeractor_print_signal_tx.clone()),
-                    &mut join
+                    &mut Threading::Spawn
             );
     }
 
     {
         base_actor_builder.with_name("ConsolePrinter")
+            .with_explicit_core(3+4)
             .build( move |context| actor::console_printer::run(context
                                                                , consoleprinter_fizzbuzz_messages_rx.clone()
                                                                , consoleprinter_print_signal_rx.clone()),
@@ -143,9 +148,10 @@ fn build_graph(mut graph: Graph) -> Graph {
     }
     {
         base_actor_builder.with_name("ErrorLogger")
+            .with_explicit_core(9)
             .build( move |context| actor::error_logger::run(context
                                                             , errorlogger_errors_rx.clone()),
-                    &mut join
+                    &mut Threading::Spawn
             );
     }
     actor_team.spawn();
