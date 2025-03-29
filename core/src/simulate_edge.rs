@@ -178,10 +178,3 @@ pub(crate) async fn simulated_behavior< C: SteadyCommander + 'static>(
     Ok(())
 }
 
-
-
-struct SimRunnerCollection<T: 'static> {
-    storage: Vec<Box<dyn IntoSimRunner<T>>>, // Owns different test types
-    references: Vec<&'static mut dyn IntoSimRunner<T>>, // References for usage
-}
-

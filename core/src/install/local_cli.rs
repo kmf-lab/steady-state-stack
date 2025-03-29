@@ -213,7 +213,7 @@ mod tests {
         let installed_exe = custom_install_dir.join("test_exe");
         assert!(installed_exe.exists());
 
-        let metadata = fs::metadata(&installed_exe).expect("iternal error");
+        let _metadata = fs::metadata(&installed_exe).expect("iternal error");
 
     }
 

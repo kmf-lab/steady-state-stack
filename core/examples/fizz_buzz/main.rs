@@ -86,8 +86,8 @@ fn build_graph(mut graph: Graph) -> Graph {
     
     //build actors
 
-    let mut actor_team = ActorTeam::new(&graph);
-    let mut join = Threading::Join(&mut actor_team);
+    //let mut actor_team = ActorTeam::new(&graph);
+    //let mut join = Threading::Join(&mut actor_team);
 
 
     {
@@ -154,7 +154,7 @@ fn build_graph(mut graph: Graph) -> Graph {
                     &mut Threading::Spawn
             );
     }
-    actor_team.spawn();
+    //actor_team.spawn();
     //actor_team2.spawn();
 
     graph

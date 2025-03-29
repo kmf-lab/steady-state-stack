@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use crate::core_exec::*;
     use std::thread;
     use std::time::Duration;
     use crate::*;

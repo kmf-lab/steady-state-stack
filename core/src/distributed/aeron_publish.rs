@@ -191,11 +191,9 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 pub(crate) mod aeron_tests {
     use std::{env, fs};
     use super::*;
-    use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::distributed_builder::AqueductBuilder;
     use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
-    use crate::distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
 
     //NOTE: bump this up for longer running load tests
     //       20_000_000_000;

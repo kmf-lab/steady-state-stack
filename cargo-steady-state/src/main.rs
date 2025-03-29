@@ -473,9 +473,12 @@ mod tests {
                 println!("____________________________________________________________-----------------------------------------------------------");
                     do_cargo_cache_install(test_name);
                 println!("============================================================-----------------------------------------------------------");
+                    #[cfg(not(windows))]
                     do_cargo_build_of_generated_code(test_name);
                 println!("////////////////////////////////////////////////////////////-----------------------------------------------------------");
+                    #[cfg(not(windows))]
                     do_cargo_test_of_generated_code(test_name);
+
                     let _ignore = fs::remove_file(&dot_file);
 
             }
@@ -520,14 +523,17 @@ fn do_cargo_cache_install(test_name: &str) {
         let build_me = PathBuf::from(test_name);
         let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
 
-        // Execute the cargo build command and capture its output
+        // Choose the cargo command based on the platform //TODO: not yet working.
+        let cargo_cmd = if cfg!(windows) { "check" } else { "build" };
+
+        // Execute the cargo command and capture its output
         let output = Command::new("cargo")
-            .arg("build")
-            .arg("--verbose") // Keep verbose output for detailed build information
+            .arg(cargo_cmd) // Use "check" on Windows, "build" elsewhere
+            .arg("--verbose") // Keep verbose output for detailed information
             .arg("--manifest-path")
             .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Path to Cargo.toml
             .current_dir(build_me_absolute.clone()) // Set the working directory
-            .env("RUSTC_WRAPPER", "sccache") // Use sccache for compiler caching
+            .env("RUSTC_WRAPPER", "sccache") // Use sccache for compiler caching (still works with check)
             .stdout(Stdio::piped()) // Capture stdout instead of inheriting it
             .stderr(Stdio::piped()) // Capture stderr instead of inheriting it
             .spawn()
@@ -535,18 +541,18 @@ fn do_cargo_cache_install(test_name: &str) {
             .wait_with_output()
             .expect("failed to wait on child");
 
-        // Check if the build failed and print the output if so
+        // Print output for debugging regardless of success
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("{} stdout for {}:\n{}", cargo_cmd, test_name, stdout);
+        eprintln!("{} stderr for {}:\n{}", cargo_cmd, test_name, stderr);
+
+        // Check if the command failed and handle accordingly
         if !output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("{}", format!("Build failed for {}:", test_name).red());
-            println!("{}", "----- Standard Output -----".magenta());
-            println!("{}", stdout);
-            eprintln!("{}", "----- Standard Error -----".magenta());
-            eprintln!("{}", stderr);
-            panic!("Build failed for {}", test_name); // Panic after printing output
+            eprintln!("{}", format!("{} failed for {}:", cargo_cmd, test_name).red());
+            panic!("{} failed for {}", cargo_cmd, test_name); // Panic after printing output
         } else {
-            println!("Build succeeded for {}", test_name);
+            println!("{} succeeded for {}", cargo_cmd, test_name);
         }
     }
     

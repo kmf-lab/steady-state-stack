@@ -623,6 +623,7 @@ mod meteric_server_tests {
 
 #[cfg(test)]
 mod http_telemetry_tests {
+    use std::thread::sleep;
     use super::*;
     use crate::GraphBuilder;
     use std::time::Duration;
@@ -630,10 +631,11 @@ mod http_telemetry_tests {
     use isahc::ReadResponseExt;
     use crate::monitor::ActorStatus;
 
-    #[async_std::test]
-    async fn test_metrics_server() {
+    #[test]
+    fn test_metrics_server() {
         if std::env::var("GITHUB_ACTIONS").is_err() {
-            let (mut graph, server_ip, tx_in) = stand_up_test_server("127.0.0.1:0").await;
+            let (mut graph, server_ip, tx_in) =
+                stand_up_test_server("127.0.0.1:0");
 
             // Step 5: Capture and validate the metrics server content
             // Fetch the metrics from the server
@@ -694,7 +696,7 @@ mod http_telemetry_tests {
 
 
 
-    async fn stand_up_test_server(addr: &str) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
+    fn stand_up_test_server(addr: &str) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
         // Step 1: Set up a minimal graph
         let mut graph = GraphBuilder::for_testing()
             .with_telemtry_production_rate_ms(500)
@@ -705,7 +707,7 @@ mod http_telemetry_tests {
         if let Some(ref addr) = Some(addr.to_string()) {
             if let Some(addr) = check_addr(addr) {
                 println!("{}",&addr);                
-                launch_server(graph, Some(addr), tx_in, rx_in).await
+                launch_server(graph, Some(addr), tx_in, rx_in)
             } else {
                 panic!("Unable to Bind to http://{}", addr);
             }
@@ -714,7 +716,7 @@ mod http_telemetry_tests {
         }        
     }
 
-    async fn launch_server(mut graph: Graph, server_ip: Option<String>, tx_in: LazySteadyTx<DiagramData>
+    fn launch_server(mut graph: Graph, server_ip: Option<String>, tx_in: LazySteadyTx<DiagramData>
                            , rx_in: LazySteadyRx<DiagramData>) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
 
         let server_ip_out = server_ip.clone();
@@ -729,7 +731,7 @@ mod http_telemetry_tests {
         graph.start();
 
         // Allow the server to start
-        Delay::new(Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(500));
 
         // Step 4: Send test data to the metrics_server
         // Simulate DiagramData messages
