@@ -60,7 +60,7 @@ pub(crate) mod actor_tests {
     use super::*;
 
     #[test]
-    fn test_simple_process() {
+    fn test_tick_generator() {
         let mut graph = GraphBuilder::for_testing().build(());
 
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()

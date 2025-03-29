@@ -813,20 +813,32 @@ impl <T> LazySteadyRx<T> {
 
     /// For testing simulates taking data from the actor in a controlled manner.
     pub fn assert_eq_count(&self, expected: usize) {
-        core_exec::block_on(async move {
+        let measured = core_exec::block_on(async move {
             let rx = self.lazy_channel.get_rx_clone().await;
             let mut rx = rx.lock().await;
-            assert_eq!(expected,rx.avail_units());
+            rx.avail_units()
         });
+        if expected != measured {
+            error!("Assertion failed:  {} == {}  {} {}",  expected, measured, file!(), line!());
+        }
+        assert_eq!(expected,measured);
     }
 
     pub fn assert_gt_count(&self, expected: usize) {
-        core_exec::block_on(async move {
+        let measured = core_exec::block_on(async move {
             let rx = self.lazy_channel.get_rx_clone().await;
             let mut rx = rx.lock().await;
-            let measured = rx.avail_units();
-            assert!(expected>measured,"{} > {}",expected,measured);
+            rx.avail_units()
         });
+
+        if !(expected > measured) {
+            error!("Assertion failed:  {} > {}",  expected, measured);
+        }
+        assert!(
+            expected > measured,
+            "Assertion failed at {}:{}: {} > {}",
+            file!(), line!(), expected, measured
+        );
     }
 
     pub fn assert_eq_take(&self, expected: Vec<T>)

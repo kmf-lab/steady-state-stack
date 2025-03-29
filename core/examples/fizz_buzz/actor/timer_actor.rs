@@ -49,7 +49,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_process() {
+    fn test_timer_actor() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (print_signal_tx,test_print_signal_rx) = graph.channel_builder().with_capacity(4).build();
         graph.actor_builder()

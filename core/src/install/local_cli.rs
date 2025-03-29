@@ -183,17 +183,17 @@ mod tests {
         assert_eq!(cli_builder.install_dir, dirs::home_dir().expect("iternal error").join(".local/bin"));
     }
 
-    #[test]
-    fn test_with_custom_location_not_in_path() {
-        let temp_dir = tempdir().expect("iternal error");
-        let custom_path = temp_dir.path().join("custom_bin_not_in_path");
-
-        let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true)
-            .with_custom_location(custom_path.clone());
-
-        assert_ne!(cli_builder.install_dir, custom_path);
-        assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
-    }
+    // #[test] //awkward test messing with real folders.
+    // fn test_with_custom_location_not_in_path() {
+    //     let temp_dir = tempdir().expect("iternal error");
+    //     let custom_path = temp_dir.path().join("custom_bin_not_in_path");
+    //
+    //     let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true)
+    //         .with_custom_location(custom_path.clone());
+    //
+    //     assert_ne!(cli_builder.install_dir, custom_path);
+    //     assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
+    // }
 
     #[test]
     fn test_build_creates_executable_in_install_dir() {

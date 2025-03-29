@@ -87,7 +87,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_process() {
+    fn test_console_printer() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (test_fizzbuzz_messages_tx,fizzbuzz_messages_rx) = graph.channel_builder().with_capacity(40).build();
         let (test_print_signal_tx,print_signal_rx) = graph.channel_builder().with_capacity(4).build();

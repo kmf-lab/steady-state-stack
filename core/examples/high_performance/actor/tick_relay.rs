@@ -42,7 +42,7 @@ pub(crate) mod actor_tests {
     use crate::actor::tick_relay::{internal_behavior, BATCH};
 
     #[test]
-    fn test_simple_process() {
+    fn test_tick_hp_relay() {
         // build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing()
                          .build(());
@@ -56,11 +56,12 @@ pub(crate) mod actor_tests {
              .with_name("UnitTest")
              .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );
 
-        let test_data:Vec<Tick> = (0..BATCH).map(|i| Tick { value: i as u128 }).collect();
+        let test_data:Vec<Tick> = (0..BATCH+1).map(|i| Tick { value: i as u128 }).collect();
         graph.start();
-        sleep(Duration::from_millis(5));
-
         ticks_tx_in.testing_send_all(test_data,true);
+
+        sleep(Duration::from_millis(500));
+
 
         graph.request_stop();
         assert_eq!(true,graph.block_until_stopped(Duration::from_secs(2)));

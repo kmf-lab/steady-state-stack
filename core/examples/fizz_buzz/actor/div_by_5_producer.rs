@@ -63,7 +63,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_process() {
+    fn test_div_by_5_producer() {
         let mut graph = GraphBuilder::for_testing().build(());
 
         let (numbers_tx, test_numbers_rx) = graph.channel_builder()

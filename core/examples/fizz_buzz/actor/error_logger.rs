@@ -54,7 +54,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_process() {
+    fn test_error_logger() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (test_errors_tx,errors_rx) = graph.channel_builder().with_capacity(4).build();
         graph.actor_builder()

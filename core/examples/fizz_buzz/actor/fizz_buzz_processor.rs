@@ -177,7 +177,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_process() {
+    fn test_fizz_buzz_processor() {
        let mut graph = GraphBuilder::for_testing().with_telemetry_metric_features(false).build(());
 
        let (test_numbers_tx,numbers_rx) = graph.channel_builder().with_capacity(1000).build_as_bundle::<_,2>();

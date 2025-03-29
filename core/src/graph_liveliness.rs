@@ -209,7 +209,7 @@ impl GraphLiveliness {
                     //Target actor may have already stopped so this is not an error
                 }
             });
-            error!("every actor has had one shot shutdown fired now");
+            trace!("every actor has had one shot shutdown fired now");
         } else if self.is_in_state(&[GraphLivelinessState::Building]) {
             warn!("request_stop should only be called after start");
         }
