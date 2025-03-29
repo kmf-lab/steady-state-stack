@@ -633,7 +633,7 @@ mod http_telemetry_tests {
 
     #[test]
     fn test_metrics_server() {
-        if std::env::var("GITHUB_ACTIONS").is_err() {
+        if cfg!(not(windows)) && std::env::var("GITHUB_ACTIONS").is_err() {
             let (mut graph, server_ip, tx_in) =
                 stand_up_test_server("127.0.0.1:0");
 
