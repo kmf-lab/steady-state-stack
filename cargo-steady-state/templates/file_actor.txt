@@ -197,12 +197,12 @@ pub(crate) mod tests {
         {%- for channel in tx_channels %}
             {%- if 1==channel.len() %}
        {{note_for_the_user}} confirm values on the output channels
-       //    test_{{channel[0].name}}_rx.assert_eq_count(1); // check expected count
-       test_{{channel[0].name}}_rx.assert_eq_take(vec!());
+       //    assert_steady_rx_eq_count(&test_{{channel[0].name}}_rx,1); // check expected count
+       assert_eq_take(&test_{{channel[0].name}}_rx,vec!());
             {%- else %}
        {{note_for_the_user}} confirm values on the output channels, further this is only one in the bundle
-       //    test_{{channel[0].name}}_rx[0].assert_eq_count(1); // check expected count
-       test_{{channel[0].name}}_rx[0].assert_eq_take(vec!());
+       //    assert_steady_rx_eq_count(&test_{{channel[0].name}}_rx[0],1); // check expected count
+       assert_steady_rx_eq_take(&test_{{channel[0].name}}_rx[0],vec!());
             {%- endif %}
         {% endfor -%}
     }

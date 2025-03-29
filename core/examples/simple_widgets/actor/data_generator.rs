@@ -104,8 +104,7 @@ mod generator_tests {
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(20));
 
-        approved_widget_rx_out.assert_eq_count(BATCH_SIZE);
-
+        assert_steady_rx_eq_count!(&approved_widget_rx_out,BATCH_SIZE);
     }
 
 

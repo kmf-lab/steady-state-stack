@@ -81,6 +81,7 @@ pub(crate) mod hp_actor_tests {
         sleep(Duration::from_millis(50));
 
         graph.block_until_stopped(Duration::from_secs(240));
-        ticks_rx_out.assert_gt_count(0);
+        let expected = 0;
+        assert_steady_rx_gt_count!(&ticks_rx_out,expected);
     }
 }

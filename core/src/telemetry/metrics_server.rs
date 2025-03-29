@@ -584,25 +584,27 @@ async fn handle_request<T>(mut stream: T,
 #[cfg(test)]
 mod meteric_server_tests {
     use std::sync::Arc;
+    use std::thread::{sleep, Thread};
     use std::time::Duration;
     use futures_timer::Delay;
-    use crate::{ActorIdentity, GraphBuilder};
+    use crate::{ActorIdentity, GraphBuilder, Threading};
     use crate::monitor::ActorMetaData;
     use crate::telemetry::metrics_collector::DiagramData;
     use crate::telemetry::metrics_server::internal_behavior;
 
-    #[async_std::test]    
-    async fn test_simple() {
+    #[test]
+    fn test_simple() {
         let mut graph = GraphBuilder::for_testing().build(());
          
-         let (tx_in, rx_in) = graph.channel_builder()
+        let (tx_in, rx_in) = graph.channel_builder()
              .with_capacity(10).build();
 
         let rate_ms = graph.telemetry_production_rate_ms;
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context, rate_ms, rx_in.clone(), None) );
+            .build(move |context| internal_behavior(context, rate_ms, rx_in.clone(), None)
+                   , &mut Threading::Spawn);
  
         let test_data:Vec<DiagramData> = (0..3).map(|i| DiagramData::NodeDef( i
                  , Box::new((
@@ -610,10 +612,11 @@ mod meteric_server_tests {
                         ident: ActorIdentity::new(i as usize, "test_actor", None ),
                         ..Default::default() }), Box::new([]),Box::new([])
                 ) ) )).collect();
+
+        graph.start();
         tx_in.testing_send_all(test_data, true);
-      
-        graph.start(); 
-        Delay::new(Duration::from_millis(60)).await;
+
+        sleep(Duration::from_millis(60));
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(15));
     

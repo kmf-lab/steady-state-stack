@@ -88,7 +88,7 @@ pub(crate) mod hd_actor_tests {
         assert_eq!(true, graph.block_until_stopped(Duration::from_secs(12)));
         sleep(Duration::from_millis(20));
 
-        ticks_rx_out.assert_gt_count(0);
-
+        let expected = 0;
+        assert_steady_rx_gt_count!(&ticks_rx_out,expected);
     }
 }

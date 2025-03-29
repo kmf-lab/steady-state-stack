@@ -100,10 +100,10 @@ mod generator_tests {
         graph.request_stop();
         graph.block_until_stopped(Duration::from_millis(3000));
 
-        approved_widget_rx_out[0].assert_eq_count(expected_count);
-        approved_widget_rx_out[1].assert_eq_count(expected_count);
-        approved_widget_rx_out[2].assert_eq_count(expected_count);
-        approved_widget_rx_out[3].assert_eq_count(expected_count);
+        crate::assert_steady_rx_eq_count!(&approved_widget_rx_out[0],expected_count);
+        crate::assert_steady_rx_eq_count!(&approved_widget_rx_out[1],expected_count);
+        crate::assert_steady_rx_eq_count!(&approved_widget_rx_out[2],expected_count);
+        crate::assert_steady_rx_eq_count!(&approved_widget_rx_out[3],expected_count);
     }
 }
 

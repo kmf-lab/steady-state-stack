@@ -207,14 +207,16 @@ pub(crate) mod tests {
 
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(15));
-        test_fizzbuzz_messages_rx.assert_eq_count(14);
-        test_fizzbuzz_messages_rx.assert_eq_take(vec!(
+        let expected = 14;
+        assert_steady_rx_eq_count!(&test_fizzbuzz_messages_rx,expected);
+        let expected1 = vec!(
             FizzBuzzMessage::Value(1),
             FizzBuzzMessage::Value(2),
             FizzBuzzMessage::Fizz,
             FizzBuzzMessage::Value(4),
             FizzBuzzMessage::Buzz,
-        ));
+        );
+        assert_steady_rx_eq_take!(&test_fizzbuzz_messages_rx,expected1);
     }
 
 }

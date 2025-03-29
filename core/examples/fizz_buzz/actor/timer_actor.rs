@@ -62,6 +62,7 @@ pub(crate) mod tests {
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1));
 
-        test_print_signal_rx.assert_eq_count(2)
+        let expected = 2;
+        assert_steady_rx_eq_count!(&test_print_signal_rx,expected);
     }
 }

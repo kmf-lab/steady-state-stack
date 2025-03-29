@@ -72,6 +72,7 @@ mod monitor_telemetry;
     /// module for all monitor features
 pub mod monitor;
     /// module for all channel features
+#[macro_use]
 pub mod channel_builder;
     /// module for all actor features
 pub mod actor_builder;
@@ -134,6 +135,8 @@ pub use channel_builder::Rate;
 pub use channel_builder::Filled;
 pub use channel_builder::LazySteadyRx;
 pub use channel_builder::LazySteadyTx;
+
+
 pub use actor_builder::MCPU;
 pub use actor_builder::Work;
 pub use actor_builder::Percentile;

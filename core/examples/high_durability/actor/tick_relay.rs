@@ -77,7 +77,6 @@ pub(crate) mod hd_actor_tests {
         ticks_tx_in.testing_close();
         graph.block_until_stopped(Duration::from_secs(240));
 
-        ticks_rx_out.assert_eq_count(BATCH);
-
+        assert_steady_rx_eq_count!(&ticks_rx_out,BATCH);
     }
 }

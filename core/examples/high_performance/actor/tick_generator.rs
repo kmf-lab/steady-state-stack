@@ -77,9 +77,8 @@ pub(crate) mod actor_tests {
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(15));
 
-        ticks_rx_out[0].assert_eq_count(BUFFER_SIZE);
-        ticks_rx_out[1].assert_eq_count(BUFFER_SIZE);
-        ticks_rx_out[2].assert_eq_count(BUFFER_SIZE);
-
+        assert_steady_rx_eq_count!(&ticks_rx_out[0],BUFFER_SIZE);
+        assert_steady_rx_eq_count!(&ticks_rx_out[1],BUFFER_SIZE);
+        assert_steady_rx_eq_count!(&ticks_rx_out[2],BUFFER_SIZE);
     }
 }

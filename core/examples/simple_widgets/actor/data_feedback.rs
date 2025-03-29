@@ -55,7 +55,7 @@ mod tests {
     use std::thread::sleep;
     use std::time::Duration;
     use futures_timer::Delay;
-    use steady_state::GraphBuilder;
+    use steady_state::*;
     use crate::actor::data_feedback::internal_behavior;
 
     #[test]
@@ -82,6 +82,7 @@ mod tests {
         sleep(Duration::from_millis(60));
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(15));
-        change_request_rx_out.assert_eq_count(10);
+        let expected = 10;
+        assert_steady_rx_eq_count!(&change_request_rx_out,expected);
     }
 }

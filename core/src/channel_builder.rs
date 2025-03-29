@@ -810,53 +810,157 @@ impl <T> LazySteadyRx<T> {
     pub fn clone(&self) -> SteadyRx<T> {
         core_exec::block_on(self.lazy_channel.get_rx_clone())
     }
-
-    /// For testing simulates taking data from the actor in a controlled manner.
-    pub fn assert_eq_count(&self, expected: usize) {
-        let measured = core_exec::block_on(async move {
-            let rx = self.lazy_channel.get_rx_clone().await;
-            let mut rx = rx.lock().await;
-            rx.avail_units()
-        });
-        if expected != measured {
-            error!("Assertion failed:  {} == {}  {} {}",  expected, measured, file!(), line!());
-        }
-        assert_eq!(expected,measured);
-    }
-
-    pub fn assert_gt_count(&self, expected: usize) {
-        let measured = core_exec::block_on(async move {
-            let rx = self.lazy_channel.get_rx_clone().await;
-            let mut rx = rx.lock().await;
-            rx.avail_units()
-        });
-
-        if !(expected > measured) {
-            error!("Assertion failed:  {} > {}",  expected, measured);
-        }
-        assert!(
-            expected > measured,
-            "Assertion failed at {}:{}: {} > {}",
-            file!(), line!(), expected, measured
-        );
-    }
-
-    pub fn assert_eq_take(&self, expected: Vec<T>)
-    where T: PartialEq + Debug {
-        core_exec::block_on(async move {
-             let rx = self.lazy_channel.get_rx_clone().await;
-             let mut rx = rx.lock().await;
-             for ex in expected.into_iter() {
-                 match rx.shared_try_take() {
-                     None => panic!("expected value"),
-                     Some((_done,taken)) => assert_eq!(ex,taken)
-                 };
-             }
-        });
-    }
-
-
 }
+
+//////////////////////////////////////////////////
+/// Asserts that the number of available units in the receiver equals the expected value.
+///
+/// Logs an error and panics if the assertion fails, including the file and line number of the
+/// call site in both the log and panic message. This is useful for debugging in test scenarios.
+///
+/// # Arguments
+///
+/// * `self` - An expression evaluating to a reference to `LazySteadyRx<T>` (e.g., `&instance`).
+/// * `expected` - The expected number of available units (`usize`).
+///
+///
+/// # Panics
+///
+/// Panics with a message including the expected and measured values, file, and line if the
+/// available units do not equal the expected value.
+#[macro_export]
+macro_rules! assert_steady_rx_eq_count {
+    ($self:expr, $expected:expr) => {{
+        let rx = $self.clone();
+        let measured = core_exec::block_on(async move {
+            //let rx = $self.lazy_channel.get_rx_clone().await;
+            let mut rx = rx.lock().await;
+            rx.avail_units()
+        });
+        if $expected != measured {
+            error!(
+                "Assertion failed: {} == {} at {}:{}",
+                $expected,
+                measured,
+                file!(),
+                line!()
+            );
+            panic!(
+                "Assertion failed at {}:{}: expected {} == measured {}",
+                file!(),
+                line!(),
+                $expected,
+                measured
+            );
+        }
+    }};
+}
+
+/// Asserts that the number of available units in the receiver is greater than the expected value.
+///
+/// Logs an error and panics if the assertion fails, including the file and line number of the
+/// call site in both the log and panic message. Useful for controlled testing of data availability.
+///
+/// # Arguments
+///
+/// * `self` - An expression evaluating to a reference to `LazySteadyRx<T>` (e.g., `&instance`).
+/// * `expected` - The value that the available units should exceed (`usize`).
+///
+/// # Panics
+///
+/// Panics with a message including the expected and measured values, file, and line if the
+/// available units are not greater than the expected value.
+#[macro_export]
+macro_rules! assert_steady_rx_gt_count {
+    ($self:expr, $expected:expr) => {{
+        let rx = $self.clone();
+        let measured = core_exec::block_on(async move {
+            //let rx = $self.lazy_channel.get_rx_clone().await;
+            let mut rx = rx.lock().await;
+            rx.avail_units()
+        });
+        if !($expected > measured) {
+            error!(
+                "Assertion failed: {} > {} at {}:{}",
+                $expected,
+                measured,
+                file!(),
+                line!()
+            );
+            panic!(
+                "Assertion failed at {}:{}: expected {} > measured {}",
+                file!(),
+                line!(),
+                $expected,
+                measured
+            );
+        }
+    }};
+}
+
+/// Asserts that values taken from the receiver match the expected sequence of values.
+///
+/// Panics if there are not enough values available or if any value does not match, including
+/// the file and line number of the call site in the panic message. Designed for testing data
+/// retrieval in a controlled manner.
+///
+/// # Arguments
+///
+/// * `self` - An expression evaluating to a reference to `LazySteadyRx<T>` (e.g., `&instance`).
+/// * `expected` - An expression yielding an iterable of expected values (e.g., `Vec<T>`).
+///
+/// # Type Constraints
+///
+/// * `T: PartialEq + Debug` - The type `T` must implement `PartialEq` for comparison and
+///   `Debug` for panic message formatting.
+///
+/// # Examples
+///
+///
+/// # Panics
+///
+/// Panics if no value is available when expected or if a taken value does not equal the
+/// corresponding expected value, with file and line included in the message.
+#[macro_export]
+macro_rules! assert_steady_rx_eq_take {
+    ($self:expr, $expected:expr) => {{
+        let rx = $self.clone();
+        core_exec::block_on(async move {
+            //let rx = $self.lazy_channel.get_rx_clone().await;
+            let mut rx = rx.lock().await;
+            for ex in $expected.into_iter() {
+                match rx.shared_try_take() {
+                    None => panic!(
+                        "Expected value but none available at {}:{}",
+                        file!(),
+                        line!()
+                    ),
+                    Some((_done, taken)) => {
+                        if ex != taken {
+                            error!(
+                                "Assertion failed: {:?} == {:?} at {}:{}",
+                                ex,
+                                taken,
+                                file!(),
+                                line!()
+                            );
+                            panic!(
+                                "Assertion failed at {}:{}: expected {:?} == taken {:?}",
+                                file!(),
+                                line!(),
+                                ex,
+                                taken
+                            );
+                        }
+                    }
+                }
+            }
+        });
+    }};
+}
+
+
+//////////////////////////////////////////////////
 
 #[derive(Debug)]
 pub(crate) struct LazyChannel<T> {

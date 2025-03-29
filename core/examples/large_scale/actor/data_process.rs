@@ -85,7 +85,8 @@ mod process_tests {
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(2));
 
-        approved_widget_out_rx.assert_gt_count(0);
+        let expected = 0;
+        crate::assert_steady_rx_gt_count!(self,expected);
     }
 
 

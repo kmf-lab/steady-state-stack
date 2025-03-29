@@ -23,8 +23,8 @@ mod simple_graph_test {
     ///
     /// # Examples
     /// this test should only be run manually, as it will panic by design
-    #[async_std::test]
-    async fn test_panic_graph() {
+    #[test]
+    fn test_panic_graph() {
     
         // Smallest possible graph just to test the capture of panic.
         // It is not recommended to inline actors this way, but it is possible.

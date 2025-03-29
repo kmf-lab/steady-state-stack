@@ -80,7 +80,7 @@ pub(crate) mod tests {
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1));
 
-        test_numbers_rx.assert_eq_take(vec!(NumberMessage{value:5}, NumberMessage{value:10}, NumberMessage{value:15}));
-
+        let expected = vec!(NumberMessage { value: 5 }, NumberMessage { value: 10 }, NumberMessage { value: 15 });
+        assert_steady_rx_eq_take!(&test_numbers_rx,expected);
     }
 }
