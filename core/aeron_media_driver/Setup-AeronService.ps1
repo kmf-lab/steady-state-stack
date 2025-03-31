@@ -18,19 +18,20 @@
         1. Install Visual Studio with the C++ workload (e.g., "Desktop development with C++").
         2. Install CMake and add it to your system PATH (e.g., via `choco install cmake`).
         3. Install Git and ensure it's in your PATH (e.g., via `choco install git`).
-        4. Download NSSM (Non-Sucking Service Manager) and place nssm.exe in a PATH directory (e.g., C:\Windows\System32).
-        5. Verify prerequisites: Run `cmake --version`, `git --version`, and `nssm` in a terminal to ensure they're accessible.
-        6. Ensure C:\Temp exists and is writable by the SYSTEM account (created automatically by the script if missing).
+        4. Download NSSM and place nssm.exe in a PATH directory (e.g., C:\Windows\System32).
+        5. Verify prerequisites: Run `cmake --version`, `git --version`, and `nssm` in a terminal.
+        6. Ensure C:\Temp exists and is writable by the SYSTEM account (created automatically).
 
     - **How to Use It Well (Run and Troubleshoot)**:
         - Run the script: `.\Setup-AeronService.ps1` or `.\Setup-AeronService.ps1 -Force` to rebuild.
-        - Check output: Look for "✅" markers indicating success at each step.
+        - Check output: Look for "✅" markers indicating success.
         - Monitor logs: Stdout/Stderr/Event logs are in C:\Temp (e.g., `Get-Content C:\Temp\aeron_stdout.log -Tail 20 -Wait`).
         - Test manually: Use the commands printed after service setup to run aeronmd.exe directly.
         - Troubleshoot:
-            - Service not starting? Check C:\Temp\aeron_stderr.log for errors and ensure prerequisites are met.
-            - No logs? Verify C:\Temp is writable and environment variables are set (see script output).
-            - Use `sc query AeronMediaDriver` to check service status.
+            - Service not starting? Check C:\Temp\aeron_stderr.log and prerequisites.
+            - No logs? Verify C:\Temp is writable.
+            - Use `sc.exe query AeronMediaDriver` to check service status.
+        - **Build Location**: Build outputs are in C:\Users\<username>\build\aeron
 
 .EXAMPLE
     .\Setup-AeronService.ps1 -Force
@@ -45,7 +46,6 @@ param(
 $scriptStartTime = Get-Date
 
 # --- 0. Ensure Running as Administrator ---
-# Elevated permissions are required for service installation and registry changes.
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Host "[ERROR] Please run this script in an Administrator PowerShell session."
@@ -56,18 +56,25 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole] "Administra
 $scriptDir = $PSScriptRoot
 
 # --- 1. Configuration ---
-# Define constants and paths for the script.
 $AERON_GIT_URL = 'https://github.com/real-logic/aeron.git'
 $AERON_VERSION = '1.46.7'
 $AERON_SRC     = 'aeron'  # Folder name for the cloned repo, relative to $scriptDir
 $AERON_SRC_PATH = Join-Path $scriptDir $AERON_SRC
 $NEEDED_EXE    = 'aeronmd.exe'
-$BUILD_FOLDER  = 'winbuild'
+# Build directory set to C:\Users\<username>\build\aeron
+$BUILD_FOLDER  = Join-Path (Join-Path $env:USERPROFILE 'build') 'aeron'
 $BIN_OUTPUT_FOLDER = "binaries\Release"
 
 $SERVICE_NAME  = 'AeronMediaDriver'
 $SERVICE_DESC  = 'Aeron C Media Driver Service'
-$NSSM_EXE      = 'nssm'  # Assumes nssm.exe is in PATH; update if it's in a specific location
+$NSSM_EXE      = 'nssm'
+
+# Check if NSSM is accessible
+if (-not (Get-Command $NSSM_EXE -ErrorAction SilentlyContinue)) {
+    Write-Error "[ERROR] NSSM command '$NSSM_EXE' not found. Ensure nssm.exe is in your PATH."
+    Exit 1
+}
+
 $AERON_DIR     = "C:\\Temp\\aeron"  # Directory for Aeron shared memory files
 $tempDir       = "C:\\Temp"
 
@@ -105,26 +112,24 @@ if (-not (Test-Path "$AERON_SRC_PATH\.git")) {
 
 # --- 3. Build Aeron (C++ Only, Java Disabled) ---
 Write-Host "`n=== [2] Build Aeron (C++ only, Java disabled) ==="
-Push-Location $AERON_SRC_PATH
+# Ensure build directory exists
+if (-not (Test-Path $BUILD_FOLDER)) {
+    Write-Host "[INFO] Creating build output folder: $BUILD_FOLDER"
+    New-Item -ItemType Directory -Path $BUILD_FOLDER | Out-Null
+}
 
-# Construct the full path to aeronmd.exe
-$buildPath = Join-Path $BUILD_FOLDER $BIN_OUTPUT_FOLDER
-$exeRelativePath = Join-Path $buildPath $NEEDED_EXE
-$exeFullPath = Join-Path $AERON_SRC_PATH $exeRelativePath
+# Define the full path to aeronmd.exe in the separate build directory
+$exeFullPath = Join-Path (Join-Path (Join-Path $BUILD_FOLDER 'binaries') 'Release') $NEEDED_EXE
 Write-Host "[DEBUG] Expected aeronmd.exe path: $exeFullPath"
 
 if ((Test-Path $exeFullPath) -and (-not $Force)) {
     Write-Host "[INFO] Build already exists. Skipping build step. Use -Force to rebuild."
 } else {
     Write-Host "[INFO] Running manual CMake build..."
-    if (-not (Test-Path $BUILD_FOLDER)) {
-        Write-Host "[INFO] Creating build output folder: $BUILD_FOLDER"
-        New-Item -ItemType Directory -Path $BUILD_FOLDER | Out-Null
-    }
     Push-Location $BUILD_FOLDER
 
     # Configure CMake: Use Visual Studio 2022, 64-bit, disable Java, build samples
-    cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DAERON_ENABLE_JAVA=OFF -DAERON_BUILD_ARCHIVE_API=OFF -DAERON_BUILD_SAMPLES=ON -DAERON_BUILD_TOOLS=OFF ..
+    cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DAERON_ENABLE_JAVA=OFF -DAERON_BUILD_ARCHIVE_API=OFF -DAERON_BUILD_SAMPLES=ON -DAERON_BUILD_TOOLS=OFF $AERON_SRC_PATH
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "[ERROR] CMake configuration failed. Ensure Visual Studio and CMake are installed."
@@ -147,7 +152,6 @@ if ((Test-Path $exeFullPath) -and (-not $Force)) {
 
     Write-Host "✅ Build successful. Found: $exeFullPath"
 }
-Pop-Location
 
 # --- 4. Install or Update Service via NSSM ---
 Write-Host "`n=== [3] Install or Update Windows Service ==="
@@ -170,11 +174,13 @@ $envString = ($envVars.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)
 
 $serviceObj = Get-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue
 
+Write-Host "[DEBUG] Using NSSM: $NSSM_EXE"
+
 if (-not $serviceObj) {
     Write-Host "[INFO] Installing service '$SERVICE_NAME' via NSSM..."
     & $NSSM_EXE install $SERVICE_NAME $servicePath
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "[ERROR] NSSM install failed. Ensure nssm.exe is in PATH."
+        Write-Error "[ERROR] NSSM install failed. Ensure nssm.exe is correctly configured."
         Exit 1
     }
 
@@ -191,7 +197,7 @@ if (-not $serviceObj) {
     & $NSSM_EXE set $SERVICE_NAME AppDirectory (Split-Path $servicePath -Parent)
 
     Write-Host "✅ Service installed successfully."
-    Write-Host "To remove service:  nssm remove $SERVICE_NAME"
+    Write-Host "To remove service:  nssm.exe remove $SERVICE_NAME"
 } else {
     Write-Host "[INFO] Service already exists. Updating configuration..."
     & $NSSM_EXE set $SERVICE_NAME Application $servicePath
@@ -216,7 +222,8 @@ if ($serviceObj.Status -ne 'Running') {
     Write-Host "  - Stderr: $tempDir\\aeron_stderr.log"
     Write-Host "  - Event Log: $tempDir\\aeron_event.log"
     Write-Host "[INFO] Starting service..."
-    & $NSSM_EX start $SERVICE_NAME
+    Write-Host "[DEBUG] Starting service with: $NSSM_EXE start $SERVICE_NAME"
+    & $NSSM_EXE start $SERVICE_NAME
 
     # Wait up to 30 seconds for the service to start
     $timeoutSeconds = 30
@@ -249,7 +256,6 @@ if ($serviceObj.Status -ne 'Running') {
 
 # --- 5. Registry Tuning ---
 Write-Host "`n=== [4] Apply Windows Registry Tweaks (UDP Performance) ==="
-# Optimize UDP performance with larger buffers and reduced throttling
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Afd\Parameters" /v DefaultSendWindow /t REG_DWORD /d $SOCKET_BUFFER_HEX /f | Out-Null
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Afd\Parameters" /v DefaultReceiveWindow /t REG_DWORD /d $SOCKET_BUFFER_HEX /f | Out-Null
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Afd\Parameters" /v FastSendDatagramThreshold /t REG_DWORD /d 1500 /f | Out-Null
@@ -261,11 +267,12 @@ Write-Host "`n[INFO] Registry tuning applied. A reboot may be required."
 # --- Done ---
 Write-Host "`n=== ✅ Setup Complete ==="
 Write-Host "Aeron code:         '$AERON_SRC_PATH'"
+Write-Host "Build directory:    '$BUILD_FOLDER'"
 Write-Host "Built artifacts:    '$exeFullPath'"
 Write-Host "Service name:       '$SERVICE_NAME'"
-Write-Host "To check status:    sc query $SERVICE_NAME"
-Write-Host "To stop service:    sc stop $SERVICE_NAME"
-Write-Host "To remove service:  nssm remove $SERVICE_NAME"
+Write-Host "To check status:    sc.exe query $SERVICE_NAME"
+Write-Host "To stop service:    sc.exe stop $SERVICE_NAME"
+Write-Host "To remove service:  nssm.exe remove $SERVICE_NAME"
 Write-Host "To check logs:      Get-Content $tempDir\\aeron_stdout.log -Tail 20 -Wait"
 Write-Host "                   Get-Content $tempDir\\aeron_stderr.log -Tail 20 -Wait"
 Write-Host "                   Get-Content $tempDir\\aeron_event.log -Tail 20 -Wait"
