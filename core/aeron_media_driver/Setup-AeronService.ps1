@@ -1,11 +1,13 @@
 <#
 .SYNOPSIS
-    Clones or updates the Aeron repository, builds the C++ Media Driver (with Java disabled),
+    Clones or updates the Aeron repository into a user-specific source directory,
+    builds the C++ Media Driver (with Java disabled) in a separate build directory,
     installs aeronmd.exe as a Windows service using NSSM, and applies performance tweaks.
 
 .DESCRIPTION
-    This script automates the setup of the Aeron Media Driver as a Windows service. It handles
-    repository cloning, building the driver, service installation, and UDP performance tuning.
+    This script automates the setup of the Aeron Media Driver as a Windows service.
+    It handles repository cloning, building the driver, service installation, and
+    UDP performance tuning.
 
 .PARAMETER Force
     Forces a rebuild of the Aeron Media Driver even if aeronmd.exe already exists.
@@ -31,7 +33,7 @@
             - Service not starting? Check C:\Temp\aeron_stderr.log and prerequisites.
             - No logs? Verify C:\Temp is writable.
             - Use `sc.exe query AeronMediaDriver` to check service status.
-        - **Build Location**: Build outputs are in C:\Users\<username>\build\aeron
+        - **Locations**: Source code in C:\Users\<username>\build\aeron, build outputs in C:\Users\<username>\build\aeron-build
 
 .EXAMPLE
     .\Setup-AeronService.ps1 -Force
@@ -52,22 +54,19 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole] "Administra
     Exit 1
 }
 
-# Get the script's directory (used for relative paths)
-$scriptDir = $PSScriptRoot
-
 # --- 1. Configuration ---
 $AERON_GIT_URL = 'https://github.com/real-logic/aeron.git'
 $AERON_VERSION = '1.46.7'
-$AERON_SRC     = 'aeron'  # Folder name for the cloned repo, relative to $scriptDir
-$AERON_SRC_PATH = Join-Path $scriptDir $AERON_SRC
-$NEEDED_EXE    = 'aeronmd.exe'
-# Build directory set to C:\Users\<username>\build\aeron
-$BUILD_FOLDER  = Join-Path (Join-Path $env:USERPROFILE 'build') 'aeron'
+# Source path for cloning the repository
+$AERON_SRC_PATH = Join-Path (Join-Path $env:USERPROFILE 'build') 'aeron'
+# Separate build directory
+$BUILD_FOLDER = Join-Path (Join-Path $env:USERPROFILE 'build') 'aeron-build'
+$NEEDED_EXE = 'aeronmd.exe'
 $BIN_OUTPUT_FOLDER = "binaries\Release"
 
-$SERVICE_NAME  = 'AeronMediaDriver'
-$SERVICE_DESC  = 'Aeron C Media Driver Service'
-$NSSM_EXE      = 'nssm'
+$SERVICE_NAME = 'AeronMediaDriver'
+$SERVICE_DESC = 'Aeron C Media Driver Service'
+$NSSM_EXE = 'nssm'
 
 # Check if NSSM is accessible
 if (-not (Get-Command $NSSM_EXE -ErrorAction SilentlyContinue)) {
@@ -75,8 +74,8 @@ if (-not (Get-Command $NSSM_EXE -ErrorAction SilentlyContinue)) {
     Exit 1
 }
 
-$AERON_DIR     = "C:\\Temp\\aeron"  # Directory for Aeron shared memory files
-$tempDir       = "C:\\Temp"
+$AERON_DIR = "C:\\Temp\\aeron"  # Directory for Aeron shared memory files
+$tempDir = "C:\\Temp"
 
 $SOCKET_BUFFER_HEX = 0x400000  # 4MB in hex for registry tweaks
 
@@ -97,6 +96,13 @@ $envVars = @{
 
 # --- 2. Clone or Update Aeron Repository ---
 Write-Host "`n=== [1] Clone or Pull Aeron Repository ==="
+if (Test-Path $AERON_SRC_PATH) {
+    if (-not (Test-Path "$AERON_SRC_PATH\.git")) {
+        Write-Host "[WARNING] Directory '$AERON_SRC_PATH' exists but is not a Git repository. Removing it..."
+        Remove-Item -Recurse -Force $AERON_SRC_PATH
+    }
+}
+
 if (-not (Test-Path "$AERON_SRC_PATH\.git")) {
     Write-Host "Cloning Aeron ($AERON_VERSION) into $AERON_SRC_PATH..."
     git clone --depth 1 --branch $AERON_VERSION $AERON_GIT_URL $AERON_SRC_PATH
@@ -112,13 +118,13 @@ if (-not (Test-Path "$AERON_SRC_PATH\.git")) {
 
 # --- 3. Build Aeron (C++ Only, Java Disabled) ---
 Write-Host "`n=== [2] Build Aeron (C++ only, Java disabled) ==="
-# Ensure build directory exists
+# Ensure separate build directory exists
 if (-not (Test-Path $BUILD_FOLDER)) {
     Write-Host "[INFO] Creating build output folder: $BUILD_FOLDER"
     New-Item -ItemType Directory -Path $BUILD_FOLDER | Out-Null
 }
 
-# Define the full path to aeronmd.exe in the separate build directory
+# Define the full path to aeronmd.exe in the build directory
 $exeFullPath = Join-Path (Join-Path (Join-Path $BUILD_FOLDER 'binaries') 'Release') $NEEDED_EXE
 Write-Host "[DEBUG] Expected aeronmd.exe path: $exeFullPath"
 
@@ -128,7 +134,7 @@ if ((Test-Path $exeFullPath) -and (-not $Force)) {
     Write-Host "[INFO] Running manual CMake build..."
     Push-Location $BUILD_FOLDER
 
-    # Configure CMake: Use Visual Studio 2022, 64-bit, disable Java, build samples
+    # Configure CMake: Use Visual Studio 2022, 64-bit, disable Java, build samples, source from $AERON_SRC_PATH
     cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DAERON_ENABLE_JAVA=OFF -DAERON_BUILD_ARCHIVE_API=OFF -DAERON_BUILD_SAMPLES=ON -DAERON_BUILD_TOOLS=OFF $AERON_SRC_PATH
 
     if ($LASTEXITCODE -ne 0) {
@@ -266,7 +272,7 @@ Write-Host "`n[INFO] Registry tuning applied. A reboot may be required."
 
 # --- Done ---
 Write-Host "`n=== ✅ Setup Complete ==="
-Write-Host "Aeron code:         '$AERON_SRC_PATH'"
+Write-Host "Aeron source code:  '$AERON_SRC_PATH'"
 Write-Host "Build directory:    '$BUILD_FOLDER'"
 Write-Host "Built artifacts:    '$exeFullPath'"
 Write-Host "Service name:       '$SERVICE_NAME'"
