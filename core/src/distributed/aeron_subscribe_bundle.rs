@@ -306,100 +306,100 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 }
 
 
-
-#[cfg(test)]
-pub(crate) mod aeron_media_driver_tests {
-    use std::env;
-    use super::*;
-    use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
-    use crate::distributed::distributed_stream::StreamSimpleMessage;
-    use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-    use crate::distributed::distributed_builder::AqueductBuilder;
-
-    #[async_std::test]
-    async fn test_bytes_process() {
-          if true {
-              return; //Not running this test at this time.
-          }
-        if std::env::var("GITHUB_ACTIONS").is_ok() {
-            return;
-        }
-        unsafe {
-            env::set_var("TELEMETRY_SERVER_PORT", "9301");
-        }
-        let mut graph = GraphBuilder::for_testing().build(());
-
-        if graph.aeron_md().is_none() {
-            info!("aeron test skipped, no media driver present");
-            return;
-        }
-
-        let channel_builder = graph.channel_builder();
-
-        //NOTE: each stream adds startup time as each transfer term must be tripled and zeroed
-        const STREAMS_COUNT:usize = 1;
-        let (to_aeron_tx,to_aeron_rx) = channel_builder
-            .with_capacity(500)
-            .build_as_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>( 6);
-
-        let aeron_config = AeronConfig::new()
-            .with_media_type(MediaType::Ipc) //for testing
-            //.with_media_type(MediaType::Udp)
-            //.with_term_length(1024 * 1024 * 4)
-            .use_point_to_point(Endpoint {
-                ip: "127.0.0.1".parse().expect("Invalid IP address"),
-                port: 40456,
-            })
-            .build();
-
-
-        let stream_id = 7;
-        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(), stream_id)
-                   , &graph.actor_builder().with_name("SenderTest")
-                   , &mut Threading::Spawn);
-
-        for _i in 0..100 {
-            to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]).await;
-            to_aeron_tx[0].testing_send_frame(&[6, 7, 8, 9, 10]).await;
-        }
-
-        for i in 0..STREAMS_COUNT {
-            to_aeron_tx[i].testing_close();
-        }
-
-
-        let (from_aeron_tx,from_aeron_rx) = channel_builder
-            .with_capacity(500)
-            .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>( 6);
-
-        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(),stream_id)
-                       , & graph.actor_builder().with_name("ReceiverTest")
-                       , &mut Threading::Spawn);
-
-
-        graph.start(); //startup the graph
-
-        warn!("waiting -------------------------");
-        //wait till we see 2 full fragments back
-        from_aeron_rx[0].testing_avail_wait(2).await;
-        warn!("found two");
-        graph.request_stop();
-        //we wait up to the timeout for clean shutdown which is transmission of all the data
-        graph.block_until_stopped(Duration::from_secs(21));
-
-        //from_aeron_rx.
-
-        let mut data = [0u8; 5];
-        for i in 0..100 {
-            let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]).await;
-            assert_eq!(5, result, "failed on iteration {}", i);
-            assert_eq!([1, 2, 3, 4, 5], data);
-            let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]).await;
-            assert_eq!(5, result, "failed on iteration {}", i);
-            assert_eq!([6,7,8,9,10], data);
-        }
-        
-    }
-}
+//
+// #[cfg(test)]
+// pub(crate) mod aeron_media_driver_tests {
+//     use std::env;
+//     use super::*;
+//     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
+//     use crate::distributed::distributed_stream::StreamSimpleMessage;
+//     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
+//     use crate::distributed::distributed_builder::AqueductBuilder;
+//
+//     #[async_std::test]
+//     async fn test_bytes_process() {
+//           if true {
+//               return; //Not running this test at this time.
+//           }
+//         if std::env::var("GITHUB_ACTIONS").is_ok() {
+//             return;
+//         }
+//         unsafe {
+//             env::set_var("TELEMETRY_SERVER_PORT", "9301");
+//         }
+//         let mut graph = GraphBuilder::for_testing().build(());
+//
+//         if graph.aeron_md().is_none() {
+//             info!("aeron test skipped, no media driver present");
+//             return;
+//         }
+//
+//         let channel_builder = graph.channel_builder();
+//
+//         //NOTE: each stream adds startup time as each transfer term must be tripled and zeroed
+//         const STREAMS_COUNT:usize = 1;
+//         let (to_aeron_tx,to_aeron_rx) = channel_builder
+//             .with_capacity(500)
+//             .build_as_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>( 6);
+//
+//         let aeron_config = AeronConfig::new()
+//             .with_media_type(MediaType::Ipc) //for testing
+//             //.with_media_type(MediaType::Udp)
+//             //.with_term_length(1024 * 1024 * 4)
+//             .use_point_to_point(Endpoint {
+//                 ip: "127.0.0.1".parse().expect("Invalid IP address"),
+//                 port: 40456,
+//             })
+//             .build();
+//
+//
+//         let stream_id = 7;
+//         to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(), stream_id)
+//                    , &graph.actor_builder().with_name("SenderTest")
+//                    , &mut Threading::Spawn);
+//
+//         for _i in 0..100 {
+//             to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]).await;
+//             to_aeron_tx[0].testing_send_frame(&[6, 7, 8, 9, 10]).await;
+//         }
+//
+//         for i in 0..STREAMS_COUNT {
+//             to_aeron_tx[i].testing_close();
+//         }
+//
+//
+//         let (from_aeron_tx,from_aeron_rx) = channel_builder
+//             .with_capacity(500)
+//             .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>( 6);
+//
+//         from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(),stream_id)
+//                        , & graph.actor_builder().with_name("ReceiverTest")
+//                        , &mut Threading::Spawn);
+//
+//
+//         graph.start(); //startup the graph
+//
+//         warn!("waiting -------------------------");
+//         //wait till we see 2 full fragments back
+//         from_aeron_rx[0].testing_avail_wait(2).await;
+//         warn!("found two");
+//         graph.request_stop();
+//         //we wait up to the timeout for clean shutdown which is transmission of all the data
+//         graph.block_until_stopped(Duration::from_secs(21));
+//
+//         //from_aeron_rx.
+//
+//         let mut data = [0u8; 5];
+//         for i in 0..100 {
+//             let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]).await;
+//             assert_eq!(5, result, "failed on iteration {}", i);
+//             assert_eq!([1, 2, 3, 4, 5], data);
+//             let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]).await;
+//             assert_eq!(5, result, "failed on iteration {}", i);
+//             assert_eq!([6,7,8,9,10], data);
+//         }
+//
+//     }
+// }
 
 

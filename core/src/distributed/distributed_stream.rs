@@ -780,11 +780,12 @@ impl<T: StreamItem> LazyStreamTx<T> {
     /// # Panics
     /// - If the entire payload can’t be sent.
     /// - If sending metadata fails.
-    pub async fn testing_send_frame(&self, data: &[u8]) {
+    pub fn testing_send_frame(&self, data: &[u8]) {
         let s = self.clone();
-        let mut l = s.lock().await;
 
+        let mut l = core_exec::block_on(s.lock());
         let x = l.payload_channel.shared_send_slice_until_full(data);
+
         assert_eq!(x, data.len(), "Not all bytes were sent!");
         assert_ne!(x, 0);
 

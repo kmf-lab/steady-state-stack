@@ -349,11 +349,10 @@ pub(crate) mod aeron_tests {
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
-    #[async_std::test]
-    async fn test_bytes_process() {
-       if is_wsl() || std::env::var("GITHUB_ACTIONS").is_ok() {
-           return; //skip this test if we are in windows wsl or github actions
+    #[test]
+    fn test_bytes_process() {
+       if std::env::var("GITHUB_ACTIONS").is_ok() {
+           return; //skip this test if we are github actions
        }
 
         unsafe {

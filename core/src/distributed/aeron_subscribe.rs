@@ -259,6 +259,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod aeron_media_driver_tests {
+    use std::thread::sleep;
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::distributed_stream::StreamSimpleMessage;
@@ -266,14 +267,9 @@ pub(crate) mod aeron_media_driver_tests {
     use crate::distributed::aeron_publish::aeron_tests::STREAM_ID;
     use crate::distributed::distributed_builder::AqueductBuilder;
 
-
-
-    #[async_std::test]
-    async fn test_bytes_process() {
-          if true {
-              return; //Not running this test at this time.
-          }
-        if std::env::var("GITHUB_ACTIONS").is_ok() {
+    #[test]
+    fn test_bytes_process() {
+        if true || std::env::var("GITHUB_ACTIONS").is_ok() {
             return;
         }
 
@@ -308,8 +304,8 @@ pub(crate) mod aeron_media_driver_tests {
                                , &mut Threading::Spawn);
 
         for _i in 0..100 {
-            to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]).await;
-            to_aeron_tx[0].testing_send_frame(&[6, 7, 8, 9, 10]).await;
+            to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]);
+            to_aeron_tx[0].testing_send_frame(&[6, 7, 8, 9, 10]);
         }
 
         for i in 0..STREAMS_COUNT {
@@ -324,28 +320,30 @@ pub(crate) mod aeron_media_driver_tests {
         from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config, STREAM_ID)
                                      , &graph.actor_builder().with_name( "ReceiverTest")
                                      , &mut Threading::Spawn);
-
-
         graph.start(); //startup the graph
 
-        warn!("waiting -------------------------");
-        //wait till we see 2 full fragments back
-        from_aeron_rx[0].testing_avail_wait(2).await;
-        warn!("found two");
+        sleep(Duration::from_millis(3000));
+        assert_steady_rx_eq_count!(from_aeron_rx[0],2);
+
         graph.request_stop();
         //we wait up to the timeout for clean shutdown which is transmission of all the data
         graph.block_until_stopped(Duration::from_secs(21));
 
-        //from_aeron_rx.
-
-        let mut data = [0u8; 5];
+        //let mut data = [0u8; 5];
         for i in 0..100 {
-            let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]).await;
-            assert_eq!(5, result, "failed on iteration {}", i);
-            assert_eq!([1, 2, 3, 4, 5], data);
-            let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]).await;
-            assert_eq!(5, result, "failed on iteration {}", i);
-            assert_eq!([6,7,8,9,10], data);
+            let data1: Vec<u8> = vec![1, 2, 3, 4, 5];
+            assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(
+                (StreamSessionMessage::new(5,1,Instant::now(), Instant::now()),data1.into_boxed_slice())));
+            let data2: Vec<u8> = vec![6, 7, 8, 9, 10];
+            assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(
+                (StreamSessionMessage::new(5,1,Instant::now(), Instant::now()),data2.into_boxed_slice())));
+
+            // let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]);
+            // assert_eq!(5, result, "failed on iteration {}", i);
+            // assert_eq!([1, 2, 3, 4, 5], data);
+            // let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]);
+            // assert_eq!(5, result, "failed on iteration {}", i);
+            // assert_eq!([6,7,8,9,10], data);
         }
         
     }

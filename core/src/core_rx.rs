@@ -188,6 +188,8 @@ impl <T>RxCore for Rx<T> {
 
 impl <T: StreamItem> RxCore for StreamRx<T> {
 
+    //TODO: we have no shared_try_peek ???
+
     type MsgOut = (T, Box<[u8]>);
     type MsgPeek<'a> = (&'a T, &'a[u8],&'a[u8]) where T: 'a;
     type MsgSize = (usize, usize);

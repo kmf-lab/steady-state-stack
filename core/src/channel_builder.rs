@@ -835,7 +835,7 @@ macro_rules! assert_steady_rx_eq_count {
         let measured = core_exec::block_on(async move {
             //let rx = $self.lazy_channel.get_rx_clone().await;
             let mut rx = rx.lock().await;
-            rx.avail_units()
+            rx.shared_avail_units()
         });
         if $expected != measured {
             error!(
@@ -929,6 +929,10 @@ macro_rules! assert_steady_rx_eq_take {
             //let rx = $self.lazy_channel.get_rx_clone().await;
             let mut rx = rx.lock().await;
             for ex in $expected.into_iter() {
+                //TODO: do eq check on peek then job over it so we can minimize allocations?
+                //      for streams we will need to deal with 2 arays somhow??
+                //let p = rx.shared_try_peek();
+
                 match rx.shared_try_take() {
                     None => panic!(
                         "Expected value but none available at {}:{}",
