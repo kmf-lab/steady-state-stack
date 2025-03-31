@@ -54,7 +54,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>, 
 mod process_tests {
     use std::thread::sleep;
     use std::time::Duration;
-    use steady_state::GraphBuilder;
+    use steady_state::*;
     use crate::actor::data_generator::Packet;
     use crate::actor::data_process::internal_behavior;
 
@@ -86,7 +86,7 @@ mod process_tests {
         graph.block_until_stopped(Duration::from_secs(2));
 
         let expected = 0;
-        crate::assert_steady_rx_gt_count!(self,expected);
+        assert_steady_rx_gt_count!(&approved_widget_out_rx,expected);
     }
 
 

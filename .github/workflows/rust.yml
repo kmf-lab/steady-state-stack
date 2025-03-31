@@ -25,4 +25,5 @@ jobs:
     - name: Build
       run: RUST_BACKTRACE=1 cargo build --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
     - name: Run tests
-      run: RUST_BACKTRACE=1 cargo test --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
+      run: RUST_BACKTRACE=1 cargo test --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics" -- --nocapture
+

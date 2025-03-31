@@ -832,10 +832,9 @@ impl <T> LazySteadyRx<T> {
 macro_rules! assert_steady_rx_eq_count {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
-        let measured = core_exec::block_on(async move {
-            //let rx = $self.lazy_channel.get_rx_clone().await;
+        let measured = block_on(async move {
             let mut rx = rx.lock().await;
-            rx.shared_avail_units()
+            rx.avail_units()
         });
         if $expected != measured {
             error!(
@@ -874,7 +873,7 @@ macro_rules! assert_steady_rx_eq_count {
 macro_rules! assert_steady_rx_gt_count {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
-        let measured = core_exec::block_on(async move {
+        let measured = block_on(async move {
             //let rx = $self.lazy_channel.get_rx_clone().await;
             let mut rx = rx.lock().await;
             rx.avail_units()
@@ -925,15 +924,14 @@ macro_rules! assert_steady_rx_gt_count {
 macro_rules! assert_steady_rx_eq_take {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
-        core_exec::block_on(async move {
+        block_on(async move {
             //let rx = $self.lazy_channel.get_rx_clone().await;
             let mut rx = rx.lock().await;
             for ex in $expected.into_iter() {
-                //TODO: do eq check on peek then job over it so we can minimize allocations?
-                //      for streams we will need to deal with 2 arays somhow??
-                //let p = rx.shared_try_peek();
-
-                match rx.shared_try_take() {
+                //TODO: this breaks teh monitor data!!!!
+                //     need urgent release with pct fix.
+                //TODO: make try_take ONLY work under teseting !!
+                match rx.try_take() {
                     None => panic!(
                         "Expected value but none available at {}:{}",
                         file!(),

@@ -103,6 +103,8 @@ pub mod distributed {
     pub mod distributed_builder;
 }
 
+pub use core_exec::block_on;
+
 pub mod simulate_edge;
 /// module for testing full graphs of actors
 pub mod graph_testing;
