@@ -38,3 +38,4 @@ target/**/*
 
 tarpaulin-report.html
 
+/core/aeron_media_driver/aeron/
