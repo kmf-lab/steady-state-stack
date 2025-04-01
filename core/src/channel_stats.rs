@@ -1453,7 +1453,7 @@ pub(crate) mod stats_tests {
 
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg latency: 18 ms\n");
+        assert_eq!(display_label, "Avg latency: 18K ms\n");
 
         assert!(computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(5))), "Trigger should fire when the average is above");
         assert!(!computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(21))), "Trigger should fire when the average is above");
@@ -1496,7 +1496,7 @@ pub(crate) mod stats_tests {
         computer.std_dev_latency.push(StdDev::two_and_a_half());
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg latency: 95 ms\nlatency 2.5StdDev: 79.329 per frame (3ms duration)\n");
+        assert_eq!(display_label, "Avg latency: 95K ms\nlatency 2.5StdDev: 79.329 per frame (3ms duration)\n");
 
         // Define a trigger for rate deviation above a threshold
         assert!(computer.triggered_latency(&Trigger::StdDevsAbove(StdDev::two_and_a_half(), Duration::from_millis(96 + 70))), "Trigger should fire when rate deviates above the mean by a std dev, exceeding 6");
