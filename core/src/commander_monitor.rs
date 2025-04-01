@@ -128,12 +128,8 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
     //TODO: check usage and add to the SteadyState
     pub(crate) async fn internal_wait_shutdown(&self) -> bool {
-        error!("expecting hang 8");
-
         let one_shot = &self.oneshot_shutdown;
-
         let mut guard = one_shot.lock().await;
-        error!("expecting hang 9");
 
         if !guard.is_terminated() {
             error!("expecting hang A");
