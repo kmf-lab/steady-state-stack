@@ -80,7 +80,7 @@ mod process_tests {
         
         let test_data: Vec<Packet> = (0..bash_size).map(|i| Packet { route: i as u16, data: Default::default() }).collect();
         let _sent = approved_widget_in_tx.testing_send_all(test_data,true);
-        sleep(Duration::from_secs(2));
+         sleep(Duration::from_millis(100));
 
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(2));

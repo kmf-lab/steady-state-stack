@@ -874,11 +874,10 @@ macro_rules! assert_steady_rx_gt_count {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
         let measured = block_on(async move {
-            //let rx = $self.lazy_channel.get_rx_clone().await;
             let mut rx = rx.lock().await;
             rx.avail_units()
         });
-        if !($expected > measured) {
+        if !(measured > $expected) {
             error!(
                 "Assertion failed: {} > {} at {}:{}",
                 $expected,
