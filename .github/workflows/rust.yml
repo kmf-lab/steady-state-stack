@@ -9,9 +9,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-# TODO: https://github.blog/changelog/2025-01-16-linux-arm64-hosted-runners-now-available-for-free-in-public-repositories-public-preview/
-# TODO: https://github.com/actions/partner-runner-images/issues/26
-# TODO: we need the most common permutations of features tested and covered
 
 jobs:
   build:
@@ -25,5 +22,7 @@ jobs:
     - name: Build
       run: RUST_BACKTRACE=1 cargo build --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
     - name: Run tests
-      run: RUST_BACKTRACE=1 cargo test --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics" -- --nocapture
+      run: RUST_LOG=debug RUST_BACKTRACE=full cargo test --verbose --workspace --examples --test --no-default-features --features "exec_async_std,prometheus_metrics" -- --show-output
+    - name: Run tests
+      run: RUST_LOG=debug RUST_BACKTRACE=full cargo test --verbose --workspace --examples --test --no-default-features --features "proactor_tokio,telemetry_server_builtin" -- --show-output
 
