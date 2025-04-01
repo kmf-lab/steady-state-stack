@@ -103,7 +103,14 @@ pub mod distributed {
     pub mod distributed_builder;
 }
 
+/// Blocks the current thread until the provided future completes, returning its result.
 pub use core_exec::block_on;
+/// Async Spawns a blocking task on a separate thread for CPU-bound or blocking operations.
+pub use core_exec::spawn_blocking;
+/// Spawns a future that can be sent across threads and detaches it for independent execution.
+pub use core_exec::spawn_detached;
+/// Optional, some runtimes limit thread count and others do not
+pub use core_exec::spawn_more_threads;
 
 pub mod simulate_edge;
 /// module for testing full graphs of actors

@@ -47,7 +47,7 @@ fi
 # Run tests with cargo-nextest, optimizing threads automatically
 # RUST_TEST_THREADS is not needed as nextest manages parallelism itself
 # Use --test-threads to manually override if desired (e.g., --test-threads=4)
-RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --no-capture | tee cargo_test.txt
+RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --examples -tests --verbose --show-output | tee cargo_test.txt
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
@@ -67,7 +67,7 @@ fi
 
 # Build release version with specific features and parallel jobs
 # Adjust -j flag to match your CPU's core count for faster compilation (e.g., -j 8 for 8 cores)
-RUST_BACKTRACE=1 cargo build --offline --release --workspace --features "proactor_nuclei telemetry_server_cdn" -j 4 | tee cargo_build_release.txt
+RUST_BACKTRACE=1 cargo build --offline --release --workspace --examples --tests --features "proactor_nuclei telemetry_server_cdn" -j 12 | tee cargo_build_release.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Release build failed with exit code $exit_code"

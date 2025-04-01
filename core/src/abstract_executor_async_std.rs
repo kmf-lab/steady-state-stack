@@ -25,7 +25,7 @@ pub(crate) mod core_exec {
     ///
     /// This function uses `async_std::task::spawn` to schedule the future on the global multi-threaded
     /// executor. Ignoring the `Task` handle detaches it, allowing thread-safe tasks to run independently.
-    pub fn spawn_and_detach<F: Future<Output=T> + Send + 'static, T: Send + 'static>(future: F) -> () {
+    pub fn spawn_detached<F: Future<Output=T> + Send + 'static, T: Send + 'static>(future: F) -> () {
         let _ = task::spawn(future);
     } // only 5x calls in metric_server and actor_builder
 

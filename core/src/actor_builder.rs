@@ -16,7 +16,7 @@ use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::lock::{Mutex, MutexGuard};
 use log::*;
 use futures_util::future::select_all;
-use crate::core_exec;
+use crate::*;
 
 
 use crate::{steady_config, ActorName, AlertColor, Graph, Metric, StdDev, Trigger};
@@ -327,7 +327,7 @@ impl ActorTeam {
                Ok(c) => {if c>=12 {info!("Threads: {}",c);} }
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
            }
-           core_exec::spawn_and_detach( super_task );
+           spawn_detached( super_task );
         });
         //only continue after startup has finished
         let _ = core_exec::block_on(local_take);
@@ -662,7 +662,7 @@ impl ActorBuilder {
             let fun:NonSendWrapper<DynCall> =  build_actor_registration(&context_archetype);
             let master_ctx:SteadyContext = build_actor_context(&context_archetype, rate_ms, default_core);
 
-            core_exec::spawn_and_detach(async move {
+            core_exec::spawn_detached(async move {
                 // Determine the core to use based on the provided options
                 let default = if let Some(exp) = explicit_core {exp} else {default_core};
                 let core = if let Some(mut balancer) = core_balancer {

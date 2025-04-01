@@ -34,7 +34,7 @@ pub(crate) mod core_exec {
     /// and its output to be safely transferred between threads. It uses `nuclei::spawn` to schedule
     /// the task on the global multi-threaded executor, with `detach` ensuring it runs without
     /// returning a handle. Useful for tasks requiring thread mobility.
-    pub fn spawn_and_detach<F: Future<Output=T> + Send + 'static, T: Send + 'static>(future: F) -> () {
+    pub fn spawn_detached<F: Future<Output=T> + Send + 'static, T: Send + 'static>(future: F) -> () {
         nuclei::spawn(future).detach();
     }
 

@@ -17,7 +17,7 @@ use time::OffsetDateTime;
 
 use crate::actor_stats::ActorStatsComputer;
 use crate::{ActorName};
-use crate::core_exec;
+use crate::*;
 use crate::channel_stats::ChannelStatsComputer;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
@@ -594,7 +594,7 @@ impl FrameHistory {
                 // Let the file write happen in the background so we can get back to data updates
                 // This is not a new thread so it is lightweight
                 //TODO: rewrite as a new actor!
-                core_exec::spawn_and_detach(async move {
+                spawn_detached(async move {
                     if let Err(e) = Self::append_to_file(path, to_be_written, flush_all).await {
                         error!("Error writing to file: {}", e);
                         error!("Due to the above error some history has been lost");
