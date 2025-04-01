@@ -543,6 +543,7 @@ mod metric_collector_tests {
     use parking_lot::RwLock;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::thread::sleep;
     use futures::executor::block_on;
     use crate::{GraphBuilder, RxCore};
 
@@ -684,45 +685,49 @@ mod metric_collector_tests {
 
             //// now confirm we can see the telemetry collected into metrics_collector
             //wait for one page of telemetry
-            Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms() * 40)).await;
+            sleep(Duration::from_millis(graph.telemetry_production_rate_ms() * 40));
 
             //hit the telemetry site and validate if it returns
             // this test will only work if the feature is on
             // hit 127.0.0.1:9100/metrics using isahc
-            match isahc::get_async("http://127.0.0.1:9100/metrics").await {
-                Ok(mut response) => {
-                    assert_eq!(200, response.status().as_u16());
-                   // warn!("ok metrics");
-                    let body = response.text().await;
-                    info!("metrics: {:?}", body); //TODO: add more checks
-                }
-                Err(e) => {
-                    warn!("failed to get metrics: {:?}", e);
-                    // //this is only an error if the feature is not on
-                    // #[cfg(feature = "prometheus_metrics")]
-                    // {
-                    //     panic!("failed to get metrics: {:?}", e);
-                    // }
-                }
-            };
-            match isahc::get_async("http://127.0.0.1:9100/graph.dot").await {
-                Ok(response) => {
-                    assert_eq!(200, response.status().as_u16());
-                    warn!("ok graph");
-
-                    //let body = response.text().await;
-                    //info!("graph: {}", body); //TODO: add more checks
-                }
-                Err(e) => {
-                    warn!("failed to get metrics: {:?}", e);
-                    // //this is only an error if the feature is not on
-                    #[cfg(any(feature = "telemetry_server_builtin",feature = "telemetry_server_cdn"))]
-                    {
-                        //panic!("failed to get metrics: {:?}", e);
+            block_on(async {
+                match isahc::get_async("http://127.0.0.1:9100/metrics").await {
+                    Ok(mut response) => {
+                        assert_eq!(200, response.status().as_u16());
+                        // warn!("ok metrics");
+                        let body = response.text().await;
+                        info!("metrics: {:?}", body); //TODO: add more checks
                     }
-                }
-            };
+                    Err(e) => {
+                        warn!("failed to get metrics: {:?}", e);
+                        // //this is only an error if the feature is not on
+                        // #[cfg(feature = "prometheus_metrics")]
+                        // {
+                        //     panic!("failed to get metrics: {:?}", e);
+                        // }
+                    }
+                };
+                match isahc::get_async("http://127.0.0.1:9100/graph.dot").await {
+                    Ok(response) => {
+                        assert_eq!(200, response.status().as_u16());
+                        warn!("ok graph");
 
+                        //let body = response.text().await;
+                        //info!("graph: {}", body); //TODO: add more checks
+                    }
+                    Err(e) => {
+                        warn!("failed to get metrics: {:?}", e);
+                        // //this is only an error if the feature is not on
+                        #[cfg(any(
+                            feature = "telemetry_server_builtin",
+                            feature = "telemetry_server_cdn"
+                        ))]
+                        {
+                            //panic!("failed to get metrics: {:?}", e);
+                        }
+                    }
+                };
+            });
 
             graph.request_stop();
             assert!(graph.block_until_stopped(Duration::from_secs(3)));

@@ -65,6 +65,7 @@ pub(crate) mod tests {
     use std::time::Duration;
     use steady_state::*;
     use super::*;
+    use crate::*;
 
     #[test]
     fn test_div_by_3_producer() {

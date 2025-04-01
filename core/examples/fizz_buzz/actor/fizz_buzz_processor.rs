@@ -175,6 +175,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
 pub(crate) mod tests {
     use steady_state::*;
     use super::*;
+    use crate::*;
 
     #[test]
     fn test_fizz_buzz_processor() {

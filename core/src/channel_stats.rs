@@ -657,7 +657,7 @@ impl ChannelStatsComputer {
 
     pub(crate) fn compute_rate_labels(&self, target_telemetry_label: &mut String, target_metric: &mut String, current_rate: &&ChannelBlock<u64>) {
         let config = ComputeLabelsConfig::channel_config(self
-                                                         , (1000, self.frame_rate_ms as usize)
+                                                         , (1, self.frame_rate_ms as usize)
                                                          , u64::MAX
                                                          , self.show_avg_rate);
         let labels = ComputeLabelsLabels {
@@ -673,7 +673,7 @@ impl ChannelStatsComputer {
     }
 
     pub(crate) fn compute_filled_labels(&self, display_label: &mut String, metric_target: &mut String, current_filled: &&ChannelBlock<u16>) {
-        let config = ComputeLabelsConfig::channel_config(self, (100, self.capacity), u64::MAX, self.show_avg_filled);
+        let config = ComputeLabelsConfig::channel_config(self, (1, 10*self.capacity), u64::MAX, self.show_avg_filled);
         let labels = ComputeLabelsLabels {
             label: "filled",
             unit: "%",
@@ -975,7 +975,7 @@ pub(crate) fn compute_labels<T: Counter>(
             metric_target.push_str(labels.prometheus_labels);
             metric_target.push('}');
         }
-        let denominator = PLACES_TENS * config.rational_adjust.1 as u64;
+        let denominator = config.rational_adjust.1 as u64;
         let avg_per_sec_numer = (config.rational_adjust.0 as u128 * current.runner) >> config.window_in_bits;
         if avg_per_sec_numer >= (10 * denominator) as u128 {
             let value = avg_per_sec_numer / denominator as u128;

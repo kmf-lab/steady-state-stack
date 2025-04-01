@@ -159,7 +159,7 @@ impl ActorStatsComputer {
         }
 
         if let Some(current_mcpu) = &self.current_mcpu {
-            let config = ComputeLabelsConfig::actor_config(self, (1000, 1), 1024, self.show_avg_mcpu);
+            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 1024, self.show_avg_mcpu);
             let labels = ComputeLabelsLabels {
                 label: "mCPU",
                 unit: "",

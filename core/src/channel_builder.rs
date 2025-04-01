@@ -925,17 +925,15 @@ macro_rules! assert_steady_rx_eq_take {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
         block_on(async move {
-            //let rx = $self.lazy_channel.get_rx_clone().await;
             let mut rx = rx.lock().await;
             for ex in $expected.into_iter() {
-                match rx.try_peek() {
+                match rx.try_take() {
                     None => panic!(
                         "Expected value but none available at {}:{}",
                         file!(),
                         line!()
                     ),
-                    Some((_done, taken)) => {
-                       // rx.
+                    Some(taken) => {
                         if ex != taken {
                             error!(
                                 "Assertion failed: {:?} == {:?} at {}:{}",
