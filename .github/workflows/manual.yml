@@ -1,4 +1,7 @@
 name: Rust Manual Build
+# TODO: https://github.blog/changelog/2025-01-16-linux-arm64-hosted-runners-now-available-for-free-in-public-repositories-public-preview/
+# TODO: https://github.com/actions/partner-runner-images/issues/26
+# TODO: we need the most common permutations of features tested and covered
 
 on:
   workflow_dispatch:
