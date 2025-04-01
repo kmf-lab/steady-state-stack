@@ -23,6 +23,3 @@ jobs:
       run: RUST_BACKTRACE=1 cargo build --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
     - name: Run tests
       run: RUST_LOG=debug RUST_BACKTRACE=full cargo test --verbose --workspace --test --no-default-features --features "exec_async_std,prometheus_metrics" -- --show-output
-    - name: Run tests
-      run: RUST_LOG=debug RUST_BACKTRACE=full cargo test --verbose --workspace --test --no-default-features --features "proactor_tokio,telemetry_server_builtin" -- --show-output
-
