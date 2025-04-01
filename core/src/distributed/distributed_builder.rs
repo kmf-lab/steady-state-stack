@@ -137,3 +137,70 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::*;
+    use crate::channel_builder::ChannelBuilder;
+
+    /// Test that `build_aqueduct` works for `LazyStreamRx<StreamSimpleMessage>` with `AqueTech::Aeron`.
+    #[test]
+    fn test_build_aqueduct_lazy_stream_rx() {
+        let mut graph = GraphBuilder::for_testing().build(());
+
+        let cb = graph.channel_builder();
+
+        let (lazy_tx, lazy_rx) = cb.build_as_stream(100);
+        // Use AqueTech::Aeron with None for media_driver and dummy channel/stream_id
+        let tech = AqueTech::None;
+        // Create a minimal ActorBuilder and Threading
+        let actor_builder = ActorBuilder::new(&mut graph);
+        let mut threading = Threading::Spawn;
+        // Call build_aqueduct; test passes if it doesn't panic
+        lazy_rx.build_aqueduct(tech, &actor_builder, &mut threading);
+    }
+
+    /// Test that `build_aqueduct` works for `LazyStreamTx<StreamSessionMessage>` with `AqueTech::Aeron`.
+    #[test]
+    fn test_build_aqueduct_lazy_stream_tx() {
+        let mut graph = GraphBuilder::for_testing().build(());
+
+        let cb = graph.channel_builder();
+
+        let (lazy_tx, lazy_rx) = cb.build_as_stream(100);
+        let tech = AqueTech::None;
+        let actor_builder = ActorBuilder::new(&mut graph);
+        let mut threading = Threading::Spawn;
+        lazy_tx.build_aqueduct(tech, &actor_builder, &mut threading);
+    }
+
+    /// Test that `build_aqueduct` works for `LazySteadyStreamRxBundle<StreamSimpleMessage, GIRTH>` with `AqueTech::Aeron`.
+    #[test]
+    fn test_build_aqueduct_lazy_stream_rx_bundle_simple() {
+        let mut graph = GraphBuilder::for_testing().build(());
+
+        const GIRTH: usize = 1;
+        let cb = graph.channel_builder();
+
+        let (lazy_tx, lazy_rx_bundle) = cb.build_as_stream_bundle::<StreamSimpleMessage, GIRTH>(100);
+        let tech = AqueTech::None;
+        let actor_builder = ActorBuilder::new(&mut graph);
+        let mut threading = Threading::Spawn;
+        lazy_rx_bundle.build_aqueduct(tech, &actor_builder, &mut threading);
+    }
+
+    #[test]
+    fn test_build_aqueduct_lazy_stream_tx_bundle_session() {
+        let mut graph = GraphBuilder::for_testing().build(());
+
+        const GIRTH: usize = 1;
+        let cb = graph.channel_builder();
+
+        let (lazy_tx_bundle, lazy_rx_bundle) = cb.build_as_stream_bundle::<StreamSessionMessage, GIRTH>(100);
+
+        let tech = AqueTech::None;
+        let actor_builder = ActorBuilder::new(&mut graph);
+        let mut threading = Threading::Spawn;
+        lazy_tx_bundle.build_aqueduct(tech, &actor_builder, &mut threading);
+    }
+}

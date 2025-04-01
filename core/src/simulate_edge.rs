@@ -178,3 +178,59 @@ pub(crate) async fn simulated_behavior< C: SteadyCommander + 'static>(
     Ok(())
 }
 
+
+#[cfg(test)]
+mod simulate_edge_tests {
+    use super::*;
+    use std::sync::Arc;
+    use futures_util::lock::Mutex;
+
+    // Test 1: Verify TestEcho can be instantiated and cloned
+    #[test]
+    fn test_echo_instantiation_and_clone() {
+        // Create a simple struct implementing SimulateTx minimally
+        struct DummyTx;
+        impl SimulateTx for DummyTx {
+            async fn simulate_echo<C: SteadyCommander>(
+                &mut self,
+                _cmd_mutex: Arc<Mutex<C>>,
+                _responder: SideChannelResponder,
+            ) {
+                // No-op for testing
+            }
+        }
+
+        let tx = Arc::new(Mutex::new(DummyTx));
+        let echo = TestEcho(tx.clone());
+        let echo_clone = echo.clone();
+
+        // Check that cloning works by comparing Arc pointers
+        assert!(Arc::ptr_eq(&echo.0, &echo_clone.0));
+    }
+
+    // Test 2: Verify TestEquals can be instantiated and cloned
+    #[test]
+    fn test_equals_instantiation_and_clone() {
+        // Create a simple struct implementing SimulateRx minimally
+        struct DummyRx;
+        impl SimulateRx for DummyRx {
+            async fn simulate_equals<C: SteadyCommander>(
+                &mut self,
+                _cmd_mutex: Arc<Mutex<C>>,
+                _responder: SideChannelResponder,
+            ) {
+                // No-op for testing
+            }
+        }
+
+        let rx = Arc::new(Mutex::new(DummyRx));
+        let equals = TestEquals(rx.clone());
+        let equals_clone = equals.clone();
+
+        // Check that cloning works by comparing Arc pointers
+        assert!(Arc::ptr_eq(&equals.0, &equals_clone.0));
+    }
+
+
+
+}

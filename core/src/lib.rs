@@ -109,7 +109,8 @@ pub use core_exec::block_on;
 pub use core_exec::spawn_blocking;
 /// Spawns a future that can be sent across threads and detaches it for independent execution.
 pub use core_exec::spawn_detached;
-/// Optional, some runtimes limit thread count and others do not
+
+/// Optional, some runtimes limit thread count and others do not, may not remain in the future
 pub use core_exec::spawn_more_threads;
 
 pub mod simulate_edge;
