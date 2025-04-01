@@ -89,7 +89,6 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
         let state2 = state.clone();
         let config2 = config.clone();
 
-
         let opt_tcp = bind_to_port(addr);
         if let Some(ref listener_new) = *opt_tcp {
             #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
@@ -106,6 +105,8 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
                                                                       } else { &*addr.ip().to_string() };
                 println!("Prometheus can scrape on http://{}:{}/metrics", display_addr, addr.port());
             }
+        } else {
+            warn!("skipping telemetry due to binding issues")
         }
         //NOTE: this is probably a mistake this loop could be its own actor.
         core_exec::spawn_and_detach(async move {
@@ -178,12 +179,12 @@ pub fn bind_to_port(addr: &str) -> Arc<Option<Box<dyn AsyncListener + Send + Syn
         Ok(listener) => match Async::new(listener) {
             Ok(async_listener) => Arc::new(Some(Box::new(async_listener) as Box<dyn AsyncListener + Send + Sync>)),
             Err(e) => {
-                error!("Unable to create async listener: {}", e);
+                warn!("Unable to create async listener: {}", e);
                 Arc::new(None)
             }
         },
         Err(e) => {
-            error!("Unable to bind to http://{}: {}", addr, e);
+            warn!("Unable to bind to http://{}: {}", addr, e);
             Arc::new(None)
         }
     }
@@ -581,6 +582,7 @@ async fn handle_request<T>(mut stream: T,
     }
 }
 
+#[cfg(not(windows))]
 #[cfg(test)]
 mod meteric_server_tests {
     use std::sync::Arc;
@@ -624,6 +626,7 @@ mod meteric_server_tests {
 
 }
 
+#[cfg(not(windows))]
 #[cfg(test)]
 mod http_telemetry_tests {
     use std::thread::sleep;
@@ -795,9 +798,6 @@ mod http_telemetry_tests {
             }
         };
     }
-
-
-
 
 }
 

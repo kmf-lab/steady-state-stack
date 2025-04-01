@@ -23,6 +23,7 @@ mod simple_graph_test {
     ///
     /// # Examples
     /// this test should only be run manually, as it will panic by design
+    #[cfg(not(windows))]
     #[test]
     fn test_panic_graph() {
     

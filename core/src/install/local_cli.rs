@@ -94,7 +94,7 @@ impl LocalCLIBuilder {
             if paths.contains(&custom_install_dir) {
                 self.install_dir = custom_install_dir;
             } else {
-                info!("Custom install directory {:?} is not in the PATH", custom_install_dir);
+                trace!("Custom install directory {:?} is not in the PATH", custom_install_dir);
                 self.install_dir = custom_install_dir;
             }
         } else {
@@ -132,8 +132,8 @@ impl LocalCLIBuilder {
     /// - (Unix only) Permissions cannot be set.
     pub fn build(&self) -> std::io::Result<()> {
         let current_exe = env::current_exe()?;
-        info!("Current executable path: {:?}", current_exe);
-        info!("path: {}", self.path);
+        trace!("Current executable path: {:?}", current_exe);
+        trace!("path: {}", self.path);
 
         fs::create_dir_all(&self.install_dir)?;
 
@@ -155,7 +155,7 @@ impl LocalCLIBuilder {
             fs::set_permissions(&dest_path, perms)?;
         }
 
-        info!("Executable installed to: {:?}", dest_path);
+        trace!("Executable installed to: {:?}", dest_path);
         Ok(())
     }
 }

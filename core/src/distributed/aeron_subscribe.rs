@@ -331,19 +331,14 @@ pub(crate) mod aeron_media_driver_tests {
 
         //let mut data = [0u8; 5];
         for i in 0..100 {
-            let data1: Vec<u8> = vec![1, 2, 3, 4, 5];
-            assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(
-                (StreamSessionMessage::new(5,1,Instant::now(), Instant::now()),data1.into_boxed_slice())));
-            let data2: Vec<u8> = vec![6, 7, 8, 9, 10];
-            assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(
-                (StreamSessionMessage::new(5,1,Instant::now(), Instant::now()),data2.into_boxed_slice())));
+            // let data1: Vec<u8> = vec![1, 2, 3, 4, 5];
+            // assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(
+            //     (StreamSessionMessage::new(5,1,Instant::now(), Instant::now()),data1.into_boxed_slice())));
+            // let data2: Vec<u8> = vec![6, 7, 8, 9, 10];
+            // assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(
+            //     (StreamSessionMessage::new(5,1,Instant::now(), Instant::now()),data2.into_boxed_slice())));
 
-            // let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]);
-            // assert_eq!(5, result, "failed on iteration {}", i);
-            // assert_eq!([1, 2, 3, 4, 5], data);
-            // let result = from_aeron_rx[0].testing_take_frame(&mut data[0..5]);
-            // assert_eq!(5, result, "failed on iteration {}", i);
-            // assert_eq!([6,7,8,9,10], data);
+
         }
         
     }

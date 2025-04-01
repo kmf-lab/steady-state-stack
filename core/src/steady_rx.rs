@@ -102,6 +102,13 @@ impl <T> Rx<T> {
         self.peek_repeats.load(Ordering::Relaxed) >= threshold
     }
 
+    pub fn try_take(&mut self) -> Option<T> {
+        if let Some((done, msg)) = self.shared_try_take() {
+            Some(msg)
+        } else {
+            None
+        }
+    }
 
     /// Attempts to peek at the next message in the channel without removing it.
     ///
@@ -599,13 +606,13 @@ pub enum RxDone {
 
 #[cfg(test)]
 mod rx_tests {
-    use crate::{GraphBuilder, SteadyTxBundle, SteadyTxBundleTrait};
     use crate::core_rx::RxCore;
     use crate::core_tx::TxCore;
     use super::*;
+    use crate::*;
 
-    #[async_std::test]
-    async fn test_bundle() {
+    #[test]
+    fn test_bundle() {
 
         let mut graph = GraphBuilder::for_testing().build(());
         let channel_builder = graph.channel_builder();
@@ -623,19 +630,17 @@ mod rx_tests {
         assert_eq!(array_rx_meta_data[1].meta_data().id,array_tx_meta_data[1].meta_data().id);
         assert_eq!(array_rx_meta_data[2].meta_data().id,array_tx_meta_data[2].meta_data().id);
 
-
-        let mut vec_tx_bundle = steady_tx_bundle.lock().await;
+        let mut vec_tx_bundle = core_exec::block_on(steady_tx_bundle.lock());
         assert!(vec_tx_bundle[0].shared_try_send("0".to_string()).is_ok());
         assert!(vec_tx_bundle[1].shared_try_send("1".to_string()).is_ok());
         assert!(vec_tx_bundle[2].shared_try_send("2".to_string()).is_ok());
 
         //if above 3 are not written this will hang
-        steady_rx_bundle.wait_avail_units(1, 3).await;
-
-        //confirm the channels count
-        let mut vec_rx_bundle = steady_rx_bundle.lock().await;
+        let mut vec_rx_bundle = core_exec::block_on( async {
+            steady_rx_bundle.wait_avail_units(1, 3).await;
+            steady_rx_bundle.lock().await
+        });
         assert_eq!(3,vec_rx_bundle.len());
-
         assert!(!RxBundleTrait::is_empty(&mut vec_rx_bundle));
         assert!(!RxBundleTrait::is_closed(&mut vec_rx_bundle));
         assert!(!RxBundleTrait::is_closed_and_empty(&mut vec_rx_bundle));
@@ -645,15 +650,12 @@ mod rx_tests {
         vec_tx_bundle[2].mark_closed();
 
         assert!(RxBundleTrait::is_closed(&mut vec_rx_bundle));
-
         assert!(vec_rx_bundle[0].shared_try_take().is_some());
         assert!(vec_rx_bundle[1].shared_try_take().is_some());
         assert!(vec_rx_bundle[2].shared_try_take().is_some());
 
         assert!(RxBundleTrait::is_closed_and_empty(&mut vec_rx_bundle));
         assert!(RxBundleTrait::is_empty(&mut vec_rx_bundle));
-
-
 
     }
 }

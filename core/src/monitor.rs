@@ -950,21 +950,14 @@ pub(crate) mod monitor_tests {
     #[async_std::test]
     async fn test_wait_shutdown() {
         let context = test_steady_context();
-        error!("expecting hang 1");
         let monitor = context.into_monitor([], []);
-       error!("expecting hang 2");
         // Simulate shutdown
         {
             let mut liveliness = monitor.runtime_state.write();
             liveliness.state = GraphLivelinessState::Running;
             liveliness.request_shutdown();
         }
-        error!("expecting hang 3");
-
         let result = monitor.wait_shutdown().await;
-
-        error!("expecting hang 4 {}",result);
-
         assert!(result);
     }
 

@@ -524,6 +524,15 @@ impl<T: StreamItem> StreamRx<T> {
         }
     }
 
+
+    pub fn try_take(&mut self) -> Option<(T,Box<[u8]>)> {
+        if let Some((done, msg)) = self.shared_try_take() {
+            Some(msg)
+        } else {
+            None
+        }
+    }
+
     // pub async fn shared_wait_closed_or_avail_messages(&mut self, full_messages: usize) -> bool {
     //     self.item_channel.shared_wait_closed_or_avail_units(full_messages).await
     // }

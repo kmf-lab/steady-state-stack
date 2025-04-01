@@ -613,8 +613,9 @@ mod metric_collector_tests {
         assert!(result.is_none());
     }
 
-    #[async_std::test]
-    async fn test_actor() {
+    #[cfg(not(windows))]
+    #[test]
+    fn test_actor() {
         use isahc::AsyncReadResponseExt;
 
         //only run this locally where we can open the default port

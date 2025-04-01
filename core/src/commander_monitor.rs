@@ -142,7 +142,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
             error!("expecting hang B");
 
         }
-        error!("hep inernal shutdwon conffed");
         true
     }
 
@@ -930,21 +929,13 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         }
     }
 
-
-
-
     /// uses opposite boolean as others since we are asking for shutdown
     /// returns true upon shutdown detection
     async fn wait_shutdown(&self) -> bool {
-        error!("expecting hang 5");
-
         let _guard = self.start_profile(CALL_OTHER);
         if self.telemetry.is_dirty() {
-            error!("expecting hang 6.0");
-
             let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 && self.is_liveliness_running() {
-                error!("need relay before shutdown?? if so check liveliness");
                 false //need a relay now so return
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));

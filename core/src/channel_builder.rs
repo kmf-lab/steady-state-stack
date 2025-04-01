@@ -928,16 +928,14 @@ macro_rules! assert_steady_rx_eq_take {
             //let rx = $self.lazy_channel.get_rx_clone().await;
             let mut rx = rx.lock().await;
             for ex in $expected.into_iter() {
-                //TODO: this breaks teh monitor data!!!!
-                //     need urgent release with pct fix.
-                //TODO: make try_take ONLY work under teseting !!
-                match rx.try_take() {
+                match rx.try_peek() {
                     None => panic!(
                         "Expected value but none available at {}:{}",
                         file!(),
                         line!()
                     ),
                     Some((_done, taken)) => {
+                       // rx.
                         if ex != taken {
                             error!(
                                 "Assertion failed: {:?} == {:?} at {}:{}",
