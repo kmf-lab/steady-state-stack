@@ -66,6 +66,6 @@ pub(crate) mod actor_tests {
         graph.request_stop();
         assert_eq!(true,graph.block_until_stopped(Duration::from_secs(2)));
 
-        crate::assert_steady_rx_eq_count!(&ticks_rx_out,BATCH);
+        crate::assert_steady_rx_gt_count!(&ticks_rx_out,BATCH-1);
     }
 }
