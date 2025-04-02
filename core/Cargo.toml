@@ -118,7 +118,6 @@ async-io         = "2.4.0"
 aeron = "0.2.0"
 futures-lite = "2.6.0"
 backtrace = "0.3.74"
-tokio = "1.44.1"
 async-trait = "0.1.88"
 # steady_state_aeron    = { path = "../../aeron-rs", version="0.1.6-kmf1" }
 # Dependencies for Unix-like systems (Linux, macOS, etc.)

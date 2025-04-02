@@ -269,7 +269,7 @@ pub(crate) mod aeron_media_driver_tests {
 
     #[test]
     fn test_bytes_process() {
-        if true || std::env::var("GITHUB_ACTIONS").is_ok() {
+        if std::env::var("GITHUB_ACTIONS").is_ok() {
             return;
         }
 
