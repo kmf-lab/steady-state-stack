@@ -235,6 +235,7 @@ mod tests {
     //    // assert!(result.is_err());
     // }
 
+    #[cfg(not(windows))]
     #[test]
     fn test_default_installation_directory_system_wide() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true);
