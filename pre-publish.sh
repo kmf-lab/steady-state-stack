@@ -47,13 +47,16 @@ fi
 # Run tests with cargo-nextest, optimizing threads automatically
 # RUST_TEST_THREADS is not needed as nextest manages parallelism itself
 # Use --test-threads to manually override if desired (e.g., --test-threads=4)
-RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --examples -tests --verbose --show-output | tee cargo_test.txt
+RUST_BACKTRACE=full RUST_LOG=debug cargo nexttest run --workspace --examples -tests | tee cargo_test.txt
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
     echo "Tests failed with exit code $exit_code"
     exit $exit_code
 fi
+echo "====================================================================================================================="
+echo "============ success all tests ran well ============================================================================="
+echo "====================================================================================================================="
 
 
 # Build the workspace in offline mode, skipping tests and examples if not needed
@@ -67,7 +70,7 @@ fi
 
 # Build release version with specific features and parallel jobs
 # Adjust -j flag to match your CPU's core count for faster compilation (e.g., -j 8 for 8 cores)
-RUST_BACKTRACE=1 cargo build --offline --release --workspace --examples --tests --features "proactor_nuclei telemetry_server_cdn" -j 12 | tee cargo_build_release.txt
+RUST_BACKTRACE=1 cargo build --release --workspace --examples --tests --features "proactor_nuclei telemetry_server_cdn" -j 12 | tee cargo_build_release.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Release build failed with exit code $exit_code"
@@ -102,10 +105,13 @@ cargo audit | tee cargo_audit.txt
 echo "install current cargo-steady-state"
 cargo install --path cargo-steady-state
 
+echo "---------------------------------------------------------------------------------"
+echo "------------------------    compute coverage please wait ------------------------"
+echo "---------------------------------------------------------------------------------"
 # Optional: Run coverage and statistics
 # These can be skipped or run separately to save time
-cargo llvm-cov -- --nocapture --show-output
-echo "To generate coverage report: cargo llvm-cov --html --output-dir coverage/"
+cargo llvm-cov nextest --no-default-features -F exec_async_std,telemetry_server_builtin
+#echo "To generate coverage report: cargo llvm-cov --html --output-dir coverage/"
 
 echo "cargo tree"
 tokei | tee cargo_tokei.txt

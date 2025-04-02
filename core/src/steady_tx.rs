@@ -3,7 +3,7 @@ use log::{error, warn};
 use futures_util::{FutureExt};
 use std::any::type_name;
 use std::backtrace::Backtrace;
-use std::time::{Instant};
+use std::time::{Duration, Instant};
 use futures::channel::oneshot;
 use futures_util::lock::{Mutex, MutexLockFuture};
 use ringbuf::traits::Observer;
@@ -12,7 +12,7 @@ use futures_util::future::{select_all};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::thread;
-
+use std::thread::sleep;
 use crate::{steady_config, ActorIdentity, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::core_tx::TxCore;
@@ -174,13 +174,13 @@ impl<T: Send + Sync> TxMetaDataProvider for Arc<Mutex<Tx<T>>> {
             if let Some(guard) = self.try_lock() {
                 return Arc::clone(&guard.deref().channel_meta_data.meta_data);
             }
-            thread::yield_now();
+            sleep(Duration::from_millis(5));
             count += 1;
 
             //only print once we have tried for a while
             if 100_000 == count {
                 let backtrace = Backtrace::capture();
-                error!("{:?}", backtrace);
+                warn!("{:?}", backtrace);
                 error!("got stuck on meta_data, unable to get lock on ChannelMetaData");
             }
         }

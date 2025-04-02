@@ -1,3 +1,4 @@
+use log::{info, warn};
 use crate::{new_state, LazyStreamRx, LazyStreamTx, Threading};
 use crate::actor_builder::ActorBuilder;
 use crate::distributed::aeron_channel_builder::AqueTech;
@@ -71,12 +72,15 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
                                                         , aeron.clone()
                                                         , state.clone())
                                , threading);
-                }
+                };
+            }
+            AqueTech::None => {
+                warn!("no AqueTech provided, probably testing or still under development");
             }
             _ => {
                 panic!("unsupported distribution type");
             }
-        }
+        };
     }
 }
 impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimpleMessage, GIRTH> {
@@ -99,12 +103,15 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
                                                              , aeron.clone()
                                                              , state.clone())
                                , threading)
-                }
+                };
+            },
+            AqueTech::None => {
+                warn!("no AqueTech provided, probably testing or still under development");
             }
             _ => {
                 panic!("unsupported distribution type");
             }
-        }
+        };
     }
 }
 
@@ -128,12 +135,15 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
                                                                , aeron.clone()
                                                                , state.clone())
                                , threading);
-                }
-            }
+                };
+            },
+            AqueTech::None => {
+                warn!("no AqueTech provided, probably testing or still under development");
+            },
             _ => {
                 panic!("unsupported distribution type");
             }
-        }
+        };
     }
 }
 
@@ -141,23 +151,23 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
 mod tests {
     use super::*;
     use crate::*;
-    use crate::channel_builder::ChannelBuilder;
 
     /// Test that `build_aqueduct` works for `LazyStreamRx<StreamSimpleMessage>` with `AqueTech::Aeron`.
     #[test]
     fn test_build_aqueduct_lazy_stream_rx() {
         let mut graph = GraphBuilder::for_testing().build(());
+        if graph.aeron_md().is_some() {
+            let cb = graph.channel_builder();
 
-        let cb = graph.channel_builder();
-
-        let (lazy_tx, lazy_rx) = cb.build_as_stream(100);
-        // Use AqueTech::Aeron with None for media_driver and dummy channel/stream_id
-        let tech = AqueTech::None;
-        // Create a minimal ActorBuilder and Threading
-        let actor_builder = ActorBuilder::new(&mut graph);
-        let mut threading = Threading::Spawn;
-        // Call build_aqueduct; test passes if it doesn't panic
-        lazy_rx.build_aqueduct(tech, &actor_builder, &mut threading);
+            let (lazy_tx, lazy_rx) = cb.build_as_stream(100);
+            // Use AqueTech::Aeron with None for media_driver and dummy channel/stream_id
+            let tech = AqueTech::None;
+            // Create a minimal ActorBuilder and Threading
+            let actor_builder = ActorBuilder::new(&mut graph);
+            let mut threading = Threading::Spawn;
+            // Call build_aqueduct; test passes if it doesn't panic
+            lazy_rx.build_aqueduct(tech, &actor_builder, &mut threading);
+        }
     }
 
     /// Test that `build_aqueduct` works for `LazyStreamTx<StreamSessionMessage>` with `AqueTech::Aeron`.

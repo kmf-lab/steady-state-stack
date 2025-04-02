@@ -320,11 +320,10 @@ impl GraphLiveliness {
                     if in_favor && !vote.in_favor {
                         // Safe total where we know this can only be done once for each
                         self.vote_in_favor_total.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        vote.in_favor = in_favor;
                     } else if vote.in_favor {
-                        error!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
+                        trace!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
                     }
-
-                    vote.in_favor = in_favor;
                     drop(vote);
                     Some(!in_favor) // Return the opposite to keep running when we vote no
                 } else {
@@ -517,7 +516,10 @@ impl GraphBuilder {
         let g = Graph::internal_new(args, self);
         if !crate::steady_config::DISABLE_DEBUG_FAIL_FAST {
             #[cfg(debug_assertions)]
-            g.apply_fail_fast();
+            {
+              g.apply_fail_fast();
+              info!("fail fast enabled for testing !");
+            }
         }
         g
     }
@@ -539,7 +541,7 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) noise_threshold: Instant,
     pub(crate) block_fail_fast: bool,
     pub(crate) telemetry_production_rate_ms: u64,
-    pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
 
 }
 
