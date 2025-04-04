@@ -3,7 +3,7 @@
 //!  Steady State is a high performance, easy to use, actor based framework for building concurrent applications in Rust.
 //!  Guarantee your SLA with telemetry, alerts and Prometheus.
 //!  Build low latency high volume solutions.
-
+//TODO: look for cargo all testing coverage.
 #[cfg(all(feature = "proactor_nuclei", feature = "exec_async_std"))]
 compile_error!("Cannot enable both features at the same time");
 #[cfg(all(feature = "proactor_nuclei", feature = "proactor_tokio"))]
@@ -35,6 +35,8 @@ pub(crate) mod channel_stats;
 pub(crate) mod actor_stats;
 pub(crate) mod steady_config;
 pub(crate) mod dot;
+
+//TODO: check our errors returned and make them simple copy
 
 mod graph_liveliness;
 mod loop_driver;
@@ -76,8 +78,7 @@ pub mod monitor;
 pub mod channel_builder;
     /// module for all actor features
 pub mod actor_builder;
-    /// util module for various utility functions.
-pub mod util;
+
 /// Installation modules for setting up various deployment methods.
 pub mod install {
     /// module with support for creating and removing systemd configuration
@@ -189,7 +190,11 @@ use std::ops::{Deref, DerefMut};
 use log::*;
 
 use crate::monitor::{ActorMetaData, ChannelMetaData};
-use crate::util::logger;
+
+/// util module for various utility functions.
+pub mod util;
+pub use crate::util::*;
+
 use futures::*;
 use futures::channel::oneshot;
 use futures::select;
@@ -392,8 +397,10 @@ pub fn steady_rx_bundle<T, const GIRTH: usize>(internal_array: [SteadyRx<T>; GIR
 /// Initialize logging for the steady_state crate.
 /// This is a convenience function that should be called at the beginning of main.
 pub fn init_logging(loglevel: LogLevel) -> Result<(), Box<dyn std::error::Error>> {
-    logger::initialize_with_level(loglevel)
+    steady_logger::initialize_with_level(loglevel)
 }
+
+
 
 
 #[derive(Copy, Clone, Debug, PartialEq, ValueEnum)]

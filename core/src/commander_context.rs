@@ -27,7 +27,7 @@ use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
 use crate::simulate_edge::{IntoSimRunner};
 use crate::telemetry::metrics_collector::CollectorDetail;
-use crate::util::logger;
+use crate::util::steady_logger;
 use crate::yield_now::yield_now;
 
 /// Context for managing actor state and interactions within the Steady framework.
@@ -82,7 +82,7 @@ impl SteadyCommander for SteadyContext {
 
     /// Initializes the logger with the specified log level.
     fn loglevel(&self, loglevel: crate::LogLevel) {
-        let _ = logger::initialize_with_level(loglevel);
+        let _ = steady_logger::initialize_with_level(loglevel);
     }
 
     /// No op, and only relays stats upon the LocalMonitor instance

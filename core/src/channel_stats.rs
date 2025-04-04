@@ -1106,7 +1106,7 @@ pub(crate) mod stats_tests {
 
     #[test]
     pub(crate) fn filled_avg_percent_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
@@ -1133,7 +1133,7 @@ pub(crate) mod stats_tests {
 
     #[test]
     pub(crate) fn filled_avg_fixed_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
@@ -1166,7 +1166,7 @@ pub(crate) mod stats_tests {
 
     #[test]
     pub(crate) fn filled_std_dev_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
@@ -1212,7 +1212,7 @@ pub(crate) mod stats_tests {
 
     #[test]
     pub(crate) fn filled_percentile_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
@@ -1258,7 +1258,7 @@ pub(crate) mod stats_tests {
     ////////////////////////////////////////////////////////
     #[test]
     pub(crate) fn rate_avg_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
@@ -1324,7 +1324,7 @@ pub(crate) mod stats_tests {
 
     #[test]
     pub(crate) fn rate_std_dev_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
@@ -1369,7 +1369,7 @@ pub(crate) mod stats_tests {
     ///////////////////
     #[test]
     pub(crate) fn rate_percentile_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
@@ -1426,7 +1426,7 @@ pub(crate) mod stats_tests {
 
     #[test]
     pub(crate) fn latency_avg_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
@@ -1467,7 +1467,7 @@ pub(crate) mod stats_tests {
 
     #[test]
     pub(crate) fn latency_std_dev_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;
@@ -1507,7 +1507,7 @@ pub(crate) mod stats_tests {
 
     #[test]
     pub(crate) fn latency_percentile_trigger() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut cmd = ChannelMetaData::default();
         cmd.capacity = 256;

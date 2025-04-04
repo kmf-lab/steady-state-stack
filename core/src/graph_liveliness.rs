@@ -33,7 +33,7 @@ use crate::distributed::aeron_channel_structs::aeron_utils::aeron_context;
 use crate::graph_testing::SideChannelHub;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
-use crate::util::logger;
+use crate::util::steady_logger;
 
 /// Represents the state of graph liveliness in the Steady State framework.
 ///
@@ -457,7 +457,7 @@ impl GraphBuilder {
     /// enabled for test building.
     ///
     pub fn for_testing() -> Self {
-        util::logger::initialize();
+        util::steady_logger::initialize();
         GraphBuilder {
             block_fail_fast: false,
             telemetry_metric_features: false,
@@ -553,7 +553,7 @@ impl Graph {
     }
 
     pub fn loglevel(&self, loglevel: crate::LogLevel) {
-        let _ = logger::initialize_with_level(loglevel);
+        let _ = steady_logger::initialize_with_level(loglevel);
     }
 
     pub fn args<A: Any>(&self) -> Option<&A> {

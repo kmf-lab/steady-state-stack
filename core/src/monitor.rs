@@ -616,7 +616,7 @@ pub(crate) mod monitor_tests {
     /// Unit test for relay_stats_tx_custom.
     #[async_std::test]
     async fn test_relay_stats_tx_rx_custom() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut graph = GraphBuilder::for_testing().build("");
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(8).build();
@@ -669,7 +669,7 @@ pub(crate) mod monitor_tests {
     /// Unit test for relay_stats_tx_rx_batch.
     #[async_std::test]
     async fn test_relay_stats_tx_rx_batch() {
-        util::logger::initialize();
+        util::steady_logger::initialize();
 
         let mut graph = GraphBuilder::for_testing().build("");
         let monitor = graph.new_testing_test_monitor("test");

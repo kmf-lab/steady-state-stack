@@ -1,158 +1,172 @@
-
-use std::str::FromStr;
-use flexi_logger::{Logger, LogSpecBuilder, WriteMode, LoggerHandle};
-
+use flexi_logger::writers::*;
+use flexi_logger::*;
 use log::*;
+use std::sync::{Arc, Mutex};
+use std::error::Error;
+use crate::LogLevel;
+use std::io;
 
-
-#[allow(unused_imports)]
-use futures::io::SeekFrom;
-#[allow(unused_imports)]
-use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-#[allow(unused_imports)]
-use std::fs::{create_dir_all, File, OpenOptions};
-
-/*
-fn lock_if_some<'a, T: std::marker::Send + 'a>(opt_lock: &'a Option<Arc<Mutex<T>>>)
-                                               -> Pin<Box<dyn Future<Output = Option<MutexGuard<'a, T>>> + Send + 'a>> {
-    Box::pin(async move {
-        match opt_lock {
-            Some(lock) => Some(lock.lock().await),
-            None => None,
-        }
-    })
+struct MemoryWriter {
+    logs: Arc<Mutex<Vec<String>>>,
+    format: FormatFunction, // Store the format function
 }
-*/
 
-
-    /// Initializes logging for the application using the provided log level.
-    ///
-    /// This function sets up the logger based on the specified log level, which can be adjusted through
-    /// command line arguments or environment variables. It's designed to be used both in the main
-    /// application and in test cases. The function demonstrates the use of traditional Rust error
-    /// propagation with the `?` operator. Note that actors do not initialize logging as it is done
-    /// for them in `main` before they are started.
-    ///
-    /// # Parameters
-    /// * `level`: A string slice (`&str`) that specifies the desired log level. The log level can be
-    ///            dynamically set via environment variables or directly passed as an argument.
-    ///
-    /// # Returns
-    /// This function returns a `Result<(), Box<dyn std::error::Error>>`. On successful initialization
-    /// of the logger, it returns `Ok(())`. If an error occurs during initialization, it returns an
-    /// `Err` with the error wrapped in a `Box<dyn std::error::Error>`.
-    ///
-    /// # Errors
-    /// This function will return an error if the logger initialization fails for any reason, such as
-    /// an invalid log level string or issues with logger setup.
-    ///
-    /// # Security Considerations
-    /// Be cautious to never log any personally identifiable information (PII) or credentials. It is
-    /// the responsibility of the developer to ensure that sensitive data is not exposed in the logs.
-    ///
-    fn steady_logging_init(level: &str) -> Result<LoggerHandle, Box<dyn std::error::Error>> {
-
-        let mut builder = LogSpecBuilder::new();
-        builder.default(LevelFilter::from_str(level)?); // Set the default level
-        let log_spec = builder.build();
-
-        let result = Logger::with(log_spec)
-            .format(flexi_logger::colored_with_thread)
-            .write_mode(WriteMode::Direct)
-            .start()?;
-
-        /////////////////////////////////////////////////////////////////////
-        // for all log levels use caution and never write any personal identifiable data
-        // to the logs. YOU are always responsible to ensure credentials are never logged.
-        ////////////////////////////////////////////////////////////////////
-        if log::log_enabled!(log::Level::Trace) || log::log_enabled!(log::Level::Debug)  {
-
-            trace!("Trace: deep application tracing");
-            //Rationale: "Trace" level is typically used for detailed debugging information, often in a context where the flow through the system is being traced.
-
-            debug!("Debug: complex part analysis");
-            //Rationale: "Debug" is used for information useful in a debugging context, less detailed than trace, but more so than higher levels.
-
-            warn!("Warn: recoverable issue, needs attention");
-            //Rationale: Warnings indicate something unexpected but not necessarily fatal; it's a signal that something should be looked at but isn't an immediate failure.
-
-            error!("Error: unexpected issue encountered");
-            //Rationale: Errors signify serious issues, typically ones that are unexpected and may disrupt normal operation but are not application-wide failures.
-
-            info!("Info: key event occurred");
-            //Rationale: Info messages are for general, important but not urgent information. They should convey key events or state changes in the application.
+impl MemoryWriter {
+    fn new(format: FormatFunction) -> Self {
+        MemoryWriter {
+            logs: Arc::new(Mutex::new(Vec::new())),
+            format,
         }
-        Ok(result)
+    }
+}
+
+impl LogWriter for MemoryWriter {
+    fn write(&self, now: &mut DeferredNow, record: &Record) -> io::Result<()> {
+        // Use a Vec<u8> as a temporary writer
+        let mut buffer = Vec::new();
+        // Call the format function with the buffer as the writer
+        (self.format)(&mut buffer, now, record)?;
+        // Convert the buffer to a String
+        let formatted = String::from_utf8_lossy(&buffer).to_string();
+        // Lock and push to logs
+        let mut logs = self.logs.lock().map_err(|_| io::Error::new(
+            io::ErrorKind::Other,
+            "Failed to lock logs"
+        ))?;
+        logs.push(formatted);
+        Ok(())
     }
 
-////////////////////////////////////////////
-////////////////////////////////////////////
+    fn flush(&self) -> io::Result<()> {
+        Ok(())
+    }
 
+    fn max_log_level(&self) -> LevelFilter {
+        LevelFilter::max()
+    }
+}
 
-/// Logger module.
-///
-/// The `logger` module provides functionality for initializing the logging system used within
-/// the Steady State framework. It ensures that the logging system is initialized only once
-/// during the runtime of the application.
-pub mod logger {
-    use std::sync::Mutex;
-    use flexi_logger::{LogSpecBuilder, LoggerHandle};
+fn steady_logging_init(level: LogLevel, test_mode: bool) -> Result<(LoggerHandle, Option<Arc<Mutex<Vec<String>>>>), Box<dyn Error>> {
+    let log_spec = LogSpecBuilder::new().default(level.to_level_filter()).build();
+    let format = flexi_logger::colored_with_thread;
+
+    if test_mode {
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let memory_writer = MemoryWriter::new(format);
+        let handle = Logger::with(log_spec)
+            .format(format)
+            .log_to_stderr() // Primary output to stderr
+            .add_writer("memory", Box::new(memory_writer) ) // Capture in memory
+            .write_mode(WriteMode::Direct)
+            .start()?;
+        Ok((handle, Some(logs)))
+    } else {
+        let handle = Logger::with(log_spec)
+            .format(format)
+            .log_to_stderr()
+            .write_mode(WriteMode::Direct)
+            .start()?;
+        Ok((handle, None))
+    }
+}
+// Logger module
+pub mod steady_logger {
+    use super::*;
     use lazy_static::lazy_static;
-    use crate::util;
 
     lazy_static! {
         static ref LOGGER_HANDLE: Mutex<Option<LoggerHandle>> = Mutex::new(None);
+        static ref TEST_LOGS: Mutex<Option<Arc<Mutex<Vec<String>>>>> = Mutex::new(None);
     }
 
-    /// Initializes the logger.
-    ///
-    /// This function initializes the logging system for the Steady State framework. It ensures
-    /// that the logging system is initialized only once, even if this function is called multiple times.
-    /// If the initialization fails, a warning message is printed.
+    /// Initializes the logger with default "info" level for normal operation.
     pub fn initialize() {
-        let mut logger_handle = LOGGER_HANDLE.lock().expect("internal error");
+        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
         if logger_handle.is_none() {
-            match util::steady_logging_init("info") {
-                Ok(handle) => {
-                    *logger_handle = Some(handle);
-                }
-                Err(e) => {
-                    print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
-                }
+            match steady_logging_init(LogLevel::Info, false) {
+                Ok((handle, _)) => *logger_handle = Some(handle),
+                Err(e) => eprintln!("Warning: Logger initialization failed: {}", e),
             }
         }
     }
 
-    /// Initializes the logger.
-    ///
-    /// This function initializes the logging system for the Steady State framework. It ensures
-    /// that the logging system is initialized only once, even if this function is called multiple times.
-    /// If the initialization fails, a warning message is printed.
-    pub fn initialize_with_level(level: crate::LogLevel) -> Result<(), Box<dyn std::error::Error>> {
-        let mut logger_handle = LOGGER_HANDLE.lock().expect("internal error");
+    /// Initializes the logger with a specific level for normal operation.
+    pub fn initialize_with_level(level: LogLevel) -> Result<(), Box<dyn Error>> {
+        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
         if logger_handle.is_none() {
-            match util::steady_logging_init(&format!("{:?}",level)) {
-                Ok(handle) => {
-                    *logger_handle = Some(handle);
-                    Ok(())
-                }
-                Err(e) => {
-                    print!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
-                    Err(e)
-                }
-            }
-        }  else if let Some(handle) = logger_handle.as_ref() {
-            handle.set_new_spec(
-                LogSpecBuilder::new()
-                    .default(level.to_level_filter())
-                    .build()
-            );
-
+            let (handle, _) = steady_logging_init(level, false)?;
+            *logger_handle = Some(handle);
+            Ok(())
+        } else if let Some(handle) = logger_handle.as_ref() {
+            handle.set_new_spec(LogSpecBuilder::new().default(level.to_level_filter()).build());
             Ok(())
         } else {
-            print!("Warning: Logger level change to {:?} failed.", level);
-            Err("Logger level change failed.".into())
+            Err("Logger level change failed".into())
         }
-
     }
+
+    /// Initializes the logger for test mode with in-memory log capturing.
+    pub fn initialize_for_test(level: LogLevel) -> Result<Arc<Mutex<Vec<String>>>, Box<dyn Error>> {
+        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
+        let mut test_logs = TEST_LOGS.lock().unwrap();
+
+        if logger_handle.is_none() {
+            let (handle, logs_opt) = steady_logging_init(level, true)?;
+            *logger_handle = Some(handle);
+            let logs = logs_opt.ok_or("Test logs not initialized")?;
+            *test_logs = Some(logs.clone());
+            Ok(logs)
+        } else {
+            Err("Logger already initialized".into())
+        }
+    }
+
+    /// Stops capturing logs in memory during a test.
+    pub fn stop_capturing_logs() {
+        if let Some(logs) = TEST_LOGS.lock().unwrap().as_ref() {
+            logs.lock().unwrap().clear();
+        }
+    }
+
+    /// Restores the logger to normal operation mode with "info" level.
+    pub fn restore_logger() {
+        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
+        let mut test_logs = TEST_LOGS.lock().unwrap();
+
+        if let Some(handle) = logger_handle.take() {
+            drop(handle); // Shutdown current logger
+        }
+        *test_logs = None;
+
+        match steady_logging_init(LogLevel::Info, false) {
+            Ok((handle, _)) => *logger_handle = Some(handle),
+            Err(e) => eprintln!("Warning: Logger restoration failed: {}", e),
+        }
+    }
+}
+
+// Assertion macro with restore_logger() just before error!
+#[macro_export]
+macro_rules! assert_in_logs {
+    ($logs:expr, $texts:expr) => {{
+        let logged_messages = $logs.lock().unwrap();
+        let texts = $texts;
+        let mut text_index = 0;
+        for msg in logged_messages.iter() {
+            if text_index < texts.len() && msg.contains(texts[text_index]) {
+                text_index += 1;
+            }
+        }
+        if text_index != texts.len() {
+            crate::steady_logger::restore_logger(); // Call just before error!
+            error!(
+                "Assertion failed: expected texts {:?} in logs {:?} at {}:{}",
+                texts, *logged_messages, file!(), line!()
+            );
+            panic!(
+                "Assertion failed at {}:{}: expected texts {:?} in logs {:?}",
+                file!(), line!(), texts, *logged_messages
+            );
+        }
+    }};
 }

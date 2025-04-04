@@ -32,7 +32,7 @@ use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_T
 use crate::steady_rx::RxDone;
 use crate::telemetry::setup;
 use crate::telemetry::setup::send_all_local_telemetry_async;
-use crate::util::logger;
+use crate::util::steady_logger;
 
 /// Automatically sends the last telemetry data when a `LocalMonitor` instance is dropped.
 impl<const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
@@ -163,7 +163,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
     /// set loglevel for the application
     fn loglevel(&self, loglevel: crate::LogLevel) {
-        let _ = logger::initialize_with_level(loglevel);
+        let _ = steady_logger::initialize_with_level(loglevel);
     }
 
     //TODO: future feature to optimize threading, not yet implemented
