@@ -23,16 +23,21 @@ pub struct AeronPublishSteadyState {
 
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
-                                     , aeron_connect: Option<Channel>
+                                     , aeron_connect: Channel
                                      , stream_id: i32
                                      , aeron:Option<Arc<futures_util::lock::Mutex<Aeron>>>
-                                     , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
+                                     , state: SteadyState<AeronPublishSteadyState>
+                                     , simulate: bool) -> Result<(), Box<dyn Error>> {
     let cmd = context.into_monitor( rx.control_meta_data(), []);
 
-    if let Some(c) = aeron_connect {
-        if let Some(a) = aeron {
-            return internal_behavior(cmd, rx, c, stream_id, a, state).await;
+    if !simulate {
+        if let Some(media_driver) = aeron {
+           return internal_behavior(cmd, rx, aeron_connect, stream_id, media_driver, state).await;
         }
+        //context.aeron_media_driver();
+
+        //TODO: add support to poll for media driver to appear..
+        return Ok(()); //do not launch because required meda driver is missing
     }
     let te:Vec<_> = rx.iter()
         .map(|f| TestEquals(f.clone()) ).collect();
@@ -383,7 +388,7 @@ pub(crate) mod aeron_tests {
             .with_telemetry_metric_features(true)
             .build(());
 
-        let aeron_md = graph.aeron_media_driver(true);
+        let aeron_md = graph.aeron_media_driver();
         if aeron_md.is_none() {
             info!("aeron test skipped, no media driver present");
             return;
@@ -437,7 +442,7 @@ pub(crate) mod aeron_tests {
         let stream_id = 12;
 
         to_aeron_rx.build_aqueduct(  AqueTech::Aeron(aeron_md.clone(), aeron_config.clone(), stream_id)
-                                  , &graph.actor_builder().with_name("SenderTest")
+                                  , &graph.actor_builder().with_name("SenderTest").never_simulate(true)
                                   , &mut Threading::Spawn);
 
         //set this up first so sender has a place to send to
@@ -451,7 +456,7 @@ pub(crate) mod aeron_tests {
                    , &mut Threading::Spawn);
 
         from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_md.clone(), aeron_config.clone(), stream_id)
-                                    , &graph.actor_builder().with_name("ReceiverTest")
+                                    , &graph.actor_builder().with_name("ReceiverTest").never_simulate(true)
                                     , &mut Threading::Spawn);
 
         graph.start(); //startup the graph

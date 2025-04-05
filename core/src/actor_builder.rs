@@ -5,7 +5,7 @@
 use std::any::Any;
 use std::error::Error;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -27,7 +27,7 @@ use crate::telemetry::metrics_collector::CollectorDetail;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
-
+use aeron::aeron::Aeron;
 #[allow(unused_imports)]
 
 use crate::commander_context::SteadyContext;
@@ -64,7 +64,9 @@ pub struct ActorBuilder {
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     backplane: Arc<Mutex<Option<SideChannelHub>>>,
     team_count: Arc<AtomicUsize>,
-    remote_details: Option<RemoteDetails>
+    remote_details: Option<RemoteDetails>,
+    pub(crate) never_simulate: bool,
+    aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>
 }
 
 #[derive(Clone)]
@@ -327,7 +329,7 @@ impl ActorTeam {
                Ok(c) => {if c>=12 {info!("Threads: {}",c);} }
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
            }
-           spawn_detached( super_task );
+           core_exec::spawn_detached( super_task );
         });
         //only continue after startup has finished
         let _ = core_exec::block_on(local_take);
@@ -362,7 +364,9 @@ struct SteadyContextArchetype<DynCall: ?Sized> {
     oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
     node_tx_rx: Option<Arc<NodeTxRx>>,
     instance_id: Arc<AtomicU32>,
-    show_thread_info: bool
+    show_thread_info: bool,
+    aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    never_simulate: bool,
 }
 
 impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
@@ -380,6 +384,8 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
             node_tx_rx: self.node_tx_rx.clone(),
             instance_id: self.instance_id.clone(),
             show_thread_info: self.show_thread_info,
+            aeron_media_driver: self.aeron_media_driver.clone(),
+            never_simulate: self.never_simulate
         }
     }
 }
@@ -438,6 +444,8 @@ impl ActorBuilder {
             usage_review: false,
             core_balancer: None,
             remote_details: None,
+            never_simulate: false,
+            aeron_media_driver: graph.aeron.clone()
         }
     }
 
@@ -534,6 +542,11 @@ impl ActorBuilder {
     pub fn with_name(&self, name: &'static str) -> Self {
         let mut result = self.clone();
         result.actor_name = ActorName::new(name,None);
+        result
+    }
+    pub fn never_simulate(&self, never_simulate: bool) -> Self {
+        let mut result = self.clone();
+        result.never_simulate = never_simulate;
         result
     }
 
@@ -841,8 +854,6 @@ impl ActorBuilder {
         });
 
 
-
-
         ////////////////////////////////////////////
         // Before starting the actor setup our shutdown oneshot
         ////////////////////////////////////////////
@@ -872,6 +883,8 @@ impl ActorBuilder {
             build_actor_exec: NonSendWrapper::new(dyn_call),
             instance_id: restart_counter,
             show_thread_info: self.show_thread_info,
+            aeron_media_driver: self.aeron_media_driver,
+            never_simulate: self.never_simulate
         }
     }
 
@@ -989,6 +1002,7 @@ fn build_actor_context<I: ?Sized>(
          team_id,
          frame_rate_ms,
          show_thread_info: builder_source.show_thread_info,
+         aeron_meda_driver: builder_source.aeron_media_driver.clone()
      }
 }
 

@@ -1,5 +1,5 @@
 use std::time::{Duration, Instant};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use std::any::Any;
@@ -17,7 +17,8 @@ use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use std::ops::DerefMut;
-use crate::{simulate_edge, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
+use aeron::aeron::Aeron;
+use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
@@ -47,7 +48,8 @@ pub struct SteadyContext {
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
     pub(crate) frame_rate_ms: u64,
     pub(crate) team_id: usize,
-    pub(crate) show_thread_info: bool
+    pub(crate) show_thread_info: bool,
+    pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>
 }
 
 impl Clone for SteadyContext {
@@ -68,13 +70,17 @@ impl Clone for SteadyContext {
             node_tx_rx: self.node_tx_rx.clone(),
             frame_rate_ms: self.frame_rate_ms,
             team_id: self.team_id,
-            show_thread_info: self.show_thread_info
+            show_thread_info: self.show_thread_info,
+            aeron_meda_driver: self.aeron_meda_driver.clone()
         }
     }
 }
 
 impl SteadyCommander for SteadyContext {
 
+    fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
+        Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
+    }
 
     async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<SteadyContext>>) -> Result<(), Box<dyn Error>> {
         simulate_edge::simulated_behavior::<SteadyContext>(self, sims).await

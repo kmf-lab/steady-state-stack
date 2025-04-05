@@ -311,7 +311,7 @@ pub(crate) mod monitor_tests {
     use super::*;
     use std::ops::DerefMut;
     use lazy_static::lazy_static;
-    use std::sync::Once;
+    use std::sync::{Once, OnceLock};
     use std::time::Duration;
     use futures_timer::Delay;
     use std::sync::Arc;
@@ -571,6 +571,7 @@ pub(crate) mod monitor_tests {
             frame_rate_ms: 1000,
             team_id: 0,
             show_thread_info: false,
+            aeron_meda_driver: OnceLock::new()
         }
     }
 
@@ -1082,6 +1083,7 @@ pub(crate) mod monitor_tests {
             frame_rate_ms: 1000,
             team_id: 0,
             show_thread_info: false,
+            aeron_meda_driver: OnceLock::new()
         }
     }
  

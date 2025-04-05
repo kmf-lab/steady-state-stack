@@ -781,7 +781,7 @@ pub enum Trigger<T>
 #[cfg(test)]
 mod lib_tests {
     use super::*;
-    use std::sync::Arc;
+    use std::sync::{Arc, OnceLock};
     use futures::channel::oneshot;
     use std::time::Instant;
     use std::sync::atomic::AtomicUsize;
@@ -959,6 +959,7 @@ mod lib_tests {
             frame_rate_ms: 1000,
             show_thread_info: false,
             team_id: 0,
+            aeron_meda_driver: OnceLock::new(),
         }
     }
 

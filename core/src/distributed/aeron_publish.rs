@@ -23,10 +23,11 @@ pub async fn run(context: SteadyContext
              , aeron_connect: Channel
              , stream_id: i32
              , aeron:Arc<futures_util::lock::Mutex<Aeron>>
-             , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
+             , state: SteadyState<AeronPublishSteadyState>
+             , simulated:bool) -> Result<(), Box<dyn Error>> {
 
     let cmd = context.into_monitor([&rx], []);
-    if cfg!(not(test)) {
+    if !simulated {
         internal_behavior(cmd, rx, aeron_connect, stream_id, aeron, state).await
     } else {
         cmd.simulated_behavior(vec!(&TestEquals(rx))).await
@@ -364,7 +365,7 @@ pub(crate) mod aeron_tests {
             .build(());
 
 
-        let md = graph.aeron_media_driver(true);
+        let md = graph.aeron_media_driver();
         if md.is_none() {
             info!("aeron test skipped, no media driver present");
             return;
@@ -422,7 +423,7 @@ pub(crate) mod aeron_tests {
         let stream_id = 0;
 
         to_aeron_rx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config.clone(), stream_id)
-                                       , & graph.actor_builder().with_name( "SenderTest")
+                                       , & graph.actor_builder().with_name( "SenderTest").never_simulate(true)
                                        , &mut Threading::Spawn);
 
         //set this up first so sender has a place to send to
@@ -436,7 +437,7 @@ pub(crate) mod aeron_tests {
                    , &mut Threading::Spawn);
 
         from_aeron_tx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config.clone(), stream_id)
-                                            , &graph.actor_builder().with_name("ReceiverTest")
+                                            , &graph.actor_builder().with_name("ReceiverTest").never_simulate(true)
                                             , &mut Threading::Spawn);
 
         graph.start(); //startup the graph

@@ -541,20 +541,20 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) noise_threshold: Instant,
     pub(crate) block_fail_fast: bool,
     pub(crate) telemetry_production_rate_ms: u64,
-    aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
 
 }
 
 impl Graph {
 
     /// returns None if there is no Media Driver for Aeron found on this machine.
-    pub fn aeron_media_driver(&self, use_in_test: bool) -> Option<Arc<Mutex<Aeron>>> {
-        if use_in_test || !cfg!(test) {
-           self.aeron.get_or_init(|| aeron_context(Context::new())).clone()
-        } else {
-            None
-        }
+    pub fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
+        Self::aeron_media_driver_internal(&self.aeron)
     }
+    pub(crate) fn aeron_media_driver_internal(holder: &OnceLock<Option<Arc<Mutex<Aeron>>>>) -> Option<Arc<Mutex<Aeron>>> {
+        holder.get_or_init(|| aeron_context(Context::new())).clone()
+    }
+
 
     pub fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = steady_logger::initialize_with_level(loglevel);
@@ -615,6 +615,7 @@ impl Graph {
             frame_rate_ms: self.telemetry_production_rate_ms, //zero will disable telemetry
             team_id: 0,
             show_thread_info: false,
+            aeron_meda_driver: self.aeron.clone()
         }
     }
 

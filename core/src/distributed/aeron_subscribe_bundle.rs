@@ -28,16 +28,21 @@ pub struct AeronSubscribeSteadyState {
 
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
-                                     , aeron_connect: Option<Channel>
+                                     , aeron_connect: Channel
                                      , stream_id: i32
                                      , aeron: Option<Arc<futures_util::lock::Mutex<Aeron>>>
-                                     , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
+                                     , state: SteadyState<AeronSubscribeSteadyState>
+                                     , simulate: bool) -> Result<(), Box<dyn Error>> {
+//TODO: context needs isNeverSimulate read for others to use this flag. also put in automation!!
 
     let cmd = context.into_monitor([], tx.control_meta_data());
-    if let Some(c) = aeron_connect {
-        if let Some(a) = aeron {
-            return internal_behavior(cmd, tx, c, stream_id, a, state).await;
+    if !simulate {
+        while cmd.aeron_media_driver().is_none() {
+            warn!("unable to find Aeron media driver, will try again in 15 sec");
+            Delay::new(Duration::from_secs(15)).await;
         }
+        let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
+        return internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await;
     }
 
     let te:Vec<_> = tx.iter()

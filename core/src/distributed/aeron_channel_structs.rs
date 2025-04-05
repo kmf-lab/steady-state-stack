@@ -15,7 +15,7 @@ pub(crate) mod aeron_utils {
     /// # Arguments
     /// - `error`: The `AeronError` encountered during operation.
     fn error_handler(error: AeronError) {
-        warn!("Aeron Error: {:?}", error);
+        error!("Aeron Error: {:?}", error);
     }
 
     /// Creates a new Aeron context with default configurations.
@@ -34,14 +34,13 @@ pub(crate) mod aeron_utils {
         // Set the error handler to log warnings for any Aeron errors
         aeron_context.set_error_handler(Box::new(error_handler));
         // Disable pre-touching to avoid unnecessary memory mapping overhead
-        aeron_context.set_pre_touch_mapped_memory(true);
+        aeron_context.set_pre_touch_mapped_memory(false);
 
         // Set the Aeron directory to a shared memory location for IPC
         #[cfg(not(windows))]
         aeron_context.set_aeron_dir("/dev/shm/aeron-default".parse().expect("valid path"));
         #[cfg(windows)]
         aeron_context.set_aeron_dir("C:\\Temp\\aeron".parse().expect("valid path"));
-
 
         match Aeron::new(aeron_context) {
             Ok(aeron) => {

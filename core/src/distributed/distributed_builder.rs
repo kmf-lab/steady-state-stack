@@ -10,7 +10,7 @@ pub trait AqueductBuilder {
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading,
+        threading: &mut Threading
     );
 }
 
@@ -19,8 +19,9 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading,
+        threading: &mut Threading
     ) {
+        let simulated = cfg!(test) && !actor_builder.never_simulate;
         let remotes = tech.to_remotes();
         let match_me = tech.to_match_me();
         let tech_string = tech.to_tech();
@@ -41,7 +42,8 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
                                                       , channel.clone()
                                                       , stream_id
                                                       , aeron.clone()
-                                                      , state.clone())
+                                                      , state.clone()
+                                                      , simulated)
                                , threading)
                 }
             },
@@ -52,6 +54,7 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
             }
         }
     }
+
 }
 
 impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
@@ -59,8 +62,10 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading,
+        threading: &mut Threading
     ) {
+        let simulated = cfg!(test) && !actor_builder.never_simulate;
+
         match tech {
             AqueTech::Aeron(media_driver, channel, stream_id) => {
                 let actor_builder = actor_builder.clone();
@@ -72,7 +77,8 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
                                                         , channel.clone()
                                                         , stream_id
                                                         , aeron.clone()
-                                                        , state.clone())
+                                                        , state.clone()
+                                                        , simulated)
                                , threading);
                 };
             }
@@ -84,14 +90,16 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
             }
         };
     }
+
 }
 impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimpleMessage, GIRTH> {
     fn build_aqueduct(
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading,
+        threading: &mut Threading
     ) {
+        let simulated = cfg!(test) && !actor_builder.never_simulate;
         let actor_builder = actor_builder.clone();
         let state = new_state();
         match tech {
@@ -99,10 +107,11 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
                 actor_builder.build(move |context|
                                aeron_publish_bundle::run(context
                                                          , self.clone()
-                                                         , Some(channel.clone())
+                                                         , channel.clone()
                                                          , stream_id
                                                          , media_driver.clone()
-                                                         , state.clone())
+                                                         , state.clone()
+                                                         , simulated)
                            , threading)
             },
             AqueTech::None => {
@@ -113,6 +122,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
             }
         };
     }
+
 }
 
 impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSessionMessage, GIRTH> {
@@ -120,8 +130,10 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading,
+        threading: &mut Threading
     ) {
+
+        let simulated = cfg!(test) && !actor_builder.never_simulate;
         let actor_builder = actor_builder.clone();
         let state = new_state();
         match tech {
@@ -129,10 +141,11 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
                     actor_builder.build(move |context|
                                    aeron_subscribe_bundle::run(context
                                                                , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
-                                                               , Some(channel.clone())
+                                                               , channel.clone()
                                                                , stream_id
                                                                , media_driver.clone()
-                                                               , state.clone())
+                                                               , state.clone()
+                                                               , simulated)
                                , threading);
             },
             AqueTech::None => {
@@ -143,6 +156,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
             }
         };
     }
+
 }
 
 #[cfg(test)]
@@ -154,14 +168,14 @@ mod tests {
     #[test]
     fn test_build_aqueduct_lazy_stream_rx() {
         let mut graph = GraphBuilder::for_testing().build(());
-        if graph.aeron_media_driver(true).is_some() {
+        if graph.aeron_media_driver().is_some() {
             let cb = graph.channel_builder();
 
             let (_lazy_tx, lazy_rx) = cb.build_as_stream(100);
             // Use AqueTech::Aeron with None for media_driver and dummy channel/stream_id
             let tech = AqueTech::None;
             // Create a minimal ActorBuilder and Threading
-            let actor_builder = ActorBuilder::new(&mut graph);
+            let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
             let mut threading = Threading::Spawn;
             // Call build_aqueduct; test passes if it doesn't panic
             lazy_rx.build_aqueduct(tech, &actor_builder, &mut threading);
@@ -177,7 +191,7 @@ mod tests {
 
         let (lazy_tx, _lazy_rx) = cb.build_as_stream(100);
         let tech = AqueTech::None;
-        let actor_builder = ActorBuilder::new(&mut graph);
+        let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
         let mut threading = Threading::Spawn;
         lazy_tx.build_aqueduct(tech, &actor_builder, &mut threading);
     }
@@ -192,7 +206,7 @@ mod tests {
 
         let (lazy_tx, lazy_rx_bundle) = cb.build_as_stream_bundle::<StreamSimpleMessage, GIRTH>(100);
         let tech = AqueTech::None;
-        let actor_builder = ActorBuilder::new(&mut graph);
+        let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
         let mut threading = Threading::Spawn;
         lazy_rx_bundle.build_aqueduct(tech, &actor_builder, &mut threading);
     }
@@ -207,7 +221,7 @@ mod tests {
         let (lazy_tx_bundle, lazy_rx_bundle) = cb.build_as_stream_bundle::<StreamSessionMessage, GIRTH>(100);
 
         let tech = AqueTech::None;
-        let actor_builder = ActorBuilder::new(&mut graph);
+        let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
         let mut threading = Threading::Spawn;
         lazy_tx_bundle.build_aqueduct(tech, &actor_builder, &mut threading);
     }

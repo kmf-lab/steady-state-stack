@@ -32,7 +32,7 @@ fn main() {
            .with_telemtry_production_rate_ms(200)
            .build(cli_args); //or pass () if no args
 
-    let aeron = graph.aeron_media_driver(false);
+    let aeron = graph.aeron_media_driver();
     if aeron.is_none() {
         info!("aeron test skipped, no media driver present");
         return;
@@ -66,8 +66,8 @@ fn main() {
                , &mut Threading::Spawn);
 
 
-    to_aeron_rx.build_aqueduct( AqueTech::Aeron(graph.aeron_media_driver(false), aeron_channel, STREAM_ID)
-                             , &graph.actor_builder().with_name("SenderTest")
+    to_aeron_rx.build_aqueduct( AqueTech::Aeron(graph.aeron_media_driver(), aeron_channel, STREAM_ID)
+                             , &graph.actor_builder().with_name("SenderTest").never_simulate(false)
                              , &mut Threading::Spawn);
 
 

@@ -467,6 +467,7 @@ impl SideChannelResponder {
 #[cfg(test)]
 mod graph_testing_tests {
     use std::sync::atomic::AtomicUsize;
+    use std::sync::OnceLock;
     use parking_lot::RwLock;
     use std::time::Instant;
     use super::*;
@@ -596,6 +597,7 @@ mod graph_testing_tests {
             frame_rate_ms: 1000,
             team_id: 0,
             show_thread_info: false,
+            aeron_meda_driver: OnceLock::new()
         }
     }
 

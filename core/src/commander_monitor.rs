@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use log::{error, warn};
 use std::time::{Duration, Instant};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use parking_lot::RwLock;
 use futures_util::lock::{Mutex, MutexGuard};
 use futures::channel::oneshot;
@@ -14,12 +14,13 @@ use std::future::Future;
 use futures::executor;
 use num_traits::Zero;
 use std::ops::DerefMut;
+use aeron::aeron::Aeron;
 use futures_util::stream::FuturesUnordered;
 use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
-use crate::{simulate_edge, yield_now, ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle, MONITOR_NOT};
+use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
@@ -74,10 +75,15 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) is_running_iteration_count: u64,
     pub(crate) show_thread_info: bool,
     pub(crate) team_id: usize,
+    pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>
 }
 
 /// Implementation of `LocalMonitor`.
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
+
+    fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
+        Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
+    }
 
     #[allow(async_fn_in_trait)]
     pub async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>
@@ -155,6 +161,10 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
+
+    fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
+        Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
+    }
 
     async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>> {

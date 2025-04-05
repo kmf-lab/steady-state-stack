@@ -28,9 +28,9 @@ pub async fn run(context: SteadyContext
                  , aeron_connect: Channel
                  , stream_id: i32
                  , aeron:Arc<futures_util::lock::Mutex<Aeron>>
-                 , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
+                 , state: SteadyState<AeronSubscribeSteadyState>, simulated: bool) -> Result<(), Box<dyn Error>> {
     let cmd = context.into_monitor([], [&tx]);
-    if cfg!(not(test)) {
+    if !simulated {
         internal_behavior(cmd, tx, aeron_connect, stream_id, aeron, state).await
     } else {
         cmd.simulated_behavior(vec!(&TestEcho(tx))).await
@@ -275,7 +275,7 @@ pub(crate) mod aeron_media_driver_tests {
 
         let mut graph = GraphBuilder::for_testing().build(());
 
-        let md = graph.aeron_media_driver(true);
+        let md = graph.aeron_media_driver();
         if md.is_none() {
             info!("aeron test skipped, no media driver present");
             return;
@@ -306,7 +306,7 @@ pub(crate) mod aeron_media_driver_tests {
 
         //in simulated graph we will build teh same but expect this to be a simulation !!
         to_aeron_rx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config.clone(), STREAM_ID)
-                               , &graph.actor_builder().with_name("SenderTest")
+                               , &graph.actor_builder().with_name("SenderTest").never_simulate(true)
                                , &mut Threading::Spawn);
 
         for _i in 0..100 {
@@ -324,7 +324,7 @@ pub(crate) mod aeron_media_driver_tests {
 
         //do not simulate yet the main graph will simulate. cfg!(test)
         from_aeron_tx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config, STREAM_ID)
-                                     , &graph.actor_builder().with_name( "ReceiverTest")
+                                     , &graph.actor_builder().with_name( "ReceiverTest").never_simulate(true)
                                      , &mut Threading::Spawn);
         graph.start(); //startup the graph
 

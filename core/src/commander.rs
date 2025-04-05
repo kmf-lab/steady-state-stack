@@ -4,6 +4,9 @@ use std::time::{Duration, Instant};
 use futures_util::future::FusedFuture;
 use std::any::Any;
 use std::error::Error;
+use std::sync::{Arc, OnceLock};
+use aeron::aeron::Aeron;
+use futures_util::lock::Mutex;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
@@ -109,6 +112,7 @@ impl SteadyContext {
             show_thread_info: self.show_thread_info,
             team_id: self.team_id,
             is_running_iteration_count: 0,
+            aeron_meda_driver: OnceLock::new()
         }
     }
 }
@@ -132,6 +136,8 @@ impl<X> SendOutcome<X> {
 ///      from other actors so we can assume that T is Send + Sync
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
+
+    fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>>;
 
     async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>) -> Result<(), Box<dyn Error>>;
 
