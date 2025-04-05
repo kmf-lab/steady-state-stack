@@ -23,20 +23,22 @@ pub struct AeronPublishSteadyState {
 
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
-                                     , aeron_connect: Channel
+                                     , aeron_connect: Option<Channel>
                                      , stream_id: i32
-                                     , aeron:Arc<futures_util::lock::Mutex<Aeron>>
+                                     , aeron:Option<Arc<futures_util::lock::Mutex<Aeron>>>
                                      , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
     let cmd = context.into_monitor( rx.control_meta_data(), []);
-    if cfg!(not(test)) {
-        internal_behavior(cmd, rx, aeron_connect, stream_id, aeron, state).await
-    } else {
-        let te:Vec<_> = rx.iter()
-            .map(|f| TestEquals(f.clone()) ).collect();
-        let sims:Vec<_> = te.iter()
-            .map(|f| f as &dyn IntoSimRunner<_>).collect();
-        cmd.simulated_behavior(sims).await
+
+    if let Some(c) = aeron_connect {
+        if let Some(a) = aeron {
+            return internal_behavior(cmd, rx, c, stream_id, a, state).await;
+        }
     }
+    let te:Vec<_> = rx.iter()
+        .map(|f| TestEquals(f.clone()) ).collect();
+    let sims:Vec<_> = te.iter()
+        .map(|f| f as &dyn IntoSimRunner<_>).collect();
+    cmd.simulated_behavior(sims).await
 }
 
 
@@ -139,7 +141,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                 }
             }
 
-        warn!("running publish '{:?}' all publications in place",cmd.identity());
+        trace!("running publish '{:?}' all publications in place",cmd.identity());
 
 
         let wait_for = (512*1024).min(rx.capacity());
@@ -381,7 +383,8 @@ pub(crate) mod aeron_tests {
             .with_telemetry_metric_features(true)
             .build(());
 
-        if graph.aeron_md().is_none() {
+        let aeron_md = graph.aeron_media_driver(true);
+        if aeron_md.is_none() {
             info!("aeron test skipped, no media driver present");
             return;
         }
@@ -433,7 +436,7 @@ pub(crate) mod aeron_tests {
 
         let stream_id = 12;
 
-        to_aeron_rx.build_aqueduct(  AqueTech::Aeron(graph.aeron_md() ,aeron_config.clone(),stream_id)
+        to_aeron_rx.build_aqueduct(  AqueTech::Aeron(aeron_md.clone(), aeron_config.clone(), stream_id)
                                   , &graph.actor_builder().with_name("SenderTest")
                                   , &mut Threading::Spawn);
 
@@ -447,7 +450,7 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
-        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md() ,aeron_config.clone(),stream_id)
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_md.clone(), aeron_config.clone(), stream_id)
                                     , &graph.actor_builder().with_name("ReceiverTest")
                                     , &mut Threading::Spawn);
 

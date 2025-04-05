@@ -168,6 +168,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    #[cfg(unix)]
     fn test_new_local_cli_builder_system_wide() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true);
         assert_eq!(cli_builder.path, "/some/path");
@@ -176,6 +177,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_new_local_cli_builder_user_local() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
         assert_eq!(cli_builder.path, "/some/path");
@@ -196,6 +198,7 @@ mod tests {
     // }
 
     #[test]
+    #[cfg(unix)]
     fn test_build_creates_executable_in_install_dir() {
         let temp_dir = tempdir().expect("iternal error");
         let custom_install_dir = temp_dir.path().join("bin");
@@ -243,6 +246,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_default_installation_directory_user_local() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
         let expected_dir = dirs::home_dir().expect("iternal error").join(".local/bin");

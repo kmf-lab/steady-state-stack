@@ -548,8 +548,12 @@ pub struct Graph { //TODO: redo as  T: StructOpt
 impl Graph {
 
     /// returns None if there is no Media Driver for Aeron found on this machine.
-    pub fn aeron_md(&mut self) -> Option<Arc<Mutex<Aeron>>> {
-        self.aeron.get_or_init(|| aeron_context(Context::new())).clone()
+    pub fn aeron_media_driver(&self, use_in_test: bool) -> Option<Arc<Mutex<Aeron>>> {
+        if use_in_test || !cfg!(test) {
+           self.aeron.get_or_init(|| aeron_context(Context::new())).clone()
+        } else {
+            None
+        }
     }
 
     pub fn loglevel(&self, loglevel: crate::LogLevel) {

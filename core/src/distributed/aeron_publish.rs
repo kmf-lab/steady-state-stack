@@ -43,7 +43,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
     let mut rx = rx.lock().await;
 
-
+   warn!("hello ------------");
     let mut state = state.lock( || AeronPublishSteadyState::default()).await;
         {
             let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
@@ -292,7 +292,7 @@ pub(crate) mod aeron_tests {
         //         Vec::new().into()
         //     )
         // });
-
+        trace!("started mock receiver------");
         let mut received_count = 0;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
 
@@ -351,21 +351,29 @@ pub(crate) mod aeron_tests {
 
     #[test]
     fn test_bytes_process() {
-       if std::env::var("GITHUB_ACTIONS").is_ok() {
-           return; //skip this test if we are github actions
-       }
+        if true || std::env::var("GITHUB_ACTIONS").is_ok() {
+            return; //skip this test if we are github actions
+        }
 
         unsafe {
             env::set_var("TELEMETRY_SERVER_PORT", "9201");
         }
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(true)
+            .with_telemtry_production_rate_ms(4000)
             .build(());
 
-        if graph.aeron_md().is_none() {
+
+        let md = graph.aeron_media_driver(true);
+        if md.is_none() {
             info!("aeron test skipped, no media driver present");
             return;
         }
+        if let Some(temp_md) = &md {
+            if let Some(guard_md) = temp_md.try_lock() {
+                info!("Found MediaDriver cnc: {:?}",guard_md.context().cnc_file_name()  );
+            };
+        };
 
         let channel_builder = graph.channel_builder();
 
@@ -392,8 +400,8 @@ pub(crate) mod aeron_tests {
             //we will use this for unit tests.
            .with_media_type(MediaType::Ipc) // 10MMps
 
-        //    .with_media_type(MediaType::Udp)// 4MMps- std 4K page
-          //  .with_term_length((1024 * 1024 * TERM_MB) as usize)
+         //   .with_media_type(MediaType::Udp)// 4MMps- std 4K page
+           // .with_term_length((1024 * 1024 * 4) as usize)
 
             .use_point_to_point(Endpoint {
                 ip: "127.0.0.1".parse().expect("Invalid IP address"),
@@ -413,7 +421,7 @@ pub(crate) mod aeron_tests {
 
         let stream_id = 0;
 
-        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(),stream_id)
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config.clone(), stream_id)
                                        , & graph.actor_builder().with_name( "SenderTest")
                                        , &mut Threading::Spawn);
 
@@ -427,7 +435,7 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
-        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(),stream_id)
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config.clone(), stream_id)
                                             , &graph.actor_builder().with_name("ReceiverTest")
                                             , &mut Threading::Spawn);
 

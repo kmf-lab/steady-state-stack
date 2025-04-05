@@ -47,7 +47,7 @@ fn main() {
         })
         .build();
 
-    if graph.aeron_md().is_none() {
+    if graph.aeron_media_driver(false).is_none() {
         info!("aeron test skipped, no media driver present");
         return;
     }
@@ -74,7 +74,7 @@ fn main() {
         .build(move |context| actor::subscriber::run(context, base.clone())
                , &mut Threading::Spawn);
 
-    from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(),aeron_channel, STREAM_ID)
+    from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_media_driver(false), aeron_channel, STREAM_ID)
                                         , &graph.actor_builder().with_name("ReceiverTest")
                                         , &mut Threading::Spawn);
 

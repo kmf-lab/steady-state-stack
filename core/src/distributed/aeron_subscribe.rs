@@ -44,7 +44,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                  , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
 
     let mut tx = tx.lock().await;
-
+warn!("begin subscribe ----------");
     let mut state = state.lock( || AeronSubscribeSteadyState::default()).await;
 
         {
@@ -275,10 +275,16 @@ pub(crate) mod aeron_media_driver_tests {
 
         let mut graph = GraphBuilder::for_testing().build(());
 
-        if graph.aeron_md().is_none() {
+        let md = graph.aeron_media_driver(true);
+        if md.is_none() {
             info!("aeron test skipped, no media driver present");
             return;
         }
+        if let Some(md) = &md {
+            if let Some(md) = md.try_lock() {
+                info!("Found MediaDriver cnc:{:?}",md.context().cnc_file_name()  );
+            };
+        };
 
         let channel_builder = graph.channel_builder();
 
@@ -298,8 +304,8 @@ pub(crate) mod aeron_media_driver_tests {
             })
             .build();
 
-
-        to_aeron_rx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(), STREAM_ID)
+        //in simulated graph we will build teh same but expect this to be a simulation !!
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config.clone(), STREAM_ID)
                                , &graph.actor_builder().with_name("SenderTest")
                                , &mut Threading::Spawn);
 
@@ -312,18 +318,18 @@ pub(crate) mod aeron_media_driver_tests {
             to_aeron_tx[i].testing_close();
         }
 
-
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_capacity(500)
             .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(6);
 
-        from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config, STREAM_ID)
+        //do not simulate yet the main graph will simulate. cfg!(test)
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config, STREAM_ID)
                                      , &graph.actor_builder().with_name( "ReceiverTest")
                                      , &mut Threading::Spawn);
         graph.start(); //startup the graph
 
         sleep(Duration::from_millis(3000));
-        assert_steady_rx_eq_count!(from_aeron_rx[0],2);
+        assert_steady_rx_eq_count!(from_aeron_rx[0],200);
 
         graph.request_stop();
         //we wait up to the timeout for clean shutdown which is transmission of all the data

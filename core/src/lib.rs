@@ -47,12 +47,6 @@ mod abstract_executor_nuclei;
 #[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
 use abstract_executor_nuclei::*;
 
-#[cfg(feature = "exec_smol")]
-mod abstract_executor_smol;
-
-#[cfg(feature = "exec_smol")]
-use abstract_executor_smol::*;
-
 #[cfg(feature = "exec_async_std")]
 mod abstract_executor_async_std;
 

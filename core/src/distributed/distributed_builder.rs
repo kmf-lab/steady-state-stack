@@ -1,4 +1,4 @@
-use log::{info, warn};
+use log::*;
 use crate::{new_state, LazyStreamRx, LazyStreamTx, Threading};
 use crate::actor_builder::ActorBuilder;
 use crate::distributed::aeron_channel_builder::AqueTech;
@@ -44,7 +44,9 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
                                                       , state.clone())
                                , threading)
                 }
-            }
+            },
+            AqueTech::None => {
+            },
             _ => {
                 panic!("unsupported distribution type");
             }
@@ -90,24 +92,22 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
         actor_builder: &ActorBuilder,
         threading: &mut Threading,
     ) {
+        let actor_builder = actor_builder.clone();
+        let state = new_state();
         match tech {
             AqueTech::Aeron(media_driver, channel, stream_id) => {
-                let actor_builder = actor_builder.clone();
-                if let Some(aeron) = media_driver {
-                    let state = new_state();
-                    actor_builder.build(move |context|
-                                   aeron_publish_bundle::run(context
-                                                             , self.clone()
-                                                             , channel.clone()
-                                                             , stream_id
-                                                             , aeron.clone()
-                                                             , state.clone())
-                               , threading)
-                };
+                actor_builder.build(move |context|
+                               aeron_publish_bundle::run(context
+                                                         , self.clone()
+                                                         , Some(channel.clone())
+                                                         , stream_id
+                                                         , media_driver.clone()
+                                                         , state.clone())
+                           , threading)
             },
             AqueTech::None => {
                 warn!("no AqueTech provided, probably testing or still under development");
-            }
+            },
             _ => {
                 panic!("unsupported distribution type");
             }
@@ -122,20 +122,18 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
         actor_builder: &ActorBuilder,
         threading: &mut Threading,
     ) {
+        let actor_builder = actor_builder.clone();
+        let state = new_state();
         match tech {
             AqueTech::Aeron(media_driver, channel, stream_id) => {
-                let actor_builder = actor_builder.clone();
-                if let Some(aeron) = media_driver {
-                    let state = new_state();
                     actor_builder.build(move |context|
                                    aeron_subscribe_bundle::run(context
                                                                , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
-                                                               , channel.clone()
+                                                               , Some(channel.clone())
                                                                , stream_id
-                                                               , aeron.clone()
+                                                               , media_driver.clone()
                                                                , state.clone())
                                , threading);
-                };
             },
             AqueTech::None => {
                 warn!("no AqueTech provided, probably testing or still under development");
@@ -156,10 +154,10 @@ mod tests {
     #[test]
     fn test_build_aqueduct_lazy_stream_rx() {
         let mut graph = GraphBuilder::for_testing().build(());
-        if graph.aeron_md().is_some() {
+        if graph.aeron_media_driver(true).is_some() {
             let cb = graph.channel_builder();
 
-            let (lazy_tx, lazy_rx) = cb.build_as_stream(100);
+            let (_lazy_tx, lazy_rx) = cb.build_as_stream(100);
             // Use AqueTech::Aeron with None for media_driver and dummy channel/stream_id
             let tech = AqueTech::None;
             // Create a minimal ActorBuilder and Threading
@@ -177,7 +175,7 @@ mod tests {
 
         let cb = graph.channel_builder();
 
-        let (lazy_tx, lazy_rx) = cb.build_as_stream(100);
+        let (lazy_tx, _lazy_rx) = cb.build_as_stream(100);
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph);
         let mut threading = Threading::Spawn;

@@ -28,36 +28,25 @@ pub struct AeronSubscribeSteadyState {
 
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
-                                     , aeron_connect: Channel
+                                     , aeron_connect: Option<Channel>
                                      , stream_id: i32
-                                     , aeron:Arc<futures_util::lock::Mutex<Aeron>>
+                                     , aeron: Option<Arc<futures_util::lock::Mutex<Aeron>>>
                                      , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
 
     let cmd = context.into_monitor([], tx.control_meta_data());
-    if cfg!(not(test)) {
-        internal_behavior(cmd, tx, aeron_connect, stream_id, aeron, state).await
-    } else {
-        let te:Vec<_> = tx.iter()
-            .map(|f| TestEcho(f.clone()) ).collect();
-        let sims:Vec<_> = te.iter()
-            .map(|f| f as &dyn IntoSimRunner<_>).collect();
-        cmd.simulated_behavior(sims).await
+    if let Some(c) = aeron_connect {
+        if let Some(a) = aeron {
+            return internal_behavior(cmd, tx, c, stream_id, a, state).await;
+        }
     }
-}
 
-// 
-// pub async fn run<const GIRTH:usize,>(context: SteadyContext
-//                                      , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
-//                                      , aeron_connect: Channel
-//                                      , stream_id: i32
-//                                      , aeron:Arc<futures_util::lock::Mutex<Aeron>>
-//                                      , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
-// 
-//     //TODO: need a new special function for this.
-//     context.into_monitor([], tx.control_meta_data())
-//            .simulated_behavior([&TestEcho(tx)]).await
-//         
-// }
+    let te:Vec<_> = tx.iter()
+        .map(|f| TestEcho(f.clone()) ).collect();
+    let sims:Vec<_> = te.iter()
+        .map(|f| f as &dyn IntoSimRunner<_>).collect();
+    cmd.simulated_behavior(sims).await
+
+}
 
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
@@ -80,14 +69,14 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         //add subscriptions
 
         {
-            let mut aeron = aeron.lock().await;
             //trace!("holding add_subscription lock");
             for f in 0..GIRTH {
                 if state.sub_reg_id[f].is_none() { //only add if we have not already done this
                     warn!("adding new sub {} {:?}", f as i32 + stream_id, aeron_channel.cstring() );
+                    let mut aeron = aeron.lock().await;
                     match aeron.add_subscription(aeron_channel.cstring(), f as i32 + stream_id) {
                         Ok(reg_id) => {
-                            warn!("new subscription found: {}",reg_id);
+                            trace!("new subscription found: {}",reg_id);
                             state.sub_reg_id[f] = Some(reg_id)},
                         Err(e) => {
                             warn!("Unable to add publication: {:?}",e);
@@ -95,7 +84,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                     };
                 }
             };
-            warn!("released add_subscription lock");
         }
         Delay::new(Duration::from_millis(4)).await; //back off so our request can get ready
 
@@ -105,7 +93,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                 subs[f] = loop {
                     let sub = {
                                 let mut aeron = aeron.lock().await; //caution other actors need this so do jit
-                                warn!("holding find_subscription({}) lock",id);
+                                trace!("holding find_subscription({}) lock",id);
                                 aeron.find_subscription(id)
                              };
                     match sub {
@@ -149,7 +137,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             }
         }
 
-        warn!("running subscriber '{:?}' all subscriptions in place",cmd.identity());
+        trace!("running subscriber '{:?}' all subscriptions in place",cmd.identity());
 
         while cmd.is_running(&mut || tx.mark_closed()) {
 

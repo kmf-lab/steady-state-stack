@@ -1,6 +1,5 @@
 use flexi_logger::writers::*;
 use flexi_logger::*;
-use log::*;
 use std::sync::{Arc, Mutex};
 use std::error::Error;
 use crate::LogLevel;
