@@ -27,11 +27,20 @@ pub async fn run(context: SteadyContext
                  , tx: SteadyStreamTx<StreamSessionMessage>
                  , aeron_connect: Channel
                  , stream_id: i32
-                 , aeron:Arc<futures_util::lock::Mutex<Aeron>>
-                 , state: SteadyState<AeronSubscribeSteadyState>, simulated: bool) -> Result<(), Box<dyn Error>> {
-    let cmd = context.into_monitor([], [&tx]);
-    if !simulated {
-        internal_behavior(cmd, tx, aeron_connect, stream_id, aeron, state).await
+                 , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
+    let mut cmd = context.into_monitor([], [&tx]);
+    if !cmd.simulate_actor() {
+        while cmd.aeron_media_driver().is_none() {
+            warn!("unable to find Aeron media driver, will try again in 15 sec");
+            let mut tx = tx.lock().await;
+            if cmd.is_running( &mut || tx.mark_closed() ) {
+                let _ = cmd.wait_periodic(Duration::from_secs(15)).await;
+            } else {
+                return Ok(());
+            }
+        }
+        let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
+        internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await
     } else {
         cmd.simulated_behavior(vec!(&TestEcho(tx))).await
     }

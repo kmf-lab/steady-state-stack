@@ -25,19 +25,22 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
                                      , aeron_connect: Channel
                                      , stream_id: i32
-                                     , aeron:Option<Arc<futures_util::lock::Mutex<Aeron>>>
                                      , state: SteadyState<AeronPublishSteadyState>
-                                     , simulate: bool) -> Result<(), Box<dyn Error>> {
-    let cmd = context.into_monitor( rx.control_meta_data(), []);
+                                     ) -> Result<(), Box<dyn Error>> {
+    let mut cmd = context.into_monitor( rx.control_meta_data(), []);
 
-    if !simulate {
-        if let Some(media_driver) = aeron {
-           return internal_behavior(cmd, rx, aeron_connect, stream_id, media_driver, state).await;
+    if !cmd.simulate_actor() {
+        while cmd.aeron_media_driver().is_none() {
+            warn!("unable to find Aeron media driver, will try again in 15 sec");
+            let mut rx = rx.lock().await;
+            if cmd.is_running( &mut || rx.is_closed_and_empty() ) {
+                let _ = cmd.wait_periodic(Duration::from_secs(15)).await;
+            } else {
+                return Ok(());
+            }
         }
-        //context.aeron_media_driver();
-
-        //TODO: add support to poll for media driver to appear..
-        return Ok(()); //do not launch because required meda driver is missing
+        let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
+        return internal_behavior(cmd, rx, aeron_connect, stream_id, aeron_media_driver, state).await;
     }
     let te:Vec<_> = rx.iter()
         .map(|f| TestEquals(f.clone()) ).collect();

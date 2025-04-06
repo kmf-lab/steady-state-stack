@@ -1002,7 +1002,8 @@ fn build_actor_context<I: ?Sized>(
          team_id,
          frame_rate_ms,
          show_thread_info: builder_source.show_thread_info,
-         aeron_meda_driver: builder_source.aeron_media_driver.clone()
+         aeron_meda_driver: builder_source.aeron_media_driver.clone(),
+         never_simulate: builder_source.never_simulate
      }
 }
 

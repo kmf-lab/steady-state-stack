@@ -21,7 +21,6 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
         actor_builder: &ActorBuilder,
         threading: &mut Threading
     ) {
-        let simulated = cfg!(test) && !actor_builder.never_simulate;
         let remotes = tech.to_remotes();
         let match_me = tech.to_match_me();
         let tech_string = tech.to_tech();
@@ -41,9 +40,7 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
                                                       , self.clone()
                                                       , channel.clone()
                                                       , stream_id
-                                                      , aeron.clone()
-                                                      , state.clone()
-                                                      , simulated)
+                                                      , state.clone() )
                                , threading)
                 }
             },
@@ -64,8 +61,6 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
         actor_builder: &ActorBuilder,
         threading: &mut Threading
     ) {
-        let simulated = cfg!(test) && !actor_builder.never_simulate;
-
         match tech {
             AqueTech::Aeron(media_driver, channel, stream_id) => {
                 let actor_builder = actor_builder.clone();
@@ -76,9 +71,7 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
                                                         , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
                                                         , channel.clone()
                                                         , stream_id
-                                                        , aeron.clone()
-                                                        , state.clone()
-                                                        , simulated)
+                                                        , state.clone())
                                , threading);
                 };
             }
@@ -99,7 +92,6 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
         actor_builder: &ActorBuilder,
         threading: &mut Threading
     ) {
-        let simulated = cfg!(test) && !actor_builder.never_simulate;
         let actor_builder = actor_builder.clone();
         let state = new_state();
         match tech {
@@ -109,9 +101,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
                                                          , self.clone()
                                                          , channel.clone()
                                                          , stream_id
-                                                         , media_driver.clone()
-                                                         , state.clone()
-                                                         , simulated)
+                                                         , state.clone())
                            , threading)
             },
             AqueTech::None => {
@@ -133,7 +123,6 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
         threading: &mut Threading
     ) {
 
-        let simulated = cfg!(test) && !actor_builder.never_simulate;
         let actor_builder = actor_builder.clone();
         let state = new_state();
         match tech {
@@ -143,9 +132,8 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
                                                                , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
                                                                , channel.clone()
                                                                , stream_id
-                                                               , media_driver.clone()
                                                                , state.clone()
-                                                               , simulated)
+                                                               )
                                , threading);
             },
             AqueTech::None => {

@@ -615,7 +615,8 @@ impl Graph {
             frame_rate_ms: self.telemetry_production_rate_ms, //zero will disable telemetry
             team_id: 0,
             show_thread_info: false,
-            aeron_meda_driver: self.aeron.clone()
+            aeron_meda_driver: self.aeron.clone(),
+            never_simulate: true
         }
     }
 

@@ -30,16 +30,19 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
                                      , tx: SteadyStreamTxBundle<StreamSessionMessage,GIRTH>
                                      , aeron_connect: Channel
                                      , stream_id: i32
-                                     , aeron: Option<Arc<futures_util::lock::Mutex<Aeron>>>
                                      , state: SteadyState<AeronSubscribeSteadyState>
-                                     , simulate: bool) -> Result<(), Box<dyn Error>> {
-//TODO: context needs isNeverSimulate read for others to use this flag. also put in automation!!
+                                     ) -> Result<(), Box<dyn Error>> {
 
-    let cmd = context.into_monitor([], tx.control_meta_data());
-    if !simulate {
+    let mut cmd = context.into_monitor([], tx.control_meta_data());
+    if !cmd.simulate_actor() {
         while cmd.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
-            Delay::new(Duration::from_secs(15)).await;
+            let mut tx = tx.lock().await;
+            if cmd.is_running( &mut || tx.mark_closed() ) {
+                let _ = cmd.wait_periodic(Duration::from_secs(15)).await;
+            } else {
+                return Ok(());
+            }
         }
         let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
         return internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await;

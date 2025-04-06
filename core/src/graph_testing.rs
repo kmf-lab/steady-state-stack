@@ -597,7 +597,8 @@ mod graph_testing_tests {
             frame_rate_ms: 1000,
             team_id: 0,
             show_thread_info: false,
-            aeron_meda_driver: OnceLock::new()
+            aeron_meda_driver: OnceLock::new(),
+            never_simulate: false
         }
     }
 

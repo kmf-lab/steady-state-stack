@@ -49,7 +49,8 @@ pub struct SteadyContext {
     pub(crate) frame_rate_ms: u64,
     pub(crate) team_id: usize,
     pub(crate) show_thread_info: bool,
-    pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>
+    pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    pub never_simulate: bool,
 }
 
 impl Clone for SteadyContext {
@@ -71,7 +72,8 @@ impl Clone for SteadyContext {
             frame_rate_ms: self.frame_rate_ms,
             team_id: self.team_id,
             show_thread_info: self.show_thread_info,
-            aeron_meda_driver: self.aeron_meda_driver.clone()
+            aeron_meda_driver: self.aeron_meda_driver.clone(),
+            never_simulate: self.never_simulate
         }
     }
 }
@@ -654,4 +656,7 @@ impl SteadyCommander for SteadyContext {
             result.load(Ordering::Relaxed)
         }
 
+    fn simulate_actor(&self) -> bool {
+        cfg!(test) && !self.never_simulate
+    }
 }
