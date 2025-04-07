@@ -50,7 +50,7 @@ pub struct SteadyContext {
     pub(crate) team_id: usize,
     pub(crate) show_thread_info: bool,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
-    pub never_simulate: bool,
+    pub use_internal_behavior: bool, //TODO: need to restrict to set once!
 }
 
 impl Clone for SteadyContext {
@@ -73,7 +73,7 @@ impl Clone for SteadyContext {
             team_id: self.team_id,
             show_thread_info: self.show_thread_info,
             aeron_meda_driver: self.aeron_meda_driver.clone(),
-            never_simulate: self.never_simulate
+            use_internal_behavior: self.use_internal_behavior
         }
     }
 }
@@ -656,7 +656,4 @@ impl SteadyCommander for SteadyContext {
             result.load(Ordering::Relaxed)
         }
 
-    fn simulate_actor(&self) -> bool {
-        cfg!(test) && !self.never_simulate
-    }
 }

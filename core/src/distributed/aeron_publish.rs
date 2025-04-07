@@ -26,7 +26,7 @@ pub async fn run(context: SteadyContext
              ) -> Result<(), Box<dyn Error>> {
 
     let mut cmd = context.into_monitor([&rx], []);
-    if !cmd.simulate_actor() {
+    if cmd.use_internal_behavior {
         while cmd.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
             let mut rx = rx.lock().await;

@@ -616,7 +616,7 @@ impl Graph {
             team_id: 0,
             show_thread_info: false,
             aeron_meda_driver: self.aeron.clone(),
-            never_simulate: true
+            use_internal_behavior: true
         }
     }
 

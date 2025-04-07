@@ -598,7 +598,7 @@ mod graph_testing_tests {
             team_id: 0,
             show_thread_info: false,
             aeron_meda_driver: OnceLock::new(),
-            never_simulate: false
+            use_internal_behavior: true
         }
     }
 

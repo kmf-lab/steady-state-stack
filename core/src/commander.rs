@@ -113,7 +113,7 @@ impl SteadyContext {
             team_id: self.team_id,
             is_running_iteration_count: 0,
             aeron_meda_driver: self.aeron_meda_driver.clone(),
-            never_simulate: self.never_simulate
+            use_internal_behavior: self.use_internal_behavior
         }
     }
 }
@@ -139,7 +139,6 @@ impl<X> SendOutcome<X> {
 pub trait SteadyCommander {
 
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>>;
-    fn simulate_actor(&self) -> bool;
 
     async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>) -> Result<(), Box<dyn Error>>;
 

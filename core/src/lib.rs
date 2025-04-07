@@ -960,7 +960,7 @@ mod lib_tests {
             show_thread_info: false,
             team_id: 0,
             aeron_meda_driver: OnceLock::new(),
-            never_simulate: false
+            use_internal_behavior: true
         }
     }
 

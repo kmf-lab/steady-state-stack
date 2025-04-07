@@ -76,7 +76,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) show_thread_info: bool,
     pub(crate) team_id: usize,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
-    pub(crate) never_simulate: bool
+    pub use_internal_behavior: bool
 }
 
 /// Implementation of `LocalMonitor`.
@@ -1088,9 +1088,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         result.load(Ordering::Relaxed)
     }
 
-    fn simulate_actor(&self) -> bool {
-        cfg!(test) && !self.never_simulate
-    }
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> LocalMonitor<RX_LEN, TX_LEN> {
