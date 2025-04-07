@@ -105,6 +105,18 @@ tempfile         = "3.19.1"
 ahash            = "0.8.11" # fastest hash map so far
 async-io         = "2.4.0"
 
+
+# HTTP Web solution is built on this stack of crates
+http           = "1.3.1"
+httparse       = "1.10.1"
+futures-rustls = "0.26.0"
+h2 = { version = "0.3", default-features = false }
+quinn          = "0.11.7"
+h3             = "0.0.7"
+#################################################
+
+
+
 # buldign in MQTT for IoT and Lambdas, for soon 0.2 release
 #mqttrs           = "0.4.1"
 # building in encryption for soon 0.2 release, pre testing now.
@@ -116,9 +128,9 @@ async-io         = "2.4.0"
 #once_cell = "1.20.2"
 # for local testing
 aeron = "0.2.0"
-futures-lite = "2.6.0"
-backtrace = "0.3.74"
-async-trait = "0.1.88"
+#futures-lite = "2.6.0"
+#backtrace = "0.3.74"
+#async-trait = "0.1.88"
 # steady_state_aeron    = { path = "../../aeron-rs", version="0.1.6-kmf1" }
 # Dependencies for Unix-like systems (Linux, macOS, etc.)
 [target.'cfg(unix)'.dependencies]
