@@ -49,22 +49,25 @@ fn steady_logging_init(
     level: LogLevel,
     test_mode: bool,
 ) -> Result<LoggerHandle, Box<dyn Error>> {
+
+    //eprintln!("steady_logging_init {} ----------------------------------------",test_mode);
+
     let log_spec = LogSpecBuilder::new()
         .default(level.to_level_filter())
         .build();
 
     let format = flexi_logger::colored_with_thread;
 
-    let mut logger = Logger::with(log_spec)
-        .format(format)
-        .log_to_stderr()
-        .write_mode(WriteMode::Direct);
-
+    let mut logger = Logger::with(log_spec);
     if test_mode {
-        let memory_writer = MemoryWriter::new(format);
-        logger = logger.add_writer("memory", Box::new(memory_writer));
+        //eprintln!("test mode enabled -----------------------------------------");
+        logger = logger.log_to_writer(Box::new(MemoryWriter::new(format)))
+                       .duplicate_to_stderr(flexi_logger::Duplicate::All);
+    } else {
+        logger = logger.log_to_stderr();
     }
-
+    let mut logger = logger.format(format)
+                            .write_mode(WriteMode::Direct);
     logger.start().map_err(|e| Box::new(e) as Box<dyn Error>)
 }
 
@@ -89,6 +92,19 @@ pub mod steady_logger {
             }
         }
     }
+    /// Initializes the logger for test mode with in-memory log capturing.
+    /// If the logger is already set, it does nothing.
+    /// This function has been significantly changed to not return the log buffer.
+    pub fn initialize_for_test(level: LogLevel) -> Result<(), Box<dyn Error>> {
+        //eprintln!("initialize_for_test start -----------------------------------------");
+        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
+        if logger_handle.is_none() {
+            let handle = super::steady_logging_init(level, true)?;
+            *logger_handle = Some(handle);
+        }
+        //eprintln!("initialize_for_test stop-----------------------------------------");
+        Ok(())
+    }
 
     /// Initializes the logger with a specific level for normal operation.
     /// If a logger is already running, it changes the level dynamically.
@@ -111,17 +127,7 @@ pub mod steady_logger {
         }
     }
 
-    /// Initializes the logger for test mode with in-memory log capturing.
-    /// If the logger is already set, it does nothing.
-    /// This function has been significantly changed to not return the log buffer.
-    pub fn initialize_for_test(level: LogLevel) -> Result<(), Box<dyn Error>> {
-        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
-        if logger_handle.is_none() {
-            let handle = super::steady_logging_init(level, true)?;
-            *logger_handle = Some(handle);
-        }
-        Ok(())
-    }
+
 
     /// Clears the thread-local log buffer for the current test.
     pub fn clear_test_logs() {
@@ -136,18 +142,6 @@ pub mod steady_logger {
         clear_test_logs();
     }
 
-    /// Restores the logger to normal operation mode with "info" level.
-    /// This attempts to drop the existing logger handle and re-initialize.
-    pub fn restore_logger() {
-        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
-        if let Some(handle) = logger_handle.take() {
-            drop(handle);
-        }
-        match super::steady_logging_init(LogLevel::Info, false) {
-            Ok(handle) => *logger_handle = Some(handle),
-            Err(e) => eprintln!("Warning: Logger restoration failed: {}", e),
-        }
-    }
 }
 
 /// Assertion macro that checks if all specified texts appear in the logs.
@@ -155,30 +149,31 @@ pub mod steady_logger {
 #[macro_export]
 macro_rules! assert_in_logs {
     ($texts:expr) => {{
-        LOG_BUFFER.with(|buf| {
-            let logged_messages = buf.borrow();
-            let texts = $texts;
-            let mut text_index = 0;
-            for msg in logged_messages.iter() {
-                if text_index < texts.len() && msg.contains(texts[text_index]) {
-                    text_index += 1;
-                }
+        let logged_messages = LOG_BUFFER.with(|buf| buf.borrow().clone());
+        let texts = $texts;
+        let mut text_index = 0;
+        //eprintln!("----------------------------------------");
+        for msg in logged_messages.iter() {
+            //eprintln!("{:?}", msg);
+            if text_index < texts.len() && msg.contains(texts[text_index]) {
+                text_index += 1;
             }
-            if text_index != texts.len() {
-                crate::steady_logger::restore_logger();
-                log::error!(
-                    "Assertion failed: expected texts {:?} in logs {:?} at {}:{}",
-                    texts, *logged_messages, file!(), line!()
-                );
-                panic!(
-                    "Assertion failed at {}:{}: expected texts {:?} in logs {:?}",
-                    file!(),
-                    line!(),
-                    texts,
-                    *logged_messages
-                );
-            }
-        });
+        }
+        //eprintln!("----------------------------------------");
+
+        if text_index != texts.len() {
+            eprintln!(
+                "Assertion failed: expected texts {:?} in logs {:?} at {}:{}",
+                texts, logged_messages, file!(), line!()
+            );
+            panic!(
+                "Assertion failed at {}:{}: expected texts {:?} in logs {:?}",
+                file!(),
+                line!(),
+                texts,
+                logged_messages
+            );
+        }
     }};
 }
 
@@ -187,13 +182,16 @@ mod test_log_tests {
     use super::*;
     use log::info;
 
-    // #[test]
-    // fn test_assert_in_logs_macro() {
-    //     steady_logger::initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
-    //     steady_logger::clear_test_logs();
-    //     info!("Hello from test!");
-    //     assert_in_logs!(["Hello from test!"]);
-    // }
+    #[test]
+    fn test_assert_in_logs_macro() {
+        steady_logger::initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
+        steady_logger::clear_test_logs();
+        eprintln!("=====================================");
+
+        info!("Hello from test!");
+
+        assert_in_logs!(["Hello from test!"]);
+    }
 
     #[test]
     #[should_panic(expected = "Assertion failed at")]
