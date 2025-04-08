@@ -20,7 +20,8 @@ impl MemoryWriter {
 }
 
 thread_local! {
-    static LOG_BUFFER: RefCell<Vec<String>> = RefCell::new(Vec::new());
+    //one buffer per thread ensures each actor can test independently without cross mixing text
+    pub static LOG_BUFFER: RefCell<Vec<String>> = RefCell::new(Vec::new());
 }
 
 impl LogWriter for MemoryWriter {
@@ -180,24 +181,26 @@ macro_rules! assert_in_logs {
 #[cfg(test)]
 mod test_log_tests {
     use super::*;
+    use steady_logger::*; //typical import for captured log tests
     use log::info;
 
     #[test]
     fn test_assert_in_logs_macro() {
-        steady_logger::initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
-        steady_logger::clear_test_logs();
+        initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
+        clear_test_logs();
         eprintln!("=====================================");
 
         info!("Hello from test!");
+        info!("Yet Again!");
 
-        assert_in_logs!(["Hello from test!"]);
+        assert_in_logs!(["Hello from test!","Yet Again!"]);
     }
 
     #[test]
     #[should_panic(expected = "Assertion failed at")]
     fn test_assert_in_logs_macro_failure() {
-        steady_logger::initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
-        steady_logger::clear_test_logs();
+        initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
+        clear_test_logs();
         assert_in_logs!(["This text does not exist in logs"]);
     }
 }

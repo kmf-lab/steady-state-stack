@@ -50,7 +50,7 @@ pub struct SteadyContext {
     pub(crate) team_id: usize,
     pub(crate) show_thread_info: bool,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
-    pub use_internal_behavior: bool, //TODO: need to restrict to set once!
+    pub use_internal_behavior: bool,
 }
 
 impl Clone for SteadyContext {

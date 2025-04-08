@@ -51,7 +51,7 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
                         &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
                         &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
   {% if is_on_graph_edge %}
-  if cfg!(not(test)) { {% endif %}
+  if cmd.use_internal_behavior { {% endif %}
      internal_behavior(cmd {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx{%- endfor -%}, state).await
   {% if is_on_graph_edge %}
   } else {
