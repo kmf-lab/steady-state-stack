@@ -74,7 +74,7 @@ fn main() {
         .build(move |context| actor::subscriber::run(context, base.clone())
                , &mut Threading::Spawn);
 
-    from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_media_driver(), aeron_channel, STREAM_ID)
+    from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_channel, STREAM_ID)
                                         , &graph.actor_builder().with_name("ReceiverTest").never_simulate(false)
                                         , &mut Threading::Spawn);
 

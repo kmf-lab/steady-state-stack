@@ -278,22 +278,19 @@ pub(crate) mod aeron_media_driver_tests {
 
     #[test]
     fn test_bytes_process() {
-        if std::env::var("GITHUB_ACTIONS").is_ok() {
-            return;
-        }
+        // if std::env::var("GITHUB_ACTIONS").is_ok() {
+        //     return;
+        // }
 
         let mut graph = GraphBuilder::for_testing().build(());
-
-        let md = graph.aeron_media_driver();
-        if md.is_none() {
-            info!("aeron test skipped, no media driver present");
-            return;
-        }
-        if let Some(md) = &md {
+        if let Some(md) = graph.aeron_media_driver() {
             if let Some(md) = md.try_lock() {
                 info!("Found MediaDriver cnc:{:?}",md.context().cnc_file_name()  );
             };
-        };
+        } else {
+            info!("aeron test skipped, no media driver present");
+            return;
+        }
 
         let channel_builder = graph.channel_builder();
 
@@ -314,7 +311,7 @@ pub(crate) mod aeron_media_driver_tests {
             .build();
 
         //in simulated graph we will build teh same but expect this to be a simulation !!
-        to_aeron_rx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config.clone(), STREAM_ID)
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(aeron_config.clone(), STREAM_ID)
                                , &graph.actor_builder().with_name("SenderTest").never_simulate(true)
                                , &mut Threading::Spawn);
 
@@ -332,22 +329,19 @@ pub(crate) mod aeron_media_driver_tests {
             .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(6);
 
         //do not simulate yet the main graph will simulate. cfg!(test)
-        from_aeron_tx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config, STREAM_ID)
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_config, STREAM_ID)
                                      , &graph.actor_builder().with_name( "ReceiverTest").never_simulate(true)
                                      , &mut Threading::Spawn);
-        graph.start(); //startup the graph
-
-        sleep(Duration::from_millis(3000));
-        assert_steady_rx_eq_count!(from_aeron_rx[0],200);
-
+        graph.start();
+        assert!(from_aeron_rx[0].testing_avail_wait(200, Duration::from_secs(20)));
         graph.request_stop();
-        //we wait up to the timeout for clean shutdown which is transmission of all the data
-        graph.block_until_stopped(Duration::from_secs(21));
+        graph.block_until_stopped(Duration::from_secs(2));
 
         //let mut data = [0u8; 5];
         for i in 0..100 {
             // let data1: Vec<u8> = vec![1, 2, 3, 4, 5];
             // assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(
+            //     //TODO: instant is a big problme for equals.
             //     (StreamSessionMessage::new(5,1,Instant::now(), Instant::now()),data1.into_boxed_slice())));
             // let data2: Vec<u8> = vec![6, 7, 8, 9, 10];
             // assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(

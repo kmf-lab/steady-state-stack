@@ -431,7 +431,7 @@ pub(crate) mod aeron_tests {
 
         let stream_id = 0;
 
-        to_aeron_rx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config.clone(), stream_id)
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(aeron_config.clone(), stream_id)
                                        , & graph.actor_builder().with_name( "SenderTest").never_simulate(true)
                                        , &mut Threading::Spawn);
 
@@ -445,7 +445,7 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
                    , &mut Threading::Spawn);
 
-        from_aeron_tx.build_aqueduct(AqueTech::Aeron(md.clone(), aeron_config.clone(), stream_id)
+        from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_config.clone(), stream_id)
                                             , &graph.actor_builder().with_name("ReceiverTest").never_simulate(true)
                                             , &mut Threading::Spawn);
 

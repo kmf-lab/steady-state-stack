@@ -26,23 +26,22 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
         let tech_string = tech.to_tech();
 
         match tech {
-            AqueTech::Aeron(media_driver, channel, stream_id) => {
+            AqueTech::Aeron(channel, stream_id) => {
                 let actor_builder = actor_builder
                     .with_remote_details(remotes
                                          ,match_me
                                          ,true
                                          ,tech_string
                     );
-                if let Some(aeron) = media_driver {
-                    let state = new_state();
-                    actor_builder.build(move |context|
-                                   aeron_publish::run(context
-                                                      , self.clone()
-                                                      , channel.clone()
-                                                      , stream_id
-                                                      , state.clone() )
-                               , threading)
-                }
+                let state = new_state();
+                actor_builder.build(move |context|
+                               aeron_publish::run(context
+                                                  , self.clone()
+                                                  , channel.clone()
+                                                  , stream_id
+                                                  , state.clone() )
+                           , threading)
+
             },
             AqueTech::None => {
             },
@@ -62,18 +61,17 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
         threading: &mut Threading
     ) {
         match tech {
-            AqueTech::Aeron(media_driver, channel, stream_id) => {
+            AqueTech::Aeron(channel, stream_id) => {
                 let actor_builder = actor_builder.clone();
-                if let Some(aeron) = media_driver {
-                    let state = new_state();
-                    actor_builder.build(move |context|
-                                   aeron_subscribe::run(context
-                                                        , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
-                                                        , channel.clone()
-                                                        , stream_id
-                                                        , state.clone())
-                               , threading);
-                };
+                let state = new_state();
+                actor_builder.build(move |context|
+                               aeron_subscribe::run(context
+                                                    , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
+                                                    , channel.clone()
+                                                    , stream_id
+                                                    , state.clone())
+                           , threading);
+
             }
             AqueTech::None => {
                 warn!("no AqueTech provided, probably testing or still under development");
@@ -95,7 +93,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
         let actor_builder = actor_builder.clone();
         let state = new_state();
         match tech {
-            AqueTech::Aeron(media_driver, channel, stream_id) => {
+            AqueTech::Aeron(channel, stream_id) => {
                 actor_builder.build(move |context|
                                aeron_publish_bundle::run(context
                                                          , self.clone()
@@ -126,7 +124,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
         let actor_builder = actor_builder.clone();
         let state = new_state();
         match tech {
-            AqueTech::Aeron(media_driver, channel, stream_id) => {
+            AqueTech::Aeron(channel, stream_id) => {
                     actor_builder.build(move |context|
                                    aeron_subscribe_bundle::run(context
                                                                , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>

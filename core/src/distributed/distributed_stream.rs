@@ -17,12 +17,17 @@ use ringbuf::traits::{Observer, Split};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use futures_timer::Delay;
+use futures_util::select;
 use crate::core_rx::RxCore;
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::TxMetaDataProvider;
 use crate::core_exec;
+use futures::future::FutureExt; // For .fuse()
+use futures::pin_mut;           // For pin_mut!
+
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
 pub type IdType = i32;
@@ -861,27 +866,43 @@ impl<T: StreamItem> LazyStreamRx<T> {
     /// # Panics
     /// - If the received fragment length != `data.len()`.
     /// - If an error occurs while reading.
-    pub async fn testing_take_frame(&self, data: &mut [u8]) -> usize {
-        let s = self.clone();
-        let mut l = s.lock().await;
+    // pub async fn testing_take_frame(&self, data: &mut [u8]) -> usize {
+    //     let s = self.clone();
+    //     let mut l = s.lock().await;
+    //
+    //     if let Some(_c) = l.item_channel.shared_take_async().await {
+    //         let count = l.payload_channel.shared_take_slice(data);
+    //         assert_eq!(count, data.len());
+    //         count
+    //     } else {
+    //         // Could log or handle gracefully instead of returning 0.
+    //         0
+    //     }
+    // }
 
-        if let Some(_c) = l.item_channel.shared_take_async().await {
-            let count = l.payload_channel.shared_take_slice(data);
-            assert_eq!(count, data.len());
-            count
-        } else {
-            // Could log or handle gracefully instead of returning 0.
-            0
+
+
+    pub fn testing_avail_wait(&self, count: usize, timeout_duration: Duration) -> bool {
+        core_exec::block_on(async {
+            let s = self.clone();
+            let mut l = s.lock().await;
+
+            // Define futures and apply .fuse()
+            let wait_fut = l.shared_wait_closed_or_avail_units(count).fuse();
+            let timeout_fut = Delay::new(timeout_duration).fuse();
+
+            // Pin the futures on the stack
+            pin_mut!(wait_fut);
+            pin_mut!(timeout_fut);
+
+            select! {
+            result = wait_fut => result, // Return the result if wait_fut completes first
+            _ = timeout_fut => false,    // Return false if timeout_fut completes first
         }
+        })
     }
 
-    pub async fn testing_avail_wait(&self, count: usize) -> bool {
-        let s = self.clone();
-        let mut l = s.lock().await;
 
-        l.shared_wait_closed_or_avail_units(count).await
-
-    }
 }
 
 //TODO: these two methods control streams showing items not bytes, this may need to be corrected.

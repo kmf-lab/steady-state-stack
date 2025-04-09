@@ -24,7 +24,7 @@ type StreamId = i32;
 ///
 pub enum AqueTech {
     None,
-    Aeron(Option<Arc<Mutex<Aeron>>>, Channel, StreamId),
+    Aeron(Channel, StreamId),
 }
 
 impl AqueTech {
@@ -37,7 +37,7 @@ impl AqueTech {
     pub(crate) fn to_tech(&self) -> &'static str {
         match self {
             AqueTech::None => "none",
-            AqueTech::Aeron(Some(_), _, _) => "Aeron",
+            AqueTech::Aeron(_, _) => "Aeron",
             _ => "Unknown",
         }
     }
@@ -51,7 +51,7 @@ impl AqueTech {
     pub(crate) fn to_match_me(&self) -> String {
         match self {
             AqueTech::None => "none".to_string(),
-            AqueTech::Aeron(Some(_), channel, _) => {
+            AqueTech::Aeron(channel, _) => {
                 channel.cstring().into_string().expect("Valid CString conversion")
             }
             _ => "Unknown".to_string(),
@@ -66,7 +66,7 @@ impl AqueTech {
     pub(crate) fn to_remotes(&self) -> Vec<String> {
         let mut result = Vec::new();
         match self {
-            AqueTech::Aeron(Some(_), _, _) => {
+            AqueTech::Aeron(_, _) => {
                 // TODO: Replace with logic to gather actual peer IPs (e.g., via MQTT).
                 result.push("127.0.0.1".to_string());
             }
