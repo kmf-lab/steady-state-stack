@@ -361,9 +361,9 @@ pub(crate) mod aeron_tests {
 
     #[test]
     fn test_bytes_process() {
-        if true || std::env::var("GITHUB_ACTIONS").is_ok() {
-            return; //skip this test if we are github actions
-        }
+        // if true || std::env::var("GITHUB_ACTIONS").is_ok() {
+        //     return; //skip this test if we are github actions
+        // }
 
         unsafe {
             env::set_var("TELEMETRY_SERVER_PORT", "9201");

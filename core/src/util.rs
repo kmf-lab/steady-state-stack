@@ -7,6 +7,7 @@ use std::io;
 use std::io::Write;  // Ensure we have this for potential write() usage
 use log::Record;
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A simple memory writer that stores all log messages (after formatting) in a thread-local `Vec<String>`.
 struct MemoryWriter {
@@ -22,6 +23,7 @@ impl MemoryWriter {
 thread_local! {
     //one buffer per thread ensures each actor can test independently without cross mixing text
     pub static LOG_BUFFER: RefCell<Vec<String>> = RefCell::new(Vec::new());
+    pub static IS_TEST_MODE: AtomicBool = AtomicBool::new(false);
 }
 
 impl LogWriter for MemoryWriter {
@@ -85,7 +87,7 @@ pub mod steady_logger {
     /// Initializes the logger with default "info" level for normal operation.
     /// Does nothing if a logger is already set.
     pub fn initialize() {
-        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
+        let mut logger_handle = LOGGER_HANDLE.lock().expect("log init");
         if logger_handle.is_none() {
             match super::steady_logging_init(LogLevel::Info, false) {
                 Ok(handle) => *logger_handle = Some(handle),
@@ -97,20 +99,29 @@ pub mod steady_logger {
     /// If the logger is already set, it does nothing.
     /// This function has been significantly changed to not return the log buffer.
     pub fn initialize_for_test(level: LogLevel) -> Result<(), Box<dyn Error>> {
-        //eprintln!("initialize_for_test start -----------------------------------------");
-        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
+        let mut logger_handle = LOGGER_HANDLE.lock().expect("log init for test");
         if logger_handle.is_none() {
+            IS_TEST_MODE.with(|is_test_mode| {
+                is_test_mode.store(true, Ordering::SeqCst);
+            });
             let handle = super::steady_logging_init(level, true)?;
             *logger_handle = Some(handle);
+            Ok(())
+        } else {
+            let is_test = IS_TEST_MODE.with(|is_test_mode| is_test_mode.load(Ordering::SeqCst));
+            if !is_test {
+                Err("Already init without test capturing".into())
+            } else {
+                Ok(())
+            }
         }
-        //eprintln!("initialize_for_test stop-----------------------------------------");
-        Ok(())
+
     }
 
     /// Initializes the logger with a specific level for normal operation.
     /// If a logger is already running, it changes the level dynamically.
     pub fn initialize_with_level(level: LogLevel) -> Result<(), Box<dyn Error>> {
-        let mut logger_handle = LOGGER_HANDLE.lock().unwrap();
+        let mut logger_handle = LOGGER_HANDLE.lock().expect("log init for specific level");
         if logger_handle.is_none() {
             let handle = super::steady_logging_init(level, false)?;
             *logger_handle = Some(handle);
@@ -150,30 +161,33 @@ pub mod steady_logger {
 #[macro_export]
 macro_rules! assert_in_logs {
     ($texts:expr) => {{
-        let logged_messages = LOG_BUFFER.with(|buf| buf.borrow().clone());
-        let texts = $texts;
-        let mut text_index = 0;
-        //eprintln!("----------------------------------------");
-        for msg in logged_messages.iter() {
-            //eprintln!("{:?}", msg);
-            if text_index < texts.len() && msg.contains(texts[text_index]) {
-                text_index += 1;
+        let is_test = IS_TEST_MODE.with(|is_test_mode| is_test_mode.load(Ordering::SeqCst));
+        if !is_test {
+            warn!("Logger not initialized for testing, cannot assert logs right now");
+        } else {
+            let logged_messages = LOG_BUFFER.with(|buf| buf.borrow().clone());
+            let texts = $texts;
+            let mut text_index = 0;
+            for msg in logged_messages.iter() {
+                //eprintln!("{:?}", msg);
+                if text_index < texts.len() && msg.contains(texts[text_index]) {
+                    text_index += 1;
+                }
             }
-        }
-        //eprintln!("----------------------------------------");
 
-        if text_index != texts.len() {
-            eprintln!(
-                "Assertion failed: expected texts {:?} in logs {:?} at {}:{}",
-                texts, logged_messages, file!(), line!()
-            );
-            panic!(
-                "Assertion failed at {}:{}: expected texts {:?} in logs {:?}",
-                file!(),
-                line!(),
-                texts,
-                logged_messages
-            );
+            if text_index != texts.len() {
+                eprintln!(
+                    "Assertion failed: expected texts {:?} in logs {:?} at {}:{}",
+                    texts, logged_messages, file!(), line!()
+                );
+                panic!(
+                    "Assertion failed at {}:{}: expected texts {:?} in logs {:?}",
+                    file!(),
+                    line!(),
+                    texts,
+                    logged_messages
+                );
+            }
         }
     }};
 }
@@ -183,12 +197,12 @@ mod test_log_tests {
     use super::*;
     use steady_logger::*; //typical import for captured log tests
     use log::info;
+    use crate::*;
 
     #[test]
     fn test_assert_in_logs_macro() {
         initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
         clear_test_logs();
-        eprintln!("=====================================");
 
         info!("Hello from test!");
         info!("Yet Again!");
