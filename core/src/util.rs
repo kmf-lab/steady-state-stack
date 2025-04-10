@@ -53,13 +53,11 @@ fn steady_logging_init(
     test_mode: bool,
 ) -> Result<LoggerHandle, Box<dyn Error>> {
 
-    //eprintln!("steady_logging_init {} ----------------------------------------",test_mode);
-
     let log_spec = LogSpecBuilder::new()
         .default(level.to_level_filter())
         .build();
 
-    let format = flexi_logger::colored_with_thread;
+    let format = colored_with_thread;
 
     let mut logger = Logger::with(log_spec);
     if test_mode {
