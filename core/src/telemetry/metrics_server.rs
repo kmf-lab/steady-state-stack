@@ -388,21 +388,32 @@ const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SER
 //   pub trait AsyncReadExt: AsyncRead     for the .write_all
 
 async fn handle_request<T>(mut stream: T,
-                        state: Arc<Mutex<State>>,
-                        _config: Arc<Mutex<Config>>) -> io::Result<()>
-  where
+                           state: Arc<Mutex<State>>,
+                           _config: Arc<Mutex<Config>>) -> io::Result<()>
+where
     T: AsyncRead + AsyncWrite + Unpin
-    {
+{
     let mut buffer = vec![0; 1024];
     let _ = stream.read(&mut buffer).await?;
     let request = String::from_utf8_lossy(&buffer);
 
-    // Parse the HTTP request to get the path.
-    let path = request.split_whitespace().nth(1).unwrap_or("/");
+    // Parse the HTTP request to get the method and path
+    let mut parts = request.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    let path = parts.next().unwrap_or("/");
+
+    // Define the CORS header to include in all responses
+    let cors_header = "Access-Control-Allow-Origin: *\r\n";
+
+    // Handle OPTIONS requests for CORS preflight
+    if method == "OPTIONS" {
+        stream.write_all(b"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Length: 0\r\n\r\n").await?;
+        return Ok(());
+    }
 
     #[cfg(feature = "prometheus_metrics")]
-    if path.starts_with("/me") { //for prometheus /metrics
-        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ").await?;
+    if path.starts_with("/me") { // for prometheus /metrics
+        stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: text/plain\r\nContent-Length: ", cors_header).as_bytes()).await?;
         let locked_state = state.lock().await;
         stream.write_all(itoa::Buffer::new().format(locked_state.metric.len()).as_bytes()).await?;
         stream.write_all(b"\r\n\r\n").await?;
@@ -412,17 +423,15 @@ async fn handle_request<T>(mut stream: T,
 
     #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
     {
-        if path.starts_with("/gr") { //for local telemetry /graph.dot
-            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/vnd.graphviz\r\nContent-Length: ").await?;
+        if path.starts_with("/gr") { // for local telemetry /graph.dot
+            stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: text/vnd.graphviz\r\nContent-Length: ", cors_header).as_bytes()).await?;
             let locked_state = state.lock().await;
             stream.write_all(itoa::Buffer::new().format(locked_state.doc.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
             stream.write_all(&locked_state.doc).await?;
             return Ok(());
-        } else if path.starts_with("/set?") {//example /set?rankdir=LR&show=label1,label2&hide=label3,label4            
+        } else if path.starts_with("/set?") { // example /set?rankdir=LR&show=label1,label2&hide=label3,label4
             let mut rankdir = "LR";
-            //let mut show:Option<Split<&str>> = None; // TODO: Labels feature
-            //let mut hide:Option<Split<&str>> = None; // TODO: Labels feature
             let mut parts = path.split("?");
             if let Some(_part) = parts.next() {
                 if let Some(part) = parts.next() {
@@ -431,15 +440,9 @@ async fn handle_request<T>(mut stream: T,
                         let mut parts = part.split("=");
                         if let Some(key) = parts.next() {
                             if let Some(value) = parts.next() {
-                                if "rankdir"==key {
+                                if "rankdir" == key {
                                     rankdir = value;
                                 }
-                                // match key {
-                                //     "rankdir" => rankdir = value,
-                                //     //"show" => show = Some(value.split(",")),// TODO: Labels feature
-                                //     //"hide" => hide = Some(value.split(",")),
-                                //     _ => {}
-                                // }
                             }
                         }
                     }
@@ -448,136 +451,109 @@ async fn handle_request<T>(mut stream: T,
             if rankdir.eq("LR") || rankdir.eq("TB") {
                 let mut c = _config.lock().await;
                 c.rankdir = rankdir.to_string();
-                // TODO: Labels feature
-                // if c.apply_labels(show,hide) {
-                //     stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").await?;
+                // TODO: Labels feature (commented out in original code)
+                // if c.apply_labels(show, hide) {
+                //     stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Length: 0\r\n\r\n", cors_header).as_bytes()).await?;
                 //     return Ok(());
                 // }
             }
-            stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n").await?;
+            stream.write_all(format!("HTTP/1.1 400 Bad Request\r\n{}Content-Length: 0\r\n\r\n", cors_header).as_bytes()).await?;
             return Ok(());
-        } else if path.eq("/") || path.starts_with("/in") || path.starts_with("/de") { //index
-                // Write the HTTP header
-                stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/html\r\nContent-Length: ").await?;
-                stream.write_all(itoa::Buffer::new().format(CONTENT_INDEX_HTML_GZ.len()).as_bytes()).await?;
-                stream.write_all(b"\r\n\r\n").await?;
-                // Write the actual data
-                stream.write_all(CONTENT_INDEX_HTML_GZ).await?;
+        } else if path.eq("/") || path.starts_with("/in") || path.starts_with("/de") { // index
+            stream.write_all(format!("HTTP/1.1 200 OK\r\n{}content-encoding: gzip\r\nContent-Type: text/html\r\nContent-Length: ", cors_header).as_bytes()).await?;
+            stream.write_all(itoa::Buffer::new().format(CONTENT_INDEX_HTML_GZ.len()).as_bytes()).await?;
+            stream.write_all(b"\r\n\r\n").await?;
+            stream.write_all(CONTENT_INDEX_HTML_GZ).await?;
             return Ok(());
         } else if path.starts_with("/im") && path.len().ge(&15) { // /images/*
             if path.as_bytes()[8].eq(&b'z') {
                 if path.as_bytes()[13].eq(&b'i') {
-                    if path.len().ge(&30) { //"/images/zoom-in-icon-disabled.svg"
+                    if path.len().ge(&30) { // "/images/zoom-in-icon-disabled.svg"
                         let data = CONTENT_ZOOM_IN_ICON_DISABLED_SVG.as_bytes();
-                        // Write the HTTP header
-                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: ").await?;
+                        stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/svg+xml\r\nContent-Length: ", cors_header).as_bytes()).await?;
                         stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
                         stream.write_all(b"\r\n\r\n").await?;
-                        // Write the actual data
                         stream.write_all(data).await?;
-                    } else {                      //"/images/zoom-in-icon.svg"
+                    } else { // "/images/zoom-in-icon.svg"
                         let data = CONTENT_ZOOM_IN_ICON_SVG.as_bytes();
-                        // Write the HTTP header
-                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: ").await?;
+                        stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/svg+xml\r\nContent-Length: ", cors_header).as_bytes()).await?;
                         stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
                         stream.write_all(b"\r\n\r\n").await?;
-                        // Write the actual data
                         stream.write_all(data).await?;
                     }
                 } else if path.len().ge(&30) { // "/images/zoom-out-icon-disabled.svg"
-                        let data = CONTENT_ZOOM_OUT_ICON_DISABLED_SVG.as_bytes();
-                        // Write the HTTP header
-                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: ").await?;
-                        stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
-                        stream.write_all(b"\r\n\r\n").await?;
-                        // Write the actual data
-                        stream.write_all(data).await?;
-                    } else {                     //"/images/zoom-out-icon.svg"
-                        let data = CONTENT_ZOOM_OUT_ICON_SVG.as_bytes();
-                        // Write the HTTP header
-                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: ").await?;
-                        stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
-                        stream.write_all(b"\r\n\r\n").await?;
-                        // Write the actual data
-                        stream.write_all(data).await?;
-                    }
-            } else if path.as_bytes()[11].eq(&b'r') {
-                    if path.len().ge(&22) {   //"/images/refresh-time-icon.svg"
-                        let data = CONTENT_REFRESH_TIME_ICON_SVG.as_bytes();
-                        // Write the HTTP header
-                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: ").await?;
-                        stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
-                        stream.write_all(b"\r\n\r\n").await?;
-                        // Write the actual data
-                        stream.write_all(data).await?;
-                    } else {                        //"/images/user-icon.svg"
-                        let data = CONTENT_USER_ICON_SVG.as_bytes();
-                        // Write the HTTP header
-                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: ").await?;
-                        stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
-                        stream.write_all(b"\r\n\r\n").await?;
-                        // Write the actual data
-                        stream.write_all(data).await?;
-                    }
-                } else if path.len().ge(&22) {   //"/images/preview-icon.svg"
-                        // Write the HTTP header
-                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: ").await?;
-                        stream.write_all(itoa::Buffer::new().format(CONTENT_PREVIEW_ICON_GZ.len()).as_bytes()).await?;
-                        stream.write_all(b"\r\n\r\n").await?;
-                        // Write the actual data
-                        stream.write_all(CONTENT_PREVIEW_ICON_GZ).await?;
-                    } else {                        //"/images/spinner.gif"
-                        // Write the HTTP header
-                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/gif\r\nContent-Length: ").await?;
-                        stream.write_all(itoa::Buffer::new().format(CONTENT_SPINNER_GIF.len()).as_bytes()).await?;
-                        stream.write_all(b"\r\n\r\n").await?;
-                        // Write the actual data
-                        stream.write_all(CONTENT_SPINNER_GIF).await?;
+                    let data = CONTENT_ZOOM_OUT_ICON_DISABLED_SVG.as_bytes();
+                    stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/svg+xml\r\nContent-Length: ", cors_header).as_bytes()).await?;
+                    stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
+                    stream.write_all(b"\r\n\r\n").await?;
+                    stream.write_all(data).await?;
+                } else { // "/images/zoom-out-icon.svg"
+                    let data = CONTENT_ZOOM_OUT_ICON_SVG.as_bytes();
+                    stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/svg+xml\r\nContent-Length: ", cors_header).as_bytes()).await?;
+                    stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
+                    stream.write_all(b"\r\n\r\n").await?;
+                    stream.write_all(data).await?;
                 }
-
-            return Ok(());
-        } else if path.starts_with("/we") {         //"/webworker.js"
-                // Write the HTTP header
-                stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ").await?;
-                stream.write_all(itoa::Buffer::new().format(CONTENT_WEBWORKER_JS_GZ.len()).as_bytes()).await?;
+            } else if path.as_bytes()[11].eq(&b'r') {
+                if path.len().ge(&22) { // "/images/refresh-time-icon.svg"
+                    let data = CONTENT_REFRESH_TIME_ICON_SVG.as_bytes();
+                    stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/svg+xml\r\nContent-Length: ", cors_header).as_bytes()).await?;
+                    stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
+                    stream.write_all(b"\r\n\r\n").await?;
+                    stream.write_all(data).await?;
+                } else { // "/images/user-icon.svg"
+                    let data = CONTENT_USER_ICON_SVG.as_bytes();
+                    stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/svg+xml\r\nContent-Length: ", cors_header).as_bytes()).await?;
+                    stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
+                    stream.write_all(b"\r\n\r\n").await?;
+                    stream.write_all(data).await?;
+                }
+            } else if path.len().ge(&22) { // "/images/preview-icon.svg"
+                stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/svg+xml\r\nContent-Length: ", cors_header).as_bytes()).await?;
+                stream.write_all(itoa::Buffer::new().format(CONTENT_PREVIEW_ICON_GZ.len()).as_bytes()).await?;
                 stream.write_all(b"\r\n\r\n").await?;
-                // Write the actual data
-                stream.write_all(CONTENT_WEBWORKER_JS_GZ).await?; 
-            return Ok(());
-        } else if path.starts_with("/do") {
-            if path.ends_with(".css") { //"/dot-viewer.css"
-                    // Write the HTTP header
-                    stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/css\r\nContent-Length: ").await?;
-                    stream.write_all(itoa::Buffer::new().format(CONTENT_DOT_VIEWER_CSS_GZ.len()).as_bytes()).await?;
-                    stream.write_all(b"\r\n\r\n").await?;
-                    // Write the actual data
-                    stream.write_all(CONTENT_DOT_VIEWER_CSS_GZ).await?;
-              
-            } else { //"/dot-viewer.js"               
-                    // Write the HTTP header
-                    stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ").await?;
-                    stream.write_all(itoa::Buffer::new().format(CONTENT_DOT_VIEWER_JS_GZ.len()).as_bytes()).await?;
-                    stream.write_all(b"\r\n\r\n").await?;
-                    // Write the actual data
-                    stream.write_all(CONTENT_DOT_VIEWER_JS_GZ).await?;               
+                stream.write_all(CONTENT_PREVIEW_ICON_GZ).await?;
+            } else { // "/images/spinner.gif"
+                stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/gif\r\nContent-Length: ", cors_header).as_bytes()).await?;
+                stream.write_all(itoa::Buffer::new().format(CONTENT_SPINNER_GIF.len()).as_bytes()).await?;
+                stream.write_all(b"\r\n\r\n").await?;
+                stream.write_all(CONTENT_SPINNER_GIF).await?;
             }
             return Ok(());
-        } else if path.starts_with("/vi") {        //"/viz-lite.js"
-            // Write the HTTP header
-            stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ").await?;
+        } else if path.starts_with("/we") { // "/webworker.js"
+            stream.write_all(format!("HTTP/1.1 200 OK\r\n{}content-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ", cors_header).as_bytes()).await?;
+            stream.write_all(itoa::Buffer::new().format(CONTENT_WEBWORKER_JS_GZ.len()).as_bytes()).await?;
+            stream.write_all(b"\r\n\r\n").await?;
+            stream.write_all(CONTENT_WEBWORKER_JS_GZ).await?;
+            return Ok(());
+        } else if path.starts_with("/do") {
+            if path.ends_with(".css") { // "/dot-viewer.css"
+                stream.write_all(format!("HTTP/1.1 200 OK\r\n{}content-encoding: gzip\r\nContent-Type: text/css\r\nContent-Length: ", cors_header).as_bytes()).await?;
+                stream.write_all(itoa::Buffer::new().format(CONTENT_DOT_VIEWER_CSS_GZ.len()).as_bytes()).await?;
+                stream.write_all(b"\r\n\r\n").await?;
+                stream.write_all(CONTENT_DOT_VIEWER_CSS_GZ).await?;
+            } else { // "/dot-viewer.js"
+                stream.write_all(format!("HTTP/1.1 200 OK\r\n{}content-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ", cors_header).as_bytes()).await?;
+                stream.write_all(itoa::Buffer::new().format(CONTENT_DOT_VIEWER_JS_GZ.len()).as_bytes()).await?;
+                stream.write_all(b"\r\n\r\n").await?;
+                stream.write_all(CONTENT_DOT_VIEWER_JS_GZ).await?;
+            }
+            return Ok(());
+        } else if path.starts_with("/vi") { // "/viz-lite.js"
+            stream.write_all(format!("HTTP/1.1 200 OK\r\n{}content-encoding: gzip\r\nContent-Type: text/javascript\r\nContent-Length: ", cors_header).as_bytes()).await?;
             stream.write_all(itoa::Buffer::new().format(CONTENT_VIZ_LITE_GZ.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
-            // Write the actual data
             stream.write_all(CONTENT_VIZ_LITE_GZ).await?;
             return Ok(());
         } else {
-            stream.write_all("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".as_bytes()).await?;
+            stream.write_all(format!("HTTP/1.1 404 Not Found\r\n{}Content-Length: 0\r\n\r\n", cors_header).as_bytes()).await?;
             return Ok(());
         }
     }
+
     #[allow(unreachable_code)]
     {
-        stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n").await?;
+        stream.write_all(format!("HTTP/1.1 404 Not Found\r\n{}Content-Length: 0\r\n\r\n", cors_header).as_bytes()).await?;
         Ok(())
     }
 }

@@ -99,20 +99,21 @@ pub mod steady_logger {
     /// If the logger is already set, it does nothing.
     /// This function has been significantly changed to not return the log buffer.
     pub fn initialize_for_test(level: LogLevel) -> Result<(), Box<dyn Error>> {
+        // Always set IS_TEST_MODE to true for the current thread
+        IS_TEST_MODE.with(|is_test_mode| {
+            is_test_mode.store(true, Ordering::SeqCst);
+        });
         let mut logger_handle = LOGGER_HANDLE.lock().expect("log init for test");
         if logger_handle.is_none() {
-            IS_TEST_MODE.with(|is_test_mode| {
-                is_test_mode.store(true, Ordering::SeqCst);
-            });
             let handle = super::steady_logging_init(level, true)?;
             *logger_handle = Some(handle);
             Ok(())
         } else {
             let is_test = IS_TEST_MODE.with(|is_test_mode| is_test_mode.load(Ordering::SeqCst));
-            if !is_test {
-                Err("Already init without test capturing".into())
-            } else {
+            if is_test {
                 Ok(())
+            } else {
+                Err("Already init without test capturing".into())
             }
         }
 
