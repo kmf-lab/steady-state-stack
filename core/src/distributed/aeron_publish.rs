@@ -277,7 +277,7 @@ pub(crate) mod aeron_tests {
             if sent_count>=TEST_ITEMS {
                 //if an actor exits without closing its streams we will get a dirty shutdown.
                 tx.mark_closed();
-                error!("sender is done");
+                //error!("sender is done");
                 return Ok(()); //exit now because we sent all our data
             }
         }
@@ -341,7 +341,7 @@ pub(crate) mod aeron_tests {
 
             //here we request shutdown but we only leave after our upstream actors are done
             if received_count >= (TEST_ITEMS-taken) {
-                error!("stop requested");
+                //error!("stop requested");
                 cmd.request_graph_stop();
                 return Ok(());
             }
@@ -373,18 +373,16 @@ pub(crate) mod aeron_tests {
             .with_telemetry_metric_features(true)
             .with_telemtry_production_rate_ms(4000)
             .build(());
-
-
         let md = graph.aeron_media_driver();
-        if md.is_none() {
-            info!("aeron test skipped, no media driver present");
-            return;
-        }
+
         if let Some(temp_md) = &md {
             if let Some(guard_md) = temp_md.try_lock() {
                 info!("Found MediaDriver cnc: {:?}",guard_md.context().cnc_file_name()  );
             };
-        };
+        } else {
+            info!("aeron test skipped, no media driver present");
+            return;
+        }
 
         let channel_builder = graph.channel_builder();
 

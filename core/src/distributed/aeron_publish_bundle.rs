@@ -200,7 +200,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                             true
                                         }
                                         Err(aeron_error) => {
-                                            error!("{:?}", aeron_error);
+                                            core_exec::block_on(yield_now::yield_now());
+                                            //error!("{:?}", aeron_error);
                                             false
                                         }
                                     }

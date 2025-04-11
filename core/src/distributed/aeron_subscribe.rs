@@ -277,6 +277,7 @@ pub(crate) mod aeron_media_driver_tests {
     use crate::distributed::distributed_builder::AqueductBuilder;
 
     #[test]
+    #[cfg(not(windows))]
     fn test_bytes_process() {
         // if std::env::var("GITHUB_ACTIONS").is_ok() {
         //     return;

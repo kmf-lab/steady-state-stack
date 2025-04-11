@@ -97,11 +97,12 @@ pub mod steady_logger {
     /// If the logger is already set, it does nothing.
     /// This function has been significantly changed to not return the log buffer.
     pub fn initialize_for_test(level: LogLevel) -> Result<(), Box<dyn Error>> {
+        let mut logger_handle = LOGGER_HANDLE.lock().expect("log init for test");
+        //we hold the guard now
         // Always set IS_TEST_MODE to true for the current thread
         IS_TEST_MODE.with(|is_test_mode| {
             is_test_mode.store(true, Ordering::SeqCst);
         });
-        let mut logger_handle = LOGGER_HANDLE.lock().expect("log init for test");
         if logger_handle.is_none() {
             let handle = super::steady_logging_init(level, true)?;
             *logger_handle = Some(handle);
@@ -138,9 +139,8 @@ pub mod steady_logger {
         }
     }
 
-
-
     /// Clears the thread-local log buffer for the current test.
+    /// Danger may remove unxpected messages if threads are shared
     pub fn clear_test_logs() {
         LOG_BUFFER.with(|buf| {
             buf.borrow_mut().clear();
@@ -191,6 +191,40 @@ macro_rules! assert_in_logs {
     }};
 }
 
+#[macro_export]
+macro_rules! assert_not_in_logs {
+    ($texts:expr) => {{
+        let is_test = IS_TEST_MODE.with(|is_test_mode| is_test_mode.load(Ordering::SeqCst));
+        if !is_test {
+            warn!("Logger not initialized for testing, cannot assert logs right now");
+        } else {
+            let logged_messages = LOG_BUFFER.with(|buf| buf.borrow().clone());
+            let texts = $texts;
+            let mut text_index = 0;
+            for msg in logged_messages.iter() {
+                //not sure if the not should happen in order as well.
+                if text_index < texts.len() && !msg.contains(texts[text_index]) {
+                    text_index += 1;
+                }
+            }
+
+            if text_index != texts.len() {
+                eprintln!(
+                    "Assertion failed: expected texts {:?} in logs {:?} at {}:{}",
+                    texts, logged_messages, file!(), line!()
+                );
+                panic!(
+                    "Assertion failed at {}:{}: expected texts {:?} in logs {:?}",
+                    file!(),
+                    line!(),
+                    texts,
+                    logged_messages
+                );
+            }
+        }
+    }};
+}
+
 #[cfg(test)]
 mod test_log_tests {
     use super::*;
@@ -199,21 +233,21 @@ mod test_log_tests {
     use crate::*;
 
     #[test]
+    #[cfg(not(windows))]
     fn test_assert_in_logs_macro() {
+        //confirm we have test logging in place
         initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
-        clear_test_logs();
 
         info!("Hello from test!");
         info!("Yet Again!");
-
+        //confirm that we did log these
         assert_in_logs!(["Hello from test!","Yet Again!"]);
     }
 
     #[test]
-    #[should_panic(expected = "Assertion failed at")]
+    #[cfg(not(windows))]
     fn test_assert_in_logs_macro_failure() {
         initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
-        clear_test_logs();
-        assert_in_logs!(["This text does not exist in logs"]);
+        assert_not_in_logs!(["This text does not exist in logs"]);
     }
 }

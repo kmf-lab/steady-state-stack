@@ -60,9 +60,19 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
         actor_builder: &ActorBuilder,
         threading: &mut Threading
     ) {
+
+        let remotes = tech.to_remotes();
+        let match_me = tech.to_match_me();
+        let tech_string = tech.to_tech();
+
         match tech {
             AqueTech::Aeron(channel, stream_id) => {
-                let actor_builder = actor_builder.clone();
+                let actor_builder = actor_builder
+                    .with_remote_details(remotes
+                                         ,match_me
+                                         ,false
+                                         ,tech_string
+                    );
                 let state = new_state();
                 actor_builder.build(move |context|
                                aeron_subscribe::run(context
@@ -90,7 +100,16 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
         actor_builder: &ActorBuilder,
         threading: &mut Threading
     ) {
-        let actor_builder = actor_builder.clone();
+        let remotes = tech.to_remotes();
+        let match_me = tech.to_match_me();
+        let tech_string = tech.to_tech();
+
+        let actor_builder = actor_builder
+            .with_remote_details(remotes
+                                 ,match_me
+                                 ,true
+                                 ,tech_string
+            );
         let state = new_state();
         match tech {
             AqueTech::Aeron(channel, stream_id) => {
@@ -120,8 +139,16 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
         actor_builder: &ActorBuilder,
         threading: &mut Threading
     ) {
+        let remotes = tech.to_remotes();
+        let match_me = tech.to_match_me();
+        let tech_string = tech.to_tech();
 
-        let actor_builder = actor_builder.clone();
+        let actor_builder = actor_builder
+            .with_remote_details(remotes
+                                 ,match_me
+                                 ,false
+                                 ,tech_string
+            );
         let state = new_state();
         match tech {
             AqueTech::Aeron(channel, stream_id) => {

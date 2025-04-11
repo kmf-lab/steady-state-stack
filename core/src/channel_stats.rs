@@ -500,8 +500,16 @@ impl ChannelStatsComputer {
             // Adjust the 'take' value using the line_expansion factor
             let adjusted_take = ((take as f32) * self.line_expansion ) as u128;
 
+
+            /////////////////////
+            //needs thought TODO: self.rate
+
+
+
             // Calculate the index from the adjusted 'take' value
-            let index = (128usize - (adjusted_take >> 20).leading_zeros() as usize).min(DOT_PEN_WIDTH.len() - 1);
+            let index = (128usize -
+                (adjusted_take >> 20).leading_zeros() as usize)
+                .min(DOT_PEN_WIDTH.len() - 1);
 
             // Get the line thickness from the DOT_PEN_WIDTH array
             DOT_PEN_WIDTH[index]
