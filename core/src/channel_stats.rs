@@ -447,9 +447,26 @@ impl ChannelStatsComputer {
             display_label.push('\n');
         });
 
+        let mut line_thick = DOT_PEN_WIDTH[0];//default
+
         // Does nothing if the value is None
         if let Some(ref current_rate) = self.current_rate {
             self.compute_rate_labels(display_label, metric_text, &current_rate);
+
+            if let Some(h) = &current_rate.histogram {
+                if !self.line_expansion.is_nan() {
+                    let per_sec = h.value_at_percentile(80f64);
+
+                    let adjusted_rate = ((per_sec as f32)*self.line_expansion) as u64;
+                    //max of 16 step sizes.
+                    let traffic_index = 64usize - (adjusted_rate >> 10).leading_zeros() as usize;
+
+                    // Get the line thickness from the DOT_PEN_WIDTH array
+                    // NOTE: [0] is 1 and they grow as a factorial after that.
+                    line_thick = DOT_PEN_WIDTH[traffic_index.min(DOT_PEN_WIDTH.len() - 1)];
+
+                }
+            }
         }
 
         if let Some(ref current_filled) = self.current_filled {
@@ -493,29 +510,6 @@ impl ChannelStatsComputer {
         };
         if self.trigger_alert_level(&AlertColor::Red) {
             line_color = DOT_RED;
-        };
-
-        let line_thick = if !self.line_expansion.is_nan() {
-
-            // Adjust the 'take' value using the line_expansion factor
-            let adjusted_take = ((take as f32) * self.line_expansion ) as u128;
-
-
-            /////////////////////
-            //needs thought TODO: self.rate
-
-
-
-            // Calculate the index from the adjusted 'take' value
-            let index = (128usize -
-                (adjusted_take >> 20).leading_zeros() as usize)
-                .min(DOT_PEN_WIDTH.len() - 1);
-
-            // Get the line thickness from the DOT_PEN_WIDTH array
-            DOT_PEN_WIDTH[index]
-
-        } else {
-            "1"
         };
 
         (line_color, line_thick)
