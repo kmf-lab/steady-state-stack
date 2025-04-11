@@ -61,7 +61,6 @@ fn steady_logging_init(
 
     let mut logger = Logger::with(log_spec);
     if test_mode {
-        //eprintln!("test mode enabled -----------------------------------------");
         logger = logger.log_to_writer(Box::new(MemoryWriter::new(format)))
                        .duplicate_to_stderr(flexi_logger::Duplicate::All);
     } else {
@@ -160,6 +159,7 @@ pub mod steady_logger {
 #[macro_export]
 macro_rules! assert_in_logs {
     ($texts:expr) => {{
+        use crate::*;
         let is_test = IS_TEST_MODE.with(|is_test_mode| is_test_mode.load(Ordering::SeqCst));
         if !is_test {
             warn!("Logger not initialized for testing, cannot assert logs right now");
@@ -194,6 +194,7 @@ macro_rules! assert_in_logs {
 #[macro_export]
 macro_rules! assert_not_in_logs {
     ($texts:expr) => {{
+        use crate::*;
         let is_test = IS_TEST_MODE.with(|is_test_mode| is_test_mode.load(Ordering::SeqCst));
         if !is_test {
             warn!("Logger not initialized for testing, cannot assert logs right now");
@@ -228,26 +229,29 @@ macro_rules! assert_not_in_logs {
 #[cfg(test)]
 mod test_log_tests {
     use super::*;
-    use steady_logger::*; //typical import for captured log tests
+    use steady_logger::*;
     use log::info;
-    use crate::*;
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        static ref TEST_LOGGER: () = {
+            initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
+        };
+    }
 
     #[test]
     #[cfg(not(windows))]
     fn test_assert_in_logs_macro() {
-        //confirm we have test logging in place
-        initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
-
+        let _ = &*TEST_LOGGER; // Ensure logger is initialized
         info!("Hello from test!");
         info!("Yet Again!");
-        //confirm that we did log these
-        assert_in_logs!(["Hello from test!","Yet Again!"]);
+        assert_in_logs!(["Hello from test!", "Yet Again!"]);
     }
 
     #[test]
     #[cfg(not(windows))]
     fn test_assert_in_logs_macro_failure() {
-        initialize_for_test(LogLevel::Info).expect("Failed to initialize test logger");
+        let _ = &*TEST_LOGGER; // Ensure logger is initialized
         assert_not_in_logs!(["This text does not exist in logs"]);
     }
 }
