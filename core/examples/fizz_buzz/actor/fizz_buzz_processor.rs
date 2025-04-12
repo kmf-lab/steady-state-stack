@@ -80,22 +80,18 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
                 )
                 .await;
         }
-
         let (threes_rx, fives_rx) = numbers_rx.split_at_mut(1);
         let mut panic_countdown = PANIC_COUNTDOWN as isize;
-
         let c1 = threes_rx[0].capacity() >> 1;
         let c2 = fives_rx[0].capacity() >> 1;
-
         let vacant_block = BATCH_SIZE.min(fizzbuzz_messages_tx.capacity());
-
         while cmd.is_running(&mut || {
-            state.value == stop_value
-                && threes_rx[0].is_closed_and_empty()
-                && fives_rx[0].is_closed_and_empty()
-                && fizzbuzz_messages_tx.mark_closed()
-                && errors_tx.mark_closed()
-        }) {
+                                    state.value == stop_value
+                                        && threes_rx.is_closed_and_empty()
+                                        && fives_rx.is_closed_and_empty()
+                                        && fizzbuzz_messages_tx.mark_closed()
+                                        && errors_tx.mark_closed()
+                                }) {
             let _clean = await_for_all!(
                 cmd.wait_avail(&mut threes_rx[0], c1),
                 cmd.wait_avail(&mut fives_rx[0], c2),
