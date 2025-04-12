@@ -161,15 +161,9 @@ mod test_log_tests {
     use log::info;
     use lazy_static::lazy_static;
 
-    lazy_static! {
-        static ref TEST_LOGGER: () = {
-            initialize().expect("Failed to initialize logger");
-        };
-    }
-
     #[test]
     fn test_log_capture() {
-        let _ = &*TEST_LOGGER; // Ensure logger is initialized
+        let _ = initialize().expect("Failed to initialize logger"); // Ensure logger is initialized
         let _guard = start_capture();
         info!("Hello from test!");
         info!("Yet Again!");
@@ -178,7 +172,7 @@ mod test_log_tests {
 
     #[test]
     fn test_log_isolation() {
-        let _ = &*TEST_LOGGER;
+        let _ = initialize().expect("Failed to initialize logger");
         let _guard = start_capture();
         info!("Test 2 log");
         assert_in_logs!(["Test 2 log"]);

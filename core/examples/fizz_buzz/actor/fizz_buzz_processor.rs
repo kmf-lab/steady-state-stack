@@ -87,8 +87,8 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
         let vacant_block = BATCH_SIZE.min(fizzbuzz_messages_tx.capacity());
         while cmd.is_running(&mut || {
                                     state.value == stop_value
-                                        && threes_rx.is_closed_and_empty()
-                                        && fives_rx.is_closed_and_empty()
+                                        && threes_rx[0].is_closed_and_empty()
+                                        && fives_rx[0].is_closed_and_empty()
                                         && fizzbuzz_messages_tx.mark_closed()
                                         && errors_tx.mark_closed()
                                 }) {
