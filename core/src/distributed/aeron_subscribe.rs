@@ -299,7 +299,7 @@ pub(crate) mod aeron_media_driver_tests {
         const STREAMS_COUNT:usize = 1;
         let (to_aeron_tx,to_aeron_rx) = channel_builder
             .with_capacity(500)
-            .build_as_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>( 6);
+            .build_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>( 6);
 
         let aeron_config = AeronConfig::new()
             .with_media_type(MediaType::Ipc) //for testing
@@ -327,7 +327,7 @@ pub(crate) mod aeron_media_driver_tests {
 
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_capacity(500)
-            .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(6);
+            .build_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(6);
 
         //do not simulate yet the main graph will simulate. cfg!(test)
         from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_config, STREAM_ID)

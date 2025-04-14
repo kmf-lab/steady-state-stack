@@ -42,7 +42,7 @@ mod simple_graph_test {
 
         let (tx, rx) = graph.channel_builder()
             .with_capacity(300)
-            .build();
+            .build_channel();
     
     
         graph.actor_builder()

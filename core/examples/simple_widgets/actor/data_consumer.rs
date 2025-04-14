@@ -75,7 +75,7 @@ mod consumer_tests {
         let mut graph = GraphBuilder::for_testing().build(());
 
         let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
-            .with_capacity(BATCH_SIZE).build();
+            .with_capacity(BATCH_SIZE).build_channel();
 
         let state = Arc::new(Mutex::new(InternalState::new()));
 

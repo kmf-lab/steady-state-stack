@@ -622,7 +622,7 @@ mod graph_testing_tests {
             Instant::now(),
             40);
 
-        builder.build::<T>()
+        builder.build_channel::<T>()
     }
 
     // Test for wait_avail_units method

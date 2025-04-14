@@ -64,10 +64,10 @@ pub(crate) mod hp_actor_tests {
                                       .build(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
             .with_capacity(WAIT_AVAIL)
-            .build();
+            .build_channel();
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
             .with_capacity(WAIT_AVAIL)
-            .build();
+            .build_channel();
         graph.actor_builder()
             .with_name("UnitTest")
             .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );

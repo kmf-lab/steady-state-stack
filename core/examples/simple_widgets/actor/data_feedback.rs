@@ -67,11 +67,11 @@ mod tests {
 
         let (failure_feedback_tx_out,failure_feedback_rx_out) = graph.channel_builder()
                                                                    .with_capacity(20)
-                                                                   .build();
+                                                                   .build_channel();
         
         let (change_request_tx_out,change_request_rx_out) = graph.channel_builder()
                                                                     .with_capacity(BATCH_SIZE)
-                                                                    .build();
+                                                                    .build_channel();
         
          graph.actor_builder()
              .with_name("UnitTest")

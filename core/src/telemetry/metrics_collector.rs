@@ -636,7 +636,7 @@ mod metric_collector_tests {
             let (tx, rx) = graph.channel_builder()
                 .with_capacity(300)
                 .with_no_refresh_window()
-                .build();
+                .build_channel();
 
 
             graph.actor_builder()

@@ -50,7 +50,7 @@ fn build_graph(mut graph: Graph) -> Graph {
     {% for channel in channels %}
     let ({{channel[0].tx_prefix_name(channel)}}_{{channel[0].name}}_tx, {{channel[0].rx_prefix_name(channel)}}_{{channel[0].name}}_rx) = base_channel_builder
         .with_capacity({{channel[0].capacity}}){% if channel.len()>1 %}
-        .build_as_bundle::<_,{{channel.len()}}>();{% else %}
+        .build_channel_bundle::<_,{{channel.len()}}>();{% else %}
         .build();{% endif %}
     {% endfor %}
     //build actors

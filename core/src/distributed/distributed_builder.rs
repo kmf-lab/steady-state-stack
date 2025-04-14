@@ -184,7 +184,7 @@ mod tests {
         if graph.aeron_media_driver().is_some() {
             let cb = graph.channel_builder();
 
-            let (_lazy_tx, lazy_rx) = cb.build_as_stream(100);
+            let (_lazy_tx, lazy_rx) = cb.build_stream(100);
             // Use AqueTech::Aeron with None for media_driver and dummy channel/stream_id
             let tech = AqueTech::None;
             // Create a minimal ActorBuilder and Threading
@@ -202,7 +202,7 @@ mod tests {
 
         let cb = graph.channel_builder();
 
-        let (lazy_tx, _lazy_rx) = cb.build_as_stream(100);
+        let (lazy_tx, _lazy_rx) = cb.build_stream(100);
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
         let mut threading = Threading::Spawn;
@@ -217,7 +217,7 @@ mod tests {
         const GIRTH: usize = 1;
         let cb = graph.channel_builder();
 
-        let (lazy_tx, lazy_rx_bundle) = cb.build_as_stream_bundle::<StreamSimpleMessage, GIRTH>(100);
+        let (lazy_tx, lazy_rx_bundle) = cb.build_stream_bundle::<StreamSimpleMessage, GIRTH>(100);
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
         let mut threading = Threading::Spawn;
@@ -231,7 +231,7 @@ mod tests {
         const GIRTH: usize = 1;
         let cb = graph.channel_builder();
 
-        let (lazy_tx_bundle, lazy_rx_bundle) = cb.build_as_stream_bundle::<StreamSessionMessage, GIRTH>(100);
+        let (lazy_tx_bundle, lazy_rx_bundle) = cb.build_stream_bundle::<StreamSessionMessage, GIRTH>(100);
 
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);

@@ -575,7 +575,7 @@ mod meteric_server_tests {
         let mut graph = GraphBuilder::for_testing().build(());
          
         let (tx_in, rx_in) = graph.channel_builder()
-             .with_capacity(10).build();
+             .with_capacity(10).build_channel();
 
         let rate_ms = graph.telemetry_production_rate_ms;
 
@@ -685,7 +685,7 @@ mod http_telemetry_tests {
             .build(());
 
         // Step 2: Start the metrics_server actor        
-        let (tx_in, rx_in) = graph.channel_builder().build();
+        let (tx_in, rx_in) = graph.channel_builder().build_channel();
         if let Some(ref addr) = Some(addr.to_string()) {
             if let Some(addr) = check_addr(addr) {
                 println!("{}",&addr);                

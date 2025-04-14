@@ -86,12 +86,12 @@ pub(crate) mod approval_tests {
         let mut graph = GraphBuilder::for_testing().build(());
 
         let (widget_inventory_tx_in, widget_inventory_rx_in) = graph.channel_builder()
-            .with_capacity(BATCH_SIZE).build();
+            .with_capacity(BATCH_SIZE).build_channel();
         let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
-            .with_capacity(BATCH_SIZE).build();
+            .with_capacity(BATCH_SIZE).build_channel();
 
         let (feedback_tx_out,_feedback_rx_out) = graph.channel_builder()
-            .with_capacity(BATCH_SIZE).build();
+            .with_capacity(BATCH_SIZE).build_channel();
 
         graph.actor_builder()
             .with_name("UnitTest")

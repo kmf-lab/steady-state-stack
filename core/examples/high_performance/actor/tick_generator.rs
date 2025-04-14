@@ -65,7 +65,7 @@ pub(crate) mod actor_tests {
 
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
             .with_capacity(BUFFER_SIZE)
-            .build_as_bundle::<_, 3>();
+            .build_channel_bundle::<_, 3>();
 
         graph.actor_builder()
             .with_name("UnitTest")

@@ -51,7 +51,7 @@ pub(crate) mod tests {
     #[test]
     fn test_timer_actor() {
         let mut graph = GraphBuilder::for_testing().build(());
-        let (print_signal_tx,test_print_signal_rx) = graph.channel_builder().with_capacity(4).build();
+        let (print_signal_tx,test_print_signal_rx) = graph.channel_builder().with_capacity(4).build_channel();
         graph.actor_builder()
             .with_name("UnitTest")
             .build_spawn( move |context|

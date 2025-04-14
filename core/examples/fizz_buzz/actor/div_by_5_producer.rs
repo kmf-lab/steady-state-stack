@@ -68,7 +68,7 @@ pub(crate) mod tests {
         let mut graph = GraphBuilder::for_testing().build(());
 
         let (numbers_tx, test_numbers_rx) = graph.channel_builder()
-                                             .with_capacity(50000).build();
+                                             .with_capacity(50000).build_channel();
 
         graph.actor_builder()
             .with_name("UnitTest")

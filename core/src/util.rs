@@ -143,6 +143,14 @@ macro_rules! assert_in_logs {
             }
         }
         if text_index != texts.len() {
+              // Print all the content for easier check with index
+            eprintln!("Captured logs ({} messages):", logged_messages.len());
+            for (i, msg) in logged_messages.iter().enumerate() {
+                eprintln!("[{}]: {}", i, msg);
+            }
+            eprintln!("Expected texts: {:?}", texts);
+            eprintln!("Found {} out of {} expected texts.", text_index, texts.len());
+
             panic!(
                 "Assertion failed at {}:{}: expected texts {:?} in logs {:?}",
                 file!(),

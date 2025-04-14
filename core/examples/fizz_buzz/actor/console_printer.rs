@@ -89,8 +89,8 @@ pub(crate) mod tests {
     #[test]
     fn test_console_printer() {
         let mut graph = GraphBuilder::for_testing().build(());
-        let (test_fizzbuzz_messages_tx,fizzbuzz_messages_rx) = graph.channel_builder().with_capacity(40).build();
-        let (test_print_signal_tx,print_signal_rx) = graph.channel_builder().with_capacity(4).build();
+        let (test_fizzbuzz_messages_tx,fizzbuzz_messages_rx) = graph.channel_builder().with_capacity(40).build_channel();
+        let (test_print_signal_tx,print_signal_rx) = graph.channel_builder().with_capacity(4).build_channel();
 
         graph.actor_builder()
             .with_name("UnitTest")

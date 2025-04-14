@@ -62,7 +62,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         if 0usize == RX_LEN {
             (None, None)
         } else {
-            let (telemetry_send_rx, telemetry_take_rx) = channel_builder.build();
+            let (telemetry_send_rx, telemetry_take_rx) = channel_builder.build_channel();
             (
                 //TODO: perhaps we should have LazySend...
                 Some(SteadyTelemetrySend::new(telemetry_send_rx.clone(), [0; RX_LEN], rx_inverse_local_idx, start_now)),
@@ -74,7 +74,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         if 0usize == TX_LEN {
             (None, None)
         } else {
-            let (telemetry_send_tx, telemetry_take_tx) = channel_builder.build();
+            let (telemetry_send_tx, telemetry_take_tx) = channel_builder.build_channel();
             (  
                 //TODO: may need LazySend..
                 Some(SteadyTelemetrySend::new(telemetry_send_tx.clone(), [0; TX_LEN], tx_inverse_local_idx, start_now)),
@@ -82,7 +82,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
             )
         };
 
-    let act_tuple = channel_builder.build();
+    let act_tuple = channel_builder.build_channel();
     let det = SteadyTelemetryRx {
         send: tx_tuple.1,
         take: rx_tuple.1,
@@ -151,7 +151,7 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
         let (tx, rx) = base
             .with_labels(&["steady_state-telemetry"], true)
             .with_capacity(REAL_CHANNEL_LENGTH_TO_FEATURE)
-            .build();
+            .build_channel();
 
         let outgoing = [tx.clone()]; 
         let optional_servers = steady_tx_bundle(outgoing);

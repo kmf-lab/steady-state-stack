@@ -593,7 +593,7 @@ pub(crate) mod monitor_tests {
             Instant::now(),
             40).with_capacity(capacity);
 
-        builder.build::<T>()
+        builder.build_channel::<T>()
     }
 
     #[test]
@@ -618,7 +618,7 @@ pub(crate) mod monitor_tests {
         util::steady_logger::initialize();
 
         let mut graph = GraphBuilder::for_testing().build("");
-        let (tx_string, rx_string) = graph.channel_builder().with_capacity(8).build();
+        let (tx_string, rx_string) = graph.channel_builder().with_capacity(8).build_channel();
         let tx_string = tx_string.clone();
         let rx_string = rx_string.clone();
 
@@ -673,7 +673,7 @@ pub(crate) mod monitor_tests {
         let mut graph = GraphBuilder::for_testing().build("");
         let monitor = graph.new_testing_test_monitor("test");
 
-        let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build();
+        let (tx_string, rx_string) = graph.channel_builder().with_capacity(5).build_channel();
         let tx_string = tx_string.clone();
         let rx_string = rx_string.clone();
 

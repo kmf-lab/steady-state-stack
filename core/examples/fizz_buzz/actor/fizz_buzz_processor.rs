@@ -177,9 +177,9 @@ pub(crate) mod tests {
     fn test_fizz_buzz_processor() {
        let mut graph = GraphBuilder::for_testing().with_telemetry_metric_features(false).build(());
 
-       let (test_numbers_tx,numbers_rx) = graph.channel_builder().with_capacity(1000).build_as_bundle::<_,2>();
-       let (fizzbuzz_messages_tx,test_fizzbuzz_messages_rx) = graph.channel_builder().with_capacity(1000).build();
-       let (errors_tx,_test_errors_tx) = graph.channel_builder().with_capacity(4).build();
+       let (test_numbers_tx,numbers_rx) = graph.channel_builder().with_capacity(1000).build_channel_bundle::<_,2>();
+       let (fizzbuzz_messages_tx,test_fizzbuzz_messages_rx) = graph.channel_builder().with_capacity(1000).build_channel();
+       let (errors_tx,_test_errors_tx) = graph.channel_builder().with_capacity(4).build_channel();
 
        let value = new_state();
         graph.actor_builder()

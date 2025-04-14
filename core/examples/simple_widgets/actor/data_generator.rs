@@ -86,12 +86,12 @@ mod generator_tests {
         
         let (feedback_tx_out,feedback_rx_out) = graph.channel_builder()
                                                                    .with_capacity(32)
-                                                                   .build();
+                                                                   .build_channel();
 
         const BATCH_SIZE:usize = 256;
         let (approved_widget_tx_out,approved_widget_rx_out) = graph.channel_builder()
                                                                    .with_capacity(BATCH_SIZE)
-                                                                   .build();
+                                                                   .build_channel();
 
         graph.actor_builder()
             .with_name("UnitTest")

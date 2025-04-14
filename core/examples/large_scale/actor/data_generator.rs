@@ -89,7 +89,7 @@ mod generator_tests {
         let expected_count = 100;
         let (approved_widget_tx_out, approved_widget_rx_out) = graph.channel_builder()
             .with_capacity(expected_count)
-            .build_as_bundle::<Packet, 4>();
+            .build_channel_bundle::<Packet, 4>();
 
         graph.actor_builder()
             .with_name("UnitTest")

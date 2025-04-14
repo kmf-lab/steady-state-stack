@@ -1,6 +1,6 @@
 //use std::pin::{Pin};
 //use futures::future::Future;
-//use futures::future::FutureExt;
+use futures::future::FutureExt;
 //use futures::select;
 //use futures::pin_mut;
 

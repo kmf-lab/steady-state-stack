@@ -65,10 +65,10 @@ mod process_tests {
 
         let bash_size = 100;
         let (approved_widget_in_tx, approved_widget_in_rx) = graph.channel_builder()
-            .with_capacity(bash_size).build();
+            .with_capacity(bash_size).build_channel();
 
         let (approved_widget_out_tx, approved_widget_out_rx) = graph.channel_builder()
-            .with_capacity(bash_size).build();
+            .with_capacity(bash_size).build_channel();
 
         graph.actor_builder()
             .with_name("UnitTest")

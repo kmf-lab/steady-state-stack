@@ -285,7 +285,7 @@ impl ChannelBuilder {
     ///
     /// # Returns
     /// A tuple containing bundles of transmitters and receivers.
-    pub fn build_as_eager_bundle<T, const GIRTH: usize>(&self) -> (SteadyTxBundle<T, GIRTH>, SteadyRxBundle<T, GIRTH>) {
+    pub(crate) fn build_eager_bundle<T, const GIRTH: usize>(&self) -> (SteadyTxBundle<T, GIRTH>, SteadyRxBundle<T, GIRTH>) {
         let mut tx_vec = Vec::with_capacity(GIRTH);
         let mut rx_vec = Vec::with_capacity(GIRTH);
 
@@ -309,12 +309,12 @@ impl ChannelBuilder {
     ///
     /// # Returns
     /// A tuple containing bundles of transmitters and receivers.
-    pub fn build_as_bundle<T, const GIRTH: usize>(&self) -> (LazySteadyTxBundle<T, GIRTH>, LazySteadyRxBundle<T, GIRTH>) {
+    pub fn build_channel_bundle<T, const GIRTH: usize>(&self) -> (LazySteadyTxBundle<T, GIRTH>, LazySteadyRxBundle<T, GIRTH>) {
         let mut tx_vec = Vec::with_capacity(GIRTH);
         let mut rx_vec = Vec::with_capacity(GIRTH);
 
         (0..GIRTH).for_each(|_| {
-            let (t, r) = self.build();
+            let (t, r) = self.build_channel();
             tx_vec.push(t);
             rx_vec.push(r);
         });
@@ -336,8 +336,8 @@ impl ChannelBuilder {
         )
     }
 
-    pub fn build_as_stream_bundle<T: StreamItem, const GIRTH: usize>(&self
-                                                                     , bytes_per_item: usize
+    pub fn build_stream_bundle<T: StreamItem, const GIRTH: usize>(&self
+                                                                  , bytes_per_item: usize
                                                ) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
 
         let mut tx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
@@ -363,7 +363,7 @@ impl ChannelBuilder {
             ,
         )
     }
-    pub fn build_as_stream<T: StreamItem>(&self, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
+    pub fn build_stream<T: StreamItem>(&self, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
         let bytes_capacity = self.capacity*bytes_per_item;
         let lazy_stream = Arc::new(LazyStream::new(self
                                                    , &self.with_capacity(bytes_capacity)));
@@ -375,6 +375,12 @@ impl ChannelBuilder {
     ///
     /// # Returns
     /// A tuple containing the transmitter (`LazySteadyTx<T>`) and receiver (`LazySteadyRx<T>`).
+    pub fn build_channel<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
+        let lazy_channel = Arc::new(LazyChannel::new(self));
+        (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))
+    }
+
+    /// same as build_channel
     pub fn build<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
         let lazy_channel = Arc::new(LazyChannel::new(self));
         (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))

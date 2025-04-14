@@ -48,9 +48,9 @@ pub(crate) mod actor_tests {
                          .build(());
 
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
-                                              .with_capacity(BATCH*3).build();
+                                              .with_capacity(BATCH*3).build_channel();
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
-                                               .with_capacity(BATCH*3).build();
+                                               .with_capacity(BATCH*3).build_channel();
 
         graph.actor_builder()
              .with_name("UnitTest")

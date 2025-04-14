@@ -336,7 +336,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 //         const STREAMS_COUNT:usize = 1;
 //         let (to_aeron_tx,to_aeron_rx) = channel_builder
 //             .with_capacity(500)
-//             .build_as_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>( 6);
+//             .build_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>( 6);
 //
 //         let aeron_config = AeronConfig::new()
 //             .with_media_type(MediaType::Ipc) //for testing
@@ -366,7 +366,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 //
 //         let (from_aeron_tx,from_aeron_rx) = channel_builder
 //             .with_capacity(500)
-//             .build_as_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>( 6);
+//             .build_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>( 6);
 //
 //         from_aeron_tx.build_aqueduct(AqueTech::Aeron(graph.aeron_md(), aeron_config.clone(),stream_id)
 //                        , & graph.actor_builder().with_name("ReceiverTest")

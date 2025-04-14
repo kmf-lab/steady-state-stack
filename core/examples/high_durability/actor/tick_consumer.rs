@@ -68,9 +68,9 @@ pub(crate) mod hd_actor_tests {
         let mut graph = GraphBuilder::for_testing().build(());
 
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
-            .with_capacity(WAIT_AVAIL).build();
+            .with_capacity(WAIT_AVAIL).build_channel();
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
-            .with_capacity(WAIT_AVAIL).build();
+            .with_capacity(WAIT_AVAIL).build_channel();
 
         graph.actor_builder()
             .with_name("UnitTest")

@@ -407,7 +407,7 @@ pub(crate) mod aeron_tests {
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
             .with_capacity(4*1024*1024)
-            .build_as_stream_bundle::<StreamSimpleMessage,1>(8);
+            .build_stream_bundle::<StreamSimpleMessage,1>(8);
 
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_avg_rate()
@@ -416,7 +416,7 @@ pub(crate) mod aeron_tests {
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
             .with_capacity(4*1024*1024)
-            .build_as_stream_bundle::<StreamSessionMessage,1>(8);
+            .build_stream_bundle::<StreamSessionMessage,1>(8);
 
         //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
         let aeron_config = AeronConfig::new()            

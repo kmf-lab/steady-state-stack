@@ -100,7 +100,7 @@ fn build_graph<const LEVEL_1: usize,
     };
 
 
-    let (btx,brx) = base_channel_builder.build_as_bundle::<_, { LEVEL_1 }>();
+    let (btx,brx) = base_channel_builder.build_channel_bundle::<_, { LEVEL_1 }>();
 
             base_actor_builder
                 .with_name("Generator")
@@ -115,7 +115,7 @@ fn build_graph<const LEVEL_1: usize,
         for x in 0..LEVEL_1 {
 
             let local_rx = brx[x].clone();
-            let (btx,brx) = base_channel_builder.build_as_bundle::<_, { LEVEL_2 }>();
+            let (btx,brx) = base_channel_builder.build_channel_bundle::<_, { LEVEL_2 }>();
                 base_actor_builder
                     .with_name_and_suffix("RouterA",x)
                     .build(
@@ -131,7 +131,7 @@ fn build_graph<const LEVEL_1: usize,
             for y in 0..LEVEL_2 {
 
                 let local_rx = brx[y].clone();
-                let (btx,brx) = base_channel_builder.build_as_bundle::<_, { LEVEL_3 }>();
+                let (btx,brx) = base_channel_builder.build_channel_bundle::<_, { LEVEL_3 }>();
                 base_actor_builder
                     .with_name_and_suffix("RouterB", route_b_count)
                     .build(move |context| actor::data_router::run(context
@@ -145,7 +145,7 @@ fn build_graph<const LEVEL_1: usize,
                 for z in 0..LEVEL_3 {
 
                     let local_rx = brx[z].clone();
-                    let (btx,brx) = base_channel_builder.build_as_bundle::<_, { LEVEL_4 }>();
+                    let (btx,brx) = base_channel_builder.build_channel_bundle::<_, { LEVEL_4 }>();
                         base_actor_builder
                             .with_name_and_suffix("RouterC", route_c_count)
                             .build(move |context| actor::data_router::run(context
@@ -195,7 +195,7 @@ fn build_graph<const LEVEL_1: usize,
 
                             let local_rx = brx[f].clone();
 
-                            let (filter_tx, filter_rx) = base_channel_builder.build();
+                            let (filter_tx, filter_rx) = base_channel_builder.build_channel();
                                 base_actor_builder
                                     .with_name_and_suffix("Logger",user_count)
                                     .build(move |context| actor::data_process::run(context
@@ -210,7 +210,7 @@ fn build_graph<const LEVEL_1: usize,
                                 //TODO: we need to profile this, also slow the frame rate
                                 let mut count = large_scale_test;
                                 loop {
-                                    let (logging_tx, logging_rx) = base_channel_builder.build();
+                                    let (logging_tx, logging_rx) = base_channel_builder.build_channel();
 
                                     base_actor_builder
                                         .with_name_and_suffix("Filter", (100*count)+user_count)
@@ -230,7 +230,7 @@ fn build_graph<const LEVEL_1: usize,
                             };
 
 
-                            let (decrypt_tx, decrypt_rx) = base_channel_builder.build();
+                            let (decrypt_tx, decrypt_rx) = base_channel_builder.build_channel();
                             base_actor_builder
                                     .with_name_and_suffix("Decrypt",user_count)
                                     .build(move |context| actor::data_process::run(context

@@ -56,9 +56,9 @@ pub(crate) mod hd_actor_tests {
         //build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
-            .with_capacity(BATCH).build();
+            .with_capacity(BATCH).build_channel();
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
-            .with_capacity(BATCH).build();
+            .with_capacity(BATCH).build_channel();
         graph.actor_builder()
             .with_name("UnitTest")
             .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );

@@ -79,17 +79,17 @@ fn build_simple_widgets_graph(mut graph: steady_state::Graph) -> (steady_state::
     let (generator_tx, generator_rx) = base_channel_builder
         .with_rate_percentile(Percentile::p80())
         .with_capacity(4000)
-        .build();
+        .build_channel();
 
     let (consumer_tx, consumer_rx) = base_channel_builder
         .with_avg_rate()
         .with_capacity(4000)
-        .build();
+        .build_channel();
 
     let (failure_tx, failure_rx) = base_channel_builder
         .with_capacity(300)
         .connects_sidecar() //hint for display
-        .build();
+        .build_channel();
 
     let (change_tx, change_rx) = base_channel_builder
         .with_filled_max()
@@ -101,7 +101,7 @@ fn build_simple_widgets_graph(mut graph: steady_state::Graph) -> (steady_state::
         .with_filled_standard_deviation(StdDev::two())
         .with_filled_percentile(Percentile::p25())
         .with_capacity(200)
-        .build();
+        .build_channel();
 
     let base_actor_builder = graph.actor_builder() //with default OneForOne supervisor....
         .with_mcpu_percentile(Percentile::p80())

@@ -140,8 +140,6 @@ pub use channel_builder::Rate;
 pub use channel_builder::Filled;
 pub use channel_builder::LazySteadyRx;
 pub use channel_builder::LazySteadyTx;
-
-
 pub use actor_builder::MCPU;
 pub use actor_builder::Work;
 pub use actor_builder::Percentile;
@@ -149,14 +147,14 @@ pub use actor_builder::ActorTeam;
 pub use actor_builder::Threading;
 pub use graph_liveliness::*;
 pub use install::serviced::*;
-
-
 pub use steady_rx::Rx;
 pub use steady_tx::Tx;
 pub use steady_rx::SteadyRxBundleTrait;
 pub use steady_tx::SteadyTxBundleTrait;
 pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
+pub use crate::distributed::distributed_builder::AqueductBuilder;
+
 pub use commander::SteadyCommander;
 pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
@@ -168,9 +166,6 @@ pub use distributed::distributed_stream::{SteadyStreamRxBundleTrait, StreamRxBun
 pub use distributed::distributed_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
 pub use distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
 pub use distributed::distributed_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamTx};
-//pub use loop_driver::wait_for_all;
-//pub use loop_driver::wait_for_any;
-//pub use loop_driver::wait_for_all_or_proceed_upon;
 pub use log::{debug, error, info, trace, warn};
 pub use std::time::{Duration, Instant};
 pub use std::error::Error;
@@ -197,6 +192,7 @@ pub use commander_monitor::LocalMonitor;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::yield_now::yield_now;
+
 
 /// Type alias for a thread-safe steady state (S) wrapped in an `Arc` and `Mutex`.
 ///
@@ -995,7 +991,7 @@ mod lib_tests {
             Instant::now(),
             40);
 
-        builder.build::<T>()
+        builder.build_channel::<T>()
     }
 
     // Test for try_peek

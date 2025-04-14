@@ -62,7 +62,7 @@ pub(crate) mod hp_actor_tests {
         let mut graph = GraphBuilder::for_testing().build(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
             .with_capacity(BATCH)
-            .build_as_bundle::<_, 3>();
+            .build_channel_bundle::<_, 3>();
 
         graph.actor_builder()
             .with_name("UnitTest")

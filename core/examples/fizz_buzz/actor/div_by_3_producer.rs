@@ -73,7 +73,7 @@ pub(crate) mod tests {
 
        let (numbers_tx, test_numbers_rx) = graph.channel_builder()
                    .with_capacity(50000)
-                   .build();
+                   .build_channel();
 
         graph.actor_builder()
                     .with_name("UnitTest")

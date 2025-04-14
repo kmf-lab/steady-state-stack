@@ -616,7 +616,7 @@ mod rx_tests {
 
         let mut graph = GraphBuilder::for_testing().build(());
         let channel_builder = graph.channel_builder();
-        let (lazy_tx_bundle, lazy_rx_bundle) = channel_builder.build_as_bundle::<String,3>();
+        let (lazy_tx_bundle, lazy_rx_bundle) = channel_builder.build_channel_bundle::<String,3>();
         let (steady_tx_bundle0, steady_rx_bundle0) = (lazy_tx_bundle[0].clone(), lazy_rx_bundle[0].clone());
         let (steady_tx_bundle1, steady_rx_bundle1) = (lazy_tx_bundle[1].clone(), lazy_rx_bundle[1].clone());
         let (steady_tx_bundle2, steady_rx_bundle2) = (lazy_tx_bundle[2].clone(), lazy_rx_bundle[2].clone());

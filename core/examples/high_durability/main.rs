@@ -56,7 +56,7 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p50()),AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p80()),AlertColor::Red)
         .with_avg_rate()
-        .build_as_bundle::<_,PARALLEL>();
+        .build_channel_bundle::<_,PARALLEL>();
     
     let (tickgenerator_ticks_tx, tickgenerator_to_tick_consumer_ticks_rx) = base_channel_builder
         .with_capacity(CHANNEL_SIZE)
@@ -64,7 +64,7 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p50()),AlertColor::Orange)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p80()),AlertColor::Red)
         .with_avg_rate()
-        .build_as_bundle::<_,PARALLEL>();
+        .build_channel_bundle::<_,PARALLEL>();
 
 
 
@@ -88,7 +88,7 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                     .with_filled_trigger(Trigger::AvgAbove(Filled::p50()),AlertColor::Orange)
                     .with_filled_trigger(Trigger::AvgAbove(Filled::p80()),AlertColor::Red)
                     .with_avg_rate()
-                    .build();
+                    .build_channel();
 
 
                 base_actor_builder.with_name("TickRelay")

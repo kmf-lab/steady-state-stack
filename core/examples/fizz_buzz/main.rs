@@ -67,22 +67,22 @@ fn build_graph(mut graph: Graph) -> Graph {
         .with_capacity(32000)
         .with_avg_rate()
         .with_avg_filled()
-        .build_as_bundle::<_,2>();
+        .build_channel_bundle::<_,2>();
     
     let (fizzbuzzprocessor_fizzbuzz_messages_tx, consoleprinter_fizzbuzz_messages_rx) = base_channel_builder
         .with_capacity(64000)
         .with_avg_rate()
         .with_avg_filled()
       //  .with_avg_latency()
-        .build();
+        .build_channel();
     
     let (fizzbuzzprocessor_errors_tx, errorlogger_errors_rx) = base_channel_builder
         .with_capacity(100)
-        .build();
+        .build_channel();
     
     let (timeractor_print_signal_tx, consoleprinter_print_signal_rx) = base_channel_builder
         .with_capacity(10)
-        .build();
+        .build_channel();
     
     //build actors
 

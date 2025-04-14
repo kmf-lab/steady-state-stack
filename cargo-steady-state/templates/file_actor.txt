@@ -167,10 +167,10 @@ pub(crate) mod tests {
     fn test_simple_process() {
        let mut graph = GraphBuilder::for_testing().build(());
        {%- for channel in rx_channels %}
-       let (test_{{channel[0].name}}_tx,{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_as_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
+       let (test_{{channel[0].name}}_tx,{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_channel_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
        {% endfor -%}
        {%- for channel in tx_channels %}
-       let ({{channel[0].name}}_tx,test_{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_as_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
+       let ({{channel[0].name}}_tx,test_{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_channel_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
        {% endfor -%}
        let state = new_state();
        graph.actor_builder()
