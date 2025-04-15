@@ -126,9 +126,11 @@ pub mod commander_monitor;
 mod stream_iterator;
 mod abstract_executor_tests;
 
-pub use futures_util::FutureExt;
-pub use futures::pin_mut;
-pub use futures::select;
+pub use loop_driver::steady_fuse_future;
+pub use loop_driver::steady_select_two;
+pub use loop_driver::steady_select_three;
+pub use loop_driver::steady_select_four;
+pub use loop_driver::steady_select_five;
 
 pub use clap::*;
 pub use commander::SendOutcome;
@@ -174,7 +176,9 @@ pub use log::{debug, error, info, trace, warn};
 pub use std::time::{Duration, Instant};
 pub use std::error::Error;
 
-
+use futures_util::FutureExt;
+use futures::pin_mut;
+use futures::select;
 use std::fmt::Debug;
 use std::sync::Arc;
 use futures::lock::Mutex;

@@ -2,6 +2,8 @@ use futures_util::FutureExt;
 pub use futures::future::Future;
 pub use futures::select;
 pub use futures::pin_mut;
+use futures_util::future::FusedFuture;
+
 /// This macro waits for all the provided futures to complete.
 /// It returns a boolean indicating if all futures returned true.
 ///
@@ -104,6 +106,96 @@ macro_rules! await_for_all_or_proceed_upon {
 //     }
 // }
 
+
+pub fn steady_fuse_future<F>(fut: F) -> futures_util::future::Fuse<F>
+where
+    F: Future,
+{
+    fut.fuse()
+}
+
+// This function pins the futures and runs select! on them.
+// It takes fused futures that are not Unpin, pins them locally, and selects.
+pub async fn steady_select_two<F1, F2, O>(fut1: F1, fut2: F2) -> O
+where
+    F1: Future<Output = O> + FusedFuture,
+    F2: Future<Output = O> + FusedFuture,
+{
+    pin_mut!(fut1);
+    pin_mut!(fut2);
+
+    select! {
+        res = fut1 => res,
+        res = fut2 => res,
+    }
+}
+
+pub async fn steady_select_three<F1, F2, F3, O>(fut1: F1, fut2: F2, fut3: F3) -> O
+where
+    F1: Future<Output = O> + FusedFuture,
+    F2: Future<Output = O> + FusedFuture,
+    F3: Future<Output = O> + FusedFuture,
+{
+    pin_mut!(fut1);
+    pin_mut!(fut2);
+    pin_mut!(fut3);
+
+    select! {
+        res = fut1 => res,
+        res = fut2 => res,
+        res = fut3 => res,
+    }
+}
+
+pub async fn steady_select_four<F1, F2, F3, F4, O>(fut1: F1, fut2: F2, fut3: F3, fut4: F4) -> O
+where
+    F1: Future<Output = O> + FusedFuture,
+    F2: Future<Output = O> + FusedFuture,
+    F3: Future<Output = O> + FusedFuture,
+    F4: Future<Output = O> + FusedFuture,
+{
+    pin_mut!(fut1);
+    pin_mut!(fut2);
+    pin_mut!(fut3);
+    pin_mut!(fut4);
+
+    select! {
+        res = fut1 => res,
+        res = fut2 => res,
+        res = fut3 => res,
+        res = fut4 => res,
+    }
+}
+
+pub async fn steady_select_five<F1, F2, F3, F4, F5, O>(
+    fut1: F1,
+    fut2: F2,
+    fut3: F3,
+    fut4: F4,
+    fut5: F5,
+) -> O
+where
+    F1: Future<Output = O> + FusedFuture,
+    F2: Future<Output = O> + FusedFuture,
+    F3: Future<Output = O> + FusedFuture,
+    F4: Future<Output = O> + FusedFuture,
+    F5: Future<Output = O> + FusedFuture,
+{
+    pin_mut!(fut1);
+    pin_mut!(fut2);
+    pin_mut!(fut3);
+    pin_mut!(fut4);
+    pin_mut!(fut5);
+
+    select! {
+        res = fut1 => res,
+        res = fut2 => res,
+        res = fut3 => res,
+        res = fut4 => res,
+        res = fut5 => res,
+    }
+}
+
 /// This macro waits for any of the provided futures to complete.
 /// It returns a boolean indicating if any one of the futures returned true.
 ///
@@ -113,7 +205,6 @@ macro_rules! await_for_all_or_proceed_upon {
 ///
 #[macro_export]
 macro_rules! await_for_any {
-
     // Case: Single future
     ($first:expr $(,)?) => {{
         async {
@@ -122,86 +213,40 @@ macro_rules! await_for_any {
     }};
     // Case: Two futures
     ($first:expr, $second:expr $(,)?) => {{
-            use futures_util::FutureExt;
-            use futures::pin_mut;
-            use futures::select;
         async {
-
-            let fut1 = $first.fuse();
-            let fut2 = $second.fuse();
-            pin_mut!(fut1);
-            pin_mut!(fut2);
-            select! {
-                b = fut1 => {b},
-                b = fut2 => {b},
-            }
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            $crate::steady_select_two(fut1, fut2).await
         }.await
     }};
     // Case: Three futures
     ($first:expr, $second:expr, $third:expr $(,)?) => {{
         async {
-            use futures_util::FutureExt;
-            use futures::pin_mut;
-            use futures::select;
-            let fut1 = $first.fuse();
-            let fut2 = $second.fuse();
-            let fut3 = $third.fuse();
-            pin_mut!(fut1);
-            pin_mut!(fut2);
-            pin_mut!(fut3);
-            select! {
-                b = fut1 => {b},
-                b = fut2 => {b},
-                b = fut3 => {b},
-            }
-
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            $crate::steady_select_three(fut1, fut2, fut3).await
         }.await
     }};
-     // Case: Four futures
+    // Case: Four futures
     ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
         async {
-            use futures_util::FutureExt;
-            use futures::pin_mut;
-            use futures::select;
-            let fut1 = $first.fuse();
-            let fut2 = $second.fuse();
-            let fut3 = $third.fuse();
-            let fut4 = $fourth.fuse();
-            pin_mut!(fut1);
-            pin_mut!(fut2);
-            pin_mut!(fut3);
-            pin_mut!(fut4);
-            select! {
-                b = fut1 => {b},
-                b = fut2 => {b},
-                b = fut3 => {b},
-                b = fut4 => {b},
-            }
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            let fut4 = $crate::steady_fuse_future($fourth);
+            $crate::steady_select_four(fut1, fut2, fut3, fut4).await
         }.await
     }};
     // Case: Five futures
     ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
         async {
-            use futures_util::FutureExt;
-            use futures::pin_mut;
-            use futures::select;
-            let fut1 = $first.fuse();
-            let fut2 = $second.fuse();
-            let fut3 = $third.fuse();
-            let fut4 = $fourth.fuse();
-            let fut5 = $fifth.fuse();
-            pin_mut!(fut1);
-            pin_mut!(fut2);
-            pin_mut!(fut3);
-            pin_mut!(fut4);
-            pin_mut!(fut5);
-            select! {
-                b = fut1 => {b},
-                b = fut2 => {b},
-                b = fut3 => {b},
-                b = fut4 => {b},
-                b = fut5 => {b},
-            }
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            let fut4 = $crate::steady_fuse_future($fourth);
+            let fut5 = $crate::steady_fuse_future($fifth);
+            $crate::steady_select_five(fut1, fut2, fut3, fut4, fut5).await
         }.await
     }};
     // Add more cases as needed
