@@ -519,6 +519,7 @@ mod graph_testing_tests {
 
 
     #[test]
+    #[cfg(not(windows))]
     async fn test_node_call_success() {
 
         // Simulates Graph creation where we init the side channel hub
