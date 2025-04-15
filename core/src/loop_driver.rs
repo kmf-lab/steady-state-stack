@@ -1,9 +1,7 @@
-//use std::pin::{Pin};
-//use futures::future::Future;
-use futures::future::FutureExt;
-//use futures::select;
-//use futures::pin_mut;
-
+use futures_util::FutureExt;
+pub use futures::future::Future;
+pub use futures::select;
+pub use futures::pin_mut;
 /// This macro waits for all the provided futures to complete.
 /// It returns a boolean indicating if all futures returned true.
 ///
@@ -51,7 +49,7 @@ macro_rules! await_for_all {
 macro_rules! await_for_all_or_proceed_upon {
     ($first_future:expr, $($rest_futures:expr),* $(,)?) => {
         async {
-            use futures::future::FutureExt;
+            use futures_util::FutureExt;
             use futures::pin_mut;
 
             // Fuse the first future and pin it
@@ -115,6 +113,7 @@ macro_rules! await_for_all_or_proceed_upon {
 ///
 #[macro_export]
 macro_rules! await_for_any {
+
     // Case: Single future
     ($first:expr $(,)?) => {{
         async {
@@ -123,10 +122,11 @@ macro_rules! await_for_any {
     }};
     // Case: Two futures
     ($first:expr, $second:expr $(,)?) => {{
-        async {
-            use futures::future::FutureExt;
+            use futures_util::FutureExt;
             use futures::pin_mut;
             use futures::select;
+        async {
+
             let fut1 = $first.fuse();
             let fut2 = $second.fuse();
             pin_mut!(fut1);
@@ -140,7 +140,7 @@ macro_rules! await_for_any {
     // Case: Three futures
     ($first:expr, $second:expr, $third:expr $(,)?) => {{
         async {
-            use futures::future::FutureExt;
+            use futures_util::FutureExt;
             use futures::pin_mut;
             use futures::select;
             let fut1 = $first.fuse();
@@ -160,7 +160,7 @@ macro_rules! await_for_any {
      // Case: Four futures
     ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
         async {
-            use futures::future::FutureExt;
+            use futures_util::FutureExt;
             use futures::pin_mut;
             use futures::select;
             let fut1 = $first.fuse();
@@ -182,7 +182,7 @@ macro_rules! await_for_any {
     // Case: Five futures
     ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
         async {
-            use futures::future::FutureExt;
+            use futures_util::FutureExt;
             use futures::pin_mut;
             use futures::select;
             let fut1 = $first.fuse();

@@ -126,6 +126,10 @@ pub mod commander_monitor;
 mod stream_iterator;
 mod abstract_executor_tests;
 
+pub use futures_util::FutureExt;
+pub use futures::pin_mut;
+pub use futures::select;
+
 pub use clap::*;
 pub use commander::SendOutcome;
 pub use simulate_edge::TestEcho;
@@ -183,10 +187,10 @@ use crate::monitor::{ActorMetaData, ChannelMetaData};
 /// util module for various utility functions.
 pub mod util;
 pub use crate::util::*;
-
-use futures::*;
+use futures::AsyncRead;
+use futures::AsyncWrite;
+pub use futures::future::Future;
 use futures::channel::oneshot;
-use futures::select;
 use futures_util::lock::{MappedMutexGuard, MutexGuard};
 pub use commander_monitor::LocalMonitor;
 use crate::core_rx::RxCore;
