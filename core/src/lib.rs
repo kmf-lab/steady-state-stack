@@ -131,6 +131,11 @@ pub use loop_driver::steady_select_two;
 pub use loop_driver::steady_select_three;
 pub use loop_driver::steady_select_four;
 pub use loop_driver::steady_select_five;
+pub use loop_driver::steady_await_for_all_or_proceed_upon_two;
+pub use loop_driver::steady_await_for_all_or_proceed_upon_three;
+pub use loop_driver::steady_await_for_all_or_proceed_upon_four;
+pub use loop_driver::steady_await_for_all_or_proceed_upon_five;
+
 
 pub use clap::*;
 pub use commander::SendOutcome;
