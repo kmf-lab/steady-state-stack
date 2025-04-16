@@ -178,6 +178,8 @@ pub trait StreamRxBundleTrait {
     fn is_closed_and_empty(&mut self) -> bool;
     fn is_closed(&mut self) -> bool;
 
+    fn is_empty(&mut self) -> bool;
+
 }
 
 impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
@@ -192,10 +194,15 @@ impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
 
 impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
     fn is_closed_and_empty(&mut self) -> bool {
-       self.iter_mut().all(|f| f.is_closed_and_empty())
+        self.iter_mut().all(|f| f.is_closed_and_empty()
+        )
     }
     fn is_closed(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed())
+    }
+    fn is_empty(&mut self) -> bool {
+        self.iter_mut().all(|f| f.is_empty()
+        )
     }
 
 }
@@ -560,6 +567,12 @@ impl<T: StreamItem> StreamRx<T> {
         //debug!("closed {} {}", self.item_channel.is_closed(), self.payload_channel.is_closed());
         self.item_channel.is_closed() && self.payload_channel.is_closed()
     }
+
+    pub fn is_empty(&mut self) -> bool {
+        self.item_channel.is_empty()
+            && self.payload_channel.is_empty()
+    }
+
     pub(crate) fn consume_messages<C: SteadyCommander>(
         &mut self,
         cmd: &mut C,

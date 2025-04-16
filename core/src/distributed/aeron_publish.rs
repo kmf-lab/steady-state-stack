@@ -3,7 +3,9 @@ use std::sync::Arc;
 use futures_timer::Delay;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
+use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
+use futures_util::SinkExt;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamRx, StreamSimpleMessage};
 use crate::{SteadyCommander, SteadyState};
@@ -50,10 +52,10 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                                                  , stream_id: i32
                                                                  , aeron:Arc<futures_util::lock::Mutex<Aeron>>
                                                                  , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
+    let is_shared_connection = false; //TODO: perhaps channel should define this??
 
     let mut rx = rx.lock().await;
 
-   warn!("hello ------------");
     let mut state = state.lock( || AeronPublishSteadyState::default()).await;
         {
             let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
@@ -71,9 +73,9 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         Delay::new(Duration::from_millis(2)).await; //back off so our request can get ready
 
         // now lookup when the publications are ready
-        let mut _my_pub = Err("");
+        let mut my_pub = Err("");
                 if let Some(id) = state.pub_reg_id {
-                    _my_pub = loop {
+                    my_pub = loop {
                         let ex_pub = {
                             let mut aeron = aeron.lock().await; //other actors need this so jit
                             //trace!("holding find_exclusive_publication({}) lock",id);
@@ -136,7 +138,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         let capacity:usize = rx.capacity().into();
         let wait_for = (512*1024).min(capacity);
 
-        while cmd.is_running(&mut || rx.is_closed_and_empty()) {
+        while cmd.is_running(&mut || rx.is_closed_and_empty() && (is_shared_connection || close_areon(&my_pub)) ) {
     
             let _clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
                                            ,cmd.wait_avail(&mut rx, wait_for)
@@ -152,7 +154,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                        //provide every message and slice until false is returned at that point
                         //we release everything consumed up to this point and return or if no data
                         //upon return release
-                    match &mut _my_pub {
+                    match &mut my_pub {
                         Ok(p) => {
 
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
@@ -195,6 +197,13 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
          }        
 
     Ok(())
+}
+
+fn close_areon(my_pub: &Result<ExclusivePublication, &str>) -> bool {
+    if let Ok(ep) = my_pub {
+        ep.close();
+    }
+    true
 }
 
 #[cfg(test)]

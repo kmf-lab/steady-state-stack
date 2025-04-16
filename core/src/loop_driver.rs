@@ -38,6 +38,12 @@ macro_rules! await_for_all {
 //     flag
 // }
 
+pub fn steady_fuse_future<F>(fut: F) -> futures_util::future::Fuse<F>
+where
+    F: Future,
+{
+    fut.fuse()
+}
 
 /// This macro waits for either the first future to complete, or all of the rest to complete.
 /// It returns a boolean indicating if all futures (or the rest of the futures if the first completes) returned true.
@@ -51,18 +57,18 @@ macro_rules! await_for_all {
 macro_rules! await_for_all_or_proceed_upon {
     ($first_future:expr, $($rest_futures:expr),* $(,)?) => {
         async {
-            use futures_util::FutureExt;
-            use futures::pin_mut;
+            use futures_util::pin_mut;
+            use futures::FutureExt;
 
             // Fuse the first future and pin it
-            let first = $first_future.fuse();
+            let first = $crate::steady_fuse_future($first_future);
             pin_mut!(first);
 
             // Create the combined future for the rest and pin it
             let rest = async {
                 let mut flag = true;
                 $(
-                    let next = $rest_futures.fuse();
+                    let next = $crate::steady_fuse_future($rest_futures);
                     pin_mut!(next);
                     flag = flag & next.await;
                 )*
@@ -107,12 +113,7 @@ macro_rules! await_for_all_or_proceed_upon {
 // }
 
 
-pub fn steady_fuse_future<F>(fut: F) -> futures_util::future::Fuse<F>
-where
-    F: Future,
-{
-    fut.fuse()
-}
+
 
 // This function pins the futures and runs select! on them.
 // It takes fused futures that are not Unpin, pins them locally, and selects.
