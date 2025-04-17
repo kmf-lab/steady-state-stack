@@ -149,18 +149,6 @@ pub(crate) struct Config {
 
 }
 
-// TODO: Labels feature
-// impl Config {
-//     pub(crate) fn apply_labels(&mut self, show: Option<Split<&str>>, hide: Option<Split<&str>>) -> bool {
-//
-//         //let labesl = b"hello,world";
-//
-//
-//
-//         true  //return false if some show or hide labels are not found
-//     }
-// }
-
 /// Builds the DOT graph from the current state.
 ///
 /// # Arguments
