@@ -66,7 +66,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         while state.pub_reg_id.len()<GIRTH {
             state.pub_reg_id.push(None);
         }
-
+//TODO: if there is no publication before isRun we do NEED to send some status for cpu measure
         {
             let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
 
@@ -89,7 +89,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         // now lookup when the publications are ready
             for f in 0..GIRTH {
                 if let Some(id) = state.pub_reg_id[f] {
-                    pubs[f] = loop {
+                    pubs[f] = loop { //TODO: question this loop !!
                         let ex_pub = {
                             let mut aeron = aeron.lock().await; //other actors need this so jit
                             //trace!("holding find_exclusive_publication({}) lock",id);
@@ -121,10 +121,11 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         match mutex.into_inner() {
                                             Ok(publication) => {
                                                 // Successfully extracted the ExclusivePublication
-                                                loop {
-                                                    // warn!("pub {} max_message_length {} max_message_length {} available_window {:?}"
-                                                    //       , publication.session_id(),  publication.max_message_length(), publication.max_message_length(), publication.available_window() );
-                                                    // 
+                                                while cmd.is_running(&mut || rx.is_closed_and_empty()) {
+                                                    //TODO: remains zero window until we get a subscriber.
+                                                     warn!("pub {} max_message_length {} max_message_length {} available_window {:?}"
+                                                           , publication.session_id(),  publication.max_message_length(), publication.max_message_length(), publication.available_window() );
+
                                                     if let Ok(w) = publication.available_window() {
                                                         if w>1024 {
                                                             break; //we have a window!!
@@ -134,6 +135,10 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                         Delay::new(Duration::from_millis(200));
                                                     }
                                                 }
+                                                if !cmd.is_liveliness_running() {
+                                                    return Ok(()) ;//TODO: not sure.
+                                                }
+
                                                 break Ok(publication);
                                             }
                                             Err(_) => panic!("Failed to unwrap Mutex"),
@@ -151,11 +156,12 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
         trace!("running publish '{:?}' all publications in place",cmd.identity());
 
+//TODO: ok we found the problem. we never call is running so we never record ANY actions!!!
 
         let wait_for = (512*1024).min(rx.capacity());
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
-    
-            let _clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
+            cmd.relay_stats();
+            let _clean = await_for_all!(cmd.wait_periodic(Duration::from_millis(100))
                           ,cmd.wait_avail_bundle(&mut rx, wait_for, 1)
                            );
 
