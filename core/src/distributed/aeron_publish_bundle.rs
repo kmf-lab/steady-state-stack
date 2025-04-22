@@ -89,13 +89,11 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         // now lookup when the publications are ready
             for f in 0..GIRTH {
                 if let Some(id) = state.pub_reg_id[f] {
-                    pubs[f] = loop { //TODO: question this loop !!
+                    let mut found = false;
+                    while cmd.is_running(&mut || rx.is_closed_and_empty()) && !found {
                         let ex_pub = {
-                            let mut aeron = aeron.lock().await; //other actors need this so jit
-                            //trace!("holding find_exclusive_publication({}) lock",id);
-                            let response = aeron.find_exclusive_publication(id);
-                            //trace!("releasing find_exclusive_publication({}) lock",id);
-                            response
+                            let mut aeron = aeron.lock().await;
+                            aeron.find_exclusive_publication(id)
                         };
                         match ex_pub {
                             Err(e) => {
@@ -106,40 +104,22 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                     if cmd.is_liveliness_stop_requested() {
                                         //trace!("stop detected before finding publication");
                                         //we are done, shutdown happened before we could start up.
-                                        break Err("Shutdown requested while waiting".into());
+                                        pubs[f] = Err("Shutdown requested while waiting".into());
+                                        found = true;
                                     }
                                 } else {
                                     warn!("Error finding publication: {:?}", e);
-                                    break Err(e.into());
+                                    pubs[f] = Err(e.into());
+                                    found = true;
                                 }
                             },
-                            Ok(publication) => {
-                                // Take ownership of the Arc and unwrap it
+                            Ok(publication) => {  // Take ownership of the Arc and unwrap it
                                 match Arc::try_unwrap(publication) {
-                                    Ok(mutex) => {
-                                        // Take ownership of the inner Mutex
+                                    Ok(mutex) => {   // Take ownership of the inner Mutex
                                         match mutex.into_inner() {
                                             Ok(publication) => {
-                                                // Successfully extracted the ExclusivePublication
-                                                while cmd.is_running(&mut || rx.is_closed_and_empty()) {
-                                                    //TODO: remains zero window until we get a subscriber.
-                                                     warn!("pub {} max_message_length {} max_message_length {} available_window {:?}"
-                                                           , publication.session_id(),  publication.max_message_length(), publication.max_message_length(), publication.available_window() );
-
-                                                    if let Ok(w) = publication.available_window() {
-                                                        if w>1024 {
-                                                            break; //we have a window!!
-                                                        }
-                                                        Delay::new(Duration::from_millis(40));
-                                                    } else {
-                                                        Delay::new(Duration::from_millis(200));
-                                                    }
-                                                }
-                                                if !cmd.is_liveliness_running() {
-                                                    return Ok(()) ;//TODO: not sure.
-                                                }
-
-                                                break Ok(publication);
+                                                pubs[f] = Ok(publication);
+                                                found = true;
                                             }
                                             Err(_) => panic!("Failed to unwrap Mutex"),
                                         }
@@ -154,9 +134,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                 }
             }
 
-        trace!("running publish '{:?}' all publications in place",cmd.identity());
-
-//TODO: ok we found the problem. we never call is running so we never record ANY actions!!!
+        error!("running publish '{:?}' all publications in place",cmd.identity());
 
         let wait_for = (512*1024).min(rx.capacity());
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
@@ -179,8 +157,9 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                         //upon return release
                     match &mut pubs[i] {
                         Ok(p) => {
-
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
+                            //TODO: if this is zero from the call then there are no subscribers so just hold back.
+
              //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
                                 rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();

@@ -77,7 +77,8 @@ warn!("begin subscribe ----------");
     // now lookup when the subscriptions are ready
         let mut _my_sub = Err("");
             if let Some(id) = state.sub_reg_id {
-                _my_sub = loop {
+                let mut found = false;
+                while cmd.is_running(&mut || tx.mark_closed()) && !found {
                     let sub = {
                                 let mut aeron = aeron.lock().await; //caution other actors need this so do jit
                                 warn!("holding find_subscription({}) lock",id);
@@ -92,11 +93,13 @@ warn!("begin subscribe ----------");
                                 if cmd.is_liveliness_stop_requested() {
                                     warn!("stop detected before finding publication");
                                     //we are done, shutdown happened before we could start up.
-                                    break Err("Shutdown requested while waiting".into());
+                                    _my_sub = Err("Shutdown requested while waiting".into());
+                                    found = true;
                                 }
                             } else {
                                 warn!("Error finding subscription: {:?}", e);
-                                break Err("Unable to find requested subscription".into());
+                                _my_sub = Err("Unable to find requested subscription".into());
+                                found = true;
                             }
                         },
                         Ok(subscription) => {
@@ -108,7 +111,8 @@ warn!("begin subscribe ----------");
                                         Ok(subscription) => {
                                             // Successfully extracted the ExclusivePublication
                                             //warn!("unwrap");
-                                            break Ok(subscription);
+                                            _my_sub = Ok(subscription);
+                                            found = true;
                                         }
                                         Err(_) => panic!("Failed to unwrap Mutex"),
                                     }

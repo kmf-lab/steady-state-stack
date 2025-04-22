@@ -75,14 +75,12 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         // now lookup when the publications are ready
         let mut my_pub = Err("");
                 if let Some(id) = state.pub_reg_id {
-                    my_pub = loop {
-                        let ex_pub = {
-                            let mut aeron = aeron.lock().await; //other actors need this so jit
-                            //trace!("holding find_exclusive_publication({}) lock",id);
-                            let response = aeron.find_exclusive_publication(id);
-                            //trace!("releasing find_exclusive_publication({}) lock",id);
-                            response
-                        };
+                    let mut found = false;
+                    while cmd.is_running(&mut || rx.is_closed_and_empty() && (is_shared_connection || close_areon(&my_pub)) ) && !found {
+                           let ex_pub = {
+                                    let mut aeron = aeron.lock().await; //other actors need this so jit
+                                    aeron.find_exclusive_publication(id)
+                                };
                         match ex_pub {
                             Err(e) => {
                                 if e.to_string().contains("Awaiting")
@@ -92,11 +90,13 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                     if cmd.is_liveliness_stop_requested() {
                                         //trace!("stop detected before finding publication");
                                         //we are done, shutdown happened before we could start up.
-                                        break Err("Shutdown requested while waiting");
+                                        my_pub = Err("Shutdown requested while waiting");
+                                        found = true;
                                     }
                                 } else {
                                     warn!("Error finding publication: {:?}", e);
-                                    break Err("Unable to find requested publication");
+                                    my_pub = Err("Unable to find requested publication");
+                                    found = true;
                                 }
                             },
                             Ok(publication) => {
@@ -106,21 +106,8 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                         // Take ownership of the inner Mutex
                                         match mutex.into_inner() {
                                             Ok(publication) => {
-                                                // Successfully extracted the ExclusivePublication
-                                                loop {
-                                                    // warn!("pub {} max_message_length {} max_message_length {} available_window {:?}"
-                                                    //       , publication.session_id(),  publication.max_message_length(), publication.max_message_length(), publication.available_window() );
-                                                    // 
-                                                    if let Ok(w) = publication.available_window() {
-                                                        if w>1024 {
-                                                            break; //we have a window!!
-                                                        }
-                                                        Delay::new(Duration::from_millis(40));
-                                                    } else {
-                                                        Delay::new(Duration::from_millis(200));
-                                                    }
-                                                }
-                                                break Ok(publication);
+                                              my_pub = Ok(publication);
+                                              found = true;
                                             }
                                             Err(_) => panic!("Failed to unwrap Mutex"),
                                         }
@@ -158,7 +145,9 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                         Ok(p) => {
 
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
-             //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
+                            //TODO: if this is zero from the call then there are no subscribers so just hold back.
+
+                            //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
                                 rx.consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len>0);
@@ -371,16 +360,16 @@ pub(crate) mod aeron_tests {
     #[test]
     #[cfg(not(windows))]
     fn test_bytes_process() {
-        // if true || std::env::var("GITHUB_ACTIONS").is_ok() {
-        //     return; //skip this test if we are github actions
-        // }
+        if std::env::var("GITHUB_ACTIONS").is_ok() {
+            return; //skip this test if we are github actions
+        }
 
         unsafe {
             env::set_var("TELEMETRY_SERVER_PORT", "9201");
         }
         let mut graph = GraphBuilder::for_testing()
             .with_telemetry_metric_features(true)
-            .with_telemtry_production_rate_ms(4000)
+            .with_telemtry_production_rate_ms(400)
             .build(());
         let md = graph.aeron_media_driver();
 
@@ -437,7 +426,7 @@ pub(crate) mod aeron_tests {
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
                    , &mut Threading::Spawn);
 
-        let stream_id = 0;
+        let stream_id = 789;
 
         to_aeron_rx.build_aqueduct(AqueTech::Aeron(aeron_config.clone(), stream_id)
                                        , & graph.actor_builder().with_name( "SenderTest").never_simulate(true)

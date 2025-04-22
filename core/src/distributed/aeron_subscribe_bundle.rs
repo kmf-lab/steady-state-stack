@@ -98,7 +98,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
     // now lookup when the subscriptions are ready
         for f in 0..GIRTH {
             if let Some(id) = state.sub_reg_id[f] {
-                subs[f] = loop {
+                let mut found = false;
+                while cmd.is_running(&mut || tx.mark_closed()) && !found {
                     let sub = {
                                 let mut aeron = aeron.lock().await; //caution other actors need this so do jit
                                 trace!("holding find_subscription({}) lock",id);
@@ -113,12 +114,14 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                 if cmd.is_liveliness_stop_requested() {
                                     warn!("stop detected before finding publication");
                                     //we are done, shutdown happened before we could start up.
-                                    break Err("Shutdown requested while waiting".into());
+                                    subs[f] = Err("Shutdown requested while waiting".into());
+                                    found = true;
                                 }
                             } else {
 
                                 warn!("Error finding publication: {:?}", e);
-                                break Err(e.into());
+                                subs[f] = Err(e.into());
+                                found = true;
                             }
                         },
                         Ok(subscription) => {
@@ -130,7 +133,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         Ok(subscription) => {
                                             // Successfully extracted the ExclusivePublication
                                             //warn!("unwrap");
-                                            break Ok(subscription);
+                                            subs[f] = Ok(subscription);
+                                            found = true;
                                         }
                                         Err(_) => panic!("Failed to unwrap Mutex"),
                                     }
