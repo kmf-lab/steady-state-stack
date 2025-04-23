@@ -152,6 +152,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         trace!("running subscriber '{:?}' all subscriptions in place",cmd.identity());
 
         while cmd.is_running(&mut || tx.mark_closed()) {
+            //enable shared core if configured.
+            yield_now::yield_now().await;
 
             //warn!("looping");
             // only poll this often
@@ -159,6 +161,15 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
                 let mut found_data = false;
                 for i in 0..GIRTH {
+                    //TODO: if one is already full we can not let it stop the second from reading
+                    //      this is a serious bug we need to work out. before network testing.
+
+                       if tx[i].shared_vacant_units() < (tx[i].capacity()>>2) {
+                           //Only if we have no data on the others??
+                           cmd.yield_now().await;
+                           continue; //do not fetch more until these get consumed a bit
+                       }
+
                         match &mut subs[i] {
                             Ok(sub) => {
                                 if tx[i].ready.is_empty() {
@@ -174,16 +185,14 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         let mut sent_bytes = 0;
 
                                         let _frags = {
-                                            //NOTE: aeron is NOT thread safe so we are forced to lock across the entire app
                                             let mut total = 0;
                                             //each call to this is no more than one full SOCKET_SO_RCVBUF
-                                            for _ in 0..16 { //16
+                                            for _ in 0..8 { //16
 
                                                 let c = {
                                                     let now = Instant::now();
                                                     let stream = &mut tx[i];
-                                                    //TODO: we need to wait on this lock butalso track it.
-                                           //         let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
+                                                    let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
                                                     sub.poll(&mut |buffer: &AtomicBuffer
                                                                            , offset: i32
                                                                            , length: i32
@@ -211,8 +220,9 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                     break;
                                                 }
                                                 cmd.relay_stats_smartly();
-                                                Delay::new(Duration::from_millis(4)).await;
-                                             //   warn!("relay stats here");
+
+                                                //TODO: configure?
+                                                Delay::new(Duration::from_millis(16)).await;
 
                                             }
                                             total
@@ -227,16 +237,13 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                             no_count = 0;
                                         }
                                         found_data |= local_data;
-                                        if  no_count>5 {
+                                        if no_count>5 {
                                             //TODO: may not flush all so check again periodicly in our main loop
                                             tx[i].fragment_flush_all(&mut cmd);
-
                                             continue; //next stream
                                         }
 
-
                                     // see break, we only stop when we have no data or no room
-                                    /////////////////////////////////
 
                                 } else {
                                     tx[i].fragment_flush_ready(&mut cmd);
@@ -262,7 +269,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                     //break Err("Shutdown requested while waiting".into());
                                                 }
                                             } else {
-
                                                 warn!("Error finding publication: {:?}", e);
                                                 break;
                                             }
@@ -285,21 +291,16 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                             }
                                         }
                                     }
-
-
                                 }
-
                                // panic!("{:?}", e); //restart this actor for some reason we do not have subscription
                             }
                         }
-                    
                 }
                 if cmd.is_liveliness_stop_requested() || !found_data {
                     continue;
                 } else {
                     cmd.relay_stats_smartly();
                 }
-
         }
 
     Ok(())

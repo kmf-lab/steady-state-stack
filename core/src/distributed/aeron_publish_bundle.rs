@@ -138,11 +138,10 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
         let wait_for = (512*1024).min(rx.capacity());
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
-            cmd.relay_stats();
-            let _clean = await_for_all!(cmd.wait_periodic(Duration::from_millis(100))
-                          ,cmd.wait_avail_bundle(&mut rx, wait_for, 1)
-                           );
-
+            let _clean = await_for_any!(
+                           cmd.wait_periodic(Duration::from_millis(16))
+                          ,cmd.wait_avail_bundle(&mut rx, wait_for, 1000)
+                         );
 
             let mut count_done = 0;
             let mut count_bytes = 0;

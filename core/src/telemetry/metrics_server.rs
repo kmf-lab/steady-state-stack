@@ -253,8 +253,10 @@ async fn process_msg(msg: DiagramData
                 (status.unit_total_ns - status.await_total_ns) as u128
             }).sum();
 
+            //TODO: we are debugging from here.
             actor_status.iter().enumerate().for_each(|(i, status)| {
-                if !metrics_state.nodes.is_empty() {
+                if metrics_state.nodes.len()>i && metrics_state.nodes[i].id.is_some()   {
+                    //trace!("metric_sserver call: {} {:?}",i, metrics_state.nodes[i].id);
                     metrics_state.nodes[i].compute_and_refresh(*status, total_work_ns);
                 }
             });

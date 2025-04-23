@@ -7,7 +7,7 @@ use std::ops::DerefMut;
 use num_traits::Zero;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
 use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
-use crate::steady_rx::{Rx};
+use crate::steady_rx::{Rx, RxMetaDataProvider};
 use crate::steady_tx::{Tx};
 
 /// Structure representing the receiver side of steady telemetry.
@@ -172,10 +172,12 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     fn consume_actor(&self) -> Option<ActorStatus> {
         if let Some(act) = &self.actor {
             let mut buffer = [ActorStatus::default(); steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
-            let count = {
-                if let Some(mut guard) = act.try_lock() {
-                    guard.deref_mut().shared_take_slice(&mut buffer)
+            let count_of_actor_status_events = {
+                if let Some(mut actor_status_rx) = act.try_lock() {
+                    //TODO: if we have no messages then we also do not get any status on graph.dot.
+                    actor_status_rx.deref_mut().shared_take_slice(&mut buffer)
                 } else {
+                    error!("Internal error, unable to lock the actor!!!! {:?} ",&self.actor);
                     0
                 }
             };
@@ -186,7 +188,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let mut calls = [0u16; 6];
             let mut iteration_sum = 0;
             let mut thread_info: Option<ThreadInfo> = None;
-            for status in buffer.iter().take(count) {
+            for status in buffer.iter().take(count_of_actor_status_events) {
                 assert!(
                     status.unit_total_ns >= status.await_total_ns,
                     "{} {}",
@@ -203,22 +205,34 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                     calls[i] = calls[i].saturating_add(*call);
                 }
             }
-
-            if count > 0 {
+//TODO: IF NEVER SENT WE SHOULD SEND??
+            if count_of_actor_status_events > 0 {
                 Some(ActorStatus {
                     iteration_start: buffer[0].iteration_start, //always the starting iterator count
                     iteration_sum,
-                    total_count_restarts: buffer[count - 1].total_count_restarts,
-                    bool_stop: buffer[count - 1].bool_stop,
+                    //we just use the last event for these two, no need to check the others.
+                    total_count_restarts: buffer[count_of_actor_status_events - 1].total_count_restarts,
+                    bool_stop: buffer[count_of_actor_status_events - 1].bool_stop,
                     await_total_ns,
                     unit_total_ns,
                     thread_info,
                     calls,
                 })
             } else {
-                None
+                Some(ActorStatus {
+                    iteration_start: buffer[0].iteration_start, //always the starting iterator count
+                    iteration_sum,
+                    total_count_restarts: 0,
+                    bool_stop: false,
+                    await_total_ns,
+                    unit_total_ns,
+                    thread_info,
+                    calls,
+                })
+              //HACK TESTFOR ZERO  None
             }
         } else {
+            error!("what case is this one??????????????????");
             None
         }
     }
