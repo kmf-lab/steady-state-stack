@@ -665,7 +665,10 @@ impl ChannelStatsComputer {
         let labels = ComputeLabelsLabels {
             label: "rate",
             unit: "per/sec",
-            prometheus_labels: &self.prometheus_labels
+            prometheus_labels: &self.prometheus_labels,
+            int_only: false,
+            fixed_digits: 0
+
         };
         compute_labels(config, current_rate
                        , labels, &self.std_dev_rate
@@ -675,11 +678,14 @@ impl ChannelStatsComputer {
     }
 
     pub(crate) fn compute_filled_labels(&self, display_label: &mut String, metric_target: &mut String, current_filled: &&ChannelBlock<u16>) {
-        let config = ComputeLabelsConfig::channel_config(self, (1, 10*self.capacity), u64::MAX, self.show_avg_filled);
+        let config = ComputeLabelsConfig::channel_config(self, (1, 10*self.capacity), 100, self.show_avg_filled);
         let labels = ComputeLabelsLabels {
             label: "filled",
             unit: "%",
-            prometheus_labels: &self.prometheus_labels
+            prometheus_labels: &self.prometheus_labels,
+            int_only: false,
+            fixed_digits: 0
+
         };
         compute_labels(config, current_filled, labels, &self.std_dev_filled, &self.percentiles_filled, metric_target, display_label);
     }
@@ -689,7 +695,10 @@ impl ChannelStatsComputer {
         let labels = ComputeLabelsLabels {
             label: "latency",
             unit: "ms",
-            prometheus_labels: &self.prometheus_labels
+            prometheus_labels: &self.prometheus_labels,
+            int_only: false,
+            fixed_digits: 0
+
         };
 
         compute_labels(config, current_latency, labels, &self.std_dev_latency, &self.percentiles_latency, metric_target, display_label);
@@ -923,6 +932,8 @@ pub(crate) struct ComputeLabelsLabels<'a> {
     pub(crate) label: &'a str,
     pub(crate) unit: &'a str,
     pub(crate) prometheus_labels: &'a str,
+    pub(crate) int_only: bool,
+    pub(crate) fixed_digits: usize
 }
 
 /// Computes labels and updates the metric and label targets.
@@ -1004,16 +1015,27 @@ pub(crate) fn compute_labels<T: Counter>(
             }
         } else {
             let value = avg_per_sec_numer as f32 / denominator as f32;
-            let value = &format!(" {:.3}", value);
-
+            let value = if labels.int_only {
+                let int_value = value as u32;
+                if labels.fixed_digits > 0 {
+                    // Pad with leading zeros to match fixed_digits length
+                    format!("{:0>width$}", int_value, width = labels.fixed_digits)
+                } else {
+                    // No padding, just the integer
+                    Buffer::new().format(int_value).to_string() //TODO: reevaluate!
+                }
+            } else {
+                // Show with 3 decimal places as before
+                format!(" {:.3}", value)
+            };
             #[cfg(feature = "prometheus_metrics" )]
             {
-                metric_target.push_str(value);
+                metric_target.push_str(&value);
                 metric_target.push('\n');
             }
 
             label_target.push(':');
-            label_target.push_str(value);
+            label_target.push_str(&value);
         }
 
         label_target.push(' ');

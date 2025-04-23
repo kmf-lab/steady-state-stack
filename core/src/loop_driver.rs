@@ -24,6 +24,19 @@ macro_rules! await_for_all {
     };
 }
 
+#[macro_export]
+macro_rules! wait_for_all {
+    ($($t:expr),*) => {
+        async {
+            let mut flag = true;
+            $(
+                flag &= $t.await;
+            )*
+            flag
+        }
+    };
+}
+
 
 
 pub fn steady_fuse_future<F>(fut: F) -> futures_util::future::Fuse<F>
@@ -324,7 +337,54 @@ macro_rules! await_for_any {
     // Add more cases as needed
 }
 
-
+#[macro_export]
+macro_rules! wait_for_any {
+    // Case: Single future
+    ($first:expr $(,)?) => {{
+        async {
+            $first.await
+        }
+    }};
+    // Case: Two futures
+    ($first:expr, $second:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            $crate::steady_select_two(fut1, fut2).await
+        }
+    }};
+    // Case: Three futures
+    ($first:expr, $second:expr, $third:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            $crate::steady_select_three(fut1, fut2, fut3).await
+        }
+    }};
+    // Case: Four futures
+    ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            let fut4 = $crate::steady_fuse_future($fourth);
+            $crate::steady_select_four(fut1, fut2, fut3, fut4).await
+        }
+    }};
+    // Case: Five futures
+    ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            let fut4 = $crate::steady_fuse_future($fourth);
+            let fut5 = $crate::steady_fuse_future($fifth);
+            $crate::steady_select_five(fut1, fut2, fut3, fut4, fut5).await
+        }
+    }};
+    // Add more cases as needed
+}
 
 
 #[cfg(test)]
