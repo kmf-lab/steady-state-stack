@@ -510,6 +510,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
                                             , out_item: &mut Tx<S>
                                             , out_data: &mut Tx<u8>
                                             , defrag: &mut Defrag<S>) -> Option<i32> {
+
         //record this was called
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));

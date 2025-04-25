@@ -26,7 +26,9 @@ use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::TxMetaDataProvider;
 use crate::core_exec;
 use futures::future::FutureExt; // For .fuse()
-use futures::pin_mut;           // For pin_mut!
+use futures::pin_mut;
+use log::{error, warn};
+// For pin_mut!
 
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
@@ -362,7 +364,8 @@ pub struct StreamTx<T: StreamItem> {
     pub(crate) item_channel: Tx<T>,
     pub(crate) payload_channel: Tx<u8>,
     defrag: AHashMap<i32, Defrag<T>>,
-    pub(crate) ready: VecDeque<i32>
+    pub(crate) ready_msg_session: VecDeque<i32>,
+    pub(crate) last_data_instant: Option<Instant>,
 }
 impl<T: StreamItem> Debug for StreamTx<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -370,7 +373,7 @@ impl<T: StreamItem> Debug for StreamTx<T> {
             .field("item_channel", &"Tx<T>")
             .field("payload_channel", &"Tx<u8>")
             .field("defrag_keys", &self.defrag.keys().collect::<Vec<_>>())
-            .field("ready", &self.ready)
+            .field("ready", &self.ready_msg_session)
             .finish()
     }
 }
@@ -406,7 +409,8 @@ impl<T: StreamItem> StreamTx<T> {
             item_channel,
             payload_channel,
             defrag: Default::default(),
-            ready: VecDeque::with_capacity(4)
+            ready_msg_session: VecDeque::with_capacity(4),
+            last_data_instant: None
         }
     }
 
@@ -417,32 +421,37 @@ impl<T: StreamItem> StreamTx<T> {
         true
     }
 
-    pub fn capacity(&mut self) -> usize {
+    pub fn capacity(&self) -> usize {
         self.item_channel.capacity()
     }
 
     //call this when we have no data in from poll to clear out anything waiting.
     pub(crate) fn fragment_flush_all<C: SteadyCommander>(&mut self, cmd: &mut C) {
-        self.ready.clear();
+        self.ready_msg_session.clear();
         for de in self.defrag.values_mut().filter(|f| !f.ringbuffer_items.0.is_empty()) {
                      if let Some(x) = cmd.flush_defrag_messages( &mut self.item_channel
                                                                 , &mut self.payload_channel
                                                                 , de) {
-                         self.ready.push_back(x);
+                         self.ready_msg_session.push_back(x);
                      }
         }
     }
 
-        pub(crate) fn fragment_flush_ready<C: SteadyCommander>(&mut self, cmd: &mut C) {
-            while let Some(session_id) = self.ready.pop_front() {
+    pub(crate) fn fragment_flush_ready<C: SteadyCommander>(&mut self, cmd: &mut C) {
+        let mut new_ready = Vec::new(); // Temporary storage for x values
+        while let Some(session_id) = self.ready_msg_session.pop_front() { // Changed to pop_front directly
+            warn!("todo copy to all:: flush the session {}", session_id);
             if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
-                if let Some(x) = cmd.flush_defrag_messages(  &mut self.item_channel
-                                                           , &mut self.payload_channel
-                                                           , defrag_entry) {
-                    self.ready.push_back(x);
+                if let Some(x) = cmd.flush_defrag_messages(&mut self.item_channel,
+                                                           &mut self.payload_channel,
+                                                           defrag_entry) {
+                    new_ready.push(x); // Collect x instead of pushing to self.ready
                 }
+            } else {
+                error!("internal error, session reported without any defrag");
             }
         }
+        self.ready_msg_session.extend(new_ready); // Add collected x values after the loop
     }
 
     pub(crate) fn smallest_space(&mut self) -> Option<usize> {
@@ -491,8 +500,8 @@ impl<T: StreamItem> StreamTx<T> {
             debug_assert!(result.is_ok());
             
             let cap: usize = defrag_entry.ringbuffer_items.0.capacity().into();
-            if defrag_entry.ringbuffer_items.1.occupied_len() == cap && !self.ready.contains(&defrag_entry.session_id) {
-                self.ready.push_back(defrag_entry.session_id);
+            if defrag_entry.ringbuffer_items.1.occupied_len() == cap && !self.ready_msg_session.contains(&defrag_entry.session_id) {
+                self.ready_msg_session.push_back(defrag_entry.session_id);
             };
 
             defrag_entry.running_length = 0;

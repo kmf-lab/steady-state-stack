@@ -135,7 +135,7 @@ warn!("begin subscribe ----------");
                 let mut found_data = false;
                         match &mut _my_sub {
                             Ok(sub) => {
-                                if tx.ready.is_empty() {
+                                if tx.ready_msg_session.is_empty() {
                                     let mut no_count = 0;
                                     tx.fragment_flush_all(&mut cmd);
                                     let mut remaining_poll = if let Some(s)= tx.smallest_space() {
@@ -180,7 +180,7 @@ warn!("begin subscribe ----------");
 
                                                 remaining_poll -= c;
                                                 total += c;
-                                                if !tx.ready.is_empty() || c.is_zero() || remaining_poll.is_zero() {
+                                                if !tx.ready_msg_session.is_empty() || c.is_zero() || remaining_poll.is_zero() {
                                                     tx.fragment_flush_ready(&mut cmd);
                                                     break;
                                                 }
@@ -191,7 +191,7 @@ warn!("begin subscribe ----------");
                                             }
                                             total
                                         };
-                                        if !tx.ready.is_empty() {
+                                        if !tx.ready_msg_session.is_empty() {
                                             tx.fragment_flush_ready(&mut cmd);
                                         }
                                         if !local_data {
