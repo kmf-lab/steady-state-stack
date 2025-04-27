@@ -294,7 +294,7 @@ impl SteadyCommander for SteadyContext {
     fn flush_defrag_messages<S: StreamItem>(&mut self
                                             , out_item: &mut Tx<S>
                                             , out_data: &mut Tx<u8>
-                                            , defrag: &mut Defrag<S>) -> Option<i32> {
+                                            , defrag: &mut Defrag<S>) -> (u32,u32,Option<i32>) {
 
 
         //slice messages
@@ -335,9 +335,9 @@ impl SteadyCommander for SteadyContext {
         } else {
             //skipped no room
             warn!("no room skipped");
-            return Some(defrag.session_id); //try again later and do not pick up more
+            return (msg_count as u32, total_bytes as u32, Some(defrag.session_id)); //try again later and do not pick up more
         }
-        None
+        (msg_count as u32, total_bytes as u32, None)
     }
 
     /// Checks if the Tx channel is currently full.

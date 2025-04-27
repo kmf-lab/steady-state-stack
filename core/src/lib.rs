@@ -96,7 +96,9 @@ pub mod distributed {
     pub mod aeron_publish;
     pub mod aeron_subscribe;
     pub mod distributed_builder;
-    pub mod scheduling;
+
+    pub mod polling;
+
 }
 
 /// Blocks the current thread until the provided future completes, returning its result.

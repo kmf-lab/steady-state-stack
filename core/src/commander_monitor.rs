@@ -509,7 +509,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     fn flush_defrag_messages<S: StreamItem>(&mut self
                                             , out_item: &mut Tx<S>
                                             , out_data: &mut Tx<u8>
-                                            , defrag: &mut Defrag<S>) -> Option<i32> {
+                                            , defrag: &mut Defrag<S>) -> (u32,u32,Option<i32>) {
 
         //record this was called
         if let Some(ref mut st) = self.telemetry.state {
@@ -524,46 +524,36 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let msg_count = out_item.tx.vacant_len().min(on_ring_items);
         let items_len_a = msg_count.min(items_a.len());
         let items_len_b = msg_count - items_len_a;
-        // if (msg_count<on_ring_items) {
-        //     warn!("only flushing {} of {} due to {}", msg_count, on_ring_items, out_item.tx.vacant_len());
-        // }
 
         //sum messages length
         let total_bytes_a = items_a[0..items_len_a].iter().map(|x| x.length()).sum::<i32>() as usize;
         let total_bytes_b = items_b[0..items_len_b].iter().map(|x| x.length()).sum::<i32>() as usize;
         let total_bytes = total_bytes_a + total_bytes_b;
-        //warn!("push one large group {} {}",msg_count,total_bytes);
-       // out_data.tx.wait_vacant(total_bytes).await; //
-  //      if total_bytes <= out_data.tx.vacant_len() {
-            //move this slice to the tx
-            let (payload_a, payload_b) = defrag.ringbuffer_bytes.1.as_slices();
-           // warn!("tx payload slices {} {}",payload_a.len(),payload_b.len());
 
-            let len_a = total_bytes.min(payload_a.len());
-            let mut check_bytes = out_data.tx.push_slice(&payload_a[0..len_a]);
-            let len_b = total_bytes - len_a;
-            if len_b > 0 {
-                check_bytes += out_data.tx.push_slice(&payload_b[0..len_b]);
-            }
-            assert_eq!(check_bytes,total_bytes,"Internal error");
-            unsafe {
-                defrag.ringbuffer_bytes.1.advance_read_index(total_bytes)
-            }
-            //move the messages
-            //warn!("tx push slice {} {}",len_a,len_b);
-            out_item.tx.push_slice(&items_a[0..items_len_a]);
-            if items_len_b > 0 {
-                out_item.tx.push_slice(&items_b[0..items_len_b]);
-            }
-            unsafe {
-                defrag.ringbuffer_items.1.advance_read_index(msg_count)
-            }
-        // } else {
-        //     //skipped no room
-        //     warn!("no room skipped, internal error");
-        //     return Some(defrag.session_id); //try again later and do not pick up more
-        // }
-        /////
+        //move this slice to the tx
+        let (payload_a, payload_b) = defrag.ringbuffer_bytes.1.as_slices();
+       // warn!("tx payload slices {} {}",payload_a.len(),payload_b.len());
+
+        let len_a = total_bytes.min(payload_a.len());
+        let mut check_bytes = out_data.tx.push_slice(&payload_a[0..len_a]);
+        let len_b = total_bytes - len_a;
+        if len_b > 0 {
+            check_bytes += out_data.tx.push_slice(&payload_b[0..len_b]);
+        }
+        assert_eq!(check_bytes,total_bytes,"Internal error");
+        unsafe {
+            defrag.ringbuffer_bytes.1.advance_read_index(total_bytes)
+        }
+        //move the messages
+        //warn!("tx push slice {} {}",len_a,len_b);
+        out_item.tx.push_slice(&items_a[0..items_len_a]);
+        if items_len_b > 0 {
+            out_item.tx.push_slice(&items_b[0..items_len_b]);
+        }
+        unsafe {
+            defrag.ringbuffer_items.1.advance_read_index(msg_count)
+        }
+
         // record the telemetry for this change
         if msg_count>0 {
             //warn!("update send telmetry {} {}",msg_count,total_bytes);
@@ -578,13 +568,11 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
        if defrag.ringbuffer_items.1.is_empty() {
            debug_assert_eq!(0,defrag.ringbuffer_bytes.1.occupied_len());
-           None
+           (msg_count as u32, total_bytes as u32, None)
         } else { //we want to flush again if we left anything behind and not loose the session_id
-           Some(defrag.session_id)
+           (msg_count as u32, total_bytes as u32, Some(defrag.session_id))
         }
     }
-
-
 
 
     /// Checks if the Tx channel is currently full.

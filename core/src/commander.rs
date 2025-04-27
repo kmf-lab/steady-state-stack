@@ -193,7 +193,7 @@ pub trait SteadyCommander {
                                             , item: &mut Tx<S>
                                             , data: &mut Tx<u8>
                                             , defrag: &mut Defrag<S>
-    ) -> Option<i32>;
+    ) -> (u32,u32,Option<i32>);
 
 
     /// Waits for a specified duration, ensuring a consistent periodic interval between calls.

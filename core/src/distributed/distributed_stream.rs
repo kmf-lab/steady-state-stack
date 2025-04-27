@@ -28,6 +28,7 @@ use crate::core_exec;
 use futures::future::FutureExt; // For .fuse()
 use futures::pin_mut;
 use log::{error, warn};
+use num_traits::Zero;
 // For pin_mut!
 
 
@@ -357,6 +358,9 @@ impl TxMetaDataProvider for TxChannelMetaDataWrapper {
     }
 }
 
+pub const RATE_COLLECTOR_MASK:usize = 15;
+pub const RATE_COLLECTOR_LEN:usize = 16;
+
 
 /// A transmitter for a steady stream. Holds two channels:
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
@@ -365,7 +369,18 @@ pub struct StreamTx<T: StreamItem> {
     pub(crate) payload_channel: Tx<u8>,
     defrag: AHashMap<i32, Defrag<T>>,
     pub(crate) ready_msg_session: VecDeque<i32>,
-    pub(crate) last_data_instant: Option<Instant>,
+    pub(crate) last_input_instant: Instant,
+    pub(crate) last_output_instant: Instant,
+
+
+    pub(crate) input_rate_index: usize,
+    pub(crate) input_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
+
+    pub(crate) output_rate_index: usize,
+    pub(crate) output_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
+
+    pub(crate) stored_vacant_values: (u32,u32)
+
 }
 impl<T: StreamItem> Debug for StreamTx<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -406,12 +421,88 @@ impl<T: StreamItem> StreamTx<T> {
     /// Creates a new `StreamTx` wrapping the given channels and `stream_id`.
     pub fn new(item_channel: Tx<T>, payload_channel: Tx<u8>) -> Self {
         StreamTx {
+            stored_vacant_values: (item_channel.capacity() as u32, payload_channel.capacity() as u32),
             item_channel,
             payload_channel,
             defrag: Default::default(),
             ready_msg_session: VecDeque::with_capacity(4),
-            last_data_instant: None
+            last_input_instant: Instant::now(),
+            input_rate_index: RATE_COLLECTOR_MASK,
+            input_rate_collector: Default::default(),
+            last_output_instant: Instant::now(),
+            output_rate_index: RATE_COLLECTOR_MASK,
+            output_rate_collector: Default::default()
         }
+    }
+
+    pub fn set_stored_vacant_values(&mut self, messages: u32, total_bytes_for_messages: u32) {
+       self.stored_vacant_values  = (messages,total_bytes_for_messages);
+    }
+
+    pub fn get_stored_vacant_values(&mut self) -> (u32, u32) {
+        self.stored_vacant_values
+    }
+
+    pub fn store_input_data_rate(&mut self, duration: Duration, messages: u32, total_bytes_for_messages: u32) {
+        self.input_rate_index += 1;
+        self.input_rate_collector[RATE_COLLECTOR_MASK & self.input_rate_index] = (duration,messages,total_bytes_for_messages);
+    }
+
+    pub fn store_output_data_rate(&mut self, duration: Duration, messages: u32, total_bytes_for_messages: u32) {
+        self.output_rate_index += 1;
+        self.output_rate_collector[RATE_COLLECTOR_MASK & self.input_rate_index] = (duration,messages,total_bytes_for_messages);
+    }
+
+    /// compute the fastest we expect this to possibly be done
+    pub fn guess_duration_till_empty(&self) -> Duration {
+        // Sum the remaining bytes in all defrag ring buffers
+        let total_remaining_bytes: usize = self.defrag.values()
+            .map(|defrag| defrag.ringbuffer_bytes.0.occupied_len()) // Assume occupied_len exists
+            .sum();
+
+        // Compute total bytes and duration from output rate collector
+        let sum_bytes: u64 = self.output_rate_collector.iter()
+            .map(|&(_, _, bytes)| bytes as u64)
+            .sum();
+        let sum_duration: f64 = self.output_rate_collector.iter()
+            .map(|&(d, _, _)| d.as_secs_f64())
+            .sum();
+
+        // Calculate time based on rate, with default fallback
+        if sum_duration > 0.0 && sum_bytes > 0 {
+            let rate = sum_bytes as f64 / sum_duration; // Bytes per second
+            let estimated_time = total_remaining_bytes as f64 / rate; // Seconds
+            Duration::from_secs_f64(estimated_time)
+        } else {
+            Duration::from_millis(1) // Default if no rate data
+        }
+    }
+
+    pub fn guess_duration_between_arrivals(&self) -> (Duration, Duration) {
+        // Collect inter-arrival times in seconds
+        let intervals: Vec<f64> = self.input_rate_collector.iter()
+            .filter(|&&(_, m, _)| m > 0) // Only consider entries with messages
+            .map(|&(d, m, _)| d.as_secs_f64() / m as f64) // Average time per message
+            .collect();
+
+        // Handle edge cases
+        if intervals.is_empty() {
+            return (Duration::from_millis(1), Duration::from_millis(0));
+        } else if intervals.len() == 1 {
+            return (Duration::from_secs_f64(intervals[0]), Duration::from_millis(0));
+        }
+
+        // Compute mean
+        let mean = intervals.iter().sum::<f64>() / intervals.len() as f64;
+
+        // Compute sample variance and standard deviation
+        let variance = intervals.iter()
+            .map(|&x| (x - mean).powi(2))
+            .sum::<f64>() / (intervals.len() as f64 - 1.0);
+        let stddev = variance.sqrt();
+
+        // Return as Durations
+        (Duration::from_secs_f64(mean), Duration::from_secs_f64(stddev))
     }
 
     /// Marks both control and payload channels as closed. Returns `true` for convenience.
@@ -429,29 +520,37 @@ impl<T: StreamItem> StreamTx<T> {
     pub(crate) fn fragment_flush_all<C: SteadyCommander>(&mut self, cmd: &mut C) {
         self.ready_msg_session.clear();
         for de in self.defrag.values_mut().filter(|f| !f.ringbuffer_items.0.is_empty()) {
-                     if let Some(x) = cmd.flush_defrag_messages( &mut self.item_channel
+                     if let (msgs,bytes,Some(more_session_id)) = cmd.flush_defrag_messages( &mut self.item_channel
                                                                 , &mut self.payload_channel
                                                                 , de) {
-                         self.ready_msg_session.push_back(x);
+                         self.ready_msg_session.push_back(more_session_id);
                      }
         }
     }
 
-    pub(crate) fn fragment_flush_ready<C: SteadyCommander>(&mut self, cmd: &mut C) {
-        let mut new_ready = Vec::new(); // Temporary storage for x values
+    pub(crate) fn fragment_flush_ready<C: SteadyCommander>(&mut self, cmd: &mut C) -> (u32,u32) {
+        let mut total_messages = 0;
+        let mut total_bytes = 0;
+        let mut to_consume = self.ready_msg_session.len();
         while let Some(session_id) = self.ready_msg_session.pop_front() { // Changed to pop_front directly
-            warn!("todo copy to all:: flush the session {}", session_id);
+            to_consume -= 1;
             if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
-                if let Some(x) = cmd.flush_defrag_messages(&mut self.item_channel,
-                                                           &mut self.payload_channel,
-                                                           defrag_entry) {
-                    new_ready.push(x); // Collect x instead of pushing to self.ready
+                //how do we know how much we wrote??
+                if let (msgs,bytes,Some(needs_more_work_for_session_id)) = cmd.flush_defrag_messages(&mut self.item_channel,
+                                                                   &mut self.payload_channel,
+                                                                   defrag_entry) {
+                    total_messages += msgs;
+                    total_bytes += bytes;
+                    self.ready_msg_session.push_back(needs_more_work_for_session_id);
                 }
             } else {
                 error!("internal error, session reported without any defrag");
             }
+            if to_consume.is_zero() {
+                break;
+            }
         }
-        self.ready_msg_session.extend(new_ready); // Add collected x values after the loop
+        (total_messages,total_bytes)
     }
 
     pub(crate) fn smallest_space(&mut self) -> Option<usize> {
@@ -511,20 +610,6 @@ impl<T: StreamItem> StreamTx<T> {
     }
 }
 
-// not sure we want this anymore.
-//
-// #[derive(Clone, Debug)]
-// pub struct StreamData<T: StreamItem> {
-//     pub item: T,
-//     pub payload: Box<[u8]>,
-// }
-//
-// impl <T: StreamItem>StreamData<T> {
-//     pub fn new(item: T, payload: Box<[u8]>) -> Self {
-//       StreamData {item, payload}
-//     }
-// }
-
 
 /// A receiver for a steady stream. Holds two channels:
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
@@ -533,8 +618,6 @@ pub struct StreamRx<T: StreamItem> {
     pub(crate) item_channel: Rx<T>,
     pub(crate) payload_channel: Rx<u8>
 }
-
-
 
 impl<T: StreamItem> StreamRx<T> {
     /// Creates a new `StreamRx` wrapping the given channels and `stream_id`.
