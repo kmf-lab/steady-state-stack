@@ -84,7 +84,7 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
     if !tx_item.ready_msg_session.is_empty() {
         let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(cmd);
         let (stored_vacant_items, stored_vacant_bytes) = tx_item.get_stored_vacant_values();
-
+//TODO: wy is measured > stored_vacant
         assert!(measured_vacant_items <= stored_vacant_items);
         if measured_vacant_items != stored_vacant_items {
             let duration = now.duration_since(tx_item.last_output_instant);
@@ -206,7 +206,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
         error!("earliest index selecte {:?}",earliest_idx);
         {
             let tx_stream = &mut tx_guards[earliest_idx];
-            if !tx_stream.shared_is_full() {
+          //  if !tx_stream.shared_is_full() {
                 if let Ok(sub) = &mut subs[earliest_idx] {
                     let delay = poll_aeron_subscription(tx_stream, sub, &mut cmd).await;
                     next_times[earliest_idx] = now + delay;
@@ -217,10 +217,10 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
                     //moving this out of the way to avoid checking again
                     next_times[earliest_idx] = now + Duration::from_secs(u32::MAX as u64);
                 }
-            } else {
-                error!("output full skipping {:?}", earliest_idx);
-                next_times[earliest_idx] = now + tx_stream.guess_duration_till_empty().div(2);
-            }
+          //  } else {
+          //      error!("output full skipping {:?}", earliest_idx);
+          //      next_times[earliest_idx] = now + tx_stream.guess_duration_till_empty().div(2);
+           // }
         }
     }
     Ok(())
