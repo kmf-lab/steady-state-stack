@@ -371,7 +371,7 @@ pub struct StreamTx<T: StreamItem> {
     pub(crate) ready_msg_session: VecDeque<i32>,
     pub(crate) last_input_instant: Instant,
     pub(crate) last_output_instant: Instant,
-
+    pub(crate) vacant_fragments: usize, //cache for polling
     pub(crate) input_rate_index: usize,
     pub(crate) input_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
 
@@ -420,6 +420,7 @@ impl<T: StreamItem> StreamTx<T> {
     /// Creates a new `StreamTx` wrapping the given channels and `stream_id`.
     pub fn new(item_channel: Tx<T>, payload_channel: Tx<u8>) -> Self {
         StreamTx {
+            vacant_fragments: item_channel.capacity() as usize,
             stored_vacant_values: (item_channel.capacity() as u32, payload_channel.capacity() as u32),
             item_channel,
             payload_channel,
@@ -430,7 +431,7 @@ impl<T: StreamItem> StreamTx<T> {
             input_rate_collector: Default::default(),
             last_output_instant: Instant::now(),
             output_rate_index: RATE_COLLECTOR_MASK,
-            output_rate_collector: Default::default()
+            output_rate_collector: Default::default(),
         }
     }
 
