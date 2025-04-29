@@ -358,8 +358,8 @@ impl TxMetaDataProvider for TxChannelMetaDataWrapper {
     }
 }
 
-pub const RATE_COLLECTOR_MASK:usize = 15;
-pub const RATE_COLLECTOR_LEN:usize = 16;
+pub const RATE_COLLECTOR_MASK:usize = 31;
+pub const RATE_COLLECTOR_LEN:usize = 32;
 
 
 /// A transmitter for a steady stream. Holds two channels:
@@ -371,7 +371,6 @@ pub struct StreamTx<T: StreamItem> {
     pub(crate) ready_msg_session: VecDeque<i32>,
     pub(crate) last_input_instant: Instant,
     pub(crate) last_output_instant: Instant,
-
 
     pub(crate) input_rate_index: usize,
     pub(crate) input_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
@@ -478,30 +477,59 @@ impl<T: StreamItem> StreamTx<T> {
         }
     }
 
-    pub fn guess_duration_between_arrivals(&self) -> (Duration, Duration) {
-        // Collect inter-arrival times in seconds
-        let intervals: Vec<f64> = self.input_rate_collector.iter()
-            .filter(|&&(_, m, _)| m > 0) // Only consider entries with messages
-            .map(|&(d, m, _)| d.as_secs_f64() / m as f64) // Average time per message
-            .collect();
+    pub fn fastest_byte_processing_duration(&self) -> Option<Duration> {
+        // Iterate over output_rate_collector to find the highest rate (bytes per second)
+        let max_rate = self.output_rate_collector.iter()
+            .filter_map(|&(duration, _, bytes)| {
+                let duration_secs = duration.as_secs_f64();
+                if duration_secs > 0.0 && bytes > 0 {
+                    Some(bytes as f64 / duration_secs) // Bytes per second
+                } else {
+                    None
+                }
+            })
+            .fold(None, |acc: Option<f64>, rate| {
+                match acc {
+                    None => Some(rate),
+                    Some(max) => Some(max.max(rate)),
+                }
+            });
 
-        // Handle edge cases
-        if intervals.is_empty() {
-            return (Duration::from_millis(1), Duration::from_millis(0));
-        } else if intervals.len() == 1 {
-            return (Duration::from_secs_f64(intervals[0]), Duration::from_millis(0));
+        // Convert max rate to duration per byte (seconds per byte)
+        max_rate.map(|rate| {
+            let seconds_per_byte = 1.0 / rate; // Seconds per byte
+            Duration::from_secs_f64(seconds_per_byte)
+        })
+    }
+
+    pub fn guess_duration_between_arrivals(&self) -> (Duration, Duration) {
+        let mut sum: f64 = 0.0;      // Sum of average times (in seconds)
+        let mut sum_sq: f64 = 0.0;   // Sum of squared average times
+        let mut count: usize = 0;    // Number of entries with m > 0
+
+        // Single pass over the collector
+        for &(d, m, _) in &self.input_rate_collector {
+            if m > 0 {
+                // Compute average time per message in seconds
+                let avg_time = d.as_nanos() as f64 / m as f64 / 1_000_000_000.0; // Convert ns to s
+                sum += avg_time;
+                sum_sq += avg_time * avg_time;
+                count += 1;
+            }
         }
 
-        // Compute mean
-        let mean = intervals.iter().sum::<f64>() / intervals.len() as f64;
+        // Handle edge cases
+        if count == 0 {
+            return (Duration::from_millis(1), Duration::from_millis(0));
+        } else if count == 1 {
+            return (Duration::from_secs_f64(sum), Duration::from_millis(0));
+        }
 
-        // Compute sample variance and standard deviation
-        let variance = intervals.iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / (intervals.len() as f64 - 1.0);
+        // Compute mean and sample standard deviation
+        let mean = sum / count as f64;
+        let variance = (sum_sq - sum * sum / count as f64) / (count as f64 - 1.0);
         let stddev = variance.sqrt();
 
-        // Return as Durations
         (Duration::from_secs_f64(mean), Duration::from_secs_f64(stddev))
     }
 

@@ -1,166 +1,282 @@
-/// A module for computing polling schedules based on a normal distribution.
-/// This is designed to be simple, fast, and easy to use for engineers, with verbose
-/// comments explaining every step. It generates polling times for message arrivals,
-/// respecting minimum and maximum delay bounds.
-pub mod polling_schedule {
-    use statrs::distribution::{Normal, ContinuousCDF};
-    use std::vec::Vec;
+use std::time::{Duration, Instant};
 
-    /// Configuration struct for generating a polling schedule.
-    /// Holds all the settings needed to compute polling times based on a normal distribution.
-    pub struct PollingScheduleConfig {
-        /// The average time gap between message arrivals (in milliseconds).
-        /// This is the center of the distribution.
-        average_gap: f64,
+/// A scheduler for polling with adaptive delays based on a bell curve.
+pub struct PollScheduler {
+    /// The expected moment for the next event (in nanoseconds).
+    expected_moment_ns: u64,
+    /// Standard deviation controlling the bell curve width (in nanoseconds).
+    std_dev_ns: u64,
+    /// Minimum delay between polls (in nanoseconds).
+    min_delay_ns: u64,
+    /// Maximum delay between polls (in nanoseconds).
+    max_delay_ns: u64,
+    /// Timestamp of the last poll (in nanoseconds).
+    last_poll_time_ns: u64,
+}
 
-        /// How much the time gaps vary (in milliseconds).
-        /// Think of this as the spread of the distribution. Must be > 0 for normal calculations,
-        /// but if it’s 0, we’ll handle it by returning a single time.
-        gap_variation: f64,
-
-        /// What fraction of the distribution to cover (e.g., 0.99999 for 99.999%).
-        /// Must be between 0 and 1. This controls how much of the possible range we include.
-        coverage_fraction: f64,
-
-        /// How many polling points to generate (e.g., 10 means 11 points, including start and end).
-        /// This splits the covered range into equal probability steps.
-        number_of_points: usize,
-
-        /// The smallest delay allowed (in milliseconds).
-        /// No polling time will be less than this.
-        minimum_delay: f64,
-
-        /// The largest delay allowed (in milliseconds).
-        /// No polling time will be more than this.
-        maximum_delay: f64,
-    }
-
-    impl PollingScheduleConfig {
-        /// Creates a new polling schedule configuration with super obvious argument names.
-        ///
-        /// # Arguments
-        /// - `average_gap`: The average time between message arrivals (in milliseconds).
-        /// - `gap_variation`: The standard deviation of the time gaps (in milliseconds).
-        /// - `coverage_fraction`: The fraction of the distribution to cover (0 to 1, e.g., 0.99999).
-        /// - `number_of_points`: The number of polling points to generate (>= 1).
-        /// - `minimum_delay`: The smallest allowed polling time (in milliseconds).
-        /// - `maximum_delay`: The largest allowed polling time (in milliseconds).
-        ///
-        /// # Returns
-        /// A new `PollingScheduleConfig` instance ready to compute the schedule.
-        ///
-        /// # Notes
-        /// - We don’t do heavy validation here to keep it simple, but you should ensure:
-        ///   - `gap_variation` is non-negative.
-        ///   - `coverage_fraction` is between 0 and 1.
-        ///   - `number_of_points` is at least 1 for a useful schedule.
-        ///   - `minimum_delay` <= `maximum_delay`.
-        pub fn new(
-            average_gap: f64,
-            gap_variation: f64,
-            coverage_fraction: f64,
-            number_of_points: usize,
-            minimum_delay: f64,
-            maximum_delay: f64,
-        ) -> Self {
-            Self {
-                average_gap,
-                gap_variation,
-                coverage_fraction,
-                number_of_points,
-                minimum_delay,
-                maximum_delay,
-            }
-        }
-
-        /// Computes the polling schedule based on the configuration.
-        ///
-        /// This generates a list of times (in milliseconds) when you should poll for messages.
-        /// The times are spaced to cover equal chunks of probability in the distribution,
-        /// and they always stay within `minimum_delay` and `maximum_delay`.
-        ///
-        /// # Returns
-        /// A vector of polling times (in milliseconds). If `gap_variation` is 0,
-        /// you get a single time at `average_gap` (adjusted to fit the bounds).
-        ///
-        /// # How It Works
-        /// 1. If there’s no variation, we return just one time.
-        /// 2. Otherwise, we use a normal distribution to:
-        ///    - Find the range that covers `coverage_fraction` of the distribution.
-        ///    - Adjust that range to fit within `minimum_delay` and `maximum_delay`.
-        ///    - Split that range into `number_of_points` equal probability steps.
-        ///    - Convert those steps back into actual times.
-        ///
-        /// # Performance
-        /// - Fast and low-CPU: Uses efficient math from `statrs` and a single loop.
-        /// - Not super accurate with window sizes (as requested), but always respects bounds.
-        pub fn compute_schedule(&self) -> Vec<f64> {
-            // Check for no variation (degenerate case)
-            if self.gap_variation == 0.0 {
-                // If there’s no spread, all messages arrive at the average gap time.
-                // We clamp it to stay within our bounds and return just that one time.
-                let adjusted_time = self.average_gap.clamp(self.minimum_delay, self.maximum_delay);
-                return vec![adjusted_time];
-            }
-
-            // Create a standard normal distribution (mean 0, std dev 1) for calculations.
-            // This is our reference for probability math.
-            let normal = Normal::new(0.0, 1.0).unwrap();
-
-            // Figure out how far out we need to go to cover `coverage_fraction`.
-            // For example, for 99.999%, we want 0.000005% in each tail (outside our range).
-            let tail_fraction = (1.0 - self.coverage_fraction) / 2.0;
-            let z_score = normal.inverse_cdf(1.0 - tail_fraction); // Distance in standard deviations
-
-            // Calculate the initial range based on the average and variation.
-            let initial_lower_time = self.average_gap - z_score * self.gap_variation;
-            let initial_upper_time = self.average_gap + z_score * self.gap_variation;
-
-            // Force the range to stay within our bounds.
-            let lower_time = initial_lower_time.max(self.minimum_delay);
-            let upper_time = initial_upper_time.min(self.maximum_delay);
-
-            // Convert these times to z-scores (standardized distances from the average).
-            let z_lower = (lower_time - self.average_gap) / self.gap_variation;
-            let z_upper = (upper_time - self.average_gap) / self.gap_variation;
-
-            // Get the probabilities at these z-scores.
-            // This tells us where these times sit in the standard normal distribution.
-            let prob_lower = normal.cdf(z_lower);
-            let prob_upper = normal.cdf(z_upper);
-
-            // Prepare to store our polling times.
-            // We’ll make `number_of_points` points, including the start and end.
-            let mut polling_times = Vec::with_capacity(self.number_of_points);
-
-            // Generate the polling times by splitting the probability range evenly.
-            for i in 0..=self.number_of_points {
-                // Calculate the probability at this step.
-                let step_prob = prob_lower
-                    + (i as f64) * (prob_upper - prob_lower) / (self.number_of_points as f64);
-                // Convert that probability back to a z-score.
-                let step_z = normal.inverse_cdf(step_prob);
-                // Turn the z-score into a time using our average and variation.
-                let step_time = self.average_gap + self.gap_variation * step_z;
-                polling_times.push(step_time);
-            }
-
-            // Return the list of polling times, which are guaranteed to be within bounds
-            // because they’re based on probabilities between prob_lower and prob_upper.
-            polling_times
+impl PollScheduler {
+    /// Creates a new `PollScheduler` with default values.
+    pub fn new() -> Self {
+        PollScheduler {
+            expected_moment_ns: 0,
+            std_dev_ns: 1_000_000_000, // 1 second
+            min_delay_ns: 1_000_000,    // 1 millisecond
+            max_delay_ns: 1_000_000_000, // 1 second
+            last_poll_time_ns: 0,
         }
     }
 
-    /// Example usage to show how simple this is to use.
+    /// Sets the expected moment for the next event.
+    pub fn set_expected_moment_ns(&mut self, time_ns: u64) {
+        self.expected_moment_ns = time_ns;
+    }
+
+    /// Sets the standard deviation for the bell curve.
+    pub fn set_std_dev_ns(&mut self, std_dev_ns: u64) {
+        self.std_dev_ns = std_dev_ns;
+    }
+
+    /// Sets the minimum delay between polls.
+    pub fn set_min_delay_ns(&mut self, min_delay_ns: u64) {
+        self.min_delay_ns = min_delay_ns;
+    }
+
+    /// Sets the maximum delay between polls.
+    pub fn set_max_delay_ns(&mut self, max_delay_ns: u64) {
+        self.max_delay_ns = max_delay_ns;
+    }
+
+    /// Updates the last poll time.
+    pub fn update_last_poll_time(&mut self, time_ns: u64) {
+        self.last_poll_time_ns = time_ns;
+    }
+
+    /// Computes the next poll time based on the current time.
+    pub fn compute_next_poll_time(&self, current_time_ns: u64) -> u64 {
+        // Calculate the absolute distance from the expected moment
+        let distance = if current_time_ns > self.expected_moment_ns {
+            current_time_ns - self.expected_moment_ns
+        } else {
+            self.expected_moment_ns - current_time_ns
+        };
+        let distance_squared = distance * distance;
+
+        // Define the scaling factor based on 3 standard deviations
+        let three_sigma = 3 * self.std_dev_ns;
+        let s = three_sigma * three_sigma;
+
+        // Handle edge case where std_dev_ns is 0
+        if s == 0 {
+            return current_time_ns + self.max_delay_ns;
+        }
+
+        // Calculate the delay using a parabolic approximation
+        let delta_delay = self.max_delay_ns - self.min_delay_ns;
+        let ratio = ((distance_squared as u128 * delta_delay as u128) / s as u128) as u64;
+        let delay_ns = self.min_delay_ns + ratio;
+
+        // Ensure the delay does not exceed the maximum
+        let delay_ns = delay_ns.min(self.max_delay_ns);
+
+        // Return the next poll time
+        current_time_ns + delay_ns
+    }
+}
+
+/// Helper function to get the current time in nanoseconds (simplified for demo).
+fn current_time_ns() -> u64 {
+    Instant::now().elapsed().as_nanos() as u64
+}
+#[cfg(test)]
+mod tests {
+    use super::PollScheduler;
+    use std::time::Duration;
+
+    // Helper function to simulate current_time_ns for testing
+    fn fixed_time_ns(value: u64) -> u64 {
+        value
+    }
+
     #[test]
-    fn example_usage() {
-        // Set up a schedule: average gap of 1000ms, variation of 50ms,
-        // covering 99.999% of the distribution, with 10 points,
-        // between 0ms and 10000ms.
-        let config = PollingScheduleConfig::new(1000.0, 50.0, 0.99999, 10, 0.0, 10000.0);
-        let schedule = config.compute_schedule();
-        println!("Polling times: {:?}", schedule);
-        assert_eq!(schedule.len(), 11); // 10 points + 1 (start)
-        assert!(schedule.iter().all(|&t| t >= 0.0 && t <= 10000.0)); // Respects bounds
+    fn test_at_expected_moment() {
+        let mut scheduler = PollScheduler::new();
+        let expected_moment = 5_000_000_000; // 5 seconds
+        scheduler.set_expected_moment_ns(expected_moment);
+        scheduler.set_std_dev_ns(1_000_000_000); // 1 second
+        scheduler.set_min_delay_ns(10_000_000);  // 10 ms
+        scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
+
+        let current_time = expected_moment; // Exactly at 5 seconds
+        let next_poll_time = scheduler.compute_next_poll_time(current_time);
+        let delay = next_poll_time - current_time;
+        assert_eq!(delay, 10_000_000); // Delay should be 10 ms (min_delay_ns)
+    }
+
+    #[test]
+    fn test_slightly_before_expected_moment() {
+        let mut scheduler = PollScheduler::new();
+        let expected_moment = 5_000_000_000; // 5 seconds
+        scheduler.set_expected_moment_ns(expected_moment);
+        scheduler.set_std_dev_ns(1_000_000_000); // 1 second
+        scheduler.set_min_delay_ns(10_000_000);  // 10 ms
+        scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
+
+        let current_time = expected_moment - 100_000_000; // 100 ms before (4.9 seconds)
+        let next_poll_time = scheduler.compute_next_poll_time(current_time);
+        let delay = next_poll_time - current_time;
+        // Expected delay: min_delay + (distance^2 / s) * delta_delay
+        let distance = 100_000_000; // 100 ms
+        let s= 9_000_000_000_000_000_000 as u128; // (3 * 1e9)^2 = 9e18
+        let delta_delay = 1_990_000_000; // 2e9 - 10e6
+        let ratio = ((distance as u128 * distance as u128) as u128 * delta_delay as u128) / s as u128;
+        let expected_delay = 10_000_000 + ratio as u64; // ~10,221,111 ns
+        assert_eq!(delay, expected_delay);
+    }
+
+    #[test]
+    fn test_slightly_after_expected_moment() {
+        let mut scheduler = PollScheduler::new();
+        let expected_moment = 5_000_000_000; // 5 seconds
+        scheduler.set_expected_moment_ns(expected_moment);
+        scheduler.set_std_dev_ns(1_000_000_000); // 1 second
+        scheduler.set_min_delay_ns(10_000_000);  // 10 ms
+        scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
+
+        let current_time = expected_moment + 100_000_000; // 100 ms after (5.1 seconds)
+        let next_poll_time = scheduler.compute_next_poll_time(current_time);
+        let delay = next_poll_time - current_time;
+        let distance = 100_000_000; // 100 ms
+        let s = 9_000_000_000_000_000_000 as u128; // (3 * 1e9)^2 = 9e18
+        let delta_delay = 1_990_000_000; // 2e9 - 10e6
+        let ratio = ((distance as u128 * distance as u128)  * delta_delay as u128) / s as u128;
+        let expected_delay = 10_000_000 + ratio as u64; // ~10,221,111 ns
+        assert_eq!(delay, expected_delay);
+    }
+
+    #[test]
+    fn test_one_std_dev_before() {
+        let mut scheduler = PollScheduler::new();
+        let expected_moment = 5_000_000_000; // 5 seconds
+        scheduler.set_expected_moment_ns(expected_moment);
+        scheduler.set_std_dev_ns(1_000_000_000); // 1 second
+        scheduler.set_min_delay_ns(10_000_000);  // 10 ms
+        scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
+
+        let current_time = expected_moment - 1_000_000_000; // 1 second before (4 seconds)
+        let next_poll_time = scheduler.compute_next_poll_time(current_time);
+        let delay = next_poll_time - current_time;
+        let distance = 1_000_000_000; // 1 second
+        let s = 9_000_000_000_000_000_000 as u128; // (3 * 1e9)^2 = 9e18
+        let delta_delay = 1_990_000_000; // 2e9 - 10e6
+        let ratio = ((distance as u128 * distance as u128) as u128 * delta_delay as u128) / s as u128;
+        let expected_delay = 10_000_000 + ratio as u64; // ~231,111,111 ns
+        assert_eq!(delay, expected_delay);
+    }
+
+    #[test]
+    fn test_three_std_dev_before() {
+        let mut scheduler = PollScheduler::new();
+        let expected_moment = 5_000_000_000; // 5 seconds
+        scheduler.set_expected_moment_ns(expected_moment);
+        scheduler.set_std_dev_ns(1_000_000_000); // 1 second
+        scheduler.set_min_delay_ns(10_000_000);  // 10 ms
+        scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
+
+        let current_time = expected_moment - 3_000_000_000; // 3 seconds before (2 seconds)
+        let next_poll_time = scheduler.compute_next_poll_time(current_time);
+        let delay = next_poll_time - current_time;
+        // Distance is 3e9 (3 std_dev), so delay should be max_delay_ns
+        assert_eq!(delay, 2_000_000_000); // 2 seconds
+    }
+
+    #[test]
+    fn test_three_std_dev_after() {
+        let mut scheduler = PollScheduler::new();
+        let expected_moment = 5_000_000_000; // 5 seconds
+        scheduler.set_expected_moment_ns(expected_moment);
+        scheduler.set_std_dev_ns(1_000_000_000); // 1 second
+        scheduler.set_min_delay_ns(10_000_000);  // 10 ms
+        scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
+
+        let current_time = expected_moment + 3_000_000_000; // 3 seconds after (8 seconds)
+        let next_poll_time = scheduler.compute_next_poll_time(current_time);
+        let delay = next_poll_time - current_time;
+        // Distance is 3e9 (3 std_dev), so delay should be max_delay_ns
+        assert_eq!(delay, 2_000_000_000); // 2 seconds
+    }
+
+    #[test]
+    fn test_zero_std_dev() {
+        let mut scheduler = PollScheduler::new();
+        let expected_moment = 5_000_000_000; // 5 seconds
+        scheduler.set_expected_moment_ns(expected_moment);
+        scheduler.set_std_dev_ns(0); // 0 seconds
+        scheduler.set_min_delay_ns(10_000_000);  // 10 ms
+        scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
+
+        let current_time = expected_moment - 1_000_000_000; // 1 second before
+        let next_poll_time = scheduler.compute_next_poll_time(current_time);
+        let delay = next_poll_time - current_time;
+        // With std_dev = 0, delay should be max_delay_ns
+        assert_eq!(delay, 2_000_000_000); // 2 seconds
+    }
+
+    #[test]
+    fn test_beyond_max_delay() {
+        let mut scheduler = PollScheduler::new();
+        let expected_moment = 5_000_000_000; // 5 seconds
+        scheduler.set_expected_moment_ns(expected_moment);
+        scheduler.set_std_dev_ns(1_000_000_000); // 1 second
+        scheduler.set_min_delay_ns(10_000_000);  // 10 ms
+        scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
+
+        let current_time = expected_moment - 4_000_000_000; // 4 seconds before (1 second)
+        let next_poll_time = scheduler.compute_next_poll_time(current_time);
+        let delay = next_poll_time - current_time;
+        // Distance is 4e9 (> 3 std_dev), so delay should be max_delay_ns
+        assert_eq!(delay, 2_000_000_000); // 2 seconds
+    }
+
+    #[test]
+    fn test_poll_sequence_with_delay_vector() {
+        let mut scheduler = PollScheduler::new();
+        let expected_moment = 5_000_000_000; // 5 seconds in nanoseconds
+        scheduler.set_expected_moment_ns(expected_moment);
+        scheduler.set_std_dev_ns(1_000_000_000); // 1 second
+        scheduler.set_min_delay_ns(10_000_000);  // 10 ms
+        scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
+
+        // Vector of current times (in nanoseconds) approaching and passing the moment
+        let current_times = vec![
+            expected_moment - 3_000_000_000, // 3 seconds before
+            expected_moment - 1_000_000_000, // 1 second before
+            expected_moment - 500_000_000,   // 0.5 seconds before
+            expected_moment,                 // exactly at the moment
+            expected_moment + 500_000_000,   // 0.5 seconds after
+            expected_moment + 1_000_000_000, // 1 second after
+            expected_moment + 3_000_000_000, // 3 seconds after
+        ];
+
+        // Vector of expected delays (in nanoseconds) corresponding to each current time
+        let expected_delays = vec![
+            2_000_000_000, // max_delay_ns at 3 seconds before (3 std devs)
+            231_111_111,   // calculated delay at 1 second before
+            65_277_777,    // calculated delay at 0.5 seconds before
+            10_000_000,    // min_delay_ns at the moment
+            65_277_777,    // symmetric delay at 0.5 seconds after
+            231_111_111,   // symmetric delay at 1 second after
+            2_000_000_000, // max_delay_ns at 3 seconds after (3 std devs)
+        ];
+
+        // Simulate polling sequence and verify delays
+        for (i, &current_time) in current_times.iter().enumerate() {
+            let next_poll_time = scheduler.compute_next_poll_time(current_time);
+            let computed_delay = next_poll_time - current_time;
+            assert_eq!(
+                computed_delay, expected_delays[i],
+                "Delay mismatch at step {}: expected {}, got {}",
+                i, expected_delays[i], computed_delay
+            );
+        }
     }
 }

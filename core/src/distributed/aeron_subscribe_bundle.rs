@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::ops::Div;
+use std::ops::{Div, Mul};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use futures_timer::Delay;
@@ -15,6 +15,7 @@ use crate::distributed::distributed_stream::{SteadyStreamTxBundle, StreamSession
 use crate::{IntoSimRunner, SteadyCommander, SteadyState, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait, TestEcho};
 use crate::commander_context::SteadyContext;
 use crate::core_tx::TxCore;
+use crate::distributed::polling;
 
 #[derive(Default)]
 pub struct AeronSubscribeSteadyState {
@@ -104,12 +105,34 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
         tx_item.last_input_instant = now;
     }
 
-    let (a,b) = tx_item.guess_duration_between_arrivals();
-    let minimum = tx_item.guess_duration_till_empty().div(2);
-    warn!("poll details {:?} send: min{:?} arrivals: mean{:?} std{:?}",sub.stream_id(), minimum, a, b);
-    //TODO: here we will use the new delay compute.
+    let (avg,std) = tx_item.guess_duration_between_arrivals();
+   
+    
+    //TODO: move into tx_item??
+    let (min,max) =
+    if let Some(d) = tx_item.fastest_byte_processing_duration() {
+       let waiting_bytes= tx_item.payload_channel.capacity()-tx_item.payload_channel.shared_vacant_units();
+       if waiting_bytes<2 {
+           (Duration::ZERO,d)
+       } else {
+           (d.mul((waiting_bytes >> 1) as u32), d.mul((waiting_bytes - 1) as u32))
+       }
+    } else {
+        (Duration::ZERO, Duration::MAX) //TODO: add a const for max poll??
+    };
+    let mut scheduler = polling::PollScheduler::new();
+    scheduler.set_max_delay_ns(max.as_nanos() as u64);
+    scheduler.set_min_delay_ns(min.as_nanos() as u64);
+    scheduler.set_std_dev_ns(std.as_nanos() as u64);
+    scheduler.update_last_poll_time(0);    
+    scheduler.set_expected_moment_ns(avg.as_nanos() as u64);
+    let now_ns = now.duration_since(tx_item.last_input_instant).as_nanos() as u64;
+    let ns = scheduler.compute_next_poll_time(now_ns);
+    Duration::from_nanos(ns)
+    //scheduler.compute_next_poll_time(now_ns)
 
-    Duration::from_millis(10)
+
+    //Duration::from_millis(10)
 }
 
 async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
