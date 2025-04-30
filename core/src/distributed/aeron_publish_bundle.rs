@@ -68,7 +68,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         }
 //TODO: if there is no publication before isRun we do NEED to send some status for cpu measure
         {
-            let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
+           let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
 
            //trace!("holding add_exclusive_publication lock");
             for f in 0..GIRTH {
@@ -87,82 +87,79 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         Delay::new(Duration::from_millis(2)).await; //back off so our request can get ready
 
         // now lookup when the publications are ready
-            for f in 0..GIRTH {
-                if let Some(id) = state.pub_reg_id[f] {
-                    let mut found = false;
-                    while cmd.is_running(&mut || rx.is_closed_and_empty()) && !found {
-                        let ex_pub = {
-                            let mut aeron = aeron.lock().await;
-                            aeron.find_exclusive_publication(id)
-                        };
-                        match ex_pub {
-                            Err(e) => {
-                                if e.to_string().contains("Awaiting")
-                                    || e.to_string().contains("not ready") {
-                                    //important that we do not poll fast while driver is setting up
-                                    Delay::new(Duration::from_millis(4)).await;
-                                    if cmd.is_liveliness_stop_requested() {
-                                        //trace!("stop detected before finding publication");
-                                        //we are done, shutdown happened before we could start up.
-                                        pubs[f] = Err("Shutdown requested while waiting".into());
-                                        found = true;
-                                    }
-                                } else {
-                                    warn!("Error finding publication: {:?}", e);
-                                    pubs[f] = Err(e.into());
+        for f in 0..GIRTH {
+            if let Some(id) = state.pub_reg_id[f] {
+                let mut found = false;
+                while cmd.is_running(&mut || rx.is_closed_and_empty()) && !found {
+                    let ex_pub = {
+                        let mut aeron = aeron.lock().await;
+                        aeron.find_exclusive_publication(id)
+                    };
+                    match ex_pub {
+                        Err(e) => {
+                            if e.to_string().contains("Awaiting")
+                                || e.to_string().contains("not ready") {
+                                //important that we do not poll fast while driver is setting up
+                                Delay::new(Duration::from_millis(4)).await;
+                                if cmd.is_liveliness_stop_requested() {
+                                    //trace!("stop detected before finding publication");
+                                    //we are done, shutdown happened before we could start up.
+                                    pubs[f] = Err("Shutdown requested while waiting".into());
                                     found = true;
                                 }
-                            },
-                            Ok(publication) => {  // Take ownership of the Arc and unwrap it
-                                match Arc::try_unwrap(publication) {
-                                    Ok(mutex) => {   // Take ownership of the inner Mutex
-                                        match mutex.into_inner() {
-                                            Ok(publication) => {
-                                                pubs[f] = Ok(publication);
-                                                found = true;
-                                            }
-                                            Err(_) => panic!("Failed to unwrap Mutex"),
+                            } else {
+                                warn!("Error finding publication: {:?}", e);
+                                pubs[f] = Err(e.into());
+                                found = true;
+                            }
+                        },
+                        Ok(publication) => {  // Take ownership of the Arc and unwrap it
+                            match Arc::try_unwrap(publication) {
+                                Ok(mutex) => {   // Take ownership of the inner Mutex
+                                    match mutex.into_inner() {
+                                        Ok(publication) => {
+                                            pubs[f] = Ok(publication);
+                                            found = true;
                                         }
+                                        Err(_) => panic!("Failed to unwrap Mutex"),
                                     }
-                                    Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
                                 }
+                                Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
                             }
                         }
-                    };
-                } else { //only add if we have not already done this
-                    return Err("Check if Media Driver is running.".into());
-                }
+                    }
+                };
+            } else { //only add if we have not already done this
+                return Err("Check if Media Driver is running.".into());
             }
+        }
 
         error!("running publish '{:?}' all publications in place",cmd.identity());
 
-        let wait_for = (512*1024).min(rx.capacity());
+        let wait_for = 1;//(512*1024).min(rx.capacity());
+        let in_channels = 1;
         while cmd.is_running(&mut || rx.is_closed_and_empty()) {
+
             let _clean = await_for_any!(
                            cmd.wait_periodic(Duration::from_millis(16))
-                          ,cmd.wait_avail_bundle(&mut rx, wait_for, 1000)
+                          ,cmd.wait_avail_bundle(&mut rx, wait_for, in_channels)
                          );
 
-            let mut count_done = 0;
-            let mut count_bytes = 0;
 
-                for i in 0..GIRTH {
-                    //buld a working batch solution first and then extract to functions later
-                    //peek a block ahead, 
+            for i in 0..GIRTH {
+                match &mut pubs[i] {
+                    Ok(p) => {
+                        //trace!("AA {} stream:{}",i, p.stream_id());
 
+                        loop {
+                            let mut count_done = 0;
+                            let mut count_bytes = 0;
 
-                       //provide every message and slice until false is returned at that point
-                        //we release everything consumed up to this point and return or if no data
-                        //upon return release
-                    match &mut pubs[i] {
-                        Ok(p) => {
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
-                            //TODO: if this is zero from the call then there are no subscribers so just hold back.
-
-             //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
+                            if vacant_aeron_bytes > 0 {
                                 rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
-                                    assert!(msg_len>0);
+                                    assert!(msg_len > 0);
                                     let response = if slice2.is_empty() {
                                         p.offer_part(AtomicBuffer::wrap_slice(&mut slice1), 0, msg_len as Index)
                                     } else {  // TODO: p.try_claim() is probably a beter  way to move our datarather than AtomicBuffer usage..
@@ -180,7 +177,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                     match response {
                                         Ok(_value) => {
                                             count_done += 1;
-                                            count_bytes+=msg_len;
+                                            count_bytes += msg_len;
                                             true
                                         }
                                         Err(aeron_error) => {
@@ -190,14 +187,22 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         }
                                     }
                                 });
+                            }
+                            if 0==count_done {
+                                break;
+                            }
+                            //trace!("CC sent {}",count_done);
+
                         }
-                        Err(e) => {
-                            warn!("panic details {}",e);
-                          //  panic!("{:?}", e); //we should have had the pup so try again
-                        }
-                    }                   
-                    
+
+                    }
+                    Err(e) => {
+                        warn!("panic details {}",e);
+                      //  panic!("{:?}", e); //we should have had the pup so try again
+                    }
                 }
+
+            }
 
 
          }        

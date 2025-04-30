@@ -16,6 +16,7 @@ use ringbuf::storage::Heap;
 use ringbuf::traits::{Observer, Split};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
+use std::ops::Mul;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use futures_timer::Delay;
@@ -374,7 +375,7 @@ pub struct StreamTx<T: StreamItem> {
     pub(crate) vacant_fragments: usize, //cache for polling
     pub(crate) input_rate_index: usize,
     pub(crate) input_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
-
+    pub(crate) max_poll_latency: Duration, //for polling systems must check at least this often
     pub(crate) output_rate_index: usize,
     pub(crate) output_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
 
@@ -420,6 +421,7 @@ impl<T: StreamItem> StreamTx<T> {
     /// Creates a new `StreamTx` wrapping the given channels and `stream_id`.
     pub fn new(item_channel: Tx<T>, payload_channel: Tx<u8>) -> Self {
         StreamTx {
+            max_poll_latency: Duration::from_millis(1000), //TODO: expose?
             vacant_fragments: item_channel.capacity() as usize,
             stored_vacant_values: (item_channel.capacity() as u32, payload_channel.capacity() as u32),
             item_channel,
@@ -454,27 +456,16 @@ impl<T: StreamItem> StreamTx<T> {
     }
 
     /// compute the fastest we expect this to possibly be done
-    pub fn guess_duration_till_empty(&self) -> Duration {
-        // Sum the remaining bytes in all defrag ring buffers
-        let total_remaining_bytes: usize = self.defrag.values()
-            .map(|defrag| defrag.ringbuffer_bytes.0.occupied_len()) // Assume occupied_len exists
-            .sum();
-
-        // Compute total bytes and duration from output rate collector
-        let sum_bytes: u64 = self.output_rate_collector.iter()
-            .map(|&(_, _, bytes)| bytes as u64)
-            .sum();
-        let sum_duration: f64 = self.output_rate_collector.iter()
-            .map(|&(d, _, _)| d.as_secs_f64())
-            .sum();
-
-        // Calculate time based on rate, with default fallback
-        if sum_duration > 0.0 && sum_bytes > 0 {
-            let rate = sum_bytes as f64 / sum_duration; // Bytes per second
-            let estimated_time = total_remaining_bytes as f64 / rate; // Seconds
-            Duration::from_secs_f64(estimated_time)
+    pub fn next_poll_bounds(&self) -> (Duration,Duration) {
+        if let Some(d) = self.fastest_byte_processing_duration() {
+            let waiting_bytes= self.payload_channel.capacity()-self.payload_channel.shared_vacant_units();
+            if waiting_bytes<2 {
+                (Duration::ZERO,self.max_poll_latency.min(d))
+            } else {
+                (self.max_poll_latency.min(d.mul((waiting_bytes >> 1) as u32)), self.max_poll_latency.min(d.mul((waiting_bytes - 1) as u32)))
+            }
         } else {
-            Duration::from_millis(1) // Default if no rate data
+            (Duration::ZERO, self.max_poll_latency)
         }
     }
 
@@ -602,7 +593,6 @@ impl<T: StreamItem> StreamTx<T> {
             Defrag::new(session_id, self.item_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
         });
 
-
         // // If this is the beginning of a fragment, assert the ringbuffer is empty
         let some_now = Some(now);
         if is_begin {
@@ -627,8 +617,7 @@ impl<T: StreamItem> StreamTx<T> {
             let result = defrag_entry.ringbuffer_items.0.try_push(T::from_defrag(defrag_entry));
             debug_assert!(result.is_ok());
             
-            let cap: usize = defrag_entry.ringbuffer_items.0.capacity().into();
-            if defrag_entry.ringbuffer_items.1.occupied_len() == cap && !self.ready_msg_session.contains(&defrag_entry.session_id) {
+            if!self.ready_msg_session.contains(&defrag_entry.session_id) {
                 self.ready_msg_session.push_back(defrag_entry.session_id);
             };
 
@@ -768,6 +757,10 @@ impl<T: StreamItem> StreamRx<T> {
         debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
         let x = cmd.advance_read_index(&mut self.item_channel, active_items);
         debug_assert_eq!(x, active_items, "Item channel advance mismatch");
+
+        let avail = self.item_channel.shared_avail_units();
+       //warn!("published {:?} on {:?} avail {:?}",active_items, self.item_channel.channel_meta_data.meta_data.id, avail);
+
     }
 
     fn extract_stream_payload_slices<'a>(

@@ -65,18 +65,6 @@ struct RawDiagramState {
     last_instant: Option<Instant> //for testing do not remove
 }
 
-// Locks an optional `SteadyTx` and returns a future resolving to a `MutexGuard`.
-// #[allow(clippy::type_complexity)]
-// fn lock_if_some<'a, T: Send + 'a + Sync>(
-//     opt_lock: &'a Option<SteadyTx<T>>,
-// ) -> Pin<Box<dyn Future<Output = Option<MutexGuard<'a, Tx<T>>>> + Send + 'a>> {
-//     Box::pin(async move {
-//         match opt_lock {
-//             Some(lock) => Some(lock.lock().await),
-//             None => None,
-//         }
-//     })
-// }
 
 /// Runs the metrics collector actor, collecting telemetry data from all actors and consolidating it for sharing and logging.
 pub(crate) async fn run<const GIRTH: usize>(
@@ -143,8 +131,8 @@ async fn internal_behavior<const GIRTH: usize>(
                 _tcount = timelords.len();
                 assert!(!timelords.is_empty(), "internal error, timelords should not be empty");
 
-                timelords.iter().for_each(|f|
-                    futures_unordered.push(future_checking_avail(f, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))
+                timelords.iter().for_each(|steady_rxf|
+                    futures_unordered.push(future_checking_avail(steady_rxf, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))
                 );
 
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
@@ -157,10 +145,11 @@ async fn internal_behavior<const GIRTH: usize>(
                     }
                 }
             } else {
+                const MAX_TIMELORDS: usize = 7;
                 _trigger = "selecting timelords";
                 // reminder: scan is flat mapped so the index is NOT the channel id
                 scan.iter().for_each(|f| futures_unordered.push(future_checking_avail(&*f.1, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR))   );
-                let count = futures_unordered.len().min(5);
+                let count = futures_unordered.len().min(MAX_TIMELORDS);
                 let mut timelord_collector = Vec::new();
                 while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
                     if full_frame_of_data {
@@ -233,17 +222,22 @@ async fn internal_behavior<const GIRTH: usize>(
             { //only check this when debug is on.
                 if let Some(i) = state.last_instant {
                     let measured = i.elapsed().as_millis() as u64;
-
                     let margin = 1.max(1+(ctrl.frame_rate_ms>>1));
-
-                    //log if this is far out of bounds
-                    if measured > (ctrl.frame_rate_ms+margin)*8 {
-                        warn!("frame rate is far too slow {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?} other:{:?}"
-                            , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
-                    }
+                  
+                    // only concerned with too fast because too slow is a normal case when
+                    // all actors are waiting as they should for new work so we get no updates.
+                    // at this time there is no way to distinguish this from all 7 selected
+                    // timelords calling poorly written blocking code simultaneously (this is unlikely)
+                    //TODO: in that case however we should drop CPU usage to zero for all with no actro state in this frame.
+                    
                     if measured < (ctrl.frame_rate_ms-(margin - (margin>>2))) && _tcount >0{
                          warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
-                             , measured, ctrl.frame_rate_ms, state.sequence, state.fill, _trigger, _tcount);
+                             , measured
+                             , ctrl.frame_rate_ms
+                             , state.sequence
+                             , state.fill
+                             , _trigger
+                             , _tcount);
                     }
 
                 }

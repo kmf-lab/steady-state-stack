@@ -1,4 +1,5 @@
 use std::time::{Duration, Instant};
+use log::*;
 
 /// A scheduler for polling with adaptive delays based on a bell curve.
 pub struct PollScheduler {
@@ -10,8 +11,7 @@ pub struct PollScheduler {
     min_delay_ns: u64,
     /// Maximum delay between polls (in nanoseconds).
     max_delay_ns: u64,
-    /// Timestamp of the last poll (in nanoseconds).
-    last_poll_time_ns: u64,
+    // Timestamp of the last poll (in nanoseconds) is assumed to be zero
 }
 
 impl PollScheduler {
@@ -22,7 +22,6 @@ impl PollScheduler {
             std_dev_ns: 1_000_000_000, // 1 second
             min_delay_ns: 1_000_000,    // 1 millisecond
             max_delay_ns: 1_000_000_000, // 1 second
-            last_poll_time_ns: 0,
         }
     }
 
@@ -46,11 +45,6 @@ impl PollScheduler {
         self.max_delay_ns = max_delay_ns;
     }
 
-    /// Updates the last poll time.
-    pub fn update_last_poll_time(&mut self, time_ns: u64) {
-        self.last_poll_time_ns = time_ns;
-    }
-
     /// Computes the next poll time based on the current time.
     pub fn compute_next_poll_time(&self, current_time_ns: u64) -> u64 {
         // Calculate the absolute distance from the expected moment
@@ -59,24 +53,34 @@ impl PollScheduler {
         } else {
             self.expected_moment_ns - current_time_ns
         };
-        let distance_squared = distance * distance;
+        let distance_squared: u128 = distance as u128 * distance as u128;
 
         // Define the scaling factor based on 3 standard deviations
         let three_sigma = 3 * self.std_dev_ns;
-        let s = three_sigma * three_sigma;
+        let s:u128 = three_sigma as u128 * three_sigma as u128;
 
         // Handle edge case where std_dev_ns is 0
         if s == 0 {
             return current_time_ns + self.max_delay_ns;
         }
 
+        let max_delay_ns;
+        let min_delay_ns;
+        if self.max_delay_ns < self.min_delay_ns {
+            let avg = (self.max_delay_ns+self.min_delay_ns)>>1;
+            max_delay_ns = avg;
+            min_delay_ns = avg;
+        } else {
+            max_delay_ns = self.max_delay_ns;
+            min_delay_ns = self.min_delay_ns;
+        }
         // Calculate the delay using a parabolic approximation
-        let delta_delay = self.max_delay_ns - self.min_delay_ns;
-        let ratio = ((distance_squared as u128 * delta_delay as u128) / s as u128) as u64;
-        let delay_ns = self.min_delay_ns + ratio;
+        let delta_delay = max_delay_ns - min_delay_ns;
+        let ratio = ((distance_squared * delta_delay as u128) / s) as u64;
+        let delay_ns = min_delay_ns + ratio;
 
         // Ensure the delay does not exceed the maximum
-        let delay_ns = delay_ns.min(self.max_delay_ns);
+        let delay_ns = delay_ns.min(max_delay_ns);
 
         // Return the next poll time
         current_time_ns + delay_ns

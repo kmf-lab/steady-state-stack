@@ -145,7 +145,7 @@ impl GraphLiveliness {
             if ident.id >= self.registered_voters.len() {
                 self.registered_voters.resize(ident.id + 1, VoterStatus::None);
             }
-            error!("\nregister voter {:?} of expected count: {:?}",ident,self.actors_count.load(Ordering::SeqCst));
+            //trace!("\nregister voter {:?} of expected count: {:?}",ident,self.actors_count.load(Ordering::SeqCst));
 
             if self.registered_voters[ident.id].eq(&VoterStatus::None) {
                 self.registered_voter_count.fetch_add(1, Ordering::SeqCst);
