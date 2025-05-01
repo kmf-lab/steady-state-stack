@@ -674,6 +674,7 @@ mod dot_tests {
             bool_stop: false,
             calls: [0;6],
             thread_info: None,
+            bool_blocking: false,
         };
         let total_work_ns = 1000u128;
         let mut node = Node {

@@ -743,6 +743,7 @@ mod http_telemetry_tests {
                 bool_stop: false,
                 calls: [0; 6],
                 thread_info: None,
+                bool_blocking: false,
             }
         ).collect();
 

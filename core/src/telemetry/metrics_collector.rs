@@ -61,9 +61,12 @@ struct RawDiagramState {
     future_take: Vec<i64>, // These are for the next frame since we do not have the matching sent yet.
     future_send: Vec<i64>, // These are for the next frame if we ended up with too many items.
     error_map:HashMap<String,u32>,
+    actor_last_update: Vec<u64>, //last sequence number for each actor to know if it stops responding
     #[cfg(debug_assertions)]
     last_instant: Option<Instant> //for testing do not remove
+
 }
+
 
 
 /// Runs the metrics collector actor, collecting telemetry data from all actors and consolidating it for sharing and logging.
@@ -220,26 +223,28 @@ async fn internal_behavior<const GIRTH: usize>(
         if state.fill>=2 {
             #[cfg(debug_assertions)]
             { //only check this when debug is on.
-                if let Some(i) = state.last_instant {
-                    let measured = i.elapsed().as_millis() as u64;
-                    let margin = 1.max(1+(ctrl.frame_rate_ms>>1));
-                  
-                    // only concerned with too fast because too slow is a normal case when
-                    // all actors are waiting as they should for new work so we get no updates.
-                    // at this time there is no way to distinguish this from all 7 selected
-                    // timelords calling poorly written blocking code simultaneously (this is unlikely)
-                    //TODO: in that case however we should drop CPU usage to zero for all with no actro state in this frame.
-                    
-                    if measured < (ctrl.frame_rate_ms-(margin - (margin>>2))) && _tcount >0{
-                         warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
-                             , measured
-                             , ctrl.frame_rate_ms
-                             , state.sequence
-                             , state.fill
-                             , _trigger
-                             , _tcount);
-                    }
+              //and we are not shutting down
+                if !is_shutting_down {
+                    if let Some(i) = state.last_instant {
+                        let measured = i.elapsed().as_millis() as u64;
+                        let margin = 1.max(1 + (ctrl.frame_rate_ms >> 1));
 
+                        // only concerned with too fast because too slow is a normal case when
+                        // all actors are waiting as they should for new work so we get no updates.
+                        // at this time there is no way to distinguish this from all 7 selected
+                        // timelords calling poorly written blocking code simultaneously (this is unlikely)
+                        //TODO: in that case however we should drop CPU usage to zero for all with no actro state in this frame.
+
+                        if measured < (ctrl.frame_rate_ms - (margin - (margin >> 2))) && _tcount > 0 {
+                            warn!("frame rate is far too fast {:?}ms vs {:?}ms seq:{:?} fill:{:?} trigger:{:?}  other:{:?}"
+                                , measured
+                                , ctrl.frame_rate_ms
+                                , state.sequence
+                                , state.fill
+                                , _trigger
+                                , _tcount);
+                        }
+                    }
                 }
             }
 
@@ -312,7 +317,6 @@ fn gather_valid_actor_telemetry_to_scan(
 
 /// Collects channel data from the state and dynamic senders.
 fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[CollectorDetail]) -> Vec<ActorIdentity> {
-    
     state.fill += 1;
     let working: Vec<(bool, &CollectorDetail)> = dynamic_senders
         .iter()
@@ -338,10 +342,14 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[Collecto
         })
         .collect();
 
+    // Ensure actor_last_update matches actor_count
+    if state.actor_last_update.len() < state.actor_count {
+        state.actor_last_update.resize(state.actor_count, 0);
+    }
+
     let to_pop: Vec<ActorIdentity> = working
         .iter()
         .filter(|(has_data_in, f)| {
-            
             if let Some(act) = f.telemetry_take[0].consume_actor() {
                 let actor_id = f.ident.id;
                 if actor_id < state.actor_status.len() {
@@ -350,6 +358,11 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[Collecto
                     state.actor_status.resize(actor_id + 1, ActorStatus::default());
                     state.actor_status[actor_id] = act;
                 }
+                // Record the sequence number when this actor sent data
+                if actor_id >= state.actor_last_update.len() {
+                    state.actor_last_update.resize(actor_id + 1, 0);
+                }
+                state.actor_last_update[actor_id] = state.sequence;
                 false
             } else {
                 !has_data_in && f.telemetry_take.len().gt(&1)
@@ -430,6 +443,8 @@ fn gather_node_details(
     state.total_take_send.resize(max_channels_len, (0, 0));
     state.future_take.resize(max_channels_len, 0);
     state.future_send.resize(max_channels_len, 0);
+    // Resize actor_last_update to match the number of dynamic senders
+    state.actor_last_update.resize(dynamic_senders.len(), 0);
 
     let nodes: Vec<DiagramData> = dynamic_senders
         .iter()
@@ -479,14 +494,28 @@ async fn send_data_details(
 ) -> bool {
     let mut next_frame = false;
     for consumer in consumer_vec.iter_mut() {
-
         if consumer.vacant_units().ge(&2) {
-
-            //do not write if we have no actors
             if !state.actor_status.is_empty() {
-                next_frame = true; //only increase frame when we have real actors in play
+                next_frame = true;
+                // Create a modified actor_status with adjusted CPU usage
+                let modified_status: Vec<ActorStatus> = state.actor_status.iter().enumerate().map(|(id, status)| {
+                    let frames_missed = if id < state.actor_last_update.len() {
+                        state.sequence.saturating_sub(state.actor_last_update[id])
+                    } else {
+                        0 // New actor, no updates yet
+                    };
+                    if frames_missed >= 2 {
+                        let mut new_status = *status;
+                        // Since cpu_usage isn’t in ActorStatus, use unit_total_ns as a proxy
+                        new_status.await_total_ns = if status.bool_blocking { new_status.unit_total_ns } else { 0 };
+                        new_status
+                    } else {
+                        *status
+                    }
+                }).collect();
+
                 if let Err(e) = consumer.shared_send_async(
-                    DiagramData::NodeProcessData(state.sequence, state.actor_status.clone().into_boxed_slice()),
+                    DiagramData::NodeProcessData(state.sequence, modified_status.into_boxed_slice()),
                     ident,
                     SendSaturation::IgnoreInRelease,
                 )
@@ -496,8 +525,7 @@ async fn send_data_details(
                 }
 
                 if let Err(e) = consumer.shared_send_async(
-                    DiagramData::ChannelVolumeData(state.sequence
-                                                   , state.total_take_send.clone().into_boxed_slice()),
+                    DiagramData::ChannelVolumeData(state.sequence, state.total_take_send.clone().into_boxed_slice()),
                     ident,
                     SendSaturation::IgnoreInRelease,
                 )
@@ -506,7 +534,6 @@ async fn send_data_details(
                     error!("error sending node process data {:?}", e);
                 }
             }
-
         } else if warn {
             #[cfg(not(test))]
             {
@@ -515,9 +542,7 @@ async fn send_data_details(
                     ident, consumer.capacity()
                 );
             }
-
         }
-
     }
     next_frame
 }

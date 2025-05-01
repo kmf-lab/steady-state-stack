@@ -12,8 +12,6 @@ use crate::*;
 use crate::commander_context::SteadyContext;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
-// TODO: what if we have to aeron clients talking to the same media driver? seems bad?
-
 
 #[derive(Default)]
 pub struct AeronPublishSteadyState {

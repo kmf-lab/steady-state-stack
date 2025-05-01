@@ -124,6 +124,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         calls,
         instance_id: that.instance_id,
         bool_stop: false,
+        bool_blocking: false, //TODO: thread this in from with_blocking?
     });
 
     (rx_tuple.0, tx_tuple.0, telemetry_actor)

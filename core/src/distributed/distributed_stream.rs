@@ -379,7 +379,7 @@ pub struct StreamTx<T: StreamItem> {
     pub(crate) output_rate_index: usize,
     pub(crate) output_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
 
-    pub(crate) stored_vacant_values: (u32,u32)
+    pub(crate) stored_vacant_values: (i32,i32)
 
 }
 impl<T: StreamItem> Debug for StreamTx<T> {
@@ -423,7 +423,7 @@ impl<T: StreamItem> StreamTx<T> {
         StreamTx {
             max_poll_latency: Duration::from_millis(1000), //TODO: expose?
             vacant_fragments: item_channel.capacity() as usize,
-            stored_vacant_values: (item_channel.capacity() as u32, payload_channel.capacity() as u32),
+            stored_vacant_values: (item_channel.capacity() as i32, payload_channel.capacity() as i32),
             item_channel,
             payload_channel,
             defrag: Default::default(),
@@ -437,11 +437,11 @@ impl<T: StreamItem> StreamTx<T> {
         }
     }
 
-    pub fn set_stored_vacant_values(&mut self, messages: u32, total_bytes_for_messages: u32) {
+    pub fn set_stored_vacant_values(&mut self, messages: i32, total_bytes_for_messages: i32) {
        self.stored_vacant_values  = (messages,total_bytes_for_messages);
     }
 
-    pub fn get_stored_vacant_values(&mut self) -> (u32, u32) {
+    pub fn get_stored_vacant_values(&mut self) -> (i32, i32) {
         self.stored_vacant_values
     }
 

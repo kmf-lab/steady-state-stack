@@ -21,6 +21,7 @@ pub struct ActorStatus {
     pub(crate) iteration_start: u64,
     pub(crate) iteration_sum: u64,
     pub(crate) bool_stop: bool,
+    pub(crate) bool_blocking: bool,
     pub(crate) await_total_ns: u64,
     pub(crate) unit_total_ns: u64,
     pub(crate) thread_info: Option<ThreadInfo>,

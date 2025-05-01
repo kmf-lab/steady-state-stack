@@ -16,7 +16,7 @@ use crate::{await_for_all, IntoSimRunner, SteadyCommander, SteadyState, SteadySt
 use crate::commander_context::SteadyContext;
 use crate::core_tx::TxCore;
 use crate::distributed::polling;
-
+use crate::yield_now;
 #[derive(Default)]
 pub struct AeronSubscribeSteadyState {
     sub_reg_id: Vec<Option<i64>>,
@@ -66,7 +66,7 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
         let remaining_poll = if let Some(s) = tx_item.smallest_space() { s } else {
             tx_item.item_channel.capacity()
         };
-       //trace!("poll for as many as: {}", remaining_poll);
+       //error!("poll for as many as: {}", remaining_poll);
         if 0 >= sub.poll(&mut | buffer: &AtomicBuffer,
                                               offset: i32,
                                               length: i32,
@@ -84,8 +84,9 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
             input_bytes += length as u32;
             input_frags += 1;
         }, remaining_poll as i32) {
-            break;
+            break; //we got no data so leave now we will try again later
         }
+        yield_now().await; //do not remove in many cases this allows us more data in this pass
     }
     //trace!("poll the stream {} got {} ready msg empty {} ",sub.stream_id(),input_frags, tx_item.ready_msg_session.is_empty());
 
@@ -93,15 +94,15 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
         let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(cmd);
         let (stored_vacant_items, stored_vacant_bytes) = tx_item.get_stored_vacant_values();
 
-        if stored_vacant_items > measured_vacant_items {
+        if stored_vacant_items > measured_vacant_items as i32 {
             let duration = now.duration_since(tx_item.last_output_instant);
             tx_item.store_output_data_rate(duration
-                              , stored_vacant_items - measured_vacant_items
-                              , stored_vacant_bytes - measured_vacant_bytes);
+                              , (stored_vacant_items - measured_vacant_items as i32) as u32
+                              , (stored_vacant_bytes - measured_vacant_bytes as i32) as u32);
 
             tx_item.last_output_instant = now;
-            let new_vacant_items = measured_vacant_items - now_sent_messages;
-            let new_vacant_bytes = measured_vacant_bytes - now_sent_bytes;
+            let new_vacant_items:i32 = measured_vacant_items as i32 - now_sent_messages as i32;
+            let new_vacant_bytes:i32 = measured_vacant_bytes as i32 - now_sent_bytes as i32;
             tx_item.set_stored_vacant_values(new_vacant_items, new_vacant_bytes);
         }
     }
@@ -219,14 +220,11 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
         now = Instant::now();
         {
             let tx_stream = &mut tx_guards[earliest_idx];
-            // trace!("AA earliest index selecte {:?} {:?} of {:?}"
-               // , earliest_idx
-               // , tx_stream.shared_vacant_units()
-               // , tx_stream.capacity());
+            //error!("AA earliest index selecte {:?} {:?} of {:?}", earliest_idx, tx_stream.shared_vacant_units(), tx_stream.capacity());
 
               if !tx_stream.shared_is_full() {
                 if let Ok(sub) = &mut subs[earliest_idx] {
-                    // trace!("BB sub: {:?} ", sub.stream_id());
+                   // error!("BB sub: {:?} ", sub.stream_id());
 
                     let delay = poll_aeron_subscription(tx_stream, sub, &mut cmd).await;
                     next_times[earliest_idx] = now + delay;

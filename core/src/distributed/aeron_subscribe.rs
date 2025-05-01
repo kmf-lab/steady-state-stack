@@ -1,40 +1,41 @@
 use std::error::Error;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use futures_timer::Delay;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
+use aeron::subscription::Subscription;
+use log::{error, warn};
+use num_traits::Zero;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTx, StreamSessionMessage};
-use crate::{SteadyCommander, SteadyState};
-use crate::*;
-use num_traits::Zero;
+use crate::{SteadyCommander, SteadyState, StreamTx, TestEcho};
 use crate::commander_context::SteadyContext;
-//  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
+use crate::core_tx::TxCore;
+use crate::distributed::polling;
+use crate::yield_now;
 
 #[derive(Default)]
 pub struct AeronSubscribeSteadyState {
     sub_reg_id: Option<i64>,
 }
 
-
-// In Aeron, the maximum message length is determined by the term buffer length.
-// Specifically, the maximum message size is calculated as the
-// lesser of 16 MB or one-eighth of the term buffer length.
-
-pub async fn run(context: SteadyContext
-                 , tx: SteadyStreamTx<StreamSessionMessage>
-                 , aeron_connect: Channel
-                 , stream_id: i32
-                 , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
+pub async fn run(
+    context: SteadyContext,
+    tx: SteadyStreamTx<StreamSessionMessage>,
+    aeron_connect: Channel,
+    stream_id: i32,
+    state: SteadyState<AeronSubscribeSteadyState>,
+) -> Result<(), Box<dyn Error>> {
     let mut cmd = context.into_monitor([], [&tx]);
     if cmd.use_internal_behavior {
         while cmd.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
             let mut tx = tx.lock().await;
-            if cmd.is_running( &mut || tx.mark_closed() ) {
-                let _ = cmd.wait_periodic(Duration::from_secs(15)).await;
+            if cmd.is_running(&mut || tx.mark_closed()) {
+                cmd.wait_periodic(Duration::from_secs(15)).await;
             } else {
                 return Ok(());
             }
@@ -42,243 +43,173 @@ pub async fn run(context: SteadyContext
         let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
         internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await
     } else {
-        cmd.simulated_behavior(vec!(&TestEcho(tx))).await
+        cmd.simulated_behavior(vec![&TestEcho(tx)]).await
     }
 }
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C
-                 , tx: SteadyStreamTx<StreamSessionMessage>
-                 , aeron_channel: Channel
-                 , stream_id: i32
-                 , aeron: Arc<futures_util::lock::Mutex<Aeron>>
-                 , state: SteadyState<AeronSubscribeSteadyState>) -> Result<(), Box<dyn Error>> {
 
-    let mut tx = tx.lock().await;
-warn!("begin subscribe ----------");
-    let mut state = state.lock( || AeronSubscribeSteadyState::default()).await;
+async fn internal_behavior<C: SteadyCommander>(
+    mut cmd: C,
+    tx: SteadyStreamTx<StreamSessionMessage>,
+    aeron_channel: Channel,
+    stream_id: i32,
+    aeron: Arc<futures_util::lock::Mutex<Aeron>>,
+    state: SteadyState<AeronSubscribeSteadyState>,
+) -> Result<(), Box<dyn Error>> {
+    let mut tx = tx.lock().await; // Lock tx at the start, as in the original
+    let mut state = state.lock(|| AeronSubscribeSteadyState::default()).await;
+    let mut sub: Option<Subscription> = None;
 
-        {
-            let mut aeron = aeron.lock().await;
-                if state.sub_reg_id.is_none() { //only add if we have not already done this
-                    warn!("adding new sub {} {:?}", stream_id, aeron_channel.cstring() );
-                    match aeron.add_subscription(aeron_channel.cstring(), stream_id) {
-                        Ok(reg_id) => {
-                            warn!("new subscription found: {}",reg_id);
-                            state.sub_reg_id = Some(reg_id)},
-                        Err(e) => {
-                            warn!("Unable to add publication: {:?}",e);
-                        }
-                    };
-                }
+    // Step 1: Add subscription if not already registered
+    if state.sub_reg_id.is_none() {
+        let mut aeron_guard = aeron.lock().await;
+        let reg_id = aeron_guard.add_subscription(aeron_channel.cstring(), stream_id)?;
+        warn!("new subscription registered: {}", reg_id);
+        state.sub_reg_id = Some(reg_id);
+    }
 
-            warn!("released add_subscription lock");
-        }
-        Delay::new(Duration::from_millis(4)).await; //back off so our request can get ready
-
-    // now lookup when the subscriptions are ready
-        let mut _my_sub = Err("");
-            if let Some(id) = state.sub_reg_id {
-                let mut found = false;
-                while cmd.is_running(&mut || tx.mark_closed()) && !found {
-                    let sub = {
-                                let mut aeron = aeron.lock().await; //caution other actors need this so do jit
-                                warn!("holding find_subscription({}) lock",id);
-                                aeron.find_subscription(id)
-                             };
-                    match sub {
-                        Err(e) => {
-                            if e.to_string().contains("Awaiting")
-                                || e.to_string().contains("not ready") {
-                                //important that we do not poll fast while driver is setting up
-                                Delay::new(Duration::from_millis(2)).await;
-                                if cmd.is_liveliness_stop_requested() {
-                                    warn!("stop detected before finding publication");
-                                    //we are done, shutdown happened before we could start up.
-                                    _my_sub = Err("Shutdown requested while waiting".into());
-                                    found = true;
-                                }
-                            } else {
-                                warn!("Error finding subscription: {:?}", e);
-                                _my_sub = Err("Unable to find requested subscription".into());
-                                found = true;
+    // Step 2: Wait for the subscription to become available
+    while sub.is_none() {
+        if let Some(id) = state.sub_reg_id {
+            let mut aeron_guard = aeron.lock().await;
+            match aeron_guard.find_subscription(id) {
+                Ok(subscription) => {
+                    match Arc::try_unwrap(subscription) {
+                        Ok(mutex) => {
+                            match mutex.into_inner() {
+                                Ok(subscription) => {
+                                    sub = Some(subscription);
+                                },
+                                Err(_) => panic!("Failed to unwrap Mutex"),
                             }
                         },
-                        Ok(subscription) => {
-                            // Take ownership of the Arc and unwrap it
-                            match Arc::try_unwrap(subscription) {
-                                Ok(mutex) => {
-                                    // Take ownership of the inner Mutex
-                                    match mutex.into_inner() {
-                                        Ok(subscription) => {
-                                            // Successfully extracted the ExclusivePublication
-                                            //warn!("unwrap");
-                                            _my_sub = Ok(subscription);
-                                            found = true;
-                                        }
-                                        Err(_) => panic!("Failed to unwrap Mutex"),
-                                    }
-                                }
-                                Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
-                            }
-                        }
+                        Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
                     }
-                };
-            } else { //only add if we have not already done this
-                return Err("Check if Media Driver is running.".into());
-            }
-        warn!("running subscriber '{:?}' all subscriptions in place",cmd.identity());
-
-        while cmd.is_running(&mut || tx.mark_closed()) {
-
-            // only poll this often
-            let _clean = await_for_all!( cmd.wait_periodic(Duration::from_micros(2)) );
-
-                let mut found_data = false;
-                        match &mut _my_sub {
-                            Ok(sub) => {
-                                if tx.ready_msg_session.is_empty() {
-                                    let mut no_count = 0;
-                                    tx.fragment_flush_all(&mut cmd);
-                                    let mut remaining_poll = if let Some(s)= tx.smallest_space() {
-                                                                     s as i32
-                                                                } else {
-                                                                    tx.item_channel.capacity() as i32
-                                                                };
-                                        let mut local_data = false;
-                                        let mut sent_count = 0;
-                                        let mut sent_bytes = 0;
-
-                                        let _frags = {
-                                            //NOTE: aeron is NOT thread safe so we are forced to lock across the entire app
-                                            let mut total = 0;
-                                            //each call to this is no more than one full SOCKET_SO_RCVBUF
-                                            for _z in 0..16 { //16
-
-                                                let c = {
-                                                    let now = Instant::now();
-                                                    let stream = &mut tx;
-                                                    //TODO: we need to wait on this lock butalso track it.
-                                           //         let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
-                                                    sub.poll(&mut |buffer: &AtomicBuffer
-                                                                           , offset: i32
-                                                                           , length: i32
-                                                                           , header: &Header| {
-                                                        local_data = true;
-                                                        let flags = header.flags();
-                                                        let is_begin: bool = 0 != (flags & frame_descriptor::BEGIN_FRAG);
-                                                        let is_end: bool = 0 != (flags & frame_descriptor::END_FRAG);
-
-                                                        stream.fragment_consume(header.session_id()
-                                                                               , buffer.as_sub_slice(offset, length)
-                                                                               , is_begin, is_end, now);
-                                                        sent_count += 1;
-                                                        sent_bytes += length;
-                                                    }, remaining_poll)
-                                                };
-                                                // if z>0 && c>0 {
-                                                //     warn!("success at {} found more {} ",z,c);
-                                                // }
-
-                                                remaining_poll -= c;
-                                                total += c;
-                                                if !tx.ready_msg_session.is_empty() || c.is_zero() || remaining_poll.is_zero() {
-                                                    tx.fragment_flush_ready(&mut cmd);
-                                                    break;
-                                                }
-                                                cmd.relay_stats_smartly();
-                                                Delay::new(Duration::from_millis(4)).await;
-                                             //   warn!("relay stats here");
-
-                                            }
-                                            total
-                                        };
-                                        if !tx.ready_msg_session.is_empty() {
-                                            tx.fragment_flush_ready(&mut cmd);
-                                        }
-                                        if !local_data {
-                                            no_count += 1;
-                                            yield_now().await;
-                                        } else {
-                                            no_count = 0;
-                                        }
-                                        found_data |= local_data;
-                                        if  no_count>5 {
-                                            //TODO: may not flush all so check again periodicly in our main loop
-                                            tx.fragment_flush_all(&mut cmd);
-
-                                            continue; //next stream
-                                        }
-                                    // see break, we only stop when we have no data or no room
-                                    /////////////////////////////////
-
-                                } else {
-                                    tx.fragment_flush_ready(&mut cmd);
-                                }
-                            }
-                            Err(_) => {
-                                if let Some(id) = state.sub_reg_id {
-                                    let sub = {
-                                        let mut aeron = aeron.lock().await; //caution other actors need this so do jit
-                                        warn!("holding find_subscription({}) lock",id);
-                                        aeron.find_subscription(id)
-                                    };
-                                    match sub {
-                                        Err(e) => {
-                                            if e.to_string().contains("Awaiting")
-                                                || e.to_string().contains("not ready") {
-                                                //important that we do not poll fast while driver is setting up
-                                                Delay::new(Duration::from_millis(2)).await;
-                                                if cmd.is_liveliness_stop_requested() {
-                                                    warn!("stop detected before finding publication");
-                                                    return Ok(());
-                                                    //we are done, shutdown happened before we could start up.
-                                                    //break Err("Shutdown requested while waiting".into());
-                                                }
-                                            } else {
-
-                                                warn!("Error finding publication: {:?}", e);
-                                                break;
-                                            }
-                                        },
-                                        Ok(subscription) => {
-                                            // Take ownership of the Arc and unwrap it
-                                            match Arc::try_unwrap(subscription) {
-                                                Ok(mutex) => {
-                                                    // Take ownership of the inner Mutex
-                                                    match mutex.into_inner() {
-                                                        Ok(subscription) => {
-                                                           // ?? sub[0] = subscription;
-                                                        }
-                                                        Err(_) => panic!("Failed to unwrap Mutex"),
-                                                    }
-                                                }
-                                                Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
-                                            }
-                                        }
-                                    }
-                                }
-                               // panic!("{:?}", e); //restart this actor for some reason we do not have subscription
-                            }
-                        }
-                if cmd.is_liveliness_stop_requested() || !found_data {
-                    continue;
-                } else {
-                    cmd.relay_stats_smartly();
                 }
+                Err(e) => {
+                    if e.to_string().contains("Awaiting") || e.to_string().contains("not ready") {
+                        Delay::new(Duration::from_millis(2)).await;
+                        if cmd.is_liveliness_stop_requested() {
+                            warn!("shutdown requested while waiting for subscription");
+                            return Ok(());
+                        }
+                    } else {
+                        return Err(format!("Error finding subscription: {:?}", e).into());
+                    }
+                }
+            }
+        } else {
+            return Err("Subscription registration ID not set".into());
         }
+    }
+
+    let mut sub = sub.unwrap();
+    let mut next_poll_time = Instant::now();
+
+    // Step 3: Main polling loop
+    error!("running subscriber '{:?}' with subscription in place", cmd.identity());
+    while cmd.is_running(&mut || tx.mark_closed()) {
+        let now = Instant::now();
+        if now < next_poll_time {
+            cmd.wait_periodic(next_poll_time - now).await;
+        }
+
+        if !tx.shared_is_full() {
+            let delay = poll_aeron_subscription(&mut tx, &mut sub, &mut cmd).await;
+            next_poll_time = now + delay;
+        } else {
+            let fastest_duration = tx.fastest_byte_processing_duration();
+            next_poll_time = now + if let Some(f) = fastest_duration {
+                f * (tx.capacity() >> 1) as u32
+            } else {
+                tx.max_poll_latency
+            };
+        }
+    }
+
     Ok(())
 }
 
+async fn poll_aeron_subscription<C: SteadyCommander>(
+    tx: &mut StreamTx<StreamSessionMessage>,
+    sub: &mut Subscription,
+    cmd: &mut C,
+) -> Duration {
+    let mut input_bytes: u32 = 0;
+    let mut input_frags: u32 = 0;
+    let now = Instant::now();
 
+    let measured_vacant_items = tx.item_channel.shared_vacant_units() as u32;
+    let measured_vacant_bytes = tx.payload_channel.shared_vacant_units() as u32;
+
+    loop {
+        // tx is already locked by the caller (internal_behavior), so we use it directly
+        let remaining_poll = tx.smallest_space().unwrap_or(tx.item_channel.capacity()) as i32;
+        if 0 >= sub.poll(
+            &mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
+                let flags = header.flags();
+                let is_begin = (flags & frame_descriptor::BEGIN_FRAG) != 0;
+                let is_end = (flags & frame_descriptor::END_FRAG) != 0;
+                tx.fragment_consume(header.session_id(), buffer.as_sub_slice(offset, length), is_begin, is_end, now);
+                input_bytes += length as u32;
+                input_frags += 1;
+            },
+            remaining_poll,
+        ) {
+            break; //we got no data so leave now we will try again later
+        }
+        yield_now().await; //do not remove in many cases this allows us more data in this pass
+    }
+
+    // Flush ready messages if any
+    if !tx.ready_msg_session.is_empty() {
+        let (now_sent_messages, now_sent_bytes) = tx.fragment_flush_ready(cmd);
+        let (stored_vacant_items, stored_vacant_bytes) = tx.get_stored_vacant_values();
+
+        if stored_vacant_items > measured_vacant_items as i32 {
+            let duration = now.duration_since(tx.last_output_instant);
+            tx.store_output_data_rate(
+                duration,
+                (stored_vacant_items - (measured_vacant_items as i32)) as u32,
+                (stored_vacant_bytes - (measured_vacant_bytes as i32)) as u32,
+            );
+            tx.last_output_instant = now;
+            tx.set_stored_vacant_values(
+                measured_vacant_items as i32 - now_sent_messages as i32,
+                measured_vacant_bytes as i32 - now_sent_bytes as i32,
+            );
+        }
+    }
+
+    // Update input data rate if fragments were received
+    if input_frags > 0 {
+        let duration = now.duration_since(tx.last_input_instant);
+        tx.store_input_data_rate(duration, input_frags, input_bytes);
+        tx.last_input_instant = now;
+    }
+
+    // Calculate next poll time using the scheduler
+    let (avg, std) = tx.guess_duration_between_arrivals();
+    let (min, max) = tx.next_poll_bounds();
+    let mut scheduler = polling::PollScheduler::new();
+    scheduler.set_max_delay_ns(max.as_nanos() as u64);
+    scheduler.set_min_delay_ns(min.as_nanos() as u64);
+    scheduler.set_std_dev_ns(std.as_nanos() as u64);
+    scheduler.set_expected_moment_ns(avg.as_nanos() as u64);
+    let now_ns = now.duration_since(tx.last_input_instant).as_nanos() as u64;
+    Duration::from_nanos(scheduler.compute_next_poll_time(now_ns))
+}
 
 #[cfg(test)]
 pub(crate) mod aeron_media_driver_tests {
     use std::thread::sleep;
+    use log::info;
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::distributed_stream::StreamSimpleMessage;
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aeron_publish::aeron_tests::STREAM_ID;
     use crate::distributed::distributed_builder::AqueductBuilder;
+    use crate::{GraphBuilder, Threading};
 
     #[test]
     #[cfg(not(windows))]
