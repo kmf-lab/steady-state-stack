@@ -136,13 +136,13 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
         let wait_for = 1;//(512*1024).min(rx.capacity());
         let in_channels = 1;
-        while cmd.is_running(&mut || rx.is_closed_and_empty()) {
+       //TODO: we may want a config option to determin if all data is sent before shutdown or not !!
+        while cmd.is_running(&mut || rx.is_closed()) {
 
             let _clean = await_for_any!(
                            cmd.wait_periodic(Duration::from_millis(16))
                           ,cmd.wait_avail_bundle(&mut rx, wait_for, in_channels)
                          );
-
 
             for i in 0..GIRTH {
                 match &mut pubs[i] {
@@ -195,16 +195,11 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
                     }
                     Err(e) => {
-                        warn!("panic details {}",e);
-                      //  panic!("{:?}", e); //we should have had the pup so try again
+                        warn!("error details {}",e);
                     }
                 }
-
             }
-
-
-         }        
-
+         } 
     Ok(())
 }
 

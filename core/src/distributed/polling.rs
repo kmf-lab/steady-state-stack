@@ -87,10 +87,7 @@ impl PollScheduler {
     }
 }
 
-/// Helper function to get the current time in nanoseconds (simplified for demo).
-fn current_time_ns() -> u64 {
-    Instant::now().elapsed().as_nanos() as u64
-}
+
 #[cfg(test)]
 mod tests {
     use super::PollScheduler;

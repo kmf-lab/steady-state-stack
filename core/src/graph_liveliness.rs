@@ -72,12 +72,14 @@ pub enum GraphLivelinessState {
 #[derive(Default, Clone)]
 pub struct ShutdownVote {
     pub(crate) id: usize,
-    pub(crate) ident: Option<ActorIdentity>,
+    pub(crate) signature: Option<ActorIdentity>,
     pub(crate) in_favor: bool,
+    pub(crate) voter_status: VoterStatus
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub(crate) enum VoterStatus {
+    #[default]
     None,
     Registered(ActorIdentity),
     Dead(ActorIdentity),
@@ -173,7 +175,7 @@ impl GraphLiveliness {
         } else {
             warn!("no actors to wait for");
         }
-        error!("changed to running state");
+        trace!("changed to running state");
         self.building_to_running();
     }
 
@@ -185,14 +187,25 @@ impl GraphLiveliness {
         if self.state.eq(&GraphLivelinessState::Running) {
             let voters = self.registered_voters.len();
 
-            // Print new ballots for this new election
-            let votes: Vec<Mutex<ShutdownVote>> = (0..voters)
-                .map(|i| Mutex::new(ShutdownVote {
-                                    id: i,
-                                    ident: None,
-                                    in_favor: false,
-                }))
-                .collect();
+            // // Print new ballots for this new election
+            // let votes: Vec<Mutex<ShutdownVote>> = (0..voters)
+            //     .map(|i| Mutex::new(ShutdownVote {
+            //                         id: i,
+            //                         ident: None,
+            //                         in_favor: false,
+            //     }))
+            //     .collect();
+
+            let votes: Vec<Mutex<ShutdownVote>> = self.registered_voters.iter().enumerate().map(|(i,v)| {
+                Mutex::new(ShutdownVote {
+                    id: i,
+                    signature: None,
+                    in_favor: false,
+                    voter_status: v.clone(),
+                })
+            }).collect();
+
+
             self.votes = Arc::new(votes.into_boxed_slice());
             self.vote_in_favor_total.store(0, Ordering::SeqCst); // Redundant but safe for clarity
 
@@ -226,7 +239,7 @@ impl GraphLiveliness {
                     //we can only vote once as a dead actor
                     if !vote.in_favor {
                         assert_eq!(vote.id, i);
-                        vote.ident = Some(*ident); // Signature it is me
+                        vote.signature = Some(*ident); // Signature it is me
                         vote.in_favor = true; // The dead are in favor of shutdown
                         self.vote_in_favor_total.fetch_add(1, Ordering::SeqCst);
                     }
@@ -316,7 +329,7 @@ impl GraphLiveliness {
                 let my_ballot = &self.votes[ident.id];
                 if let Some(mut vote) = my_ballot.try_lock() {
                     assert_eq!(vote.id, ident.id);
-                    vote.ident = Some(ident); // Signature it is me
+                    vote.signature = Some(ident); // Signature it is me
                     if in_favor && !vote.in_favor {
                         // Safe total where we know this can only be done once for each
                         self.vote_in_favor_total.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -457,7 +470,7 @@ impl GraphBuilder {
     /// enabled for test building.
     ///
     pub fn for_testing() -> Self {
-        util::steady_logger::initialize();
+        let _ = util::steady_logger::initialize();
         GraphBuilder {
             block_fail_fast: false,
             telemetry_metric_features: false,
@@ -518,7 +531,7 @@ impl GraphBuilder {
             #[cfg(debug_assertions)]
             {
               g.apply_fail_fast();
-              info!("fail fast enabled for testing !");
+              trace!("fail fast enabled for testing !");
             }
         }
         g
@@ -816,13 +829,11 @@ impl Graph {
 
         // Now iterate over the sorted voters and log the results
         voters.iter().for_each(|voter| {
-            warn!("#{:?} Voted: {:?} Ident: {:?}"
-                                       , voter.as_ref().map_or(usize::MAX, |f| f.id)
-                                       , voter.as_ref().is_some_and(|f| f.in_favor)
-                                       , voter.as_ref().map_or(
-                                                   Default::default()
-                                                 //self.state.registered_voters[0]
-                                                   , |f| f.ident));
+            warn!("#{:?} Status:{:?} Voted: {:?} Ident: {:?}"
+                   , voter.as_ref().map_or(usize::MAX, |f| f.id)
+                   , voter.as_ref().map_or(Default::default(), |f| f.voter_status.clone())
+                   , voter.as_ref().is_some_and(|f| f.in_favor)
+                   , voter.as_ref().map_or(Default::default(), |f| f.signature));
         });
         warn!("graph stopped uncleanly");
     }

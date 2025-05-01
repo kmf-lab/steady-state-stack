@@ -210,6 +210,7 @@ impl<T> TxCore for Tx<T> {
                         _ = timeout_future => Err(msg),
                     }
                 } else {
+                    //TODO: need to know about shutdown here?
                     //NOTE: may block here on shutdown if graph is built poorly
                     match self.tx.push(msg).await {
                         Ok(_) => Ok(TxDone::Normal(1)),
