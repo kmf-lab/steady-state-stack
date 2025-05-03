@@ -28,9 +28,11 @@ use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
+use crate::SendOutcome::Blocked;
 use crate::simulate_edge::{ IntoSimRunner};
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::steady_rx::RxDone;
+use crate::steady_tx::TxDone;
 use crate::telemetry::setup;
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::util::steady_logger;
@@ -782,17 +784,17 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         } else {
             None
         };
-         //TODO: is this not returning on shutdown? what is our timeout?
+        let doneOne = this.done_one(&a);
         let result = this.shared_send_async_timeout(a, self.ident, saturation, timeout).await;
         drop(guard);
 
         match result {
-            Ok(done_count) => {
+             SendOutcome::Success => {
                 if let Some(ref mut tel) = self.telemetry.send_tx {
-                    this.telemetry_inc(done_count, tel); } else { this.monitor_not(); };
+                    this.telemetry_inc(doneOne, tel); } else { this.monitor_not(); };
                 SendOutcome::Success
             }
-            Err(sensitive) => SendOutcome::Blocked(sensitive),
+            SendOutcome::Blocked(sensitive) => SendOutcome::Blocked(sensitive),
         }
 
     }

@@ -479,11 +479,7 @@ impl SteadyCommander for SteadyContext {
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
     async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut> {
-        match this.shared_send_async(a, self.ident, saturation).await {
-            Ok(_) => SendOutcome::Success,
-            Err(a) => SendOutcome::Blocked(a),
-        }
-        
+        this.shared_send_async(a, self.ident, saturation).await
     }
 
 

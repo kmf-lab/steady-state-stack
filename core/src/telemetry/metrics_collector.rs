@@ -25,6 +25,7 @@ use crate::commander::SteadyCommander;
 use crate::commander_context::SteadyContext;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
+use crate::SendOutcome::{Blocked, Success};
 use crate::steady_rx::*;
 use crate::steady_tx::*;
 use crate::telemetry::metrics_collector;
@@ -476,8 +477,8 @@ async fn send_structure_details(
         let to_send = nodes.clone().into_iter();
         for send_me in to_send {
             match consumer.shared_send_async(send_me, ident, SendSaturation::IgnoreAndWait).await {
-                Ok(_) => {}
-                Err(e) => {
+                Success => {}
+                Blocked(e) => {
                     error!("error sending node data {:?}", e);
                 }
             }
@@ -514,7 +515,7 @@ async fn send_data_details(
                     }
                 }).collect();
 
-                if let Err(e) = consumer.shared_send_async(
+                if let Blocked(e) = consumer.shared_send_async(
                     DiagramData::NodeProcessData(state.sequence, modified_status.into_boxed_slice()),
                     ident,
                     SendSaturation::IgnoreInRelease,
@@ -524,7 +525,7 @@ async fn send_data_details(
                     error!("error sending node process data {:?}", e);
                 }
 
-                if let Err(e) = consumer.shared_send_async(
+                if let Blocked(e) = consumer.shared_send_async(
                     DiagramData::ChannelVolumeData(state.sequence, state.total_take_send.clone().into_boxed_slice()),
                     ident,
                     SendSaturation::IgnoreInRelease,
@@ -561,10 +562,7 @@ mod metric_collector_tests {
     use std::sync::Arc;
     use parking_lot::RwLock;
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::thread::sleep;
     use futures::executor::block_on;
-    use crate::{GraphBuilder, RxCore};
 
     #[test]
     fn test_raw_diagram_state_default() {

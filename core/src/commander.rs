@@ -117,7 +117,10 @@ impl SteadyContext {
         }
     }
 }
+
+#[derive(Default)]
 pub enum SendOutcome<X> {
+    #[default]
     Success,
     Blocked(X),
 }

@@ -1,3 +1,4 @@
+use std::future::pending;
 use log::{error, trace, warn};
 use futures_util::{select, FutureExt};
 use std::time::{Duration, Instant};
@@ -5,12 +6,12 @@ use futures::pin_mut;
 use futures_timer::Delay;
 use futures_util::lock::{MutexGuard};
 use ringbuf::traits::Observer;
-use futures_util::future::FusedFuture;
+use futures_util::future::{Either, FusedFuture};
 use async_ringbuf::producer::AsyncProducer;
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
-use crate::{steady_config, ActorIdentity, SendSaturation, StreamSessionMessage, StreamSimpleMessage, Tx, MONITOR_NOT};
+use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamSessionMessage, StreamSimpleMessage, Tx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 use crate::core_exec;
 
@@ -39,9 +40,19 @@ pub trait TxCore {
     async fn shared_wait_empty(&mut self) -> bool;
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
     #[allow(async_fn_in_trait)]
-    async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<TxDone, Self::MsgOut>;
+    async fn shared_send_async_core(
+        &mut self,
+        msg: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+        timeout: Option<Duration>,
+    ) -> SendOutcome<Self::MsgOut>;
     #[allow(async_fn_in_trait)]
-    async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<TxDone, Self::MsgOut>;
+    async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) ->  SendOutcome<Self::MsgOut>;
+    #[allow(async_fn_in_trait)]
+    async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) ->  SendOutcome<Self::MsgOut>;
+
+    fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone;
 
     }
 
@@ -51,7 +62,9 @@ impl<T> TxCore for Tx<T> {
     type MsgOut = T;
     type MsgSize = usize;
 
-
+    fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
+        TxDone::Normal(1)
+    }
     fn shared_mark_closed(&mut self) -> bool {
         if let Some(c) = self.make_closed.take() {
             let result = c.send(());
@@ -168,98 +181,80 @@ impl<T> TxCore for Tx<T> {
     }
 
     #[inline]
-    async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>,) -> Result<TxDone, Self::MsgOut> {
+    async fn shared_send_async_core(
+        &mut self,
+        msg: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+        timeout: Option<Duration>,
+    ) -> SendOutcome<Self::MsgOut> {
         if self.make_closed.is_none() {
             warn!("Send called after channel marked closed");
         }
 
         match self.tx.try_push(msg) {
-            Ok(_) => Ok(TxDone::Normal(1)),
+            Ok(_) => SendOutcome::Success,
             Err(msg) => {
                 match saturation {
-                    SendSaturation::IgnoreAndWait => {
-                    }
-                    SendSaturation::IgnoreAndErr => {
-                        return Err(msg);
-                    }
-                    SendSaturation::Warn => {
-                        self.report_tx_full_warning(ident);
-                    }
+                    SendSaturation::IgnoreAndWait => {}
+                    SendSaturation::IgnoreAndErr => return SendOutcome::Blocked(msg),
+                    SendSaturation::Warn => self.report_tx_full_warning(ident),
                     SendSaturation::IgnoreInRelease => {
                         #[cfg(debug_assertions)]
-                        {
-                            self.report_tx_full_warning(ident);
-                        }
+                        self.report_tx_full_warning(ident);
                     }
                 }
-                if let Some(timeout) = timeout {
-                    let has_room = self.tx.wait_vacant(1).fuse();
-                    pin_mut!(has_room);
-                    let mut timeout_future = Delay::new(timeout).fuse();
+
+                let has_room = self.tx.wait_vacant(1).fuse();
+                pin_mut!(has_room);
+                let mut one_down = &mut self.oneshot_shutdown;
+                // Create a fused timeout future, using pending() for None case
+                let timeout_future = match timeout {
+                    Some(duration) => Delay::new(duration).fuse(),
+                    None => Delay::new(Duration::MAX).fuse(),
+                };
+                pin_mut!(timeout_future);
+
+                if !one_down.is_terminated() {
                     select! {
-                        _ = has_room => {
-                            let result = self.tx.push(msg).await;
-                            match result {
-                                Ok(_) => Ok(TxDone::Normal(1)),
-                                Err(t) => {
-                                    error!("channel is closed");
-                                    Err(t)
-                                }
+                    _ = one_down => SendOutcome::Blocked(msg),
+                    _ = has_room => {
+                        match self.tx.push(msg).await {
+                            Ok(_) => SendOutcome::Success,
+                            Err(t) => {
+                                error!("channel is closed");
+                                SendOutcome::Blocked(t)
                             }
-                        },
-                        _ = timeout_future => Err(msg),
-                    }
-                } else {
-                    //TODO: need to know about shutdown here?
-                    //NOTE: may block here on shutdown if graph is built poorly
-                    match self.tx.push(msg).await {
-                        Ok(_) => Ok(TxDone::Normal(1)),
-                        Err(t) => {
-                            error!("channel is closed");
-                            Err(t)
                         }
                     }
+                    _ = timeout_future => SendOutcome::Blocked(msg),
+                }
+                } else {
+                    SendOutcome::Blocked(msg)
                 }
             }
         }
     }
 
+    #[inline]
+    async fn shared_send_async(
+        &mut self,
+        msg: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+    ) -> SendOutcome<Self::MsgOut> {
+        self.shared_send_async_core(msg, ident, saturation, None).await
+    }
 
     #[inline]
-    async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<TxDone, Self::MsgOut> {
-        if self.make_closed.is_none() {
-            warn!("Send called after channel marked closed");
-        }
-
-        match self.tx.try_push(msg) {
-            Ok(_) => Ok(TxDone::Normal(1)),
-            Err(msg) => {
-                match saturation {
-                    SendSaturation::IgnoreAndWait => {
-                    }
-                    SendSaturation::IgnoreAndErr => {
-                        return Err(msg);
-                    }
-                    SendSaturation::Warn => {
-                        self.report_tx_full_warning(ident);
-                    }
-                    SendSaturation::IgnoreInRelease => {
-                        #[cfg(debug_assertions)]
-                        {
-                            self.report_tx_full_warning(ident);
-                        }
-                    }
-                }
-                //NOTE: may block here on shutdown if graph is built poorly
-                match self.tx.push(msg).await {
-                    Ok(_) => Ok(TxDone::Normal(1)),
-                    Err(t) => {
-                        error!("channel is closed");
-                        Err(t)
-                    }
-                }
-            }
-        }
+    async fn shared_send_async_timeout(
+        &mut self,
+        msg: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+        timeout: Option<Duration>,
+    ) -> SendOutcome<Self::MsgOut> {
+        self.shared_send_async_core(msg, ident, saturation, timeout).await
     }
 
 }
@@ -268,6 +263,10 @@ impl TxCore for StreamTx<StreamSessionMessage> {
     type MsgIn<'a> = (StreamSessionMessage, &'a[u8]);
     type MsgOut = StreamSessionMessage;
     type MsgSize = (usize, usize);
+
+    fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
+       TxDone::Stream(1, one.1.len())
+    }
 
     fn shared_mark_closed(&mut self) -> bool {
         if let Some(c) = self.item_channel.make_closed.take() {
@@ -426,13 +425,13 @@ impl TxCore for StreamTx<StreamSessionMessage> {
     }
 
     #[inline]
-    async fn shared_send_async_timeout(
+    async fn shared_send_async_core(
         &mut self,
         msg: Self::MsgIn<'_>,
         ident: ActorIdentity,
         saturation: SendSaturation,
         timeout: Option<Duration>,
-    ) -> Result<TxDone, Self::MsgOut> {
+    ) -> SendOutcome<Self::MsgOut> {
         let (item, payload) = msg;
         assert_eq!(item.length(), payload.len() as i32);
 
@@ -445,7 +444,7 @@ impl TxCore for StreamTx<StreamSessionMessage> {
             "Send called after channel marked closed"
         );
 
-        // Do the quick push attempt in a block so that the mutable borrows end before any await.
+        // Try to push immediately
         let push_result = {
             let payload_tx = &mut self.payload_channel.tx;
             let item_tx = &mut self.item_channel.tx;
@@ -453,20 +452,19 @@ impl TxCore for StreamTx<StreamSessionMessage> {
                 let payload_size = payload_tx.push_slice(payload);
                 debug_assert_eq!(payload_size, item.length() as usize);
                 let _ = item_tx.try_push(item);
-                Ok(TxDone::Stream(1,payload_size))
+                Ok(())
             } else {
                 Err(msg)
             }
         };
 
         match push_result {
-            Ok(done) => Ok(done),
-            Err((item,payload)) => {
+            Ok(_) => SendOutcome::Success,
+            Err((item, payload)) => {
+                // Handle saturation
                 match saturation {
-                    SendSaturation::IgnoreAndWait => { /* fallthrough */ }
-                    SendSaturation::IgnoreAndErr => {
-                        return Err(item);
-                    }
+                    SendSaturation::IgnoreAndWait => {}
+                    SendSaturation::IgnoreAndErr => return SendOutcome::Blocked(item),
                     SendSaturation::Warn => {
                         self.item_channel.report_tx_full_warning(ident);
                         self.payload_channel.report_tx_full_warning(ident);
@@ -479,122 +477,69 @@ impl TxCore for StreamTx<StreamSessionMessage> {
                         }
                     }
                 }
-                if let Some(timeout) = timeout {
-                    let has_room = async {
-                        self.payload_channel.tx.wait_vacant(payload.len()).await;
-                        self.item_channel.tx.wait_vacant(1).await;
-                    }.fuse();
-                    pin_mut!(has_room);
-                    let mut timeout_future = Delay::new(timeout).fuse();
 
-                    select! {
-                    _ = has_room => {
-                        {
-                            // Borrow the payload channel in its own block:
-                            let got_all = self.payload_channel.tx.push_slice(payload) == payload.len();
-                            if !got_all {
-                                error!("channel is closed");
-                                return Err(item);
-                            }
-                        } // payload_tx borrow dropped here
-
-                        {
-                            // Now borrow the item channel:
-                            let item_tx = &mut self.item_channel.tx;
-                            match item_tx.push(item).await {
-                                Ok(_) => Ok(TxDone::Stream(1,payload.len())),
-                                Err(t) => {
-                                    error!("channel is closed");
-                                    Err(t)
-                                }
-                            }
-                        }
-                    },
-                    _ = timeout_future => Err(item),
+                // Wait for vacant space, shutdown, or timeout
+                let has_room = async {
+                    self.payload_channel.tx.wait_vacant(payload.len()).await;
+                    self.item_channel.tx.wait_vacant(1).await;
                 }
-                } else {
-                    {
-                        let payload_tx = &mut self.payload_channel.tx;
-                        payload_tx.wait_vacant(payload.len()).await;
-                        let pushed = payload_tx.push_slice(payload) == payload.len();
+                    .fuse();
+                pin_mut!(has_room);
+                let mut one_down = &mut self.item_channel.oneshot_shutdown;
+                let timeout_future = match timeout {
+                    Some(duration) => Either::Left(Delay::new(duration).fuse()),
+                    None => Either::Right(pending::<()>().fuse()),
+                };
+                pin_mut!(timeout_future);
+
+                if !one_down.is_terminated() {
+                    select! {
+                    _ = one_down => SendOutcome::Blocked(item), // Shutdown detected
+                    _ = has_room => {
+                        // Push payload
+                        let pushed = self.payload_channel.tx.push_slice(payload) == payload.len();
                         if !pushed {
                             error!("channel is closed");
-                            return Err(item);
+                            return SendOutcome::Blocked(item);
                         }
-                    }
-                    {
-                        let item_tx = &mut self.item_channel.tx;
-                        match item_tx.push(item).await {
-                            Ok(_) => Ok(TxDone::Stream(1,payload.len())),
+                        // Push item
+                        match self.item_channel.tx.push(item).await {
+                            Ok(_) => SendOutcome::Success,
                             Err(t) => {
                                 error!("channel is closed");
-                                Err(t)
+                                SendOutcome::Blocked(t)
                             }
                         }
                     }
+                    _ = timeout_future => SendOutcome::Blocked(item), // Timeout
+                }
+                } else {
+                    // Already shut down
+                    SendOutcome::Blocked(item)
                 }
             }
         }
     }
 
+    #[inline]
+    async fn shared_send_async(
+        &mut self,
+        msg: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+    ) -> SendOutcome<Self::MsgOut> {
+        self.shared_send_async_core(msg, ident, saturation, None).await
+    }
 
     #[inline]
-    async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<TxDone, Self::MsgOut> {
-        let (item,payload) = msg;
-        assert_eq!(item.length(),payload.len() as i32);
-
-        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
-        debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
-
-        let push_result = if self.payload_channel.tx.vacant_len() >= item.length() as usize &&
-            self.item_channel.tx.vacant_len() >= 1 {
-            let _ = self.payload_channel.tx.push_slice(payload);
-            let _ = self.item_channel.tx.try_push(item);
-            Ok(())
-        } else {
-            Err(msg)
-        };
-
-        match push_result {
-            Ok(_) => Ok(TxDone::Stream(1,payload.len()) ),
-            Err((item,payload)) => {
-                match saturation {
-                    SendSaturation::IgnoreAndWait => {
-                    }
-                    SendSaturation::IgnoreAndErr => {
-                        return Err(item);
-                    }
-                    SendSaturation::Warn => {
-                        self.item_channel.report_tx_full_warning(ident);
-                        self.payload_channel.report_tx_full_warning(ident);
-                    }
-                    SendSaturation::IgnoreInRelease => {
-                        #[cfg(debug_assertions)]
-                        {
-                            self.item_channel.report_tx_full_warning(ident);
-                            self.payload_channel.report_tx_full_warning(ident);
-                        }
-                    }
-                }
-                //NOTE: may block here on shutdown if graph is built poorly
-                self.payload_channel.tx.wait_vacant(payload.len()).await;
-                match self.payload_channel.tx.push_slice(payload)==payload.len() {
-                    true => {
-                        match self.item_channel.tx.push(item).await {
-                            Ok(_) => Ok(TxDone::Stream(1,payload.len())),
-                            Err(t) => {
-                                error!("channel is closed");
-                                Err(t)
-                            }
-                        }
-                    }
-                    false => {
-                        error!("channel is closed");
-                        Err(item)
-                    }
-                }
-            }
-        }
+    async fn shared_send_async_timeout(
+        &mut self,
+        msg: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+        timeout: Option<Duration>,
+    ) -> SendOutcome<Self::MsgOut> {
+        self.shared_send_async_core(msg, ident, saturation, timeout).await
     }
 
 }
@@ -606,6 +551,9 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
     type MsgOut = StreamSimpleMessage;
     type MsgSize = (usize, usize);
 
+    fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
+        TxDone::Stream(1, one.len())
+    }
     fn shared_mark_closed(&mut self) -> bool {
         if let Some(c) = self.item_channel.make_closed.take() {
             let result = c.send(());
@@ -761,14 +709,13 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
     }
 
     #[inline]
-    async fn shared_send_async_timeout(
+    async fn shared_send_async_core(
         &mut self,
         payload: Self::MsgIn<'_>,
         ident: ActorIdentity,
         saturation: SendSaturation,
         timeout: Option<Duration>,
-    ) -> Result<TxDone, Self::MsgOut> {
-
+    ) -> SendOutcome<Self::MsgOut> {
         debug_assert!(
             self.item_channel.make_closed.is_some(),
             "Send called after channel marked closed"
@@ -778,28 +725,27 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
             "Send called after channel marked closed"
         );
 
-        // Do the quick push attempt in a block so that the mutable borrows end before any await.
+        // Try to push immediately
         let push_result = {
             let payload_tx = &mut self.payload_channel.tx;
             let item_tx = &mut self.item_channel.tx;
             if payload_tx.vacant_len() >= payload.len() as usize && item_tx.vacant_len() >= 1 {
                 let payload_size = payload_tx.push_slice(payload);
                 debug_assert_eq!(payload_size, payload.len() as usize);
-                let _ = item_tx.try_push(StreamSimpleMessage{ length: payload.len() as i32 });
-                Ok(TxDone::Stream(1,payload_size))
+                let _ = item_tx.try_push(StreamSimpleMessage { length: payload.len() as i32 });
+                Ok(())
             } else {
-                Err(StreamSimpleMessage{ length: payload.len() as i32 })
+                Err(StreamSimpleMessage { length: payload.len() as i32 })
             }
         };
 
         match push_result {
-            Ok(done) => Ok(done),
+            Ok(_) => SendOutcome::Success,
             Err(item) => {
+                // Handle saturation
                 match saturation {
-                    SendSaturation::IgnoreAndWait => { /* fallthrough */ }
-                    SendSaturation::IgnoreAndErr => {
-                        return Err(item);
-                    }
+                    SendSaturation::IgnoreAndWait => {}
+                    SendSaturation::IgnoreAndErr => return SendOutcome::Blocked(item),
                     SendSaturation::Warn => {
                         self.item_channel.report_tx_full_warning(ident);
                         self.payload_channel.report_tx_full_warning(ident);
@@ -812,120 +758,69 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
                         }
                     }
                 }
-                if let Some(timeout) = timeout {
-                    let has_room = async {
-                        self.payload_channel.tx.wait_vacant(payload.len()).await;
-                        self.item_channel.tx.wait_vacant(1).await;
-                    }.fuse();
-                    pin_mut!(has_room);
-                    let mut timeout_future = Delay::new(timeout).fuse();
 
-                    select! {
-                    _ = has_room => {
-                        {
-                            // Borrow the payload channel in its own block:
-                            let got_all = self.payload_channel.tx.push_slice(payload) == payload.len();
-                            if !got_all {
-                                error!("channel is closed");
-                                return Err(item);
-                            }
-                        } // payload_tx borrow dropped here
-
-                        {
-                            // Now borrow the item channel:
-                            let item_tx = &mut self.item_channel.tx;
-                            match item_tx.push(item).await {
-                                Ok(_) => Ok(TxDone::Stream(1,payload.len())),
-                                Err(t) => {
-                                    error!("channel is closed");
-                                    Err(t)
-                                }
-                            }
-                        }
-                    },
-                    _ = timeout_future => Err(item),
+                // Wait for vacant space, shutdown, or timeout
+                let has_room = async {
+                    self.payload_channel.tx.wait_vacant(payload.len()).await;
+                    self.item_channel.tx.wait_vacant(1).await;
                 }
-                } else {
-                    {
-                        let payload_tx = &mut self.payload_channel.tx;
-                        payload_tx.wait_vacant(payload.len()).await;
-                        let pushed = payload_tx.push_slice(payload) == payload.len();
+                    .fuse();
+                pin_mut!(has_room);
+                let mut one_down = &mut self.item_channel.oneshot_shutdown;
+                let timeout_future = match timeout {
+                    Some(duration) => Either::Left(Delay::new(duration).fuse()),
+                    None => Either::Right(pending::<()>().fuse()),
+                };
+                pin_mut!(timeout_future);
+
+                if !one_down.is_terminated() {
+                    select! {
+                    _ = one_down => SendOutcome::Blocked(item), // Shutdown detected
+                    _ = has_room => {
+                        // Push payload
+                        let pushed = self.payload_channel.tx.push_slice(payload) == payload.len();
                         if !pushed {
                             error!("channel is closed");
-                            return Err(item);
+                            return SendOutcome::Blocked(item);
                         }
-                    }
-                    {
-                        let item_tx = &mut self.item_channel.tx;
-                        match item_tx.push(item).await {
-                            Ok(_) => Ok(TxDone::Stream(1,payload.len())),
+                        // Push item
+                        match self.item_channel.tx.push(item).await {
+                            Ok(_) => SendOutcome::Success,
                             Err(t) => {
                                 error!("channel is closed");
-                                Err(t)
+                                SendOutcome::Blocked(t)
                             }
                         }
                     }
+                    _ = timeout_future => SendOutcome::Blocked(item), // Timeout
+                }
+                } else {
+                    // Already shut down
+                    SendOutcome::Blocked(item)
                 }
             }
         }
     }
 
+    #[inline]
+    async fn shared_send_async(
+        &mut self,
+        payload: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+    ) -> SendOutcome<Self::MsgOut> {
+        self.shared_send_async_core(payload, ident, saturation, None).await
+    }
 
     #[inline]
-    async fn shared_send_async(&mut self, payload: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<TxDone, Self::MsgOut> {
-
-        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
-        debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
-
-        let push_result = if self.payload_channel.tx.vacant_len() >= payload.len() as usize &&
-            self.item_channel.tx.vacant_len() >= 1 {
-            let _ = self.payload_channel.tx.push_slice(payload);
-            let _ = self.item_channel.tx.try_push(StreamSimpleMessage{ length: payload.len() as i32 });
-            Ok(())
-        } else {
-            Err(StreamSimpleMessage{ length: payload.len() as i32 })
-        };
-
-        match push_result {
-            Ok(_) => Ok(TxDone::Stream(1,payload.len()) ),
-            Err(item) => {
-                match saturation {
-                    SendSaturation::IgnoreAndWait => {
-                    }
-                    SendSaturation::IgnoreAndErr => {
-                        return Err(item);
-                    }
-                    SendSaturation::Warn => {
-                        self.item_channel.report_tx_full_warning(ident);
-                        self.payload_channel.report_tx_full_warning(ident);
-                    }
-                    SendSaturation::IgnoreInRelease => {
-                        #[cfg(debug_assertions)]
-                        {
-                            self.item_channel.report_tx_full_warning(ident);
-                            self.payload_channel.report_tx_full_warning(ident);
-                        }
-                    }
-                }
-                //NOTE: may block here on shutdown if graph is built poorly
-                self.payload_channel.tx.wait_vacant(payload.len()).await;
-                match self.payload_channel.tx.push_slice(payload)==payload.len() {
-                    true => {
-                        match self.item_channel.tx.push(item).await {
-                            Ok(_) => Ok(TxDone::Stream(1,payload.len())),
-                            Err(t) => {
-                                error!("channel is closed");
-                                Err(t)
-                            }
-                        }
-                    }
-                    false => {
-                        error!("channel is closed");
-                        Err(item)
-                    }
-                }
-            }
-        }
+    async fn shared_send_async_timeout(
+        &mut self,
+        payload: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+        timeout: Option<Duration>,
+    ) -> SendOutcome<Self::MsgOut> {
+        self.shared_send_async_core(payload, ident, saturation, timeout).await
     }
 
 }
@@ -997,12 +892,25 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
         <T as TxCore>::shared_try_send(&mut **self, msg)
     }
+    async fn shared_send_async_core(
+        &mut self,
+        msg: Self::MsgIn<'_>,
+        ident: ActorIdentity,
+        saturation: SendSaturation,
+        timeout: Option<Duration>,
+    ) -> SendOutcome<Self::MsgOut> {
+        <T as TxCore>::shared_send_async_core(&mut **self,msg,ident,saturation,timeout).await
+    }
 
-    async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>) -> Result<TxDone, Self::MsgOut> {
+    async fn shared_send_async_timeout(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation, timeout: Option<Duration>) ->SendOutcome<Self::MsgOut> {
         <T as TxCore>::shared_send_async_timeout(&mut **self,msg,ident,saturation,timeout).await
     }
 
-    async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> Result<TxDone, Self::MsgOut> {
+    async fn shared_send_async(&mut self, msg: Self::MsgIn<'_>, ident: ActorIdentity, saturation: SendSaturation) -> SendOutcome<Self::MsgOut> {
          <T as TxCore>::shared_send_async(&mut **self,msg,ident,saturation).await
+    }
+
+    fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
+        <T as TxCore>::done_one(&self,one)
     }
 }
