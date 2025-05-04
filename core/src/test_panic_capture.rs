@@ -64,7 +64,7 @@ mod simple_graph_test {
               //              #[cfg(not(coverage))]  // coverage does not support panics so this is disabled for coverage
              //               panic!("panic at 5");
                         }
-                        let _ = context.send_async(&mut tx, x.to_string(), SendSaturation::IgnoreAndWait).await;
+                        let _ = context.send_async(&mut tx, x.to_string(), SendSaturation::AwaitForRoom).await;
                     }
                     Ok(())
                 }

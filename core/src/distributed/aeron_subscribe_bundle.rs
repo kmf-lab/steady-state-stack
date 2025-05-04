@@ -22,6 +22,8 @@ pub struct AeronSubscribeSteadyState {
     sub_reg_id: Vec<Option<i64>>,
 }
 
+const ROUND_ROBIN:Option<Duration> = None;
+
 pub async fn run<const GIRTH: usize>(
     context: SteadyContext,
     tx: SteadyStreamTxBundle<StreamSessionMessage, GIRTH>,
@@ -214,7 +216,11 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
             }
         }
         if earliest_time > now {
-            cmd.wait_periodic(earliest_time - now).await;
+            let time_to_wait = earliest_time - now;
+            if time_to_wait.as_secs() > 2 {
+                error!("waiting {:?} Sec",time_to_wait.as_secs());
+            }
+            cmd.wait_periodic(time_to_wait).await;
             //TODO: we need some kind of check in the runtime to ensure cmd is in the stack for await.
         }
         now = Instant::now();
@@ -222,26 +228,25 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
             let tx_stream = &mut tx_guards[earliest_idx];
             //error!("AA earliest index selecte {:?} {:?} of {:?}", earliest_idx, tx_stream.shared_vacant_units(), tx_stream.capacity());
 
-              if !tx_stream.shared_is_full() {
+            let desired = if !tx_stream.shared_is_full() {
                 if let Ok(sub) = &mut subs[earliest_idx] {
-                   // error!("BB sub: {:?} ", sub.stream_id());
-
                     let delay = poll_aeron_subscription(tx_stream, sub, &mut cmd).await;
-                    next_times[earliest_idx] = now + delay;
-                    //trace!("setting idx {:?} all next_times {:?}", earliest_idx, next_times);
+                    now + delay
                 } else {
                     error!("Internal error, the subscription should be present");
                     //moving this out of the way to avoid checking again
-                    next_times[earliest_idx] = now + Duration::from_secs(u32::MAX as u64);
+                    now + Duration::from_secs(i32::MAX as u64)
                 }
             } else {
                   //trace!("output full skipping {:?}", earliest_idx);
                   if let Some(f) = tx_stream.fastest_byte_processing_duration() {
-                      next_times[earliest_idx] = now + f.mul((tx_stream.capacity() >> 1) as u32);
+                      now + f.mul((tx_stream.capacity() >> 1) as u32)
                   } else {
-                      next_times[earliest_idx] = now + tx_stream.max_poll_latency;
+                      now + tx_stream.max_poll_latency
                   }
-              }
+            };
+            next_times[earliest_idx] = if let Some(d) = ROUND_ROBIN {now+d} else {desired};
+
         }
     }
     Ok(())

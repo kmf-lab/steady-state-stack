@@ -46,7 +46,7 @@ async fn internal_behavior<C:SteadyCommander, const GIRTH:usize>(mut cmd: C, one
 
             match cmd.try_send(&mut tx[index], t) {
                 SendOutcome::Success => {}
-                SendOutcome::Blocked(t) => {cmd.send_async(&mut tx[index], t, SendSaturation::IgnoreAndWait).await;}
+                SendOutcome::Blocked(t) => {cmd.send_async(&mut tx[index], t, SendSaturation::AwaitForRoom).await;}
             }
         }
     }

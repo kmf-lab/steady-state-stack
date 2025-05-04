@@ -72,6 +72,8 @@ impl<T> TxCore for Tx<T> {
                 //not a serious issue, may happen with bundles
                 trace!("close called but the receiver already dropped");
             }
+        } else {
+            warn!("already marked closed, check for reduntant calls");
         }
         true // always returns true, close request is never rejected by this method.
     }
@@ -196,39 +198,38 @@ impl<T> TxCore for Tx<T> {
             Ok(_) => SendOutcome::Success,
             Err(msg) => {
                 match saturation {
-                    SendSaturation::IgnoreAndWait => {}
-                    SendSaturation::IgnoreAndErr => return SendOutcome::Blocked(msg),
-                    SendSaturation::Warn => self.report_tx_full_warning(ident),
-                    SendSaturation::IgnoreInRelease => {
-                        #[cfg(debug_assertions)]
-                        self.report_tx_full_warning(ident);
+                    SendSaturation::AwaitForRoom => {}
+                    SendSaturation::ReturnBlockedMsg => return SendOutcome::Blocked(msg),
+                    SendSaturation::WarnThenAwait => self.report_tx_full_warning(ident),
+                    SendSaturation::DebugWarnThenAwait => {
+                                                #[cfg(debug_assertions)]
+                                                self.report_tx_full_warning(ident);
                     }
                 }
 
                 let has_room = self.tx.wait_vacant(1).fuse();
                 pin_mut!(has_room);
                 let mut one_down = &mut self.oneshot_shutdown;
-                // Create a fused timeout future, using pending() for None case
                 let timeout_future = match timeout {
                     Some(duration) => Delay::new(duration).fuse(),
-                    None => Delay::new(Duration::MAX).fuse(),
+                    None => Delay::new(Duration::from_secs(i32::MAX as u64)).fuse(), //do not use duration max as we need to add
                 };
                 pin_mut!(timeout_future);
 
                 if !one_down.is_terminated() {
                     select! {
-                    _ = one_down => SendOutcome::Blocked(msg),
-                    _ = has_room => {
-                        match self.tx.push(msg).await {
-                            Ok(_) => SendOutcome::Success,
-                            Err(t) => {
-                                error!("channel is closed");
-                                SendOutcome::Blocked(t)
+                        _ = one_down => SendOutcome::Blocked(msg),
+                        _ = has_room => {
+                            match self.tx.push(msg).await {
+                                Ok(_) => SendOutcome::Success,
+                                Err(t) => {
+                                    error!("channel is closed");
+                                    SendOutcome::Blocked(t)
+                                }
                             }
                         }
+                        _ = timeout_future => SendOutcome::Blocked(msg),
                     }
-                    _ = timeout_future => SendOutcome::Blocked(msg),
-                }
                 } else {
                     SendOutcome::Blocked(msg)
                 }
@@ -463,13 +464,13 @@ impl TxCore for StreamTx<StreamSessionMessage> {
             Err((item, payload)) => {
                 // Handle saturation
                 match saturation {
-                    SendSaturation::IgnoreAndWait => {}
-                    SendSaturation::IgnoreAndErr => return SendOutcome::Blocked(item),
-                    SendSaturation::Warn => {
+                    SendSaturation::AwaitForRoom => {}
+                    SendSaturation::ReturnBlockedMsg => return SendOutcome::Blocked(item),
+                    SendSaturation::WarnThenAwait => {
                         self.item_channel.report_tx_full_warning(ident);
                         self.payload_channel.report_tx_full_warning(ident);
                     }
-                    SendSaturation::IgnoreInRelease => {
+                    SendSaturation::DebugWarnThenAwait => {
                         #[cfg(debug_assertions)]
                         {
                             self.item_channel.report_tx_full_warning(ident);
@@ -744,13 +745,13 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
             Err(item) => {
                 // Handle saturation
                 match saturation {
-                    SendSaturation::IgnoreAndWait => {}
-                    SendSaturation::IgnoreAndErr => return SendOutcome::Blocked(item),
-                    SendSaturation::Warn => {
+                    SendSaturation::AwaitForRoom => {}
+                    SendSaturation::ReturnBlockedMsg => return SendOutcome::Blocked(item),
+                    SendSaturation::WarnThenAwait => {
                         self.item_channel.report_tx_full_warning(ident);
                         self.payload_channel.report_tx_full_warning(ident);
                     }
-                    SendSaturation::IgnoreInRelease => {
+                    SendSaturation::DebugWarnThenAwait => {
                         #[cfg(debug_assertions)]
                         {
                             self.item_channel.report_tx_full_warning(ident);

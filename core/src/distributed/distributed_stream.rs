@@ -188,6 +188,10 @@ pub trait StreamRxBundleTrait {
 
 impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
     fn mark_closed(&mut self) -> bool {
+        if self.is_empty() {
+            warn!("nothing found to be closed");
+            return false;
+        }
         //NOTE: must be all or nothing it never returns early
         self.iter_mut().for_each(|f| {let _ = f.mark_closed();});
         true  // always returns true, close request is never rejected by this method.

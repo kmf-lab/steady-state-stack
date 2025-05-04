@@ -225,7 +225,8 @@ async fn internal_behavior<const GIRTH: usize>(
             #[cfg(debug_assertions)]
             { //only check this when debug is on.
               //and we are not shutting down
-                if !is_shutting_down {
+                                
+                if !ctrl.is_liveliness_stop_requested() {
                     if let Some(i) = state.last_instant {
                         let measured = i.elapsed().as_millis() as u64;
                         let margin = 1.max(1 + (ctrl.frame_rate_ms >> 1));
@@ -476,7 +477,7 @@ async fn send_structure_details(
     for consumer in consumer_vec.iter_mut() {
         let to_send = nodes.clone().into_iter();
         for send_me in to_send {
-            match consumer.shared_send_async(send_me, ident, SendSaturation::IgnoreAndWait).await {
+            match consumer.shared_send_async(send_me, ident, SendSaturation::AwaitForRoom).await {
                 Success => {}
                 Blocked(e) => {
                     error!("error sending node data {:?}", e);
@@ -518,7 +519,7 @@ async fn send_data_details(
                 if let Blocked(e) = consumer.shared_send_async(
                     DiagramData::NodeProcessData(state.sequence, modified_status.into_boxed_slice()),
                     ident,
-                    SendSaturation::IgnoreInRelease,
+                    SendSaturation::DebugWarnThenAwait,
                 )
                     .await
                 {
@@ -528,7 +529,7 @@ async fn send_data_details(
                 if let Blocked(e) = consumer.shared_send_async(
                     DiagramData::ChannelVolumeData(state.sequence, state.total_take_send.clone().into_boxed_slice()),
                     ident,
-                    SendSaturation::IgnoreInRelease,
+                    SendSaturation::DebugWarnThenAwait,
                 )
                     .await
                 {
@@ -672,7 +673,7 @@ mod metric_collector_tests {
                                 context.request_graph_stop();
                                 continue;
                             }
-                            let _ = context.send_async(&mut tx, x.to_string(), SendSaturation::IgnoreAndWait).await;
+                            let _ = context.send_async(&mut tx, x.to_string(), SendSaturation::AwaitForRoom).await;
                         }
                         Ok(())
                     }

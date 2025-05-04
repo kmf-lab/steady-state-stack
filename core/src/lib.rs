@@ -597,14 +597,14 @@ pub enum SendSaturation {
     /// This option blocks the sender until there is space in the channel, ensuring that
     /// all messages are eventually sent. This can help maintain a reliable flow of messages
     /// but may lead to increased latency under high load.
-    IgnoreAndWait,
+    AwaitForRoom,
 
     /// Ignore the saturation and return an error immediately.
     ///
     /// This option allows the sender to detect and handle the saturation condition
     /// without blocking. It returns an error, which can be used to implement custom
     /// backpressure handling or retry logic.
-    IgnoreAndErr,
+    ReturnBlockedMsg,
 
     /// Warn about the saturation condition but allow the message to be sent anyway.
     ///
@@ -613,13 +613,13 @@ pub enum SendSaturation {
     /// from being sent. This can help maintain throughput but may lead to resource exhaustion
     /// if not monitored properly.
     #[default]
-    Warn,
+    WarnThenAwait,
 
     /// Ignore the saturation condition entirely in release builds.
     ///
     /// This option is similar to `Warn`, but it does not generate warnings in release builds.
     /// This can be useful for performance-critical applications where logging overhead needs to be minimized.
-    IgnoreInRelease,
+    DebugWarnThenAwait,
 }
 
 
@@ -915,7 +915,7 @@ mod lib_tests {
         let guard = tx.try_lock();
         if let Some(mut tx_guard) = guard {
             let result = context
-                .send_async(&mut tx_guard, 42, SendSaturation::Warn)
+                .send_async(&mut tx_guard, 42, SendSaturation::WarnThenAwait)
                 .await;
             assert!(result.is_sent());
         }
@@ -1291,7 +1291,7 @@ mod enum_tests {
     #[test]
     fn test_send_saturation_default() {
         let saturation = SendSaturation::default();
-        assert_eq!(saturation, SendSaturation::Warn);
+        assert_eq!(saturation, SendSaturation::WarnThenAwait);
     }
 
     #[test]

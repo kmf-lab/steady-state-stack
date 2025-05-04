@@ -632,7 +632,7 @@ pub(crate) mod monitor_tests {
         let threshold = 5;
         let mut count = 0;
         while count < threshold {
-            let _ = monitor.send_async(&mut txd, "test".to_string(), SendSaturation::Warn).await;
+            let _ = monitor.send_async(&mut txd, "test".to_string(), SendSaturation::WarnThenAwait).await;
             count += 1;
         }
 
@@ -689,7 +689,7 @@ pub(crate) mod monitor_tests {
         let threshold = 5;
         let mut count = 0;
         while count < threshold {
-            let _ = monitor.send_async(txd, "test".to_string(), SendSaturation::Warn).await;
+            let _ = monitor.send_async(txd, "test".to_string(), SendSaturation::WarnThenAwait).await;
             count += 1;
             if let Some(ref mut tx) = monitor.telemetry.send_tx {
                 assert_eq!(tx.count[txd.local_index], count);
@@ -1033,7 +1033,7 @@ pub(crate) mod monitor_tests {
         let mut monitor = context.into_monitor([], [&tx]);
 
         if let Some(mut tx) = tx.try_lock() {
-            let result = monitor.send_async(&mut tx, 42, SendSaturation::Warn).await;
+            let result = monitor.send_async(&mut tx, 42, SendSaturation::WarnThenAwait).await;
             assert!(result.is_sent());
         };
     }

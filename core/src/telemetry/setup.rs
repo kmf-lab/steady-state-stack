@@ -308,8 +308,8 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                             GraphLivelinessState::Stopped,
                                             GraphLivelinessState::StoppedUncleanly,
                                         ]) {
-                                            warn!("full telemetry state channel detected from {:?} value:{:?} full:{:?} capacity: {:?}",
-                                                this.ident, a, tx.is_full(), tx.tx.capacity());
+                                            // trace!("full telemetry state channel detected from {:?} value:{:?} full:{:?} capacity: {:?}",
+                                            //             this.ident, a, tx.is_full(), tx.tx.capacity());
                                             actor_status.last_telemetry_error = now;
                                         }
                                    
@@ -427,7 +427,7 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
                 let needs_to_be_closed = tx.make_closed.is_some();
                 if needs_to_be_closed {
                     status.bool_stop = true;
-                    let _ = tx.shared_send_async(status, ident, SendSaturation::IgnoreInRelease).await;
+                    let _ = tx.shared_send_async(status, ident, SendSaturation::DebugWarnThenAwait).await;
                     if let Some(c) = tx.make_closed.take() {
                         let _ = c.send(());
                         //ignore any failure since this may already be closed which is ok here
@@ -443,7 +443,7 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
             let mut tx = send_tx.tx.lock().await;
             if tx.make_closed.is_none() {
                 if send_tx.count.iter().any(|x| !x.is_zero()) {
-                    let _ = tx.shared_send_async(send_tx.count, ident, SendSaturation::IgnoreInRelease).await;
+                    let _ = tx.shared_send_async(send_tx.count, ident, SendSaturation::DebugWarnThenAwait).await;
                 }
                 tx.mark_closed();
                 tx.wait_empty().await;
@@ -454,7 +454,7 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
             let mut rx = send_rx.tx.lock().await;
             if rx.make_closed.is_none() {
                 if send_rx.count.iter().any(|x| !x.is_zero()) {
-                    let _ = rx.shared_send_async(send_rx.count, ident, SendSaturation::IgnoreInRelease).await;
+                    let _ = rx.shared_send_async(send_rx.count, ident, SendSaturation::DebugWarnThenAwait).await;
                 }
                 rx.mark_closed();
                 rx.wait_empty().await;

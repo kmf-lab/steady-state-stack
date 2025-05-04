@@ -76,7 +76,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
                     ErrorMessage {
                         text: format!("at value: {}", state.value),
                     },
-                    SendSaturation::IgnoreAndWait,
+                    SendSaturation::AwaitForRoom,
                 )
                 .await;
         }
