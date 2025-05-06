@@ -196,7 +196,7 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
     scheduler.set_std_dev_ns(std.as_nanos() as u64);
     scheduler.set_expected_moment_ns(avg.as_nanos() as u64);
     let now_ns = now.duration_since(tx.last_input_instant).as_nanos() as u64;
-    Duration::from_nanos(scheduler.compute_next_poll_time(now_ns))
+    Duration::from_nanos(scheduler.compute_next_delay_ns(now_ns))
 }
 
 #[cfg(test)]

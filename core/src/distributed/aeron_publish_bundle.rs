@@ -59,12 +59,12 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
     let mut rx = rx.lock().await;
     let mut state = state.lock(|| AeronPublishSteadyState::default()).await;
         let mut pubs: [ Result<ExclusivePublication, Box<dyn Error> >;GIRTH] = std::array::from_fn(|_| Err("Not Found".into())  );
-               
+        let mut last_position: [i64;GIRTH] = [0;GIRTH];
+
         //ensure right length
         while state.pub_reg_id.len()<GIRTH {
             state.pub_reg_id.push(None);
         }
-//TODO: if there is no publication before isRun we do NEED to send some status for cpu measure
         {
            let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
 
@@ -136,14 +136,15 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
         let wait_for = 1;//(512*1024).min(rx.capacity());
         let in_channels = 1;
-       //TODO: we may want a config option to determin if all data is sent before shutdown or not !!
-        while cmd.is_running(&mut || rx.is_closed()) {
+        let mut all_streams_flushed = false;
+        while cmd.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
 
             let _clean = await_for_any!(
                            cmd.wait_periodic(Duration::from_millis(16))
                           ,cmd.wait_avail_bundle(&mut rx, wait_for, in_channels)
                          );
 
+            let mut flushed_count = 0;
             for i in 0..GIRTH {
                 match &mut pubs[i] {
                     Ok(p) => {
@@ -152,7 +153,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                         loop {
                             let mut count_done = 0;
                             let mut count_bytes = 0;
-
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
                             if vacant_aeron_bytes > 0 {
                                 rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
@@ -173,10 +173,15 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                         p.offer_part(buf, 0, msg_len as Index)
                                     };
                                     match response {
-                                        Ok(_value) => {
-                                            count_done += 1;
-                                            count_bytes += msg_len;
-                                            true
+                                        Ok(value) => {
+                                            if value>=0 {
+                                                last_position[i]= value;
+                                                count_done += 1;
+                                                count_bytes += msg_len;
+                                                true
+                                            } else {
+                                                false
+                                            }
                                         }
                                         Err(aeron_error) => {
                                             false
@@ -190,12 +195,19 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
                         }
 
+                        if let Ok(position) = p.position() {
+                            if last_position[i] <= position {
+                                flushed_count += 1;
+                            };
+                        }
+
                     }
                     Err(e) => {
                         warn!("error details {}",e);
                     }
                 }
             }
+            all_streams_flushed = GIRTH == flushed_count;
          } 
     Ok(())
 }

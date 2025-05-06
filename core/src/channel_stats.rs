@@ -1,8 +1,7 @@
 
 use std::cmp::Ordering;
 use std::collections::VecDeque;
-
-
+use std::fmt::Write;
 #[allow(unused_imports)]
 use log::*;
 use num_traits::Zero;
@@ -935,7 +934,6 @@ pub(crate) struct ComputeLabelsLabels<'a> {
     pub(crate) int_only: bool,
     pub(crate) fixed_digits: usize
 }
-
 /// Computes labels and updates the metric and label targets.
 ///
 /// # Arguments
@@ -957,30 +955,13 @@ pub(crate) fn compute_labels<T: Counter>(
     metric_target: &mut String,
     label_target: &mut String,
 ) {
-    // We have frames, refresh rates and windows
-    // A frame is a single slice of time, viewable
-    // A refresh rate is how many frames we remain unchanged before showing new derived fields
-    // For example we want to show the moving averages slow enough for humans to read it.
-    // A window is a count of refresh rates, this is the time we use to compute the averages and std_devs
-    // This solution is designed to be able to show the data in a human readable way
-
-    // A typical frame rate is 100ms (always greater than 32ms)
-    // A typical refresh rate is 100+ frames or every 10 seconds of frames
-    // A typical window is 6 or more refreshes for a 1 minute moving average
-
-    // Over the window
-    // Average latency: 18.652 ms   (custom unit)
-    // Average rate: 2000 per/second  (only one converted, and custom unit)
-    // Average fill:  units
-    // Average mcpu: 256
-    // Average work: 25%          (custom unit)
-
     if config.show_avg {
-        // info!("{} runner: {:?} shift: {:?}",label, current.runner, (self.refresh_rate_in_bits + self.window_bucket_in_bits));
+        // Prefix the label
         label_target.push_str("Avg ");
         label_target.push_str(labels.label);
 
-        #[cfg(feature = "prometheus_metrics" )]
+        // Prefix the metric for Prometheus
+        #[cfg(feature = "prometheus_metrics")]
         {
             metric_target.push_str("avg_");
             metric_target.push_str(labels.label);
@@ -988,67 +969,105 @@ pub(crate) fn compute_labels<T: Counter>(
             metric_target.push_str(labels.prometheus_labels);
             metric_target.push('}');
         }
+
+        // Compute the average value components
         let denominator = config.rational_adjust.1 as u64;
         let avg_per_sec_numer = (config.rational_adjust.0 as u128 * current.runner) >> config.window_in_bits;
-        if avg_per_sec_numer >= (10 * denominator) as u128 {
-            let value = avg_per_sec_numer / denominator as u128;
+        let int_value = avg_per_sec_numer / denominator as u128;
+        let float_value = avg_per_sec_numer as f32 / denominator as f32;
 
+        // Format the label based on int_only flag
+        if labels.int_only {
+            let mut itoa_buf = itoa::Buffer::new();
+            let int_str = itoa_buf.format(int_value);
+            let int_len = int_str.len();
+            let pad = labels.fixed_digits.saturating_sub(int_len);
             label_target.push_str(": ");
-            let mut b = itoa::Buffer::new();
-            let t = b.format(value);
-            if value >= 9_999 {
-                if value >= 9_999_999 {
-                    label_target.push_str(&t[..t.len() - 6]);
-                    label_target.push('M');
-                } else {
-                    label_target.push_str(&t[..t.len() - 3]);
-                    label_target.push('K');
-                }
-            } else {
-                label_target.push_str(t);
+            for _ in 0..pad {
+                label_target.push('0');
             }
-            #[cfg(feature = "prometheus_metrics" )]
+            label_target.push_str(int_str);
+
+            // Output raw integer value for metrics
+            #[cfg(feature = "prometheus_metrics")]
             {
                 metric_target.push(' ');
-                metric_target.push_str(itoa::Buffer::new().format(value));
+                metric_target.push_str(int_str);
                 metric_target.push('\n');
             }
         } else {
-            let value = avg_per_sec_numer as f32 / denominator as f32;
-            let value = if labels.int_only {
-                let int_value = value as u32;
-                if labels.fixed_digits > 0 {
-                    // Pad with leading zeros to match fixed_digits length
-                    format!("{:0>width$}", int_value, width = labels.fixed_digits)
+            label_target.push_str(": ");
+            if int_value >= 10 {
+                let mut b = itoa::Buffer::new();
+                let t = b.format(int_value);
+                if int_value >= 9_999_999 {
+                    label_target.push_str(&t[..t.len() - 6]);
+                    label_target.push('M');
+                } else if int_value >= 9_999 {
+                    label_target.push_str(&t[..t.len() - 3]);
+                    label_target.push('K');
                 } else {
-                    // No padding, just the integer
-                    Buffer::new().format(int_value).to_string() //TODO: reevaluate!
+                    label_target.push_str(t);
+                }
+
+                // Output raw integer value for metrics
+                #[cfg(feature = "prometheus_metrics")]
+                {
+                    metric_target.push(' ');
+                    metric_target.push_str(t);
+                    metric_target.push('\n');
                 }
             } else {
-                // Show with 3 decimal places as before
-                format!(" {:.3}", value)
-            };
-            #[cfg(feature = "prometheus_metrics" )]
-            {
-                metric_target.push_str(&value);
-                metric_target.push('\n');
-            }
+                // Format float with 3 decimal places
+                let mut value_buf = [0u8; 32];
+                struct SliceWriter<'a> {
+                    buf: &'a mut [u8],
+                    pos: usize,
+                }
+                impl<'a> core::fmt::Write for SliceWriter<'a> {
+                    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                        let bytes = s.as_bytes();
+                        if self.pos + bytes.len() > self.buf.len() {
+                            return Err(core::fmt::Error);
+                        }
+                        self.buf[self.pos..self.pos + bytes.len()].copy_from_slice(bytes);
+                        self.pos += bytes.len();
+                        Ok(())
+                    }
+                }
+                let mut writer = SliceWriter {
+                    buf: &mut value_buf,
+                    pos: 0,
+                };
+                write!(&mut writer, " {:.3}", float_value).unwrap();
+                let offset = writer.pos;
+                label_target.push_str(core::str::from_utf8(&value_buf[..offset]).unwrap());
 
-            label_target.push(':');
-            label_target.push_str(&value);
+                // Output raw float value for metrics
+                #[cfg(feature = "prometheus_metrics")]
+                {
+                    metric_target.push(' ');
+                    metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).unwrap());
+                    metric_target.push('\n');
+                }
+            }
         }
 
+        // Append unit and newline
         label_target.push(' ');
         label_target.push_str(labels.unit);
         label_target.push('\n');
     }
 
+    // Compute standard deviation if required
     let std = if !std_dev.is_empty() {
         actor_stats::compute_std_dev(config.window_in_bits, 1 << config.window_in_bits, current.runner, current.sum_of_squares)
-    } else { 0f32 };
+    } else {
+        0f32
+    };
 
+    // Format standard deviation entries
     std_dev.iter().for_each(|f| {
-        // Inflight Operations 2.5 Standard Deviations Above Mean: 30455.1 events in 3 ms Frame
         label_target.push_str(labels.label);
         label_target.push(' ');
 
@@ -1056,15 +1075,15 @@ pub(crate) fn compute_labels<T: Counter>(
         if *f != StdDev::one() {
             label_target.push_str(&n_units);
         }
-        label_target.push_str("StdDev: "); // This is per frame.
+        label_target.push_str("StdDev: ");
         let value = &format!("{:.3}", (f.value() * std) / PLACES_TENS as f32);
         label_target.push_str(value);
 
         label_target.push_str(" per frame (");
-        label_target.push_str(Buffer::new().format(config.frame_rate_ms));
+        label_target.push_str(itoa::Buffer::new().format(config.frame_rate_ms));
         label_target.push_str("ms duration)\n");
 
-        #[cfg(feature = "prometheus_metrics" )]
+        #[cfg(feature = "prometheus_metrics")]
         {
             metric_target.push_str("std_");
             metric_target.push_str(labels.label);
@@ -1078,21 +1097,19 @@ pub(crate) fn compute_labels<T: Counter>(
         }
     });
 
+    // Format percentile entries
     percentile.iter().for_each(|p| {
         label_target.push_str(labels.label);
         label_target.push(' ');
 
-        label_target.push_str(Buffer::new().format(p.percentile() as usize));
+        label_target.push_str(itoa::Buffer::new().format(p.percentile() as usize));
         label_target.push_str("%ile ");
 
         if let Some(h) = &current.histogram {
-            //let value = ((config.rational_adjust.0 as f32 * h.value_at_percentile(p.percentile()).min(config.max_value) as f32)
-              //  / config.rational_adjust.1 as f32) as usize;
-
             let value = (h.value_at_percentile(p.percentile()).min(config.max_value) as f32) as usize;
-            label_target.push_str(Buffer::new().format(value));
+            label_target.push_str(itoa::Buffer::new().format(value));
 
-            #[cfg(feature = "prometheus_metrics" )]
+            #[cfg(feature = "prometheus_metrics")]
             {
                 metric_target.push_str("percentile_");
                 metric_target.push_str(labels.label);
@@ -1105,7 +1122,7 @@ pub(crate) fn compute_labels<T: Counter>(
                 metric_target.push('\n');
             }
         } else {
-            label_target.push_str("InternalError"); // Not expected to happen
+            label_target.push_str("InternalError");
             error!("InternalError: no histogram for required percentile {:?}", p);
         }
         label_target.push(' ');

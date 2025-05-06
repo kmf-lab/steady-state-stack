@@ -466,7 +466,8 @@ impl<T: StreamItem> StreamTx<T> {
             if waiting_bytes<2 {
                 (Duration::ZERO,self.max_poll_latency.min(d))
             } else {
-                (self.max_poll_latency.min(d.mul((waiting_bytes >> 1) as u32)), self.max_poll_latency.min(d.mul((waiting_bytes - 1) as u32)))
+                (  self.max_poll_latency.min(d.mul((waiting_bytes >> 1) as u32))
+                 , self.max_poll_latency.min(d.mul((waiting_bytes - 1) as u32)))
             }
         } else {
             (Duration::ZERO, self.max_poll_latency)

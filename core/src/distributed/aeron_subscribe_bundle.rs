@@ -68,7 +68,7 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
         let remaining_poll = if let Some(s) = tx_item.smallest_space() { s } else {
             tx_item.item_channel.capacity()
         };
-       //error!("poll for as many as: {}", remaining_poll);
+       error!("poll for as many as: {}", remaining_poll);
         if 0 >= sub.poll(&mut | buffer: &AtomicBuffer,
                                               offset: i32,
                                               length: i32,
@@ -90,7 +90,7 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
         }
         yield_now().await; //do not remove in many cases this allows us more data in this pass
     }
-    //trace!("poll the stream {} got {} ready msg empty {} ",sub.stream_id(),input_frags, tx_item.ready_msg_session.is_empty());
+    trace!("poll the stream {} got {} ready msg empty {} ",sub.stream_id(),input_frags, tx_item.ready_msg_session.is_empty());
 
     if !tx_item.ready_msg_session.is_empty() {
         let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(cmd);
@@ -115,15 +115,15 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
     }
 
     let (avg,std) = tx_item.guess_duration_between_arrivals();
-    let (min,max) = tx_item.next_poll_bounds();
+    let (min,max) = tx_item.next_poll_bounds();//TODO: check these limits?
 
     let mut scheduler = polling::PollScheduler::new();
     scheduler.set_max_delay_ns(max.as_nanos() as u64);
     scheduler.set_min_delay_ns(min.as_nanos() as u64);
     scheduler.set_std_dev_ns(std.as_nanos() as u64);
     scheduler.set_expected_moment_ns(avg.as_nanos() as u64);
-    let now_ns = now.duration_since(tx_item.last_input_instant).as_nanos() as u64;
-    let ns = scheduler.compute_next_poll_time(now_ns);
+    let waited_ns = now.duration_since(tx_item.last_input_instant).as_nanos() as u64;
+    let ns = scheduler.compute_next_delay_ns(waited_ns);
     Duration::from_nanos(ns)
 }
 
@@ -202,8 +202,8 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
     }
 
     error!("running subscriber '{:?}' all subscriptions in place", cmd.identity());
-    let mut next_times = [Instant::now(); GIRTH];
     let mut now = Instant::now();
+    let mut next_times = [now; GIRTH];
 
     while cmd.is_running(&mut || tx_guards.mark_closed()) {
 
@@ -217,7 +217,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
         }
         if earliest_time > now {
             let time_to_wait = earliest_time - now;
-            if time_to_wait.as_secs() > 2 {
+            if time_to_wait.as_secs() > 2 { //this should not be happening
                 error!("waiting {:?} Sec",time_to_wait.as_secs());
             }
             cmd.wait_periodic(time_to_wait).await;
@@ -226,26 +226,32 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
         now = Instant::now();
         {
             let tx_stream = &mut tx_guards[earliest_idx];
-            //error!("AA earliest index selecte {:?} {:?} of {:?}", earliest_idx, tx_stream.shared_vacant_units(), tx_stream.capacity());
+            error!("AA earliest index selecte {:?} {:?} of {:?}", earliest_idx, tx_stream.shared_vacant_units(), tx_stream.capacity());
 
-            let desired = if !tx_stream.shared_is_full() {
+            let dynamic = if !tx_stream.shared_is_full() {
                 if let Ok(sub) = &mut subs[earliest_idx] {
-                    let delay = poll_aeron_subscription(tx_stream, sub, &mut cmd).await;
-                    now + delay
+                    poll_aeron_subscription(tx_stream, sub, &mut cmd).await
                 } else {
                     error!("Internal error, the subscription should be present");
                     //moving this out of the way to avoid checking again
-                    now + Duration::from_secs(i32::MAX as u64)
+                    Duration::from_secs(i32::MAX as u64)
                 }
             } else {
                   //trace!("output full skipping {:?}", earliest_idx);
                   if let Some(f) = tx_stream.fastest_byte_processing_duration() {
-                      now + f.mul((tx_stream.capacity() >> 1) as u32)
+                      let result = f.mul((tx_stream.capacity() >> 1) as u32);
+                       if result.gt(&Duration::from_secs(1)) {
+                           error!("result too large: {:?}",result);
+                       }
+                      result
                   } else {
-                      now + tx_stream.max_poll_latency
+                      if tx_stream.max_poll_latency.gt(&Duration::from_secs(1)) {
+                          error!("result too large: {:?}",tx_stream.max_poll_latency);
+                      }
+                      tx_stream.max_poll_latency
                   }
             };
-            next_times[earliest_idx] = if let Some(d) = ROUND_ROBIN {now+d} else {desired};
+            next_times[earliest_idx] = now + if let Some(fixed) = ROUND_ROBIN { fixed } else { dynamic };
 
         }
     }
