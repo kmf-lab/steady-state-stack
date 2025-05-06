@@ -721,9 +721,9 @@ impl ActorBuilder {
                        }
                        Err(e) => {
                            if let Some(specific_error) = e.downcast_ref::<std::io::Error>() {
-                               warn!("IO Error encountered: {}", specific_error);
+                               warn!("IO Error encountered: {} in actor: {:?}", specific_error,context_archetype.ident);
                            } else if let Some(specific_error) = e.downcast_ref::<String>() {
-                               warn!("String Error encountered: {}", specific_error);
+                               warn!("String Error encountered: {} in actor: {:?}", specific_error,context_archetype.ident);
                            }
                            // Panic or an actor Error, log and continue in the loop
                            warn!("Restarting: {:?} ", context_archetype.ident);

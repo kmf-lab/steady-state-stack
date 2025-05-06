@@ -319,7 +319,7 @@ fn gather_valid_actor_telemetry_to_scan(
 
 /// Collects channel data from the state and dynamic senders.
 fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[CollectorDetail]) -> Vec<ActorIdentity> {
-    state.fill += 1;
+    state.fill = (state.fill + 1) & 0xF;
     let working: Vec<(bool, &CollectorDetail)> = dynamic_senders
         .iter()
         .map(|f| {

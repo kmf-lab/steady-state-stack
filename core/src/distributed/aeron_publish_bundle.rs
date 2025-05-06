@@ -136,6 +136,9 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
         let wait_for = 1;//(512*1024).min(rx.capacity());
         let in_channels = 1;
+
+    //TODO: need to do this for the single publish
+    //TODO: can we poll less if we see they are not flushing?
         let mut all_streams_flushed = false;
         while cmd.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
 
@@ -199,11 +202,14 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                             if last_position[i] <= position {
                                 flushed_count += 1;
                             };
+                        } else {
+                            //is closed
+                            flushed_count +=1; //not sure...
                         }
-
                     }
                     Err(e) => {
                         warn!("error details {}",e);
+                        flushed_count +=1; //not sure...
                     }
                 }
             }

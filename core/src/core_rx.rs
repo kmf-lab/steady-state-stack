@@ -12,6 +12,7 @@ use crate::{steady_config, Rx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamRx};
 use crate::steady_rx::{RxDone};
 use futures_util::{FutureExt};
+use crate::yield_now;
 
 pub trait RxCore {
     type MsgOut;
@@ -157,6 +158,7 @@ impl <T>RxCore for Rx<T> {
                 let mut operation = &mut self.rx.wait_occupied(count);
                 select! { _ = one_closed => self.rx.occupied_len() >= count, _ = operation => true }
             } else {
+                yield_now::yield_now().await; //this is a big help in closed shutdown tight loop
                 self.rx.occupied_len() >= count // if closed, we can still take
             }
         }
@@ -315,6 +317,7 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
                 let mut operation = &mut self.item_channel.rx.wait_occupied(count);
                 select! { _ = one_closed => self.item_channel.rx.occupied_len() >= count, _ = operation => true }
             } else {
+                yield_now::yield_now().await; //this is a big help in closed shutdown tight loop
                 self.item_channel.rx.occupied_len() >= count // if closed, we can still take
             }
         }

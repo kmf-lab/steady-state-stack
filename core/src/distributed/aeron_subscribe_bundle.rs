@@ -56,6 +56,11 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
     cmd: &mut C,
 ) -> Duration {
 
+    if sub.channel_status() != aeron::concurrent::status::status_indicator_reader::CHANNEL_ENDPOINT_ACTIVE {
+        error!("Subscription {} not active, status: {}", sub.stream_id(), sub.channel_status());
+        return tx_item.max_poll_latency;
+    }
+
     let mut input_bytes: u32 = 0;
     let mut input_frags: u32 = 0;
 
@@ -68,7 +73,8 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
         let remaining_poll = if let Some(s) = tx_item.smallest_space() { s } else {
             tx_item.item_channel.capacity()
         };
-       error!("poll for as many as: {}", remaining_poll);
+        error!("sub: {} poll for as many as: {} status: {:?}", sub.stream_id()
+               ,remaining_poll, sub.channel_status());
         if 0 >= sub.poll(&mut | buffer: &AtomicBuffer,
                                               offset: i32,
                                               length: i32,
@@ -90,7 +96,8 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
         }
         yield_now().await; //do not remove in many cases this allows us more data in this pass
     }
-    trace!("poll the stream {} got {} ready msg empty {} ",sub.stream_id(),input_frags, tx_item.ready_msg_session.is_empty());
+
+    error!("poll the stream {} got {} ready msg empty {} status {}",sub.stream_id(),input_frags, tx_item.ready_msg_session.is_empty(),sub.channel_status());
 
     if !tx_item.ready_msg_session.is_empty() {
         let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(cmd);
@@ -185,6 +192,9 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
                             Ok(mutex) => {
                                 match mutex.into_inner() {
                                     Ok(subscription) => {
+                                        // aeron::concurrent::status::status_indicator_reader::
+                                        error!("new sub {:?} {:?}",subscription.stream_id(), subscription.channel_status());
+                                   //if above is wrong try again?
                                         subs[f] = Ok(subscription);
                                         found = true;
                                     },
@@ -228,13 +238,17 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
             let tx_stream = &mut tx_guards[earliest_idx];
             error!("AA earliest index selecte {:?} {:?} of {:?}", earliest_idx, tx_stream.shared_vacant_units(), tx_stream.capacity());
 
+
             let dynamic = if !tx_stream.shared_is_full() {
-                if let Ok(sub) = &mut subs[earliest_idx] {
-                    poll_aeron_subscription(tx_stream, sub, &mut cmd).await
-                } else {
-                    error!("Internal error, the subscription should be present");
-                    //moving this out of the way to avoid checking again
-                    Duration::from_secs(i32::MAX as u64)
+
+                match &mut subs[earliest_idx] {
+                    Ok(subscription) => {
+                        poll_aeron_subscription(tx_stream, subscription, &mut cmd).await
+                    }
+                    Err(e) => {error!("Internal error, the subscription should be present: {:?}",e);
+                        //moving this out of the way to avoid checking again
+                        Duration::from_secs(i32::MAX as u64)
+                    }
                 }
             } else {
                   //trace!("output full skipping {:?}", earliest_idx);

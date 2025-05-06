@@ -14,6 +14,7 @@ use crate::steady_tx::TxDone;
 use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamSessionMessage, StreamSimpleMessage, Tx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 use crate::core_exec;
+use crate::yield_now;
 
 pub trait TxCore {
     type MsgIn<'a>;
@@ -145,6 +146,7 @@ impl<T> TxCore for Tx<T> {
                 let mut operation = &mut self.tx.wait_vacant(safe_count);
                 select! { _ = one_down => false, _ = operation => true, }
             } else {
+                yield_now().await; //this is a big help in shutdown tight loop
                 false
             }
         }
@@ -380,6 +382,7 @@ impl TxCore for StreamTx<StreamSessionMessage> {
                                    };
                 select! { _ = one_down => false, _ = operation.fuse() => true, }
             } else {
+                yield_now().await; //this is a big help in shutdown tight loop
                 false
             }
         }
@@ -666,6 +669,7 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
                 };
                 select! { _ = one_down => false, _ = operation.fuse() => true, }
             } else {
+                yield_now().await; //this is a big help in shutdown tight loop
                 false
             }
         }
