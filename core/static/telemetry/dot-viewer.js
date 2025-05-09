@@ -388,7 +388,7 @@ window.onload = () => {
   webworker.onmessage = onMessage;
   webworker.postMessage(DOT_URL);
 
-  setSpeed('1 sec');
+  setSpeed('200 ms');
 
 };
 

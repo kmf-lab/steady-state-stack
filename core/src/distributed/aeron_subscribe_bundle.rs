@@ -54,6 +54,7 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
     tx_item: &mut StreamTx<StreamSessionMessage>,
     sub: &mut Subscription,
     cmd: &mut C,
+    log: bool
 ) -> Duration {
 
     if sub.channel_status() != aeron::concurrent::status::status_indicator_reader::CHANNEL_ENDPOINT_ACTIVE {
@@ -91,6 +92,9 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
             input_bytes += length as u32;
             input_frags += 1;
         }, remaining_poll as i32) {
+            if  log {
+                error!("on this poll pass we got {} {}",input_frags, input_bytes);
+            }
             break; //we got no data so leave now we will try again later
         }
         yield_now().await; //do not remove in many cases this allows us more data in this pass
@@ -174,7 +178,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
                     Err(e) => {
                         if e.to_string().contains("Awaiting")
                             || e.to_string().contains("not ready") {
-                            Delay::new(Duration::from_millis(2)).await;
+                            Delay::new(Duration::from_millis(7)).await;
                             if cmd.is_liveliness_stop_requested() {
                                 warn!("stop detected before finding publication");
                                 subs[f] = Err("Shutdown requested while waiting".into());
@@ -191,11 +195,14 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
                             Ok(mutex) => {
                                 match mutex.into_inner() {
                                     Ok(subscription) => {
-                                        // aeron::concurrent::status::status_indicator_reader::
-                                        error!("new sub {:?} {:?}",subscription.stream_id(), subscription.channel_status());
-                                   //if above is wrong try again?
-                                        subs[f] = Ok(subscription);
-                                        found = true;
+                                        error!("new sub {:?} status: {:?} connected: {:?}",subscription.stream_id(), subscription.channel_status(), subscription.is_connected());
+                                        if subscription.is_connected() {
+                                            subs[f] = Ok(subscription);
+                                            found = true;                                            
+                                        } else {
+                                            Delay::new(Duration::from_millis(7)).await;
+                                        }                                 
+                                       
                                     },
                                     Err(_) => panic!("Failed to unwrap Mutex"),
                                 }
@@ -214,7 +221,18 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
     let mut now = Instant::now();
     let mut next_times = [now; GIRTH];
 
+    let mut log_count_down = 0;
+    let mut loop_count = 0;
     while cmd.is_running(&mut || tx_guards.mark_closed()) {
+        if 0 == (loop_count % 1000) {
+            log_count_down = 10;
+            error!("---------------------------------------------------------------")
+        }
+        loop_count += 1;
+        let log_this = log_count_down > 0;
+        if log_this {
+            log_count_down -= 1;
+        }
 
         let mut earliest_idx = 0;
         let mut earliest_time = next_times[0];
@@ -226,12 +244,18 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
         }
         if earliest_time > now {
             let time_to_wait = earliest_time - now;
-            if time_to_wait.as_secs() > 2 { //this should not be happening
-                error!("waiting {:?} Sec",time_to_wait.as_secs());
+            if log_this || time_to_wait.as_secs() > 2 { //this should not be happening
+                error!("idx {} waiting {:?} Sec",earliest_idx,time_to_wait.as_secs());
             }
             cmd.wait_periodic(time_to_wait).await;
             //TODO: we need some kind of check in the runtime to ensure cmd is in the stack for await.
+        }  else {
+            if log_this {
+                error!("idx {} not waiting ",earliest_idx);
+            }
         }
+
+
         now = Instant::now();
         {
             let tx_stream = &mut tx_guards[earliest_idx];
@@ -239,7 +263,15 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
 
             let dynamic = match &mut subs[earliest_idx] {
                         Ok(subscription) => {
-                            poll_aeron_subscription(tx_stream, subscription, &mut cmd).await
+                                if log_this {
+                                  //  [2025-05-08 23:30:23.085579 -05:00] T[async-std/runtime] ERROR [C:\Users\Getac\git\steady-state-stack\core\src\distributed\aeron_subscribe_bundle.rs:264] idx 0 poll_aeron_subscription 40 vacant (6400, 6400000) 6400 connected false closed false status 1
+                                   error!("idx {:?} poll_aeron_subscription {:?} vacant {:?} {:?} connected {:?} closed {:?} status {:?}"
+                                        , earliest_idx, subscription.stream_id()
+                                        , tx_stream.get_stored_vacant_values(), tx_stream.shared_vacant_units()
+                                        , subscription.is_connected(), subscription.is_closed(), subscription.channel_status()
+                                    );
+                                }
+                                poll_aeron_subscription(tx_stream, subscription, &mut cmd, log_this).await
                         }
                         Err(e) => {error!("Internal error, the subscription should be present: {:?}",e);
                             //moving this out of the way to avoid checking again
