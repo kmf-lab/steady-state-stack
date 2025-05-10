@@ -94,6 +94,7 @@ pub struct GraphLiveliness {
     pub(crate) shutdown_one_shot_vec: Arc<Mutex<Vec< Sender<()> >>>,
     pub(crate) registered_voter_count: AtomicUsize,
     pub(crate) actors_count: Arc<AtomicUsize>,
+    pub(crate) shutdown_timeout: Option<Duration>
 }
 
 
@@ -120,6 +121,7 @@ impl GraphLiveliness {
             votes: Arc::new(Box::new([])),
             vote_in_favor_total: AtomicUsize::new(0),
             shutdown_one_shot_vec: one_shot_shutdown,
+            shutdown_timeout: None
         }
     }
 
@@ -764,9 +766,15 @@ impl Graph {
     /// * `clean_shutdown_timeout` - The timeout duration for a clean shutdown.
     pub fn block_until_stopped(self, clean_shutdown_timeout: Duration) -> bool {
 
+        // Duration is not allowed to be less than 3 frames of telemetry
+        // This ensures with safety that all actors had an opportunity to
+        // raise objections and delay the stop. We just take the max of both
+        // durations and do not error or panic since we are shutting down
+        let timeout = clean_shutdown_timeout.max(Duration::from_millis(3 * self.telemetry_production_rate_ms));
 
         if let Some(wait_on) = {
-            let state = self.runtime_state.write();
+            let mut state = self.runtime_state.write();
+            state.shutdown_timeout = Some(timeout);
             if state.is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
                 let (tx, rx) = oneshot::channel();
                 let v = state.shutdown_one_shot_vec.clone();
@@ -783,11 +791,7 @@ impl Graph {
         }
 
         let now = Instant::now();
-        // Duration is not allowed to be less than 3 frames of telemetry
-        // This ensures with safety that all actors had an opportunity to
-        // raise objections and delay the stop. We just take the max of both
-        // durations and do not error or panic since we are shutting down
-        let timeout = clean_shutdown_timeout.max(Duration::from_millis(3 * self.telemetry_production_rate_ms));
+
 
         // Wait for either the timeout or the state to be Stopped
         // While try lock then yield and do until time has passed

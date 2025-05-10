@@ -191,6 +191,8 @@ pub trait SteadyCommander {
     fn is_liveliness_running(&self) -> bool;
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_stop_requested(&self) -> bool;
+    /// if we are shutting down return the optional timeout before we force the exit
+    fn is_liveliness_shutdown_timeout(&self) -> Option<Duration>;
 
     fn flush_defrag_messages<S: StreamItem>(&mut self
                                             , item: &mut Tx<S>

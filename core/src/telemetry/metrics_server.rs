@@ -61,7 +61,7 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
 
     let mut frames = DotGraphFrames {
         active_metric: BytesMut::new(),
-        last_graph: Instant::now(),
+        last_generated_graph: Instant::now(),
         active_graph: BytesMut::new(),
     };
 
@@ -80,7 +80,7 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
 
     let mut history = FrameHistory::new(frame_rate_ms);
 
-    let (tcp_sender_tx, tcp_receiver_tx) = oneshot::channel();
+    let (tcp_sender_tx, tcp_receiver_tx) = oneshot::channel::<Option<Duration>>();
     let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
 
 
@@ -123,6 +123,7 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
         //TODO: merge the above connection loop into this wait so we only have 1 thread and 1 loop.
         let _clean = await_for_all!( ctrl.wait_avail(&mut rxg,1) );
 
+
         if let Some(msg) = ctrl.try_take(&mut rxg) {
             process_msg(msg
                         , &mut metrics_state
@@ -135,7 +136,10 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
                         , config.clone()).await;
         }
     }
-    let _ = tcp_sender_tx.send(());
+    //force all the data we may be holding to be written to history and telemetry before we exit
+    generate_reports(&mut metrics_state, &mut history, &mut frames, true, state, config, true).await;
+    let timeout = ctrl.is_liveliness_shutdown_timeout();
+    let _ = tcp_sender_tx.send(timeout);
     Ok(())
 }
 
@@ -202,16 +206,31 @@ pub(crate) fn check_addr(addr: &str) -> Option<String> {
 }
 
 async fn handle_new_requests (
-    tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
+    tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<Option<Duration>>>>,
     state: Arc<Mutex<State>>,
     config: Arc<Mutex<Config>>,
     listener: &Box<dyn AsyncListener + Send + Sync>,
 ) {
     //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
     //      for per/second metrics and many telemetry observers with slower refresh rates
+    let mut shutdown_wait = None;
     loop {
         let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
-        select! {  _ = shutdown.deref_mut() => {  break;  },
+        select! {  timeout = shutdown.deref_mut() => {
+
+                        let margin = Duration::from_millis(10);
+                        let adjusted_timeout:Duration = if let Ok(Some(timeout)) = timeout {
+                                       if timeout>margin {
+                                            timeout-margin
+                                       } else {
+                                            Duration::ZERO
+                                       }
+                             } else {
+                                 Duration::ZERO
+                            };
+                        shutdown_wait = Some(adjusted_timeout);
+                        break;
+                    },
                 result = listener.accept().fuse() => {
                     match result {
                        Ok((stream, _peer_addr)) => {
@@ -222,6 +241,28 @@ async fn handle_new_requests (
                        }
                    }
            } }
+    }
+    if let Some(duration) = shutdown_wait {
+        if duration > Duration::ZERO {
+            select! {
+                // Wait for the duration to expire
+                _ = Delay::new(duration).fuse() => {
+                    // Duration expired, exit
+                }
+                // Accept and handle one more connection if it arrives
+                result = listener.accept().fuse() => {
+                    match result {
+                        Ok((stream, _peer_addr)) => {
+                            let _ = handle_request(stream, state.clone(), config.clone()).await;
+                        }
+                        Err(e) => {
+                            error!("Error accepting connection: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+        // If duration is zero, skip the select and exit immediately
     }
 }
 
@@ -253,7 +294,6 @@ async fn process_msg(msg: DiagramData
                 (status.unit_total_ns - status.await_total_ns) as u128
             }).sum();
 
-            //TODO: we are debugging from here.
             actor_status.iter().enumerate().for_each(|(i, status)| {
                 if metrics_state.nodes.len()>i && metrics_state.nodes[i].id.is_some()   {
                     //trace!("metric_sserver call: {} {:?}",i, metrics_state.nodes[i].id);
@@ -271,28 +311,34 @@ async fn process_msg(msg: DiagramData
 
             if steady_config::TELEMETRY_HISTORY {
                 history.apply_edge(&total_take_send, frame_rate_ms);
-
-                history.update(flush_all).await;
-                history.mark_position();
             }
+            let flush_frame = flush_all || rxg.is_empty() || frames.last_generated_graph.elapsed().as_millis() >= 2 * frame_rate_ms as u128;
 
-            if rxg.is_empty() || frames.last_graph.elapsed().as_millis() >= 2 * frame_rate_ms as u128 {
-
-                let config = config.lock().await;
-                build_dot(metrics_state, &mut frames.active_graph, &config);
-                drop(config);
-                
-                let graph_bytes = frames.active_graph.to_vec();
-                build_metric(metrics_state, &mut frames.active_metric);
-                let metric_bytes = frames.active_metric.to_vec();
-
-                let mut state = state.lock().await;
-                state.doc = graph_bytes;
-                state.metric = metric_bytes;
-                drop(state);
-                frames.last_graph = Instant::now();
-            }
+            generate_reports(metrics_state, history, frames, flush_all, state, config, flush_frame).await;
         },
+    }
+}
+
+async fn generate_reports(metrics_state: &mut MetricState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<Mutex<State>>, config: Arc<Mutex<Config>>, flush_frame: bool) {
+    if steady_config::TELEMETRY_HISTORY {
+        history.update(flush_all).await;
+        history.mark_position();
+    }
+
+    if flush_frame {
+        let config = config.lock().await;
+        build_dot(metrics_state, &mut frames.active_graph, &config);
+        drop(config);
+
+        let graph_bytes = frames.active_graph.to_vec();
+        build_metric(metrics_state, &mut frames.active_metric);
+        let metric_bytes = frames.active_metric.to_vec();
+
+        let mut state = state.lock().await;
+        state.doc = graph_bytes;
+        state.metric = metric_bytes;
+        drop(state);
+        frames.last_generated_graph = Instant::now();
     }
 }
 

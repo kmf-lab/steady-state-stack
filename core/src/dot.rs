@@ -288,7 +288,7 @@ pub(crate) fn build_dot(state: &MetricState, dot_graph: &mut BytesMut, config: &
 pub struct DotGraphFrames {
     pub(crate) active_metric: BytesMut,
     pub(crate) active_graph: BytesMut,
-    pub(crate) last_graph: Instant,
+    pub(crate) last_generated_graph: Instant,
 }
 
 /// Applies the node definition to the local state.

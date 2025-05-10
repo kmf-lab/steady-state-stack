@@ -254,7 +254,11 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     fn is_liveliness_stop_requested(&self) -> bool {
         self.is_liveliness_in(&[ GraphLivelinessState::StopRequested ])
     }
-
+    /// Timeout if shutdown has been called
+    fn is_liveliness_shutdown_timeout(&self) -> Option<Duration> {
+        let liveliness = self.runtime_state.read();
+        liveliness.shutdown_timeout
+    }
 
 
     /// Attempts to peek at a slice of messages without removing them from the channel.

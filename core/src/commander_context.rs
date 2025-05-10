@@ -130,6 +130,13 @@ impl SteadyCommander for SteadyContext {
     fn is_liveliness_running(&self) -> bool {
         self.is_liveliness_in(&[ GraphLivelinessState::Running ])
     }
+
+    /// Timeout if shutdown has been called
+    fn is_liveliness_shutdown_timeout(&self) -> Option<Duration> {
+        let liveliness = self.runtime_state.read();
+        liveliness.shutdown_timeout
+    }
+
     /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_stop_requested(&self) -> bool {
         self.is_liveliness_in(&[ GraphLivelinessState::StopRequested ])

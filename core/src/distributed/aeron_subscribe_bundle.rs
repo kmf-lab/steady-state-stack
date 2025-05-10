@@ -22,7 +22,7 @@ pub struct AeronSubscribeSteadyState {
     sub_reg_id: Vec<Option<i64>>,
 }
 
-const ROUND_ROBIN:Option<Duration> = None;
+const ROUND_ROBIN:Option<Duration> = Some(Duration::from_millis(5)); //TODO: hack for testing
 
 pub async fn run<const GIRTH: usize>(
     context: SteadyContext,
