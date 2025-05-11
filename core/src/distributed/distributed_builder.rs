@@ -122,10 +122,11 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
                            , threading)
             },
             AqueTech::None => {
+                #[cfg(not(test))]
                 warn!("no AqueTech provided, probably testing or still under development");
             },
-            _ => {
-                panic!("unsupported distribution type");
+            x => {
+                panic!("unsupported distribution type: {:?}", x);
             }
         };
     }
@@ -162,10 +163,11 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
                                , threading);
             },
             AqueTech::None => {
+                #[cfg(not(test))]
                 warn!("no AqueTech provided, probably testing or still under development");
             },
-            _ => {
-                panic!("unsupported distribution type");
+            x => {
+                panic!("unsupported distribution type {:?}",x);
             }
         };
     }
@@ -173,7 +175,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
 }
 
 #[cfg(test)]
-mod tests {
+mod distributed_builder_tests {
     use super::*;
     use crate::*;
 

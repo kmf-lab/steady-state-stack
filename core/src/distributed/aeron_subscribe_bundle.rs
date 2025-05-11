@@ -56,7 +56,6 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
     cmd: &mut C,
     log: bool
 ) -> Duration {
-
     if sub.channel_status() != aeron::concurrent::status::status_indicator_reader::CHANNEL_ENDPOINT_ACTIVE {
         error!("Subscription {} not active, status: {}", sub.stream_id(), sub.channel_status());
         return tx_item.max_poll_latency;
@@ -64,24 +63,17 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
 
     let mut input_bytes: u32 = 0;
     let mut input_frags: u32 = 0;
-
     let now = Instant::now();
 
-    let measured_vacant_items = tx_item.item_channel.shared_vacant_units() as u32;
-    let measured_vacant_bytes = tx_item.payload_channel.shared_vacant_units() as u32;
-
+    // Poll the subscription
     loop {
         let remaining_poll = if let Some(s) = tx_item.smallest_space() { s } else {
             tx_item.item_channel.capacity()
         };
-        //error!("sub: {} poll for as many as: {} status: {:?}", sub.stream_id(), remaining_poll, sub.channel_status());
-        if 0 >= sub.poll(&mut | buffer: &AtomicBuffer,
-                                              offset: i32,
-                                              length: i32,
-                                              header: &Header| {
+        if 0 >= sub.poll(&mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
             let flags = header.flags();
-            let is_begin: bool = 0 != (flags & frame_descriptor::BEGIN_FRAG);
-            let is_end: bool = 0 != (flags & frame_descriptor::END_FRAG);
+            let is_begin = 0 != (flags & frame_descriptor::BEGIN_FRAG);
+            let is_end = 0 != (flags & frame_descriptor::END_FRAG);
             tx_item.fragment_consume(
                 header.session_id(),
                 buffer.as_sub_slice(offset, length),
@@ -92,40 +84,41 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
             input_bytes += length as u32;
             input_frags += 1;
         }, remaining_poll as i32) {
-            if  log {
-                error!("on this poll pass we got {} {}",input_frags, input_bytes);
+            if log {
+                error!("on this poll pass we got {} {}", input_frags, input_bytes);
             }
-            break; //we got no data so leave now we will try again later
+            break; // No data received, exit loop
         }
-        yield_now().await; //do not remove in many cases this allows us more data in this pass
+        yield_now().await; // Allow more data in this pass
     }
 
-    //error!("poll the stream {} got {} ready msg empty {} status {}",sub.stream_id(),input_frags, tx_item.ready_msg_session.is_empty(),sub.channel_status());
-
+    // Flush ready messages and update state
     if !tx_item.ready_msg_session.is_empty() {
         let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(cmd);
-        let (stored_vacant_items, stored_vacant_bytes) = tx_item.get_stored_vacant_values();
 
-        if stored_vacant_items > measured_vacant_items as i32 {
-            let duration = now.duration_since(tx_item.last_output_instant);
-            tx_item.store_output_data_rate(duration
-                              , (stored_vacant_items - measured_vacant_items as i32) as u32
-                              , (stored_vacant_bytes - measured_vacant_bytes as i32) as u32);
+        // Get current vacant units after flushing
+        let current_vacant_items = tx_item.item_channel.shared_vacant_units() as i32;
+        let current_vacant_bytes = tx_item.payload_channel.shared_vacant_units() as i32;
 
-            tx_item.last_output_instant = now;
-            let new_vacant_items:i32 = measured_vacant_items as i32 - now_sent_messages as i32;
-            let new_vacant_bytes:i32 = measured_vacant_bytes as i32 - now_sent_bytes as i32;
-            tx_item.set_stored_vacant_values(new_vacant_items, new_vacant_bytes);
-        }
+        // Store output data rate using actual sent values
+        let duration = now.duration_since(tx_item.last_output_instant);
+        tx_item.store_output_data_rate(duration, now_sent_messages, now_sent_bytes);
+        tx_item.last_output_instant = now;
+
+        // Update stored vacant values with current state
+        tx_item.set_stored_vacant_values(current_vacant_items, current_vacant_bytes);
     }
+
+    // Store input data rate if fragments were received
     if input_frags > 0 {
         let duration = now.duration_since(tx_item.last_input_instant);
         tx_item.store_input_data_rate(duration, input_frags, input_bytes);
         tx_item.last_input_instant = now;
     }
 
-    let (avg,std) = tx_item.guess_duration_between_arrivals();
-    let (min,max) = tx_item.next_poll_bounds();//TODO: check these limits?
+    // Schedule next poll
+    let (avg, std) = tx_item.guess_duration_between_arrivals();
+    let (min, max) = tx_item.next_poll_bounds();
 
     let mut scheduler = polling::PollScheduler::new();
     scheduler.set_max_delay_ns(max.as_nanos() as u64);
@@ -158,7 +151,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
             warn!("adding new sub {} {:?}", f as i32 + stream_id, aeron_channel.cstring());
             match aeron.lock().await.add_subscription(aeron_channel.cstring(), f as i32 + stream_id) {
                 Ok(reg_id) => {
-                    trace!("new subscription found: {}", reg_id);
+                    warn!("idx: {} new subscription found: {}", f, reg_id);
                     state.sub_reg_id[f] = Some(reg_id);
                 },
                 Err(e) => {
@@ -185,9 +178,9 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
                                 found = true;
                             }
                         } else {
-                            warn!("Error finding subscription: {:?}", e);
+                            warn!("Idx: {} Error finding subscription: {:?}", f, e);
                             subs[f] = Err(e.into());
-                            found = true;
+                            // keep looking, if this is happending in a looper perhaps we should regegister?
                         }
                     },
                     Ok(subscription) => {
@@ -224,8 +217,8 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
     let mut log_count_down = 0;
     let mut loop_count = 0;
     while cmd.is_running(&mut || tx_guards.mark_closed()) {
-        if 0 == (loop_count % 1000) {
-            log_count_down = 10;
+        if 0 == (loop_count % 2000) {
+            log_count_down = 30;
             error!("---------------------------------------------------------------")
         }
         loop_count += 1;

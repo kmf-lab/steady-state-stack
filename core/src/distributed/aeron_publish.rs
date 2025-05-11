@@ -349,13 +349,13 @@ pub(crate) mod aeron_tests {
         Ok(())
     }
 
-    fn is_wsl() -> bool {
-        if let Ok(version) = fs::read_to_string("/proc/version") {
-            version.contains("Microsoft") || version.contains("WSL")
-        } else {
-            false // If the file can't be read, assume not WSL
-        }
-    }
+    // fn is_wsl() -> bool {
+    //     if let Ok(version) = fs::read_to_string("/proc/version") {
+    //         version.contains("Microsoft") || version.contains("WSL")
+    //     } else {
+    //         false // If the file can't be read, assume not WSL
+    //     }
+    // }
 
     //TODO: this test seems to take forever at at times. need more investigation.
     // #[test]

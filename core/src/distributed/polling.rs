@@ -96,9 +96,9 @@ mod tests {
     use std::time::Duration;
 
     // Helper function to simulate current_time_ns for testing
-    fn fixed_time_ns(value: u64) -> u64 {
-        value
-    }
+    // fn fixed_time_ns(value: u64) -> u64 {
+    //     value
+    // }
 
     #[test]
     fn test_at_expected_moment() {
@@ -110,8 +110,7 @@ mod tests {
         scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
 
         let current_time = expected_moment; // Exactly at 5 seconds
-        let next_poll_time = scheduler.compute_next_delay_ns(current_time);
-        let delay = next_poll_time - current_time;
+        let delay = scheduler.compute_next_delay_ns(current_time);
         assert_eq!(delay, 10_000_000); // Delay should be 10 ms (min_delay_ns)
     }
 
@@ -125,8 +124,7 @@ mod tests {
         scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
 
         let current_time = expected_moment - 100_000_000; // 100 ms before (4.9 seconds)
-        let next_poll_time = scheduler.compute_next_delay_ns(current_time);
-        let delay = next_poll_time - current_time;
+        let delay = scheduler.compute_next_delay_ns(current_time);
         // Expected delay: min_delay + (distance^2 / s) * delta_delay
         let distance = 100_000_000; // 100 ms
         let s= 9_000_000_000_000_000_000 as u128; // (3 * 1e9)^2 = 9e18
@@ -146,8 +144,7 @@ mod tests {
         scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
 
         let current_time = expected_moment + 100_000_000; // 100 ms after (5.1 seconds)
-        let next_poll_time = scheduler.compute_next_delay_ns(current_time);
-        let delay = next_poll_time - current_time;
+        let delay = scheduler.compute_next_delay_ns(current_time);
         let distance = 100_000_000; // 100 ms
         let s = 9_000_000_000_000_000_000 as u128; // (3 * 1e9)^2 = 9e18
         let delta_delay = 1_990_000_000; // 2e9 - 10e6
@@ -166,8 +163,7 @@ mod tests {
         scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
 
         let current_time = expected_moment - 1_000_000_000; // 1 second before (4 seconds)
-        let next_poll_time = scheduler.compute_next_delay_ns(current_time);
-        let delay = next_poll_time - current_time;
+        let delay = scheduler.compute_next_delay_ns(current_time);
         let distance = 1_000_000_000; // 1 second
         let s = 9_000_000_000_000_000_000 as u128; // (3 * 1e9)^2 = 9e18
         let delta_delay = 1_990_000_000; // 2e9 - 10e6
@@ -186,8 +182,7 @@ mod tests {
         scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
 
         let current_time = expected_moment - 3_000_000_000; // 3 seconds before (2 seconds)
-        let next_poll_time = scheduler.compute_next_delay_ns(current_time);
-        let delay = next_poll_time - current_time;
+        let delay = scheduler.compute_next_delay_ns(current_time);
         // Distance is 3e9 (3 std_dev), so delay should be max_delay_ns
         assert_eq!(delay, 2_000_000_000); // 2 seconds
     }
@@ -202,8 +197,7 @@ mod tests {
         scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
 
         let current_time = expected_moment + 3_000_000_000; // 3 seconds after (8 seconds)
-        let next_poll_time = scheduler.compute_next_delay_ns(current_time);
-        let delay = next_poll_time - current_time;
+        let delay = scheduler.compute_next_delay_ns(current_time);
         // Distance is 3e9 (3 std_dev), so delay should be max_delay_ns
         assert_eq!(delay, 2_000_000_000); // 2 seconds
     }
@@ -218,10 +212,9 @@ mod tests {
         scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
 
         let current_time = expected_moment - 1_000_000_000; // 1 second before
-        let next_poll_time = scheduler.compute_next_delay_ns(current_time);
-        let delay = next_poll_time - current_time;
+        let delay = scheduler.compute_next_delay_ns(current_time);
         // With std_dev = 0, delay should be max_delay_ns
-        assert_eq!(delay, 2_000_000_000); // 2 seconds
+        assert_eq!(delay, 1_000_000_000);
     }
 
     #[test]
@@ -234,8 +227,7 @@ mod tests {
         scheduler.set_max_delay_ns(2_000_000_000); // 2 seconds
 
         let current_time = expected_moment - 4_000_000_000; // 4 seconds before (1 second)
-        let next_poll_time = scheduler.compute_next_delay_ns(current_time);
-        let delay = next_poll_time - current_time;
+        let delay = scheduler.compute_next_delay_ns(current_time);
         // Distance is 4e9 (> 3 std_dev), so delay should be max_delay_ns
         assert_eq!(delay, 2_000_000_000); // 2 seconds
     }
@@ -273,8 +265,7 @@ mod tests {
 
         // Simulate polling sequence and verify delays
         for (i, &current_time) in current_times.iter().enumerate() {
-            let next_poll_time = scheduler.compute_next_delay_ns(current_time);
-            let computed_delay = next_poll_time - current_time;
+            let computed_delay = scheduler.compute_next_delay_ns(current_time);
             assert_eq!(
                 computed_delay, expected_delays[i],
                 "Delay mismatch at step {}: expected {}, got {}",

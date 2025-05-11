@@ -22,6 +22,7 @@ type StreamId = i32;
 ///   - Second field: The configured Aeron channel (e.g., point-to-point or multicast).
 ///   - Third field: The stream ID for identifying the communication stream.
 ///
+#[derive(Debug)]
 pub enum AqueTech {
     None,
     Aeron(Channel, StreamId),

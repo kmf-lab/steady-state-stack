@@ -54,7 +54,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd:C, rx: SteadyRx<FailureFe
 mod tests {
     use std::thread::sleep;
     use std::time::Duration;
-    use futures_timer::Delay;
     use steady_state::*;
     use crate::actor::data_feedback::internal_behavior;
 

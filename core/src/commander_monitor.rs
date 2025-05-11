@@ -84,9 +84,9 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 /// Implementation of `LocalMonitor`.
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
-    fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
-        Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
-    }
+    // fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
+    //     Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
+    // }
 
     #[allow(async_fn_in_trait)]
     pub async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>
@@ -512,71 +512,101 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
 
 
-    fn flush_defrag_messages<S: StreamItem>(&mut self
-                                            , out_item: &mut Tx<S>
-                                            , out_data: &mut Tx<u8>
-                                            , defrag: &mut Defrag<S>) -> (u32,u32,Option<i32>) {
-
-        //record this was called
+    fn flush_defrag_messages<S: StreamItem>(
+        &mut self,
+        out_item: &mut Tx<S>,
+        out_data: &mut Tx<u8>,
+        defrag: &mut Defrag<S>,
+    ) -> (u32, u32, Option<i32>) {
+        // Record this was called
         if let Some(ref mut st) = self.telemetry.state {
-            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| {
+                Some(f.saturating_add(1))
+            });
         }
         debug_assert!(out_data.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(out_item.make_closed.is_some(), "Send called after channel marked closed");
 
-        //slice messages
+        // Get item slices and check if there's anything to flush
         let (items_a, items_b) = defrag.ringbuffer_items.1.as_slices();
-        let on_ring_items = items_a.len()+items_b.len();
-        let msg_count = out_item.tx.vacant_len().min(on_ring_items);
+        let total_items = items_a.len() + items_b.len();
+        if total_items == 0 {
+            return (0, 0, None); // Early return for empty buffer
+        }
+
+        // Determine how many messages can fit in both channels
+        let vacant_items = out_item.tx.vacant_len();
+        let vacant_bytes = out_data.tx.vacant_len();
+        let mut msg_count = 0;
+        let mut total_bytes = 0;
+
+        // Calculate feasible number of messages
+        for item in items_a.iter().chain(items_b.iter()) {
+            let item_bytes = item.length() as usize;
+            if msg_count < vacant_items && total_bytes + item_bytes <= vacant_bytes {
+                msg_count += 1;
+                total_bytes += item_bytes;
+            } else {
+                break;
+            }
+        }
+
+        if msg_count == 0 {
+            return (0, 0, Some(defrag.session_id)); // No space to flush anything
+        }
+
+        // Push payload bytes
+        let (payload_a, payload_b) = defrag.ringbuffer_bytes.1.as_slices();
+        let len_a = total_bytes.min(payload_a.len());
+        let pushed_a = out_data.tx.push_slice(&payload_a[0..len_a]);
+        let len_b = (total_bytes - pushed_a).min(payload_b.len());
+        let pushed_b = if len_b > 0 {
+            out_data.tx.push_slice(&payload_b[0..len_b])
+        } else {
+            0
+        };
+        let pushed_bytes = pushed_a + pushed_b;
+        assert_eq!(pushed_bytes, total_bytes, "Failed to push all payload bytes");
+        unsafe {
+            defrag.ringbuffer_bytes.1.advance_read_index(pushed_bytes);
+        }
+
+        // Push items
         let items_len_a = msg_count.min(items_a.len());
         let items_len_b = msg_count - items_len_a;
-
-        //sum messages length
-        let total_bytes_a = items_a[0..items_len_a].iter().map(|x| x.length()).sum::<i32>() as usize;
-        let total_bytes_b = items_b[0..items_len_b].iter().map(|x| x.length()).sum::<i32>() as usize;
-        let total_bytes = total_bytes_a + total_bytes_b;
-
-        //move this slice to the tx
-        let (payload_a, payload_b) = defrag.ringbuffer_bytes.1.as_slices();
-       // warn!("tx payload slices {} {}",payload_a.len(),payload_b.len());
-
-        let len_a = total_bytes.min(payload_a.len());
-        let mut check_bytes = out_data.tx.push_slice(&payload_a[0..len_a]);
-        let len_b = total_bytes - len_a;
-        if len_b > 0 {
-            check_bytes += out_data.tx.push_slice(&payload_b[0..len_b]);
-        }
-        assert_eq!(check_bytes,total_bytes,"Internal error");
-        unsafe {
-            defrag.ringbuffer_bytes.1.advance_read_index(total_bytes)
-        }
-        //move the messages
-        //warn!("tx push slice {} {}",len_a,len_b);
         out_item.tx.push_slice(&items_a[0..items_len_a]);
         if items_len_b > 0 {
             out_item.tx.push_slice(&items_b[0..items_len_b]);
         }
         unsafe {
-            defrag.ringbuffer_items.1.advance_read_index(msg_count)
+            defrag.ringbuffer_items.1.advance_read_index(msg_count);
         }
 
-        // record the telemetry for this change
-        if msg_count>0 {
-            //warn!("update send telmetry {} {}",msg_count,total_bytes);
+        // Record telemetry
+        if msg_count > 0 {
             if let Some(ref mut tel) = self.telemetry.send_tx {
-                out_item.local_index = tel.process_event(out_item.local_index, out_item.channel_meta_data.meta_data.id, msg_count as isize);
-                out_data.local_index = tel.process_event(out_data.local_index, out_data.channel_meta_data.meta_data.id, total_bytes as isize);
+                out_item.local_index = tel.process_event(
+                    out_item.local_index,
+                    out_item.channel_meta_data.meta_data.id,
+                    msg_count as isize,
+                );
+                out_data.local_index = tel.process_event(
+                    out_data.local_index,
+                    out_data.channel_meta_data.meta_data.id,
+                    total_bytes as isize,
+                );
             } else {
                 out_item.local_index = MONITOR_NOT;
                 out_data.local_index = MONITOR_NOT;
             }
         }
 
-       if defrag.ringbuffer_items.1.is_empty() {
-           debug_assert_eq!(0,defrag.ringbuffer_bytes.1.occupied_len());
-           (msg_count as u32, total_bytes as u32, None)
-        } else { //we want to flush again if we left anything behind and not loose the session_id
-           (msg_count as u32, total_bytes as u32, Some(defrag.session_id))
+        // Return result
+        if msg_count == total_items {
+            debug_assert_eq!(0, defrag.ringbuffer_bytes.1.occupied_len());
+            (msg_count as u32, total_bytes as u32, None)
+        } else {
+            (msg_count as u32, total_bytes as u32, Some(defrag.session_id))
         }
     }
 
@@ -788,14 +818,14 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         } else {
             None
         };
-        let doneOne = this.done_one(&a);
+        let done_one = this.done_one(&a);
         let result = this.shared_send_async_timeout(a, self.ident, saturation, timeout).await;
         drop(guard);
 
         match result {
              SendOutcome::Success => {
                 if let Some(ref mut tel) = self.telemetry.send_tx {
-                    this.telemetry_inc(doneOne, tel); } else { this.monitor_not(); };
+                    this.telemetry_inc(done_one, tel); } else { this.monitor_not(); };
                 SendOutcome::Success
             }
             SendOutcome::Blocked(sensitive) => SendOutcome::Blocked(sensitive),

@@ -298,53 +298,78 @@ impl SteadyCommander for SteadyContext {
         }
     }
 
-    fn flush_defrag_messages<S: StreamItem>(&mut self
-                                            , out_item: &mut Tx<S>
-                                            , out_data: &mut Tx<u8>
-                                            , defrag: &mut Defrag<S>) -> (u32,u32,Option<i32>) {
+    fn flush_defrag_messages<S: StreamItem>(
+        &mut self,
+        out_item: &mut Tx<S>,
+        out_data: &mut Tx<u8>,
+        defrag: &mut Defrag<S>,
+    ) -> (u32, u32, Option<i32>) {
 
+        debug_assert!(out_data.make_closed.is_some(), "Send called after channel marked closed");
+        debug_assert!(out_item.make_closed.is_some(), "Send called after channel marked closed");
 
-        //slice messages
+        // Get item slices and check if there's anything to flush
         let (items_a, items_b) = defrag.ringbuffer_items.1.as_slices();
-        //warn!("on ring buffer items {} {}",items_a.len(),items_b.len());
-        let msg_count = out_item.tx.vacant_len().min(items_a.len()+items_b.len());
-        let msg_count = msg_count.min(50000); //hack test must be smaller than our channel!!!
+        let total_items = items_a.len() + items_b.len();
+        if total_items == 0 {
+            return (0, 0, None); // Early return for empty buffer
+        }
+
+        // Determine how many messages can fit in both channels
+        let vacant_items = out_item.tx.vacant_len();
+        let vacant_bytes = out_data.tx.vacant_len();
+        let mut msg_count = 0;
+        let mut total_bytes = 0;
+
+        // Calculate feasible number of messages
+        for item in items_a.iter().chain(items_b.iter()) {
+            let item_bytes = item.length() as usize;
+            if msg_count < vacant_items && total_bytes + item_bytes <= vacant_bytes {
+                msg_count += 1;
+                total_bytes += item_bytes;
+            } else {
+                break;
+            }
+        }
+
+        if msg_count == 0 {
+            return (0, 0, Some(defrag.session_id)); // No space to flush anything
+        }
+
+        // Push payload bytes
+        let (payload_a, payload_b) = defrag.ringbuffer_bytes.1.as_slices();
+        let len_a = total_bytes.min(payload_a.len());
+        let pushed_a = out_data.tx.push_slice(&payload_a[0..len_a]);
+        let len_b = (total_bytes - pushed_a).min(payload_b.len());
+        let pushed_b = if len_b > 0 {
+            out_data.tx.push_slice(&payload_b[0..len_b])
+        } else {
+            0
+        };
+        let pushed_bytes = pushed_a + pushed_b;
+        assert_eq!(pushed_bytes, total_bytes, "Failed to push all payload bytes");
+        unsafe {
+            defrag.ringbuffer_bytes.1.advance_read_index(pushed_bytes);
+        }
+
+        // Push items
         let items_len_a = msg_count.min(items_a.len());
         let items_len_b = msg_count - items_len_a;
-        //sum messages length
-        let total_bytes_a = items_a[0..items_len_a].iter().map(|x| x.length()).sum::<i32>() as usize;
-        let total_bytes_b = items_b[0..items_len_b].iter().map(|x| x.length()).sum::<i32>() as usize;
-        let total_bytes = total_bytes_a + total_bytes_b;
-        //warn!("push one large group {} {}",msg_count,total_bytes);
-        if total_bytes <= out_data.tx.vacant_len() {
-            //move this slice to the tx
-            let (payload_a, payload_b) = defrag.ringbuffer_bytes.1.as_slices();
-            // warn!("tx payload slices {} {}",payload_a.len(),payload_b.len());
-
-            let len_a = total_bytes.min(payload_a.len());
-            out_data.tx.push_slice(&payload_a[0..len_a]);
-            let len_b = total_bytes - len_a;
-            if len_b > 0 {
-                out_data.tx.push_slice(&payload_b[0..len_b]);
-            }
-            unsafe {
-                defrag.ringbuffer_bytes.1.advance_read_index(total_bytes)
-            }
-            //move the messages
-            //warn!("tx push slice {} {}",len_a,len_b);
-            out_item.tx.push_slice(&items_a[0..items_len_a]);
-            if items_len_b > 0 {
-                out_item.tx.push_slice(&items_b[0..items_len_b]);
-            }
-            unsafe {
-                defrag.ringbuffer_items.1.advance_read_index(msg_count)
-            }
-        } else {
-            //skipped no room
-            warn!("no room skipped");
-            return (msg_count as u32, total_bytes as u32, Some(defrag.session_id)); //try again later and do not pick up more
+        out_item.tx.push_slice(&items_a[0..items_len_a]);
+        if items_len_b > 0 {
+            out_item.tx.push_slice(&items_b[0..items_len_b]);
         }
-        (msg_count as u32, total_bytes as u32, None)
+        unsafe {
+            defrag.ringbuffer_items.1.advance_read_index(msg_count);
+        }
+
+        // Return result
+        if msg_count == total_items {
+            debug_assert_eq!(0, defrag.ringbuffer_bytes.1.occupied_len());
+            (msg_count as u32, total_bytes as u32, None)
+        } else {
+            (msg_count as u32, total_bytes as u32, Some(defrag.session_id))
+        }
     }
 
     /// Checks if the Tx channel is currently full.

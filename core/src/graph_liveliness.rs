@@ -175,7 +175,7 @@ impl GraphLiveliness {
             }
 
         } else {
-            warn!("no actors to wait for");
+            warn!("This graph contains no actors.");
         }
         trace!("changed to running state");
         self.building_to_running();
