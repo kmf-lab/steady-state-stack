@@ -113,7 +113,8 @@ impl SteadyContext {
             team_id: self.team_id,
             is_running_iteration_count: 0,
             aeron_meda_driver: self.aeron_meda_driver.clone(),
-            use_internal_behavior: self.use_internal_behavior
+            use_internal_behavior: self.use_internal_behavior,
+            shutdown_barrier: self.shutdown_barrier.clone(),
         }
     }
 }
@@ -485,10 +486,10 @@ pub trait SteadyCommander {
     /// `true` if the actor is running, `false` otherwise.
     fn is_running<F: FnMut() -> bool>(&mut self, accept_fn: F) -> bool;
     /// Requests a graph stop for the actor.
-    ///
-    /// # Returns
-    /// `true` if the request was successful, `false` otherwise.
-    fn request_graph_stop(&self) -> bool;
+    /// will await if a barrier is in place needing more actor approvals
+    /// for the simple case will return immediately upon changing the state
+    async fn request_graph_stop(&self);  // see with_graph_stop_barrier_count
+
     /// Retrieves the actor's arguments, cast to the specified type.
     ///
     /// # Returns

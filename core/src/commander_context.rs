@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 use std::sync::{Arc, OnceLock};
+use async_lock::Barrier;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use std::any::Any;
@@ -51,6 +52,7 @@ pub struct SteadyContext {
     pub(crate) show_thread_info: bool,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     pub use_internal_behavior: bool,
+    pub(crate) shutdown_barrier: Option<Arc<Barrier>>,     
 }
 
 impl Clone for SteadyContext {
@@ -73,7 +75,8 @@ impl Clone for SteadyContext {
             team_id: self.team_id,
             show_thread_info: self.show_thread_info,
             aeron_meda_driver: self.aeron_meda_driver.clone(),
-            use_internal_behavior: self.use_internal_behavior
+            use_internal_behavior: self.use_internal_behavior,
+            shutdown_barrier: self.shutdown_barrier.clone(),
         }
     }
 }
@@ -601,14 +604,18 @@ impl SteadyCommander for SteadyContext {
     }
     /// Requests a graph stop for the actor.
     ///
-    /// # Returns
-    /// `true` if the request was successful, `false` otherwise.
     #[inline]
-    fn request_graph_stop(&self) -> bool {
+    async fn request_graph_stop(&self) {
+        if let Some(barrier) = &self.shutdown_barrier {
+            // Wait for all required actors to reach the barrier
+            barrier.clone().wait().await;
+        }
         let mut liveliness = self.runtime_state.write();
-        liveliness.request_shutdown();
-        true
+        liveliness.internal_request_shutdown().await;
     }
+   
+    
+    
     /// Retrieves the actor's arguments, cast to the specified type.
     ///
     /// # Returns
@@ -683,5 +690,6 @@ impl SteadyCommander for SteadyContext {
 
             result.load(Ordering::Relaxed)
         }
+
 
 }

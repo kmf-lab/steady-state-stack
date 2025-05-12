@@ -1003,7 +1003,8 @@ fn build_actor_context<I: ?Sized>(
          frame_rate_ms,
          show_thread_info: builder_source.show_thread_info,
          aeron_meda_driver: builder_source.aeron_media_driver.clone(),
-         use_internal_behavior: builder_source.never_simulate || !cfg!(test)
+         use_internal_behavior: builder_source.never_simulate || !cfg!(test),
+         shutdown_barrier: None,
      }
 }
 

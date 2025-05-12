@@ -37,7 +37,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
         //here we request shutdown but we only leave after our upstream actors are done
         if received_count >= (TEST_ITEMS-taken) {
             error!("stop requested");
-            cmd.request_graph_stop();
+            cmd.request_graph_stop().await;
             return Ok(());
         }
     }

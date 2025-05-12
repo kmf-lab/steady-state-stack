@@ -25,6 +25,7 @@ use futures::channel::oneshot::Sender;
 use futures_util::lock::{MutexGuard, MutexLockFuture};
 use aeron::aeron::Aeron;
 use aeron::context::Context;
+use async_lock::Barrier;
 use crate::actor_builder::ActorBuilder;
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
@@ -185,7 +186,7 @@ impl GraphLiveliness {
     /// This call only returns when all listeners have been notified. They may delay in acting
     /// on the request but they are aware.
     ///
-    pub fn request_shutdown(&mut self) {
+    pub(crate) async fn internal_request_shutdown(&mut self) {
         if self.state.eq(&GraphLivelinessState::Running) {
             let voters = self.registered_voters.len();
 
@@ -217,13 +218,13 @@ impl GraphLiveliness {
             self.state = GraphLivelinessState::StopRequested;
 
             let local_oss = self.shutdown_one_shot_vec.clone();
-            core_exec::block_on(async move {
-                let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
-                while let Some(f) = one_shots.pop() {
+
+            let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
+            while let Some(f) = one_shots.pop() {
                     let _ignore = f.send(()); //May already been done but we don't care
                     //Target actor may have already stopped so this is not an error
-                }
-            });
+            }
+                        
             trace!("every actor has had one shot shutdown fired now");
         } else if self.is_in_state(&[GraphLivelinessState::Building]) {
             warn!("request_stop should only be called after start");
@@ -439,8 +440,8 @@ pub struct GraphBuilder {
     backplane: Option<SideChannelHub>,
     proactor_config: Option<ProactorConfig>,
     iouring_queue_length: u32,
-    telemtry_production_rate_ms: u64
-
+    telemtry_production_rate_ms: u64,
+    shutdown_barrier: Option<Arc<Barrier>>,
 }
 
 impl Default for GraphBuilder {
@@ -465,6 +466,7 @@ impl GraphBuilder {
           proactor_config: Some(ProactorConfig::InterruptDriven),
           iouring_queue_length: 1<<5,
           telemtry_production_rate_ms: 40,
+          shutdown_barrier: None,
       }
     }
 
@@ -481,6 +483,7 @@ impl GraphBuilder {
             proactor_config: Some(ProactorConfig::InterruptDriven),
             iouring_queue_length: 1<<5,
             telemtry_production_rate_ms: 40, //default
+            shutdown_barrier: None,
         }
     }
 
@@ -511,6 +514,13 @@ impl GraphBuilder {
         } else {
             warn!("telemetry production rate must be at least 40ms, setting to 40ms");
         }
+        result
+    }
+    
+    pub fn with_shutdown_barrier(&self, latched_actor_count: usize) -> Self {
+        let mut result = self.clone();
+        result.shutdown_barrier = Some(Arc::new(Barrier::new(latched_actor_count)  ));
+      
         result
     }
 
@@ -631,7 +641,8 @@ impl Graph {
             team_id: 0,
             show_thread_info: false,
             aeron_meda_driver: self.aeron.clone(),
-            use_internal_behavior: true
+            use_internal_behavior: true,
+            shutdown_barrier: None,
         }
     }
 
@@ -756,7 +767,8 @@ impl Graph {
     /// Stops the graph procedure requested.
     pub fn request_stop(&mut self) {
         let mut a = self.runtime_state.write();
-        a.request_shutdown();
+        core_exec::block_on(async move {   a.internal_request_shutdown().await });
+    
     }
 
     /// Blocks until the graph is stopped.

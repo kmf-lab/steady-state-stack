@@ -57,7 +57,7 @@ mod simple_graph_test {
                         //info!("attempted sent: {:?}", count.load(Ordering::SeqCst));
     
                         if x >= 10 {
-                            context.request_graph_stop();
+                            context.request_graph_stop().await;
                             continue;
                         }
                         if 5 == x {

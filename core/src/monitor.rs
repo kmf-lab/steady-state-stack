@@ -570,7 +570,8 @@ pub(crate) mod monitor_tests {
             team_id: 0,
             show_thread_info: false,
             aeron_meda_driver: OnceLock::new(),
-            use_internal_behavior: true
+            use_internal_behavior: true,
+            shutdown_barrier: None,
         }
     }
 
@@ -955,7 +956,7 @@ pub(crate) mod monitor_tests {
         {
             let mut liveliness = monitor.runtime_state.write();
             liveliness.state = GraphLivelinessState::Running;
-            liveliness.request_shutdown();
+            liveliness.internal_request_shutdown().await;
         }
         let result = monitor.wait_shutdown().await;
         assert!(result);
@@ -1083,7 +1084,8 @@ pub(crate) mod monitor_tests {
             team_id: 0,
             show_thread_info: false,
             aeron_meda_driver: OnceLock::new(),
-            use_internal_behavior: true
+            use_internal_behavior: true,
+            shutdown_barrier: None,
         }
     }
  

@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use log::{error, warn};
 use std::time::{Duration, Instant};
 use std::sync::{Arc, OnceLock};
+use async_lock::Barrier;
 use parking_lot::RwLock;
 use futures_util::lock::{Mutex, MutexGuard};
 use futures::channel::oneshot;
@@ -78,7 +79,8 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) show_thread_info: bool,
     pub(crate) team_id: usize,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
-    pub use_internal_behavior: bool
+    pub use_internal_behavior: bool,
+    pub(crate) shutdown_barrier: Option<Arc<Barrier>>,                   // Barrier for synchronization
 }
 
 /// Implementation of `LocalMonitor`.
@@ -1029,14 +1031,16 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
     /// Requests a stop of the graph.
     ///
-    /// # Returns
-    /// `true` if the request was successful, otherwise `false`.
     #[inline]
-    fn request_graph_stop(&self) -> bool {
+    async fn request_graph_stop(&self) {
+        if let Some(barrier) = &self.shutdown_barrier {
+            // Wait for all required actors to reach the barrier
+            barrier.clone().wait().await;
+        }
         let mut liveliness = self.runtime_state.write();
-        liveliness.request_shutdown();
-        true
+        liveliness.internal_request_shutdown().await;
     }
+
     /// Retrieves the actor's arguments, cast to the specified type.
     ///
     /// # Returns

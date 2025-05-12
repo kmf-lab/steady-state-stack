@@ -105,6 +105,8 @@ tempfile         = "3.19.1"
 #pin-project      = "1.1.7"
 ahash            = "0.8.11" # fastest hash map so far
 async-io         = "2.4.0"
+async-lock       = "3.4"  # Use the latest version
+
 
 
 # HTTP Web solution is built on this stack of crates

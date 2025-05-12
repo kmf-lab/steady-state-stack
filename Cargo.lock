@@ -2818,6 +2818,7 @@ dependencies = [
  "ahash",
  "askama",
  "async-io",
+ "async-lock",
  "async-ringbuf",
  "async-std",
  "bytes",

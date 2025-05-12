@@ -875,7 +875,7 @@ mod lib_tests {
     // #[test]
     // fn test_request_graph_stop() {
     //     let context = test_steady_context();
-    //     let result = context.request_graph_stop();
+    //     let result = context.request_graph_stop().await;
     //     assert!(result);
     //     let liveliness = context.runtime_state.read();
     //     assert!(liveliness.is_in_state(&[GraphLivelinessState::StopRequested]));
@@ -972,7 +972,8 @@ mod lib_tests {
             show_thread_info: false,
             team_id: 0,
             aeron_meda_driver: OnceLock::new(),
-            use_internal_behavior: true
+            use_internal_behavior: true,
+            shutdown_barrier: None,
         }
     }
 
