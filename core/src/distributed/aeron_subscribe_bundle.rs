@@ -217,8 +217,8 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
     let mut log_count_down = 0;
     let mut loop_count = 0;
     while cmd.is_running(&mut || tx_guards.mark_closed()) {
-        if 0 == (loop_count % 2000) {
-            log_count_down = 30;
+        if 0 == (loop_count % 10000) {
+            log_count_down = 20;
             error!("---------------------------------------------------------------")
         }
         loop_count += 1;

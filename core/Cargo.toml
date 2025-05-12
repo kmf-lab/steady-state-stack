@@ -110,12 +110,12 @@ async-lock       = "3.4"  # Use the latest version
 
 
 # HTTP Web solution is built on this stack of crates
-http           = "1.3.1"
-httparse       = "1.10.1"
-futures-rustls = "0.26.0"
-h2 = { version = "0.3", default-features = false }
-quinn          = "0.11.7"
-h3             = "0.0.7"
+#http           = "1.3.1"
+#httparse       = "1.10.1"
+#futures-rustls = "0.26.0"
+#h2 = { version = "0.3", default-features = false }
+#quinn          = "0.11.7"
+#h3             = "0.0.7"
 #################################################
 
 

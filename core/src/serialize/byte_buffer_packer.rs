@@ -281,4 +281,36 @@ mod tests {
     }
 
     // Add more tests to cover different scenarios
+    #[test]
+    fn test_consume_to_u64_small() {
+        // bits length less than 64
+        let bits = [1u8, 0, 1]; // 1<<0 + 1<<2 = 1 + 4 = 5
+        let result = PackedVecWriter::<i32>::consume_to_u64(&bits);
+        assert_eq!(result, vec![5u64]);
+    }
+
+    #[test]
+    fn test_consume_to_u64_large() {
+        // bits length greater than 64
+        let bits = vec![1u8; 70];
+        let result = PackedVecWriter::<i32>::consume_to_u64(&bits);
+        // First chunk: bits[0..64] all 1 => 2^64 - 1
+        let expected0 = u64::MAX;
+        // Second chunk: bits[64..70] all 1 => sum of bits 0..5 = 63
+        let expected1 = (0..6).fold(0u64, |acc, i| acc | (1u64 << i));
+        assert_eq!(result, vec![expected0, expected1]);
+    }
+
+    #[test]
+    fn test_delta_write_count_and_sync() {
+        let mut writer: PackedVecWriter<i32> = PackedVecWriter::new();
+        let mut buffer1 = BytesMut::new();
+        // First write should be full sync, so delta_write_count remains 0
+        writer.add_vec(&mut buffer1, &[10, 20, 30]);
+        assert_eq!(writer.delta_write_count(), 0);
+        // Second write should be a delta, so delta_write_count increments
+        let mut buffer2 = BytesMut::new();
+        writer.add_vec(&mut buffer2, &[11, 21, 30]);
+        assert_eq!(writer.delta_write_count(), 1);
+    }
 }

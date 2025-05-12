@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::ops::Sub;
 use ringbuf::storage::{Heap};
 use std::sync::Arc;
 use futures::lock::Mutex;
@@ -37,6 +38,7 @@ use crate::actor_builder::{ActorBuilder, Percentile};
 use crate::core_rx::RxCore;
 use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamItem, TxChannelMetaDataWrapper};
 use crate::monitor::ChannelMetaData;
+use crate::steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
 use crate::steady_rx::{Rx, RxDone};
 use crate::steady_tx::{Tx};
 
@@ -50,12 +52,8 @@ const DEFAULT_CAPACITY: usize = 64; // do not change
 /// The `ChannelBuilder` struct allows for the detailed configuration of channels, including
 /// performance metrics, thresholds, and other operational parameters. This provides flexibility
 /// in tailoring channels to specific requirements and monitoring needs.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ChannelBuilder {
-    /// The noise threshold as an `Instant`.
-    ///
-    /// This field is used to manage and mitigate noise in the channel's operation.
-    noise_threshold: Instant,
 
     /// The count of channels, stored as an `Arc<AtomicUsize>`.
     ///
@@ -205,7 +203,6 @@ impl ChannelBuilder {
     pub(crate) fn new(
         channel_count: Arc<AtomicUsize>,
         oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
-        noise_threshold: Instant,
         frame_rate_ms: u64,
     ) -> ChannelBuilder {
 
@@ -214,7 +211,6 @@ impl ChannelBuilder {
                                                                                               , Duration::from_secs(1)
                                                                                               , Duration::from_secs(10));        
         ChannelBuilder {
-            noise_threshold,
             channel_count,
             capacity: DEFAULT_CAPACITY,
             labels: &[],
@@ -673,6 +669,8 @@ impl ChannelBuilder {
 
 
     pub(crate) fn eager_build_internal<T>(&self) -> (Tx<T>, Rx<T>) {
+        let now = Instant::now().sub(Duration::from_secs(1 + MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
+
 
         let type_byte_count = size_of::<T>();
         let type_string_name = std::any::type_name::<T>();
@@ -696,7 +694,6 @@ impl ChannelBuilder {
         let (sender_is_closed, receiver_is_closed) = oneshot::channel();
         let tx_version = Arc::new(AtomicU32::new(Self::UNSET));
         let rx_version = Arc::new(AtomicU32::new(Self::UNSET));
-        let noise_threshold = self.noise_threshold;
 
         //let rb = AsyncRb::<Heap<u8>>::new(1000).split();;
         //let rb = AsyncRb::<Array<u8,1000>>::default().split();
@@ -708,7 +705,7 @@ impl ChannelBuilder {
                 channel_meta_data: TxChannelMetaDataWrapper{ meta_data: Arc::clone(&channel_meta_data)},
                 local_index: MONITOR_UNKNOWN,
                 make_closed: Some(sender_is_closed),
-                last_error_send: noise_threshold,
+                last_error_send: now,
                 oneshot_shutdown: receiver_tx,
             },
             Rx {
@@ -716,7 +713,7 @@ impl ChannelBuilder {
                 channel_meta_data: RxChannelMetaDataWrapper{ meta_data: Arc::clone(&channel_meta_data)},
                 local_monitor_index: MONITOR_UNKNOWN,
                 is_closed: receiver_is_closed,
-                last_error_send: noise_threshold,
+                last_error_send: now,
                 oneshot_shutdown: receiver_rx,
                 rx_version: rx_version.clone(),
                 tx_version: tx_version.clone(),
@@ -1435,10 +1432,9 @@ pub(crate) mod test_builder {
     pub(crate) fn test_channel_builder_new() {
         let channel_count = Arc::new(AtomicUsize::new(0));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
-        let noise_threshold = Instant::now();
         let frame_rate_ms = 1000;
 
-        let builder = ChannelBuilder::new(channel_count.clone(), oneshot_shutdown_vec.clone(), noise_threshold, frame_rate_ms);
+        let builder = ChannelBuilder::new(channel_count.clone(), oneshot_shutdown_vec.clone(), frame_rate_ms);
 
         assert_eq!(builder.capacity, DEFAULT_CAPACITY);
       //  assert_eq!(builder.labels, &[]);
@@ -1578,8 +1574,7 @@ pub(crate) mod test_builder {
     fn create_test_channel_builder() -> ChannelBuilder {
         let channel_count = Arc::new(AtomicUsize::new(0));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
-        let noise_threshold = Instant::now();
         let frame_rate_ms = 1000;
-        ChannelBuilder::new(channel_count, oneshot_shutdown_vec, noise_threshold, frame_rate_ms)
+        ChannelBuilder::new(channel_count, oneshot_shutdown_vec, frame_rate_ms)
     }
 }

@@ -87,3 +87,32 @@ pub(crate) mod core_exec {
         });
     }
 }
+
+// Additional tests for async-std executor abstractions
+#[cfg(test)]
+mod async_std_exec_tests {
+    use crate::{spawn_detached, spawn_blocking, block_on, spawn_more_threads};
+    use std::{thread, time::Duration};
+    use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+
+    #[test]
+    fn test_spawn_detached_async_std() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let flag_clone = flag.clone();
+        spawn_detached(async move { flag_clone.store(true, Ordering::SeqCst); });
+        thread::sleep(Duration::from_millis(50));
+        assert!(flag.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_spawn_blocking_async_std() {
+        let result = block_on(async { spawn_blocking(|| 9).await });
+        assert_eq!(result, 9);
+    }
+
+    #[test]
+    fn test_spawn_more_threads_async_std() {
+        let result = block_on(async { spawn_more_threads(3).await.unwrap() });
+        assert_eq!(result, 0);
+    }
+}
