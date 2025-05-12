@@ -100,12 +100,12 @@ async fn internal_behavior<const GIRTH: usize>(
     let mut locked_servers = optional_servers.lock().await;
 
     let mut rebuild_scan_requested: bool = false;
-    let mut is_shutting_down = false;
-
+    let mut trying_to_shutdown = false;
     loop {
         if !ctrl.is_running(&mut || {
-                            is_shutting_down = true;
-                            is_all_empty_and_closed(Ok(dynamic_senders_vec.read()))
+                            trying_to_shutdown = true;
+                            is_all_empty_and_closed(Ok(dynamic_senders_vec.read())) 
+                                &&  state.fill == 0
                                 && locked_servers.mark_closed()
                         }) {
             break;
@@ -218,10 +218,10 @@ async fn internal_behavior<const GIRTH: usize>(
         if let Some(nodes) = nodes {
             send_structure_details(ident, &mut locked_servers, nodes).await;
         }
-        let warn = !is_shutting_down && steady_config::TELEMETRY_SERVER;
         
+
         // we wait and fire only when we know we have a full frame which is two rounds of loading
-        if state.fill>=2 {
+        if state.fill>=2 || trying_to_shutdown {
             #[cfg(debug_assertions)]
             { //only check this when debug is on.
               //and we are not shutting down
@@ -250,6 +250,8 @@ async fn internal_behavior<const GIRTH: usize>(
                 }
             }
 
+            
+           let warn = steady_config::TELEMETRY_SERVER && !trying_to_shutdown;
             let next_frame = send_data_details(ident, &mut locked_servers, &state, warn).await;
             if next_frame {
                 state.sequence += 1;
@@ -261,6 +263,8 @@ async fn internal_behavior<const GIRTH: usize>(
             }
         } 
     }
+    
+    
     Ok(())
 }
 

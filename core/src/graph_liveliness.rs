@@ -568,6 +568,7 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) telemetry_production_rate_ms: u64,
     pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
 
+    pub shutdown_barrier: Option<Arc<Barrier>>,
 }
 
 impl Graph {
@@ -642,7 +643,7 @@ impl Graph {
             show_thread_info: false,
             aeron_meda_driver: self.aeron.clone(),
             use_internal_behavior: true,
-            shutdown_barrier: None,
+            shutdown_barrier: self.shutdown_barrier.clone(),
         }
     }
 
@@ -895,6 +896,7 @@ impl Graph {
                                              },
             team_count: Arc::new(AtomicUsize::new(1)),
             aeron: Default::default(),
+            shutdown_barrier: builder.shutdown_barrier
         };
 
         if builder.telemetry_metric_features {

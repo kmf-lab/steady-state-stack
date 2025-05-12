@@ -28,6 +28,7 @@ use crate::telemetry::metrics_collector::CollectorDetail;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
 use aeron::aeron::Aeron;
+use async_lock::Barrier;
 #[allow(unused_imports)]
 
 use crate::commander_context::SteadyContext;
@@ -66,7 +67,8 @@ pub struct ActorBuilder {
     team_count: Arc<AtomicUsize>,
     remote_details: Option<RemoteDetails>,
     pub(crate) never_simulate: bool,
-    aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>
+    aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    pub shutdown_barrier: Option<Arc<Barrier>>,
 }
 
 #[derive(Clone)]
@@ -367,6 +369,7 @@ struct SteadyContextArchetype<DynCall: ?Sized> {
     show_thread_info: bool,
     aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     never_simulate: bool,
+    shutdown_barrier:  Option<Arc<Barrier>>
 }
 
 impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
@@ -385,7 +388,8 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
             instance_id: self.instance_id.clone(),
             show_thread_info: self.show_thread_info,
             aeron_media_driver: self.aeron_media_driver.clone(),
-            never_simulate: self.never_simulate
+            never_simulate: self.never_simulate,
+            shutdown_barrier: self.shutdown_barrier.clone()
         }
     }
 }
@@ -445,7 +449,8 @@ impl ActorBuilder {
             core_balancer: None,
             remote_details: None,
             never_simulate: false,
-            aeron_media_driver: graph.aeron.clone()
+            aeron_media_driver: graph.aeron.clone(),
+            shutdown_barrier: graph.shutdown_barrier.clone(),
         }
     }
 
@@ -884,7 +889,8 @@ impl ActorBuilder {
             instance_id: restart_counter,
             show_thread_info: self.show_thread_info,
             aeron_media_driver: self.aeron_media_driver,
-            never_simulate: self.never_simulate
+            never_simulate: self.never_simulate,
+            shutdown_barrier: self.shutdown_barrier
         }
     }
 
@@ -1004,7 +1010,7 @@ fn build_actor_context<I: ?Sized>(
          show_thread_info: builder_source.show_thread_info,
          aeron_meda_driver: builder_source.aeron_media_driver.clone(),
          use_internal_behavior: builder_source.never_simulate || !cfg!(test),
-         shutdown_barrier: None,
+         shutdown_barrier: builder_source.shutdown_barrier.clone(),
      }
 }
 
