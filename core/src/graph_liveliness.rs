@@ -842,8 +842,9 @@ impl Graph {
 
         // You can sort or prioritize the votes as needed here
         voters.sort_by_key(|voter|
-            !voter.as_ref().is_some_and(|f| f.in_favor)); // This will put `true` (in favor) votes first
-
+            !voter.as_ref().is_some_and(|f| f.in_favor )); // This will put `true` (in favor) votes first
+               
+        
         // Now iterate over the sorted voters and log the results
         voters.iter().for_each(|voter| {
             warn!("#{:?} Status:{:?} Voted: {:?} Ident: {:?}"
@@ -910,7 +911,6 @@ impl Graph {
         ChannelBuilder::new(
             self.channel_count.clone(),
             self.oneshot_shutdown_vec.clone(),
-            self.noise_threshold,
             self.telemetry_production_rate_ms,
         )
     }

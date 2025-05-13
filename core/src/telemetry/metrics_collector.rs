@@ -775,3 +775,77 @@ pub(crate) fn future_checking_avail<T: Send + Sync>(steady_rx: &SteadyRx<T>, cou
         }
             .boxed()
     }
+
+#[cfg(test)]
+mod extra_tests {
+    use super::*;
+    use parking_lot::RwLock;
+    use std::collections::{VecDeque, HashMap};
+    use std::sync::Arc;
+    use futures::executor::block_on;
+    use futures::future::BoxFuture;
+    use futures::stream::FuturesUnordered;
+    use std::time::Duration;
+
+    #[test]
+    fn test_raw_diagram_state_default() {
+        let mut state = RawDiagramState::default();
+        // Defaults
+        assert_eq!(state.sequence, 0);
+        assert_eq!(state.fill, 0);
+        assert_eq!(state.actor_count, 0);
+        assert!(state.actor_status.is_empty());
+        assert!(state.total_take_send.is_empty());
+        assert!(state.future_take.is_empty());
+        assert!(state.future_send.is_empty());
+        assert!(state.error_map.is_empty());
+        assert!(state.actor_last_update.is_empty());
+    }
+
+    #[test]
+    fn test_is_all_empty_and_closed_ok() {
+        // single CollectorDetail with no telemetry entries => empty and closed
+        let vec: Arc<RwLock<Vec<CollectorDetail>>> = Arc::new(RwLock::new(vec![
+            CollectorDetail {
+                telemetry_take: VecDeque::new(),
+                ident: ActorIdentity::new(1, "a", None),
+            }
+        ]));
+        let lock = Ok(vec.read());
+        assert!(is_all_empty_and_closed(lock));
+    }
+
+
+    #[test]
+    fn test_full_frame_or_timeout_empty() {
+        let mut fu: FuturesUnordered<BoxFuture<'_, (bool, Option<usize>)>> = FuturesUnordered::new();
+        let res = block_on(full_frame_or_timeout(&mut fu, 100));
+        assert!(res.is_none(), "Timeout with no futures returns None");
+    }
+
+    #[test]
+    fn test_collect_channel_data_empty() {
+        let mut state = RawDiagramState::default();
+        // two rounds to advance fill
+        let to_pop = collect_channel_data(&mut state, &[]);
+        assert_eq!(to_pop.len(), 0);
+        assert_eq!(state.fill, 1);
+        let to_pop2 = collect_channel_data(&mut state, &[]);
+        assert_eq!(to_pop2.len(), 0);
+        assert_eq!(state.fill, 2);
+    }
+
+    #[test]
+    fn test_gather_node_details_building() {
+        let mut state = RawDiagramState::default();
+        let senders: Vec<CollectorDetail> = Vec::new();
+        // when building (is_building=true), even mismatched channels should yield Some(empty)
+        let nodes = gather_node_details(&mut state, &senders, true);
+        assert!(nodes.is_some());
+        assert!(nodes.unwrap().is_empty());
+        // actor_count updated
+        assert_eq!(state.actor_count, 0);
+    }
+
+
+}

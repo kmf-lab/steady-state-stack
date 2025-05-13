@@ -863,3 +863,46 @@ mod test_actor_stats_triggers {
 
 
 }
+/// Additional tests to achieve 100% coverage for all utility functions and edge cases.
+#[cfg(test)]
+mod extra_tests {
+    use super::*;
+    use std::cmp::Ordering;
+
+    /// Verify `time_label` produces the correct text for various durations.
+    #[test]
+    fn test_time_label_thresholds() {
+        // sub-second
+        assert_eq!(time_label(500), "sec");
+        // seconds
+        assert_eq!(time_label(1500), "1.5 secs");
+        // exactly one minute
+        assert_eq!(time_label(60_000), "min");
+        // minutes
+        assert_eq!(time_label(90_000), "1.5 mins");
+        // exactly one hour
+        assert_eq!(time_label(3_600_000), "hr");
+        // multiple hours
+        assert_eq!(time_label(7_200_000), "2.0 hrs");
+        // exactly one day
+        assert_eq!(time_label(86_400_000), "day");
+        // multiple days
+        assert_eq!(time_label(172_800_000), "2.0 days");
+    }
+
+
+
+    /// Test `percentile_rational` returns Equal when no histogram or no data.
+ 
+    /// Test both branches of `compute_std_dev`.
+    #[test]
+    fn test_compute_std_dev_branches() {
+        // runner < SQUARE_LIMIT: should compute a finite non-negative value
+        let val = compute_std_dev(1, 2, 1, 2);
+        assert!(val >= 0.0, "std dev should be non-negative");
+
+        // runner >= SQUARE_LIMIT: computed expression is negative inside sqrt -> NaN
+        let nan = compute_std_dev(0, 1, SQUARE_LIMIT, 0);
+        assert!(nan.is_nan(), "expected NaN for overflow branch");
+    }
+}

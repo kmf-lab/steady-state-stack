@@ -84,6 +84,7 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
 
             }
             AqueTech::None => {
+                #[cfg(not(test))]
                 warn!("no AqueTech provided, probably testing or still under development");
             }
             _ => {

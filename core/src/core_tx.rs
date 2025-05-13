@@ -920,3 +920,252 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
         <T as TxCore>::done_one(&self,one)
     }
 }
+
+#[cfg(test)]
+mod extended_coverage {
+    use super::*;
+    use futures::executor::block_on;
+    use futures_util::lock::Mutex;
+    use crate::TxCore;
+    use crate::{ActorIdentity, SendSaturation, SendOutcome};
+    use std::time::Duration;
+
+    /// FakeTx implements TxCore with predictable behavior for testing the MutexGuard<TxCore> forwarding.
+    struct FakeTx {
+        closed: bool,
+        send_count: usize,
+        log_calls: usize,
+        one_val: usize,
+        capacity: usize,
+        is_full: bool,
+        is_empty: bool,
+        vacant: usize,
+    }
+
+    impl FakeTx {
+        fn new() -> Self {
+            FakeTx { closed: false, send_count: 0, log_calls: 0, one_val: 3, capacity: 4, is_full: false, is_empty: true, vacant: 4 }
+        }
+    }
+
+    impl TxCore for FakeTx {
+        type MsgIn<'a> = usize;
+        type MsgOut = usize;
+        type MsgSize = usize;
+
+        fn shared_mark_closed(&mut self) -> bool {
+            self.closed = true;
+            true
+        }
+
+        fn shared_send_iter_until_full<'a, I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
+            let cnt = iter.count();
+            self.send_count += cnt;
+            cnt
+        }
+
+        fn log_perodic(&mut self) -> bool {
+            self.log_calls += 1;
+            self.log_calls > 1
+        }
+
+        fn one(&self) -> Self::MsgSize {
+            self.one_val
+        }
+
+        fn telemetry_inc<const LEN: usize>(&mut self, _d: TxDone, _tel: &mut crate::monitor_telemetry::SteadyTelemetrySend<LEN>) {
+            // no internal state change needed
+        }
+
+        fn monitor_not(&mut self) {
+            self.one_val = 0;
+        }
+
+        fn shared_capacity(&self) -> usize {
+            self.capacity
+        }
+
+        fn shared_is_full(&self) -> bool {
+            self.is_full
+        }
+
+        fn shared_is_empty(&self) -> bool {
+            self.is_empty
+        }
+
+        fn shared_vacant_units(&self) -> usize {
+            self.vacant
+        }
+
+        async fn shared_wait_shutdown_or_vacant_units(&mut self, _count: Self::MsgSize) -> bool {
+            // simulate immediate availability
+            true
+        }
+
+        async fn shared_wait_vacant_units(&mut self, _count: Self::MsgSize) -> bool {
+            true
+        }
+
+        async fn shared_wait_empty(&mut self) -> bool {
+            true
+        }
+
+        fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
+            Ok(TxDone::Normal(msg))
+        }
+
+        async fn shared_send_async_core(
+            &mut self,
+            _msg: Self::MsgIn<'_>,
+            _ident: ActorIdentity,
+            _s: SendSaturation,
+            _timeout: Option<Duration>,
+        ) -> SendOutcome<Self::MsgOut> {
+            SendOutcome::Success
+        }
+
+        async fn shared_send_async_timeout(
+            &mut self,
+            msg: Self::MsgIn<'_>,
+            _id: ActorIdentity,
+            _s: SendSaturation,
+            _timeout: Option<Duration>,
+        ) -> SendOutcome<Self::MsgOut> {
+            SendOutcome::Success
+        }
+
+        async fn shared_send_async(
+            &mut self,
+            msg: Self::MsgIn<'_>,
+            _id: ActorIdentity,
+            _s: SendSaturation,
+        ) -> SendOutcome<Self::MsgOut> {
+            SendOutcome::Success
+        }
+
+        fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
+            TxDone::Normal(*one)
+        }
+    }
+
+    #[test]
+    fn test_mutexguard_txcore_methods() {
+        // Use the futures_util Mutex to get a MutexGuard<'_, FakeTx>
+        let mtx = Mutex::new(FakeTx::new());
+        let mut guard = block_on(mtx.lock());
+
+        // Test shared_mark_closed
+        assert!(!guard.closed);
+        assert!(guard.shared_mark_closed());
+        assert!(guard.closed);
+
+        // Test shared_send_iter_until_full
+        let sent = guard.shared_send_iter_until_full([10,20,30].into_iter());
+        assert_eq!(sent, 3);
+
+        // Test log_perodic toggles
+        assert!(!guard.log_perodic());
+        assert!(guard.log_perodic());
+
+        // one() value
+        assert_eq!(guard.one(), 3);
+        // monitor_not resets one()
+        guard.monitor_not();
+        assert_eq!(guard.one(), 0);
+
+        // capacity, full, empty, vacant
+        assert_eq!(guard.shared_capacity(), 4);
+        assert!(!guard.shared_is_full());
+        assert!(guard.shared_is_empty());
+        assert_eq!(guard.shared_vacant_units(), 4);
+
+        // Async wait methods
+        assert!(block_on(guard.shared_wait_shutdown_or_vacant_units(1)));
+        assert!(block_on(guard.shared_wait_vacant_units(1)));
+        assert!(block_on(guard.shared_wait_empty()));
+
+        // Try send
+        let try_res = guard.shared_try_send(5);
+        assert!(try_res.is_ok());
+        // Async send
+        let ident = ActorIdentity::new(0, "test", None);
+        let res = block_on(guard.shared_send_async(7, ident, SendSaturation::AwaitForRoom));
+        assert!(matches!(res, SendOutcome::Success));
+
+        let res_to = block_on(guard.shared_send_async_timeout(8, ident, SendSaturation::ReturnBlockedMsg, Some(Duration::from_millis(1))));
+        assert!(matches!(res_to, SendOutcome::Success));
+
+        // done_one
+        assert_eq!(guard.done_one(&9), TxDone::Normal(9));
+    }
+
+}
+#[cfg(test)]
+mod advanced_tx_core_tests {
+    use super::*;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::monitor_telemetry::SteadyTelemetrySend;
+    use futures::executor::block_on;
+    use std::time::{Duration, Instant};
+    use crate::GraphBuilder;
+
+    /// A tiny helper to build a fresh Tx<u8> and its matching Rx<u8>.
+    fn new_tx() -> Tx<u8> {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let builder = graph.channel_builder();
+        let (tx, _rx) = builder.eager_build_internal();
+        tx
+    }
+
+    #[test]
+    fn done_one_and_shared_mark_closed() {
+        let mut tx = new_tx();
+
+        // done_one should always return Normal(1)
+        assert_eq!(tx.done_one(&42u8), TxDone::Normal(1));
+
+        // First close takes the oneshot sender and succeeds.
+        assert!(tx.shared_mark_closed());
+        // Second close finds `make_closed` == None → the `warn!` branch.
+        assert!(tx.shared_mark_closed());
+    }
+
+    #[test]
+    fn shared_send_iter_until_full_and_warn_after_close() {
+        let mut tx = new_tx();
+        // push two items
+        let pushed = tx.shared_send_iter_until_full([7u8, 8u8].into_iter());
+        assert_eq!(pushed, 2);
+
+        // consume the close flag so that `make_closed` becomes None
+        let _ = tx.shared_mark_closed();
+        // now warn branch should run
+        let pushed2 = tx.shared_send_iter_until_full(std::iter::empty());
+        assert_eq!(pushed2, 0);
+    }
+
+
+
+    #[test]
+    fn shared_try_send_and_async_variants() {
+        let mut tx = new_tx();
+        let ident = ActorIdentity::new(0, "me", None);
+
+        // shared_try_send success
+        assert_eq!(tx.shared_try_send(99u8), Ok(TxDone::Normal(1)));
+
+        // shared_send_async_core success immediately
+        let outcome = block_on(tx.shared_send_async_core(5u8, ident, SendSaturation::AwaitForRoom, None));
+        assert!(matches!(outcome, SendOutcome::Success));
+
+        // shared_send_async = core with None timeout
+        let outcome2 = block_on(tx.shared_send_async(6u8, ident, SendSaturation::ReturnBlockedMsg));
+        assert!(matches!(outcome2, SendOutcome::Success));
+
+        // shared_send_async_timeout passes through
+        let outcome3 = block_on(tx.shared_send_async_timeout(7u8, ident, SendSaturation::ReturnBlockedMsg, Some(Duration::from_millis(1))));
+        assert!(matches!(outcome3, SendOutcome::Success));
+    }
+
+
+}

@@ -51,7 +51,6 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
     let channel_builder = ChannelBuilder::new(
         that.channel_count.clone(),
         that.oneshot_shutdown_vec.clone(),
-        start_now,
         that.frame_rate_ms,
     )
         .with_labels(&["steady_state-telemetry"], false)

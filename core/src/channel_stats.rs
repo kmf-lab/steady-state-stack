@@ -7,7 +7,6 @@ use log::*;
 use num_traits::Zero;
 use crate::*;
 use hdrhistogram::{Counter, Histogram};
-use itoa::Buffer;
 
 use crate::actor_stats::{ActorStatsComputer, ChannelBlock};
 
@@ -1578,5 +1577,85 @@ pub(crate) mod stats_tests {
         assert!(!computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(2000))), "Trigger should fire when the average rate is above");
         assert!(!computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(100))), "Trigger should fire when the average rate is below");
         assert!(computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(2000))), "Trigger should fire when the average rate is below");
+    }
+}
+#[cfg(test)]
+pub(crate) mod extra_tests {
+    use super::*;
+    use rand_distr::{Distribution, Normal};
+    use rand::{rngs::StdRng, SeedableRng};
+    use std::sync::Arc;
+    #[allow(unused_imports)]
+    use log::*;
+    use crate::util;
+
+    /// Helper function to set up a `ChannelStatsComputer` with specified parameters.
+    fn setup_computer(capacity: usize, window_bits: u8, refresh_bits: u8) -> ChannelStatsComputer {
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = capacity;
+        cmd.window_bucket_in_bits = window_bits;
+        cmd.refresh_rate_in_bits = refresh_bits;
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 42);
+        computer.frame_rate_ms = 3;
+        computer
+    }
+
+
+    /// Test histogram creation failure by using an extreme capacity.
+    #[test]
+    pub(crate) fn histogram_failure() {
+        let _ = util::steady_logger::initialize();
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = usize::MAX; // Extremely large capacity to simulate failure
+        cmd.percentiles_filled.push(Percentile::p50()); // Force histogram creation
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 42);
+        computer.accumulate_data_frame(0, 100);
+        // Expect error logging or graceful handling; no panic should occur
+    }
+
+
+    /// Test when the bucket is full and a new one is added.
+    #[test]
+    pub(crate) fn full_bucket() {
+        let _ = util::steady_logger::initialize();
+        let mut computer = setup_computer(256, 2, 2);
+        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        for _ in 0..c {
+            computer.accumulate_data_frame(100, 100);
+        }
+        assert!(computer.history_filled.len() > 1);
+    }
+
+
+
+
+    /// Test Prometheus metrics generation when enabled.
+    #[cfg(feature = "prometheus_metrics")]
+    #[test]
+    pub(crate) fn prometheus_metrics_enabled() {
+        let _ = util::steady_logger::initialize();
+        let mut computer = setup_computer(256, 2, 2);
+        computer.accumulate_data_frame(100, 100);
+        let mut display_label = String::new();
+        let mut metrics = String::new();
+        computer.compute(&mut display_label, &mut metrics, None, 100, 50);
+        assert!(metrics.contains("inflight"));
+        assert!(metrics.contains("send_total"));
+        assert!(metrics.contains("take_total"));
+    }
+
+    /// Test behavior when capacity is zero (should return grey line).
+    #[test]
+    pub(crate) fn zero_capacity() {
+        let _ = util::steady_logger::initialize();
+        let mut computer = ChannelStatsComputer::default();
+        computer.capacity = 0; // Manually set to bypass init assertion
+        let mut display_label = String::new();
+        let mut metrics = String::new();
+        let (color, thickness) = computer.compute(&mut display_label, &mut metrics, None, 100, 50);
+        assert_eq!(color, DOT_GREY);
+        assert_eq!(thickness, "1");
     }
 }

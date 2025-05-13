@@ -592,7 +592,6 @@ pub(crate) mod monitor_tests {
         let builder = ChannelBuilder::new(
             Arc::new(Default::default()),
             Arc::new(Default::default()),
-            Instant::now(),
             40).with_capacity(capacity);
 
         builder.build_channel::<T>()

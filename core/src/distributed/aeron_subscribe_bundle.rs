@@ -22,7 +22,7 @@ pub struct AeronSubscribeSteadyState {
     sub_reg_id: Vec<Option<i64>>,
 }
 
-const ROUND_ROBIN:Option<Duration> = Some(Duration::from_millis(5)); //TODO: hack for testing
+const ROUND_ROBIN:Option<Duration> = None;// Some(Duration::from_millis(5)); //TODO: hack for testing
 
 pub async fn run<const GIRTH: usize>(
     context: SteadyContext,
@@ -148,14 +148,16 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
 
     for f in 0..GIRTH {
         if state.sub_reg_id[f].is_none() {
-            warn!("adding new sub {} {:?}", f as i32 + stream_id, aeron_channel.cstring());
-            match aeron.lock().await.add_subscription(aeron_channel.cstring(), f as i32 + stream_id) {
+            let mut meda_driver = aeron.lock();
+            let connection_string = aeron_channel.cstring();
+            let stream_id = f as i32 + stream_id;
+
+            match meda_driver.await.add_subscription(connection_string, stream_id) {
                 Ok(reg_id) => {
-                    warn!("idx: {} new subscription found: {}", f, reg_id);
                     state.sub_reg_id[f] = Some(reg_id);
                 },
                 Err(e) => {
-                    warn!("Unable to add publication: {:?}", e);
+                    warn!("Unable to register subscription: {:?}", e);
                 }
             };
         }
@@ -178,9 +180,19 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
                                 found = true;
                             }
                         } else {
-                            warn!("Idx: {} Error finding subscription: {:?}", f, e);
+                            warn!("Idx: {} Error finding subscription: {:?}, trying registration process again", f, e);
                             subs[f] = Err(e.into());
-                            // keep looking, if this is happending in a looper perhaps we should regegister?
+                            let mut meda_driver = aeron.lock();
+                            let connection_string = aeron_channel.cstring();
+                            let stream_id = f as i32 + stream_id;
+                            match meda_driver.await.add_subscription(connection_string, stream_id) {
+                                Ok(reg_id) => {
+                                    state.sub_reg_id[f] = Some(reg_id);
+                                },
+                                Err(e) => {
+                                    warn!("Unable to register subscription: {:?}", e);
+                                }
+                            };
                         }
                     },
                     Ok(subscription) => {
@@ -216,7 +228,8 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
 
     let mut log_count_down = 0;
     let mut loop_count = 0;
-    while cmd.is_running(&mut || tx_guards.mark_closed()) {
+
+    while cmd.is_running(&mut || tx_guards.mark_closed() ) {
         if 0 == (loop_count % 10000) {
             log_count_down = 20;
             error!("---------------------------------------------------------------")

@@ -1,9 +1,8 @@
 use flexi_logger::writers::*;
 use flexi_logger::*;
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex};
 use std::error::Error;
 use std::io;
-use std::io::Write;
 use log::Record;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -167,7 +166,6 @@ mod test_log_tests {
     use super::*;
     use steady_logger::*;
     use log::info;
-    use lazy_static::lazy_static;
 
     #[test]
     fn test_log_capture() {

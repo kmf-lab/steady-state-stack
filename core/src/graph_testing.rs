@@ -621,7 +621,6 @@ mod graph_testing_tests {
         let builder = ChannelBuilder::new(
             Arc::new(Default::default()),
             Arc::new(Default::default()),
-            Instant::now(),
             40);
 
         builder.build_channel::<T>()

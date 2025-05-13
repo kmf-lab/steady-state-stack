@@ -215,7 +215,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             }
             all_streams_flushed = GIRTH == flushed_count;
          }
-    error!("exit Ok");
     Ok(())
 }
 

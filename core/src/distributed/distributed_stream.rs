@@ -28,7 +28,7 @@ use crate::steady_tx::TxMetaDataProvider;
 use crate::core_exec;
 use futures::future::FutureExt; // For .fuse()
 use futures::pin_mut;
-use log::{error, warn};
+use log::{error, trace, warn};
 use num_traits::Zero;
 // For pin_mut!
 
@@ -189,8 +189,8 @@ pub trait StreamRxBundleTrait {
 impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
     fn mark_closed(&mut self) -> bool {
         if self.is_empty() {
-            warn!("nothing found to be closed");
-            return false;
+            trace!("bundle has no streams, nothing found to be closed");
+            return true; //true we did close nothing
         }
         //NOTE: must be all or nothing it never returns early
         self.iter_mut().for_each(|f| {let _ = f.mark_closed();});
@@ -1063,3 +1063,160 @@ impl<T: StreamItem> TxMetaDataProvider for SteadyStreamTx<T> {
     }
 }
 
+#[cfg(test)]
+mod extra_stream_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+    use std::sync::Arc;
+    /// Test extract_stream_payload_slices covers both on_first=true and false branches
+    #[test]
+    fn test_extract_stream_payload_slices_behavior() {
+        let mut p1 = [1u8, 2, 3];
+        let mut p2 = [4u8, 5, 6, 7];
+        let mut on_first = true;
+        let mut idx = 0;
+        // First slice: take 2 bytes from p1
+        let (a1, b1) = StreamRx::<StreamSimpleMessage>::extract_stream_payload_slices(&mut p1, &mut p2, &mut on_first, &mut idx, 2);
+        assert_eq!(a1, &mut [1u8, 2][..]);
+        assert_eq!(b1.len(), 0);
+        assert!(on_first);
+        assert_eq!(idx, 2);
+        // Second slice: p1 has 1 left, so a from p1[2..3], b from p2[0..1]
+        let (a2, b2) = StreamRx::<StreamSimpleMessage>::extract_stream_payload_slices(&mut p1, &mut p2, &mut on_first, &mut idx, 2);
+        assert_eq!(a2, &mut [3u8][..]);
+        assert_eq!(b2, &mut [4u8][..]);
+        assert!(!on_first);
+        assert_eq!(idx, 1);
+        // Third slice: on_first=false, consume from p2
+        let (a3, b3) = StreamRx::<StreamSimpleMessage>::extract_stream_payload_slices(&mut p1, &mut p2, &mut on_first, &mut idx, 2);
+        assert_eq!(a3, &mut [5u8, 6][..]);
+        assert_eq!(b3.len(), 0);
+    }
+
+    /// Test Defrag::new initializes fields correctly and buffers have correct capacity
+    #[test]
+    fn test_defrag_new_properties() {
+        let items = 3;
+        let bytes = 5;
+        let session_id = 42;
+        let def: Defrag<StreamSimpleMessage> = Defrag::new(session_id, items, bytes);
+        assert_eq!(def.session_id, session_id);
+        assert_eq!(def.running_length, 0);
+        assert!(def.arrival.is_none());
+        assert!(def.finish.is_none());
+        // Writer side vacant_len equals capacity
+        assert_eq!(def.ringbuffer_items.0.vacant_len(), items);
+        assert_eq!(def.ringbuffer_bytes.0.vacant_len(), bytes);
+    }
+
+    #[test]
+    fn test_stream_session_message_new_and_from_defrag() {
+        let arrival = Instant::now();
+        let finish = arrival + Duration::from_secs(1);
+        let mut def = Defrag::<StreamSessionMessage>::new(7, 4, 4);
+        def.arrival = Some(arrival);
+        def.finish = Some(finish);
+        def.running_length = 8;
+        let msg = StreamSessionMessage::from_defrag(&def);
+        assert_eq!(msg.length(), 8);
+        assert_eq!(msg.session_id, 7);
+        assert_eq!(msg.arrival, arrival);
+        assert_eq!(msg.finished, finish);
+    }
+
+
+    #[test]
+    fn test_stream_simple_message_wrap_and_from_defrag() {
+        let data = [10u8, 20, 30];
+        let (msg, slice) = StreamSimpleMessage::wrap(&data);
+        assert_eq!(msg.length(), 3);
+        assert_eq!(slice, &data);
+        // from_defrag
+        let mut def = Defrag::<StreamSimpleMessage>::new(0, 2, 2);
+        def.running_length = 5;
+        let m2 = StreamSimpleMessage::from_defrag(&def);
+        assert_eq!(m2.length(), 5);
+        // testing_new
+        let tn = StreamSimpleMessage::testing_new(6);
+        assert_eq!(tn.length(), 6);
+    }
+
+    /// Test testing_new and length for StreamSessionMessage
+    #[test]
+    fn test_testing_new_methods() {
+        let tn = StreamSessionMessage::testing_new(9);
+        assert_eq!(tn.length(), 9);
+    }
+
+    /// Test RATE_COLLECTOR constants relationship
+    #[test]
+    fn test_rate_collector_constants() {
+        assert_eq!(RATE_COLLECTOR_LEN, 32);
+        assert_eq!(RATE_COLLECTOR_MASK, 31);
+        // Masking LEN yields zero
+        assert_eq!(RATE_COLLECTOR_LEN & RATE_COLLECTOR_MASK, 0);
+    }
+
+    /// Test StreamTxBundleTrait.mark_closed on empty and non-empty bundles
+    #[test]
+    fn test_stream_tx_bundle_trait_empty() {
+        type Bundle = StreamTxBundle<'static, StreamSimpleMessage>;
+        let mut bundle: Bundle = Vec::new();
+        assert!(bundle.mark_closed(), "even Empty bundle should return true");
+    }
+
+    /// Test StreamRxBundleTrait on empty bundles
+    #[test]
+    fn test_stream_rx_bundle_trait_empty() {
+        type Bundle = StreamRxBundle<'static, StreamSimpleMessage>;
+        let mut bundle: Bundle = Vec::new();
+        assert!(bundle.is_closed_and_empty());
+        assert!(bundle.is_closed());
+        assert!(bundle.is_empty());
+    }
+
+
+    /// Even a zero‐length LazySteadyStreamTxBundle should clone cleanly to an empty SteadyStreamTxBundle.
+    #[test]
+    fn test_lazy_tx_bundle_clone_empty() {
+        let empty: [LazyStreamTx<StreamSimpleMessage>; 0] = [];
+        let cloned: SteadyStreamTxBundle<StreamSimpleMessage, 0> = empty.clone();
+        // An Arc<[..;0]> has length 0
+        assert_eq!(Arc::as_ref(&cloned).len(), 0);
+    }
+
+    /// Even a zero‐length LazySteadyStreamRxBundle should clone cleanly to an empty SteadyStreamRxBundle.
+    #[test]
+    fn test_lazy_rx_bundle_clone_empty() {
+        let empty: [LazyStreamRx<StreamSimpleMessage>; 0] = [];
+        let cloned: SteadyStreamRxBundle<StreamSimpleMessage, 0> = empty.clone();
+        assert_eq!(Arc::as_ref(&cloned).len(), 0);
+    }
+
+    /// SteadyStreamRxBundleTrait on empty should produce an immediate empty lock and empty metadata arrays.
+    #[test]
+    fn test_steady_rx_bundle_trait_empty() {
+        let bundle: SteadyStreamRxBundle<StreamSimpleMessage, 0> = Arc::new([]);
+        // lock() is a JoinAll over zero futures: completes immediately
+        let guards: Vec<_> = core_exec::block_on(bundle.lock());
+        assert!(guards.is_empty());
+
+        let ctrl = bundle.control_meta_data();
+        assert_eq!(ctrl.len(), 0, "control_meta_data for GIRTH=0 must be length 0");
+        let payload = bundle.payload_meta_data();
+        assert_eq!(payload.len(), 0, "payload_meta_data for GIRTH=0 must be length 0");
+    }
+
+    /// SteadyStreamTxBundleTrait on empty should produce an immediate empty lock and empty metadata arrays.
+    #[test]
+    fn test_steady_tx_bundle_trait_empty() {
+        let bundle: SteadyStreamTxBundle<StreamSimpleMessage, 0> = Arc::new([]);
+        let guards: Vec<_> = core_exec::block_on(bundle.lock());
+        assert!(guards.is_empty());
+
+        let ctrl = bundle.control_meta_data();
+        assert_eq!(ctrl.len(), 0, "control_meta_data for GIRTH=0 must be length 0");
+        let payload = bundle.payload_meta_data();
+        assert_eq!(payload.len(), 0, "payload_meta_data for GIRTH=0 must be length 0");
+    }
+}
