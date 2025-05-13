@@ -659,3 +659,31 @@ mod rx_tests {
 
     }
 }
+
+// Unit tests for Rx<T> convenience methods
+#[cfg(test)]
+mod steady_rx_tests {
+    use super::*;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::*;
+
+    #[test]
+    fn test_peek_slice_and_iter() {
+        let builder = ChannelBuilder::default().with_capacity(3);
+        let (tx_lazy, rx_lazy) = builder.build_channel::<i32>();
+        tx_lazy.testing_send_all(vec![5,6,7], false);
+
+        let rx = rx_lazy.clone();
+        let mut ste_rx = core_exec::block_on(rx.lock());
+        let mut buf = [0; 3];
+        let n = ste_rx.shared_try_peek_slice(&mut buf);
+        assert_eq!(n, 3);
+        assert_eq!(buf, [5,6,7]);
+        assert!(ste_rx.shared_try_peek().is_some());
+
+        // try_peek_iter
+        let collected: Vec<_> = ste_rx.try_peek_iter().cloned().collect();
+        assert_eq!(collected, vec![5,6,7]);
+    }
+}
+

@@ -266,4 +266,13 @@ mod tests {
         encode_decode_signed_test(-0x100001); // 4-byte
         encode_decode_signed_test(-0x8000001); // 5-byte
     }
+    
+    #[test]
+    fn test_read_empty_buffers() {
+        // Empty buffer should return None
+        let mut empty_signed = Bytes::from_static(&[]);
+        assert!(read_long_signed(&mut empty_signed).is_none());
+        let mut empty_unsigned = Bytes::from_static(&[]);
+        assert!(read_long_unsigned(&mut empty_unsigned).is_none());
+    }
 }

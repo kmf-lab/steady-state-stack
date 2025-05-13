@@ -216,7 +216,8 @@ async fn handle_new_requests (
     let mut shutdown_wait = None;
     loop {
         let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
-        select! {  timeout = shutdown.deref_mut() => {
+        select! {
+               timeout = shutdown.deref_mut() => {
 
                         let margin = Duration::from_millis(10);
                         let adjusted_timeout:Duration = if let Ok(Some(timeout)) = timeout {

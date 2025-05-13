@@ -919,6 +919,68 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
         <T as TxCore>::done_one(&self,one)
     }
+
+
+}
+
+// Unit-tests for the combined TxCore / RxCore behavior
+#[cfg(test)]
+mod core_tx_rx_tests {
+    use super::*;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::*;
+    use crate::core_rx::RxCore;
+
+    #[test]
+    fn test_tx_rx_basic_flow() {
+        // build a channel of capacity 2
+        let builder = ChannelBuilder::default().with_capacity(2);
+        let (tx, rx) = builder.build_channel::<i32>();
+
+        // --- test TxCore methods ---
+        let tx = tx.clone();
+        let mut txg = core_exec::block_on(tx.lock());
+        assert_eq!(txg.shared_capacity(), 2);
+        assert!(txg.shared_is_empty());
+        let sent = txg.shared_send_slice_until_full(&[7, 8]);
+        assert_eq!(sent, 2);
+        assert!(txg.shared_is_full());
+        drop(txg);
+
+        // --- test RxCore methods ---
+        let rx = rx.clone();
+        let mut rxg = core_exec::block_on(rx.lock());
+        assert_eq!(rxg.shared_capacity(), 2);
+        assert_eq!(rxg.shared_avail_units(), 2);
+        assert_eq!(rxg.shared_try_peek(), Some(&7));
+        drop(rxg);
+
+        let rx = rx.clone();
+        let mut rxg = core_exec::block_on(rx.lock());
+        assert_eq!(rxg.shared_try_take().map(|(_,v)| v), Some(7));
+        assert_eq!(rxg.shared_try_take().map(|(_,v)| v), Some(8));
+        assert!(rxg.shared_is_empty());
+    }
+
+    #[test]
+    fn test_bad_message_detection() {
+        let builder = ChannelBuilder::default().with_capacity(1);
+        let (tx, rx) = builder.build_channel::<u8>();
+
+        // send one byte
+        let tx = tx.clone();
+        let mut txg = core_exec::block_on(tx.lock());
+        assert_eq!(txg.shared_send_slice_until_full(&[42]), 1);
+        drop(txg);
+
+        // repeated peeks should bump `peek_repeats`
+        let rx = rx.clone();
+        let mut rxg = core_exec::block_on(rx.lock());
+        assert_eq!(rxg.shared_try_peek(), Some(&42));
+        assert_eq!(rxg.shared_try_peek(), Some(&42));
+        assert!(rxg.possible_bad_message(2));
+        assert!(!rxg.possible_bad_message(5));
+    }
 }
 
 #[cfg(test)]

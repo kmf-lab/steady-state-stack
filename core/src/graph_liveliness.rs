@@ -3,7 +3,7 @@
 //! and the liveliness state handles the shutdown process and state transitions.
 
 use crate::{steady_config, util};
-use std::ops::Sub;
+use std::ops::{Deref, Sub};
 use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
 use std::time::{Duration, Instant};
@@ -176,6 +176,7 @@ impl GraphLiveliness {
             }
 
         } else {
+            #[cfg(not(test))]
             warn!("This graph contains no actors.");
         }
         trace!("changed to running state");
@@ -571,6 +572,19 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub shutdown_barrier: Option<Arc<Barrier>>,
 }
 
+
+// Custom guard type to hold the lock and hub reference
+pub struct SideChannelGuard<'a> {
+    guard: MutexGuard<'a, Option<SideChannelHub>>, // Keeps the lock held
+}
+
+impl<'a> Deref for SideChannelGuard<'a> {
+    type Target = SideChannelHub;
+    fn deref(&self) -> &Self::Target {
+        self.guard.as_ref().expect("SideChannelHub is not initialized")
+    }
+}
+
 impl Graph {
 
     /// returns None if there is no Media Driver for Aeron found on this machine.
@@ -734,8 +748,11 @@ impl Graph {
     }
 
     /// Returns a future that locks the side channel hub.
-    pub fn sidechannel_director(&self) -> MutexLockFuture<'_, Option<SideChannelHub>> {
-        self.backplane.lock()
+    pub fn sidechannel_director(&self) -> SideChannelGuard<'_> {
+        // Acquire the lock (block_on is used assuming an async context)
+        let guard = core_exec::block_on(self.backplane.lock());
+        // Return the guard, keeping the lock alive
+        SideChannelGuard { guard }
     }
 
     /// Starts the graph.
@@ -842,9 +859,8 @@ impl Graph {
 
         // You can sort or prioritize the votes as needed here
         voters.sort_by_key(|voter|
-            !voter.as_ref().is_some_and(|f| f.in_favor )); // This will put `true` (in favor) votes first
-               
-        
+            !voter.as_ref().is_some_and(|f| f.in_favor)); // This will put `true` (in favor) votes first
+
         // Now iterate over the sorted voters and log the results
         voters.iter().for_each(|voter| {
             warn!("#{:?} Status:{:?} Voted: {:?} Ident: {:?}"

@@ -414,3 +414,113 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_advance_index(&mut **self, count)
     }
 }
+
+#[cfg(test)]
+mod core_rx_async_tests {
+    use super::*;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::core_exec::block_on;
+    use crate::steady_rx::{Rx, RxDone};
+    use crate::steady_tx::Tx;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+    use futures::lock::Mutex;
+    use crate::core_tx::TxCore;
+    use crate::{ActorIdentity, SendSaturation};
+    use crate::*;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Helper function to set up a channel for tests.
+    ///
+    /// - `capacity`: The capacity of the channel.
+    /// - `data`: Optional initial data to populate the channel.
+    /// - Returns: A tuple of `(Tx, Rx)` wrapped in `Arc<Mutex<...>>` for shared access.
+    fn setup_channel<T: Clone + Send + 'static>(
+        capacity: usize,
+        data: Option<Vec<T>>,
+    ) -> (Arc<Mutex<Tx<T>>>, Arc<Mutex<Rx<T>>>, Graph) {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let builder = graph.channel_builder();
+        let builder = builder.with_capacity(capacity);
+        let (tx_lazy, rx_lazy) = builder.build_channel::<T>();
+        let tx = tx_lazy.clone();
+        let rx = rx_lazy.clone();
+        if let Some(values) = data {
+            core_exec::block_on(async {
+                let mut tx_guard = tx.lock().await;
+                for value in values {
+                    let _ = tx_guard.shared_send_async(value, ActorIdentity::default(), SendSaturation::default()).await;
+                }
+            });
+        }
+        graph.start();
+        (tx, rx, graph)
+    }
+
+    #[test]
+    fn test_peek_async_timeout_empty() {
+        let (tx, rx, graph) = setup_channel::<i32>(1, None);
+        assert!(graph.runtime_state.read().is_in_state(&[GraphLivelinessState::Running]), "Graph should be Running");
+        let mut rx_guard = core_exec::block_on(rx.lock());
+        assert!(!rx_guard.oneshot_shutdown.is_terminated() );
+
+        let start = Instant::now();
+        let peeked = core_exec::block_on(rx_guard.shared_peek_async_timeout(Some(Duration::from_millis(120))));
+
+        assert!(peeked.is_none(), "Peek should return None on an empty channel after timeout or shutdown");
+        eprintln!("timeout {:?}",start.elapsed());
+        assert!(start.elapsed() >= Duration::from_millis(100), "Timeout duration should be at least 100ms");
+    }
+
+    #[test]
+    fn test_peek_async_timeout_with_data() {
+        let (tx, rx, _) = setup_channel(1, Some(vec![42]));
+        let mut rx_guard = core_exec::block_on(rx.lock());
+        let peeked = core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
+        assert_eq!(peeked, Some(&42), "Peek should return the available data");
+    }
+
+    #[test]
+    fn test_peek_async_timeout_shutdown() {
+        let (tx, rx, _) = setup_channel::<i32>(1, None);
+        let mut rx_guard = core_exec::block_on(rx.lock());
+        let peek_future = rx_guard.shared_peek_async_timeout(Some(Duration::from_secs(1)));
+        drop(core_exec::block_on(tx.lock())); // Simulate shutdown by dropping Tx guard
+        let peeked = core_exec::block_on(peek_future);
+        assert!(peeked.is_none(), "Peek should return None after shutdown");
+    }
+
+    #[test]
+    fn test_wait_avail_units() {
+        let (tx, rx, _) = setup_channel::<i32>(1, None);
+        let mut rx_guard = core_exec::block_on(rx.lock());
+        let wait_future = rx_guard.shared_wait_avail_units(1);
+        core_exec::block_on(async {
+            let mut tx_guard = tx.lock().await;
+            tx_guard.shared_send_async(42,ActorIdentity::default(), SendSaturation::default()).await;
+        });
+        assert!(core_exec::block_on(wait_future), "Wait should return true when units become available");
+    }
+
+    #[test]
+    fn test_wait_shutdown_or_avail_units() {
+        let (tx, rx, _) = setup_channel::<i32>(1, None);
+        let mut rx_guard = core_exec::block_on(rx.lock());
+        let wait_future = rx_guard.shared_wait_shutdown_or_avail_units(1);
+        drop(core_exec::block_on(tx.lock())); // Simulate shutdown by dropping Tx guard
+        assert!(!core_exec::block_on(wait_future), "Wait should return false on shutdown");
+    }
+
+    #[test]
+    fn test_wait_closed_or_avail_units() {
+        let (tx, rx, _) = setup_channel::<i32>(1, None);
+        let mut rx_guard = core_exec::block_on(rx.lock());
+        let wait_future = rx_guard.shared_wait_closed_or_avail_units(1);
+        core_exec::block_on(async {
+            let mut tx_guard = tx.lock().await;
+            tx_guard.mark_closed();
+        });
+        let result = core_exec::block_on(wait_future);
+        assert!(!result, "Wait should return false when channel is closed with no units available");
+    }
+}

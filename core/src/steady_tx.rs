@@ -263,10 +263,39 @@ pub enum TxDone {
     Stream(usize,usize)
 }
 
-/////////////////////////////////////////////////////////////////
+// LazySteadyTx / LazySteadyRx smoke tests
+#[cfg(test)]
+mod steady_lazy_tests {
+    use super::*;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::*;
+
+    #[test]
+    fn test_lazy_flow() {
+        let builder = ChannelBuilder::default().with_capacity(2);
+        let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
+
+        // lazy-clone and send
+        tx_lazy.testing_send_all(vec![1, 2], false);
+        // lock & inspect
+        let tx = tx_lazy.clone();
+        let ste_tx = core_exec::block_on(tx.lock());
+        assert_eq!(ste_tx.shared_capacity(), 2);
+        drop(ste_tx);
+
+        let rx = rx_lazy.clone();
+        let mut ste_rx = core_exec::block_on(rx.lock());
+        assert_eq!(ste_rx.try_peek(), Some(&1));
+        drop(ste_rx);
+
+        let rx = rx_lazy.clone();
+        let mut ste_rx = core_exec::block_on(rx.lock());
+        assert_eq!(ste_rx.try_take(), Some(1));
+        assert_eq!(ste_rx.try_take(), Some(2));
+        assert_eq!(ste_rx.try_take(), None);
+    }
+}
 
 
-//Need try_send and try_stream_send and send_slice_until_full
-//Need  SteadyStreamTxBundle  channel to index function
 
 
