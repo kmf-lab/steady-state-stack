@@ -31,7 +31,7 @@ use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::commander_context::SteadyContext;
 use crate::distributed::aeron_channel_structs::aeron_utils::aeron_context;
-use crate::graph_testing::SideChannelHub;
+use crate::graph_testing::SideChannelMessenger;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::steady_logger;
@@ -438,7 +438,7 @@ pub struct GraphBuilder {
     block_fail_fast: bool,
     telemetry_metric_features: bool,
     enable_io_driver: bool,
-    backplane: Option<SideChannelHub>,
+    backplane: Option<SideChannelMessenger>,
     proactor_config: Option<ProactorConfig>,
     iouring_queue_length: u32,
     telemtry_production_rate_ms: u64,
@@ -480,7 +480,7 @@ impl GraphBuilder {
             block_fail_fast: false,
             telemetry_metric_features: false,
             enable_io_driver: false,
-            backplane: Some(SideChannelHub::default()),
+            backplane: Some(SideChannelMessenger::default()),
             proactor_config: Some(ProactorConfig::InterruptDriven),
             iouring_queue_length: 1<<5,
             telemtry_production_rate_ms: 40, //default
@@ -563,30 +563,38 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
-    pub(crate) backplane: Arc<Mutex<Option<SideChannelHub>>>, // Only used in testing
+    pub(crate) backplane: Arc<Mutex<Option<SideChannelMessenger>>>, // Only used in testing
     pub(crate) noise_threshold: Instant,
     pub(crate) block_fail_fast: bool,
     pub(crate) telemetry_production_rate_ms: u64,
     pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
-
-    pub shutdown_barrier: Option<Arc<Barrier>>,
+    pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
 }
 
 
 // Custom guard type to hold the lock and hub reference
 pub struct SideChannelGuard<'a> {
-    guard: MutexGuard<'a, Option<SideChannelHub>>, // Keeps the lock held
+    guard: MutexGuard<'a, Option<SideChannelMessenger>>, // Keeps the lock held
 }
 
 impl<'a> Deref for SideChannelGuard<'a> {
-    type Target = SideChannelHub;
+    type Target = SideChannelMessenger;
     fn deref(&self) -> &Self::Target {
         self.guard.as_ref().expect("SideChannelHub is not initialized")
     }
 }
 
 impl Graph {
+    /// Returns a future that locks the side channel hub.
+    pub fn sidechannel_messenger(&self) -> SideChannelGuard {
 
+        // Acquire the lock (block_on is used assuming an async context)
+        let guard = core_exec::block_on(self.backplane.lock());
+        // Return the guard, keeping the lock alive
+        SideChannelGuard { guard}
+    }
+    
+    
     /// returns None if there is no Media Driver for Aeron found on this machine.
     pub fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
         Self::aeron_media_driver_internal(&self.aeron)
@@ -747,13 +755,7 @@ impl Graph {
         writeln!(writer, "=== End of Trace ===").unwrap();
     }
 
-    /// Returns a future that locks the side channel hub.
-    pub fn sidechannel_director(&self) -> SideChannelGuard<'_> {
-        // Acquire the lock (block_on is used assuming an async context)
-        let guard = core_exec::block_on(self.backplane.lock());
-        // Return the guard, keeping the lock alive
-        SideChannelGuard { guard }
-    }
+
 
     /// Starts the graph.
     ///

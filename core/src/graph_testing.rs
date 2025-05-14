@@ -6,6 +6,7 @@
 
 use std::any::Any;
 use std::collections::HashMap;
+use std::error::Error;
 use std::fmt::Debug;
 use std::ops::{DerefMut};
 use std::sync::Arc;
@@ -22,6 +23,7 @@ use ringbuf::consumer::Consumer;
 use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyCommander, Tx, TxBundle};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
+use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
@@ -58,16 +60,16 @@ pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, Inter
 
 
 
-/// The `SideChannelHub` struct manages side channels for nodes in the graph.
+/// The `SideChannelMessenger` struct manages side channels for nodes in the graph.
 /// Each node holds its own lock on read and write to the backplane.
 /// The backplane functions as a central message hub, ensuring that only one user can hold it at a time.
 #[derive(Clone,Default)]
-pub struct SideChannelHub {
+pub struct SideChannelMessenger {
     node: HashMap<ActorName, Arc<NodeTxRx>>,
     pub(crate) backplane: HashMap<ActorName, Arc<Mutex<SideChannel>>>,
 }
 
-impl Debug for SideChannelHub {
+impl Debug for SideChannelMessenger {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SideChannelHub")
             .field("node", &self.node)
@@ -75,7 +77,7 @@ impl Debug for SideChannelHub {
     }
 }
 
-impl SideChannelHub {
+impl SideChannelMessenger {
 
 
     /// Retrieves the transmitter and receiver for a node by its id.
@@ -87,7 +89,7 @@ impl SideChannelHub {
     /// # Returns
     ///
     /// An `Option` containing an `Arc<Mutex<(SideChannel,Receiver<()>)>>` if the node exists.
-    pub fn node_tx_rx(&self, key: ActorName) -> Option<Arc<NodeTxRx>> {
+    pub(crate) fn node_tx_rx(&self, key: ActorName) -> Option<Arc<NodeTxRx>> {
                 self.node.get(&key).cloned()
     }
 
@@ -97,7 +99,7 @@ impl SideChannelHub {
     ///
     /// * `name` - The name of the node.
     /// * `capacity` - The capacity of the ring buffer.
-    pub fn register_node(&mut self, key: ActorName, capacity: usize, shutdown_rx: Receiver<()>) -> bool {
+    pub(crate) fn register_node(&mut self, key: ActorName, capacity: usize, shutdown_rx: Receiver<()>) -> bool {
             // Message to the node
             let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(capacity);
             let (sender_tx, receiver_tx) = rb.split();
@@ -127,25 +129,32 @@ impl SideChannelHub {
     ///
     /// An `Option` containing the response message if the operation is successful.
     ///
-    pub async fn call_actor(&self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Option<Box<dyn Any + Send + Sync>> {
+    pub fn call_actor(&self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
 
-        if let Some(sc) = self.backplane.get(&id) {
-            let mut sc_guard = sc.lock().await;
-            let (tx, rx) = sc_guard.deref_mut();
-            match tx.push(msg).await {
-                Ok(_) => {
-                    //trace!("pushed message to node: {:?}", id);
-                    //do nothing else but immediately get the response for more deterministic testing
-                    return rx.pop().await;
+        if let Some(sc) = self.backplane.get(&id) {            
+            return core_exec::block_on( async move {
+                let mut sc_guard = sc.lock().await;
+                let (tx, rx) = sc_guard.deref_mut();
+                match tx.push(msg).await {
+                    Ok(_) => {
+                        //trace!("pushed message to node: {:?}", id);
+                        //do nothing else but immediately get the response for more deterministic testing
+                        if let Some(response) = rx.pop().await {
+                            Ok(response)    
+                        } else {
+                            Err("Actor disconnected, no response".into())
+                        }                        
+                    }
+                    Err(e) => {
+                        error!("Error sending test request: {:?}", e);
+                        Err("Unable to send request, see logs".into())
+                    }
                 }
-                Err(e) => {
-                    error!("Error sending test implementation request: {:?}", e);
-                }
-            }
+            })            
         } else {
-            error!("Node with name {:?} not found", id);
+            error!("Actor with name {:?} not found", id);
+            Err("Unable to find the target actor.".into())
         }
-        None
     }
 }
 
@@ -504,7 +513,7 @@ mod graph_testing_tests {
 
     #[test]
     async fn test_register_and_retrieve_node() {
-        let mut hub = SideChannelHub::default();
+        let mut hub = SideChannelMessenger::default();
 
         let actor = ActorIdentity::new(2,"test_actor",Some(2));
 
@@ -524,7 +533,7 @@ mod graph_testing_tests {
 
         // Simulates Graph creation where we init the side channel hub
         // and register our actors for future testing
-        let mut hub = SideChannelHub::default();
+        let mut hub = SideChannelMessenger::default();
         let actor = ActorIdentity::new(1,"test_actor",Some(1));
         let actor_name = actor.label;
         let text = format!("hub: {:?} actor: {:?}",hub,actor_name);

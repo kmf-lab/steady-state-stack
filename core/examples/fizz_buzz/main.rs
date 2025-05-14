@@ -162,16 +162,14 @@ fn build_graph(mut graph: Graph) -> Graph {
 
 #[cfg(test)]
 mod graph_tests {
-    use async_std::test;
     use steady_state::*;
     use std::time::Duration;
     use crate::args::Args;
     use crate::build_graph;
-    use std::ops::DerefMut;
-    use futures_timer::Delay;
+    use std::thread::sleep;
 
     #[test]
-    async fn test_graph_one() {
+    fn test_graph() {
 
         let test_ops = Args {
             loglevel: LogLevel::Debug,
@@ -180,16 +178,14 @@ mod graph_tests {
         };
         let mut graph = build_graph( GraphBuilder::for_testing().build(test_ops.clone()) );
         graph.start();
-        let mut guard = graph.sidechannel_director().await;
-        let g = guard.deref_mut();
-        assert!(g.is_some(), "Internal error, this is a test so this back channel should have been created already");
-        if let Some(_plane) = g {
+        let mut messenger = graph.sidechannel_messenger();
+
 
             //NOTE: to ensure the node_call is for the correct channel for a given actor unique types for each channel are required
 
 
             //TODO:   Adjust as needed to inject test values into the graph
-            //  let response = plane.call_actor(Box::new(FizzBuzzMessage::default()), "ConsolePrinter").await;
+            //  let response = plane.call_actor(Box::new(FizzBuzzMessage::default()), "ConsolePrinter");
             //  if let Some(msg) = response { // ok indicates the message was echoed
             //     //trace!("response: {:?} {:?}", msg.downcast_ref::<String>(),i);
             //     assert_eq!("ok", msg.downcast_ref::<String>().expect("bad type"));
@@ -198,7 +194,7 @@ mod graph_tests {
             //    // panic!("bad response from generator: {:?}", response);
             //  }
             //TODO:   Adjust as needed to inject test values into the graph
-            //  let response = plane.call_actor(Box::new(PrintSignal::default()), "ConsolePrinter").await;
+            //  let response = plane.call_actor(Box::new(PrintSignal::default()), "ConsolePrinter");
             //  if let Some(msg) = response { // ok indicates the message was echoed
             //     //trace!("response: {:?} {:?}", msg.downcast_ref::<String>(),i);
             //     assert_eq!("ok", msg.downcast_ref::<String>().expect("bad type"));
@@ -210,7 +206,7 @@ mod graph_tests {
 
 
             //TODO:   Adjust as needed to inject test values into the graph
-            //  let response = plane.call_actor(Box::new(ErrorMessage::default()), "ErrorLogger").await;
+            //  let response = plane.call_actor(Box::new(ErrorMessage::default()), "ErrorLogger");
             //  if let Some(msg) = response { // ok indicates the message was echoed
             //     //trace!("response: {:?} {:?}", msg.downcast_ref::<String>(),i);
             //     assert_eq!("ok", msg.downcast_ref::<String>().expect("bad type"));
@@ -222,12 +218,12 @@ mod graph_tests {
 
 
             // //TODO:   if needed you may want to add a delay right here to allow the graph to process the message
-            Delay::new(Duration::from_millis(100)).await;
+            sleep(Duration::from_millis(100));
 
 
 
             //TODO:   Adjust as needed to test the values produced by the graph
-            //  let response = plane.call_actor(Box::new(NumberMessage::default()), "DivBy3Producer").await;
+            //  let response = plane.call_actor(Box::new(NumberMessage::default()), "DivBy3Producer");
             //  if let Some(msg) = response { // ok indicates the expected structure instance matched
             //     //trace!("response: {:?} {:?}", msg.downcast_ref::<String>(),i);
             //     assert_eq!("ok", msg.downcast_ref::<String>().expect("bad type"));
@@ -237,7 +233,7 @@ mod graph_tests {
             //  }
 
             //TODO:   Adjust as needed to test the values produced by the graph
-            //  let response = plane.call_actor(Box::new(NumberMessage::default()), "DivBy5Producer").await;
+            //  let response = plane.call_actor(Box::new(NumberMessage::default()), "DivBy5Producer");
             //  if let Some(msg) = response { // ok indicates the expected structure instance matched
             //     //trace!("response: {:?} {:?}", msg.downcast_ref::<String>(),i);
             //     assert_eq!("ok", msg.downcast_ref::<String>().expect("bad type"));
@@ -248,7 +244,7 @@ mod graph_tests {
 
 
             //TODO:   Adjust as needed to test the values produced by the graph
-            //  let response = plane.call_actor(Box::new(PrintSignal::default()), "TimerActor").await;
+            //  let response = plane.call_actor(Box::new(PrintSignal::default()), "TimerActor");
             //  if let Some(msg) = response { // ok indicates the expected structure instance matched
             //     //trace!("response: {:?} {:?}", msg.downcast_ref::<String>(),i);
             //     assert_eq!("ok", msg.downcast_ref::<String>().expect("bad type"));
@@ -256,10 +252,8 @@ mod graph_tests {
             //     error!("bad response from generator: {:?}", response);
             //    // panic!("bad response from generator: {:?}", response);
             //  }
-
-
-        }
-        drop(guard);
+        drop(messenger);
+        
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(3));
 

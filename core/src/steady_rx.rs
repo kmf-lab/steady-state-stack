@@ -329,7 +329,7 @@ impl<T> Rx<T> {
         let mut one_down = &mut self.oneshot_shutdown;
         let result = if !one_down.is_terminated() {
             let mut operation = &mut self.rx.pop();
-            select! { _ = one_down => self.rx.try_pop(),
+            select! { _ = one_down => self.rx.try_pop(),  //TODO: this seems very wrong..
                      p = operation => p }
         } else {
             self.rx.try_pop()

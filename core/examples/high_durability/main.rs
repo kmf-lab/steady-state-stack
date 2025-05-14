@@ -124,14 +124,13 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 mod graph_tests {
     use steady_state::GraphBuilder;
 
-    #[async_std::test]
-    async fn test_graph_one() {
+    #[test]
+    fn test_graph_one() {
     
              let _graph = GraphBuilder::for_testing().build(());
     //         graph.start();
     //
-    //         let mut guard = graph.sidechannel_director().await;
-    //         if let Some(plane) = guard.deref_mut() {
+    //         let mut director = graph.sidechannel_director();
     //
     //           //  write your test here, send messages to edge nodes and get responses
     //           let response = plane.node_call(Box::new(Tick { value: 42 }), ActorName::new("TickGenerator",None)).await;
@@ -145,8 +144,6 @@ mod graph_tests {
     //
     //              //TODO: confirm
     //
-    //         }
-    //         drop(guard);
     //         graph.request_stop();
     //         graph.block_until_stopped(Duration::from_secs(3));
     

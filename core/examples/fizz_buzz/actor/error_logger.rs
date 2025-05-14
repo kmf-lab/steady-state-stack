@@ -31,6 +31,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 
          match cmd.try_take(&mut errors_rx) {
                 Some(message) => {
+                    #[cfg(not(test))]
                     error!("Error: {:?}",message);
                     cmd.relay_stats();
                 },

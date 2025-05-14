@@ -236,7 +236,6 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
               //HACK TESTFOR ZERO  None
             }
         } else {
-            error!("what case is this one??????????????????");
             None
         }
     }
