@@ -92,7 +92,7 @@ mod graph_tests {
     use futures_timer::Delay;
 
     #[test]
-    fn test_graph() {
+    fn test_graph() -> Result<(), Box<dyn std::error::Error>> {
 
             let test_ops = Args {
                 loglevel: LogLevel::Debug,
@@ -109,7 +109,7 @@ mod graph_tests {
                 {%- if actor.is_on_graph_edge() -%}
                   {% for channel in actor.rx_channels %}
                      {{note_for_the_user}}  Adjust as needed to inject test values into the graph
-                     // assert!(messenger.call_actor(Box::new({{channel[0].message_type}}::default()), ActorName::new("{{actor.display_name}}",None)).is_ok());
+                     // messenger.call_actor(Box::new({{channel[0].message_type}}::default()), ActorName::new("{{actor.display_name}}",None))?;
                   {%- endfor %}
                 {% endif -%}
             {%- endfor %}
@@ -122,13 +122,13 @@ mod graph_tests {
 
                   {% for channel in actor.tx_channels %}
                      {{note_for_the_user}}  Adjust as needed to test the values produced by the graph
-                     // assert!(messenger.call_actor(Box::new({{channel[0].message_type}}::default()), ActorName::new("{{actor.display_name}}",None)).is_ok());
+                     // messenger.call_actor(Box::new({{channel[0].message_type}}::default()), ActorName::new("{{actor.display_name}}",None))?;
                   {%- endfor %}
                 {% endif -%}
              {%- endfor %}
             drop(messenger); //must drop before we can use graph methods
             graph.request_stop();
             graph.block_until_stopped(Duration::from_secs(3));
-
+            Ok(())
     }
 }
