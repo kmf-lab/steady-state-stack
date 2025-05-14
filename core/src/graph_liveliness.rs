@@ -435,6 +435,7 @@ pub enum ProactorConfig {
 ///
 #[derive(Clone, Debug)]
 pub struct GraphBuilder {
+    is_for_testing: bool,
     block_fail_fast: bool,
     telemetry_metric_features: bool,
     enable_io_driver: bool,
@@ -460,6 +461,7 @@ impl GraphBuilder {
         panic!("should not call for_production in tests");
         #[cfg(not(test))]
       GraphBuilder {
+          is_for_testing: false,
           block_fail_fast: true,
           telemetry_metric_features: steady_config::TELEMETRY_SERVER,
           enable_io_driver: true,
@@ -477,6 +479,7 @@ impl GraphBuilder {
     pub fn for_testing() -> Self {
         let _ = util::steady_logger::initialize();
         GraphBuilder {
+            is_for_testing: true,
             block_fail_fast: false,
             telemetry_metric_features: false,
             enable_io_driver: false,
@@ -558,7 +561,7 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) actor_count: Arc<AtomicUsize>,
     pub(crate) thread_lock: Arc<Mutex<()>>,
     pub(crate) team_count: Arc<AtomicUsize>,
-
+    pub(crate) is_for_testing: bool,
     // Used by collector but could grow if we get new actors at runtime
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
@@ -915,6 +918,7 @@ impl Graph {
                                              },
             team_count: Arc::new(AtomicUsize::new(1)),
             aeron: Default::default(),
+            is_for_testing: builder.is_for_testing,
             shutdown_barrier: builder.shutdown_barrier
         };
 

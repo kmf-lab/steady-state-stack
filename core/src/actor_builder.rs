@@ -69,6 +69,7 @@ pub struct ActorBuilder {
     pub(crate) never_simulate: bool,
     aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     pub shutdown_barrier: Option<Arc<Barrier>>,
+    is_for_test: bool
 }
 
 #[derive(Clone)]
@@ -169,12 +170,14 @@ type ActorRuntime = NonSendWrapper<DynCall>;
 struct FutureBuilderType {
     fun: SteadyContextArchetype<DynCall>,
     frame_rate_ms: u64,
+    is_for_test: bool
 }
 impl FutureBuilderType {
-    fn new(fun: SteadyContextArchetype<DynCall>, frame_rate_ms: u64) -> Self {
+    fn new(fun: SteadyContextArchetype<DynCall>, frame_rate_ms: u64, is_for_test: bool) -> Self {
         FutureBuilderType {
             fun,
             frame_rate_ms,
+            is_for_test,
         }
     }
     
@@ -183,7 +186,7 @@ impl FutureBuilderType {
     }
     
     fn context(&self, team_display_id: usize) -> SteadyContext {
-        build_actor_context(&self.fun, self.frame_rate_ms, team_display_id)
+        build_actor_context(&self.fun, self.frame_rate_ms, team_display_id, self.is_for_test)
     }
     
 }
@@ -202,10 +205,11 @@ impl ActorTeam {
     }
 
     /// Adds an actor to the team with the specified context and frame rate.
-    fn add_actor(&mut self, context_archetype: SteadyContextArchetype<DynCall>, frame_rate_ms: u64) {
+    fn add_actor(&mut self, context_archetype: SteadyContextArchetype<DynCall>, frame_rate_ms: u64, is_for_test: bool) {
         self.future_builder.push_back(FutureBuilderType::new(
             context_archetype.clone(),
-            frame_rate_ms
+            frame_rate_ms,
+            is_for_test
         ));
     }
 
@@ -451,6 +455,7 @@ impl ActorBuilder {
             never_simulate: false,
             aeron_media_driver: graph.aeron.clone(),
             shutdown_barrier: graph.shutdown_barrier.clone(),
+            is_for_test: graph.is_for_testing
         }
     }
 
@@ -668,6 +673,8 @@ impl ActorBuilder {
         let default_core = self.team_count.clone().fetch_add(1, Ordering::SeqCst);
         let thread_lock = self.thread_lock.clone();
         let rate_ms = self.frame_rate_ms;
+        let is_for_test = self.is_for_test;
+
         let context_archetype = self.single_actor_exec_archetype(build_actor_exec);
 
         
@@ -678,7 +685,7 @@ impl ActorBuilder {
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
            }
             let fun:NonSendWrapper<DynCall> =  build_actor_registration(&context_archetype);
-            let master_ctx:SteadyContext = build_actor_context(&context_archetype, rate_ms, default_core);
+            let master_ctx:SteadyContext = build_actor_context(&context_archetype, rate_ms, default_core, is_for_test);
 
             core_exec::spawn_detached(async move {
                 // Determine the core to use based on the provided options
@@ -757,8 +764,9 @@ impl ActorBuilder {
             F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         let rate = self.frame_rate_ms;
+        let is_for_test = self.is_for_test;
         let temp:SteadyContextArchetype<DynCall> = self.single_actor_exec_archetype(build_actor_exec);
-        target.add_actor(temp, rate);
+        target.add_actor(temp, rate, is_for_test);
     }
 
     /// Builds actor but can either spawn or team the threading based on enum
@@ -989,9 +997,11 @@ fn build_actor_context<I: ?Sized>(
     builder_source: &SteadyContextArchetype<I>,
     frame_rate_ms: u64,
     team_id: usize,
+    is_test: bool
 ) -> SteadyContext
 {
-     SteadyContext {
+    let uib = builder_source.never_simulate || !is_test;
+    SteadyContext {
          runtime_state: builder_source.runtime_state.clone(),
          channel_count: builder_source.channel_count.clone(),
          ident: builder_source.ident,
@@ -1009,7 +1019,7 @@ fn build_actor_context<I: ?Sized>(
          frame_rate_ms,
          show_thread_info: builder_source.show_thread_info,
          aeron_meda_driver: builder_source.aeron_media_driver.clone(),
-         use_internal_behavior: builder_source.never_simulate || !cfg!(test),
+         use_internal_behavior: uib,
          shutdown_barrier: builder_source.shutdown_barrier.clone(),
      }
 }
