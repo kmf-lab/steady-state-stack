@@ -110,7 +110,15 @@ echo "------------------------    compute coverage please wait -----------------
 echo "---------------------------------------------------------------------------------"
 # Optional: Run coverage and statistics
 # These can be skipped or run separately to save time
-cargo llvm-cov nextest --no-default-features -F exec_async_std,telemetry_server_builtin
+cargo llvm-cov --lcov --output-path cov_a.lcov --no-default-features -F exec_async_std,telemetry_server_builtin,core_affinity,core_display,prometheus_metrics
+cargo llvm-cov --lcov --output-path cov_b.lcov --no-default-features -F proactor_windows,telemetry_server_cdn
+# cargo llvm-cov --html --output-dir coverage/ --no-default-features -F exec_async_std,telemetry_server_builtin,core_affinity,core_display,prometheus_metrics
+lcov --add-tracefile cov_a.lcov --add-tracefile cov_b.lcov -o merged.lcov
+genhtml merged.lcov --output-directory coverage_html
+
+
+
+# cargo llvm-cov nextest --no-default-features -F exec_async_std,telemetry_server_builtin,core_affinity,core_display,prometheus_metrics
 #echo "To generate coverage report: cargo llvm-cov --html --output-dir coverage/"
 
 echo "cargo tree"

@@ -1205,9 +1205,7 @@ mod advanced_tx_core_tests {
         let pushed2 = tx.shared_send_iter_until_full(std::iter::empty());
         assert_eq!(pushed2, 0);
     }
-
-
-
+    
     #[test]
     fn shared_try_send_and_async_variants() {
         let mut tx = new_tx();
@@ -1228,6 +1226,5 @@ mod advanced_tx_core_tests {
         let outcome3 = block_on(tx.shared_send_async_timeout(7u8, ident, SendSaturation::ReturnBlockedMsg, Some(Duration::from_millis(1))));
         assert!(matches!(outcome3, SendOutcome::Success));
     }
-
 
 }

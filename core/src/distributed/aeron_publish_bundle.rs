@@ -376,7 +376,6 @@ pub(crate) mod aeron_tests {
     }
 
     #[async_std::test]
-   // #[ignore] //too heavy weight for normal testing, a light version exists in aeron_subscribe
     async fn test_bytes_process() {
         if true {
              return; //do not run this test

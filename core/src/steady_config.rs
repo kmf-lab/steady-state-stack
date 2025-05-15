@@ -1,13 +1,12 @@
-//! Configuration module for the SteadyState project.
+//! Configuration options for the SteadyState project.
 //!
-//! This module defines various constants and utility functions for configuring telemetry, debugging behavior,
-//! and other settings within the SteadyState project. The configuration options are set using compile-time
-//! features and environment variables.
+//! Provides compile-time and runtime configuration for telemetry, debugging behavior,
+//! and other internal system settings.
 
 use std::env;
 
-/// Indicates whether the telemetry server is enabled.
-/// This is determined by the presence of any of the following features:
+/// Whether the telemetry server is enabled.
+/// Enabled if any of the features:
 /// - `telemetry_server_cdn`
 /// - `telemetry_server_builtin`
 /// - `prometheus_metrics`
@@ -17,113 +16,110 @@ pub const TELEMETRY_SERVER: bool = true;
 #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin", feature = "prometheus_metrics")))]
 pub const TELEMETRY_SERVER: bool = false;
 
-pub const SHOW_ACTORS: bool = false; //if we want to see each actor ID logged upon creation
-pub const BACKPLANE_CAPACITY: usize = 16; //for test messages
+/// Whether actor IDs are logged on creation (for debugging).
+pub const SHOW_ACTORS: bool = false;
 
-// #[cfg(any(
-//     feature = "aeron_driver_systemd",
-//     feature = "aeron_driver_sidecar",
-//     feature = "aeron_driver_external"
-// ))]
-// pub const AERON_USED: bool = true;
-//
-// #[cfg(not(any(
-//     feature = "aeron_driver_systemd",
-//     feature = "aeron_driver_sidecar",
-//     feature = "aeron_driver_external"
-// )))]
-// pub const AERON_USED: bool = false;
+/// Capacity of the backplane channel for test messages.
+pub const BACKPLANE_CAPACITY: usize = 16;
 
-
-
-/// Indicates whether telemetry history is enabled.
-/// This is determined by the presence of the `telemetry_history` feature.
+/// Whether telemetry history is enabled (controlled by `telemetry_history` feature).
 #[cfg(feature = "telemetry_history")]
 pub const TELEMETRY_HISTORY: bool = true;
 
 #[cfg(not(feature = "telemetry_history"))]
 pub const TELEMETRY_HISTORY: bool = false;
 
-/// Determines if supervisors should restart actors while debugging.
-/// When set to `false`, it allows debugging of the actor that failed.
-/// When set to `true`, supervisors will always restart actors, even in debug mode.
-/// This is controlled by the `restart_actors_when_debugging` feature.
-#[cfg(not(feature = "restart_actors_when_debugging"))]
-pub const DISABLE_DEBUG_FAIL_FAST: bool = false;
-
+/// Whether debug-mode failure fast is disabled (controlled by
+/// `restart_actors_when_debugging` feature).
+///
+/// - `true`: supervisors will restart actors on failure even in debug mode.
+/// - `false`: failure will halt for debugging.
 #[cfg(feature = "restart_actors_when_debugging")]
 pub const DISABLE_DEBUG_FAIL_FAST: bool = true;
 
-//////////////////////////////////////////////////////////
+#[cfg(not(feature = "restart_actors_when_debugging"))]
+pub const DISABLE_DEBUG_FAIL_FAST: bool = false;
 
-/// Default port for the telemetry server.
-const DEFAULT_TELEMETRY_SERVER_PORT: &str = "9900";
-
-/// Retrieves the telemetry server port from the environment variable `TELEMETRY_SERVER_PORT`.
-/// If not set, it defaults to `DEFAULT_TELEMETRY_SERVER_PORT`.
-///
-/// # Panics
-///
-/// Panics if the `TELEMETRY_SERVER_PORT` is not a valid `u16`.
-pub(crate) fn telemetry_server_port() -> u16 {
-    env::var("TELEMETRY_SERVER_PORT")
-        .unwrap_or_else(|_| DEFAULT_TELEMETRY_SERVER_PORT.to_string())
-        .parse::<u16>()
-        .expect("TELEMETRY_SERVER_PORT must be a valid u16")
-}
-
-/// Default IP address for the telemetry server.
-const DEFAULT_TELEMETRY_SERVER_IP: &str = "0.0.0.0";
-
-/// Retrieves the telemetry server IP address from the environment variable `TELEMETRY_SERVER_IP`.
-/// If not set, it defaults to `DEFAULT_TELEMETRY_SERVER_IP`.
-pub(crate) fn telemetry_server_ip() -> String {
-    env::var("TELEMETRY_SERVER_IP")
-        .unwrap_or_else(|_| DEFAULT_TELEMETRY_SERVER_IP.to_string())
-}
-
-//////////////////////////////////////////////////////////
-
-/// The maximum rate in seconds at which the same telemetry error will be reported.
-/// This avoids filling logs with repeated errors for the same issue on the same channel.
+/// Maximum seconds between repeated telemetry error reports.
 pub const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 20;
 
-//////////////////////////////////////////////////////////
+/// Number of slots in the real channel for telemetry collection.
+pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 64;
 
-/// Granularity of the frames for telemetry data collection.
-/// Larger values consume more memory but allow for faster capture rates and higher accuracy.
-pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 64; 
+/// Number of messages consumed by the collector (half of collector channel length).
+pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECTOR / 2;
 
-/// Number of messages consumed by the collector.
-/// Larger values take up memory but allow faster capture rates.
-pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECTOR >> 1;
-
-/// Length of the channel for feature processing.
-/// Allows features to fall behind with minimal latency.
+/// Length of the real channel for feature processing (to allow minimal latency).
 pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 128;
 
-// #[cfg(test)]
-// mod steady_config_tests {
-//     use super::*;
-//     use std::env;
-//
-//     #[test]
-//     fn test_telemetry_server_port_and_ip_env_var() {
-//         unsafe {
-//             env::remove_var("TELEMETRY_SERVER_PORT");
-//             assert_eq!(telemetry_server_port(), 9100);
-//             env::set_var("TELEMETRY_SERVER_PORT", "9200");
-//             assert_eq!(telemetry_server_port(), 9200);
-//             env::remove_var("TELEMETRY_SERVER_PORT");
-//             assert_eq!(telemetry_server_port(), 9100);
-//         }
-//         unsafe {
-//             env::remove_var("TELEMETRY_SERVER_IP");
-//             assert_eq!(telemetry_server_ip(), "0.0.0.0");
-//             env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
-//             assert_eq!(telemetry_server_ip(), "127.0.0.1");
-//             env::remove_var("TELEMETRY_SERVER_IP");
-//         }
-//     }
-//
-// }
+// Default values for runtime configuration
+const DEFAULT_TELEMETRY_SERVER_PORT: u16 = 9900;
+const DEFAULT_TELEMETRY_SERVER_IP: &str = "0.0.0.0";
+
+/// Retrieves the telemetry server port, reading from the `TELEMETRY_SERVER_PORT` environment
+/// variable. Falls back to a sensible default if the variable is unset or invalid.
+///
+/// # Behavior
+/// - If `TELEMETRY_SERVER_PORT` is unset, returns `DEFAULT_TELEMETRY_SERVER_PORT`.
+/// - If the variable is set but cannot be parsed as `u16`, returns the default.
+pub(crate) fn telemetry_server_port() -> u16 {
+    env::var("TELEMETRY_SERVER_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(DEFAULT_TELEMETRY_SERVER_PORT)
+}
+
+/// Retrieves the telemetry server IP address, reading from the `TELEMETRY_SERVER_IP`
+/// environment variable. Falls back to a sensible default if the variable is unset.
+///
+/// # Behavior
+/// - If `TELEMETRY_SERVER_IP` is unset, returns `DEFAULT_TELEMETRY_SERVER_IP`.
+pub(crate) fn telemetry_server_ip() -> String {
+    env::var("TELEMETRY_SERVER_IP").unwrap_or_else(|_| DEFAULT_TELEMETRY_SERVER_IP.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_default_constants() {
+        // Under default compilation (no special features)
+        assert_eq!(TELEMETRY_SERVER, true);
+        assert_eq!(SHOW_ACTORS, false);
+        assert_eq!(BACKPLANE_CAPACITY, 16);
+        assert_eq!(TELEMETRY_HISTORY, false);
+        assert_eq!(DISABLE_DEBUG_FAIL_FAST, false);
+        assert_eq!(MAX_TELEMETRY_ERROR_RATE_SECONDS, 20);
+        assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 64);
+        assert_eq!(CONSUMED_MESSAGES_BY_COLLECTOR, 32);
+        assert_eq!(REAL_CHANNEL_LENGTH_TO_FEATURE, 128);
+    }
+
+    #[test]
+    fn test_telemetry_server_port_env_handling() {
+        unsafe {
+            env::remove_var("TELEMETRY_SERVER_PORT");
+            assert_eq!(telemetry_server_port(), DEFAULT_TELEMETRY_SERVER_PORT);
+
+            env::set_var("TELEMETRY_SERVER_PORT", "9100");
+            assert_eq!(telemetry_server_port(), 9100);
+
+            env::set_var("TELEMETRY_SERVER_PORT", "not_a_number");
+            // invalid values fall back to default
+            assert_eq!(telemetry_server_port(), DEFAULT_TELEMETRY_SERVER_PORT);
+        }
+    }
+
+    #[test]
+    fn test_telemetry_server_ip_env_handling() {
+        unsafe {
+            env::remove_var("TELEMETRY_SERVER_IP");
+            assert_eq!(telemetry_server_ip(), DEFAULT_TELEMETRY_SERVER_IP);
+
+            env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+            assert_eq!(telemetry_server_ip(), "127.0.0.1");
+        }
+    }
+}
