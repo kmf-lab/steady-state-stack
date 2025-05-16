@@ -53,8 +53,8 @@ pub async fn run<const GIRTH: usize>(
 async fn poll_aeron_subscription<C: SteadyCommander>(
     tx_item: &mut StreamTx<StreamSessionMessage>,
     sub: &mut Subscription,
-    cmd: &mut C,
-    log: bool
+    cmd: &mut C
+
 ) -> Duration {
     if sub.channel_status() != aeron::concurrent::status::status_indicator_reader::CHANNEL_ENDPOINT_ACTIVE {
         error!("Subscription {} not active, status: {}", sub.stream_id(), sub.channel_status());
@@ -84,9 +84,9 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
             input_bytes += length as u32;
             input_frags += 1;
         }, remaining_poll as i32) {
-            if log {
-                error!("on this poll pass we got {} {}", input_frags, input_bytes);
-            }
+
+            
+            
             break; // No data received, exit loop
         }
         yield_now().await; // Allow more data in this pass
@@ -200,7 +200,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
                             Ok(mutex) => {
                                 match mutex.into_inner() {
                                     Ok(subscription) => {
-                                        error!("new sub {:?} status: {:?} connected: {:?}",subscription.stream_id(), subscription.channel_status(), subscription.is_connected());
+                                        //trace!("new sub {:?} status: {:?} connected: {:?}",subscription.stream_id(), subscription.channel_status(), subscription.is_connected());
                                         if subscription.is_connected() {
                                             subs[f] = Ok(subscription);
                                             found = true;                                            
@@ -230,15 +230,15 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
     let mut loop_count = 0;
 
     while cmd.is_running(&mut || tx_guards.mark_closed() ) {
-        if 0 == (loop_count % 10000) {
-            log_count_down = 20;
-            error!("---------------------------------------------------------------")
-        }
-        loop_count += 1;
-        let log_this = log_count_down > 0;
-        if log_this {
-            log_count_down -= 1;
-        }
+        // if 0 == (loop_count % 10000) {
+        //     log_count_down = 20;
+        //     error!("---------------------------------------------------------------")
+        // }
+        // loop_count += 1;
+        // let log_this = log_count_down > 0;
+        // if log_this {
+        //     log_count_down -= 1;
+        // }
 
         let mut earliest_idx = 0;
         let mut earliest_time = next_times[0];
@@ -250,18 +250,8 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
         }
         if earliest_time > now {
             let time_to_wait = earliest_time - now;
-            if log_this || time_to_wait.as_secs() > 2 { //this should not be happening
-                error!("idx {} waiting {:?} Sec",earliest_idx,time_to_wait.as_secs());
-            }
-            cmd.wait_periodic(time_to_wait).await;
-            //TODO: we need some kind of check in the runtime to ensure cmd is in the stack for await.
-        }  else {
-            if log_this {
-                error!("idx {} not waiting ",earliest_idx);
-            }
-        }
-
-
+            cmd.wait_periodic(time_to_wait).await;    //TODO: we need some kind of check in the runtime to ensure cmd is in the stack for await.
+        } 
         now = Instant::now();
         {
             let tx_stream = &mut tx_guards[earliest_idx];
@@ -269,15 +259,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
 
             let dynamic = match &mut subs[earliest_idx] {
                         Ok(subscription) => {
-                                if log_this {
-                                  //  [2025-05-08 23:30:23.085579 -05:00] T[async-std/runtime] ERROR [C:\Users\Getac\git\steady-state-stack\core\src\distributed\aeron_subscribe_bundle.rs:264] idx 0 poll_aeron_subscription 40 vacant (6400, 6400000) 6400 connected false closed false status 1
-                                   error!("idx {:?} poll_aeron_subscription {:?} vacant {:?} {:?} connected {:?} closed {:?} status {:?}"
-                                        , earliest_idx, subscription.stream_id()
-                                        , tx_stream.get_stored_vacant_values(), tx_stream.shared_vacant_units()
-                                        , subscription.is_connected(), subscription.is_closed(), subscription.channel_status()
-                                    );
-                                }
-                                poll_aeron_subscription(tx_stream, subscription, &mut cmd, log_this).await
+                                poll_aeron_subscription(tx_stream, subscription, &mut cmd).await
                         }
                         Err(e) => {error!("Internal error, the subscription should be present: {:?}",e);
                             //moving this out of the way to avoid checking again
