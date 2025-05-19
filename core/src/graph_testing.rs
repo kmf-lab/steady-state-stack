@@ -174,12 +174,15 @@ impl SideChannelResponder {
     pub async fn simulate_echo<'a, T: 'static, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self
                         , tx_core: &mut X, cmd: & Arc<Mutex<C>>) -> bool
     where <X as TxCore>::MsgOut: Send, <X as TxCore>::MsgOut: Sync, <X as TxCore>::MsgOut: 'static {
+       // trace!("simulate echo {:?}", cmd.lock().await.identity());
         if self.should_apply::<T>().await { //we got a message and now confirm we have room to send it
-            
+            // trace!("should echo does apply, waiting for vacant unit");
             if tx_core.shared_wait_vacant_units(tx_core.one()).await {
                 //we hold cmd just as long as it takes us to respond.
                 let mut cmd_guard = cmd.lock().await;
+                // trace!("respond with echo");
                 self.respond_with(move |message| {
+                    // trace!("try send");
                     match cmd_guard.try_send(tx_core,*message.downcast::<T>().expect("error casting")) {
                         SendOutcome::Success => {Box::new("ok".to_string())}
                         SendOutcome::Blocked(msg) => {Box::new(msg)}
@@ -428,8 +431,12 @@ impl SideChannelResponder {
 
         // Attempt to peek at the next message
         if let Some(q) = rx.try_peek() {
+            let is_correct_type = q.is::<M>();
+            if !is_correct_type {
+                error!("Fix the unit test sent message, Type must match channel of the target actor but it does not.");
+            }
             // Check if the message can be downcast to the expected type
-            q.is::<M>()
+            is_correct_type
         } else {
             // No message available to peek at
             false

@@ -799,7 +799,7 @@ impl Graph {
     /// # Arguments
     ///
     /// * `clean_shutdown_timeout` - The timeout duration for a clean shutdown.
-    pub fn block_until_stopped(self, clean_shutdown_timeout: Duration) -> bool {
+    pub fn block_until_stopped(self, clean_shutdown_timeout: Duration) ->  Result<(), Box<dyn std::error::Error>>  {
 
         // Duration is not allowed to be less than 3 frames of telemetry
         // This ensures with safety that all actors had an opportunity to
@@ -843,9 +843,9 @@ impl Graph {
                 if state.state.eq(&GraphLivelinessState::StoppedUncleanly) {
                     warn!("graph stopped uncleanly");
                     Self::report_votes(&mut state);
-                    return false;
+                    return Err("graph stopped uncleanly".into());
                 }
-                return true;
+                return Ok(());
             } else {
                 thread::sleep(Duration::from_millis(self.telemetry_production_rate_ms));
                 //in case any actors just returned Ok(()) without normal is_running call

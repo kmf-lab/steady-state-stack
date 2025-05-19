@@ -165,12 +165,15 @@ impl <T>RxCore for Rx<T> {
     }
 
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
+        let mut one_down = &mut self.oneshot_shutdown;
+
         if self.rx.occupied_len() >= count {
             true
+        } else if !one_down.is_terminated() {
+            let mut operation = &mut self.rx.wait_occupied(count);
+            select! { _ = one_down => false, _ = operation => true }
         } else {
-            let operation = &mut self.rx.wait_occupied(count);
-            operation.await;
-            true
+            false
         }
     }
 
