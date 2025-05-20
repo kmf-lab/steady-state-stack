@@ -7,7 +7,7 @@ use futures_util::lock::{Mutex};
 use crate::{yield_now, Rx, SteadyCommander, StreamRx, StreamSessionMessage, StreamSimpleMessage, StreamTx, Tx};
 use crate::core_tx::TxCore;
 use crate::graph_testing::SideChannelResponder;
-
+use crate::i;
 
 pub type SimRunner<C> = Box<
     dyn Fn(Arc<Mutex<C>>, SideChannelResponder) -> Pin<Box<dyn Future<Output = ()> >>
@@ -103,7 +103,7 @@ impl<T: Send + Sync + Debug + Clone + Eq + 'static> SimulateRx for Rx<T> {
     async fn simulate_equals<C: SteadyCommander>(&mut self
                                                , cmd_mutex: Arc<Mutex<C>>
                                                , responder: SideChannelResponder) {
-        while cmd_mutex.lock().await.is_running(&mut || self.is_closed_and_empty()) {
+        while cmd_mutex.lock().await.is_running(&mut || i!(self.is_closed_and_empty())) {
             responder.simulate_equals(self, &cmd_mutex).await;
             yield_now::yield_now().await;
         }
@@ -113,7 +113,7 @@ impl SimulateRx for StreamRx<StreamSimpleMessage> {
     async fn simulate_equals<C: SteadyCommander>(&mut self
                                                  , cmd_mutex: Arc<Mutex<C>>
                                                  , responder: SideChannelResponder) {
-        while cmd_mutex.lock().await.is_running(&mut || self.is_closed_and_empty()) {
+        while cmd_mutex.lock().await.is_running(&mut || i!(self.is_closed_and_empty())) {
             responder.simulate_equals(self, &cmd_mutex).await;
             yield_now::yield_now().await;
         }
@@ -123,7 +123,7 @@ impl SimulateRx for StreamRx<StreamSessionMessage> {
     async fn simulate_equals<C: SteadyCommander>(&mut self
                                                  , cmd_mutex: Arc<Mutex<C>>
                                                  , responder: SideChannelResponder) {
-        while cmd_mutex.lock().await.is_running(&mut || self.is_closed_and_empty()) {
+        while cmd_mutex.lock().await.is_running(&mut || i!(self.is_closed_and_empty())) {
             responder.simulate_equals(self, &cmd_mutex).await;
             yield_now::yield_now().await;
         }

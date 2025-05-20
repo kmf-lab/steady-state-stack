@@ -344,10 +344,10 @@ impl GraphLiveliness {
                         vote.veto_backtrace = None;
                         vote.in_favor = in_favor;
                     } else {
-                        //TODO: only for debug build                        
-                        vote.veto_backtrace = Some(Backtrace::capture());
-                        vote.veto_reason = i_take_last_false();
-                                                
+                        if cfg!(debug_assertions) {
+                            vote.veto_backtrace = Some(Backtrace::capture());
+                        }
+                        vote.veto_reason = i_take_last_false();                                                
                         if vote.in_favor {
                             trace!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
                         }
@@ -888,13 +888,13 @@ impl Graph {
         });
         warn!("graph stopped uncleanly");
         
-        //TODO: only want to show traces on debug build?
         voters.iter().for_each(|voter| {
             let backtrace = voter.as_ref().map_or(&None,|f| &f.veto_backtrace);
             let reason = voter.as_ref().map_or(&None,|f| &f.veto_reason);
             if let Some(r) = reason {
                 eprint!("reason: {:#?}", r);
             }
+            #[cfg(debug_assertions)]
             if let Some(bt) = backtrace {
                 eprint!("backtrace: {:#?}", bt);
             }
