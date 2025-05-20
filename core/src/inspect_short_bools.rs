@@ -30,7 +30,6 @@ thread_local! {
 macro_rules! i {
     ($e:expr) => {{
         let result = $e;
-        //TODO: only do this for debug build?
         if !result {
             $crate::LAST_FALSE.with(|cell| {
                 *cell.borrow_mut() = Some(stringify!($e));
