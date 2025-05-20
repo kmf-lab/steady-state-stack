@@ -186,8 +186,10 @@ pub(crate) mod tests {
        {{note_for_the_user}} adjust this vec content to make a valid test
        test_{{channel[0].name}}_tx.testing_send_all(vec![{{channel[0].message_type}}::default()],true);
            {%- else %}
-       {{note_for_the_user}} adjust this vec content to make a valid test, further this is only one in the bundle
-       test_{{channel[0].name}}_tx[0].testing_send_all(vec![{{channel[0].message_type}}::default()],true);
+        {{note_for_the_user}} adjust this vec content to make a valid test
+        {%- for i in 0..channel.len() %}
+        test_{{channel[0].name}}_tx[{{i}}].testing_send_all(vec![{{channel[0].message_type}}::default()],true);
+        {%- endfor %}
            {%- endif %}
 
         {% endfor %}

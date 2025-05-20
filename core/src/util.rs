@@ -3,7 +3,7 @@ use flexi_logger::*;
 use std::sync::{Mutex};
 use std::error::Error;
 use std::io;
-use log::Record;
+use log::*;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::LogLevel;
@@ -125,6 +125,8 @@ pub mod steady_logger {
     /// Stops capturing logs and clears the thread-local log buffer.
     pub fn stop_capturing_logs() {
         IS_CAPTURING.with(|cap| cap.store(false, Ordering::SeqCst));
+        LOG_BUFFER.with(|buf| warn!("{:?}", buf.borrow()));
+
         LOG_BUFFER.with(|buf| buf.borrow_mut().clear());
     }
 }

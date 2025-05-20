@@ -86,9 +86,6 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 /// Implementation of `LocalMonitor`.
 impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
-    // fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
-    //     Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
-    // }
 
     #[allow(async_fn_in_trait)]
     pub async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>

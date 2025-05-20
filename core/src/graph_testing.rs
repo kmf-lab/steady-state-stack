@@ -585,9 +585,8 @@ mod graph_testing_tests {
         // Simulates the main test block which makes a call and awaits for the response.
         //test code will call to the actor and only return after above actor responds
         let msg = Box::new(42) as Box<dyn Any + Send + Sync>;
-        let result = hub.call_actor_internal(msg, actor_name).await;
+        let result = hub.call_actor_internal(msg, actor_name);
 
-         assert!(result.is_some(), "Should receive a response");
          let r = result.expect("iternal error");
          let response = r.downcast_ref::<i32>().expect("iternal error");
          assert_eq!(*response, 84, "Response should match the expected value");

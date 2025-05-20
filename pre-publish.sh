@@ -24,6 +24,7 @@ cargo_tree_output=$(cargo tree)
 for crate in $unwanted_crates; do
     if echo "$cargo_tree_output" | grep -q "$crate"; then
         echo "Error: '$crate' crate found in the Cargo project."
+        cargo tree | -B 15 '$crate'
         exit 1
     else
         echo "Success: No '$crate' crate found in the Cargo project."
@@ -47,7 +48,7 @@ fi
 # Run tests with cargo-nextest, optimizing threads automatically
 # RUST_TEST_THREADS is not needed as nextest manages parallelism itself
 # Use --test-threads to manually override if desired (e.g., --test-threads=4)
-RUST_BACKTRACE=full RUST_LOG=debug cargo nexttest run --workspace --examples -tests | tee cargo_test.txt
+RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --examples -tests | tee cargo_test.txt
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then

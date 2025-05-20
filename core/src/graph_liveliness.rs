@@ -22,7 +22,7 @@ use std::io::Write;
 use futures::channel::oneshot;
 use futures::channel::oneshot::Sender;
 
-use futures_util::lock::{MutexGuard, MutexLockFuture};
+use futures_util::lock::{MutexGuard};
 use aeron::aeron::Aeron;
 use aeron::context::Context;
 use async_lock::Barrier;

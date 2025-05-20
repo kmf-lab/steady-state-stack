@@ -13,26 +13,6 @@
 //! - **Destructive Read**: Reading the stored identifier clears it from storage, preparing it for the next use.
 //! - **Efficient String Handling**: Uses `'static` strings for identifiers to avoid runtime allocations.
 //!
-//! ## Usage Example
-//!
-//! ```rust
-//! use my_debug_macro::i;
-//!
-//! let condition1 = true;
-//! let condition2 = false;
-//! let condition3 = true;
-//!
-//! let result = i!(condition1) && i!(condition2) && i!(condition3);
-//! if !result {
-//!     if let Some(failed) = my_debug_macro::i_take_last_false() {
-//!         println!("Failed at: {}", failed);
-//!     }
-//! }
-//! ```
-//!
-//! In this example, `"condition2"` is stored as the identifier of the expression that evaluated to
-//! `false`. After calling `i_take_last_false()`, the storage is cleared.
-
 use std::cell::RefCell;
 
 thread_local! {
@@ -46,12 +26,6 @@ thread_local! {
 /// the expression (a `'static` string) is stored in thread-local storage. This storage can later
 /// be retrieved and cleared using `i_take_last_false`.
 ///
-/// # Examples
-///
-/// ```rust
-/// let result = i!(some_condition);
-/// assert_eq!(result, some_condition);
-/// ```
 #[macro_export]
 macro_rules! i {
     ($e:expr) => {{
@@ -77,14 +51,6 @@ macro_rules! i {
 /// - `Some(&'static str)`: The identifier of the last expression that evaluated to `false`.
 /// - `None`: If no `false` expression has been recorded since the last read.
 ///
-/// # Examples
-///
-/// ```rust
-/// let result = i!(false);
-/// assert!(!result);
-/// assert_eq!(i_take_last_false(), Some("false"));
-/// assert_eq!(i_take_last_false(), None); // Storage is cleared after reading
-/// ```
 pub fn i_take_last_false() -> Option<&'static str> {
     LAST_FALSE.with(|cell| {
         let mut borrowed = cell.borrow_mut();

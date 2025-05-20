@@ -53,11 +53,7 @@ mod abstract_executor_async_std;
 #[cfg(feature = "exec_async_std")]
 use abstract_executor_async_std::*;
 
-#[cfg(any(feature = "exec_embassy"))]
-mod abstract_executor_embassy;
 
-#[cfg(any(feature = "exec_embassy"))]
-use abstract_executor_embassy::*;
 
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ mod actor {
         pub mod {{mod}};{% endfor %}
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Args::parse();
 
     let service_executable_name = "{{project_name}}";
@@ -30,7 +30,9 @@ fn main() {
            graph.request_stop(); //actors can also call stop as desired on the context or monitor
         }
 
-        graph.block_until_stopped(Duration::from_secs(2));
+        graph.block_until_stopped(Duration::from_secs(2))
+    } else {
+        Ok(())
     }
 }
 
@@ -109,26 +111,25 @@ mod graph_tests {
                 {%- if actor.is_on_graph_edge() -%}
                   {% for channel in actor.rx_channels %}
                      {{note_for_the_user}}  Adjust as needed to inject test values into the graph
-                     // messenger.call_actor(Box::new({{channel[0].message_type}}::default()), ActorName::new("{{actor.display_name}}",None))?;
+                     // messenger.call_actor_by_name(Box::new({{channel[0].message_type}}::default()), "{{actor.display_name}}")?;
                   {%- endfor %}
                 {% endif -%}
             {%- endfor %}
 
-              // {{note_for_the_user}}  if needed you may want to add a delay right here to allow the graph to process the message
-              Delay::new(Duration::from_millis(100)).await;
 
              {% for actor in actors -%}
                 {%- if actor.is_on_graph_edge() -%}
 
                   {% for channel in actor.tx_channels %}
                      {{note_for_the_user}}  Adjust as needed to test the values produced by the graph
-                     // messenger.call_actor(Box::new({{channel[0].message_type}}::default()), ActorName::new("{{actor.display_name}}",None))?;
+                     // messenger.call_actor_by_name(Box::new({{channel[0].message_type}}::default()),"{{actor.display_name}}"))?;
                   {%- endfor %}
                 {% endif -%}
              {%- endfor %}
             drop(messenger); //must drop before we can use graph methods
             graph.request_stop();
+            //this will return Ok(()) once you have actors shutting down in order
             graph.block_until_stopped(Duration::from_secs(3));
-            Ok(())
+            Ok(()) //hack for now..
     }
 }

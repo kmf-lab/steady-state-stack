@@ -264,8 +264,24 @@ async fn internal_behavior<const GIRTH: usize>(
         } 
     }
     
-    
     Ok(())
+}
+
+
+
+#[inline]
+pub(crate) fn future_checking_avail<T: Send + Sync>(steady_rx: &SteadyRx<T>, count: usize) -> BoxFuture<'_, (bool, Option<usize>)> {
+    async move {
+        let mut guard = steady_rx.lock().await;
+        let is_closed = guard.deref_mut().is_closed();
+        if !is_closed {
+            let result: bool = guard.deref_mut().shared_wait_shutdown_or_avail_units(count).await;
+            (result, Some(guard.deref().id()))
+        } else {
+            (false, None)
+        }
+    }
+        .boxed()
 }
 
 /// Waits for either a full frame of data or a timeout.
@@ -589,7 +605,7 @@ mod metric_collector_tests {
         let dynamic_senders_vec = Arc::new(RwLock::new(vec![
             CollectorDetail {
                 telemetry_take: VecDeque::new(),
-                ident: ActorIdentity::new(0, "test_actor", None ),
+                ident: ActorIdentity::new(0, "test_actor", None),
             }
         ]));
         let result = gather_valid_actor_telemetry_to_scan(1, &dynamic_senders_vec);
@@ -601,7 +617,7 @@ mod metric_collector_tests {
         let dynamic_senders_vec = Arc::new(RwLock::new(vec![
             CollectorDetail {
                 telemetry_take: VecDeque::new(),
-                ident: ActorIdentity::new(0, "test_actor", None ),
+                ident: ActorIdentity::new(0, "test_actor", None),
             }
         ]));
         let result = is_all_empty_and_closed(Ok(dynamic_senders_vec.read()));
@@ -610,7 +626,7 @@ mod metric_collector_tests {
 
     #[test]
     fn test_send_structure_details() {
-        let ident = ActorIdentity::new(0, "test_actor", None );
+        let ident = ActorIdentity::new(0, "test_actor", None);
         let mut consumer_vec: [MutexGuard<'_, Tx<DiagramData>>; 0] = [];
         let nodes = vec![
             DiagramData::NodeDef(0, Box::new((
@@ -624,7 +640,7 @@ mod metric_collector_tests {
 
     #[test]
     fn test_send_data_details() {
-        let ident = ActorIdentity::new( 0,  "test_actor", None );
+        let ident = ActorIdentity::new(0, "test_actor", None);
         let mut consumer_vec: [MutexGuard<'_, Tx<DiagramData>>; 0] = [];
         let state = RawDiagramState::default();
         let result = block_on(send_data_details(ident, &mut consumer_vec, &state, false));
@@ -641,7 +657,7 @@ mod metric_collector_tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn test_actor() {
+    fn test_actor() -> Result<(), Box<dyn std::error::Error>> {
         use isahc::AsyncReadResponseExt;
 
         //only run this locally where we can open the default port
@@ -755,26 +771,13 @@ mod metric_collector_tests {
             });
 
             graph.request_stop();
-            assert!(graph.block_until_stopped(Duration::from_secs(3)));
+            graph.block_until_stopped(Duration::from_secs(3))
+        } else {
+            Ok(())
         }
     }
 
 }
-
-#[inline]
-pub(crate) fn future_checking_avail<T: Send + Sync>(steady_rx: &SteadyRx<T>, count: usize) -> BoxFuture<'_, (bool, Option<usize>)> {
-        async move {
-            let mut guard = steady_rx.lock().await;
-            let is_closed = guard.deref_mut().is_closed();
-            if !is_closed {
-                let result:bool = guard.deref_mut().shared_wait_shutdown_or_avail_units(count).await;
-                (result,  Some(guard.deref().id()))
-            } else {
-                (false, None)
-            }
-        }
-            .boxed()
-    }
 
 #[cfg(test)]
 mod extra_tests {
@@ -846,6 +849,4 @@ mod extra_tests {
         // actor_count updated
         assert_eq!(state.actor_count, 0);
     }
-
-
 }
