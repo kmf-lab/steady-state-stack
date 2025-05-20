@@ -55,7 +55,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_error_logger() {
+    fn test_error_logger() -> Result<(),Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
         let (test_errors_tx,errors_rx) = graph.channel_builder().with_capacity(4).build_channel();
         graph.actor_builder()
@@ -72,7 +72,7 @@ pub(crate) mod tests {
                         ErrorMessage { text: "ignore me from testing, error 3".to_string() },
                     ], true);
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
-        assert!(graph.block_until_stopped(Duration::from_secs(1)));
+        graph.block_until_stopped(Duration::from_secs(1))
 
         //nothing to test logger will just write to console errors we ignore
 

@@ -87,7 +87,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_console_printer() {
+    fn test_console_printer() -> Result<(),Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
         let (test_fizzbuzz_messages_tx,fizzbuzz_messages_rx) = graph.channel_builder().with_capacity(40).build_channel();
         let (test_print_signal_tx,print_signal_rx) = graph.channel_builder().with_capacity(4).build_channel();
@@ -123,7 +123,7 @@ pub(crate) mod tests {
         sleep(Duration::from_millis(1));
 
         graph.request_stop();
-        assert!(graph.block_until_stopped(Duration::from_secs(4)));
+        graph.block_until_stopped(Duration::from_secs(4))
 
         //nothing to test as this will print to the console
     }

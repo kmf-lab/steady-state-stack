@@ -36,7 +36,7 @@ pub(crate) mod actor_stats;
 pub(crate) mod steady_config;
 pub(crate) mod dot;
 
-//TODO: check our errors returned and make them simple copy
+//TODO: check our errors returned and make them simp
 
 mod graph_liveliness;
 mod loop_driver;
@@ -198,6 +198,9 @@ use crate::monitor::{ActorMetaData, ChannelMetaData};
 
 /// util module for various utility functions.
 pub mod util;
+pub mod inspect_short_bools;
+pub use crate::inspect_short_bools::LAST_FALSE;
+
 pub use crate::util::*;
 use futures::AsyncRead;
 use futures::AsyncWrite;

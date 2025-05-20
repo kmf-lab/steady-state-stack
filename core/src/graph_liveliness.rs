@@ -32,6 +32,7 @@ use crate::channel_builder::ChannelBuilder;
 use crate::commander_context::SteadyContext;
 use crate::distributed::aeron_channel_structs::aeron_utils::aeron_context;
 use crate::graph_testing::SideChannelMessenger;
+use crate::inspect_short_bools::i_take_last_false;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::steady_logger;
@@ -70,12 +71,14 @@ pub enum GraphLivelinessState {
 
 
 /// Represents a vote for shutdown by an actor.
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct ShutdownVote {
     pub(crate) id: usize,
     pub(crate) signature: Option<ActorIdentity>,
     pub(crate) in_favor: bool,
-    pub(crate) voter_status: VoterStatus
+    pub(crate) voter_status: VoterStatus,
+    pub(crate) veto_backtrace: Option<Backtrace>,
+    pub(crate) veto_reason: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -206,6 +209,8 @@ impl GraphLiveliness {
                     signature: None,
                     in_favor: false,
                     voter_status: v.clone(),
+                    veto_backtrace: None,
+                    veto_reason: None,
                 })
             }).collect();
 
@@ -326,20 +331,27 @@ impl GraphLiveliness {
                 Some(true)
             },
             GraphLivelinessState::StopRequested => {
-               //info!("stop requested, voting now: {:?}", ident);
-
+                // we compute the in favor or veto before we grab the lock to minimize lock time
                 let in_favor = accept_fn();
 
                 let my_ballot = &self.votes[ident.id];
                 if let Some(mut vote) = my_ballot.try_lock() {
-                    assert_eq!(vote.id, ident.id);
+                    debug_assert_eq!(vote.id, ident.id);
                     vote.signature = Some(ident); // Signature it is me
                     if in_favor && !vote.in_favor {
                         // Safe total where we know this can only be done once for each
                         self.vote_in_favor_total.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        vote.veto_backtrace = None;
                         vote.in_favor = in_favor;
-                    } else if vote.in_favor {
-                        trace!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
+                    } else {
+                        //TODO: only for debug build                        
+                        vote.veto_backtrace = Some(Backtrace::capture());
+                        vote.veto_reason = i_take_last_false();
+                                                
+                        if vote.in_favor {
+                            trace!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
+                        }
+
                     }
                     drop(vote);
                     Some(!in_favor) // Return the opposite to keep running when we vote no
@@ -859,7 +871,7 @@ impl Graph {
     fn report_votes(state: &mut RwLockWriteGuard<GraphLiveliness>) {
         warn!("voter log: (approved votes at the top, total:{})", state.votes.len());
         let mut voters = state.votes.iter()
-            .map(|f| f.try_lock().map(|v| v.clone()))
+            .map(|f| f.try_lock())
             .collect::<Vec<_>>();
 
         // You can sort or prioritize the votes as needed here
@@ -875,6 +887,20 @@ impl Graph {
                    , voter.as_ref().map_or(Default::default(), |f| f.signature));
         });
         warn!("graph stopped uncleanly");
+        
+        //TODO: only want to show traces on debug build?
+        voters.iter().for_each(|voter| {
+            let backtrace = voter.as_ref().map_or(&None,|f| &f.veto_backtrace);
+            let reason = voter.as_ref().map_or(&None,|f| &f.veto_reason);
+            if let Some(r) = reason {
+                eprint!("reason: {:#?}", r);
+            }
+            if let Some(bt) = backtrace {
+                eprint!("backtrace: {:#?}", bt);
+            }
+        });
+        
+        
     }
 
     /// Creates a new graph for normal or unit test use.

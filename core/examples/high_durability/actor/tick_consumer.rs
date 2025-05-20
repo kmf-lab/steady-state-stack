@@ -63,7 +63,7 @@ pub(crate) mod hd_actor_tests {
 
     const WAIT_AVAIL: usize = 250;
     #[test]
-    fn test_tick_durablity_consumer() {
+    fn test_tick_durablity_consumer() -> Result<(), Box<dyn Error>> {
         //build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -85,10 +85,11 @@ pub(crate) mod hd_actor_tests {
         sleep(Duration::from_millis(300));
         graph.request_stop();
 
-        assert_eq!(true, graph.block_until_stopped(Duration::from_secs(12)));
+        graph.block_until_stopped(Duration::from_secs(12))?;
         sleep(Duration::from_millis(20));
 
         let expected = 0;
         assert_steady_rx_gt_count!(&ticks_rx_out,expected);
+        Ok(())
     }
 }
