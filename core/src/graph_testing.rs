@@ -118,7 +118,15 @@ impl SideChannelMessenger {
             }
     }
 
-    /// Sends a message to a node and waits for a response.
+    pub fn call_actor_with_name(&self, msg: Box<dyn Any + Send + Sync>, name: &'static str) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
+        self.call_actor_internal(msg, ActorName::new(name, None))
+    }
+
+    pub fn call_actor_with_name_and_suffix(&self, msg: Box<dyn Any + Send + Sync>, name: &'static str, suffix: usize) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
+        self.call_actor_internal(msg, ActorName::new(name, Some(suffix)))
+    }
+
+        /// Sends a message to a node and waits for a response.
     ///
     /// # Arguments
     ///
@@ -129,7 +137,7 @@ impl SideChannelMessenger {
     ///
     /// An `Option` containing the response message if the operation is successful.
     ///
-    pub fn call_actor(&self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
+    pub(crate) fn call_actor_internal(&self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
 
         if let Some(sc) = self.backplane.get(&id) {            
             return core_exec::block_on( async move {
@@ -577,7 +585,7 @@ mod graph_testing_tests {
         // Simulates the main test block which makes a call and awaits for the response.
         //test code will call to the actor and only return after above actor responds
         let msg = Box::new(42) as Box<dyn Any + Send + Sync>;
-        let result = hub.call_actor(msg, actor_name).await;
+        let result = hub.call_actor_internal(msg, actor_name).await;
 
          assert!(result.is_some(), "Should receive a response");
          let r = result.expect("iternal error");
