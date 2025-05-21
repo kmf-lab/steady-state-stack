@@ -8,7 +8,6 @@ use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
 use aeron::subscription::Subscription;
 use log::{error, warn};
-use num_traits::Zero;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTx, StreamSessionMessage};
 use crate::{SteadyCommander, SteadyState, StreamTx, TestEcho};

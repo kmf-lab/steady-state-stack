@@ -25,14 +25,14 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 
     let mut errors_rx = errors_rx.lock().await;
 
-    while cmd.is_running(&mut || errors_rx.is_closed_and_empty()) {
+    while cmd.is_running(&mut || i!(errors_rx.is_closed_and_empty())) {
 
          let clean = await_for_all!(cmd.wait_avail(&mut errors_rx,1) );
 
          match cmd.try_take(&mut errors_rx) {
-                Some(message) => {
+                Some(_message) => {
                     #[cfg(not(test))]
-                    error!("Error: {:?}",message);
+                    error!("Error: {:?}",_message);
                     cmd.relay_stats();
                 },
                 None => {

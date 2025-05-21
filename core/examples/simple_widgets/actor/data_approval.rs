@@ -81,7 +81,7 @@ pub(crate) mod approval_tests {
     use crate::actor::WidgetInventory;
 
     #[test]
-    fn test_approval() {
+    fn test_approval() -> Result<(), Box<dyn Error>> {
         // build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -107,9 +107,10 @@ pub(crate) mod approval_tests {
        widget_inventory_tx_in.testing_send_all(test_data, true);
        //
        graph.request_stop();
-       graph.block_until_stopped(Duration::from_secs(2));
+       graph.block_until_stopped(Duration::from_secs(2))?;
        //
        assert_steady_rx_eq_count!(&approved_widget_rx_out,BATCH_SIZE);
+        Ok(())
     }
 
 

@@ -30,7 +30,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
     let mut buffer:[NumberMessage; BATCH_SIZE] = [NumberMessage::default(); BATCH_SIZE];
     let mut index:u64 = 0;
 
-    while cmd.is_running(&mut || index>=fizz_buzz_processor::STOP_VALUE && numbers_tx.mark_closed()) {
+    while cmd.is_running(&mut || i!(numbers_tx.mark_closed())) {
         let _clean = await_for_all!(cmd.wait_vacant(&mut numbers_tx, BATCH_SIZE>>1));
 
         let mut i = 0;
@@ -40,7 +40,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
             buffer[i] = NumberMessage{value:index};
             i = i + 1;
             if i >= limit || index == fizz_buzz_processor::STOP_VALUE {
-                if index == fizz_buzz_processor::STOP_VALUE {
+                if index >= fizz_buzz_processor::STOP_VALUE {
                     cmd.request_graph_stop().await;
                 }
                 break;
@@ -61,10 +61,9 @@ pub(crate) mod tests {
     use std::time::Duration;
     use steady_state::*;
     use super::*;
-    use crate::*;
 
     #[test]
-    fn test_div_by_5_producer() {
+    fn test_div_by_5_producer() -> Result<(), Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
 
         let (numbers_tx, test_numbers_rx) = graph.channel_builder()
@@ -79,9 +78,10 @@ pub(crate) mod tests {
         graph.start(); //startup the graph
         sleep(Duration::from_millis(2));
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
-        graph.block_until_stopped(Duration::from_secs(1));
+        graph.block_until_stopped(Duration::from_secs(1))?;
 
         let expected = vec!(NumberMessage { value: 5 }, NumberMessage { value: 10 }, NumberMessage { value: 15 });
         assert_steady_rx_eq_take!(&test_numbers_rx,expected);
+        Ok(())
     }
 }

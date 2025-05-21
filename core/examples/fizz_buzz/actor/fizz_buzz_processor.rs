@@ -87,10 +87,10 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
         let vacant_block = BATCH_SIZE.min(fizzbuzz_messages_tx.capacity());
         while cmd.is_running(&mut || {
                                     state.value == stop_value
-                                        && threes_rx[0].is_closed_and_empty()
-                                        && fives_rx[0].is_closed_and_empty()
-                                        && fizzbuzz_messages_tx.mark_closed()
-                                        && errors_tx.mark_closed()
+                                        && i!(threes_rx[0].is_closed_and_empty())
+                                        && i!(fives_rx[0].is_closed_and_empty())
+                                        && i!(fizzbuzz_messages_tx.mark_closed())
+                                        && i!(errors_tx.mark_closed())
                                 }) {
             let _clean = await_for_all!(
                 cmd.wait_avail(&mut threes_rx[0], c1),
@@ -171,7 +171,6 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
 pub(crate) mod tests {
     use steady_state::*;
     use super::*;
-    use crate::*;
 
     #[test]
     fn test_fizz_buzz_processor() {

@@ -81,7 +81,7 @@ mod generator_tests {
     use crate::actor::data_generator::internal_behavior;
 
     #[test]
-    fn test_generator() {
+    fn test_generator() -> Result<(),Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
         
         let (feedback_tx_out,feedback_rx_out) = graph.channel_builder()
@@ -102,9 +102,10 @@ mod generator_tests {
         feedback_tx_out.testing_close();
 
         graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(20));
+        graph.block_until_stopped(Duration::from_secs(20))?;
 
         assert_steady_rx_eq_count!(&approved_widget_rx_out,BATCH_SIZE);
+        Ok(())
     }
 
 

@@ -27,7 +27,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
 
     let mut print_signal_tx = print_signal_tx.lock().await;
     let mut tick = 0;
-    while cmd.is_running(&mut || print_signal_tx.mark_closed()) {
+    while cmd.is_running(&mut || i!(print_signal_tx.mark_closed())) {
          let clean = await_for_any!(cmd.wait_periodic(Duration::from_secs(2)));
          if clean {
              tick += 1;

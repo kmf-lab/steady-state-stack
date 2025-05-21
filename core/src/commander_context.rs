@@ -8,7 +8,6 @@ use std::error::Error;
 use futures_util::lock::{Mutex};
 use futures::channel::oneshot;
 use futures_util::stream::FuturesUnordered;
-use log::warn;
 use std::future::Future;
 use futures_util::{select, FutureExt, StreamExt};
 use futures_timer::Delay;

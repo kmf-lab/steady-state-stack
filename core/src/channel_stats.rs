@@ -1582,8 +1582,6 @@ pub(crate) mod stats_tests {
 #[cfg(test)]
 pub(crate) mod extra_tests {
     use super::*;
-    use rand_distr::{Distribution, Normal};
-    use rand::{rngs::StdRng, SeedableRng};
     use std::sync::Arc;
     #[allow(unused_imports)]
     use log::*;

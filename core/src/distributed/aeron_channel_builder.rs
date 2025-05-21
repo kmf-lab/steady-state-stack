@@ -1,9 +1,6 @@
 use std::cmp::PartialEq;
 use std::fmt::Debug;
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Arc;
-use aeron::aeron::Aeron;
-use futures_util::lock::Mutex;
 use crate::distributed::aeron_channel_structs::*;
 
 /// Type alias for stream identifier used in Aeron communication.

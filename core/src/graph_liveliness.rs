@@ -374,6 +374,8 @@ impl GraphLiveliness {
     }
 }
 
+
+
 /// Represents the identity of an actor.
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash)]
 pub struct ActorIdentity {
@@ -892,11 +894,47 @@ impl Graph {
             let backtrace = voter.as_ref().map_or(&None,|f| &f.veto_backtrace);
             let reason = voter.as_ref().map_or(&None,|f| &f.veto_reason);
             if let Some(r) = reason {
-                eprint!("reason: {:#?}", r);
+                eprintln!("veto expression: {:#?}", r);
             }
-            #[cfg(debug_assertions)]
             if let Some(bt) = backtrace {
-                eprint!("backtrace: {:#?}", bt);
+                let text = format!("{:#?}", bt);
+                let adj = text.trim();
+                let adj = adj.strip_prefix("Backtrace ").unwrap_or(adj);
+                let adj = adj.strip_prefix("[").unwrap_or(adj).trim();
+                let adj = adj.strip_suffix("]").unwrap_or(adj).trim();
+
+                let mut level = 1; // Start inside the list
+                let mut is_header = true;
+                let mut start = 0; // Index of the start of the current frame
+
+                // Parse frames by tracking nesting levels and indices
+                for (i, c) in adj.char_indices() {
+                    if c == '{' {
+                        level += 1;
+                    } else if c == '}' {
+                        level -= 1;
+                    }
+                    if c == ',' && level == 1 {
+                        // End of a frame
+                        let end = i; // Up to but not including the ','
+                        let frame = &adj[start..end];
+                        let frame = frame.trim();
+                        if is_header                            
+                            && !frame.starts_with("{ fn: \"std::backtrace") 
+                            && !frame.starts_with("{ fn: \"steady_state::graph_liveliness::GraphLiveliness::is_running")
+                            && !frame.starts_with("{ fn: \"steady_state::commander_") {
+                            is_header = false;
+                        }
+                        if !is_header {
+                            eprintln!("{}", frame);
+                            if frame.starts_with("{ fn: \"steady_state::actor_builder::launch_actor") {
+                                break; //all done
+                            }
+                        }
+
+                        start = i + 1; // Start after the ','
+                    }
+                }
             }
         });
         

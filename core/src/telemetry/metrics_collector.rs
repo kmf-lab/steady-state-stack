@@ -583,10 +583,7 @@ mod metric_collector_tests {
     use std::sync::Arc;
     use parking_lot::RwLock;
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::thread::sleep;
     use futures::executor::block_on;
-    use crate::GraphBuilder;
 
     #[test]
     fn test_raw_diagram_state_default() {
@@ -788,7 +785,6 @@ mod extra_tests {
     use futures::executor::block_on;
     use futures::future::BoxFuture;
     use futures::stream::FuturesUnordered;
-    use std::time::Duration;
 
     #[test]
     fn test_raw_diagram_state_default() {

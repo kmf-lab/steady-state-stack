@@ -58,7 +58,7 @@ mod tests {
     use crate::actor::data_feedback::internal_behavior;
 
     #[test]
-    fn test_feedback() {
+    fn test_feedback() -> Result<(), Box<dyn Error>> {
         
         const BATCH_SIZE:usize = 200;
         
@@ -80,8 +80,9 @@ mod tests {
         graph.start();
         sleep(Duration::from_millis(60));
         graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(15));
+        graph.block_until_stopped(Duration::from_secs(15))?;
         let expected = 10;
         assert_steady_rx_eq_count!(&change_request_rx_out,expected);
+        Ok(())
     }
 }

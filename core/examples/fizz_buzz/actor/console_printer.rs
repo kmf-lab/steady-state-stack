@@ -39,8 +39,8 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
     let mut total_fizzbuzz:u64 = 0;
 
     let wait_for_count = fizzbuzz_messages_rx.capacity()/200;
-    while cmd.is_running(&mut || fizzbuzz_messages_rx.is_closed_and_empty() &&
-                                               print_signal_rx.is_closed_and_empty()) {
+    while cmd.is_running(&mut || i!(fizzbuzz_messages_rx.is_closed_and_empty()) &&
+                                               i!(print_signal_rx.is_closed_and_empty())) {
 
         let _clean = await_for_any!(cmd.wait_avail(&mut fizzbuzz_messages_rx, wait_for_count),
                                                cmd.wait_avail(&mut print_signal_rx,1));
