@@ -394,7 +394,7 @@ fn derive_block(copy: bool) -> &'static str {
 
 
 #[cfg(test)]
-mod tests {
+mod code_generation_tests {
     use std::{env, fs};
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
