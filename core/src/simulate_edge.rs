@@ -6,11 +6,11 @@ use futures_util::future::join_all;
 use futures_util::lock::{Mutex};
 use crate::{yield_now, Rx, SteadyCommander, StreamRx, StreamSessionMessage, StreamSimpleMessage, StreamTx, Tx};
 use crate::core_tx::TxCore;
-use crate::graph_testing::SideChannelResponder;
+use crate::graph_testing::{SideChannelResponder, StageDirection};
 use crate::i;
 
 pub type SimRunner<C> = Box<
-    dyn Fn(Arc<Mutex<C>>, SideChannelResponder) -> Pin<Box<dyn Future<Output = ()> >>
+    dyn Fn(Arc<Mutex<C>>, SideChannelResponder, usize) -> Pin<Box<dyn Future<Output = ()> >>
 >;
 
 
@@ -26,8 +26,8 @@ where
 {
     fn into_sim_runner(&self) -> SimRunner<C> {
 
-         let this= <TestEquals<T> as Clone>::clone(self);
-         Box::new( move |cmd_mutex, responder| {
+         let this= self.clone();
+         Box::new( move |cmd_mutex, responder, index| {
              Box::pin(
                  <TestEquals<T> as Clone>::clone(&this).run_it(cmd_mutex, responder)
              )
@@ -41,8 +41,8 @@ where
     C: SteadyCommander + 'static ,
 {
     fn into_sim_runner(&self) -> SimRunner<C> {
-        let this = <TestEcho<T> as Clone>::clone(&self);
-        Box::new(move |cmd_mutex, responder| {
+        let this = self.clone();
+        Box::new(move |cmd_mutex, responder, index| {
             Box::pin(
                 <TestEcho<T> as Clone>::clone(&this).run_it(cmd_mutex, responder)
             )
@@ -56,6 +56,15 @@ pub trait SimulateTx {
     async fn simulate_echo<C: SteadyCommander>( &mut self
                                          , cmd_mutex: Arc<Mutex<C>>
                                          , responder: SideChannelResponder) ;
+
+    #[allow(async_fn_in_trait)]
+    async fn simulate<C: SteadyCommander>( &mut self
+                                          , cmd_mutex: Arc<Mutex<C>>
+                                          , responder: SideChannelResponder) ;
+
+
+
+
 }
 pub trait SimulateRx {
 
@@ -66,7 +75,7 @@ pub trait SimulateRx {
 }
 
 
-impl<T: Send + Sync + Clone + 'static> SimulateTx for Tx<T> {
+impl<T: Send + Sync + Clone +Debug + 'static> SimulateTx for Tx<T> {
     async fn simulate_echo<C: SteadyCommander>(&mut self
                          , cmd_mutex: Arc<Mutex<C>>
                          , responder: SideChannelResponder) {
@@ -75,7 +84,30 @@ impl<T: Send + Sync + Clone + 'static> SimulateTx for Tx<T> {
              yield_now::yield_now().await;
          }
     }
+
+    async fn simulate<C: SteadyCommander>(&mut self, cmd_mutex: Arc<Mutex<C>>, responder: SideChannelResponder) {
+        while cmd_mutex.lock().await.is_running(&mut || self.shared_mark_closed()) {
+
+            if let Some(true) = responder.should_apply::<StageDirection<T>>().await {
+
+                //where is the channel and which count is it?
+
+
+            }
+
+            //responder.simulate_echo(self, &cmd_mutex).await;
+
+            //yield_now::yield_now().await;
+
+        }
+    }
+
 }
+
+
+//TODO: we need dynamic selection of the responder basesd on peek!
+
+
 impl SimulateTx for StreamTx<StreamSimpleMessage> {
     async fn simulate_echo<C: SteadyCommander>(&mut self
                                                , cmd_mutex: Arc<Mutex<C>>
@@ -85,6 +117,12 @@ impl SimulateTx for StreamTx<StreamSimpleMessage> {
             yield_now::yield_now().await;
         }
     }
+
+    async fn simulate<C: SteadyCommander>(&mut self, cmd_mutex: Arc<Mutex<C>>, responder: SideChannelResponder) {
+        todo!()
+    }
+
+
 }
 impl SimulateTx for StreamTx<StreamSessionMessage> {
     async fn simulate_echo<C: SteadyCommander>(&mut self
@@ -95,6 +133,12 @@ impl SimulateTx for StreamTx<StreamSessionMessage> {
             yield_now::yield_now().await;
         }
     }
+
+    async fn simulate<C: SteadyCommander>(&mut self, cmd_mutex: Arc<Mutex<C>>, responder: SideChannelResponder) {
+        todo!()
+    }
+
+
 }
 
 
@@ -167,10 +211,11 @@ pub(crate) async fn simulated_behavior< C: SteadyCommander + 'static>(
     if let Some(responder) = cmd.sidechannel_responder() {
         let cmd_mutex = Arc::new(Mutex::new(cmd));
         let mut tasks: Vec<Pin<Box<dyn Future<Output = ()>  >>> = Vec::new();
-        for behave in sims.into_iter() {
+        ///TODO: store the index position to match which we want along with type !!!
+        for (i,behave) in sims.into_iter().enumerate() {
             let cmd_mutex = cmd_mutex.clone();
             let sim = behave.into_sim_runner();
-            let task = sim(cmd_mutex, responder.clone());
+            let task = sim(cmd_mutex, responder.clone(), i);
             tasks.push(task);
         }
         join_all(tasks).await;
@@ -198,6 +243,12 @@ mod simulate_edge_tests {
             ) {
                 // No-op for testing
             }
+
+            async fn simulate<C: SteadyCommander>(
+                &mut self, cmd_mutex: Arc<Mutex<C>>, responder: SideChannelResponder) {
+                // No-op for testing
+            }
+
         }
 
         let tx = Arc::new(Mutex::new(DummyTx));

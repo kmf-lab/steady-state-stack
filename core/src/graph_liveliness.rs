@@ -32,7 +32,7 @@ use crate::channel_builder::ChannelBuilder;
 use crate::commander_context::SteadyContext;
 use crate::distributed::aeron_channel_structs::aeron_utils::aeron_context;
 use crate::graph_testing::StageManager;
-use crate::inspect_short_bools::i_take_last_false;
+use crate::inspect_short_bools::i_take_expression;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::steady_logger;
@@ -347,7 +347,7 @@ impl GraphLiveliness {
                         if cfg!(debug_assertions) {
                             vote.veto_backtrace = Some(Backtrace::capture());
                         }
-                        vote.veto_reason = i_take_last_false();                                                
+                        vote.veto_reason = i_take_expression();
                         if vote.in_favor {
                             trace!("already voted in favor! : {:?} {:?} vs {:?}",ident,in_favor, vote.in_favor);
                         }

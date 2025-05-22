@@ -39,7 +39,7 @@ macro_rules! i {
     }};
 }
 
-/// Retrieves and takes ownership of the last expression identifier that evaluated to `false`.
+/// Retrieves and takes ownership of the expression identifier that evaluated to `false`.
 ///
 /// This function returns the stored identifier (if any) and clears the thread-local storage,
 /// ensuring it is empty for the next use. The returned value is an `Option<&'static str>`, where
@@ -50,7 +50,7 @@ macro_rules! i {
 /// - `Some(&'static str)`: The identifier of the last expression that evaluated to `false`.
 /// - `None`: If no `false` expression has been recorded since the last read.
 ///
-pub fn i_take_last_false() -> Option<&'static str> {
+pub fn i_take_expression() -> Option<&'static str> {
     LAST_FALSE.with(|cell| {
         let mut borrowed = cell.borrow_mut();
         borrowed.take()
@@ -67,7 +67,7 @@ mod tests {
         let result = i!(true);
         assert!(result, "Expression should evaluate to true");
         assert_eq!(
-            i_take_last_false(),
+            i_take_expression(),
             None,
             "No identifier should be stored for true"
         );
@@ -79,12 +79,12 @@ mod tests {
         let result = i!(false);
         assert!(!result, "Expression should evaluate to false");
         assert_eq!(
-            i_take_last_false(),
+            i_take_expression(),
             Some("false"),
             "Identifier should be stored"
         );
         assert_eq!(
-            i_take_last_false(),
+            i_take_expression(),
             None,
             "Storage should be cleared after reading"
         );
@@ -97,7 +97,7 @@ mod tests {
         let result = i!(true) && i!(true) && i!(true);
         assert!(result, "Result should be true");
         assert_eq!(
-            i_take_last_false(),
+            i_take_expression(),
             None,
             "No identifier should be stored when all are true"
         );
@@ -112,12 +112,12 @@ mod tests {
         let result = i!(condition1) && i!(condition2);
         assert!(!result, "Result should be false");
         assert_eq!(
-            i_take_last_false(),
-            Some("condition2"),
+            i_take_expression(),
+            Some("condition1"),
             "condition2 should be stored as the last false"
         );
         assert_eq!(
-            i_take_last_false(),
+            i_take_expression(),
             None,
             "Storage should be cleared after reading"
         );

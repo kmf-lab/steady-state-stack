@@ -77,29 +77,25 @@ impl Debug for StageManager {
 /// Type alias for a side channel, which is a pair of internal sender and receiver.
 pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, InternalReceiver<Box<dyn Any + Send + Sync>>);
 
-
-//TODO: enum is not sized??
-pub(crate) type StageChannel = (InternalSender<StageAction<dyn Any + Send + Sync>>, InternalReceiver<StageAction<dyn Any + Send + Sync>>);
-
-
+trait StageAction {}
 
 // Define StageDirection
-pub enum StageDirection<T> {
+pub enum StageDirection<T: Debug + Clone> {
     Echo(T),
     EchoAt(usize, T),
 }
 
 // Define StageWaitFor
-pub enum StageWaitFor<T> {
-    Equals(T),
-    EqualsAt(usize, T),
+pub enum StageWaitFor<T: Debug + Eq> {
+    Message(T),
+    MessageAt(usize, T),
+    // AnyMessage
+    // ValueGreaterThan
 }
 
-// Union enum that can hold either variant
-pub enum StageAction<T> {
-    Direction(StageDirection<T>),
-    WaitFor(StageWaitFor<T>),
-}
+impl<T: Debug + Eq> StageAction for StageWaitFor<T> {}
+impl<T: Debug + Clone> StageAction for StageDirection<T> {}
+
 
 impl StageManager {
 
@@ -142,6 +138,25 @@ impl StageManager {
             }
     }
 
+//new
+    pub fn actor_with_name_action<S: StageAction + 'static + Send + Sync>(
+        &self,
+        name: &'static str,
+        action: S,
+    ) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
+        self.call_actor_internal(Box::new(action), ActorName::new(name, None))
+    }
+    pub fn actor_with_name_and_suffix_action<S: StageAction + 'static + Send + Sync>(
+        &self,
+        name: &'static str, suffix: usize,
+        action: S,
+    ) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
+        self.call_actor_internal(Box::new(action), ActorName::new(name, Some(suffix)))
+    }
+//TODO: rename once this all works
+
+
+    //old
     pub fn actor_with_name(&self, name: &'static str, msg: Box<dyn Any + Send + Sync>) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
         self.call_actor_internal(msg, ActorName::new(name, None))
     }
@@ -149,6 +164,7 @@ impl StageManager {
     pub fn actor_with_name_and_suffix(&self, name: &'static str, suffix: usize, msg: Box<dyn Any + Send + Sync>) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
         self.call_actor_internal(msg, ActorName::new(name, Some(suffix)))
     }
+
 
         /// Sends a message to a node and waits for a response.
     ///
@@ -164,13 +180,11 @@ impl StageManager {
     pub(crate) fn call_actor_internal(&self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
 
         if let Some(sc) = self.backplane.get(&id) {            
-            return core_exec::block_on( async move {
+            core_exec::block_on( async move {
                 let mut sc_guard = sc.lock().await;
                 let (tx, rx) = sc_guard.deref_mut();
                 match tx.push(msg).await {
                     Ok(_) => {
-                        //trace!("pushed message to node: {:?}", id);
-                        //do nothing else but immediately get the response for more deterministic testing
                         if let Some(response) = rx.pop().await {
                             Ok(response)    
                         } else {
@@ -199,15 +213,16 @@ pub struct SideChannelResponder {
 
 impl SideChannelResponder {
 
-      
+
     
     
     
     pub async fn simulate_echo<'a, T: 'static, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self
                         , tx_core: &mut X, cmd: & Arc<Mutex<C>>) -> bool
     where <X as TxCore>::MsgOut: Send, <X as TxCore>::MsgOut: Sync, <X as TxCore>::MsgOut: 'static {
+
        // trace!("simulate echo {:?}", cmd.lock().await.identity());
-        if self.should_apply::<T>().await { //we got a message and now confirm we have room to send it
+        if let Some(true) = self.should_apply::<T>().await { //we got a message and now confirm we have room to send it
             // trace!("should echo does apply, waiting for vacant unit");
             if tx_core.shared_wait_vacant_units(tx_core.one()).await {
                 //we hold cmd just as long as it takes us to respond.
@@ -226,10 +241,11 @@ impl SideChannelResponder {
         } else {
             false
         }
+
     }
 
     pub async fn simulate_equals<T: Debug + Eq + 'static, X: RxCore<MsgOut = T>, C: SteadyCommander>(&self, rx_core: &mut X, cmd: & Arc<Mutex<C>>) -> bool where <X as RxCore>::MsgOut: std::fmt::Debug {
-        if self.should_apply::<T>().await { //we have a message and now block until a unit arrives
+        if let Some(true) = self.should_apply::<T>().await { //we have a message and now block until a unit arrives
             if rx_core.shared_wait_avail_units(1).await {
                 //for testing we hold the cmd lock only while we check equals and respond
                 let mut cmd_guard = cmd.lock().await;
@@ -311,7 +327,7 @@ impl SideChannelResponder {
         cmd: &mut C,
         target_tx: &mut Tx<M>,
     ) -> bool {
-        if self.should_apply::<M>().await {
+        if let Some(true) = self.should_apply::<M>().await {
             if cmd.wait_vacant(target_tx, 1).await {
                 self.respond_with(move |message| {
                     match cmd.try_send(target_tx,  *message.downcast::<M>().expect("error casting")) {
@@ -340,7 +356,7 @@ impl SideChannelResponder {
         cmd: &mut C,
         target_tx_bundle: &mut TxBundle<'_,M>,
     ) -> bool {
-        if self.should_apply::<M>().await {
+        if let Some(true) = self.should_apply::<M>().await {
             let girth = target_tx_bundle.len();
             for t in target_tx_bundle.iter_mut() {
                 if !cmd.wait_vacant(&mut *t, 1).await {
@@ -381,7 +397,7 @@ impl SideChannelResponder {
         cmd: &mut C,
         source_rx: &mut Rx<M>,
     ) -> bool {
-        if self.should_apply::<M>().await {
+        if let Some(true) = self.should_apply::<M>().await {
             if cmd.wait_avail(source_rx, 1).await {
                 self.respond_with(move |message| {
                     // Attempt to downcast to the expected message type
@@ -421,7 +437,7 @@ impl SideChannelResponder {
         cmd: &mut C,
         source_rx: &mut RxBundle<'_, M>,
     ) -> bool {
-        if self.should_apply::<M>().await {
+        if let Some(true) = self.should_apply::<M>().await {
             let girth = source_rx.len();
             for x in 0..girth {
                 let srx: &mut MutexGuard<Rx<M>> =  &mut source_rx[x];
@@ -452,11 +468,7 @@ impl SideChannelResponder {
     ///
     /// # Type Parameters
     /// - `M`: The expected message type.
-    ///
-    /// # Returns
-    /// - `true` if the next message matches the expected type.
-    /// - `false` otherwise.
-    pub async fn should_apply<M: 'static>(&self) -> bool
+    pub async fn should_apply<M: 'static>(&self) -> Option<bool>
     {
         let mut guard = self.arc.lock().await;
         let ((_, rx), _) = guard.deref_mut();
@@ -468,10 +480,10 @@ impl SideChannelResponder {
                 error!("Fix the unit test sent message, Type must match channel of the target actor but it does not.");
             }
             // Check if the message can be downcast to the expected type
-            is_correct_type
+            Some(is_correct_type)
         } else {
             // No message available to peek at
-            false
+            None
         }
     }
     
