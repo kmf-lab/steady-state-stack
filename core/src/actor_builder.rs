@@ -21,7 +21,7 @@ use crate::*;
 
 use crate::{steady_config, ActorName, AlertColor, Graph, Metric, StdDev, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
-use crate::graph_testing::{SideChannel, SideChannelMessenger};
+use crate::graph_testing::{SideChannel, StageManager};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 
@@ -63,7 +63,7 @@ pub struct ActorBuilder {
     avg_load: bool,
     frame_rate_ms: u64,
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
-    backplane: Arc<Mutex<Option<SideChannelMessenger>>>,
+    backplane: Arc<Mutex<Option<StageManager>>>,
     team_count: Arc<AtomicUsize>,
     remote_details: Option<RemoteDetails>,
     pub(crate) never_simulate: bool,

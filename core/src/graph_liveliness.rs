@@ -31,7 +31,7 @@ use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::commander_context::SteadyContext;
 use crate::distributed::aeron_channel_structs::aeron_utils::aeron_context;
-use crate::graph_testing::SideChannelMessenger;
+use crate::graph_testing::StageManager;
 use crate::inspect_short_bools::i_take_last_false;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
@@ -453,7 +453,7 @@ pub struct GraphBuilder {
     block_fail_fast: bool,
     telemetry_metric_features: bool,
     enable_io_driver: bool,
-    backplane: Option<SideChannelMessenger>,
+    backplane: Option<StageManager>,
     proactor_config: Option<ProactorConfig>,
     iouring_queue_length: u32,
     telemtry_production_rate_ms: u64,
@@ -497,7 +497,7 @@ impl GraphBuilder {
             block_fail_fast: false,
             telemetry_metric_features: false,
             enable_io_driver: false,
-            backplane: Some(SideChannelMessenger::default()),
+            backplane: Some(StageManager::default()),
             proactor_config: Some(ProactorConfig::InterruptDriven),
             iouring_queue_length: 1<<5,
             telemtry_production_rate_ms: 40, //default
@@ -580,7 +580,7 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
-    pub(crate) backplane: Arc<Mutex<Option<SideChannelMessenger>>>, // Only used in testing
+    pub(crate) backplane: Arc<Mutex<Option<StageManager>>>, // Only used in testing
     pub(crate) noise_threshold: Instant,
     pub(crate) block_fail_fast: bool,
     pub(crate) telemetry_production_rate_ms: u64,
@@ -591,11 +591,11 @@ pub struct Graph { //TODO: redo as  T: StructOpt
 
 // Custom guard type to hold the lock and hub reference
 pub struct SideChannelGuard<'a> {
-    guard: MutexGuard<'a, Option<SideChannelMessenger>>, // Keeps the lock held
+    guard: MutexGuard<'a, Option<StageManager>>, // Keeps the lock held
 }
 
 impl<'a> Deref for SideChannelGuard<'a> {
-    type Target = SideChannelMessenger;
+    type Target = StageManager;
     fn deref(&self) -> &Self::Target {
         self.guard.as_ref().expect("SideChannelHub is not initialized")
     }

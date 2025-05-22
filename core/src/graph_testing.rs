@@ -55,21 +55,18 @@ pub enum GraphTestResult<K, E>
 }
 
 
-/// Type alias for a side channel, which is a pair of internal sender and receiver.
-pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, InternalReceiver<Box<dyn Any + Send + Sync>>);
 
 
-
-/// The `SideChannelMessenger` struct manages side channels for nodes in the graph.
+/// The `StageManager` struct manages side channels for nodes in the graph.
 /// Each node holds its own lock on read and write to the backplane.
 /// The backplane functions as a central message hub, ensuring that only one user can hold it at a time.
 #[derive(Clone,Default)]
-pub struct SideChannelMessenger {
+pub struct StageManager {
     node: HashMap<ActorName, Arc<NodeTxRx>>,
     pub(crate) backplane: HashMap<ActorName, Arc<Mutex<SideChannel>>>,
 }
 
-impl Debug for SideChannelMessenger {
+impl Debug for StageManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SideChannelHub")
             .field("node", &self.node)
@@ -77,7 +74,34 @@ impl Debug for SideChannelMessenger {
     }
 }
 
-impl SideChannelMessenger {
+/// Type alias for a side channel, which is a pair of internal sender and receiver.
+pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, InternalReceiver<Box<dyn Any + Send + Sync>>);
+
+
+//TODO: enum is not sized??
+pub(crate) type StageChannel = (InternalSender<StageAction<dyn Any + Send + Sync>>, InternalReceiver<StageAction<dyn Any + Send + Sync>>);
+
+
+
+// Define StageDirection
+pub enum StageDirection<T> {
+    Echo(T),
+    EchoAt(usize, T),
+}
+
+// Define StageWaitFor
+pub enum StageWaitFor<T> {
+    Equals(T),
+    EqualsAt(usize, T),
+}
+
+// Union enum that can hold either variant
+pub enum StageAction<T> {
+    Direction(StageDirection<T>),
+    WaitFor(StageWaitFor<T>),
+}
+
+impl StageManager {
 
 
     /// Retrieves the transmitter and receiver for a node by its id.
@@ -118,11 +142,11 @@ impl SideChannelMessenger {
             }
     }
 
-    pub fn call_actor_with_name(&self, msg: Box<dyn Any + Send + Sync>, name: &'static str) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
+    pub fn actor_with_name(&self, name: &'static str, msg: Box<dyn Any + Send + Sync>) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
         self.call_actor_internal(msg, ActorName::new(name, None))
     }
 
-    pub fn call_actor_with_name_and_suffix(&self, msg: Box<dyn Any + Send + Sync>, name: &'static str, suffix: usize) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
+    pub fn actor_with_name_and_suffix(&self, name: &'static str, suffix: usize, msg: Box<dyn Any + Send + Sync>) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
         self.call_actor_internal(msg, ActorName::new(name, Some(suffix)))
     }
 
@@ -528,7 +552,7 @@ mod graph_testing_tests {
 
     #[test]
     async fn test_register_and_retrieve_node() {
-        let mut hub = SideChannelMessenger::default();
+        let mut hub = StageManager::default();
 
         let actor = ActorIdentity::new(2,"test_actor",Some(2));
 
@@ -548,7 +572,7 @@ mod graph_testing_tests {
 
         // Simulates Graph creation where we init the side channel hub
         // and register our actors for future testing
-        let mut hub = SideChannelMessenger::default();
+        let mut hub = StageManager::default();
         let actor = ActorIdentity::new(1,"test_actor",Some(1));
         let actor_name = actor.label;
         let text = format!("hub: {:?} actor: {:?}",hub,actor_name);
