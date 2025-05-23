@@ -103,7 +103,7 @@ mod graph_tests {
             };
             let mut graph = build_graph( GraphBuilder::for_testing().build(test_ops.clone()) );
             graph.start();
-            let messenger = graph.sidechannel_messenger();
+            let stage_manager = graph.stage_manager();
 
              //NOTE: to ensure the node_call is for the correct channel for a given actor unique types for each channel are required
 
@@ -111,7 +111,7 @@ mod graph_tests {
                 {%- if actor.is_on_graph_edge() -%}
                   {% for channel in actor.rx_channels %}
                      {{note_for_the_user}}  Adjust as needed to inject test values into the graph
-                     // messenger.call_actor_by_name(Box::new({{channel[0].message_type}}::default()), "{{actor.display_name}}")?;
+                     // stage_manager.actor_perform("{{actor.display_name}}", StateWaitFor::Message({{channel[0].message_type}}::default(),Duration::from_sec(1)) )?;
                   {%- endfor %}
                 {% endif -%}
             {%- endfor %}
@@ -122,11 +122,11 @@ mod graph_tests {
 
                   {% for channel in actor.tx_channels %}
                      {{note_for_the_user}}  Adjust as needed to test the values produced by the graph
-                     // messenger.call_actor_by_name(Box::new({{channel[0].message_type}}::default()),"{{actor.display_name}}"))?;
+                     // stage_manager.actor_perform("{{actor.display_name}}", StageDirection::Echo({{channel[0].message_type}}::default())))?;
                   {%- endfor %}
                 {% endif -%}
              {%- endfor %}
-            drop(messenger); //must drop before we can use graph methods
+            drop(stage_manager); //must drop before we can use graph methods
             graph.request_stop();
             //this will return Ok(()) once you have actors shutting down in order
             graph.block_until_stopped(Duration::from_secs(3));

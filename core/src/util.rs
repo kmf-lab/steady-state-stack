@@ -1,3 +1,5 @@
+//! The `util` module provides helper functions and types for logging initialization,
+//! memory-based log capturing, and assertion macros for testing within the Steady framework.
 use flexi_logger::writers::*;
 use flexi_logger::*;
 use std::sync::{Mutex};
@@ -20,7 +22,9 @@ impl MemoryWriter {
 }
 
 thread_local! {
+    /// Thread-local buffer that stores captured log messages when log capturing is enabled.
     pub static LOG_BUFFER: RefCell<Vec<String>> = RefCell::new(Vec::new());
+    /// Flag indicating whether log messages should be captured in the thread-local buffer.
     pub static IS_CAPTURING: AtomicBool = AtomicBool::new(false);
 }
 
@@ -68,6 +72,7 @@ fn steady_logging_init(level: LogLevel, test_mode: bool) -> Result<LoggerHandle,
         .map_err(|e| Box::new(e) as Box<dyn Error>)
 }
 
+/// Provides functions to initialize and manage the global logger, including log capturing for tests.
 pub mod steady_logger {
     use super::*;
     use lazy_static::lazy_static;
@@ -131,7 +136,11 @@ pub mod steady_logger {
     }
 }
 
-/// Assertion macro to check if texts appear in logs in order.
+/// Asserts that the given sequence of texts appears in the captured logs in order.
+///
+/// Takes a slice of string literals and verifies each occurs in the thread-local
+/// log buffer in the specified order, panicking with detailed log output if
+/// any expected text is missing.
 #[macro_export]
 macro_rules! assert_in_logs {
     ($texts:expr) => {{

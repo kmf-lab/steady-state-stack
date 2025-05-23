@@ -1,3 +1,6 @@
+//! The `commander_monitor` module provides the `LocalMonitor` type and its implementation
+//! of the `SteadyCommander` trait, enabling telemetry collection, profiling, and controlled
+//! execution monitoring for actors and channels within the Steady framework.
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use log::{error, warn};
 use std::time::{Duration, Instant};
@@ -78,6 +81,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) show_thread_info: bool,
     pub(crate) team_id: usize,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    /// If true, the monitor uses its internal simulation behavior for events.
     pub use_internal_behavior: bool,
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,                   // Barrier for synchronization
 }
@@ -87,9 +91,15 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
 
 
     #[allow(async_fn_in_trait)]
-    pub async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>
+    /// Runs simulation runners within the context of this local monitor.
+    ///
+    /// Delegates to `simulate_edge::simulated_behavior`, initializing the monitor
+    /// as the command context and executing each provided simulation task in parallel.
+    pub async fn simulated_behavior(
+        self,
+        sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>> {
-        simulate_edge::simulated_behavior::<Self>(self,sims).await
+        simulate_edge::simulated_behavior::<Self>(self, sims).await
     }
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
@@ -873,7 +883,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
         let guard = self.start_profile(CALL_SINGLE_READ);
 
-        let timeout = if self.telemetry.is_dirty() {
+        let shutdown_timeout = if self.telemetry.is_dirty() {
             let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
                 Some(Duration::from_micros(0)) //stop now
@@ -884,7 +894,44 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             None //do not use the timeout
         };
 
-        let result = this.shared_take_async_timeout(timeout).await; //Can return None if we are shutting down
+        let result = this.shared_take_async_timeout(shutdown_timeout).await; //Can return None if we are shutting down
+        drop(guard);
+        match result {
+            Some(result) => {
+                if let Some(ref mut tel) = self.telemetry.send_rx {
+                    this.telemetry_inc(RxDone::Normal(1), tel);
+                } else {
+                    this.monitor_not();
+                };
+                Some(result)
+            }
+            None => None,
+        }
+    }
+
+
+    async fn take_async_with_timeout<T>(&mut self, this: &mut Rx<T>, user_timeout: Duration) -> Option<T> {
+        let guard = self.start_profile(CALL_SINGLE_READ);
+
+        let shutdown_timeout = if self.telemetry.is_dirty() {
+            let remaining_micros = self.telemetry_remaining_micros();
+            if remaining_micros <= 0 {
+                Some(Duration::from_micros(0)) //stop now
+            } else {
+                Some(Duration::from_micros(remaining_micros as u64)) //stop at remaining time
+            }
+        } else {
+            None //do not use the timeout
+        };
+
+        //take the smaller of the two
+        let timeout = if let Some(st) = shutdown_timeout {
+            st.min(user_timeout)
+        } else {
+            user_timeout
+        };
+
+        let result = this.shared_take_async_timeout(Some(timeout)).await; //Can return None if we are shutting down
         drop(guard);
         match result {
             Some(result) => {

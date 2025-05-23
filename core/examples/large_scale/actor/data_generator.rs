@@ -20,7 +20,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyContext
     if cfg!(not(test)) {
         internal_behavior(cmd, tx).await
     } else {
-        let test_echos:Vec<_> = tx.iter().map(|f| SimTx((*f).clone())).collect();
+        let test_echos:Vec<_> = tx.iter().map(|f| (*f).clone()).collect();
         let sims: Vec<&dyn IntoSimRunner<_>> = test_echos.iter().map(|te| te as &dyn IntoSimRunner<_>).collect();
         cmd.simulated_behavior(sims).await
     }

@@ -10,6 +10,7 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::ops::{DerefMut};
 use std::sync::Arc;
+use std::time::Duration;
 use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
@@ -87,8 +88,8 @@ pub enum StageDirection<T: Debug + Clone> {
 
 // Define StageWaitFor
 pub enum StageWaitFor<T: Debug + Eq> {
-    Message(T),
-    MessageAt(usize, T),
+    Message(T, Duration),
+    MessageAt(usize, T, Duration),
     // AnyMessage
     // ValueGreaterThan
 }
@@ -138,31 +139,21 @@ impl StageManager {
             }
     }
 
-//new
-    pub fn actor_with_name_action<S: StageAction + 'static + Send + Sync>(
+
+
+    pub fn actor_perform<S: StageAction + 'static + Send + Sync>(
         &self,
         name: &'static str,
         action: S,
     ) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
         self.call_actor_internal(Box::new(action), ActorName::new(name, None))
     }
-    pub fn actor_with_name_and_suffix_action<S: StageAction + 'static + Send + Sync>(
+    pub fn actor_perform_with_suffix<S: StageAction + 'static + Send + Sync>(
         &self,
         name: &'static str, suffix: usize,
         action: S,
     ) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
         self.call_actor_internal(Box::new(action), ActorName::new(name, Some(suffix)))
-    }
-//TODO: rename once this all works
-
-
-    //old
-    pub fn actor_with_name(&self, name: &'static str, msg: Box<dyn Any + Send + Sync>) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
-        self.call_actor_internal(msg, ActorName::new(name, None))
-    }
-
-    pub fn actor_with_name_and_suffix(&self, name: &'static str, suffix: usize, msg: Box<dyn Any + Send + Sync>) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
-        self.call_actor_internal(msg, ActorName::new(name, Some(suffix)))
     }
 
 
@@ -210,6 +201,8 @@ pub struct SideChannelResponder {
     pub(crate) arc: Arc<Mutex<(SideChannel,Receiver<()>)>>,
     pub(crate) identity: ActorIdentity,
 }
+
+const WAIT_FOR_QUANT:Duration = Duration::from_millis(50);
 
 impl SideChannelResponder {
 
@@ -267,45 +260,43 @@ impl SideChannelResponder {
             if rx_core.shared_wait_avail_units(1).await {
                 //for testing we hold the cmd lock only while we check equals and respond
                 let mut cmd_guard = cmd.lock().await;
+
                 self.respond_with(move |message| {
                     let swf: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<T>>()
                         .expect("error casting");
-                    match swf {
-                        StageWaitFor::Message(m) => {
+                    let t = match swf {
+                        StageWaitFor::Message(m,t) => Some((m,t)),
+                        StageWaitFor::MessageAt(i,m,t) => if *i == index {Some((m,t))} else {None}
+                    };
+                    use std::time::{Instant};
+
+                    if let Some((m, timeout)) = t {
+                        let start = Instant::now();
+                        loop {
                             match cmd_guard.try_take(rx_core) {
                                 Some(measured) => {
                                     if m.eq(&measured) {
-                                        Some(Box::new("ok".to_string()))
+                                        break Some(Box::new("ok".to_string()));
                                     } else {
                                         let failure = format!("no match {:?} {:?}", m, measured);
-                                        Some(Box::new(failure))
+                                        break Some(Box::new(failure));
                                     }
                                 }
                                 None => {
-                                    Some(Box::new("no message".to_string()))
+                                    if start.elapsed() >= *timeout {
+                                        break Some(Box::new("timeout, no message".to_string()));
+                                    } else {
+                                        //we are in a lambda so we can not use await
+                                        //this is for testing so this is not so bad
+                                        std::thread::sleep(WAIT_FOR_QUANT);
+                                    }
                                 }
                             }
                         }
-                        StageWaitFor::MessageAt(i, m) => {
-                            if *i == index {
-                                match cmd_guard.try_take(rx_core) {
-                                    Some(measured) => {
-                                        if m.eq(&measured) {
-                                            Some(Box::new("ok".to_string()))
-                                        } else {
-                                            let failure = format!("no match {:?} {:?}", m, measured);
-                                            Some(Box::new(failure))
-                                        }
-                                    }
-                                    None => {
-                                        Some(Box::new("no message".to_string()))
-                                    }
-                                }
-                            } else {
-                                None
-                            }
-                        }
+                    } else {
+                        None
                     }
+
                 }).await
             } else {
                 false
@@ -593,7 +584,7 @@ mod graph_testing_tests {
         core_exec::spawn_detached(async move {
             responder_inside_actor.expect("should exist").respond_with(|msg| {
                 let received_msg = msg.downcast_ref::<i32>().expect("iternal error");
-                Box::new(received_msg * 2) as Box<dyn Any + Send + Sync>
+                Some(Box::new(received_msg * 2) as Box<dyn Any + Send + Sync>)
             }).await;
         });
 

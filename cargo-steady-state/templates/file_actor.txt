@@ -57,11 +57,11 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
   } else {
      cmd.simulated_behavior(vec!(
            {%- for channel in tx_channels -%}
-                 &TestEcho({{channel[0].name}}_tx){%- if loop.last %}{% else -%},{%- endif %}
+                 &{{channel[0].name}}_tx{%- if loop.last %}{% else -%},{%- endif %}
              {%- endfor -%}
              {%- if !rx_channels.is_empty() && !tx_channels.is_empty() -%},{%- endif %}
              {%- for channel in rx_channels -%}
-                 &TestEquals({{channel[0].name}}_rx){%- if loop.last %}{% else -%},{%- endif %}
+                 &{{channel[0].name}}_rx{%- if loop.last %}{% else -%},{%- endif %}
              {%- endfor -%}
                )).await
   } {% endif %}

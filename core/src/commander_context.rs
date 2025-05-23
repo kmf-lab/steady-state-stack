@@ -1,3 +1,6 @@
+//! The `commander_context` module defines `SteadyContext` and its implementation
+//! of the `SteadyCommander` trait, providing the execution context for actors
+//! including state management, telemetry channels, and lifecycle controls.
 use std::time::{Duration, Instant};
 use std::sync::{Arc, OnceLock};
 use async_lock::Barrier;
@@ -50,6 +53,7 @@ pub struct SteadyContext {
     pub(crate) team_id: usize,
     pub(crate) show_thread_info: bool,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    /// Controls whether the internal simulation behavior is applied instead of actual commands.
     pub use_internal_behavior: bool,
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,     
 }
@@ -535,6 +539,11 @@ impl SteadyCommander for SteadyContext {
         this.shared_take_async().await
     }
 
+
+    async fn take_async_with_timeout<T>(&mut self, this: &mut Rx<T>, timeout: Duration) -> Option<T> {
+        this.shared_take_async_timeout(Some(timeout)).await
+    }
+
     fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize {
         this.shared_advance_index(count)
     }
@@ -689,6 +698,5 @@ impl SteadyCommander for SteadyContext {
 
             result.load(Ordering::Relaxed)
         }
-
 
 }

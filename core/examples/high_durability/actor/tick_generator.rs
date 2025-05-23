@@ -19,7 +19,7 @@ pub async fn run<const TICKS_TX_GIRTH:usize,>(context: SteadyContext
     if cfg!(not(test)) {
         internal_behavior(cmd, ticks_tx).await
     } else {
-        cmd.simulated_behavior(vec!(&SimTx(ticks_tx[0].clone()))).await
+        cmd.simulated_behavior(vec!(&ticks_tx[0])).await
     }
 }
 

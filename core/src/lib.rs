@@ -142,8 +142,6 @@ pub use loop_driver::steady_await_for_all_or_proceed_upon_five;
 
 pub use clap::*;
 pub use commander::SendOutcome;
-pub use simulate_edge::SimTx;
-pub use simulate_edge::SimRx;
 pub use simulate_edge::IntoSimRunner;
 pub use simulate_edge::SimRunner;
 pub use commander_context::*;

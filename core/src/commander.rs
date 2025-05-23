@@ -222,9 +222,13 @@ pub trait SteadyCommander {
     ///
     async fn wait_periodic(&self, duration_rate: Duration) -> bool;
 
-
-
     async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
+
+
+//TODO: soon
+//    async fn wait_avail_with_timeout<T: RxCore>(&self, this: &mut T, count: usize, timeout: Duration) -> bool;
+
+
 
     async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool;
 
@@ -458,7 +462,11 @@ pub trait SteadyCommander {
     /// # Returns
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
     async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T>;
-    
+
+    async fn take_async_with_timeout<T>(&mut self, this: &mut Rx<T>, timeout: Duration) -> Option<T>;
+
+
+
     /// Asynchronously waits for a specified duration.
     ///
     /// # Parameters

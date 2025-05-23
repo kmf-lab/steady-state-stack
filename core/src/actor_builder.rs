@@ -117,7 +117,6 @@ fn get_num_cores() -> usize {
 fn pin_thread_to_core(core_id: usize) -> Result<(), String> {
     #[cfg(unix)]
     {
-        use libc::pthread_setaffinity_np;
         let num_cores = get_num_cores(); // Get the number of available cores
         //println!("Number of cores: {:?} {:?}", num_cores, core_id);
         let core_id = core_id % num_cores; // Adjust core_id to ensure it's within bounds

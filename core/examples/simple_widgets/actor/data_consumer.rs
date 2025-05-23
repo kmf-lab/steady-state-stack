@@ -31,7 +31,7 @@ pub async fn run(context: SteadyContext
     if cfg!(not(test)) {
         internal_behavior(cmd, rx, state).await
     } else {
-        cmd.simulated_behavior(vec!(&SimRx(rx))).await
+        cmd.simulated_behavior(vec!(&rx)).await
     }
 }
 

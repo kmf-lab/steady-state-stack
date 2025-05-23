@@ -590,25 +590,31 @@ pub struct Graph { //TODO: redo as  T: StructOpt
 
 
 // Custom guard type to hold the lock and hub reference
-pub struct SideChannelGuard<'a> {
+pub struct StageManagerGuard<'a> {
     guard: MutexGuard<'a, Option<StageManager>>, // Keeps the lock held
 }
 
-impl<'a> Deref for SideChannelGuard<'a> {
+impl<'a> Deref for StageManagerGuard<'a> {
     type Target = StageManager;
     fn deref(&self) -> &Self::Target {
         self.guard.as_ref().expect("SideChannelHub is not initialized")
     }
 }
 
+impl StageManagerGuard<'_> {
+    pub fn final_bow(self) {
+    }
+}
+
+
 impl Graph {
     /// Returns a future that locks the side channel hub.
-    pub fn sidechannel_messenger(&self) -> SideChannelGuard {
+    pub fn stage_manager(&self) -> StageManagerGuard {
 
         // Acquire the lock (block_on is used assuming an async context)
         let guard = core_exec::block_on(self.backplane.lock());
         // Return the guard, keeping the lock alive
-        SideChannelGuard { guard}
+        StageManagerGuard { guard}
     }
     
     

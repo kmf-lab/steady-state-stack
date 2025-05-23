@@ -41,7 +41,7 @@ pub async fn run(context: SteadyContext
         let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
         internal_behavior(cmd, rx, aeron_connect, stream_id, aeron_media_driver, state).await
     } else {
-        cmd.simulated_behavior(vec!(&SimRx(rx))).await
+        cmd.simulated_behavior(vec!(&rx)).await
     }
 
 }

@@ -17,7 +17,7 @@ pub async fn run(context: SteadyContext
     if cfg!(not(test)) {
         internal_behavior(cmd, fizzbuzz_rx, print_signal_rx).await
     } else {
-        cmd.simulated_behavior(vec!(&SimRx(fizzbuzz_rx), &SimRx(print_signal_rx))).await
+        cmd.simulated_behavior(vec!(&fizzbuzz_rx, &print_signal_rx)).await
     }
 }
 
