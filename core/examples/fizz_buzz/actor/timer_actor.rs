@@ -18,7 +18,7 @@ pub async fn run(context: SteadyContext, print_signal_tx: SteadyTx<PrintSignal>)
     if cfg!(not(test)) {
         internal_behavior(cmd, print_signal_tx).await
     } else {
-       cmd.simulated_behavior(vec!(&TestEcho(print_signal_tx))).await
+       cmd.simulated_behavior(vec!(&SimTx(print_signal_tx))).await
     }
 }
 

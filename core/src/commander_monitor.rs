@@ -121,17 +121,17 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
     }
 
-    // pub(crate) fn validate_capacity_tx<T: TxCore>(this: &mut T, count: usize) -> usize {
-    //     if count <= this.shared_capacity() {
-    //         count
-    //     } else {
-    //         let capacity = this.shared_capacity();
-    //         if this.log_perodic() {
-    //             warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
-    //         }
-    //         capacity
-    //     }
-    // }
+    pub(crate) fn validate_capacity_tx<T: TxCore>(this: &mut T, count: usize) -> usize {
+        if count <= this.shared_capacity() {
+            count
+        } else {
+            let capacity = this.shared_capacity();
+            if this.log_perodic() {
+                warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+            }
+            capacity
+        }
+    }
 
     //TODO: check usage and add to the SteadyState
     pub(crate) async fn internal_wait_shutdown(&self) -> bool {

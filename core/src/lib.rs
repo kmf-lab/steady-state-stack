@@ -119,7 +119,11 @@ pub mod yield_now;
     /// module for all commands for channels used by actors
 pub mod commander;
 mod core_rx;
+use crate::core_rx::RxCore;
 mod core_tx;
+use crate::core_tx::TxCore;
+
+
 pub mod commander_context;
 pub mod commander_monitor;
 mod stream_iterator;
@@ -138,8 +142,8 @@ pub use loop_driver::steady_await_for_all_or_proceed_upon_five;
 
 pub use clap::*;
 pub use commander::SendOutcome;
-pub use simulate_edge::TestEcho;
-pub use simulate_edge::TestEquals;
+pub use simulate_edge::SimTx;
+pub use simulate_edge::SimRx;
 pub use simulate_edge::IntoSimRunner;
 pub use simulate_edge::SimRunner;
 pub use commander_context::*;
@@ -204,8 +208,7 @@ pub use futures::future::Future;
 use futures::channel::oneshot;
 use futures_util::lock::{MappedMutexGuard, MutexGuard};
 pub use commander_monitor::LocalMonitor;
-use crate::core_rx::RxCore;
-use crate::core_tx::TxCore;
+
 use crate::yield_now::yield_now;
 
 

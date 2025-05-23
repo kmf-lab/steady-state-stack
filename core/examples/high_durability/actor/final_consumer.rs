@@ -16,7 +16,7 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyContext
     if cfg!(not(test)) {
         internal_behavior(cmd, tick_counts_rx).await
     } else {
-        cmd.simulated_behavior(vec!(&TestEquals(tick_counts_rx[0].clone()))).await
+        cmd.simulated_behavior(vec!(&SimRx(tick_counts_rx[0].clone()))).await
     }
 }
 

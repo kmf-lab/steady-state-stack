@@ -13,7 +13,7 @@ pub async fn run(context: SteadyContext, numbers_tx: SteadyTx<NumberMessage>) ->
     if cfg!(not(test)) {
         internal_behavior(cmd, numbers_tx).await
     } else {
-        cmd.simulated_behavior(vec!(&TestEcho(numbers_tx))).await
+        cmd.simulated_behavior(vec!(&SimTx(numbers_tx))).await
     }
 }
 

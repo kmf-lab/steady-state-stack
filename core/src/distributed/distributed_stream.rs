@@ -672,11 +672,11 @@ impl<T: StreamItem> StreamRx<T> {
     }
 
     /// Checks if both channels are closed and empty.
-    pub fn is_closed_and_empty(&mut self) -> bool {
-        //debug!("closed_empty {} {}", self.item_channel.is_closed_and_empty(), self.payload_channel.is_closed_and_empty());
-        self.item_channel.is_closed_and_empty()
-            && self.payload_channel.is_closed_and_empty()
-    }
+    // pub fn is_closed_and_empty(&mut self) -> bool {
+    //     //debug!("closed_empty {} {}", self.item_channel.is_closed_and_empty(), self.payload_channel.is_closed_and_empty());
+    //     self.item_channel.is_closed_and_empty()
+    //         && self.payload_channel.is_closed_and_empty()
+    // }
     /// Checks if both channels are closed and empty.
     pub fn is_closed(&mut self) -> bool {
         //debug!("closed {} {}", self.item_channel.is_closed(), self.payload_channel.is_closed());

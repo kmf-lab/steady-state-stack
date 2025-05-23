@@ -1,5 +1,5 @@
 use log::warn;
-use futures_util::select;
+use futures_util::{select, task};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use ringbuf::traits::Observer;
@@ -47,6 +47,7 @@ pub trait RxCore {
 
     fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize;
 
+    fn is_closed_and_empty(&mut self) -> bool;
 }
 
 impl <T>RxCore for Rx<T> {
@@ -54,6 +55,18 @@ impl <T>RxCore for Rx<T> {
     type MsgOut = T;
     type MsgPeek<'a> = &'a T where T: 'a;
     type MsgSize = usize;
+
+    fn is_closed_and_empty(&mut self) -> bool {
+        if self.is_closed.is_terminated() {
+            self.shared_is_empty()
+        } else if self.shared_is_empty() {
+            let waker = task::noop_waker();
+            let mut context = task::Context::from_waker(&waker);
+            self.is_closed.poll_unpin(&mut context).is_ready()
+        } else {
+            false
+        }
+    }
 
     fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize {
         let avail = self.rx.occupied_len();
@@ -198,7 +211,13 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
     type MsgOut = (T, Box<[u8]>);
     type MsgPeek<'a> = (&'a T, &'a[u8],&'a[u8]) where T: 'a;
     type MsgSize = (usize, usize);
- 
+
+    fn is_closed_and_empty(&mut self) -> bool {
+        //debug!("closed_empty {} {}", self.item_channel.is_closed_and_empty(), self.payload_channel.is_closed_and_empty());
+        self.item_channel.is_closed_and_empty()
+            && self.payload_channel.is_closed_and_empty()
+    }
+
    fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize {
 
        let avail = self.payload_channel.rx.occupied_len();
@@ -367,7 +386,11 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     type MsgOut = <T as RxCore>::MsgOut;
     type MsgPeek<'a> =  <T as RxCore>::MsgPeek<'a> where Self: 'a;
     type MsgSize = <T as RxCore>::MsgSize;
- 
+
+    fn is_closed_and_empty(&mut self) -> bool {
+        <T as RxCore>::is_closed_and_empty(&mut **self)
+    }
+
     async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'a>> {
         <T as RxCore>::shared_peek_async_timeout(& mut **self
                                                  ,timeout).await

@@ -12,7 +12,7 @@ use async_std::sync::Mutex;
 use log::{error, trace, warn};
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTxBundle, StreamSessionMessage};
-use crate::{await_for_all, IntoSimRunner, SteadyCommander, SteadyState, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait, TestEcho};
+use crate::{await_for_all, IntoSimRunner, SteadyCommander, SteadyState, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait, SimTx};
 use crate::commander_context::SteadyContext;
 use crate::core_tx::TxCore;
 use crate::distributed::polling;
@@ -45,7 +45,7 @@ pub async fn run<const GIRTH: usize>(
         let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
         return internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await;
     }
-    let te: Vec<_> = tx.iter().map(|f| TestEcho(f.clone())).collect();
+    let te: Vec<_> = tx.iter().map(|f| SimTx(f.clone())).collect();
     let sims: Vec<_> = te.iter().map(|f| f as &dyn IntoSimRunner<_>).collect();
     cmd.simulated_behavior(sims).await
 }

@@ -214,15 +214,13 @@ pub struct SideChannelResponder {
 impl SideChannelResponder {
 
 
-    
-    
-    
-    pub async fn simulate_echo<'a, T: 'static, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self
-                        , tx_core: &mut X, cmd: & Arc<Mutex<C>>) -> bool
+    pub async fn simulate_direction<'a, T: 'static + Debug + Clone, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self
+                                                                                                                  , tx_core: &mut X, cmd: & Arc<Mutex<C>>
+                                                                                                                  , index: usize) -> bool
     where <X as TxCore>::MsgOut: Send, <X as TxCore>::MsgOut: Sync, <X as TxCore>::MsgOut: 'static {
 
        // trace!("simulate echo {:?}", cmd.lock().await.identity());
-        if let Some(true) = self.should_apply::<T>().await { //we got a message and now confirm we have room to send it
+        if let Some(true) = self.should_apply::<StageDirection<T>>().await { //we got a message and now confirm we have room to send it
             // trace!("should echo does apply, waiting for vacant unit");
             if tx_core.shared_wait_vacant_units(tx_core.one()).await {
                 //we hold cmd just as long as it takes us to respond.
@@ -230,10 +228,27 @@ impl SideChannelResponder {
                 // trace!("respond with echo");
                 self.respond_with(move |message| {
                     // trace!("try send");
-                    match cmd_guard.try_send(tx_core,*message.downcast::<T>().expect("error casting")) {
-                        SendOutcome::Success => {Box::new("ok".to_string())}
-                        SendOutcome::Blocked(msg) => {Box::new(msg)}
+                    let msg: &StageDirection<T> = message.downcast_ref::<StageDirection<T>>()
+                        .expect("error casting");
+                    match  msg {
+                        StageDirection::Echo(m) => {
+                            match cmd_guard.try_send(tx_core,m.clone()) {
+                                SendOutcome::Success => {Some(Box::new("ok".to_string()))}
+                                SendOutcome::Blocked(msg) => {Some(Box::new(msg))}
+                            }
+                        }
+                        StageDirection::EchoAt(i, m) => {
+                            if *i == index {
+                                match cmd_guard.try_send(tx_core, m.clone()) {
+                                    SendOutcome::Success => { Some(Box::new("ok".to_string())) }
+                                    SendOutcome::Blocked(msg) => { Some(Box::new(msg)) }
+                                }
+                            } else {
+                                None
+                            }
+                        }
                     }
+
                 }).await
             } else {
                 false
@@ -244,25 +259,51 @@ impl SideChannelResponder {
 
     }
 
-    pub async fn simulate_equals<T: Debug + Eq + 'static, X: RxCore<MsgOut = T>, C: SteadyCommander>(&self, rx_core: &mut X, cmd: & Arc<Mutex<C>>) -> bool where <X as RxCore>::MsgOut: std::fmt::Debug {
-        if let Some(true) = self.should_apply::<T>().await { //we have a message and now block until a unit arrives
+    pub async fn simulate_wait_for<T: Debug + Eq + 'static, X: RxCore<MsgOut = T>, C: SteadyCommander>(&self, rx_core: &mut X
+                                                                                                           , cmd: & Arc<Mutex<C>>
+                                                                                                           , index: usize) -> bool
+    where <X as RxCore>::MsgOut: std::fmt::Debug {
+        if let Some(true) = self.should_apply::<StageWaitFor<T>>().await { //we have a message and now block until a unit arrives
             if rx_core.shared_wait_avail_units(1).await {
                 //for testing we hold the cmd lock only while we check equals and respond
                 let mut cmd_guard = cmd.lock().await;
                 self.respond_with(move |message| {
-                    // Attempt to downcast to the expected message type
-                    let msg = *message.downcast::<T>().expect("error casting");
-                    match cmd_guard.try_take(rx_core) {
-                        Some(measured) => {
-                            if msg.eq(&measured) {
-                                Box::new("ok".to_string())
-                            } else {
-                                let failure = format!("no match {:?} {:?}", msg, measured);
-                                Box::new(failure)
+                    let swf: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<T>>()
+                        .expect("error casting");
+                    match swf {
+                        StageWaitFor::Message(m) => {
+                            match cmd_guard.try_take(rx_core) {
+                                Some(measured) => {
+                                    if m.eq(&measured) {
+                                        Some(Box::new("ok".to_string()))
+                                    } else {
+                                        let failure = format!("no match {:?} {:?}", m, measured);
+                                        Some(Box::new(failure))
+                                    }
+                                }
+                                None => {
+                                    Some(Box::new("no message".to_string()))
+                                }
                             }
                         }
-                        None => {
-                            Box::new("no message".to_string())
+                        StageWaitFor::MessageAt(i, m) => {
+                            if *i == index {
+                                match cmd_guard.try_take(rx_core) {
+                                    Some(measured) => {
+                                        if m.eq(&measured) {
+                                            Some(Box::new("ok".to_string()))
+                                        } else {
+                                            let failure = format!("no match {:?} {:?}", m, measured);
+                                            Some(Box::new(failure))
+                                        }
+                                    }
+                                    None => {
+                                        Some(Box::new("no message".to_string()))
+                                    }
+                                }
+                            } else {
+                                None
+                            }
                         }
                     }
                 }).await
@@ -314,34 +355,6 @@ impl SideChannelResponder {
         }
     }
 
-    /// An async function that listens for a message and echoes it back on the provided outgoing channel.
-    ///
-    /// # Parameters
-    /// - `cmd`: A mutable reference to the SteadyCommander handling command operations.
-    /// - `target_tx`: A mutable reference to the outgoing channel to send the echoed message.
-    ///
-    /// # Returns
-    /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn echo_responder<M: 'static + Debug + Send + Sync, C: SteadyCommander>(
-        &self,
-        cmd: &mut C,
-        target_tx: &mut Tx<M>,
-    ) -> bool {
-        if let Some(true) = self.should_apply::<M>().await {
-            if cmd.wait_vacant(target_tx, 1).await {
-                self.respond_with(move |message| {
-                    match cmd.try_send(target_tx,  *message.downcast::<M>().expect("error casting")) {
-                        SendOutcome::Success => {Box::new("ok".to_string())}
-                        SendOutcome::Blocked(msg) => {Box::new(msg)}
-                    }
-                }).await
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
 
     /// An async function that listens for a message and echoes it to all outgoing channels in a bundle.
     ///
@@ -373,10 +386,10 @@ impl SideChannelResponder {
                     .count();
     
                 if total == girth {
-                    Box::new("ok".to_string())
+                    Some(Box::new("ok".to_string()))
                 } else {
                     let failure = format!("failed to echo to {:?} channels", girth - total);
-                    Box::new(failure)
+                    Some(Box::new(failure))
                 }
             }).await 
         } 
@@ -384,45 +397,6 @@ impl SideChannelResponder {
         { false }
     }
 
-    /// An async function that listens for a message and verifies it matches an incoming message on a channel.
-    ///
-    /// # Parameters
-    /// - `cmd`: A mutable reference to the SteadyCommander handling command operations.
-    /// - `source_rx`: A mutable reference to the incoming channel to read the message from.
-    ///
-    /// # Returns
-    /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn equals_responder<M: 'static + Debug + Send + Eq, C: SteadyCommander>(
-        &self,
-        cmd: &mut C,
-        source_rx: &mut Rx<M>,
-    ) -> bool {
-        if let Some(true) = self.should_apply::<M>().await {
-            if cmd.wait_avail(source_rx, 1).await {
-                self.respond_with(move |message| {
-                    // Attempt to downcast to the expected message type
-                    let msg = *message.downcast::<M>().expect("error casting");
-                    match cmd.try_take(source_rx) {
-                        Some(measured) => {
-                            if measured.eq(&msg) {
-                                Box::new("ok".to_string())
-                            } else {
-                                let failure = format!("no match {:?} {:?}", msg, measured);
-                                Box::new(failure)
-                            }
-                        }
-                        None => {
-                            Box::new("no message".to_string())
-                        }
-                    }
-                }).await
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
 
     /// An async function that verifies a message matches all incoming messages from a bundle of channels.
     ///
@@ -453,10 +427,10 @@ impl SideChannelResponder {
                     .count();
 
                 if girth == total {
-                    Box::new("ok".to_string())
+                    Some(Box::new("ok".to_string()))
                 } else {
                     let failure = format!("match failure {:?} of {:?}", msg, girth - total);
-                    Box::new(failure)
+                    Some(Box::new(failure))
                 }
             }).await
         } else {
@@ -499,23 +473,28 @@ impl SideChannelResponder {
     ///
     pub async fn respond_with<F>(&self, mut f: F) -> bool
         where
-            F: FnMut(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync>,
+            F: FnMut(&Box<dyn Any + Send + Sync>) -> Option<Box<dyn Any + Send + Sync>>,
     {
         let mut guard = self.arc.lock().await;
         let ((tx, rx),_shutdown) = guard.deref_mut();
-        if let Some(q) = rx.try_pop() {
+        if let Some(q) = rx.try_peek() {
             //NOTE: if a shutdown is called for and we are not able to push this message
             //      it will result in a timeout and error by design for testing. This will
             //      happen if the main test block is not consuming the answers to the questions
             //NOTE: this should never block on shutdown since above we immediately pull the answer
-            match tx.push(f(q)).await {
-                Ok(_) => {
-                    true
+            if let Some(r) = f(q) {
+                let _ = rx.try_pop(); //we know f(q) accepted it so now remove it from the channel.
+                match tx.push(r).await {
+                    Ok(_) => {
+                        true
+                    }
+                    Err(e) => {
+                        error!("Error sending test implementation response: {:?} Identity: {:?}", e,self.identity);
+                        false
+                    }
                 }
-                Err(e) => {
-                    error!("Error sending test implementation response: {:?} Identity: {:?}", e,self.identity);
-                    false
-                }
+            } else {
+                false
             }
         } else {
             false

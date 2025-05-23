@@ -10,7 +10,7 @@ use aeron::subscription::Subscription;
 use log::{error, warn};
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTx, StreamSessionMessage};
-use crate::{SteadyCommander, SteadyState, StreamTx, TestEcho};
+use crate::{SteadyCommander, SteadyState, StreamTx, SimTx};
 use crate::commander_context::SteadyContext;
 use crate::core_tx::TxCore;
 use crate::distributed::polling;
@@ -42,7 +42,7 @@ pub async fn run(
         let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
         internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await
     } else {
-        cmd.simulated_behavior(vec![&TestEcho(tx)]).await
+        cmd.simulated_behavior(vec![&SimTx(tx)]).await
     }
 }
 

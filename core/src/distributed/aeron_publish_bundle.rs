@@ -41,7 +41,7 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
         return internal_behavior(cmd, rx, aeron_connect, stream_id, aeron_media_driver, state).await;
     }
     let te:Vec<_> = rx.iter()
-        .map(|f| TestEquals(f.clone()) ).collect();
+        .map(|f| SimRx(f.clone()) ).collect();
     let sims:Vec<_> = te.iter()
         .map(|f| f as &dyn IntoSimRunner<_>).collect();
     cmd.simulated_behavior(sims).await
