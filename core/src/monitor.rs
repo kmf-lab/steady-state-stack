@@ -9,7 +9,7 @@ use crate::*;
 use crate::actor_builder::{Percentile, Work, MCPU};
 use crate::channel_builder::{Filled, Rate};
 use crate::dot::RemoteDetails;
-use crate::graph_liveliness::{ActorIdentity};
+pub(crate) use crate::graph_liveliness::{ActorIdentity};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::TxMetaDataProvider;

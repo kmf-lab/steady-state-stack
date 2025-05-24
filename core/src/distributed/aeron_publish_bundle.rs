@@ -219,8 +219,9 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 }
 
 
+
 #[cfg(test)]
-pub(crate) mod aeron_tests {
+pub(crate) mod aeron_publish_bundle_tests {
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
@@ -376,12 +377,12 @@ pub(crate) mod aeron_tests {
     }
 
     #[async_std::test]
-    async fn test_bytes_process() {
+    async fn test_bytes_process() -> Result<(), Box<dyn Error>> {
         if true {
-             return; //do not run this test
+             return Ok(()); //do not run this test
         }
         if std::env::var("GITHUB_ACTIONS").is_ok() {
-            return;
+            return Ok(());
         }
 
         let mut graph = GraphBuilder::for_testing()
@@ -391,7 +392,7 @@ pub(crate) mod aeron_tests {
         let aeron_md = graph.aeron_media_driver();
         if aeron_md.is_none() {
             info!("aeron test skipped, no media driver present");
-            return;
+            return Ok(());
         }
 
         let channel_builder = graph.channel_builder();
@@ -460,7 +461,7 @@ pub(crate) mod aeron_tests {
                                     , &mut Threading::Spawn);
 
         graph.start(); //startup the graph
-        graph.block_until_stopped(Duration::from_secs(21));
+        graph.block_until_stopped(Duration::from_secs(21))
     }
 
 }

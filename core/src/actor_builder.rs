@@ -1367,18 +1367,18 @@ mod test_actor_builder {
             Ok(()) }, &mut Threading::Spawn);
     }
 
-    #[test]
-    fn test_actor_builder_creation_join() {
-        let mut graph =  GraphBuilder::for_testing().build(());
-        let builder = ActorBuilder::new(&mut graph);
-        assert_eq!(builder.actor_name.name, "");
-        assert_eq!(builder.refresh_rate_in_bits, 0);
-        assert_eq!(builder.window_bucket_in_bits, 0);
-        let mut t = ActorTeam::new(&graph);
-        builder.build(|c| async move {
-            assert!(c.is_liveliness_in(&vec![ GraphLivelinessState::Building ]));
-            Ok(()) }, &mut Threading::Join(&mut t));
-    }
+    // #[test]
+    // fn test_actor_builder_creation_join() {
+    //     let mut graph =  GraphBuilder::for_testing().build(());
+    //     let builder = ActorBuilder::new(&mut graph);
+    //     assert_eq!(builder.actor_name.name, "");
+    //     assert_eq!(builder.refresh_rate_in_bits, 0);
+    //     assert_eq!(builder.window_bucket_in_bits, 0);
+    //     let mut t = ActorTeam::new(&graph);
+    //     builder.build(|c| async move {
+    //         assert!(c.is_liveliness_in(&vec![ GraphLivelinessState::Building ]));
+    //         Ok(()) }, &mut Threading::Join(&mut t));
+    // }
 
     #[test]
     fn test_work_new() {

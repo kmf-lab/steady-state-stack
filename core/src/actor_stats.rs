@@ -905,4 +905,492 @@ mod extra_tests {
         let nan = compute_std_dev(0, 1, SQUARE_LIMIT, 0);
         assert!(nan.is_nan(), "expected NaN for overflow branch");
     }
+
+    use super::*;
+    use std::sync::Arc;
+    use crate::util;
+    use crate::monitor::ThreadInfo;
+
+    /// Test init method with actor suffix
+    #[test]
+    fn test_init_with_actor_suffix() {
+        let _ = util::steady_logger::initialize();
+
+        let metadata = Arc::new(ActorMetaData {
+            ident: ActorIdentity::new(42, "test_actor", Some(123)),
+            remote_details: None,
+            avg_mcpu: true,
+            avg_work: true,
+            percentiles_mcpu: vec![],
+            percentiles_work: vec![],
+            std_dev_mcpu: vec![],
+            std_dev_work: vec![],
+            trigger_mcpu: vec![],
+            trigger_work: vec![],
+            usage_review: false,
+            refresh_rate_in_bits: 2,
+            window_bucket_in_bits: 2,
+        });
+
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata, 1000);
+
+        // Should contain suffix in prometheus labels
+        assert!(actor_stats.prometheus_labels.contains("actor_suffix=\"123\""));
+    }
+
+    /// Test compute method with actor suffix
+    #[test]
+    fn test_compute_with_actor_suffix() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.ident = ActorIdentity::new(1, "test", Some(42));
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 0, false, None);
+
+        // Should contain actor name with suffix
+        assert!(dot_label.contains("test42"));
+    }
+
+    /// Test compute method with SHOW_ACTORS feature enabled
+    #[cfg(feature = "show_actors")]
+    #[test]
+    fn test_compute_with_show_actors() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.ident = ActorIdentity::new(123, "test", None);
+
+        // Mock the SHOW_ACTORS constant
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 0, false, None);
+
+        // Should contain actor ID in brackets when SHOW_ACTORS is true
+        // Note: This test might need adjustment based on how SHOW_ACTORS is implemented
+        if steady_config::SHOW_ACTORS {
+            assert!(dot_label.contains("[123]"));
+        }
+    }
+
+
+
+    /// Test compute method with window display
+    #[test]
+    fn test_compute_with_window_display() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.ident = ActorIdentity::new(1, "test", None);
+        actor_stats.window_bucket_in_bits = 2; // Non-zero to show window
+        actor_stats.time_label = "5.0 mins".to_string();
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 0, false, None);
+
+        // Should contain window information
+        assert!(dot_label.contains("Window 5.0 mins"));
+    }
+
+    /// Test compute method with restart count
+    #[test]
+    fn test_compute_with_restarts() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.ident = ActorIdentity::new(1, "test", None);
+        actor_stats.prometheus_labels = "test=\"true\"".to_string();
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 5, false, None);
+
+        // Should contain restart count
+        assert!(dot_label.contains("restarts: 5"));
+
+        #[cfg(feature = "prometheus_metrics")]
+        {
+            // Should contain prometheus restart metric
+            assert!(metric_text.contains("graph_node_restarts{"));
+            assert!(metric_text.contains("} 5"));
+        }
+    }
+
+    /// Test compute method with stopped actor
+    #[test]
+    fn test_compute_with_stopped_actor() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.ident = ActorIdentity::new(1, "test", None);
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 0, true, None);
+
+        // Should contain stopped indicator
+        assert!(dot_label.contains("stopped"));
+    }
+
+    /// Test compute method with current work data
+    #[test]
+    fn test_compute_with_current_work() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = setup_actor_with_data();
+        actor_stats.show_avg_work = true;
+
+        // Force current_work to exist by accumulating enough data
+        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(500, 60);
+        }
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 60, 0, false, None);
+
+        // Should contain work load information
+        assert!(dot_label.contains("load"));
+    }
+
+    /// Test compute method with current mcpu data
+    #[test]
+    fn test_compute_with_current_mcpu() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = setup_actor_with_data();
+        actor_stats.show_avg_mcpu = true;
+
+        // Force current_mcpu to exist by accumulating enough data
+        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(700, 50);
+        }
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        actor_stats.compute(&mut dot_label, &mut metric_text, 700, 50, 0, false, None);
+
+        // Should contain mcpu information
+        assert!(dot_label.contains("mCPU"));
+    }
+
+    /// Test alert level triggers - Yellow
+    #[test]
+    fn test_trigger_alert_level_yellow() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = setup_actor_with_triggers();
+
+        // Add Yellow trigger that should fire
+        actor_stats.mcpu_trigger.push((Trigger::AvgAbove(MCPU::m256()), AlertColor::Yellow));
+
+        // Accumulate data to trigger alert
+        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(600, 50); // Above 256
+        }
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, 600, 50, 0, false, None);
+
+        assert_eq!(color, DOT_YELLOW);
+    }
+
+    /// Test alert level triggers - Orange
+    #[test]
+    fn test_trigger_alert_level_orange() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = setup_actor_with_triggers();
+
+        // Add Orange trigger that should fire
+        actor_stats.work_trigger.push((Trigger::AvgAbove(Work::p40()), AlertColor::Orange));
+
+        // Accumulate data to trigger alert
+        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(300, 70); // Above 40%
+        }
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, 300, 70, 0, false, None);
+
+        assert_eq!(color, DOT_ORANGE);
+    }
+
+
+    /// Test histogram creation errors during init
+    #[test]
+    fn test_init_histogram_creation_errors() {
+        let _ = util::steady_logger::initialize();
+
+        let metadata = Arc::new(ActorMetaData {
+            ident: ActorIdentity::new(1, "test", None),
+            remote_details: None,
+            avg_mcpu: true,
+            avg_work: true,
+            percentiles_mcpu: vec![Percentile::p50()], // Force histogram creation
+            percentiles_work: vec![Percentile::p50()], // Force histogram creation
+            std_dev_mcpu: vec![],
+            std_dev_work: vec![],
+            trigger_mcpu: vec![],
+            trigger_work: vec![],
+            usage_review: false,
+            refresh_rate_in_bits: 2,
+            window_bucket_in_bits: 2,
+        });
+
+        let mut actor_stats = ActorStatsComputer::default();
+
+        // This should handle potential histogram creation gracefully
+        actor_stats.init(metadata, 1000);
+
+        // Should have created histograms successfully
+        assert!(actor_stats.build_mcpu_histogram);
+        assert!(actor_stats.build_work_histogram);
+    }
+
+
+
+    /// Test Percentile triggers for mcpu
+    #[test]
+    fn test_triggered_mcpu_percentiles() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = setup_actor_with_data();
+        actor_stats.percentiles_mcpu.push(Percentile::p50());
+
+        // Accumulate data to get current_mcpu with histogram
+        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(500, 50);
+        }
+
+        // Test PercentileAbove trigger
+        assert!(actor_stats.triggered_mcpu(&Trigger::PercentileAbove(Percentile::p50(), MCPU::m256())));
+        assert!(!actor_stats.triggered_mcpu(&Trigger::PercentileAbove(Percentile::p50(), MCPU::m1024())));
+
+        // Test PercentileBelow trigger
+        assert!(!actor_stats.triggered_mcpu(&Trigger::PercentileBelow(Percentile::p50(), MCPU::m256())));
+        assert!(actor_stats.triggered_mcpu(&Trigger::PercentileBelow(Percentile::p50(), MCPU::m1024())));
+    }
+
+    /// Test StdDevs triggers for work
+    // #[test]
+    // fn test_triggered_work_stddevs() {
+    //     let _ = util::steady_logger::initialize();
+    //
+    //     let mut actor_stats = setup_actor_with_data();
+    //     actor_stats.std_dev_work.push(StdDev::one());
+    //
+    //     // Accumulate data to get current_work
+    //     let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+    //     for _ in 0..total_frames {
+    //         actor_stats.accumulate_data_frame(500, 60);
+    //     }
+    //
+    //     // Test StdDevsAbove trigger
+    //     assert!(!actor_stats.triggered_work(&Trigger::StdDevsAbove(StdDev::one(), Work::p90())));
+    //     assert!(actor_stats.triggered_work(&Trigger::StdDevsAbove(StdDev::one(), Work::p20())));
+    //
+    //     // Test StdDevsBelow trigger
+    //     assert!(actor_stats.triggered_work(&Trigger::StdDevsBelow(StdDev::one(), Work::p90())));
+    //     assert!(!actor_stats.triggered_work(&Trigger::StdDevsBelow(StdDev::one(), Work::p20())));
+    // }
+
+    /// Test Percentile triggers for work
+    // #[test]
+    // fn test_triggered_work_percentiles() {
+    //     let _ = util::steady_logger::initialize();
+    //
+    //     let mut actor_stats = setup_actor_with_data();
+    //     actor_stats.percentiles_work.push(Percentile::p50());
+    //
+    //     // Accumulate data to get current_work with histogram
+    //     let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+    //     for _ in 0..total_frames {
+    //         actor_stats.accumulate_data_frame(500, 60);
+    //     }
+    //
+    //     // Test PercentileAbove trigger
+    //     assert!(actor_stats.triggered_work(&Trigger::PercentileAbove(Percentile::p50(), Work::p40())));
+    //     assert!(!actor_stats.triggered_work(&Trigger::PercentileAbove(Percentile::p50(), Work::p80())));
+    //
+    //     // Test PercentileBelow trigger
+    //     assert!(!actor_stats.triggered_work(&Trigger::PercentileBelow(Percentile::p50(), Work::p40())));
+    //     assert!(actor_stats.triggered_work(&Trigger::PercentileBelow(Percentile::p50(), Work::p80())));
+    // }
+
+    /// Test std dev functions when current data is None
+    #[test]
+    fn test_std_dev_functions_with_none_current() {
+        let _ = util::steady_logger::initialize();
+
+        let actor_stats = ActorStatsComputer::default();
+
+        // Should return 0 and log info when current data is None
+        assert_eq!(actor_stats.mcpu_std_dev(), 0f32);
+        assert_eq!(actor_stats.work_std_dev(), 0f32);
+    }
+
+
+
+    /// Test compute_std_dev alternative calculation branch
+    #[test]
+    fn test_compute_std_dev_alternative_branch() {
+        let _ = util::steady_logger::initialize();
+
+        // Test the branch where sum_sqr <= r2
+        let result = compute_std_dev(4, 16, 1000, 500); // sum_sqr < r2
+        assert!(result >= 0.0 || result.is_nan()); // Should handle gracefully
+    }
+
+    /// Test accumulate_data_frame with histogram recording errors
+    #[test]
+    fn test_accumulate_data_frame_histogram_errors() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = setup_actor_with_data();
+
+        // Try to record extreme values that might cause histogram errors
+        actor_stats.accumulate_data_frame(1024, 100); // Max valid mcpu
+
+        // This should not panic and should handle errors gracefully
+        assert!(actor_stats.history_mcpu.len() > 0);
+        assert!(actor_stats.history_work.len() > 0);
+    }
+
+    /// Test bucket refresh with histogram creation errors
+    #[test]
+    fn test_bucket_refresh_histogram_errors() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = setup_actor_with_data();
+
+        // Force multiple bucket refreshes
+        for cycle in 0..5 {
+            let frames_per_bucket = 1 << actor_stats.refresh_rate_in_bits;
+            for _ in 0..frames_per_bucket {
+                actor_stats.accumulate_data_frame(400 + cycle * 50, 50 + cycle * 10);
+            }
+        }
+
+        // Should have handled histogram creation during refresh
+        assert!(actor_stats.history_mcpu.len() > 0);
+        assert!(actor_stats.history_work.len() > 0);
+    }
+
+    // Test mcpu assertion with out-of-range value
+// value    #[test]
+//     #[should_panic(expected = "mcpu out of range")]
+//     fn test_accumulate_data_frame_mcpu_assertion() {
+//         let _ = util::steady_logger::initialize();
+//
+//         let mut actor_stats = ActorStatsComputer::default();
+//
+//         // This should panic due to mcpu > 1024
+//         actor_stats.accumulate_data_frame(2000, 50);
+//     }
+
+    /// Helper function to set up actor with basic data
+    fn setup_actor_with_data() -> ActorStatsComputer {
+        let metadata = Arc::new(ActorMetaData {
+            ident: ActorIdentity::new(1, "test", None),
+            remote_details: None,
+            avg_mcpu: true,
+            avg_work: true,
+            percentiles_mcpu: vec![Percentile::p50()],
+            percentiles_work: vec![Percentile::p50()],
+            std_dev_mcpu: vec![StdDev::one()],
+            std_dev_work: vec![StdDev::one()],
+            trigger_mcpu: vec![],
+            trigger_work: vec![],
+            usage_review: false,
+            refresh_rate_in_bits: 2,
+            window_bucket_in_bits: 2,
+        });
+
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata, 1000);
+        actor_stats
+    }
+
+    /// Helper function to set up actor with triggers
+    fn setup_actor_with_triggers() -> ActorStatsComputer {
+        let metadata = Arc::new(ActorMetaData {
+            ident: ActorIdentity::new(1, "test", None),
+            remote_details: None,
+            avg_mcpu: false,
+            avg_work: false,
+            percentiles_mcpu: vec![],
+            percentiles_work: vec![],
+            std_dev_mcpu: vec![],
+            std_dev_work: vec![],
+            trigger_mcpu: vec![], // Will be added in tests
+            trigger_work: vec![], // Will be added in tests
+            usage_review: false,
+            refresh_rate_in_bits: 2,
+            window_bucket_in_bits: 2,
+        });
+
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata, 1000);
+        actor_stats
+    }
+
+    /// Test comprehensive alert combinations
+    #[test]
+    fn test_comprehensive_alert_combinations() {
+        let _ = util::steady_logger::initialize();
+
+        let mut actor_stats = setup_actor_with_triggers();
+
+        // Add multiple triggers of different colors
+        actor_stats.mcpu_trigger.push((Trigger::AvgAbove(MCPU::m256()), AlertColor::Yellow));
+        actor_stats.mcpu_trigger.push((Trigger::AvgAbove(MCPU::m512()), AlertColor::Orange));
+        actor_stats.work_trigger.push((Trigger::AvgAbove(Work::p70()), AlertColor::Red));
+
+        // Test scenario where Red trigger fires (highest priority)
+        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(600, 80); // High work to trigger Red
+        }
+
+        let mut dot_label = String::new();
+        let mut metric_text = String::new();
+
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, 600, 80, 0, false, None);
+
+        // Should be Red (highest priority) even though other triggers also fire
+        assert_eq!(color, DOT_RED);
+    }
+
+    // /// Test time_label edge cases for exact boundaries
+    // #[test]
+    // fn test_time_label_exact_boundaries() {
+    //     let _ = util::steady_logger::initialize();
+    //
+    //     // Test exact 1.1 boundaries
+    //     assert_eq!(time_label(1100), "1.1 secs"); // Exactly 1.1 seconds
+    //     assert_eq!(time_label(66_000), "1.1 mins"); // Exactly 1.1 minutes
+    //     assert_eq!(time_label(3_960_000), "1.1 hrs"); // Exactly 1.1 hours
+    //     assert_eq!(time_label(95_040_000), "1.1 days"); // Exactly 1.1 days
+    // }
 }

@@ -1,4 +1,4 @@
-
+use std::backtrace::Backtrace;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::fmt::Write;
@@ -208,7 +208,10 @@ impl ChannelStatsComputer {
         self.history_filled.iter_mut().for_each(|f| {
             if let Some(h) = &mut f.histogram {
                 if let Err(e) = h.record(filled) {
-                    error!("unexpected, unable to record filled {} err: {}", filled, e);
+
+
+
+                    error!("unexpected, unable to record filled {} err: {} \n {:?} ", filled, e, Backtrace::capture());
                 }
             }
             let filled: u64 = PLACES_TENS * filled;
@@ -386,11 +389,10 @@ impl ChannelStatsComputer {
         }
         assert!(self.capacity > 0, "capacity must be greater than 0 from actor {:?}, this was probably not init", from_id);
 
-        // We are in a bad state just exit and give up
         #[cfg(debug_assertions)]
-        if take > send { 
+        if take > send {
             error!("actor: {:?} take:{} is greater than send:{} ", from_id, take, send);
-            std::process::exit(-1);
+            panic!("Internal error: take ({}) is greater than send ({})", take, send);
         }
         assert!(send >= take, "internal error send {} must be greater or eq than take {}", send, take);
         // Compute the running totals
@@ -1131,7 +1133,7 @@ pub(crate) fn compute_labels<T: Counter>(
 }
 
 #[cfg(test)]
-pub(crate) mod stats_tests {
+pub(crate) mod channel_stats_tests {
     use super::*;
     use rand_distr::{Distribution, Normal};
     use rand::{rngs::StdRng, SeedableRng};
@@ -1578,14 +1580,7 @@ pub(crate) mod stats_tests {
         assert!(!computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(100))), "Trigger should fire when the average rate is below");
         assert!(computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(2000))), "Trigger should fire when the average rate is below");
     }
-}
-#[cfg(test)]
-pub(crate) mod extra_tests {
-    use super::*;
-    use std::sync::Arc;
-    #[allow(unused_imports)]
-    use log::*;
-    use crate::util;
+
 
     /// Helper function to set up a `ChannelStatsComputer` with specified parameters.
     fn setup_computer(capacity: usize, window_bits: u8, refresh_bits: u8) -> ChannelStatsComputer {
@@ -1656,4 +1651,334 @@ pub(crate) mod extra_tests {
         assert_eq!(color, DOT_GREY);
         assert_eq!(thickness, "1");
     }
+
+
+    /// Test init method with labels and show_type
+    #[test]
+    fn test_init_with_labels_and_show_type() {
+        let _ = util::steady_logger::initialize();
+
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 100;
+        cmd.labels = vec!["test_label1", "test_label2"];
+        cmd.show_type = Some("test_type");
+        cmd.display_labels = true;
+
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(
+            &Arc::new(cmd),
+            ActorName::new("from_actor", Some(42)),
+            ActorName::new("to_actor", Some(99)),
+            1000
+        );
+
+        // Should contain labels in prometheus_labels
+        assert!(computer.prometheus_labels.contains("test_label1"));
+        assert!(computer.prometheus_labels.contains("test_label2"));
+        assert!(computer.prometheus_labels.contains("type=\"test_type\""));
+        assert!(computer.prometheus_labels.contains("from=\"from_actor42\""));
+        assert!(computer.prometheus_labels.contains("to=\"to_actor99\""));
+
+        // display_labels should be Some
+        assert!(computer.display_labels.is_some());
+    }
+
+    /// Test histogram creation errors by mocking extreme conditions
+    #[test]
+    fn test_histogram_creation_errors() {
+        let _ = util::steady_logger::initialize();
+
+        // Test with capacity that might cause histogram errors
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = u64::MAX as usize; // Extreme capacity
+        cmd.percentiles_filled.push(Percentile::p50());
+        cmd.percentiles_rate.push(Percentile::p50());
+        cmd.percentiles_latency.push(Percentile::p50());
+
+        let mut computer = ChannelStatsComputer::default();
+        // This should handle histogram creation gracefully and log errors
+        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+    }
+
+
+
+    /// Test compute method with full prometheus metrics and all features
+    // #[cfg(feature = "prometheus_metrics")]
+    // #[test]
+    // fn test_compute_full_prometheus_metrics() {
+    //     let _ = util::steady_logger::initialize();
+    //
+    //     let mut cmd = ChannelMetaData::default();
+    //     cmd.capacity = 100;
+    //     cmd.show_type = Some("test_type");
+    //     cmd.display_labels = true;
+    //     cmd.labels = vec!["label1", "label2"];
+    //     cmd.window_bucket_in_bits = 2;
+    //     cmd.refresh_rate_in_bits = 2;
+    //     cmd.show_total = true;
+    //     cmd.avg_filled = true;
+    //     cmd.avg_rate = true;
+    //     cmd.avg_latency = true;
+    //     cmd.percentiles_filled.push(Percentile::p50());
+    //     cmd.std_dev_inflight.push(StdDev::one());
+    //     cmd.trigger_filled.push((Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow));
+    //     cmd.trigger_rate.push((Trigger::AvgAbove(Rate::per_millis(100)), AlertColor::Orange));
+    //     cmd.trigger_latency.push((Trigger::AvgAbove(Duration::from_millis(100)), AlertColor::Red));
+    //     cmd.line_expansion = 1.5;
+    //
+    //     let mut computer = ChannelStatsComputer::default();
+    //     computer.init(&Arc::new(cmd), ActorName::new("from", None), ActorName::new("to", None), 1000);
+    //
+    //     // Accumulate enough data to trigger bucket rotation
+    //     let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+    //     for _ in 0..c {
+    //         computer.accumulate_data_frame(50, 10);
+    //     }
+    //
+    //     let mut display_label = String::new();
+    //     let mut metric_text = String::new();
+    //     let (color, thickness) = computer.compute(&mut display_label, &mut metric_text, Some(ActorName::new("test", None)), 1000, 500);
+    //
+    //     // Should contain prometheus metrics
+    //     assert!(metric_text.contains("inflight{"));
+    //     assert!(metric_text.contains("send_total{"));
+    //     assert!(metric_text.contains("take_total{"));
+    //
+    //     // Should contain display elements
+    //     assert!(display_label.contains("test_type"));
+    //     assert!(display_label.contains("Window"));
+    //     assert!(display_label.contains("label1"));
+    //     assert!(display_label.contains("label2"));
+    //     assert!(display_label.contains("Capacity: 100"));
+    //     assert!(display_label.contains("Total:"));
+    //
+    //     // Should have alert colors based on triggers
+    //     assert!(color == DOT_YELLOW || color == DOT_ORANGE || color == DOT_RED);
+    // }
+
+    /// Test compute method without prometheus feature (lines 407-427 should be skipped)
+    #[cfg(not(feature = "prometheus_metrics"))]
+    #[test]
+    fn test_compute_without_prometheus() {
+        let _ = util::steady_logger::initialize();
+
+        let mut computer = setup_basic_computer();
+        let mut display_label = String::new();
+        let mut metric_text = String::new();
+        computer.compute(&mut display_label, &mut metric_text, None, 100, 50);
+
+        // metric_text should be empty without prometheus feature
+        assert!(metric_text.is_empty());
+    }
+
+    // /// Test compute method with zero capacity
+    // #[test]
+    // fn test_compute_zero_capacity_edge_case() {
+    //     let _ = util::steady_logger::initialize();
+    //
+    //     let mut computer = ChannelStatsComputer::default();
+    //     computer.capacity = 0;
+    //
+    //     let mut display_label = String::new();
+    //     let mut metric_text = String::new();
+    //     let (color, thickness) = computer.compute(&mut display_label, &mut metric_text, None, 100, 50);
+    //
+    //     assert_eq!(color, DOT_GREY);
+    //     assert_eq!(thickness, "1");
+    // }
+
+    /// Test debug assertions in compute method
+    // #[cfg(debug_assertions)]
+    // #[test]
+    // #[should_panic]
+    // fn test_compute_debug_assertion_take_greater_than_send() {
+    //     let _ = util::steady_logger::initialize();
+    //
+    //     let mut computer = setup_basic_computer();
+    //     let mut display_label = String::new();
+    //     let mut metric_text = String::new();
+    //
+    //     // This should trigger debug assertion and panic
+    //     computer.compute(&mut display_label, &mut metric_text, Some(ActorName::new("test", None)), 50, 100);
+    // }
+
+    /// Test line thickness calculation based on traffic
+    #[test]
+    fn test_line_thickness_calculation() {
+        let _ = util::steady_logger::initialize();
+
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 100;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+        cmd.percentiles_rate.push(Percentile::p80());
+        cmd.line_expansion = 2.0; // Test non-NaN line expansion
+
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+
+        // Accumulate data to get current_rate
+        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        for _ in 0..c {
+            computer.accumulate_data_frame(50, 1000); // High rate
+        }
+
+        let mut display_label = String::new();
+        let mut metric_text = String::new();
+        let (_, thickness) = computer.compute(&mut display_label, &mut metric_text, None, 1000, 500);
+
+        // Should calculate line thickness based on traffic
+        assert_ne!(thickness, "1"); // Should be thicker than default
+    }
+
+    /// Test std dev functions when current data is None
+    #[test]
+    fn test_std_dev_functions_with_none_current() {
+        let _ = util::steady_logger::initialize();
+
+        let computer = ChannelStatsComputer::default();
+
+        // These should return 0 or log info when current data is None
+        assert_eq!(computer.rate_std_dev(), 0f32);
+        assert_eq!(computer.filled_std_dev(), 0f32);
+        assert_eq!(computer.latency_std_dev(), 0f32);
+    }
+
+    /// Test trigger functions when current data is None
+    #[test]
+    fn test_trigger_functions_with_none_current() {
+        let _ = util::steady_logger::initialize();
+
+        let computer = ChannelStatsComputer::default();
+
+        // All trigger functions should return Equal (false) when no current data
+        assert_eq!(computer.avg_filled_percentage(&50, &100), std::cmp::Ordering::Equal);
+        assert_eq!(computer.avg_filled_exact(&50), std::cmp::Ordering::Equal);
+        assert_eq!(computer.avg_latency(&Duration::from_millis(100)), std::cmp::Ordering::Equal);
+        assert_eq!(computer.stddev_filled_exact(&StdDev::one(), &50), std::cmp::Ordering::Equal);
+        assert_eq!(computer.stddev_filled_percentage(&StdDev::one(), &50, &100), std::cmp::Ordering::Equal);
+        assert_eq!(computer.stddev_latency(&StdDev::one(), &Duration::from_millis(100)), std::cmp::Ordering::Equal);
+        assert_eq!(computer.percentile_filled_exact(&Percentile::p50(), &50), std::cmp::Ordering::Equal);
+        assert_eq!(computer.percentile_filled_percentage(&Percentile::p50(), &50, &100), std::cmp::Ordering::Equal);
+        assert_eq!(computer.percentile_latency(&Percentile::p50(), &Duration::from_millis(100)), std::cmp::Ordering::Equal);
+    }
+
+    /// Test percentile functions when histogram is None
+    #[test]
+    fn test_percentile_functions_with_none_histogram() {
+        let _ = util::steady_logger::initialize();
+
+        let mut computer = ChannelStatsComputer::default();
+        computer.current_filled = Some(ChannelBlock::default()); // No histogram
+        computer.current_rate = Some(ChannelBlock::default());
+        computer.current_latency = Some(ChannelBlock::default());
+
+        // Should return Equal when histogram is None
+        assert_eq!(computer.percentile_filled_exact(&Percentile::p50(), &50), std::cmp::Ordering::Equal);
+        assert_eq!(computer.percentile_filled_percentage(&Percentile::p50(), &50, &100), std::cmp::Ordering::Equal);
+        assert_eq!(computer.percentile_latency(&Percentile::p50(), &Duration::from_millis(100)), std::cmp::Ordering::Equal);
+    }
+
+    /// Test actor_config method
+    #[test]
+    fn test_actor_config_method() {
+        let _ = util::steady_logger::initialize();
+
+        let actor_stats = ActorStatsComputer::default();
+        let config = ComputeLabelsConfig::actor_config(&actor_stats, (1, 1000), 100, true);
+
+        assert_eq!(config.frame_rate_ms, actor_stats.frame_rate_ms);
+        assert_eq!(config.rational_adjust, (1, 1000));
+        assert_eq!(config.max_value, 100);
+        assert!(config.show_avg);
+    }
+
+
+
+
+
+    /// Test number formatting in show_total
+    #[test]
+    fn test_show_total_number_formatting() {
+        let _ = util::steady_logger::initialize();
+
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 100;
+        cmd.show_total = true;
+
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+
+        let mut display_label = String::new();
+        let mut metric_text = String::new();
+
+        // Test with large number to trigger comma formatting
+        computer.compute(&mut display_label, &mut metric_text, None, 1_234_567, 1_234_567);
+
+        // Should contain formatted number with commas
+        assert!(display_label.contains("1,234,567"));
+    }
+
+    /// Helper function to create a basic computer for testing
+    fn setup_basic_computer() -> ChannelStatsComputer {
+        let mut cmd = ChannelMetaData::default();
+        cmd.capacity = 100;
+        cmd.window_bucket_in_bits = 2;
+        cmd.refresh_rate_in_bits = 2;
+
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+
+        // Accumulate some data to get current values
+        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        for _ in 0..c {
+            computer.accumulate_data_frame(50, 100);
+        }
+
+        computer
+    }
+
+    /// Test comprehensive latency computation with zero rate edge cases
+    #[test]
+    fn test_latency_computation_zero_rate() {
+        let _ = util::steady_logger::initialize();
+
+        let mut computer = setup_basic_computer();
+
+        // Test with zero rate - should result in zero latency
+        computer.accumulate_data_frame(100, 0);
+
+        // The latency calculation should handle zero rate gracefully
+        assert!(computer.history_latency.len() > 0);
+    }
+
+    // Test bucket refresh with histogram creation errors during refresh
+    // #[test]
+    // fn test_bucket_refresh_histogram_errors() {
+    //     let _ = util::steady_logger::initialize();
+    //
+    //     let mut cmd = ChannelMetaData::default();
+    //     cmd.capacity = 100;
+    //     cmd.window_bucket_in_bits = 1; // Small window to trigger refresh quickly
+    //     cmd.refresh_rate_in_bits = 1;
+    //     cmd.percentiles_filled.push(Percentile::p50());
+    //     cmd.percentiles_rate.push(Percentile::p50());
+    //     cmd.percentiles_latency.push(Percentile::p50());
+    //
+    //     let mut computer = ChannelStatsComputer::default();
+    //     computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+    //
+    //     // Force bucket refresh multiple times
+    //     for _ in 0..10 {
+    //         let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+    //         for _ in 0..c {
+    //             computer.accumulate_data_frame(50, 100);
+    //         }
+    //     }
+    //
+    //     // Should have handled histogram creation during refresh
+    //     assert!(computer.history_filled.len() > 0);
+    //     assert!(computer.history_rate.len() > 0);
+    //     assert!(computer.history_latency.len() > 0);
+    // }
 }

@@ -657,11 +657,13 @@ impl FrameHistory {
 #[cfg(test)]
 mod dot_tests {
     use super::*;
-    use crate::monitor::ChannelMetaData;
+    use crate::telemetry::metrics_server::async_write_all;
+    use crate::monitor::{ActorMetaData, ChannelMetaData, ActorIdentity, ActorStatus};
     use std::sync::Arc;
     use bytes::BytesMut;
     use std::path::PathBuf;
-    use crate::telemetry::metrics_server::async_write_all;
+    use std::fs::remove_file;
+
 
     #[test]
     fn test_node_compute_and_refresh() {
@@ -889,5 +891,435 @@ mod dot_tests {
         assert_eq!(result, "test data");
     }
 
+
+    #[test]
+    fn test_node_compute_refresh_with_load_calculation() {
+        // Test the load calculation branch (lines 66-69)
+        let actor_status = ActorStatus {
+            await_total_ns: 100,
+            unit_total_ns: 500,
+            total_count_restarts: 1,
+            iteration_start: 10, // Non-zero to trigger load calculation
+            iteration_sum: 0,
+            bool_stop: false,
+            calls: [0;6],
+            thread_info: None,
+            bool_blocking: false,
+        };
+        let total_work_ns = 1000u128;
+        let mut node = Node {
+            id: Some(ActorName::new("test_node", None)),
+            color: "grey",
+            pen_width: "1",
+            stats_computer: ActorStatsComputer::default(),
+            display_label: String::new(),
+            metric_text: String::new(),
+            remote_details: None
+        };
+        node.compute_and_refresh(actor_status, total_work_ns);
+        // This should trigger the load calculation branch
+    }
+
+    #[test]
+    fn test_build_metric_with_edges() {
+        // Test line 141 - edge metric text handling
+        let state = MetricState {
+            nodes: vec![
+                Node {
+                    id: Some(ActorName::new("node1", None)),
+                    color: "grey",
+                    pen_width: "1",
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: String::new(),
+                    metric_text: "node_metric".to_string(),
+                    remote_details: None
+                }
+            ],
+            edges: vec![
+                Edge {
+                    id: 1,
+                    from: Some(ActorName::new("from_node", None)),
+                    to: Some(ActorName::new("to_node", None)),
+                    color: "grey",
+                    sidecar: false,
+                    pen_width: "1",
+                    ctl_labels: Vec::new(),
+                    stats_computer: ChannelStatsComputer::default(),
+                    display_label: String::new(),
+                    metric_text: "edge_metric".to_string(),
+                }
+            ],
+            seq: 0,
+        };
+        let mut txt_metric = BytesMut::new();
+        build_metric(&state, &mut txt_metric);
+
+        let result = String::from_utf8(txt_metric.to_vec()).unwrap();
+        assert!(result.contains("node_metric"));
+        assert!(result.contains("edge_metric"));
+    }
+
+    #[test]
+    fn test_build_dot_with_node_suffix() {
+        // Test lines 186-191 - node suffix handling
+        let state = MetricState {
+            nodes: vec![
+                Node {
+                    id: Some(ActorName::new("node", Some(42))),
+                    color: "red",
+                    pen_width: "2",
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "node_with_suffix".to_string(),
+                    metric_text: String::new(),
+                    remote_details: None
+                }
+            ],
+            edges: vec![],
+            seq: 0,
+        };
+        let mut dot_graph = BytesMut::new();
+        let config = Config {
+            rankdir: "TB".to_string()
+        };
+
+        build_dot(&state, &mut dot_graph, &config);
+        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        assert!(result.contains("node42")); // Should include suffix
+    }
+
+    #[test]
+    fn test_build_dot_with_remote_details() {
+        // Test lines 201-211 - remote details handling
+        let remote_details = RemoteDetails {
+            ips: "192.168.1.1".to_string(),
+            match_on: "port_8080".to_string(),
+            tech: "TCP",
+            direction: "in",
+        };
+
+        let state = MetricState {
+            nodes: vec![
+                Node {
+                    id: Some(ActorName::new("remote_node", None)),
+                    color: "blue",
+                    pen_width: "3",
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "remote".to_string(),
+                    metric_text: String::new(),
+                    remote_details: Some(remote_details)
+                }
+            ],
+            edges: vec![],
+            seq: 0,
+        };
+        let mut dot_graph = BytesMut::new();
+        let config = Config {
+            rankdir: "LR".to_string()
+        };
+
+        build_dot(&state, &mut dot_graph, &config);
+        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        assert!(result.contains("192.168.1.1"));
+        assert!(result.contains("port_8080"));
+        assert!(result.contains("TCP"));
+        assert!(result.contains("in"));
+    }
+
+    #[test]
+    fn test_build_dot_with_edges_and_sidecar() {
+        // Test lines 222-283 - edge processing including sidecar
+        let state = MetricState {
+            nodes: vec![
+                Node {
+                    id: Some(ActorName::new("from_node", None)),
+                    color: "green",
+                    pen_width: "1",
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    metric_text: String::new(),
+                    remote_details: None
+                },
+                Node {
+                    id: Some(ActorName::new("to_node", Some(5))),
+                    color: "yellow",
+                    pen_width: "1",
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    metric_text: String::new(),
+                    remote_details: None
+                }
+            ],
+            edges: vec![
+                Edge {
+                    id: 1,
+                    from: Some(ActorName::new("from_node", None)),
+                    to: Some(ActorName::new("to_node", Some(5))),
+                    color: "purple",
+                    sidecar: true, // Test sidecar functionality
+                    pen_width: "4",
+                    ctl_labels: Vec::new(),
+                    stats_computer: ChannelStatsComputer::default(),
+                    display_label: "test_edge".to_string(),
+                    metric_text: String::new(),
+                }
+            ],
+            seq: 0,
+        };
+        let mut dot_graph = BytesMut::new();
+        let config = Config {
+            rankdir: "TB".to_string()
+        };
+
+        build_dot(&state, &mut dot_graph, &config);
+        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        assert!(result.contains("from_node"));
+        assert!(result.contains("to_node5"));
+        assert!(result.contains("test_edge"));
+        assert!(result.contains("rank=same")); // Sidecar rank grouping
+    }
+
+    #[test]
+    fn test_apply_node_def() {
+        // Test lines 305-342 - apply_node_def function
+        let mut local_state = MetricState::default();
+
+        let actor = Arc::new(ActorMetaData {
+            ident: ActorIdentity {
+                id: 0,
+                label: ActorName::new("test_actor", Some(1)),
+            },
+            remote_details: Some(RemoteDetails {
+                ips: "127.0.0.1".to_string(),
+                match_on: "test_match".to_string(),
+                tech: "HTTP",
+                direction: "out",
+            }),
+            avg_mcpu: false,
+            avg_work: false,
+            percentiles_mcpu: vec![],
+            percentiles_work: vec![],
+            std_dev_mcpu: vec![],
+            std_dev_work: vec![],
+            trigger_mcpu: vec![],
+            trigger_work: vec![],
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            usage_review: false,
+        });
+
+        let channel_in = Arc::new(ChannelMetaData {
+            id: 0,
+            labels: vec!["input_label"],
+            capacity: 0,
+            display_labels: false,
+            line_expansion: 0.0,
+            show_type: None,
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            percentiles_filled: vec![],
+            percentiles_rate: vec![],
+            percentiles_latency: vec![],
+            std_dev_inflight: vec![],
+            std_dev_consumed: vec![],
+            std_dev_latency: vec![],
+            trigger_rate: vec![],
+            trigger_filled: vec![],
+            trigger_latency: vec![],
+            avg_filled: false,
+            avg_rate: false,
+            avg_latency: false,
+            min_filled: false,
+            max_filled: false,
+            connects_sidecar: false,
+            type_byte_count: 0,
+            show_total: false,
+        });
+
+        let channel_out = Arc::new(ChannelMetaData {
+            id: 1,
+            labels: vec!["output_label"],
+            capacity: 0,
+            display_labels: false,
+            line_expansion: 0.0,
+            show_type: None,
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            percentiles_filled: vec![],
+            percentiles_rate: vec![],
+            percentiles_latency: vec![],
+            std_dev_inflight: vec![],
+            std_dev_consumed: vec![],
+            std_dev_latency: vec![],
+            trigger_rate: vec![],
+            trigger_filled: vec![],
+            trigger_latency: vec![],
+            avg_filled: false,
+            avg_rate: false,
+            avg_latency: false,
+            min_filled: false,
+            max_filled: false,
+            connects_sidecar: true,
+            type_byte_count: 0,
+            show_total: false,
+        });
+
+        let channels_in = vec![channel_in];
+        let channels_out = vec![channel_out];
+
+        apply_node_def(&mut local_state, actor, &channels_in, &channels_out, 1000);
+
+        assert_eq!(local_state.nodes.len(), 1);
+        assert!(local_state.nodes[0].id.is_some());
+        assert_eq!(local_state.nodes[0].id.unwrap().name, "test_actor");
+        assert!(local_state.nodes[0].remote_details.is_some());
+        assert_eq!(local_state.edges.len(), 2); // One for input, one for output
+    }
+
+    #[test]
+    fn test_define_unified_edges_from_side() {
+        // Test the "from" side of edge definition (lines 382-386)
+        let mut metric_state = MetricState::default();
+        let node_name = ActorName::new("from_node", None);
+
+        let channel = Arc::new(ChannelMetaData {
+            id: 0,
+            labels: vec!["test_label"],
+            capacity: 0,
+            display_labels: false,
+            line_expansion: 0.0,
+            show_type: None,
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            percentiles_filled: vec![],
+            percentiles_rate: vec![],
+            percentiles_latency: vec![],
+            std_dev_inflight: vec![],
+            std_dev_consumed: vec![],
+            std_dev_latency: vec![],
+            trigger_rate: vec![],
+            trigger_filled: vec![],
+            trigger_latency: vec![],
+            avg_filled: false,
+            avg_rate: false,
+            avg_latency: false,
+            min_filled: false,
+            max_filled: false,
+            connects_sidecar: false,
+            type_byte_count: 0,
+            show_total: false,
+        });
+        let channels = vec![channel];
+
+        // Test setting the "from" side (set_to = false)
+        define_unified_edges(&mut metric_state, node_name, &channels, false, 1000);
+        assert_eq!(metric_state.edges.len(), 1);
+        assert!(metric_state.edges[0].from.is_some());
+        assert!(metric_state.edges[0].to.is_none());
+    }
+
+
+
+    #[test]
+    fn test_frame_history_apply_edge_with_sync() {
+        // Test lines 540-552 - packed writer sync logic
+        let mut frame_history = FrameHistory::new(1000);
+
+        // Force a sync condition by manipulating the delta_write_count
+        // We'll simulate having written for more than 10 minutes worth of data
+        let total_take_send = vec![(100, 50); 700]; // Large number to trigger sync
+
+        // This should trigger the sync branches
+        frame_history.apply_edge(&total_take_send, 1000);
+        assert!(frame_history.history_buffer.len() > 0);
+    }
+
+    #[test]
+    fn test_will_span_into_next_block() {
+        // Test lines 623-627 - will_span_into_next_block function
+        let frame_history = FrameHistory::new(1000);
+
+        // Test the function directly - this requires manipulating internal state
+        let result = frame_history.will_span_into_next_block();
+        assert!(!result); // Should be false for a new instance
+    }
+
+    #[test]
+    fn test_truncate_file() {
+        // Test lines 640-646 - truncate_file function
+        let test_data = BytesMut::from("test truncate data");
+        let test_path = PathBuf::from("test_truncate.dat");
+
+        let result = core_exec::block_on(FrameHistory::truncate_file(test_path.clone(), test_data));
+        assert!(result.is_ok());
+
+        // Verify the file was created and contains the data
+        let file_content = std::fs::read_to_string(&test_path).expect("Failed to read test file");
+        assert_eq!(file_content, "test truncate data");
+
+        // Clean up
+        let _ = remove_file(test_path);
+    }
+
+    #[test]
+    fn test_node_with_unknown_id() {
+        // Test lines 189-191 - unknown node handling in build_dot
+        let state = MetricState {
+            nodes: vec![
+                Node {
+                    id: None, // This will trigger the "unknown" branch
+                    color: "red",
+                    pen_width: "1",
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "unknown_node".to_string(),
+                    metric_text: String::new(),
+                    remote_details: None
+                }
+            ],
+            edges: vec![],
+            seq: 0,
+        };
+        let mut dot_graph = BytesMut::new();
+        let config = Config {
+            rankdir: "LR".to_string()
+        };
+
+        // This should not include the node since id is None (filtered out)
+        build_dot(&state, &mut dot_graph, &config);
+        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        assert!(!result.contains("unknown_node"));
+    }
+
+    #[test]
+    fn test_edge_with_unknown_nodes() {
+        // Test lines 239-249 - unknown node handling in edges
+        let state = MetricState {
+            nodes: vec![],
+            edges: vec![
+                Edge {
+                    id: 1,
+                    from: None, // This will trigger "unknown" branch
+                    to: None,   // This will trigger "unknown" branch
+                    color: "grey",
+                    sidecar: false,
+                    pen_width: "1",
+                    ctl_labels: Vec::new(),
+                    stats_computer: ChannelStatsComputer::default(),
+                    display_label: "test_edge".to_string(),
+                    metric_text: String::new(),
+                }
+            ],
+            seq: 0,
+        };
+        let mut dot_graph = BytesMut::new();
+        let config = Config {
+            rankdir: "TB".to_string()
+        };
+
+        // This should not process the edge since from and to are None
+        build_dot(&state, &mut dot_graph, &config);
+        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        assert!(!result.contains("test_edge"));
+    }
 }
+
 

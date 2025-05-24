@@ -920,6 +920,7 @@ macro_rules! assert_steady_rx_gt_count {
 ///
 /// Panics if no value is available when expected or if a taken value does not equal the
 /// corresponding expected value, with file and line included in the message.
+
 #[macro_export]
 macro_rules! assert_steady_rx_eq_take {
     ($self:expr, $expected:expr) => {{
@@ -928,13 +929,37 @@ macro_rules! assert_steady_rx_eq_take {
             let mut rx = rx.lock().await;
             for ex in $expected.into_iter() {
                 match rx.try_take() {
-                    None => panic!(
+                    None => {
+                        error!("Expected value but found none");
+                        panic!(
                         "Expected value but none available at {}:{}",
                         file!(),
                         line!()
-                    ),
+                    )},
                     Some(taken) => {
-                        if ex != taken {
+                        // Smart stream detection: if taken is a stream tuple and expected is bytes
+                        let matches = if let Ok(bytes) = std::convert::TryInto::<&[u8]>::try_into(&ex) {
+                            // Expected is byte slice, check if taken is a stream tuple
+                            match std::any::type_name_of_val(&taken) {
+                                name if name.contains("StreamSimpleMessage") => {
+                                    // Convert expected bytes to stream format for comparison
+                                    let stream_expected = (
+                                        StreamSimpleMessage::new(bytes.len() as i32),
+                                        bytes.to_vec().into_boxed_slice()
+                                    );
+                                    stream_expected == taken
+                                }
+                                _ => {
+                                    // Regular channel comparison
+                                    ex == taken
+                                }
+                            }
+                        } else {
+                            // Expected is not bytes, do direct comparison
+                            ex == taken
+                        };
+
+                        if !matches {
                             error!(
                                 "Assertion failed: {:?} == {:?} at {}:{}",
                                 ex,
@@ -956,6 +981,7 @@ macro_rules! assert_steady_rx_eq_take {
         });
     }};
 }
+
 
 
 //////////////////////////////////////////////////

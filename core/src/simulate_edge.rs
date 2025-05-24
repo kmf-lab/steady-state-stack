@@ -206,4 +206,46 @@ mod simulate_edge_tests {
     use super::*;
     use std::sync::Arc;
     use futures_util::lock::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::future::Future;
+
+    // Simple mock commander for testing
+    #[derive(Clone)]
+    struct TestCommander {
+        running: Arc<AtomicBool>,
+        call_count: Arc<AtomicUsize>,
+        has_responder: bool,
+    }
+
+    impl TestCommander {
+        fn new(running: bool, has_responder: bool) -> Self {
+            Self {
+                running: Arc::new(AtomicBool::new(running)),
+                call_count: Arc::new(AtomicUsize::new(0)),
+                has_responder,
+            }
+        }
+
+        fn stop(&self) {
+            self.running.store(false, Ordering::SeqCst);
+        }
+
+        fn call_count(&self) -> usize {
+            self.call_count.load(Ordering::SeqCst)
+        }
+    }
+
+
+    #[test]
+    fn test_sim_runner_type_creation() {
+        let _ = crate::util::steady_logger::initialize();
+
+        // Test that we can create the function type
+        let _runner: SimRunner<TestCommander> = Box::new(|_cmd, _responder, _index| {
+            Box::pin(async move {
+                // Simple test runner that does nothing
+            })
+        });
+    }
+
 }
