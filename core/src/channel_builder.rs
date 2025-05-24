@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use async_ringbuf::producer::AsyncProducer;
-use crate::core_exec;
+use crate::{core_exec, StreamSimpleMessage};
 
 pub(crate) type ChannelBacking<T> = Heap<T>;
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
@@ -922,6 +922,7 @@ macro_rules! assert_steady_rx_gt_count {
 /// corresponding expected value, with file and line included in the message.
 
 #[macro_export]
+#[macro_export]
 macro_rules! assert_steady_rx_eq_take {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
@@ -937,29 +938,7 @@ macro_rules! assert_steady_rx_eq_take {
                         line!()
                     )},
                     Some(taken) => {
-                        // Smart stream detection: if taken is a stream tuple and expected is bytes
-                        let matches = if let Ok(bytes) = std::convert::TryInto::<&[u8]>::try_into(&ex) {
-                            // Expected is byte slice, check if taken is a stream tuple
-                            match std::any::type_name_of_val(&taken) {
-                                name if name.contains("StreamSimpleMessage") => {
-                                    // Convert expected bytes to stream format for comparison
-                                    let stream_expected = (
-                                        StreamSimpleMessage::new(bytes.len() as i32),
-                                        bytes.to_vec().into_boxed_slice()
-                                    );
-                                    stream_expected == taken
-                                }
-                                _ => {
-                                    // Regular channel comparison
-                                    ex == taken
-                                }
-                            }
-                        } else {
-                            // Expected is not bytes, do direct comparison
-                            ex == taken
-                        };
-
-                        if !matches {
+                        if !ex.eq(&taken) {
                             error!(
                                 "Assertion failed: {:?} == {:?} at {}:{}",
                                 ex,
@@ -980,6 +959,11 @@ macro_rules! assert_steady_rx_eq_take {
             }
         });
     }};
+}
+
+// Simple helper function for streams
+fn stream_bytes(bytes: &[u8]) -> (StreamSimpleMessage, Box<[u8]>) {
+    (StreamSimpleMessage::new(bytes.len() as i32), bytes.to_vec().into_boxed_slice())
 }
 
 
