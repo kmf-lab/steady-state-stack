@@ -302,7 +302,7 @@ impl GraphLiveliness {
     /// `true` if the graph is in one of the specified states, `false` otherwise.
     pub fn is_in_state(&self, matches: &[GraphLivelinessState]) -> bool {
         let result = matches.iter().any(|f| f.eq(&self.state));
-        trace!("is in state called: {:?} looking for {:?} match {:?}", self.state, matches, result);
+        // trace!("is in state called: {:?} looking for {:?} match {:?}", self.state, matches, result);
         result
     }
 
