@@ -367,7 +367,7 @@ pub(crate) mod aeron_publish_bundle_tests {
             //here we request shutdown but we only leave after our upstream actors are done
             if received_count >= (TEST_ITEMS-taken) {
                 error!("stop requested");
-                cmd.request_graph_stop().await;
+                cmd.request_shutdown().await;
                 return Ok(());
             }
         }

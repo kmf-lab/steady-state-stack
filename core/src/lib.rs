@@ -873,9 +873,9 @@ mod lib_tests {
     }
 
     // #[test]
-    // fn test_request_graph_stop() {
+    // fn test_request_shutdown() {
     //     let context = test_steady_context();
-    //     let result = context.request_graph_stop().await;
+    //     let result = context.request_shutdown().await;
     //     assert!(result);
     //     let liveliness = context.runtime_state.read();
     //     assert!(liveliness.is_in_state(&[GraphLivelinessState::StopRequested]));

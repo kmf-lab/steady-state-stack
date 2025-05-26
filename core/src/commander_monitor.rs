@@ -1075,7 +1075,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// Requests a stop of the graph.
     ///
     #[inline]
-    async fn request_graph_stop(&self) {
+    async fn request_shutdown(&self) {
         if let Some(barrier) = &self.shutdown_barrier {
             // Wait for all required actors to reach the barrier
             barrier.clone().wait().await;

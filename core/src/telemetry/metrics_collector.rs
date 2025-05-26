@@ -693,7 +693,7 @@ mod metric_collector_tests {
                             //info!("attempted sent: {:?}", count.load(Ordering::SeqCst));
 
                             if x >= 10 {
-                                context.request_graph_stop().await;
+                                context.request_shutdown().await;
                                 continue;
                             }
                             let _ = context.send_async(&mut tx, x.to_string(), SendSaturation::AwaitForRoom).await;

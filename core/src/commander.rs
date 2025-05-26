@@ -496,7 +496,7 @@ pub trait SteadyCommander {
     /// Requests a graph stop for the actor.
     /// will await if a barrier is in place needing more actor approvals
     /// for the simple case will return immediately upon changing the state
-    async fn request_graph_stop(&self);  // see with_graph_stop_barrier_count
+    async fn request_shutdown(&self);  // see with_graph_stop_barrier_count
 
     /// Retrieves the actor's arguments, cast to the specified type.
     ///

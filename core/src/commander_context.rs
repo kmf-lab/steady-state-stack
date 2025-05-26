@@ -613,7 +613,7 @@ impl SteadyCommander for SteadyContext {
     /// Requests a graph stop for the actor.
     ///
     #[inline]
-    async fn request_graph_stop(&self) {
+    async fn request_shutdown(&self) {
         if let Some(barrier) = &self.shutdown_barrier {
             // Wait for all required actors to reach the barrier
             barrier.clone().wait().await;

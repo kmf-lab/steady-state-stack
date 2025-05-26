@@ -46,14 +46,14 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                         i = i + 1;
                         if i >= limit || index == fizz_buzz_processor::STOP_VALUE {
                             if index >= fizz_buzz_processor::STOP_VALUE {
-                                cmd.request_graph_stop().await;
+                                cmd.request_shutdown().await;
                             }
                             break;
                         }
         }
         let _sent_count = cmd.send_slice_until_full(&mut numbers_tx, &buffer[0..i]); //TOOD: zero length? test?
     }
-    cmd.request_graph_stop().await;
+    cmd.request_shutdown().await;
     Ok(())
 }
 

@@ -153,7 +153,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
             let _done = cmd.send_slice_until_full(&mut fizzbuzz_messages_tx, &state.buffer[0..buffer_count]);
 
             if state.value == stop_value {
-                cmd.request_graph_stop().await;
+                cmd.request_shutdown().await;
             }
 
             panic_countdown -= buffer_count as isize;
