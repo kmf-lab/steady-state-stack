@@ -8,7 +8,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
-use std::ops::{DerefMut};
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
 use async_ringbuf::AsyncRb;
@@ -83,11 +83,11 @@ trait StageAction {}
 // Define StageDirection
 pub enum StageDirection<T: Debug + Clone> {
     Echo(T),
-    EchoAt(usize, T),
+    EchoAt(usize, T), //TODO: if this is used against a single it hanges.
 }
 
 // Define StageWaitFor
-pub enum StageWaitFor<T: Debug + Eq> {
+pub enum StageWaitFor<T: Debug + Eq> { //TODO: if this used against a Tx will hang
     Message(T, Duration),
     MessageAt(usize, T, Duration),
     // AnyMessage
@@ -177,7 +177,17 @@ impl StageManager {
                 match tx.push(msg).await {
                     Ok(_) => {
                         if let Some(response) = rx.pop().await {
-                            Ok(response)    
+                            let is_ok = response.downcast_ref::<&str>()
+                                .map(|msg| *msg == OK_MESSAGE)
+                                .or_else(|| response.downcast_ref::<String>()
+                                    .map(|msg| msg == OK_MESSAGE))
+                                .unwrap_or(false);
+
+                            if is_ok {
+                                Ok(response)
+                            } else {
+                                Err("Actor responded with unexpected message".into())
+                            }
                         } else {
                             Err("Actor disconnected, no response".into())
                         }                        
@@ -203,6 +213,7 @@ pub struct SideChannelResponder {
 }
 
 const WAIT_FOR_QUANT:Duration = Duration::from_millis(50);
+pub (crate) const OK_MESSAGE: &'static str = "ok";
 
 impl SideChannelResponder {
 
@@ -226,14 +237,14 @@ impl SideChannelResponder {
                     match  msg {
                         StageDirection::Echo(m) => {
                             match cmd_guard.try_send(tx_core,m.clone()) {
-                                SendOutcome::Success => {Some(Box::new("ok".to_string()))}
+                                SendOutcome::Success => {Some(Box::new(OK_MESSAGE))}
                                 SendOutcome::Blocked(msg) => {Some(Box::new(msg))}
                             }
                         }
                         StageDirection::EchoAt(i, m) => {
                             if *i == index {
                                 match cmd_guard.try_send(tx_core, m.clone()) {
-                                    SendOutcome::Success => { Some(Box::new("ok".to_string())) }
+                                    SendOutcome::Success => { Some(Box::new(OK_MESSAGE)) }
                                     SendOutcome::Blocked(msg) => { Some(Box::new(msg)) }
                                 }
                             } else {
@@ -276,13 +287,15 @@ impl SideChannelResponder {
                             match cmd_guard.try_take(rx_core) {
                                 Some(measured) => {
                                     if m.eq(&measured) {
-                                        break Some(Box::new("ok".to_string()));
+                                        break Some(Box::new(OK_MESSAGE));
                                     } else {
+                                        //error!("not equals {:?} vs {:?}",m,&measured);
                                         let failure = format!("no match {:?} {:?}", m, measured);
-                                        break Some(Box::new(failure));
+                                        break Some(Box::new(failure)); //TODO: response string is not getting checked!!!!
                                     }
                                 }
                                 None => {
+                                    //error!("no task value found");
                                     if start.elapsed() >= *timeout {
                                         break Some(Box::new("timeout, no message".to_string()));
                                     } else {

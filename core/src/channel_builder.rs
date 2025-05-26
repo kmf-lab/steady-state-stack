@@ -811,6 +811,21 @@ impl <T> LazySteadyRx<T> {
     pub fn clone(&self) -> SteadyRx<T> {
         core_exec::block_on(self.lazy_channel.get_rx_clone())
     }
+
+    pub fn testing_take_all(&self) -> Vec<T> {
+        core_exec::block_on(async {
+            let rx = self.lazy_channel.get_rx_clone().await;
+            let mut rx = rx.lock().await;
+            let mut result = Vec::new();
+
+            while let Some(item) = rx.try_take() {
+                result.push(item);
+            }
+
+            result
+        })
+    }
+
 }
 
 //////////////////////////////////////////////////
