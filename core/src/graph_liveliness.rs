@@ -2,7 +2,7 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{steady_config, util};
+use crate::{steady_config, util, ActorTeam};
 use std::ops::{Deref, Sub};
 use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -35,6 +35,7 @@ use crate::graph_testing::StageManager;
 use crate::inspect_short_bools::i_take_expression;
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
+use crate::telemetry::{metrics_collector, metrics_server};
 use crate::util::steady_logger;
 
 /// Represents the state of graph liveliness in the Steady State framework.
@@ -233,7 +234,7 @@ impl GraphLiveliness {
                         
             trace!("every actor has had one shot shutdown fired now");
         } else if self.is_in_state(&[GraphLivelinessState::Building]) {
-            warn!("request_stop should only be called after start");
+            warn!("request_shutdown should only be called after start");
         }
 
     }
@@ -696,6 +697,11 @@ impl Graph {
     pub fn actor_builder(&mut self) -> ActorBuilder {
         ActorBuilder::new(self)
     }
+ 
+    pub fn actor_team(&self) -> ActorTeam {
+        ActorTeam::new(self)
+    }
+
 
     /// Enables fail-fast behavior.
     ///
@@ -808,7 +814,7 @@ impl Graph {
     }
 
     /// Stops the graph procedure requested.
-    pub fn request_stop(&mut self) {
+    pub fn request_shutdown(&mut self) {
         let mut a = self.runtime_state.write();
         core_exec::block_on(async move {   a.internal_request_shutdown().await });
     
@@ -897,51 +903,65 @@ impl Graph {
         warn!("graph stopped uncleanly");
         
         voters.iter().for_each(|voter| {
-            let backtrace = voter.as_ref().map_or(&None,|f| &f.veto_backtrace);
-            let reason = voter.as_ref().map_or(&None,|f| &f.veto_reason);
-            if let Some(r) = reason {
-                eprintln!("veto expression: {:#?}", r);
-            }
-            if let Some(bt) = backtrace {
-                let text = format!("{:#?}", bt);
-                let adj = text.trim();
-                let adj = adj.strip_prefix("Backtrace ").unwrap_or(adj);
-                let adj = adj.strip_prefix("[").unwrap_or(adj).trim();
-                let adj = adj.strip_suffix("]").unwrap_or(adj).trim();
 
-                let mut level = 1; // Start inside the list
-                let mut is_header = true;
-                let mut start = 0; // Index of the start of the current frame
+            // we do not provide stacks for our internal actors
+            let signature = voter.as_ref().map_or(&None,|f| &f.signature);
+            let skip_internal = if let Some(signature) = signature {
+                            (metrics_server::NAME == signature.label.name)
+                         || (metrics_collector::NAME == signature.label.name)
+            } else {
+               false
+            };
 
-                // Parse frames by tracking nesting levels and indices
-                for (i, c) in adj.char_indices() {
-                    if c == '{' {
-                        level += 1;
-                    } else if c == '}' {
-                        level -= 1;
-                    }
-                    if c == ',' && level == 1 {
-                        // End of a frame
-                        let end = i; // Up to but not including the ','
-                        let frame = &adj[start..end];
-                        let frame = frame.trim();
-                        if is_header                            
-                            && !frame.starts_with("{ fn: \"std::backtrace") 
-                            && !frame.starts_with("{ fn: \"steady_state::graph_liveliness::GraphLiveliness::is_running")
-                            && !frame.starts_with("{ fn: \"steady_state::commander_") {
-                            is_header = false;
+            if !skip_internal {
+                let backtrace = voter.as_ref().map_or(&None, |f| &f.veto_backtrace);
+                let reason = voter.as_ref().map_or(&None, |f| &f.veto_reason);
+                if let Some(r) = reason {
+                    eprintln!("veto expression: {:#?}", r);
+                }
+                if let Some(bt) = backtrace {
+                    let text = format!("{:#?}", bt);
+                    let adj = text.trim();
+                    let adj = adj.strip_prefix("Backtrace ").unwrap_or(adj);
+                    let adj = adj.strip_prefix("[").unwrap_or(adj).trim();
+                    let adj = adj.strip_suffix("]").unwrap_or(adj).trim();
+
+                    let mut level = 1; // Start inside the list
+                    let mut is_header = true;
+                    let mut start = 0; // Index of the start of the current frame
+
+                    // Parse frames by tracking nesting levels and indices
+                    for (i, c) in adj.char_indices() {
+                        if c == '{' {
+                            level += 1;
+                        } else if c == '}' {
+                            level -= 1;
                         }
-                        if !is_header {
-                            eprintln!("{}", frame);
-                            if frame.starts_with("{ fn: \"steady_state::actor_builder::launch_actor") {
-                                break; //all done
+                        if c == ',' && level == 1 {
+                            // End of a frame
+                            let end = i; // Up to but not including the ','
+                            let frame = &adj[start..end];
+                            let frame = frame.trim();
+                            if is_header
+                                && !frame.starts_with("{ fn: \"std::backtrace")
+                                && !frame.starts_with("{ fn: \"steady_state::graph_liveliness::GraphLiveliness::is_running")
+                                && !frame.starts_with("{ fn: \"steady_state::commander_") {
+                                is_header = false;
                             }
-                        }
+                            if !is_header {
+                                eprintln!("{}", frame);
+                                if frame.starts_with("{ fn: \"steady_state::actor_builder::launch_actor") {
+                                    break; //all done
+                                }
+                            }
 
-                        start = i + 1; // Start after the ','
+                            start = i + 1; // Start after the ','
+                        }
                     }
                 }
             }
+
+
         });
         
         

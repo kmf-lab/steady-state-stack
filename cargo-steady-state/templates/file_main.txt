@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         {  //remove this block to run forever.
            std::thread::sleep(Duration::from_secs(60));
-           graph.request_stop(); //actors can also call stop as desired on the context or monitor
+           graph.request_shutdown(); //actors can also call stop as desired on the context or monitor
         }
 
         graph.block_until_stopped(Duration::from_secs(2))
@@ -127,7 +127,7 @@ mod graph_tests {
                 {% endif -%}
              {%- endfor %}
             drop(stage_manager); //must drop before we can use graph methods
-            graph.request_stop();
+            graph.request_shutdown();
             //this will return Ok(()) once you have actors shutting down in order
             graph.block_until_stopped(Duration::from_secs(3));
             Ok(()) //hack for now..

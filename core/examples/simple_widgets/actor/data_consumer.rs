@@ -84,7 +84,7 @@ mod consumer_tests {
             .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state.clone()));
 
         graph.start();
-        graph.request_stop();
+        graph.request_shutdown();
 
         let test_data: Vec<ApprovedWidgets> = (0..BATCH_SIZE).map(|i| ApprovedWidgets { original_count: 0, approved_count: i as u64 }).collect();
         approved_widget_tx_out.testing_send_all(test_data, true);

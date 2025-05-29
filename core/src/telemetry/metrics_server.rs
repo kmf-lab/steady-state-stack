@@ -645,7 +645,7 @@ mod meteric_server_tests {
         tx_in.testing_send_all(test_data, true);
 
         sleep(Duration::from_millis(60));
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(15));
     
      }
@@ -721,7 +721,7 @@ mod http_telemetry_tests {
             }
             // Step 6: Stop the graph
             tx_in.testing_close();
-            graph.request_stop();
+            graph.request_shutdown();
             graph.block_until_stopped(Duration::from_secs(5));
         }
     }

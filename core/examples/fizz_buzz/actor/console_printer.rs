@@ -122,7 +122,7 @@ pub(crate) mod tests {
                                                        ],true);
         sleep(Duration::from_millis(1));
 
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(4))
 
         //nothing to test as this will print to the console

@@ -68,7 +68,7 @@ pub(crate) mod actor_tests {
             .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone()) );
 
         graph.start();
-        graph.request_stop();
+        graph.request_shutdown();
 
         let test_data:Vec<TickCount> = (0..BATCH).map(|i| TickCount { count: i as u128 }).collect();
 

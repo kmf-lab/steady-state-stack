@@ -1,6 +1,6 @@
 use std::future::pending;
 use log::{error, trace, warn};
-use futures_util::{select, FutureExt};
+use futures_util::{select, FutureExt, SinkExt};
 use std::time::{Duration, Instant};
 use futures::pin_mut;
 use futures_timer::Delay;
@@ -133,8 +133,21 @@ impl<T> TxCore for Tx<T> {
 
     #[inline]
     fn shared_vacant_units(&self) -> usize {
-        self.tx.vacant_len()
+
+       // self.tx.vacant_len()
+        let capacity = self.tx.capacity().get();
+        let modulus = 2 * capacity;
+
+        // Read read_index FIRST, then write_index for producer floor guarantee
+        let read_idx = self.tx.read_index();
+        let write_idx = self.tx.write_index();
+
+        let result = (capacity + read_idx - write_idx) % modulus;
+        assert!(result<=capacity);
+        result
+
     }
+
 
     #[inline]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool {
@@ -877,8 +890,11 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
 
     #[inline]
     fn shared_vacant_units(&self) -> usize {
+
         <T as TxCore>::shared_vacant_units(&**self)
     }
+
+
 
     #[inline]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count: Self::MsgSize) -> bool {

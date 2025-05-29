@@ -134,6 +134,13 @@ impl<X> SendOutcome<X> {
             SendOutcome::Blocked(_) => false,
         }
     }
+
+    pub fn expect(self, msg: &'static str) -> bool {
+        match self {
+            SendOutcome::Success => true,
+            SendOutcome::Blocked(_) => panic!("{}",msg),
+        }
+    }
 }
 
 /// NOTE this trait is passed into actors and actors are tied to a single thread. As a result

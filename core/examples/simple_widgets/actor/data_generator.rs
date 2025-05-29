@@ -101,7 +101,7 @@ mod generator_tests {
         sleep(Duration::from_millis(500));
         feedback_tx_out.testing_close();
 
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(20))?;
 
         assert_steady_rx_eq_count!(&approved_widget_rx_out,BATCH_SIZE);

@@ -146,11 +146,25 @@ impl <T>RxCore for Rx<T> {
     }
 
     fn shared_avail_units(&mut self) -> usize {
-        self.rx.occupied_len()
+        //self.rx.occupied_len()
+        let capacity = self.rx.capacity().get();
+        let modulus = 2 * capacity;
+
+        // Read write_index FIRST, then read_index for consumer floor guarantee
+        let write_idx = self.rx.write_index();
+        let read_idx = self.rx.read_index();
+
+        let result =  (modulus + write_idx - read_idx) % modulus;
+        assert!(result<=capacity);
+
+        result
     }
 
 
-   async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
+
+
+
+    async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
 
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {

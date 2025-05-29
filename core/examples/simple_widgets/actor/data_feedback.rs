@@ -79,7 +79,7 @@ mod tests {
         failure_feedback_tx_out.testing_send_all((0..10).map(|i| crate::actor::data_feedback::FailureFeedback { count: i, message: "test".to_string() }).collect(),true);
         graph.start();
         sleep(Duration::from_millis(60));
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(15))?;
         let expected = 10;
         assert_steady_rx_eq_count!(&change_request_rx_out,expected);

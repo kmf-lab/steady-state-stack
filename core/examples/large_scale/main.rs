@@ -50,7 +50,7 @@ fn main() {
 
     {   //remove this block to run forever.
         sleep(Duration::from_secs(opt.duration));
-        graph.request_stop();
+        graph.request_shutdown();
     }
 
     graph.block_until_stopped(Duration::from_secs(80));
@@ -366,7 +366,7 @@ fn build_graph<const LEVEL_1: usize,
 //         }
 //
 //         // Stop the graph and wait for shutdown
-//         graph.request_stop();
+//         graph.request_shutdown();
 //         graph.block_until_stopped(Duration::from_secs(21));
 //     }
 //

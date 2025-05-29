@@ -148,6 +148,7 @@ impl StageManager {
     ) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
         self.call_actor_internal(Box::new(action), ActorName::new(name, None))
     }
+
     pub fn actor_perform_with_suffix<S: StageAction + 'static + Send + Sync>(
         &self,
         name: &'static str, suffix: usize,
@@ -217,14 +218,22 @@ pub (crate) const OK_MESSAGE: &'static str = "ok";
 
 impl SideChannelResponder {
 
-
+    //   Ok(true)  //did something keep going
+    //   Ok(false) //did nothing becuase it does not pertain - if we are here beyond timeout we must trigger shutdown
+    //   Err("")  // exit now failure, shutdown.
     pub async fn simulate_direction<'a, T: 'static + Debug + Clone, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self
                                                                                                                   , tx_core: &mut X, cmd: & Arc<Mutex<C>>
-                                                                                                                  , index: usize) -> bool
+                                                                                                                  , index: usize) -> Result<bool, Box<dyn Error>>
     where <X as TxCore>::MsgOut: Send, <X as TxCore>::MsgOut: Sync, <X as TxCore>::MsgOut: 'static {
 
-       // trace!("simulate echo {:?}", cmd.lock().await.identity());
-        if let Some(true) = self.should_apply::<StageDirection<T>>().await { //we got a message and now confirm we have room to send it
+        //TODO: can we add index check here as well?
+
+        match self.should_apply::<StageDirection<T>>().await {
+            Some(true) => {} //ok continue with our task
+            Some(false) => return Ok(false), //do not match
+            None => return Ok(true) //nothing found
+        }
+
             // trace!("should echo does apply, waiting for vacant unit");
             if tx_core.shared_wait_vacant_units(tx_core.one()).await {
                 //we hold cmd just as long as it takes us to respond.
@@ -234,6 +243,8 @@ impl SideChannelResponder {
                     // trace!("try send");
                     let msg: &StageDirection<T> = message.downcast_ref::<StageDirection<T>>()
                         .expect("error casting");
+                        //TODO: should be None and not for us because wrong type cast?
+
                     match  msg {
                         StageDirection::Echo(m) => {
                             match cmd_guard.try_send(tx_core,m.clone()) {
@@ -248,49 +259,59 @@ impl SideChannelResponder {
                                     SendOutcome::Blocked(msg) => { Some(Box::new(msg)) }
                                 }
                             } else {
-                                None
+                                None //this is not for us because we want index i
                             }
                         }
                     }
-
                 }).await
             } else {
-                false
+                Ok(true)
             }
-        } else {
-            false
-        }
+
 
     }
 
+    //   Ok(true)  //did something keep going
+    //   Ok(false) //did nothing becuase it does not pertain - if we are here beyond timeout we must trigger shutdown
+    //   Err("")  // exit now failure, shutdown.
     pub async fn simulate_wait_for<T: Debug + Eq + 'static, X: RxCore<MsgOut = T>, C: SteadyCommander>(&self, rx_core: &mut X
                                                                                                            , cmd: & Arc<Mutex<C>>
-                                                                                                           , index: usize) -> bool
+                                                                                                           , index: usize) -> Result<bool, Box<dyn Error>>
     where <X as RxCore>::MsgOut: std::fmt::Debug {
-        if let Some(true) = self.should_apply::<StageWaitFor<T>>().await { //we have a message and now block until a unit arrives
+        //TODO: can we add index check here as well?
+
+        match self.should_apply::<StageWaitFor<T>>().await {
+            Some(true) => {} //ok continue with our task
+            Some(false) => return Ok(false), //do not match
+            None => return Ok(true) //nothing found
+        }
+
             if rx_core.shared_wait_avail_units(1).await {
                 //for testing we hold the cmd lock only while we check equals and respond
                 let mut cmd_guard = cmd.lock().await;
 
                 self.respond_with(move |message| {
-                    let swf: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<T>>()
-                        .expect("error casting");
-                    let t = match swf {
+                    let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<T>>()
+                                                        .expect("error casting");
+                    //TODO: must return not appicable
+
+                    let message = match wait_for {
                         StageWaitFor::Message(m,t) => Some((m,t)),
-                        StageWaitFor::MessageAt(i,m,t) => if *i == index {Some((m,t))} else {None}
+                        StageWaitFor::MessageAt(i,m,t) => if *i == index {Some((m,t))}
+                                                                                   else {None}
                     };
                     use std::time::{Instant};
 
-                    if let Some((m, timeout)) = t {
+                    if let Some((expected, timeout)) = message {
                         let start = Instant::now();
                         loop {
                             match cmd_guard.try_take(rx_core) {
                                 Some(measured) => {
-                                    if m.eq(&measured) {
+                                    if expected.eq(&measured) {
                                         break Some(Box::new(OK_MESSAGE));
                                     } else {
                                         //error!("not equals {:?} vs {:?}",m,&measured);
-                                        let failure = format!("no match {:?} {:?}", m, measured);
+                                        let failure = format!("no match {:?} {:?}", expected, measured);
                                         break Some(Box::new(failure)); //TODO: response string is not getting checked!!!!
                                     }
                                 }
@@ -307,16 +328,14 @@ impl SideChannelResponder {
                             }
                         }
                     } else {
-                        None
+                        None //not applicable by index
                     }
 
                 }).await
             } else {
-                false
+                Ok(true)
             }
-        } else {
-            false
-        }
+
     }
 
 
@@ -372,12 +391,12 @@ impl SideChannelResponder {
         &self,
         cmd: &mut C,
         target_tx_bundle: &mut TxBundle<'_,M>,
-    ) -> bool {
+    ) -> Result<bool,Box<dyn Error>> {
         if let Some(true) = self.should_apply::<M>().await {
             let girth = target_tx_bundle.len();
             for t in target_tx_bundle.iter_mut() {
                 if !cmd.wait_vacant(&mut *t, 1).await {
-                    return false;
+                    return Ok(true);
                 };
             }
 
@@ -398,7 +417,7 @@ impl SideChannelResponder {
             }).await 
         } 
         else 
-        { false }
+        { Ok(false) }
     }
 
 
@@ -414,13 +433,13 @@ impl SideChannelResponder {
         &self,
         cmd: &mut C,
         source_rx: &mut RxBundle<'_, M>,
-    ) -> bool {
+    ) -> Result<bool, Box<dyn Error>> {
         if let Some(true) = self.should_apply::<M>().await {
             let girth = source_rx.len();
             for x in 0..girth {
                 let srx: &mut MutexGuard<Rx<M>> =  &mut source_rx[x];
                 if !cmd.wait_avail(srx, 1).await {
-                    return false;
+                    return Ok(true);
                 };
             }
             self.respond_with(|message| {
@@ -438,7 +457,7 @@ impl SideChannelResponder {
                 }
             }).await
         } else {
-            false
+            Ok(false)
         }
     }
 
@@ -471,11 +490,8 @@ impl SideChannelResponder {
     ///
     /// * `f` - A function that takes a message and returns a response.
     ///
-    /// # Returns
     ///
-    /// true if we found something and responded to it
-    ///
-    pub async fn respond_with<F>(&self, mut f: F) -> bool
+    pub async fn respond_with<F>(&self, mut f: F) -> Result<bool, Box<dyn Error>>
         where
             F: FnMut(&Box<dyn Any + Send + Sync>) -> Option<Box<dyn Any + Send + Sync>>,
     {
@@ -487,21 +503,21 @@ impl SideChannelResponder {
             //      happen if the main test block is not consuming the answers to the questions
             //NOTE: this should never block on shutdown since above we immediately pull the answer
             if let Some(r) = f(q) {
-                let _ = rx.try_pop(); //we know f(q) accepted it so now remove it from the channel.
                 match tx.push(r).await {
                     Ok(_) => {
-                        true
+                        let _ = rx.try_pop(); //we know f(q) accepted it so now remove it from the channel.
+                        Ok(true)
                     }
                     Err(e) => {
                         error!("Error sending test implementation response: {:?} Identity: {:?}", e,self.identity);
-                        false
+                        Err("internal error pushing response".into()) //we have an internal fault to report
                     }
                 }
             } else {
-                false
+                Ok(false) // function did not consume task for us, not applicable
             }
         } else {
-            false
+            Ok(true)
         }
     }
 }

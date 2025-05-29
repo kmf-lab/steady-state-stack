@@ -83,7 +83,7 @@ pub(crate) mod hd_actor_tests {
         ticks_tx_in.testing_send_all(test_data,true);
 
         sleep(Duration::from_millis(300));
-        graph.request_stop();
+        graph.request_shutdown();
 
         graph.block_until_stopped(Duration::from_secs(12))?;
         sleep(Duration::from_millis(20));

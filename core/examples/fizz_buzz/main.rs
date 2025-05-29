@@ -253,7 +253,7 @@ fn build_graph(mut graph: Graph) -> Graph {
 //             //  }
 //         drop(messenger);
 //
-//         graph.request_stop();
+//         graph.request_shutdown();
 //         graph.block_until_stopped(Duration::from_secs(3));
 //
 //     }

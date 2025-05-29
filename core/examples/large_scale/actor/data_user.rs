@@ -71,7 +71,7 @@ mod user_tests {
         
         graph.start();
         sleep(Duration::from_millis(60));
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(15));
         
     //     //4. assert expected results

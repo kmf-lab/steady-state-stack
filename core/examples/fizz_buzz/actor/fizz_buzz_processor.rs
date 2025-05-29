@@ -201,7 +201,7 @@ pub(crate) mod tests {
                                                      ,NumberMessage{value: 15}]
                                         ,true);
 
-        graph.request_stop(); //our actor has no input so it immediately stops upon this request
+        graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(15));
         let expected = 14;
         assert_steady_rx_eq_count!(&test_fizzbuzz_messages_rx,expected);

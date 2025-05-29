@@ -73,7 +73,7 @@ pub(crate) mod hp_actor_tests {
             .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );
 
         graph.start();
-        graph.request_stop();
+        graph.request_shutdown();
 
         let test_data:Vec<Tick> = (0..WAIT_AVAIL).map(|i| Tick { value: i as u128 }).collect();
         

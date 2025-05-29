@@ -74,7 +74,7 @@ pub(crate) mod actor_tests {
         graph.start(); //startup the graph
         sleep(Duration::from_millis(40)); //if too long telemetry will back up
         
-        graph.request_stop(); //our actor has no input so it immediately stops upon this request
+        graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(15));
 
         assert_steady_rx_eq_count!(&ticks_rx_out[0],BUFFER_SIZE);

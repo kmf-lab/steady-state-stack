@@ -243,10 +243,9 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                             GraphLivelinessState::StoppedUncleanly,
                                         ]) {
                                             error!(
-                                                "{:?} EXIT hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector has died and is not consuming messages",
+                                                "{:?} hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector is not consuming messages !",
                                                 this.ident, scale, vacant_units, capacity
                                             );
-                                            std::process::exit(-1);
                                         }
                                       
                                     }

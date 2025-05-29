@@ -770,7 +770,7 @@ mod metric_collector_tests {
                 };
             });
 
-            graph.request_stop();
+            graph.request_shutdown();
             graph.block_until_stopped(Duration::from_secs(3))
         } else {
             Ok(())

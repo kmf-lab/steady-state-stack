@@ -82,7 +82,7 @@ mod process_tests {
         let _sent = approved_widget_in_tx.testing_send_all(test_data,true);
          sleep(Duration::from_millis(100));
 
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(2));
 
         let expected = 0;

@@ -97,7 +97,7 @@ mod generator_tests {
 
         graph.start();
         sleep(Duration::from_secs(1));
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_millis(3000));
 
         crate::assert_steady_rx_eq_count!(&approved_widget_rx_out[0],expected_count);

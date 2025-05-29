@@ -27,7 +27,7 @@ fn main() {
 
     {  //remove this block to run forever.
        std::thread::sleep(Duration::from_secs(600));
-       graph.request_stop(); //actors can also call stop as desired on the context or monitor
+       graph.request_shutdown(); //actors can also call stop as desired on the context or monitor
     }
 
     graph.block_until_stopped(Duration::from_secs(2));
@@ -149,7 +149,7 @@ mod graph_tests {
     //
     //     }
     //     drop(guard);
-         graph.request_stop();
+         graph.request_shutdown();
          graph.block_until_stopped(Duration::from_secs(3));
     
     }

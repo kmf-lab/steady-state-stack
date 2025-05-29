@@ -55,7 +55,7 @@ fn main() {
         {  //remove this block to run forever.
             if opt.duration > 0 {
                 sleep(Duration::from_secs(opt.duration));
-                graph.request_stop();
+                graph.request_shutdown();
             }
         }
         graph.block_until_stopped(Duration::from_secs(2));
@@ -274,7 +274,7 @@ mod simple_widget_tests {
     //     }
     //
     //
-    //     graph.request_stop();
+    //     graph.request_shutdown();
     //     //if you make this timeout very large you will have plenty of time to debug steam through
     //     //this test method if you like.
     //     assert!(graph.block_until_stopped(Duration::from_secs(11)));

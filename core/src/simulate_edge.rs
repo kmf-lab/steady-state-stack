@@ -14,6 +14,7 @@ use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::StreamItem;
 use crate::graph_testing::{SideChannelResponder, StageDirection};
 use crate::i;
+use log::*;
 
 /// A function type that creates and runs simulation tasks.
 ///
@@ -51,8 +52,27 @@ where
                     let value = this.clone();
                     async move {
                         let mut that = value.lock().await;
+                        let mut cycles_of_no_work = 0;
+
                         while cmd_mutex.lock().await.is_running(&mut || i!(that.is_closed_and_empty())) {
-                            responder.simulate_wait_for(&mut that, &cmd_mutex, index).await;
+                            match responder.simulate_wait_for(&mut that, &cmd_mutex, index).await  {
+                                Ok(true) => {
+                                    cycles_of_no_work = 0;
+                                },
+                                Ok(false) => {
+                                    cycles_of_no_work += 1;
+                                    //TODO: based on timeout shutdown and report..
+                                    if cycles_of_no_work > 10000 {
+                                        cmd_mutex.lock().await.request_shutdown().await;
+                                        error!("stopped on cycle of no work");// TODO: refine this.
+                                    }
+                                },
+                                Err(e) => {
+                                    cmd_mutex.lock().await.request_shutdown().await;
+                                    error!("Internal Error: {:?}",e);
+                                }
+                            };
+
                         }
                     }
                 }
@@ -73,8 +93,26 @@ where
                     let value = this.clone();
                     async move {
                         let mut that = value.lock().await;
+                        let mut cycles_of_no_work = 0;
+
                         while cmd_mutex.lock().await.is_running(&mut || i!(that.is_closed_and_empty())) {
-                            responder.simulate_wait_for(&mut that, &cmd_mutex, index).await;
+                            match responder.simulate_wait_for(&mut that, &cmd_mutex, index).await {
+                                Ok(true) => {
+                                    cycles_of_no_work = 0;
+                                },
+                                Ok(false) => {
+                                    cycles_of_no_work += 1;
+                                    //TODO: based on timeout shutdown and report..
+                                    if cycles_of_no_work > 10000 {
+                                        cmd_mutex.lock().await.request_shutdown().await;
+                                        error!("stopped on cycle of no work");// TODO: refine this.
+                                    }
+                                },
+                                Err(e) => {
+                                    cmd_mutex.lock().await.request_shutdown().await;
+                                    error!("Internal Error: {:?}",e);
+                                }
+                            };
                         }
                     }
                 }
@@ -95,8 +133,26 @@ where
                     let value = this.clone();
                     async move {
                         let mut that = value.lock().await;
+                        let mut cycles_of_no_work = 0;
+
                         while cmd_mutex.lock().await.is_running(&mut || i!(that.is_closed_and_empty())) {
-                            responder.simulate_wait_for(&mut that, &cmd_mutex, index).await;
+                            match responder.simulate_wait_for(&mut that, &cmd_mutex, index).await {
+                                Ok(true) => {
+                                    cycles_of_no_work = 0;
+                                },
+                                Ok(false) => {
+                                    cycles_of_no_work += 1;
+                                    //TODO: based on timeout shutdown and report..
+                                    if cycles_of_no_work > 10000 {
+                                        cmd_mutex.lock().await.request_shutdown().await;
+                                        error!("stopped on cycle of no work");// TODO: refine this.
+                                    }
+                                },
+                                Err(e) => {
+                                    cmd_mutex.lock().await.request_shutdown().await;
+                                    error!("Internal Error: {:?}",e);
+                                }
+                            };
                         }
                     }
                 }
@@ -120,8 +176,29 @@ where
                     let value = this.clone();
                     async move {
                         let mut that = value.lock().await;
+                        let mut cycles_of_no_work = 0;
                         while cmd_mutex.lock().await.is_running(&mut || i!(that.mark_closed())) {
-                            responder.simulate_direction(&mut that, &cmd_mutex, index).await;
+                            //   Ok(true)  //did something keep going
+                            //   Ok(false) //did nothing becuase it does not pertain - if we are here beyond timeout we must trigger shutdown
+                            //   Err("")  // exit now failure, shutdown.
+
+                            match responder.simulate_direction(&mut that, &cmd_mutex, index).await {
+                                Ok(true) => {
+                                    cycles_of_no_work = 0;
+                                },
+                                Ok(false) => {
+                                    cycles_of_no_work += 1;
+                                    //TODO: based on timeout shutdown and report..
+                                    if cycles_of_no_work > 10000 {
+                                        cmd_mutex.lock().await.request_shutdown().await;
+                                        error!("stopped on cycle of no work");// TODO: refine this.
+                                    }
+                                },
+                                Err(e) => {
+                                    cmd_mutex.lock().await.request_shutdown().await;
+                                    error!("Internal Error: {:?}",e);
+                                }
+                            };
                         }
                     }
                 }
@@ -142,8 +219,25 @@ where
                     let value = this.clone();
                     async move {
                         let mut that = value.lock().await;
+                        let mut cycles_of_no_work = 0;
                         while cmd_mutex.lock().await.is_running(&mut || !(that.mark_closed())) {
-                            responder.simulate_direction(&mut that, &cmd_mutex, index).await;
+                            match responder.simulate_direction(&mut that, &cmd_mutex, index).await {
+                                Ok(true) => {
+                                    cycles_of_no_work = 0;
+                                },
+                                Ok(false) => {
+                                    cycles_of_no_work += 1;
+                                    //TODO: based on timeout shutdown and report..
+                                    if cycles_of_no_work > 10000 {
+                                        cmd_mutex.lock().await.request_shutdown().await;
+                                        error!("stopped on cycle of no work");// TODO: refine this.
+                                    }
+                                },
+                                Err(e) => {
+                                    cmd_mutex.lock().await.request_shutdown().await;
+                                    error!("Internal Error: {:?}",e);
+                                }
+                            };
                         }
                     }
                 }
@@ -164,8 +258,25 @@ where
                     let value = this.clone();
                     async move {
                         let mut that = value.lock().await;
+                        let mut cycles_of_no_work = 0;
                         while cmd_mutex.lock().await.is_running(&mut || i!(that.mark_closed())) {
-                            responder.simulate_direction(&mut that, &cmd_mutex, index).await;
+                            match responder.simulate_direction(&mut that, &cmd_mutex, index).await {
+                                Ok(true) => {
+                                    cycles_of_no_work = 0;
+                                },
+                                Ok(false) => {
+                                    cycles_of_no_work += 1;
+                                    //TODO: based on timeout shutdown and report..
+                                    if cycles_of_no_work > 10000 {
+                                        cmd_mutex.lock().await.request_shutdown().await;
+                                        error!("stopped on cycle of no work");// TODO: refine this.
+                                    }
+                                },
+                                Err(e) => {
+                                    cmd_mutex.lock().await.request_shutdown().await;
+                                    error!("Internal Error: {:?}",e);
+                                }
+                            };
                         }
                     }
                 }

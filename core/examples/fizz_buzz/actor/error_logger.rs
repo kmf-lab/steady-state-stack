@@ -71,7 +71,7 @@ pub(crate) mod tests {
                         ErrorMessage { text: "ignore me from testing, error 2".to_string() },
                         ErrorMessage { text: "ignore me from testing, error 3".to_string() },
                     ], true);
-        graph.request_stop(); //our actor has no input so it immediately stops upon this request
+        graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1))
 
         //nothing to test logger will just write to console errors we ignore
