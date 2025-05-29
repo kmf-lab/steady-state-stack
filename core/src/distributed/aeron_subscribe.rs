@@ -101,7 +101,7 @@ async fn internal_behavior<C: SteadyCommander>(
         }
     }
 
-    let mut sub = sub.unwrap();
+    let mut sub = sub.expect("internal error");
     let mut next_poll_time = Instant::now();
 
     // Step 3: Main polling loop

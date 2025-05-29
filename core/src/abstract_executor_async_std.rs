@@ -112,7 +112,7 @@ mod async_std_exec_tests {
 
     #[test]
     fn test_spawn_more_threads_async_std() {
-        let result = block_on(async { spawn_more_threads(3).await.unwrap() });
+        let result = block_on(async { spawn_more_threads(3).await.expect("internal error") });
         assert_eq!(result, 0);
     }
 }

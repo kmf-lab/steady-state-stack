@@ -779,22 +779,28 @@ impl ActorBuilder {
     ///
     /// * `build_actor_exec` - The execution logic for the actor.
     /// * `threading` - The `Threading` to use for the actor.
-    pub fn build<F, I>(self, build_actor_exec: I, threading: &mut Threading)
+    pub fn build<F, I>(self, build_actor_exec: I, desired_threading: &mut Threading)
     where
         I: Fn(SteadyContext) -> F + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         //TODO: we can set whatever we seem right at the first but later
-        //      when isRunning is called and the actor is started (registerd)
+        //      when isRunning is called and the actor is started (registered)
         //      the best location will be recomputed to be ideal.
 
-        match threading {
-            Threading::Spawn =>                        {self.build_spawn(build_actor_exec);}
-            Threading::Join(team) => {self.build_join(build_actor_exec, team);}
+        let mut applied_threading = desired_threading;
+        let mut temp = Threading::Spawn;
+        #[cfg(test)] //TODO: when testing we only use 1 thread per actor (for shared threads revisit this, simulator will need deadlock fix applied)
+        {applied_threading = &mut temp;}
+
+        match applied_threading {
+            Threading::Spawn => { self.build_spawn(build_actor_exec); }
+            Threading::Join(team) => { self.build_join(build_actor_exec, team); }
         }
+
     }
 
-    
+
     // Example adapter: converting a user’s generic Fn -> F into a pinned trait object
     fn to_dyn_call<I, F>(f: I) -> Box<dyn Fn(SteadyContext) -> PinnedFuture>
     where
