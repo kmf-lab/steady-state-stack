@@ -10,7 +10,7 @@ pub trait AqueductBuilder {
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading
+        threading: Threading
     );
 }
 
@@ -19,7 +19,7 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading
+        threading: Threading
     ) {
         let remotes = tech.to_remotes();
         let match_me = tech.to_match_me();
@@ -58,7 +58,7 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading
+        threading: Threading
     ) {
 
         let remotes = tech.to_remotes();
@@ -99,7 +99,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading
+        threading: Threading
     ) {
         let remotes = tech.to_remotes();
         let match_me = tech.to_match_me();
@@ -139,7 +139,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: &mut Threading
+        threading: Threading
     ) {
         let remotes = tech.to_remotes();
         let match_me = tech.to_match_me();

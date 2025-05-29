@@ -235,6 +235,7 @@ impl ActorTeam {
 
     /// take actor team and start the thread and consume the struct
     pub fn spawn(mut self) -> usize {
+
         let count = Arc::new(AtomicUsize::new(0));
         if self.future_builder.is_empty() {
             return 0; // Nothing to spawn, so return
@@ -779,7 +780,7 @@ impl ActorBuilder {
     ///
     /// * `build_actor_exec` - The execution logic for the actor.
     /// * `threading` - The `Threading` to use for the actor.
-    pub fn build<F, I>(self, build_actor_exec: I, desired_threading: &mut Threading)
+    pub fn build<F, I>(self, build_actor_exec: I, desired_threading: Threading)
     where
         I: Fn(SteadyContext) -> F + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
@@ -789,9 +790,8 @@ impl ActorBuilder {
         //      the best location will be recomputed to be ideal.
 
         let mut applied_threading = desired_threading;
-        let mut temp = Threading::Spawn;
-        #[cfg(test)] //TODO: when testing we only use 1 thread per actor (for shared threads revisit this, simulator will need deadlock fix applied)
-        {applied_threading = &mut temp;}
+       // #[cfg(test)] //TODO: when testing we only use 1 thread per actor (for shared threads revisit this, simulator will need deadlock fix applied)
+      //  {applied_threading = Threading::Spawn;}
 
         match applied_threading {
             Threading::Spawn => { self.build_spawn(build_actor_exec); }

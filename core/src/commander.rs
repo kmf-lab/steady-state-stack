@@ -461,15 +461,23 @@ pub trait SteadyCommander {
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
     async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut>;
 
+
+    /// Move the read index forward count items, ie jump over these
     fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize;
 
 
-    /// Attempts to take a message from the channel if available.
+    /// Attempts to take a message from the channel when available.
+    /// Returns early if shutdown signal is detected
     ///
     /// # Returns
     /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
     async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T>;
 
+    /// Attempts to take a message from the channel if available. Provides a timeout to wait.
+    /// Returns early if shutdown signal is detected
+    ///
+    /// # Returns
+    /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
     async fn take_async_with_timeout<T>(&mut self, this: &mut Rx<T>, timeout: Duration) -> Option<T>;
 
 

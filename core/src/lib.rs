@@ -183,7 +183,6 @@ pub use std::time::{Duration, Instant};
 pub use std::error::Error;
 
 use futures_util::FutureExt;
-use futures::pin_mut;
 use futures::select;
 use std::fmt::Debug;
 use std::sync::Arc;

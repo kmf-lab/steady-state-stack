@@ -8,7 +8,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
-use std::ops::{Deref, DerefMut};
+use std::ops::{ DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
 use async_ringbuf::AsyncRb;

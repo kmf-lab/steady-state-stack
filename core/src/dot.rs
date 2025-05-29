@@ -954,7 +954,7 @@ mod dot_tests {
         let mut txt_metric = BytesMut::new();
         build_metric(&state, &mut txt_metric);
 
-        let result = String::from_utf8(txt_metric.to_vec()).unwrap();
+        let result = String::from_utf8(txt_metric.to_vec()).expect("internal error");
         assert!(result.contains("node_metric"));
         assert!(result.contains("edge_metric"));
     }
@@ -983,7 +983,7 @@ mod dot_tests {
         };
 
         build_dot(&state, &mut dot_graph, &config);
-        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("node42")); // Should include suffix
     }
 
@@ -1018,7 +1018,7 @@ mod dot_tests {
         };
 
         build_dot(&state, &mut dot_graph, &config);
-        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("192.168.1.1"));
         assert!(result.contains("port_8080"));
         assert!(result.contains("TCP"));
@@ -1071,7 +1071,7 @@ mod dot_tests {
         };
 
         build_dot(&state, &mut dot_graph, &config);
-        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("from_node"));
         assert!(result.contains("to_node5"));
         assert!(result.contains("test_edge"));
@@ -1170,7 +1170,7 @@ mod dot_tests {
 
         assert_eq!(local_state.nodes.len(), 1);
         assert!(local_state.nodes[0].id.is_some());
-        assert_eq!(local_state.nodes[0].id.unwrap().name, "test_actor");
+        assert_eq!(local_state.nodes[0].id.expect("internal error").name, "test_actor");
         assert!(local_state.nodes[0].remote_details.is_some());
         assert_eq!(local_state.edges.len(), 2); // One for input, one for output
     }
@@ -1285,7 +1285,7 @@ mod dot_tests {
 
         // This should not include the node since id is None (filtered out)
         build_dot(&state, &mut dot_graph, &config);
-        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(!result.contains("unknown_node"));
     }
 
@@ -1317,7 +1317,7 @@ mod dot_tests {
 
         // This should not process the edge since from and to are None
         build_dot(&state, &mut dot_graph, &config);
-        let result = String::from_utf8(dot_graph.to_vec()).unwrap();
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(!result.contains("test_edge"));
     }
 }

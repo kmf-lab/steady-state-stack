@@ -270,7 +270,7 @@ mod test_log_tests {
             info!("Worker thread log");
         });
 
-        handle.join().unwrap();
+        handle.join().expect("internal error");
         thread::sleep(Duration::from_millis(50)); // Allow log to be processed
 
         assert_in_logs!(["Main thread log", "Worker thread log"]);

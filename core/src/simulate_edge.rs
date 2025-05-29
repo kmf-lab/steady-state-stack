@@ -268,13 +268,15 @@ where
                                     cycles_of_no_work += 1;
                                     //TODO: based on timeout shutdown and report..
                                     if cycles_of_no_work > 10000 {
-                                        cmd_mutex.lock().await.request_shutdown().await;
                                         error!("stopped on cycle of no work");// TODO: refine this.
+
+                                        cmd_mutex.lock().await.request_shutdown().await;
                                     }
                                 },
                                 Err(e) => {
-                                    cmd_mutex.lock().await.request_shutdown().await;
                                     error!("Internal Error: {:?}",e);
+
+                                    cmd_mutex.lock().await.request_shutdown().await;
                                 }
                             };
                         }
@@ -300,7 +302,6 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     if let Some(responder) = cmd.sidechannel_responder() {
         let cmd_mutex = Arc::new(Mutex::new(cmd));
         let mut tasks: Vec<Pin<Box<dyn Future<Output = ()>>>> = Vec::new();
-        // TODO: store the index position to match which we want along with type !!!
         for (i, behave) in sims.into_iter().enumerate() {
             let cmd_mutex = cmd_mutex.clone();
             let sim = behave.into_sim_runner();

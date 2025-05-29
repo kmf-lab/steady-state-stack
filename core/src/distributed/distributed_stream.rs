@@ -28,7 +28,7 @@ use crate::steady_tx::TxMetaDataProvider;
 use crate::core_exec;
 use futures::future::FutureExt; // For .fuse()
 use futures::pin_mut;
-use log::{error, trace, warn};
+use log::{error, trace};
 use num_traits::Zero;
 // For pin_mut!
 

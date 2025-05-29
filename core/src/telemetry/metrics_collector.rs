@@ -844,7 +844,7 @@ mod extra_tests {
         // when building (is_building=true), even mismatched channels should yield Some(empty)
         let nodes = gather_node_details(&mut state, &senders, true);
         assert!(nodes.is_some());
-        assert!(nodes.unwrap().is_empty());
+        assert!(nodes.expect("internal error").is_empty());
         // actor_count updated
         assert_eq!(state.actor_count, 0);
     }

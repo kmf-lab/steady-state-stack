@@ -98,7 +98,8 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub async fn simulated_behavior(
         self,
         sims: Vec<&dyn IntoSimRunner<Self>>
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Box<dyn Error>>
+    {
         simulate_edge::simulated_behavior::<Self>(self, sims).await
     }
 

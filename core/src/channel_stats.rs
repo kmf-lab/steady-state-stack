@@ -1042,13 +1042,13 @@ pub(crate) fn compute_labels<T: Counter>(
                 };
                 write!(&mut writer, " {:.3}", float_value).unwrap();
                 let offset = writer.pos;
-                label_target.push_str(core::str::from_utf8(&value_buf[..offset]).unwrap());
+                label_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
 
                 // Output raw float value for metrics
                 #[cfg(feature = "prometheus_metrics")]
                 {
                     metric_target.push(' ');
-                    metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).unwrap());
+                    metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
                     metric_target.push('\n');
                 }
             }
