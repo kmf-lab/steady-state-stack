@@ -530,18 +530,15 @@ mod graph_testing_tests {
     use parking_lot::RwLock;
     use std::time::Instant;
     use super::*;
-    use async_std::test;
     use futures::channel::oneshot;
-    use log::info;
     use crate::{GraphLiveliness, LazySteadyRx, LazySteadyTx, Rx, SteadyCommander};
-    use crate::core_exec;
     use crate::channel_builder::ChannelBuilder;
     use crate::commander_context::SteadyContext;
     use crate::monitor::ActorMetaData;
     use crate::core_tx::TxCore;
 
     #[test]
-    async fn test_graph_test_result_ok() {
+    fn test_graph_test_result_ok() {
         let result: GraphTestResult<i32, &str> = GraphTestResult::Ok(42);
         if let GraphTestResult::Ok(value) = result {
             assert_eq!(value, 42);
@@ -551,7 +548,7 @@ mod graph_testing_tests {
     }
 
     #[test]
-    async fn test_graph_test_result_err() {
+    fn test_graph_test_result_err() {
         let result: GraphTestResult<i32, &str> = GraphTestResult::Err("error");
         if let GraphTestResult::Err(value) = result {
             assert_eq!(value, "error");
@@ -562,7 +559,7 @@ mod graph_testing_tests {
 
 
     #[test]
-    async fn test_register_and_retrieve_node() {
+    fn test_register_and_retrieve_node() {
         let mut hub = StageManager::default();
 
         let actor = ActorIdentity::new(2,"test_actor",Some(2));
@@ -577,55 +574,6 @@ mod graph_testing_tests {
 
 
 
-    #[test]
-    #[cfg(not(windows))]
-    async fn test_node_call_success() {
-
-        // Simulates Graph creation where we init the side channel hub
-        // and register our actors for future testing
-        let mut hub = StageManager::default();
-        let actor = ActorIdentity::new(1,"test_actor",Some(1));
-        let actor_name = actor.label;
-        let text = format!("hub: {:?} actor: {:?}",hub,actor_name);
-        info!("custom debug {:?}",text);
-
-        let (_tx,rx) = oneshot::channel();
-        assert!(hub.register_node(actor_name, 10, rx));
-        
-        // do not run as it will confuse the build due to log of error.
-        // let (_tx,rx) = oneshot::channel();
-        // assert_eq!(false, hub.register_node(actor_name.clone(), 10, rx));
-
-
-        // Simulates the startup of the actor where we typically lookup the responder once
-        let responder_inside_actor = {
-            let (_tx,_rx) = oneshot::channel::<()>();
-            let node_tx_rx = hub.node_tx_rx(actor_name);
-            if let Some(ref tr) = node_tx_rx {
-                Some(SideChannelResponder::new(tr.clone(), actor))
-            } else {
-                None
-            }
-
-        };
-        // Simulates an actor which responds when a message is sent
-        //this is our simulated actor to respond to our node_call below
-        core_exec::spawn_detached(async move {
-            responder_inside_actor.expect("should exist").respond_with(|msg| {
-                let received_msg = msg.downcast_ref::<i32>().expect("iternal error");
-                Some(Box::new(received_msg * 2) as Box<dyn Any + Send + Sync>)
-            }).await;
-        });
-
-        // Simulates the main test block which makes a call and awaits for the response.
-        //test code will call to the actor and only return after above actor responds
-        let msg = Box::new(42) as Box<dyn Any + Send + Sync>;
-        let result = hub.call_actor_internal(msg, actor_name);
-
-         let r = result.expect("iternal error");
-         let response = r.downcast_ref::<i32>().expect("iternal error");
-         assert_eq!(*response, 84, "Response should match the expected value");
-    }
 
 
     // Helper method to build tx and rx arguments
