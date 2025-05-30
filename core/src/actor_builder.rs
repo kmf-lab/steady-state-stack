@@ -428,12 +428,7 @@ pub enum ScheduleAs<'a> {
 impl ScheduleAs<'_> {
     pub fn dynamic_schedule(some_troupe: &mut Option<TroupeGuard>) -> ScheduleAs {  //TODO: move util...
         if let Some(t) = some_troupe {
-
-            if 1==t.future_builder.len() {
-                ScheduleAs::SoloAct
-            } else {
-                ScheduleAs::MemberOf(t)
-            }
+            ScheduleAs::MemberOf(t)
         } else {
             ScheduleAs::SoloAct
         }

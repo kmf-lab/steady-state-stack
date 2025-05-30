@@ -612,10 +612,10 @@ where
 #[cfg(test)]
 mod meteric_server_tests {
     use std::sync::Arc;
-    use std::thread::{sleep, Thread};
+    use std::thread::{sleep};
     use std::time::Duration;
     use futures_timer::Delay;
-    use crate::{ActorIdentity, GraphBuilder, Threading};
+    use crate::{ActorIdentity, GraphBuilder, SoloAct};
     use crate::monitor::ActorMetaData;
     use crate::telemetry::metrics_collector::DiagramData;
     use crate::telemetry::metrics_server::internal_behavior;
@@ -632,7 +632,7 @@ mod meteric_server_tests {
         graph.actor_builder()
             .with_name("UnitTest")
             .build(move |context| internal_behavior(context, rate_ms, rx_in.clone(), None)
-                   , &mut Threading::Solo);
+                   , SoloAct);
  
         let test_data:Vec<DiagramData> = (0..3).map(|i| DiagramData::NodeDef( i
                  , Box::new((
@@ -754,10 +754,10 @@ mod http_telemetry_tests {
         let server_ip_out = server_ip.clone();
         graph.actor_builder()
             .with_name("metrics_server")
-            .build_spawn(move |context| {
+            .build(move |context| {
                 let frame_rate_ms = context.frame_rate_ms;
                 internal_behavior(context, frame_rate_ms, rx_in.clone(), server_ip.clone())
-            });
+            },SoloAct);
 
         // Step 3: Start the graph
         graph.start();

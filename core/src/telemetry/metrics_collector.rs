@@ -586,7 +586,7 @@ mod metric_collector_tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread::sleep;
     use futures::executor::block_on;
-    use crate::GraphBuilder;
+    use crate::{GraphBuilder, SoloAct};
 
     #[test]
     fn test_raw_diagram_state_default() {
@@ -683,7 +683,7 @@ mod metric_collector_tests {
             graph.actor_builder()
                 .with_no_refresh_window()
                 .with_name("generator")
-                .build_spawn(move |mut context| {
+                .build(move |mut context| {
                     let tx = tx.clone();
                     let count = gen_count.clone();
                     async move {
@@ -700,14 +700,14 @@ mod metric_collector_tests {
                         }
                         Ok(())
                     }
-                });
+                },SoloAct);
 
             let consume_count = Arc::new(AtomicUsize::new(0));
             //let check_count = consume_count.clone();
 
             graph.actor_builder()
                 .with_name("consumer")
-                .build_spawn(move |mut context| {
+                .build(move |mut context| {
                     let rx = rx.clone();
                     let count = consume_count.clone();
                     async move {
@@ -720,7 +720,7 @@ mod metric_collector_tests {
                         }
                         Ok(())
                     }
-                });
+                }, SoloAct);
 
             graph.start();
 
