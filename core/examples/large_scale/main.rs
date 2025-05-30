@@ -6,7 +6,8 @@ use log::*;
 use args::Args;
 use std::time::Duration;
 use steady_state::*;
-use steady_state::actor_builder::{ActorTeam, Threading};
+use steady_state::actor_builder::{Troupe, ScheduleAs, TroupeGuard};
+use steady_state::actor_builder::ScheduleAs::*;
 
 
 // here are the actors that will be used in the graph.
@@ -92,13 +93,7 @@ fn build_graph<const LEVEL_1: usize,
     let mut route_b_count:usize = 0;
     let mut route_c_count:usize = 0;
 
-    let mut actor_team = ActorTeam::new(&graph);
-    let mut thread_top = if spawn_a {
-        Threading::Spawn
-    } else {
-        Threading::Join(&mut actor_team)
-    };
-
+    let mut a_troupe = if spawn_a {None} else {Some(graph.actor_troupe())};
 
     let (btx,brx) = base_channel_builder.build_channel_bundle::<_, { LEVEL_1 }>();
 
@@ -108,7 +103,7 @@ fn build_graph<const LEVEL_1: usize,
                        move |context| actor::data_generator::run(context
                                                   , btx.clone()
                        )
-                       , &mut thread_top
+                       , ScheduleAs::dynamic_schedule(&mut a_troupe)
                 );
 
 
@@ -124,7 +119,7 @@ fn build_graph<const LEVEL_1: usize,
                                                                   , local_rx.clone()
                                                                   , btx.clone()
                            )
-                          , &mut thread_top
+                          , ScheduleAs::dynamic_schedule(&mut a_troupe)
                     );
 
 
@@ -139,7 +134,7 @@ fn build_graph<const LEVEL_1: usize,
                                                                   , local_rx.clone()
                                                                   , btx.clone()
                                      )
-                                 , &mut thread_top
+                                 , ScheduleAs::dynamic_schedule(&mut a_troupe)
                     );
 
                 for z in 0..LEVEL_3 {
@@ -153,19 +148,16 @@ fn build_graph<const LEVEL_1: usize,
                                                                           , local_rx.clone()
                                                                           , btx.clone()
                                           )
-                                         , &mut thread_top
+                                         , ScheduleAs::dynamic_schedule(&mut a_troupe)
                             );
 
                     if 1 == LEVEL_4 {
-                        let mut actor_linedance_tream = ActorTeam::new(&graph);
-                        if let Threading::Join(ref mut team) = thread_top {
-                            team.transfer_back_to(&mut actor_linedance_tream);
+                        let mut actor_linedance_tream = graph.actor_troupe();
+                        if let Some(ref mut troupe) = a_troupe {
+                            troupe.transfer_back_to(&mut actor_linedance_tream);
                         }
-                        let mut thread = if spawn_b {
-                            Threading::Spawn
-                        } else {
-                            Threading::Join(&mut actor_linedance_tream)
-                        };
+
+                        let mut b_troupe = if spawn_b {None} else {Some(actor_linedance_tream)};
 
                         let local_rx = brx[0].clone();
                             base_actor_builder
@@ -173,25 +165,19 @@ fn build_graph<const LEVEL_1: usize,
                                 .build(move |context| actor::data_user::run(context
                                                                                   , local_rx.clone()
                                              )
-                                            , &mut thread
+                                            , ScheduleAs::dynamic_schedule(&mut b_troupe)
                                 );
-                        actor_linedance_tream.spawn();
                         user_count += 1;
 
                     } else {
 
                         for f in 0..LEVEL_4 {
-                            let mut group_line = ActorTeam::new(&graph  );
+                            let mut group_line = graph.actor_troupe();
 
-                            if let Threading::Join(ref mut team) = thread_top {
-                                team.transfer_back_to(&mut group_line);
+                            if let Some(ref mut troupe) = a_troupe {
+                                troupe.transfer_back_to(&mut group_line);
                             }
-
-                            let mut thread = if spawn_b {
-                                Threading::Spawn
-                            } else {
-                                Threading::Join(&mut group_line)
-                            };
+                            let mut b_troupe = if spawn_b {None} else {Some(group_line)};
 
                             let local_rx = brx[f].clone();
 
@@ -202,7 +188,7 @@ fn build_graph<const LEVEL_1: usize,
                                                                                         , local_rx.clone()
                                                                                         , filter_tx.clone()
                                                   )
-                                                 , &mut thread
+                                                 , ScheduleAs::dynamic_schedule(&mut b_troupe)
                                     );
 
                             let mut input_rx = filter_rx;
@@ -218,7 +204,7 @@ fn build_graph<const LEVEL_1: usize,
                                                                                             , input_rx.clone()
                                                                                             , logging_tx.clone()
                                         )
-                                                    , &mut thread
+                                                    , ScheduleAs::dynamic_schedule(&mut b_troupe)
                                         );
 
                                     count = count - 1;
@@ -237,7 +223,7 @@ fn build_graph<const LEVEL_1: usize,
                                                                                         , output_rx.clone()
                                                                                         , decrypt_tx.clone()
                                                     )
-                                                 , &mut thread
+                                                 , ScheduleAs::dynamic_schedule(&mut b_troupe)
                                     );
 
                                 base_actor_builder
@@ -245,10 +231,8 @@ fn build_graph<const LEVEL_1: usize,
                                     .build(move |context| actor::data_user::run(context
                                                                                      , decrypt_rx.clone()
                                                     )
-                                                 , &mut thread
+                                                 , ScheduleAs::dynamic_schedule(&mut b_troupe)
                                     );
-
-                            group_line.spawn();
                             user_count += 1;
 
                         }
@@ -258,9 +242,6 @@ fn build_graph<const LEVEL_1: usize,
                 route_b_count += 1;
             }
         }
-    let _x = actor_team.spawn();
-    //trace!("remaining actors in global group: {:?}",_x);
-
     graph
 }
 

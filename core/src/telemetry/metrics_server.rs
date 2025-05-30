@@ -632,7 +632,7 @@ mod meteric_server_tests {
         graph.actor_builder()
             .with_name("UnitTest")
             .build(move |context| internal_behavior(context, rate_ms, rx_in.clone(), None)
-                   , &mut Threading::Spawn);
+                   , &mut Threading::Solo);
  
         let test_data:Vec<DiagramData> = (0..3).map(|i| DiagramData::NodeDef( i
                  , Box::new((

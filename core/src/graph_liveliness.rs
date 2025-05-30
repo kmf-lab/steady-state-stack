@@ -2,7 +2,7 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{steady_config, util, ActorTeam};
+use crate::{steady_config, util, Troupe};
 use std::ops::{Deref, Sub};
 use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -26,7 +26,7 @@ use futures_util::lock::{MutexGuard};
 use aeron::aeron::Aeron;
 use aeron::context::Context;
 use async_lock::Barrier;
-use crate::actor_builder::ActorBuilder;
+use crate::actor_builder::{ActorBuilder, TroupeGuard};
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::commander_context::SteadyContext;
@@ -697,11 +697,13 @@ impl Graph {
     pub fn actor_builder(&mut self) -> ActorBuilder {
         ActorBuilder::new(self)
     }
- 
-    pub fn actor_team(&self) -> ActorTeam {
-        ActorTeam::new(self)
-    }
 
+
+    pub fn actor_troupe(&self) -> TroupeGuard {
+        TroupeGuard {
+            troupe: Some(Troupe::new(self))
+        }
+    }
 
     /// Enables fail-fast behavior.
     ///

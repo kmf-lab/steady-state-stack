@@ -177,19 +177,21 @@ impl StageManager {
                 let (tx, rx) = sc_guard.deref_mut();
                 match tx.push(msg).await {
                     Ok(_) => {
+                        error!("waiting on rx.pop()");
                         if let Some(response) = rx.pop().await {
                             let is_ok = response.downcast_ref::<&str>()
                                 .map(|msg| *msg == OK_MESSAGE)
                                 .or_else(|| response.downcast_ref::<String>()
                                     .map(|msg| msg == OK_MESSAGE))
                                 .unwrap_or(false);
-
+                            error!("{:?}", response);
                             if is_ok {
                                 Ok(response)
                             } else {
                                 Err("Actor responded with unexpected message".into())
                             }
                         } else {
+                            error!("Actor responded unexpected message");
                             Err("Actor disconnected, no response".into())
                         }                        
                     }

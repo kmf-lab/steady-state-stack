@@ -1,5 +1,5 @@
 mod args;
-use steady_state::{Percentile, MCPU};
+use steady_state::{Percentile, ScheduleAs, MCPU};
 use steady_state::StdDev;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -112,35 +112,35 @@ fn build_simple_widgets_graph(mut graph: steady_state::Graph) -> (steady_state::
         .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10));
 
     base_actor_builder.with_name("generator")
-        .build_spawn(move |context| actor::data_generator::run(context
+        .build(move |context| actor::data_generator::run(context
                                                               , change_rx.clone()
                                                               , generator_tx.clone())
-                     
+                     , ScheduleAs::SoloAct
         );
 
     base_actor_builder.with_name("approval")
-        .build_spawn(move |context| actor::data_approval::run(context
+        .build(move |context| actor::data_approval::run(context
                                                              , generator_rx.clone()
                                                              , consumer_tx.clone()
                                                              , failure_tx.clone())
-                  
+                     , ScheduleAs::SoloAct
         );
 
     base_actor_builder.with_name("feedback")
-        .build_spawn(move |context| actor::data_feedback::run(context
+        .build(move |context| actor::data_feedback::run(context
                                                              , failure_rx.clone()
                                                              , change_tx.clone())
-                 
+                     , ScheduleAs::SoloAct
         );
 
     let state = Arc::new(Mutex::new(InternalState::new()));
 
     let actor_state = state.clone();
     base_actor_builder.with_name("consumer")
-        .build_spawn(move |context| actor::data_consumer::run(context
+        .build(move |context| actor::data_consumer::run(context
                                                              , consumer_rx.clone(),
                                                              actor_state.clone())
-                 
+                     , ScheduleAs::SoloAct
         );
 
     (graph,state)

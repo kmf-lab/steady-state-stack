@@ -70,8 +70,9 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
     {
        base_actor_builder.with_name("FinalConsumer")
-                 .build_spawn( move |context| actor::final_consumer::run(context
+                 .build( move |context| actor::final_consumer::run(context
                                             , finalconsumer_tick_counts_rx.clone())
+                               , ScheduleAs::SoloAct
                  );
     }
 
@@ -92,17 +93,17 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
 
                 base_actor_builder.with_name("TickRelay")
-                    .build_spawn( move |context| actor::tick_relay::run(context
+                    .build( move |context| actor::tick_relay::run(context
                                             , tick_consumer_ticks_rx.clone()
                                             , tickrelay_ticks_tx.clone()
-                    )
+                    ), ScheduleAs::SoloAct
                     );
 
                 base_actor_builder.with_name("TickConsumer")
-                    .build_spawn( move |context| actor::tick_consumer::run(context
+                    .build( move |context| actor::tick_consumer::run(context
                                            , tickrelay_ticks_rx.clone()
                                            , tick_consumer_tick_counts_tx.clone()
-                    )
+                    ), ScheduleAs::SoloAct
                    );
 
             }
@@ -110,8 +111,9 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
     {
        base_actor_builder.with_name("TickGenerator")
-                 .build_spawn( move |context| actor::tick_generator::run(context
+                 .build( move |context| actor::tick_generator::run(context
                                             , tickgenerator_ticks_tx.clone())
+                               , ScheduleAs::SoloAct
                  );
     }
 

@@ -5,7 +5,7 @@ use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
-use steady_state::actor_builder::ActorTeam;
+use steady_state::actor_builder::Troupe;
 mod actor {
         pub mod final_consumer;
         pub mod tick_consumer;
@@ -67,14 +67,16 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
 
     {
         base_actor_builder.with_name("TickGenerator")
-            .build_spawn( move |context| actor::tick_generator::run(context
+            .build( move |context| actor::tick_generator::run(context
                                                                     , tickgenerator_ticks_tx.clone())
+                          , ScheduleAs::SoloAct
             );
     }
     {
        base_actor_builder.with_name("FinalConsumer")
-                 .build_spawn( move |context| actor::final_consumer::run(context
+                 .build( move |context| actor::final_consumer::run(context
                                             , finalconsumer_tick_counts_rx.clone())
+                               , ScheduleAs::SoloAct
                  );
     }
 
@@ -82,7 +84,7 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
          .zip(tick_consumern_to_finalconsumer_tick_counts_tx.iter()).enumerate()
         .for_each(|(_i, (tick_consumer_ticks_rx, tick_consumer_tick_counts_tx))| {
             {
-                let mut team =  ActorTeam::new(&graph);
+                let mut troupe =  graph.actor_troupe();
 
                 let tick_consumer_ticks_rx = tick_consumer_ticks_rx.clone();
                 let tick_consumer_tick_counts_tx = tick_consumer_tick_counts_tx.clone();
@@ -96,22 +98,20 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
                     .build_channel();
 
                 base_actor_builder.with_name("TickRelay")
-                    .build_join(move |context| actor::tick_relay::run(context
+                    .build(move |context| actor::tick_relay::run(context
                                                                       , tick_consumer_ticks_rx.clone()
                                                                       , tickrelay_ticks_tx.clone()
                     )
-                                , &mut team
+                                , ScheduleAs::MemberOf(&mut troupe)
                     );
                 base_actor_builder.with_name("TickConsumer")
-                    .build_join(move |context| actor::tick_consumer::run(context
+                    .build(move |context| actor::tick_consumer::run(context
                                                                          , tickrelay_ticks_rx.clone()
                                                                          , tick_consumer_tick_counts_tx.clone()
                     )
-                                , &mut team
+                                , ScheduleAs::MemberOf(&mut troupe)
                     );
 
-
-                team.spawn();
             }
         });
 

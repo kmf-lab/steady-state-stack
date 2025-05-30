@@ -653,7 +653,7 @@ impl<T: StreamItem> StreamRx<T> {
 
 
     pub fn try_take(&mut self) -> Option<(T,Box<[u8]>)> {
-        if let Some((done, msg)) = self.shared_try_take() {
+        if let Some((_done, msg)) = self.shared_try_take() {
             Some(msg)
         } else {
             None

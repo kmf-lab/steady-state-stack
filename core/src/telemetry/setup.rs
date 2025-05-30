@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 use log::*;
 use num_traits::Zero;
-use crate::{steady_tx_bundle, ActorIdentity, Graph, GraphLivelinessState, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
+use crate::{steady_tx_bundle, ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{find_my_index, ChannelMetaData, RxTel, ThreadInfo};
@@ -164,9 +164,9 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
             .with_mcpu_avg()
             .with_load_avg();
 
-        bldr.with_name(metrics_server::NAME).build_spawn(move |context| {
+        bldr.with_name(metrics_server::NAME).build(move |context| {
             metrics_server::run(context, rx.clone())
-        });
+        }, ScheduleAs::SoloAct);
 
         let all_tel_rx = graph.all_telemetry_rx.clone();
 
@@ -178,10 +178,10 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
             .with_mcpu_avg()
             .with_load_avg();
 
-        bldr.with_name(metrics_collector::NAME).build_spawn(move |context| {
+        bldr.with_name(metrics_collector::NAME).build(move |context| {
             let all_rx = all_tel_rx.clone();
             metrics_collector::run(context, all_rx, optional_servers.clone())
-        });
+        }, ScheduleAs::SoloAct);
     }
 }
 

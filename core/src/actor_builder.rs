@@ -153,9 +153,8 @@ Ok(())
 }
 
 /// The `ActorTeam` struct manages a collection of actors, facilitating their coordinated execution.
-pub struct ActorTeam {
+pub struct Troupe {
     future_builder: VecDeque<FutureBuilderType>,
-    thread_lock: Arc<Mutex<()>>,
     team_id: usize,
 }
 
@@ -190,15 +189,39 @@ impl FutureBuilderType {
     
 }
 
+/// A guard that automatically spawns the troupe when it goes out of scope
+pub struct TroupeGuard {
+    pub(crate) troupe: Option<Troupe>,
+}
+
+impl Deref for TroupeGuard {
+    type Target = Troupe;
+
+    fn deref(&self) -> &Self::Target {
+        self.troupe.as_ref().expect("TroupeGuard troupe was already consumed")
+    }
+}
+
+impl std::ops::DerefMut for TroupeGuard {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.troupe.as_mut().expect("TroupeGuard troupe was already consumed")
+    }
+}
+
+impl Drop for TroupeGuard {
+    fn drop(&mut self) {
+        if let Some(troupe) = self.troupe.take() {
+            troupe.spawn();
+        }
+    }
+}
 
 
-
-impl ActorTeam {
+impl Troupe {
     /// Creates a new instance of `ActorTeam`.
-    pub fn new(graph: &Graph) -> Self { //TODO: add this method to graph.
-        ActorTeam {
+    pub(crate) fn new(graph: &Graph) -> Self { //TODO: add this method to graph.
+        Troupe {
             future_builder: VecDeque::new(),
-            thread_lock: graph.thread_lock.clone(),
             team_id: graph.team_count.fetch_add(1, Ordering::SeqCst),
         }
     }
@@ -233,8 +256,8 @@ impl ActorTeam {
     }
 
 
-    /// take actor team and start the thread and consume the struct
-    pub fn spawn(mut self) -> usize {
+    /// called to solidify this troupe and spawn the needed thread
+    fn spawn(mut self) -> usize {
 
         let count = Arc::new(AtomicUsize::new(0));
         if self.future_builder.is_empty() {
@@ -328,9 +351,7 @@ impl ActorTeam {
                 }
             }
         };
-        let thread_lock = self.thread_lock;
         core_exec::block_on(async move {
-           let _guard = thread_lock.lock().await;
            match core_exec::spawn_more_threads(1).await {
                Ok(c) => {if c>=12 {info!("Threads: {}",c);} }
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
@@ -398,14 +419,26 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
     }
 }
 
-/// Enum to select the treading approach for building an Actor. Each actor can spawn a new thread
-/// or it can take a Join wrapping an ActorTeam to run the Actors together.
-///
-pub enum Threading<'a> {
-    /// Spawn a new thread for the actor now
-    Spawn,
-    /// Join the actor to the team where a common spawn will be called later
-    Join(&'a mut ActorTeam),
+
+pub enum ScheduleAs<'a> {
+    SoloAct,
+    MemberOf(&'a mut Troupe),
+}
+
+impl ScheduleAs<'_> {
+    pub fn dynamic_schedule(some_troupe: &mut Option<TroupeGuard>) -> ScheduleAs {  //TODO: move util...
+        if let Some(t) = some_troupe {
+
+            if 1==t.future_builder.len() {
+                ScheduleAs::SoloAct
+            } else {
+                ScheduleAs::MemberOf(t)
+            }
+        } else {
+            ScheduleAs::SoloAct
+        }
+    }
+
 }
 
 impl ActorBuilder {
@@ -660,7 +693,7 @@ impl ActorBuilder {
     /// # Arguments
     ///
     /// * `exec` - The execution logic for the actor.
-    pub fn build_spawn<F, I>(self, build_actor_exec: I)
+    fn build_spawn<F, I>(self, build_actor_exec: I)
         where
             I: Fn(SteadyContext) -> F + 'static,
             F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
@@ -758,7 +791,7 @@ impl ActorBuilder {
     ///
     /// * `build_actor_exec` - The execution logic for the actor.
     /// * `target` - The `ActorTeam` to which the actor will be added.
-    pub fn build_join<F, I>(self, build_actor_exec: I, target: &mut ActorTeam)
+    fn build_join<F, I>(self, build_actor_exec: I, target: &mut Troupe)
         where
             I: Fn(SteadyContext) -> F + 'static,
             F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
@@ -780,7 +813,7 @@ impl ActorBuilder {
     ///
     /// * `build_actor_exec` - The execution logic for the actor.
     /// * `threading` - The `Threading` to use for the actor.
-    pub fn build<F, I>(self, build_actor_exec: I, desired_threading: Threading)
+    pub fn build<F, I>(self, build_actor_exec: I, desired_scheduling: ScheduleAs)
     where
         I: Fn(SteadyContext) -> F + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
@@ -789,13 +822,13 @@ impl ActorBuilder {
         //      when isRunning is called and the actor is started (registered)
         //      the best location will be recomputed to be ideal.
 
-        let mut applied_threading = desired_threading;
+        let mut applied_scheduling = desired_scheduling;
        // #[cfg(test)] //TODO: when testing we only use 1 thread per actor (for shared threads revisit this, simulator will need deadlock fix applied)
       //  {applied_threading = Threading::Spawn;}
 
-        match applied_threading {
-            Threading::Spawn => { self.build_spawn(build_actor_exec); }
-            Threading::Join(team) => { self.build_join(build_actor_exec, team); }
+        match applied_scheduling {
+            ScheduleAs::SoloAct => { self.build_spawn(build_actor_exec); }
+            ScheduleAs::MemberOf(team) => { self.build_join(build_actor_exec, team); }
         }
 
     }
@@ -1370,7 +1403,7 @@ mod test_actor_builder {
         assert_eq!(builder.window_bucket_in_bits, 0);
         builder.build(|c| async move {             
             assert!(c.is_liveliness_in(&vec![ GraphLivelinessState::Building ]));            
-            Ok(()) }, &mut Threading::Spawn);
+            Ok(()) }, ScheduleAs::SoloAct);
     }
 
     // #[test]

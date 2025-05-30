@@ -1,5 +1,5 @@
 use log::*;
-use crate::{new_state, LazyStreamRx, LazyStreamTx, Threading};
+use crate::{new_state, LazyStreamRx, LazyStreamTx, ScheduleAs};
 use crate::actor_builder::ActorBuilder;
 use crate::distributed::aeron_channel_builder::AqueTech;
 use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
@@ -10,7 +10,7 @@ pub trait AqueductBuilder {
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: Threading
+        threading: ScheduleAs
     );
 }
 
@@ -19,7 +19,7 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: Threading
+        threading: ScheduleAs
     ) {
         let remotes = tech.to_remotes();
         let match_me = tech.to_match_me();
@@ -45,9 +45,9 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
             },
             AqueTech::None => {
             },
-            _ => {
-                panic!("unsupported distribution type");
-            }
+            // _ => {
+            //     panic!("unsupported distribution type");
+            // }
         }
     }
 
@@ -58,7 +58,7 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: Threading
+        threading: ScheduleAs
     ) {
 
         let remotes = tech.to_remotes();
@@ -99,7 +99,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: Threading
+        threading: ScheduleAs
     ) {
         let remotes = tech.to_remotes();
         let match_me = tech.to_match_me();
@@ -139,7 +139,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSess
         self,
         tech: AqueTech,
         actor_builder: &ActorBuilder,
-        threading: Threading
+        threading: ScheduleAs
     ) {
         let remotes = tech.to_remotes();
         let match_me = tech.to_match_me();
@@ -192,9 +192,9 @@ mod distributed_builder_tests {
             let tech = AqueTech::None;
             // Create a minimal ActorBuilder and Threading
             let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-            let mut threading = Threading::Spawn;
+            let mut threading = ScheduleAs::SoloAct;
             // Call build_aqueduct; test passes if it doesn't panic
-            lazy_rx.build_aqueduct(tech, &actor_builder, &mut threading);
+            lazy_rx.build_aqueduct(tech, &actor_builder, threading);
         }
     }
 
@@ -208,8 +208,8 @@ mod distributed_builder_tests {
         let (lazy_tx, _lazy_rx) = cb.build_stream(100);
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-        let mut threading = Threading::Spawn;
-        lazy_tx.build_aqueduct(tech, &actor_builder, &mut threading);
+        let mut threading = ScheduleAs::SoloAct;
+        lazy_tx.build_aqueduct(tech, &actor_builder, threading);
     }
 
     /// Test that `build_aqueduct` works for `LazySteadyStreamRxBundle<StreamSimpleMessage, GIRTH>` with `AqueTech::Aeron`.
@@ -223,8 +223,8 @@ mod distributed_builder_tests {
         let (lazy_tx, lazy_rx_bundle) = cb.build_stream_bundle::<StreamSimpleMessage, GIRTH>(100);
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-        let mut threading = Threading::Spawn;
-        lazy_rx_bundle.build_aqueduct(tech, &actor_builder, &mut threading);
+        let mut threading = ScheduleAs::SoloAct;
+        lazy_rx_bundle.build_aqueduct(tech, &actor_builder, threading);
     }
 
     #[test]
@@ -238,7 +238,7 @@ mod distributed_builder_tests {
 
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-        let mut threading = Threading::Spawn;
-        lazy_tx_bundle.build_aqueduct(tech, &actor_builder, &mut threading);
+        let mut threading = ScheduleAs::SoloAct;
+        lazy_tx_bundle.build_aqueduct(tech, &actor_builder, threading);
     }
 }

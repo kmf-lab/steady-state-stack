@@ -72,11 +72,11 @@ fn main() {
         .with_mcpu_percentile(Percentile::p96())
         .with_mcpu_percentile(Percentile::p25())
         .build(move |context| actor::subscriber::run(context, base.clone())
-               , &mut Threading::Spawn);
+               , ScheduleAs::SoloAct);
 
     from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_channel, STREAM_ID)
-                                        , &graph.actor_builder().with_name("ReceiverTest").never_simulate(false)
-                                        , &mut Threading::Spawn);
+                                 , &graph.actor_builder().with_name("ReceiverTest").never_simulate(false)
+                                 , ScheduleAs::SoloAct);
 
     graph.start(); //startup the graph
     graph.block_until_stopped(Duration::from_secs(21));

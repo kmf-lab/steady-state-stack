@@ -175,15 +175,21 @@ where
                 {
                     let value = this.clone();
                     async move {
+                        error!("value lock in sim");
                         let mut that = value.lock().await;
                         let mut cycles_of_no_work = 0;
-                        while cmd_mutex.lock().await.is_running(&mut || i!(that.mark_closed())) {
+                        while cmd_mutex.lock().await.is_running(&mut || that.mark_closed()) {
+
+                            //TODO: so the flaw is that we are not releasing so the other shared simulater never gets to run.
                             //   Ok(true)  //did something keep going
                             //   Ok(false) //did nothing becuase it does not pertain - if we are here beyond timeout we must trigger shutdown
                             //   Err("")  // exit now failure, shutdown.
-
+                        //error!("in check sim loop direction");
                             match responder.simulate_direction(&mut that, &cmd_mutex, index).await {
                                 Ok(true) => {
+                                    //we did some work so back off so someone else can do some work.
+                                    futures_timer::Delay::new(std::time::Duration::from_millis(40)).await;
+
                                     cycles_of_no_work = 0;
                                 },
                                 Ok(false) => {
@@ -299,8 +305,10 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     cmd: C,
     sims: Vec<&dyn IntoSimRunner<C>>,
 ) -> Result<(), Box<dyn Error>> {
+    error!("get the cmd sidechannel_responder");
     if let Some(responder) = cmd.sidechannel_responder() {
         let cmd_mutex = Arc::new(Mutex::new(cmd));
+
         let mut tasks: Vec<Pin<Box<dyn Future<Output = ()>>>> = Vec::new();
         for (i, behave) in sims.into_iter().enumerate() {
             let cmd_mutex = cmd_mutex.clone();
@@ -308,6 +316,8 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
             let task = sim(cmd_mutex, responder.clone(), i);
             tasks.push(task);
         }
+        //NOTE: Since all our sims are here on one thread we must be carefull and every
+        //      simulator must have regular async for other simulations to get a time slice
         join_all(tasks).await;
     }
     Ok(())

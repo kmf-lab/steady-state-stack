@@ -438,13 +438,13 @@ pub(crate) mod aeron_publish_bundle_tests {
 
             //  .with_explicit_core(6)
             .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
-                   , &mut Threading::Spawn);
+                   , ScheduleAs::SoloAct);
 
         let stream_id = 12;
 
-        to_aeron_rx.build_aqueduct(  AqueTech::Aeron(aeron_config.clone(), stream_id)
-                                  , &graph.actor_builder().with_name("SenderTest").never_simulate(true)
-                                  , &mut Threading::Spawn);
+        to_aeron_rx.build_aqueduct(AqueTech::Aeron(aeron_config.clone(), stream_id)
+                                   , &graph.actor_builder().with_name("SenderTest").never_simulate(true)
+                                   , ScheduleAs::SoloAct);
 
         //set this up first so sender has a place to send to
         graph.actor_builder().with_name("MockReceiver")
@@ -454,11 +454,11 @@ pub(crate) mod aeron_publish_bundle_tests {
 
             // .with_explicit_core(9)
             .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
-                   , &mut Threading::Spawn);
+                   , ScheduleAs::SoloAct);
 
         from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_config.clone(), stream_id)
-                                    , &graph.actor_builder().with_name("ReceiverTest").never_simulate(true)
-                                    , &mut Threading::Spawn);
+                                     , &graph.actor_builder().with_name("ReceiverTest").never_simulate(true)
+                                     , ScheduleAs::SoloAct);
 
         graph.start(); //startup the graph
         graph.block_until_stopped(Duration::from_secs(21))

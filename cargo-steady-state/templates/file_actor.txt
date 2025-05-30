@@ -175,9 +175,9 @@ pub(crate) mod tests {
        let state = new_state();
        graph.actor_builder()
                     .with_name("UnitTest")
-                    .build_spawn( move |context|
+                    .build( move |context|
                             internal_behavior(context {%- for channel in rx_channels %}, {{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx.clone(){%- endfor -%}, state.clone())
-                     );
+                     , SoloAct );
 
        graph.start(); //startup the graph
 

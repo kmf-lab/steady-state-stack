@@ -63,12 +63,12 @@ fn main() {
         .with_mcpu_percentile(Percentile::p96())
         .with_mcpu_percentile(Percentile::p25())
         .build(move |context| actor::publisher::run(context, to_aeron_tx.clone())
-               , &mut Threading::Spawn);
+               , ScheduleAs::SoloAct);
 
 
-    to_aeron_rx.build_aqueduct( AqueTech::Aeron(aeron_channel, STREAM_ID)
-                             , &graph.actor_builder().with_name("SenderTest").never_simulate(false)
-                             , &mut Threading::Spawn);
+    to_aeron_rx.build_aqueduct(AqueTech::Aeron(aeron_channel, STREAM_ID)
+                               , &graph.actor_builder().with_name("SenderTest").never_simulate(false)
+                               , ScheduleAs::SoloAct);
 
 
 

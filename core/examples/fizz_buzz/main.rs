@@ -5,7 +5,7 @@ use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
-use steady_state::actor_builder::{ActorTeam, Threading};
+use steady_state::actor_builder::{Troupe, ScheduleAs};
 
 mod actor {
         pub mod console_printer;
@@ -86,11 +86,6 @@ fn build_graph(mut graph: Graph) -> Graph {
     let (timeractor_print_signal_tx, consoleprinter_print_signal_rx) = base_channel_builder
         .with_capacity(10)
         .build_channel();
-    
-    //build actors
-
-    //let mut actor_team = ActorTeam::new(&graph);
-    //let mut join = Threading::Join(&mut actor_team);
 
 
     {
@@ -100,9 +95,9 @@ fn build_graph(mut graph: Graph) -> Graph {
     
        base_actor_builder.with_name("DivBy3Producer")
            .with_explicit_core(8)
-           .build( move |context| actor::div_by_3_producer::run(context
+           .build(move |context| actor::div_by_3_producer::run(context
                                             , divby3producer_numbers_tx.clone()),
-                   &mut Threading::Spawn
+                  ScheduleAs::SoloAct
                  );
     }
     {
@@ -112,9 +107,9 @@ fn build_graph(mut graph: Graph) -> Graph {
     
        base_actor_builder.with_name("DivBy5Producer")
            .with_explicit_core(8)
-           .build( move |context| actor::div_by_5_producer::run(context
+           .build(move |context| actor::div_by_5_producer::run(context
                                             , divby5producer_numbers_tx.clone()),
-                   &mut Threading::Spawn
+                  ScheduleAs::SoloAct
                  );
     }
 
@@ -122,11 +117,11 @@ fn build_graph(mut graph: Graph) -> Graph {
        let state = new_state();
        base_actor_builder.with_name("FizzBuzzProcessor")
               .with_explicit_core(3)
-                 .build( move |context| actor::fizz_buzz_processor::run(context
+                 .build(move |context| actor::fizz_buzz_processor::run(context
                                             , fizzbuzzprocessor_numbers_rx.clone()
                                             , fizzbuzzprocessor_fizzbuzz_messages_tx.clone()
                                             , fizzbuzzprocessor_errors_tx.clone(), state.clone()),
-                               &mut Threading::Spawn
+                        ScheduleAs::SoloAct
                  );
     }
     {
@@ -134,32 +129,29 @@ fn build_graph(mut graph: Graph) -> Graph {
 
         base_actor_builder.with_name("TimerActor")
             .with_explicit_core(9)
-            .build( move |context| actor::timer_actor::run(context
+            .build(move |context| actor::timer_actor::run(context
                                                            , timeractor_print_signal_tx.clone()),
-                    &mut Threading::Spawn
+                   ScheduleAs::SoloAct
             );
     }
 
     {
         base_actor_builder.with_name("ConsolePrinter")
             .with_explicit_core(3+4)
-            .build( move |context| actor::console_printer::run(context
+            .build(move |context| actor::console_printer::run(context
                                                                , consoleprinter_fizzbuzz_messages_rx.clone()
                                                                , consoleprinter_print_signal_rx.clone()),
-                    &mut Threading::Spawn
+                   ScheduleAs::SoloAct
             );
     }
     {
         base_actor_builder.with_name("ErrorLogger")
             .with_explicit_core(9)
-            .build( move |context| actor::error_logger::run(context
+            .build(move |context| actor::error_logger::run(context
                                                             , errorlogger_errors_rx.clone()),
-                    &mut Threading::Spawn
+                   ScheduleAs::SoloAct
             );
     }
-    //actor_team.spawn();
-    //actor_team2.spawn();
-
     graph
 }
 

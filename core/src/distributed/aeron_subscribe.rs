@@ -208,7 +208,7 @@ pub(crate) mod aeron_media_driver_tests {
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aeron_publish::aeron_tests::STREAM_ID;
     use crate::distributed::distributed_builder::AqueductBuilder;
-    use crate::{GraphBuilder, Threading};
+    use crate::{GraphBuilder, ScheduleAs};
 
     #[test]
     #[cfg(not(windows))]
@@ -248,7 +248,7 @@ pub(crate) mod aeron_media_driver_tests {
         //in simulated graph we will build teh same but expect this to be a simulation !!
         to_aeron_rx.build_aqueduct(AqueTech::Aeron(aeron_config.clone(), STREAM_ID)
                                , &graph.actor_builder().with_name("SenderTest").never_simulate(true)
-                               , &mut Threading::Spawn);
+                               , &mut Threading::Solo);
 
         for _i in 0..100 {
             to_aeron_tx[0].testing_send_frame(&[1, 2, 3, 4, 5]);
@@ -266,7 +266,7 @@ pub(crate) mod aeron_media_driver_tests {
         //do not simulate yet the main graph will simulate. cfg!(test)
         from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_config, STREAM_ID)
                                      , &graph.actor_builder().with_name( "ReceiverTest").never_simulate(true)
-                                     , &mut Threading::Spawn);
+                                     , &mut Threading::Solo);
         graph.start();
         //from_aeron_rx[0].testing_avail_wait(200, Duration::from_secs(20));
         graph.request_shutdown();
