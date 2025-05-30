@@ -175,7 +175,6 @@ where
                 {
                     let value = this.clone();
                     async move {
-                        error!("value lock in sim");
                         let mut that = value.lock().await;
                         let mut cycles_of_no_work = 0;
                         while cmd_mutex.lock().await.is_running(&mut || that.mark_closed()) {
@@ -184,11 +183,10 @@ where
                             //   Ok(true)  //did something keep going
                             //   Ok(false) //did nothing becuase it does not pertain - if we are here beyond timeout we must trigger shutdown
                             //   Err("")  // exit now failure, shutdown.
-                        //error!("in check sim loop direction");
                             match responder.simulate_direction(&mut that, &cmd_mutex, index).await {
                                 Ok(true) => {
                                     //we did some work so back off so someone else can do some work.
-                                    futures_timer::Delay::new(std::time::Duration::from_millis(40)).await;
+                                    //futures_timer::Delay::new(std::time::Duration::from_millis(40)).await;
 
                                     cycles_of_no_work = 0;
                                 },
@@ -305,7 +303,6 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     cmd: C,
     sims: Vec<&dyn IntoSimRunner<C>>,
 ) -> Result<(), Box<dyn Error>> {
-    error!("get the cmd sidechannel_responder");
     if let Some(responder) = cmd.sidechannel_responder() {
         let cmd_mutex = Arc::new(Mutex::new(cmd));
 

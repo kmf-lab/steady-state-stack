@@ -326,7 +326,9 @@ impl Troupe {
 
                             // If actor_result was Ok(...), that actor finished successfully,
                             // so remove it from the vector. If none left, break:
-                            drop(core_exec::block_on(leftover_futures.remove(index)));
+                            if leftover_futures.get(index).is_some() {
+                                drop(core_exec::block_on(leftover_futures.remove(index)));
+                            }
                             // this actor is done and must not be part of the shutdown vote anymore
                             exit_actor_registration(&self.future_builder[index].fun);
                             if leftover_futures.is_empty() {

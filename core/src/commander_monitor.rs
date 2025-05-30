@@ -148,27 +148,13 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     pub(crate) async fn internal_wait_shutdown(&self) -> bool {
         let one_shot = &self.oneshot_shutdown;
         let mut guard = one_shot.lock().await;
-
         if !guard.is_terminated() {
-            error!("expecting hang A");
-
             let _ = guard.deref_mut().await;
-            error!("expecting hang B");
 
         }
         true
     }
 
-    // pub(crate) fn dynamic_event_count(&mut self
-    //                                   , local_index: usize //this.local_index
-    //                                   , id: usize //this.channel_meta_data.id
-    //                                   , count: isize) -> usize {
-    //     if let Some(ref mut tel) = self.telemetry.send_rx {
-    //         tel.process_event(local_index, id, count)
-    //     } else {
-    //         MONITOR_NOT
-    //     }
-    // }
 
 }
 

@@ -21,7 +21,7 @@ use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
 use futures_util::select;
 use ringbuf::consumer::Consumer;
-use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyCommander, Tx, TxBundle};
+use crate::{block_on, ActorIdentity, ActorName, Rx, RxBundle, SteadyCommander, Tx, TxBundle};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
 use crate::abstract_executor_async_std::core_exec;
@@ -29,7 +29,7 @@ use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-
+use futures::FutureExt;
 /// Represents the result of a graph test, which can either be `Ok` with a value of type `K`
 /// or `Err` with a value of type `E`.
 ///
@@ -81,9 +81,10 @@ pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, Inter
 trait StageAction {}
 
 // Define StageDirection
-pub enum StageDirection<T: Debug + Clone> {
+pub enum StageDirection<T> {
     Echo(T),
-    EchoAt(usize, T), //TODO: if this is used against a single it hanges.
+    EchoAt(usize, T)
+
 }
 
 // Define StageWaitFor
@@ -177,14 +178,12 @@ impl StageManager {
                 let (tx, rx) = sc_guard.deref_mut();
                 match tx.push(msg).await {
                     Ok(_) => {
-                        error!("waiting on rx.pop()");
                         if let Some(response) = rx.pop().await {
                             let is_ok = response.downcast_ref::<&str>()
                                 .map(|msg| *msg == OK_MESSAGE)
                                 .or_else(|| response.downcast_ref::<String>()
                                     .map(|msg| msg == OK_MESSAGE))
                                 .unwrap_or(false);
-                            error!("{:?}", response);
                             if is_ok {
                                 Ok(response)
                             } else {
@@ -228,44 +227,39 @@ impl SideChannelResponder {
                                                                                                                   , index: usize) -> Result<bool, Box<dyn Error>>
     where <X as TxCore>::MsgOut: Send, <X as TxCore>::MsgOut: Sync, <X as TxCore>::MsgOut: 'static {
 
-        //TODO: can we add index check here as well?
-
-        match self.should_apply::<StageDirection<T>>().await {
-            Some(true) => {} //ok continue with our task
-            Some(false) => return Ok(false), //do not match
-            None => return Ok(true) //nothing found
-        }
-
             // trace!("should echo does apply, waiting for vacant unit");
             if tx_core.shared_wait_vacant_units(tx_core.one()).await {
-                //we hold cmd just as long as it takes us to respond.
-                let mut cmd_guard = cmd.lock().await;
-                // trace!("respond with echo");
-                self.respond_with(move |message| {
-                    // trace!("try send");
-                    let msg: &StageDirection<T> = message.downcast_ref::<StageDirection<T>>()
-                        .expect("error casting");
-                        //TODO: should be None and not for us because wrong type cast?
+                //NOTE: we block here await until some direction comes in.
+                self.respond_with(move |message,cmd_guard| {
 
-                    match  msg {
-                        StageDirection::Echo(m) => {
-                            match cmd_guard.try_send(tx_core,m.clone()) {
-                                SendOutcome::Success => {Some(Box::new(OK_MESSAGE))}
-                                SendOutcome::Blocked(msg) => {Some(Box::new(msg))}
-                            }
-                        }
-                        StageDirection::EchoAt(i, m) => {
-                            if *i == index {
-                                match cmd_guard.try_send(tx_core, m.clone()) {
-                                    SendOutcome::Success => { Some(Box::new(OK_MESSAGE)) }
-                                    SendOutcome::Blocked(msg) => { Some(Box::new(msg)) }
+                    match message.downcast_ref::<StageDirection<T>>() {
+                        Some(msg) => {
+                            match  msg {
+                                StageDirection::Echo(m) => {
+                                    match cmd_guard.try_send(tx_core,m.clone()) {
+                                        SendOutcome::Success => {Some(Box::new(OK_MESSAGE))}
+                                        SendOutcome::Blocked(msg) => {Some(Box::new(msg))}
+                                    }
                                 }
-                            } else {
-                                None //this is not for us because we want index i
+                                StageDirection::EchoAt(i, m) => {
+                                    if *i == index {
+                                        match cmd_guard.try_send(tx_core, m.clone()) {
+                                            SendOutcome::Success => { Some(Box::new(OK_MESSAGE)) }
+                                            SendOutcome::Blocked(msg) => { Some(Box::new(msg)) }
+                                        }
+                                    } else {
+                                        None //this is not for us because we want index i
+                                    }
+                                }
                             }
+                        },
+                        None => {
+                            None
                         }
                     }
-                }).await
+
+
+                },cmd).await
             } else {
                 Ok(true)
             }
@@ -289,10 +283,7 @@ impl SideChannelResponder {
         }
 
             if rx_core.shared_wait_avail_units(1).await {
-                //for testing we hold the cmd lock only while we check equals and respond
-                let mut cmd_guard = cmd.lock().await;
-
-                self.respond_with(move |message| {
+                    self.respond_with(move |message,cmd_guard| {
                     let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<T>>()
                                                         .expect("error casting");
                     //TODO: must return not appicable
@@ -333,7 +324,7 @@ impl SideChannelResponder {
                         None //not applicable by index
                     }
 
-                }).await
+                },cmd).await
             } else {
                 Ok(true)
             }
@@ -391,18 +382,20 @@ impl SideChannelResponder {
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
     pub async fn echo_responder_bundle<M: 'static + Clone + Debug + Send, C: SteadyCommander>(
         &self,
-        cmd: &mut C,
+        cmd: &mut Arc<Mutex<C>>,
         target_tx_bundle: &mut TxBundle<'_,M>,
     ) -> Result<bool,Box<dyn Error>> {
         if let Some(true) = self.should_apply::<M>().await {
             let girth = target_tx_bundle.len();
+
+            let mut cmd_guard = cmd.lock().await;
             for t in target_tx_bundle.iter_mut() {
-                if !cmd.wait_vacant(&mut *t, 1).await {
+                if !cmd_guard.wait_vacant(&mut *t, 1).await {
                     return Ok(true);
                 };
             }
 
-            self.respond_with(|message| {
+            self.respond_with(|message, cmd| {
                 let msg = message.downcast_ref::<M>().expect("error casting");
                 let total: usize = (0..girth)
                     .filter(|&c| {
@@ -416,7 +409,7 @@ impl SideChannelResponder {
                     let failure = format!("failed to echo to {:?} channels", girth - total);
                     Some(Box::new(failure))
                 }
-            }).await 
+            },cmd).await
         } 
         else 
         { Ok(false) }
@@ -433,18 +426,21 @@ impl SideChannelResponder {
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
     pub async fn equals_responder_bundle<M: 'static + Clone + Debug + Send + Eq, C: SteadyCommander>(
         &self,
-        cmd: &mut C,
+        cmd: &mut Arc<Mutex<C>>,
         source_rx: &mut RxBundle<'_, M>,
     ) -> Result<bool, Box<dyn Error>> {
         if let Some(true) = self.should_apply::<M>().await {
             let girth = source_rx.len();
+
+            let mut cmd_guard = cmd.lock().await;
             for x in 0..girth {
                 let srx: &mut MutexGuard<Rx<M>> =  &mut source_rx[x];
-                if !cmd.wait_avail(srx, 1).await {
+                if !cmd_guard.wait_avail(srx, 1).await {
                     return Ok(true);
                 };
             }
-            self.respond_with(|message| {
+
+            self.respond_with(|message,cmd| {
                 let msg: &M = message.downcast_ref::<M>().expect("error casting");
                 let total = (0..girth)
                     .filter_map(|c| cmd.try_take(&mut source_rx[c]))
@@ -457,7 +453,7 @@ impl SideChannelResponder {
                     let failure = format!("match failure {:?} of {:?}", msg, girth - total);
                     Some(Box::new(failure))
                 }
-            }).await
+            },cmd).await
         } else {
             Ok(false)
         }
@@ -493,18 +489,37 @@ impl SideChannelResponder {
     /// * `f` - A function that takes a message and returns a response.
     ///
     ///
-    pub async fn respond_with<F>(&self, mut f: F) -> Result<bool, Box<dyn Error>>
+    pub async fn respond_with<F,C>(&self, mut f: F, cmd: & Arc<Mutex<C>>) -> Result<bool, Box<dyn Error>>
         where
-            F: FnMut(&Box<dyn Any + Send + Sync>) -> Option<Box<dyn Any + Send + Sync>>,
+            C: SteadyCommander,
+            F: FnMut(&Box<dyn Any + Send + Sync>, &mut C) -> Option<Box<dyn Any + Send + Sync>>,
     {
         let mut guard = self.arc.lock().await;
-        let ((tx, rx),_shutdown) = guard.deref_mut();
+        let ((tx, rx), shutdown) = guard.deref_mut();
+
+        //important to allow other simulators we must wait until we have at lest one thing to do
+
+
+        // Wait for either shutdown or for the receiver to have at least one message
+        select! {
+            _ = shutdown.fuse() => {
+                // Shutdown signal detected
+            },
+            _ = rx.wait_occupied(1) => {
+                // Message available, proceed to process
+            }
+        }
+
+        //that thing might not be for us so we peek it first
         if let Some(q) = rx.try_peek() {
             //NOTE: if a shutdown is called for and we are not able to push this message
             //      it will result in a timeout and error by design for testing. This will
             //      happen if the main test block is not consuming the answers to the questions
             //NOTE: this should never block on shutdown since above we immediately pull the answer
-            if let Some(r) = f(q) {
+
+            let mut cmd_guard = cmd.lock().await;
+
+            if let Some(r) = f(q, &mut cmd_guard) {
                 match tx.push(r).await {
                     Ok(_) => {
                         let _ = rx.try_pop(); //we know f(q) accepted it so now remove it from the channel.
