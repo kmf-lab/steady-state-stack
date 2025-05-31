@@ -109,7 +109,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     fn is_showstopper<T>(&self, rx: &Arc<Mutex<Rx<T>>>, threshold: usize) -> bool {
         // Lock the receiver and check the showstopper status
         let rx = core_exec::block_on(rx.lock());
-        rx.is_showstopper_message(threshold)
+        rx.is_showstopper(threshold)
     }
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
@@ -163,8 +163,6 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         }
         true
     }
-
-
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
@@ -175,10 +173,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
     /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
     /// If true you should consider pulling this message for a DLQ or log it or consider dropping it.
-    fn is_showstopper<T>(&self, rx: &Arc<Mutex<Rx<T>>>, threshold: usize) -> bool {
-        // Lock the receiver and check the showstopper status
-        let rx = core_exec::block_on(rx.lock());
-        rx.is_showstopper_message(threshold)
+    fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool {
+        rx.is_showstopper(threshold)
     }
 
     async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>

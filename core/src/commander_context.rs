@@ -90,10 +90,8 @@ impl SteadyCommander for SteadyContext {
 
     /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
     /// If true you should consider pulling this message for a DLQ or log it or consider dropping it.
-    fn is_showstopper<T>(&self, rx: &Arc<Mutex<Rx<T>>>, threshold: usize) -> bool {
-        // Lock the receiver and check the showstopper status
-        let rx = core_exec::block_on(rx.lock());
-        rx.is_showstopper_message(threshold)
+    fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool {
+        rx.is_showstopper(threshold)
     }
 
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {

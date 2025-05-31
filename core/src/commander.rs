@@ -527,6 +527,6 @@ pub trait SteadyCommander {
 
     /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
     /// If true you should consider pulling this message for a DLQ or log it or consider dropping it.
-    fn is_showstopper<T>(&self, rx: &Arc<Mutex<Rx<T>>>, threshold: usize) -> bool;
+    fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool;
 
 }

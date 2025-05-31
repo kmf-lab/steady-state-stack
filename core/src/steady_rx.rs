@@ -95,7 +95,7 @@ impl <T> Rx<T> {
     ///
     /// # Returns
     /// `true` if the message has been peeked more than the threshold, otherwise `false`.
-    pub fn is_showstopper_message(&self, threshold: usize) -> bool { //for DLQ
+    pub fn is_showstopper(&self, threshold: usize) -> bool { //for DLQ
         assert_ne!(threshold, 0); // Never checked
         assert_ne!(threshold, 1); // We have the first unique item
 
