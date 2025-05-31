@@ -229,8 +229,10 @@ impl SideChannelResponder {
 
             // trace!("should echo does apply, waiting for vacant unit");
             if tx_core.shared_wait_vacant_units(tx_core.one()).await {
+                error!("waiting fro some direction");
                 //NOTE: we block here await until some direction comes in.
                 self.respond_with(move |message,cmd_guard| {
+                    error!("respond with {:?}",message);
 
                     match message.downcast_ref::<StageDirection<T>>() {
                         Some(msg) => {

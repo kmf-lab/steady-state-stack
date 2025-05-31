@@ -211,7 +211,6 @@ pub(crate) mod aeron_media_driver_tests {
     use crate::{GraphBuilder, ScheduleAs, SoloAct};
 
     #[test]
-    #[cfg(not(windows))]
     fn test_bytes_process() {
         // if std::env::var("GITHUB_ACTIONS").is_ok() {
         //     return;

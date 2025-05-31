@@ -234,7 +234,7 @@ where
                                     //TODO: based on timeout shutdown and report..
                                     if cycles_of_no_work > 10000 {
                                         cmd_mutex.lock().await.request_shutdown().await;
-                                        error!("stopped on cycle of no work");// TODO: refine this.
+                                        error!("stopped on 10000 cycles of no work");// TODO: refine this.
                                     }
                                 },
                                 Err(e) => {

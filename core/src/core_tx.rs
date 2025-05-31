@@ -71,11 +71,12 @@ impl<T> TxCore for Tx<T> {
             let result = c.send(());
             if result.is_err() {
                 //not a serious issue, may happen with bundles
-                trace!("close called but the receiver already dropped");
+                error!("close called but the receiver already dropped");
             }
         } else {
             //TODO: we should provide more details
-            warn!("{:?} already marked closed, check for reduntant calls, ensure mark_closed is called last after all other conditions!",  self.channel_meta_data.meta_data);
+            warn!("{:?}\n already marked closed, check for redundant calls, ensure mark_closed is called last after all other conditions!"
+                ,  self.channel_meta_data.meta_data);
         }
         true // always returns true, close request is never rejected by this method.
     }

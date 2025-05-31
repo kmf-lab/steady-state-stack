@@ -261,6 +261,11 @@ impl StreamSessionMessage {
             finished,
         }
     }
+
+    pub fn wrap(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamSessionMessage, Box<[u8]>) {
+            (StreamSessionMessage::new(p0.len() as i32,session_id,arrival,finished), p0.into())
+    }
+
 }
 
 impl StreamItem for StreamSessionMessage {
@@ -294,8 +299,8 @@ pub struct StreamSimpleMessage {
 }
 
 impl StreamSimpleMessage {
-    pub fn wrap(p0: &[u8]) -> (StreamSimpleMessage, &[u8]) {
-        (StreamSimpleMessage::new(p0.len() as i32), p0)
+    pub fn wrap(p0: &[u8]) -> (StreamSimpleMessage, Box<[u8]>) {
+        (StreamSimpleMessage::new(p0.len() as i32), p0.into())
     }
 }
 
@@ -930,10 +935,11 @@ impl<T: StreamItem> LazyStreamTx<T> {
     /// # Panics
     /// - If the entire payload can’t be sent.
     /// - If sending metadata fails.
-    pub fn testing_send_frame(&self, data: &[u8]) {
+    pub(crate) fn testing_send_frame(&self, data: &[u8]) {
         let s = self.clone();
 
-        let mut l = core_exec::block_on(s.lock());
+        let mut l = s.try_lock().expect("internal error: try_lock");
+
         let x = l.payload_channel.shared_send_slice_until_full(data);
 
         assert_eq!(x, data.len(), "Not all bytes were sent!");
@@ -947,16 +953,36 @@ impl<T: StreamItem> LazyStreamTx<T> {
         };
     }
 
+    pub fn testing_send_all(&self, data: Vec<(T,Box<[u8]>)>, close: bool) {
+
+        let s = self.clone();
+        let mut l = s.try_lock().expect("internal error: try_lock");
+
+        //TODO: we might want to wait for room.
+        for d in data.into_iter() {
+            let x = l.payload_channel.shared_send_slice_until_full(&d.1);
+            match l.item_channel.shared_try_send(T::testing_new(x as i32)) {
+                Ok(_) => {}
+                Err(_) => {
+                    panic!("error sending metadata");
+                }
+            };
+            assert_eq!(x,d.1.len());
+        }
+        if close {
+            l.mark_closed(); // for clean shutdown we tell the actor we have no more data
+        }
+    }
+
     /// Closes the underlying channels by marking them as closed.
     ///
     /// This signals to any receiver that no more data will arrive.
     pub fn testing_close(&self) {
-        core_exec::block_on( async {
-            let s = self.clone();
-            let mut l = s.lock().await;
-            l.payload_channel.mark_closed();
-            l.item_channel.mark_closed();
-        });
+        let s = self.clone();
+        let mut l = s.try_lock().expect("internal error: try_lock");
+
+        l.payload_channel.mark_closed();
+        l.item_channel.mark_closed();
     }
 }
 
@@ -1125,21 +1151,7 @@ mod extra_stream_tests {
     }
 
 
-    #[test]
-    fn test_stream_simple_message_wrap_and_from_defrag() {
-        let data = [10u8, 20, 30];
-        let (msg, slice) = StreamSimpleMessage::wrap(&data);
-        assert_eq!(msg.length(), 3);
-        assert_eq!(slice, &data);
-        // from_defrag
-        let mut def = Defrag::<StreamSimpleMessage>::new(0, 2, 2);
-        def.running_length = 5;
-        let m2 = StreamSimpleMessage::from_defrag(&def);
-        assert_eq!(m2.length(), 5);
-        // testing_new
-        let tn = StreamSimpleMessage::testing_new(6);
-        assert_eq!(tn.length(), 6);
-    }
+
 
     /// Test testing_new and length for StreamSessionMessage
     #[test]

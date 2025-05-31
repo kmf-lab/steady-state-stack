@@ -41,11 +41,12 @@ pub async fn run<const GIRTH: usize>(
             }
         }
         let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
-        return internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await;
+        internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await
+    } else {
+        let te: Vec<_> = tx.iter().map(|f| f.clone()).collect();
+        let sims: Vec<_> = te.iter().map(|f| f as &dyn IntoSimRunner<_>).collect();
+        cmd.simulated_behavior(sims).await
     }
-    let te: Vec<_> = tx.iter().map(|f| f.clone()).collect();
-    let sims: Vec<_> = te.iter().map(|f| f as &dyn IntoSimRunner<_>).collect();
-    cmd.simulated_behavior(sims).await
 }
 
 async fn poll_aeron_subscription<C: SteadyCommander>(

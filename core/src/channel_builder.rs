@@ -6,6 +6,7 @@ use futures::lock::Mutex;
 use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
+use std::thread::sleep;
 use async_ringbuf::producer::AsyncProducer;
 use crate::{core_exec, StreamSimpleMessage};
 
@@ -32,6 +33,7 @@ use futures::channel::oneshot;
 #[allow(unused_imports)]
 use log::*;
 use async_ringbuf::traits::Split;
+use ringbuf::producer::Producer;
 use crate::{AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
 use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamItem, TxChannelMetaDataWrapper};
@@ -767,25 +769,27 @@ impl <T> LazySteadyTx<T> {
 
     /// Simple send of all the data in the vec for testing
     pub fn testing_send_all(&self, data: Vec<T>, close: bool) {
-        core_exec::block_on( async {
-            let tx = self.lazy_channel.get_tx_clone().await;
-            let mut tx = tx.lock().await;
-            for d in data.into_iter() {
-                let _ = tx.tx.push(d).await;
-            }
-            if close {
-                tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
-            }
-        });
+        let tx = self.clone();
+        let mut tx = tx.try_lock().expect("internal error");
+
+        for d in data.into_iter() {
+                let mut temp = d;
+                while let Err(r) = tx.tx.try_push(temp) {
+                    temp = r;
+                    sleep(Duration::from_millis(2));
+                };
+        }
+        if close {
+            tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
+        }
+
 
     }
 
     pub fn testing_close(&self) {
-        core_exec::block_on( async {
-            let tx = self.lazy_channel.get_tx_clone().await;
-            let mut tx = tx.lock().await;
-            tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
-        })
+        let tx = self.clone();
+        let mut tx = tx.try_lock().expect("internal error");
+        tx.mark_closed();
     }
 
 
@@ -936,7 +940,6 @@ macro_rules! assert_steady_rx_gt_count {
 /// Panics if no value is available when expected or if a taken value does not equal the
 /// corresponding expected value, with file and line included in the message.
 
-#[macro_export]
 #[macro_export]
 macro_rules! assert_steady_rx_eq_take {
     ($self:expr, $expected:expr) => {{
