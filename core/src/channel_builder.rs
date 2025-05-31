@@ -936,239 +936,45 @@ macro_rules! assert_steady_rx_gt_count {
 /// Panics if no value is available when expected or if a taken value does not equal the
 /// corresponding expected value, with file and line included in the message.
 
-#[macro_export]/// Asserts that values taken from the receiver match the expected sequence of values.
-///
-/// Panics if there are not enough values available or if any value does not match,
-/// including the file and line number of the call site in the panic message.
-/// Designed for testing data retrieval in a controlled manner.
-///
-/// # Arguments
-///
-/// * `self` - An expression evaluating to a reference to `LazySteadyRx<T>` (e.g., `&instance`).
-/// * `expected` - An expression yielding an iterable of expected values (e.g., `Vec<U>`).
-///
-/// In the _basic_ overload, `T` must be `PartialEq + Debug`, and you are comparing
-/// the entire `taken: T` to each `expected: T`.
-///
-/// In the _extractor_ overload, you supply a small closure of type `FnOnce(T) -> U`,
-/// and your `expected` must be something iterable of `U` where `U: PartialEq + Debug`.
-///
-/// # Type Constraints
-///
-/// For the basic form:
-/// * `T: PartialEq + Debug`
-///
-/// For the extractor form:
-/// * `T: Debug`
-/// * `U: PartialEq + Debug`
-///
-/// # Examples
-///
-/// Basic form (exact‐type comparison):
-///
-/// ```rust,ignore
-/// // Suppose your channel is LazySteadyRx<u64>:
-/// assert_steady_rx_eq_take!(&my_rx, vec![1u64, 2u64, 3u64]);
-/// ```
-///
-/// Extractor form (e.g. your channel carries `(Header, Vec<u8>)` and you only want
-/// to compare the `Vec<u8>` part against a `&[u8]` slice):
-///
-/// ```rust,ignore
-/// // Let stream_rx be LazySteadyRx<(StreamSimpleMessage, Box<[u8]>)>
-/// assert_steady_rx_eq_take!(
-///     &stream_rx,
-///     vec![&[0u8,0,0], &[1u8,1,1]],         // these are of type `&[u8]`
-///     |(hdr, boxed_bytes)| boxed_bytes.as_ref()  // extractor: get &[u8]
-/// );
-/// ```
-///
-/// # Panics
-///
-/// Panics if no value is available when expected or if a taken value does not equal
-/// the corresponding expected value, with file and line included in the message.
 #[macro_export]
-// ──────────────────────────────────────────────────────────────────────────────
-// File: src/test_helpers.rs
-// ──────────────────────────────────────────────────────────────────────────────
-
-use futures::lock::MutexGuard;
-use std::fmt::Debug;
-
-/// A trait that knows how to project a “taken” value of type `Taken` into a reference `&Ex`,
-/// so that we can compare `&Ex == &Ex`.  We rely on this trait inside our async helper:
-///
-///   1) If `Taken` and `Ex` are **the same type**, then `match_ref` just returns `&self`.
-///   2) If `Taken = (S, Box<[u8]>)` and `Ex = &[u8]`, then `match_ref` returns `&self.1.as_ref()`.
-///   3) If `Taken = (S, Vec<u8>)` and `Ex = &[u8]`, then `match_ref` returns `&self.1`.
-///   4) If `Taken = Vec<u8>` and `Ex = &[u8]`, then `match_ref` returns `&self[..]`.
-///   5) If `Taken = [u8; N]` and `Ex = &[u8]`, then `match_ref` returns `&self[..]`.
-///   6) If `Taken = [T; N]` and `Ex = T` (you want to pick a particular index), we show one example
-///      impl for `N = 1` or `N = 8`—you can replicate for any `N` if needed.
-///
-/// In short, you add one `impl MatchExpected<Ex> for Taken` for each “shape” of the data
-/// you care about, and the macro logic remains unchanged.
-pub trait MatchExpected<Ex> {
-    /// Given `self: &Taken`, produce a `&Ex` to compare against the expected item.
-    fn match_ref(&self) -> &Ex;
-}
-
-// ─── 1) IDENTITY CASE: Taken == Ex ────────────────────────────────────────────────
-// If you want to compare the entire value directly (e.g. `Taken = u64`, `Ex = u64`),
-// just compare them by default.  This requires `T: PartialEq + Debug`.
-impl<T> MatchExpected<T> for T
-where
-    T: PartialEq + Debug,
-{
-    fn match_ref(&self) -> &T {
-        self
-    }
-}
-
-// ─── 2) TUPLE → Box<[u8]> CASE: Taken = (S, Box<[u8]>), Ex = &[u8] ─────────────────
-// Common for “stream” channels where the message is (header, bytes).
-// We ignore `S` (the header) and compare only the byte‐slice.
-impl<S> MatchExpected<&[u8]> for (S, Box<[u8]>)
-where
-    S: Debug,
-{
-    fn match_ref(&self) -> &[u8] {
-        self.1.as_ref()
-    }
-}
-
-// ─── 3) TUPLE → Vec<u8> CASE: Taken = (S, Vec<u8>), Ex = &[u8] ─────────────────────
-// If your channel yields `(SomeHeader, Vec<u8>)` but you want to compare just the `&[u8]`.
-impl<S> MatchExpected<&[u8]> for (S, Vec<u8>)
-where
-    S: Debug,
-{
-    fn match_ref(&self) -> &[u8] {
-        &self.1[..]
-    }
-}
-
-// ─── 4) Vec<u8> → &[u8] CASE: Taken = Vec<u8>, Ex = &[u8] ─────────────────────────
-// If your channel yields a `Vec<u8>` directly, and you want to compare it to a slice.
-impl MatchExpected<&[u8]> for Vec<u8> {
-    fn match_ref(&self) -> &[u8] {
-        &self[..]
-    }
-}
-
-// ─── 5) FIXED ARRAY [u8; N] → &[u8] CASE: Taken = [u8; N], Ex = &[u8] ───────────────
-// Because `[u8; N]` can coerce to a slice `&[u8]`, we simply return `&self[..]`.
-impl<const N: usize> MatchExpected<&[u8]> for [u8; N] {
-    fn match_ref(&self) -> &[u8] {
-        &self[..]
-    }
-}
-
-// ─── 6) FIXED ARRAY [T; N] → T CASE: Taken = [T; N], Ex = T ────────────────────────
-// If you ever want to compare a single element inside a fixed‐length array (e.g. `[u8; 8]`),
-// you can match on a specific index.  Here is one example for index 0.  You can replicate
-// for any index by copying and changing `self[0]` → `self[5]`, etc.
-//
-// For example, if you want to compare the **first byte** of a `[u8; 8]`, do:
-/// impl MatchExpected<u8> for [u8; 8] {
-///     fn match_ref(&self) -> &u8 {
-///         &self[0]
-///     }
-/// }
-///
-/// If you also want to compare the **second byte** or **fifth byte**, you can add:
-/// impl MatchExpected<u8> for [u8; 8] {
-///     fn match_ref(&self) -> &u8 { &self[1] }
-/// }
-///
-/// But note: Rust does not allow two overlapping impls.  So you must choose ONE index
-/// or use a newtype wrapper.  In practice, it’s often better to compare the full slice (`&[u8]`)
-/// rather than just one element.  We include this here as a demonstration.
-impl MatchExpected<u8> for [u8; 8] {
-    fn match_ref(&self) -> &u8 {
-        &self[0]
-    }
-}
-
-// ─── 7) CUSTOM STRUCT → Some Field CASE (EXAMPLE) ─────────────────────────────────
-// If you ever have a struct like `MyStruct { payload: Vec<u8>, … }` and you want to
-// compare just `&[u8]`, you can add:
-//
-//     impl MatchExpected<&[u8]> for MyStruct {
-//         fn match_ref(&self) -> &[u8] {
-//             &self.payload[..]
-//         }
-//     }
-//
-// We do not declare it here, but you know exactly how to add these extra cases.
-//
-// ────────────────────────────────────────────────────────────────────────────────
-
-// ─── 8) The Async Helper That Does The Real Work ─────────────────────────────────
-// This function is the “engine” that the macro calls.  It:
-//
-//   1. Takes a locked receiver guard (so it can call `try_take()`).
-//   2. Iterates over your `expected_iter` (each of type `Ex`).
-//   3. For each expected `ex: Ex`, it calls `guard.try_take()`. If `None`, panic.
-//   4. If `Some(taken_value)`, then call `taken_value.match_ref()` to get `&Ex`.
-//   5. Compare `&Ex` to `ex: Ex` (requires `Ex: PartialEq + Debug`). If they differ, panic.
-//
-// Panics include the exact `file` and `line` passed in (which come from `file!()` and `line!()` in the macro).
-pub async fn assert_rx_eq_take_inner<Taken, Ex>(
-    mut rx_guard: MutexGuard<'_, Taken>,
-    expected_iter: impl IntoIterator<Item = Ex>,
-    file: &'static str,
-    line: u32,
-) where
-    Taken: MatchExpected<Ex> + Debug,
-    Ex: PartialEq + Debug,
-{
-    for ex in expected_iter {
-        match rx_guard.try_take() {
-            None => {
-                panic!(
-                    "assert_steady_rx_eq_take! failed at {}:{}: expected value, but channel was empty",
-                    file, line
-                );
-            }
-            Some(taken_value) => {
-                let val_ref: &Ex = taken_value.match_ref();
-                if &ex != val_ref {
-                    panic!(
-                        "assert_steady_rx_eq_take! failed at {}:{}:\n  expected: `{:?}`\n       got: `{:?}`",
-                        file, line, ex, val_ref
-                    );
-                }
-            }
-        }
-    }
-}
-
-// ─── 9) The Macro That Calls `assert_rx_eq_take_inner` ────────────────────────────
-//
-// This is the only macro you (the end user) ever call.  You pass exactly two arguments:
-//    1) A reference to your `LazySteadyRx<T>` (or whatever channel type that has `.clone()`, `lock().await`, and `try_take()`).
-//    2) An iterable of your expected items (`Vec<Ex>` or any `IntoIterator<Item = Ex>`).
-//
-// The macro clones the receiver, does a `block_on(async move { … })`, locks it once, then calls
-// `assert_rx_eq_take_inner` with `(guard, expected_iter, file!(), line!())`.  If any item is missing
-// or mismatched, it panics at the call site with the correct `file` and `line`.
 #[macro_export]
 macro_rules! assert_steady_rx_eq_take {
     ($self:expr, $expected:expr) => {{
-        // Clone the receiver so we can lock it in an async block
-        let rx_clone = $self.clone();
-        // We assume you have "use futures::executor::block_on;" in scope.  If not,
-        // adjust this line to whatever async runtime you use (tokio::runtime::Runtime, etc.)
+        let rx = $self.clone();
         block_on(async move {
-            // Lock the receiver exactly once
-            let guard = rx_clone.lock().await;
-            // Call our async helper, passing in the file & line of this macro invocation
-            $crate::assert_rx_eq_take_inner(guard, $expected, file!(), line!()).await;
+            let mut rx = rx.lock().await;
+            for ex in $expected.into_iter() {
+                match rx.try_take() {
+                    None => {
+                        error!("Expected value but found none");
+                        panic!(
+                        "Expected value but none available at {}:{}",
+                        file!(),
+                        line!()
+                    )},
+                    Some(taken) => {
+                        if !ex.eq(&taken) {
+                            error!(
+                                "Assertion failed: {:?} == {:?} at {}:{}",
+                                ex,
+                                taken,
+                                file!(),
+                                line!()
+                            );
+                            panic!(
+                                "Assertion failed at {}:{}: expected {:?} == taken {:?}",
+                                file!(),
+                                line!(),
+                                ex,
+                                taken
+                            );
+                        }
+                    }
+                }
+            }
         });
     }};
 }
-
 
 // Simple helper function for streams
 fn stream_bytes(bytes: &[u8]) -> (StreamSimpleMessage, Box<[u8]>) {
