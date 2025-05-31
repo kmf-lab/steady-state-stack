@@ -994,8 +994,8 @@ mod core_tx_rx_tests {
         let mut rxg = core_exec::block_on(rx.lock());
         assert_eq!(rxg.shared_try_peek(), Some(&42));
         assert_eq!(rxg.shared_try_peek(), Some(&42));
-        assert!(rxg.possible_bad_message(2));
-        assert!(!rxg.possible_bad_message(5));
+        assert!(rxg.is_showstopper_message(2));
+        assert!(!rxg.is_showstopper_message(5));
     }
 }
 

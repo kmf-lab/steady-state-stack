@@ -88,19 +88,21 @@ impl <T> Rx<T> {
     }
 
     /// Checks if the same item is being peeked multiple times, indicating it should be moved to dead letters.
+    /// DLQ implementation is not provided here, you may want take and log this or choose to drop it.
     ///
     /// # Parameters
     /// - `threshold`: The number of repeats to consider the message as bad.
     ///
     /// # Returns
     /// `true` if the message has been peeked more than the threshold, otherwise `false`.
-    pub fn possible_bad_message(&self, threshold: usize) -> bool {
+    pub fn is_showstopper_message(&self, threshold: usize) -> bool { //for DLQ
         assert_ne!(threshold, 0); // Never checked
         assert_ne!(threshold, 1); // We have the first unique item
 
         // If we have a lot of repeats, then we have a problem
         self.peek_repeats.load(Ordering::Relaxed) >= threshold
     }
+
 
     pub fn try_take(&mut self) -> Option<T> {
         if let Some((done, msg)) = self.shared_try_take() {

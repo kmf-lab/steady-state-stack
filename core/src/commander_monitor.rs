@@ -25,6 +25,7 @@ use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle, MONITOR_NOT};
+use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
@@ -103,6 +104,14 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
         simulate_edge::simulated_behavior::<Self>(self, sims).await
     }
 
+    /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
+    /// If true you should consider pulling this message for a DLQ or log it or consider dropping it.
+    fn is_showstopper<T>(&self, rx: &Arc<Mutex<Rx<T>>>, threshold: usize) -> bool {
+        // Lock the receiver and check the showstopper status
+        let rx = core_exec::block_on(rx.lock());
+        rx.is_showstopper_message(threshold)
+    }
+
     /// Marks the start of a high-activity profile period for telemetry monitoring.
     ///
     /// # Parameters
@@ -162,6 +171,14 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
         Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
+    }
+
+    /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
+    /// If true you should consider pulling this message for a DLQ or log it or consider dropping it.
+    fn is_showstopper<T>(&self, rx: &Arc<Mutex<Rx<T>>>, threshold: usize) -> bool {
+        // Lock the receiver and check the showstopper status
+        let rx = core_exec::block_on(rx.lock());
+        rx.is_showstopper_message(threshold)
     }
 
     async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>

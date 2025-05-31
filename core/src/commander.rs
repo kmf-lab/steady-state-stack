@@ -8,6 +8,7 @@ use std::sync::{Arc};
 use aeron::aeron::Aeron;
 use futures_util::lock::Mutex;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
+use crate::core_exec;
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
@@ -523,5 +524,9 @@ pub trait SteadyCommander {
     /// # Returns
     /// An `ActorIdentity` representing the actor's identity.
     fn identity(&self) -> ActorIdentity;
+
+    /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
+    /// If true you should consider pulling this message for a DLQ or log it or consider dropping it.
+    fn is_showstopper<T>(&self, rx: &Arc<Mutex<Rx<T>>>, threshold: usize) -> bool;
 
 }

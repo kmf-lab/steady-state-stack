@@ -22,6 +22,7 @@ use ringbuf::producer::Producer;
 use std::ops::DerefMut;
 use aeron::aeron::Aeron;
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
+use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
@@ -85,6 +86,15 @@ impl Clone for SteadyContext {
 }
 
 impl SteadyCommander for SteadyContext {
+
+
+    /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
+    /// If true you should consider pulling this message for a DLQ or log it or consider dropping it.
+    fn is_showstopper<T>(&self, rx: &Arc<Mutex<Rx<T>>>, threshold: usize) -> bool {
+        // Lock the receiver and check the showstopper status
+        let rx = core_exec::block_on(rx.lock());
+        rx.is_showstopper_message(threshold)
+    }
 
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
         Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
