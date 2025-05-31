@@ -92,7 +92,7 @@ lazy_static      = "1.5.0"
 uuid             = { version = "1.16.0", features = ["v4"] }
 num-traits       = "0.2.19" # for num::Zero and other generic math traits
 itoa             = "1.0.15"
-statrs           = "0.18.0"
+ctrlc            = "3.4.7"
 time             = { version = "0.3.41", features = ["macros", "formatting", "parsing"] }
 dirs             = "5.0.1"
 clap              = { version = "4.5.35", features = ["derive"] }  # Use clap with derive feature

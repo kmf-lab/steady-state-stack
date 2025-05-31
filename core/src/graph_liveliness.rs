@@ -557,6 +557,7 @@ impl GraphBuilder {
     /// consume the graph builder and build the graph for use
     ///
     pub fn build<A: Any + Send + Sync>(self, args: A) -> Graph {
+
         let g = Graph::internal_new(args, self);
         if !crate::steady_config::DISABLE_DEBUG_FAIL_FAST {
             #[cfg(debug_assertions)]
@@ -565,6 +566,17 @@ impl GraphBuilder {
               trace!("fail fast enabled for testing !");
             }
         }
+
+        let ctrlc_runtime_state = g.runtime_state.clone();
+
+        // Set up the Ctrl-C handler
+        ctrlc::set_handler(move || {
+            println!("Ctrl-C received, initiating shutdown...");
+            let mut a = ctrlc_runtime_state.write();
+            core_exec::block_on(async move { a.internal_request_shutdown().await });
+        }).expect("Error setting Ctrl-C handler");
+
+
         g
     }
 }
