@@ -821,7 +821,7 @@ mod extra_tests {
     #[test]
     fn test_full_frame_or_timeout_empty() {
         let mut fu: FuturesUnordered<BoxFuture<'_, (bool, Option<usize>)>> = FuturesUnordered::new();
-        let res = block_on(full_frame_or_timeout(&mut fu, 100));
+        let res = block_on(full_frame_or_timeout(&mut fu, 100)); //for testing
         assert!(res.is_none(), "Timeout with no futures returns None");
     }
 

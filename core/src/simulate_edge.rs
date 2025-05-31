@@ -311,6 +311,7 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
             let cmd_mutex = cmd_mutex.clone();
             let sim = behave.into_sim_runner();
             let task = sim(cmd_mutex, responder.clone(), i);
+            error!("adding simulator for {:?}",i);
             tasks.push(task);
         }
         //NOTE: Since all our sims are here on one thread we must be carefull and every

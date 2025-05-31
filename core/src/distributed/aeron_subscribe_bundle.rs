@@ -31,6 +31,7 @@ pub async fn run<const GIRTH: usize>(
 ) -> Result<(), Box<dyn Error>> {
     let mut cmd = context.into_monitor([], tx.control_meta_data());
     if cmd.use_internal_behavior {
+        error!("failure, we are using live aeron and should be using simulation.");
         while cmd.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
             let mut tx = tx.lock().await;
@@ -43,6 +44,7 @@ pub async fn run<const GIRTH: usize>(
         let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
         internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await
     } else {
+        error!("success we are using simulated beviror for the aeron subscribe bundles");
         let te: Vec<_> = tx.iter().map(|f| f.clone()).collect();
         let sims: Vec<_> = te.iter().map(|f| f as &dyn IntoSimRunner<_>).collect();
         cmd.simulated_behavior(sims).await
