@@ -262,8 +262,8 @@ impl StreamSessionMessage {
         }
     }
 
-    pub fn wrap(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamSessionMessage, Box<[u8]>) {
-            (StreamSessionMessage::new(p0.len() as i32,session_id,arrival,finished), p0.into())
+    pub fn wrap(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamSessionMessage, &[u8]) {
+            (StreamSessionMessage::new(p0.len() as i32,session_id,arrival,finished), p0) //TODO: target type is not boxed ??
     }
 
 }
@@ -299,8 +299,8 @@ pub struct StreamSimpleMessage {
 }
 
 impl StreamSimpleMessage {
-    pub fn wrap(p0: &[u8]) -> (StreamSimpleMessage, Box<[u8]>) {
-        (StreamSimpleMessage::new(p0.len() as i32), p0.into())
+    pub fn wrap(p0: &[u8]) -> (StreamSimpleMessage, &[u8]) {
+        (StreamSimpleMessage::new(p0.len() as i32), p0)
     }
 }
 
@@ -953,7 +953,7 @@ impl<T: StreamItem> LazyStreamTx<T> {
         };
     }
 
-    pub fn testing_send_all(&self, data: Vec<(T,Box<[u8]>)>, close: bool) {
+    pub fn testing_send_all(&self, data: Vec<(T,&[u8])>, close: bool) {
 
         let s = self.clone();
         let mut l = s.try_lock().expect("internal error: try_lock");

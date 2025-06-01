@@ -229,12 +229,9 @@ impl SideChannelResponder {
 
             // trace!("should echo does apply, waiting for vacant unit");
             if tx_core.shared_wait_vacant_units(tx_core.one()).await {
-                error!("waiting fro some direction");
                 //NOTE: we block here await until some direction comes in.
                 self.respond_with(move |message,cmd_guard| {
-                    error!("respond with {:?}",message);
-
-                    match message.downcast_ref::<StageDirection<T>>() {
+                   match message.downcast_ref::<StageDirection<X::MsgIn<'a>>>() {
                         Some(msg) => {
                             match  msg {
                                 StageDirection::Echo(m) => {
@@ -244,6 +241,7 @@ impl SideChannelResponder {
                                     }
                                 }
                                 StageDirection::EchoAt(i, m) => {
+                                    //trace!("echo at {} vs {} ", i, index);
                                     if *i == index {
                                         match cmd_guard.try_send(tx_core, m.clone()) {
                                             SendOutcome::Success => { Some(Box::new(OK_MESSAGE)) }
@@ -256,6 +254,7 @@ impl SideChannelResponder {
                             }
                         },
                         None => {
+                            error!("Unable to cast stage direction to target type: {}", std::any::type_name::<StageDirection<X::MsgIn<'a>>>());
                             None
                         }
                     }
@@ -505,10 +504,12 @@ impl SideChannelResponder {
         // Wait for either shutdown or for the receiver to have at least one message
         select! {
             _ = shutdown.fuse() => {
+                //trace!("shutdown detected in simulator");
                 // Shutdown signal detected
             },
             _ = rx.wait_occupied(1) => {
                 // Message available, proceed to process
+                //trace!("we have respond with commands {}", rx.occupied_len());
             }
         }
 

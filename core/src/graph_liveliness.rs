@@ -14,6 +14,7 @@ use crate::core_exec;
 use log::{error, info, log_enabled, trace, warn};
 use std::any::Any;
 use std::backtrace::{Backtrace, BacktraceStatus};
+use std::error::Error;
 use std::fmt::Debug;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -568,15 +569,28 @@ impl GraphBuilder {
         }
 
         let ctrlc_runtime_state = g.runtime_state.clone();
+        let tel_prod_rate = Duration::from_millis(g.telemetry_production_rate_ms);
 
         // Set up the Ctrl-C handler
         ctrlc::set_handler(move || {
             println!("Ctrl-C received, initiating shutdown...");
-            let mut a = ctrlc_runtime_state.write();
-            core_exec::block_on(async move { a.internal_request_shutdown().await });
+            let now = Instant::now();
+
+            let mut timeout = {
+                let value1 = ctrlc_runtime_state.clone();
+                let value2 = ctrlc_runtime_state.clone();
+
+                core_exec::block_on(async move { value1.write().internal_request_shutdown().await });
+                if let Some(timeout) = value2.read().shutdown_timeout {
+                    timeout
+                } else {
+                    //no timeout was set so we will use our default of 1 second
+                    Duration::from_secs(1)
+                }
+            };
+            let _ = Graph::watch_shutdown(timeout, now, ctrlc_runtime_state.clone(), tel_prod_rate);
+
         }).expect("Error setting Ctrl-C handler");
-
-
         g
     }
 }
@@ -866,18 +880,21 @@ impl Graph {
         }
 
         let now = Instant::now();
+        let rs = self.runtime_state;
+        let tel_prod_rate = Duration::from_millis(self.telemetry_production_rate_ms);
+        Self::watch_shutdown(timeout, now, rs, tel_prod_rate)
+    }
 
-
+    fn watch_shutdown(timeout: Duration, now: Instant, rs: Arc<RwLock<GraphLiveliness>>, tel_prod_rate: Duration) -> Result<(), Box<dyn Error>> {
         // Wait for either the timeout or the state to be Stopped
         // While try lock then yield and do until time has passed
         // If we are stopped we will return immediately
         loop {
             let is_stopped = {
-                let state = self.runtime_state.read();
-                state.check_is_stopped(now, timeout)
+                rs.read().check_is_stopped(now, timeout)
             };
             if let Some(shutdown) = is_stopped {
-                let mut state = self.runtime_state.write();
+                let mut state = rs.write();
                 state.state = shutdown;
 
                 if state.state.eq(&GraphLivelinessState::StoppedUncleanly) {
@@ -887,10 +904,10 @@ impl Graph {
                 }
                 return Ok(());
             } else {
-                thread::sleep(Duration::from_millis(self.telemetry_production_rate_ms));
+                thread::sleep(tel_prod_rate);
                 //in case any actors just returned Ok(()) without normal is_running call
                 //those need be set to approved votes for the shutdown
-                let mut state = self.runtime_state.write();
+                let mut state = rs.write();
                 state.vote_for_the_dead();
             }
         }

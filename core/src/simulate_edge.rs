@@ -6,6 +6,9 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
+use futures_timer::Delay;
 use futures_util::future::join_all;
 use futures_util::lock::Mutex;
 use crate::{core_rx, yield_now, Rx, SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamRx, StreamRxBundleTrait, StreamSessionMessage, StreamSimpleMessage, StreamTx, Tx};
@@ -230,11 +233,13 @@ where
                                     cycles_of_no_work = 0;
                                 },
                                 Ok(false) => {
+                                    Delay::new(Duration::from_millis(20)).await;
                                     cycles_of_no_work += 1;
                                     //TODO: based on timeout shutdown and report..
-                                    if cycles_of_no_work > 10000 {
+                                    if cycles_of_no_work > 1000 {
                                         cmd_mutex.lock().await.request_shutdown().await;
-                                        error!("stopped on 10000 cycles of no work");// TODO: refine this.
+                                        error!("request_shutdown test found 10000 cycles of no work");// TODO: refine this.
+
                                     }
                                 },
                                 Err(e) => {
@@ -311,7 +316,7 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
             let cmd_mutex = cmd_mutex.clone();
             let sim = behave.into_sim_runner();
             let task = sim(cmd_mutex, responder.clone(), i);
-            error!("adding simulator for {:?}",i);
+            // trace!("adding simulator for {:?}",i);
             tasks.push(task);
         }
         //NOTE: Since all our sims are here on one thread we must be carefull and every
