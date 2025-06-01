@@ -815,19 +815,10 @@ impl ActorBuilder {
         I: Fn(SteadyContext) -> F + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
-        //TODO: we can set whatever we seem right at the first but later
-        //      when isRunning is called and the actor is started (registered)
-        //      the best location will be recomputed to be ideal.
-
-        let mut applied_scheduling = desired_scheduling;
-       // #[cfg(test)] //TODO: when testing we only use 1 thread per actor (for shared threads revisit this, simulator will need deadlock fix applied)
-      //  {applied_threading = Threading::Spawn;}
-
-        match applied_scheduling {
+        match desired_scheduling {
             ScheduleAs::SoloAct => { self.build_spawn(build_actor_exec); }
             ScheduleAs::MemberOf(team) => { self.build_join(build_actor_exec, team); }
         }
-
     }
 
 

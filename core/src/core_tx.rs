@@ -74,8 +74,8 @@ impl<T> TxCore for Tx<T> {
                 error!("close called but the receiver already dropped");
             }
         } else {
-            //TODO: we should provide more details
-            warn!("{:?}\n already marked closed, check for redundant calls, ensure mark_closed is called last after all other conditions!"
+            //NOTE: this may happen more than once, expecially for simulations
+             trace!("{:?}\n already marked closed, check for redundant calls, ensure mark_closed is called last after all other conditions!"
                 ,  self.channel_meta_data.meta_data);
         }
         true // always returns true, close request is never rejected by this method.

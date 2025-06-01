@@ -6,14 +6,12 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::thread::sleep;
 use std::time::Duration;
 use futures_timer::Delay;
 use futures_util::future::join_all;
 use futures_util::lock::Mutex;
 use crate::{core_rx, yield_now, Rx, SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamRx, StreamRxBundleTrait, StreamSessionMessage, StreamSimpleMessage, StreamTx, Tx};
 use crate::core_rx::RxCore;
-use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::StreamItem;
 use crate::graph_testing::{SideChannelResponder, StageDirection};
 use crate::i;
@@ -219,16 +217,17 @@ where
     C: SteadyCommander + 'static,
 {
     fn into_sim_runner(&self) -> SimRunner<C> {
-        let this = self.clone();
+        let stream_tx = self.clone();
         Box::new(move |cmd_mutex, responder, index| {
             Box::pin(
                 {
-                    let value = this.clone();
+                    let tx = stream_tx.clone();
                     async move {
-                        let mut that = value.lock().await;
+                        let mut tx_guard= tx.lock().await;
                         let mut cycles_of_no_work = 0;
-                        while cmd_mutex.lock().await.is_running(&mut || !(that.mark_closed())) {
-                            match responder.simulate_direction(&mut that, &cmd_mutex, index).await {
+                        while cmd_mutex.lock().await.is_running(&mut || tx_guard.mark_closed()) {
+
+                             match responder.simulate_direction(&mut tx_guard, &cmd_mutex, index).await {
                                 Ok(true) => {
                                     cycles_of_no_work = 0;
                                 },
@@ -238,8 +237,7 @@ where
                                     //TODO: based on timeout shutdown and report..
                                     if cycles_of_no_work > 1000 {
                                         cmd_mutex.lock().await.request_shutdown().await;
-                                        error!("request_shutdown test found 10000 cycles of no work");// TODO: refine this.
-
+                                        error!("request_shutdown test found 10000 cycles of no work");// TODO: refine this with proper timeout?.
                                     }
                                 },
                                 Err(e) => {

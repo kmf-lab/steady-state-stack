@@ -28,7 +28,6 @@ impl MemoryWriter {
 pub struct TestCaptureState {
     is_capturing: Arc<AtomicBool>,
     pub log_buffer: Arc<Mutex<Vec<String>>>, // pub for the macro
-    test_thread_id: ThreadId,
 }
 
 lazy_static! {
@@ -123,7 +122,6 @@ pub mod steady_logger {
         let test_state = TestCaptureState {
             is_capturing: Arc::new(AtomicBool::new(true)),
             log_buffer: Arc::new(Mutex::new(Vec::new())),
-            test_thread_id: thread_id,
         };
 
         // Register this test context
