@@ -572,7 +572,7 @@ impl GraphBuilder {
         let tel_prod_rate = Duration::from_millis(g.telemetry_production_rate_ms);
 
         // Set up the Ctrl-C handler
-        ctrlc::set_handler(move || {
+        let result = ctrlc::set_handler(move || {
             println!("Ctrl-C received, initiating shutdown...");
             let now = Instant::now();
 
@@ -590,7 +590,10 @@ impl GraphBuilder {
             };
             let _ = Graph::watch_shutdown(timeout, now, ctrlc_runtime_state.clone(), tel_prod_rate);
 
-        }).expect("Error setting Ctrl-C handler");
+        });
+        if let Err(e) = result {
+            error!("Error setting up CTRL-C hook: {}", e);
+        }
         g
     }
 }
