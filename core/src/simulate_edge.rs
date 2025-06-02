@@ -1,84 +1,106 @@
 //! The `simulate_edge` module provides support for running simulation runners
 //! using a shared command context and side-channel responders. It allows
 //! asynchronous execution of senders and receivers in a controlled test or
-//! simulation environment, coordinating tasks via futures.
+//! simulation environment, coordinating tasks via a single cooperative loop
+//! to prevent deadlocks from multiple concurrent `is_running` loops.
+
 use std::error::Error;
 use std::fmt::Debug;
+use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
-use futures_timer::Delay;
-use futures_util::future::join_all;
-use futures_util::lock::Mutex;
-use crate::{core_rx, yield_now, Rx, SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamRx, StreamRxBundleTrait, StreamSessionMessage, StreamSimpleMessage, StreamTx, Tx};
-use crate::core_rx::RxCore;
-use crate::distributed::distributed_stream::StreamItem;
-use crate::graph_testing::{SideChannelResponder, StageDirection};
+use std::time::{Duration, Instant};
+use futures::lock::Mutex as AsyncMutex; // Use futures::lock::Mutex for async compatibility
+use crate::{await_for_all, SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamSessionMessage, StreamSimpleMessage};
+use crate::graph_testing::SideChannelResponder;
 use crate::i;
 use log::*;
+use crate::core_rx::RxCore;
 
-/// A function type that creates and runs simulation tasks.
-///
-/// `SimRunner<C>` is a boxed function that, when invoked, receives:
-/// - an `Arc<Mutex<C>>` command context,
-/// - a `SideChannelResponder` for simulating channel events,
-/// - an index identifying the simulation task,
-/// and returns a pinned boxed future (`Pin<Box<dyn Future<Output = ()>>>`) that
-/// encapsulates the asynchronous simulation behavior.
-pub type SimRunner<C> = Box<
-    dyn Fn(Arc<Mutex<C>>, SideChannelResponder, usize) -> Pin<Box<dyn Future<Output = ()>>>
+/// Result of a single simulation step indicating what happened during execution.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SimStepResult {
+    DidWork,    // Performed meaningful work
+    NoWork,     // No work available but still active
+    Finished,   // Completed all work
+}
+
+/// A function type that executes a single step of simulation work.
+pub type SimRunner<C: SteadyCommander + 'static> = Box<
+    dyn Fn(SideChannelResponder, usize, &mut C) -> Pin<Box<dyn Future<Output = Result<SimStepResult, Box<dyn Error>>>>>
 >;
 
 /// Converts components into a simulation runner function.
-///
-/// The `IntoSimRunner` trait defines how a type can produce a `SimRunner`,
-/// enabling simulation behavior for transmitter (`SimTx`) and receiver (`SimRx`) cores.
 pub trait IntoSimRunner<C: SteadyCommander + 'static> {
-    /// Transforms `self` into a `SimRunner<C>` that can execute simulation logic.
-    fn into_sim_runner(&self) -> SimRunner<C>;
+    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>;
 }
 
+/// Tracks the state of an individual simulation runner for timeout and error handling.
+#[derive(Debug)]
+struct SimulationState {
+    consecutive_no_work_cycles: usize,
+    max_no_work_cycles: usize,
+    simulation_name: String,
+}
 
+impl SimulationState {
+    fn new(simulation_name: String, max_no_work_cycles: usize) -> Self {
+        Self {
+            consecutive_no_work_cycles: 0,
+            max_no_work_cycles,
+            simulation_name,
+        }
+    }
+
+    fn record_step_result(&mut self, result: &SimStepResult) -> Result<bool, Box<dyn Error>> {
+        match result {
+            SimStepResult::DidWork => {
+                self.consecutive_no_work_cycles = 0;
+                Ok(true)
+            }
+            SimStepResult::NoWork => {
+                self.consecutive_no_work_cycles += 1;
+                if self.consecutive_no_work_cycles > self.max_no_work_cycles {
+                    Err(format!(
+                        "Simulation '{}' exceeded maximum consecutive no-work cycles ({}). \
+                         Check test setup for stalled runners.",
+                        self.simulation_name, self.max_no_work_cycles
+                    ).into())
+                } else {
+                    Ok(true)
+                }
+            }
+            SimStepResult::Finished => {
+                debug!("Simulation '{}' completed successfully", self.simulation_name);
+                Ok(false)
+            }
+        }
+    }
+}
+
+// --- Simulation Runner Implementations ---
 
 impl<T, C> IntoSimRunner<C> for SteadyRx<T>
 where
     T: 'static + Debug + Eq + Send + Sync,
     C: SteadyCommander + 'static,
 {
-    fn into_sim_runner(&self) -> SimRunner<C> {
+    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
-        Box::new(move |cmd_mutex, responder, index| {
-            Box::pin(
-                {
-                    let value = this.clone();
-                    async move {
-                        let mut that = value.lock().await;
-                        let mut cycles_of_no_work = 0;
+        let value = this.clone();
 
-                        while cmd_mutex.lock().await.is_running(&mut || i!(that.is_closed_and_empty())) {
-                            match responder.simulate_wait_for(&mut that, &cmd_mutex, index).await  {
-                                Ok(true) => {
-                                    cycles_of_no_work = 0;
-                                },
-                                Ok(false) => {
-                                    cycles_of_no_work += 1;
-                                    //TODO: based on timeout shutdown and report..
-                                    if cycles_of_no_work > 10000 {
-                                        cmd_mutex.lock().await.request_shutdown().await;
-                                        error!("stopped on cycle of no work");// TODO: refine this.
-                                    }
-                                },
-                                Err(e) => {
-                                    cmd_mutex.lock().await.request_shutdown().await;
-                                    error!("Internal Error: {:?}",e);
-                                }
-                            };
-
+                match value.try_lock() {
+                    Some(mut guard) => {
+                        if cmd.is_running(&mut || guard.is_closed_and_empty()) {
+                            responder.simulate_wait_for(&mut guard, cmd, index, run_duration)
+                        } else {
+                            Ok(SimStepResult::Finished)
                         }
                     }
+                    None => Ok(SimStepResult::NoWork),
                 }
-            )
-        })
+
+
     }
 }
 
@@ -86,39 +108,19 @@ impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamSessionMessage>
 where
     C: SteadyCommander + 'static,
 {
-    fn into_sim_runner(&self) -> SimRunner<C> {
-        let this = self.clone();
-        Box::new(move |cmd_mutex, responder, index| {
-            Box::pin(
-                {
-                    let value = this.clone();
-                    async move {
-                        let mut that = value.lock().await;
-                        let mut cycles_of_no_work = 0;
-
-                        while cmd_mutex.lock().await.is_running(&mut || i!(that.is_closed_and_empty())) {
-                            match responder.simulate_wait_for(&mut that, &cmd_mutex, index).await {
-                                Ok(true) => {
-                                    cycles_of_no_work = 0;
-                                },
-                                Ok(false) => {
-                                    cycles_of_no_work += 1;
-                                    //TODO: based on timeout shutdown and report..
-                                    if cycles_of_no_work > 10000 {
-                                        cmd_mutex.lock().await.request_shutdown().await;
-                                        error!("stopped on cycle of no work");// TODO: refine this.
-                                    }
-                                },
-                                Err(e) => {
-                                    cmd_mutex.lock().await.request_shutdown().await;
-                                    error!("Internal Error: {:?}",e);
-                                }
-                            };
+    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+                let this = self.clone();
+                match this.try_lock() {
+                    Some(mut guard) => {
+                        if cmd.is_running(&mut || guard.is_closed_and_empty()) {
+                            responder.simulate_wait_for(&mut guard, cmd, index, run_duration)
+                        } else {
+                            Ok(SimStepResult::Finished)
                         }
                     }
+                    None => Ok(SimStepResult::NoWork),
                 }
-            )
-        })
+
     }
 }
 
@@ -126,89 +128,41 @@ impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamSimpleMessage>
 where
     C: SteadyCommander + 'static,
 {
-    fn into_sim_runner(&self) -> SimRunner<C> {
+    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
-        Box::new(move |cmd_mutex, responder, index| {
-            Box::pin(
-                {
-                    let value = this.clone();
-                    async move {
-                        let mut that = value.lock().await;
-                        let mut cycles_of_no_work = 0;
-
-                        while cmd_mutex.lock().await.is_running(&mut || i!(that.is_closed_and_empty())) {
-                            match responder.simulate_wait_for(&mut that, &cmd_mutex, index).await {
-                                Ok(true) => {
-                                    cycles_of_no_work = 0;
-                                },
-                                Ok(false) => {
-                                    cycles_of_no_work += 1;
-                                    //TODO: based on timeout shutdown and report..
-                                    if cycles_of_no_work > 10000 {
-                                        cmd_mutex.lock().await.request_shutdown().await;
-                                        error!("stopped on cycle of no work");// TODO: refine this.
-                                    }
-                                },
-                                Err(e) => {
-                                    cmd_mutex.lock().await.request_shutdown().await;
-                                    error!("Internal Error: {:?}",e);
-                                }
-                            };
+                match this.try_lock() {
+                    Some(mut guard) => {
+                        if cmd.is_running(&mut || guard.is_closed_and_empty()) {
+                            responder.simulate_wait_for(&mut guard, cmd, index, run_duration)
+                        } else {
+                            Ok(SimStepResult::Finished)
                         }
                     }
+                    None => Ok(SimStepResult::NoWork),
                 }
-            )
-        })
+
     }
 }
-
-
 
 impl<T, C> IntoSimRunner<C> for SteadyTx<T>
 where
     T: 'static + Debug + Clone + Send + Sync,
     C: SteadyCommander + 'static,
 {
-    fn into_sim_runner(&self) -> SimRunner<C> {
+    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
-        Box::new(move |cmd_mutex, responder, index| {
-            Box::pin(
-                {
-                    let value = this.clone();
-                    async move {
-                        let mut that = value.lock().await;
-                        let mut cycles_of_no_work = 0;
-                        while cmd_mutex.lock().await.is_running(&mut || that.mark_closed()) {
-
-                            //TODO: so the flaw is that we are not releasing so the other shared simulater never gets to run.
-                            //   Ok(true)  //did something keep going
-                            //   Ok(false) //did nothing becuase it does not pertain - if we are here beyond timeout we must trigger shutdown
-                            //   Err("")  // exit now failure, shutdown.
-                            match responder.simulate_direction(&mut that, &cmd_mutex, index).await {
-                                Ok(true) => {
-                                    //we did some work so back off so someone else can do some work.
-                                    //futures_timer::Delay::new(std::time::Duration::from_millis(40)).await;
-
-                                    cycles_of_no_work = 0;
-                                },
-                                Ok(false) => {
-                                    cycles_of_no_work += 1;
-                                    //TODO: based on timeout shutdown and report..
-                                    if cycles_of_no_work > 10000 {
-                                        cmd_mutex.lock().await.request_shutdown().await;
-                                        error!("stopped on cycle of no work");// TODO: refine this.
-                                    }
-                                },
-                                Err(e) => {
-                                    cmd_mutex.lock().await.request_shutdown().await;
-                                    error!("Internal Error: {:?}",e);
-                                }
-                            };
+                match this.try_lock() {
+                    Some(mut guard) => {
+                        if cmd.is_running(&mut || guard.mark_closed()) {
+                            responder.simulate_direction(&mut guard, cmd, index)
+                        } else {
+                            Ok(SimStepResult::Finished)
                         }
                     }
+
+                    None => Ok(SimStepResult::NoWork),
                 }
-            )
-        })
+
     }
 }
 
@@ -216,40 +170,18 @@ impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamSessionMessage>
 where
     C: SteadyCommander + 'static,
 {
-    fn into_sim_runner(&self) -> SimRunner<C> {
-        let stream_tx = self.clone();
-        Box::new(move |cmd_mutex, responder, index| {
-            Box::pin(
-                {
-                    let tx = stream_tx.clone();
-                    async move {
-                        let mut tx_guard= tx.lock().await;
-                        let mut cycles_of_no_work = 0;
-                        while cmd_mutex.lock().await.is_running(&mut || tx_guard.mark_closed()) {
-
-                             match responder.simulate_direction(&mut tx_guard, &cmd_mutex, index).await {
-                                Ok(true) => {
-                                    cycles_of_no_work = 0;
-                                },
-                                Ok(false) => {
-                                    Delay::new(Duration::from_millis(20)).await;
-                                    cycles_of_no_work += 1;
-                                    //TODO: based on timeout shutdown and report..
-                                    if cycles_of_no_work > 1000 {
-                                        cmd_mutex.lock().await.request_shutdown().await;
-                                        error!("request_shutdown test found 10000 cycles of no work");// TODO: refine this with proper timeout?.
-                                    }
-                                },
-                                Err(e) => {
-                                    cmd_mutex.lock().await.request_shutdown().await;
-                                    error!("Internal Error: {:?}",e);
-                                }
-                            };
+    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+        let this = self.clone();
+                match this.try_lock() {
+                    Some(mut guard) => {
+                        if cmd.is_running(&mut || guard.mark_closed()) {
+                            responder.simulate_direction(&mut guard, cmd, index)
+                        } else {
+                            Ok(SimStepResult::Finished)
                         }
                     }
+                    None => Ok(SimStepResult::NoWork),
                 }
-            )
-        })
     }
 }
 
@@ -257,118 +189,99 @@ impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamSimpleMessage>
 where
     C: SteadyCommander + 'static,
 {
-    fn into_sim_runner(&self) -> SimRunner<C> {
+    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
-        Box::new(move |cmd_mutex, responder, index| {
-            Box::pin(
-                {
-                    let value = this.clone();
-                    async move {
-                        let mut that = value.lock().await;
-                        let mut cycles_of_no_work = 0;
-                        while cmd_mutex.lock().await.is_running(&mut || i!(that.mark_closed())) {
-                            match responder.simulate_direction(&mut that, &cmd_mutex, index).await {
-                                Ok(true) => {
-                                    cycles_of_no_work = 0;
-                                },
-                                Ok(false) => {
-                                    cycles_of_no_work += 1;
-                                    //TODO: based on timeout shutdown and report..
-                                    if cycles_of_no_work > 10000 {
-                                        error!("stopped on cycle of no work");// TODO: refine this.
+                match this.try_lock() {
+                    Some(mut guard) => {
+                        if cmd.is_running(&mut || guard.mark_closed()) {
+                            responder.simulate_direction(&mut guard, cmd, index)
+                        } else {
+                            Ok(SimStepResult::Finished)
+                        }
+                    }
+                    None => Ok(SimStepResult::NoWork),
+                }
 
-                                        cmd_mutex.lock().await.request_shutdown().await;
-                                    }
-                                },
-                                Err(e) => {
-                                    error!("Internal Error: {:?}",e);
+    }
+}
 
-                                    cmd_mutex.lock().await.request_shutdown().await;
-                                }
-                            };
+// --- Main Simulation Function ---
+
+/// Executes multiple simulation runners using a single cooperative scheduling loop.
+///
+/// Uses round-robin scheduling to ensure fairness, with per-runner state tracking
+/// for timeouts and detailed error reporting.
+pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
+    cmd: &mut C,
+    sims: Vec<&dyn IntoSimRunner<C>>,
+) -> Result<(), Box<dyn Error>> {
+    let responders = cmd.sidechannel_responder().ok_or("No responder")?;
+
+    let mut simulation_states: Vec<SimulationState> = (0..sims.len())
+        .map(|i| SimulationState::new(format!("sim_{}", i), 10000))
+        .collect();
+
+    let mut active_simulations: Vec<bool> = vec![true; sims.len()];
+    let mut active_count = sims.len();
+
+    info!("Starting simulation with {} runners for {:?}", sims.len(), cmd.identity());
+    let now = Instant::now();
+
+    //NOTE: each runner detects shutdown and closes its outgoign connections as needed.
+    while cmd.is_running(&mut || 0==active_count) {
+        let mut any_work_done = false;
+
+        //WARNING: this is a tight loop over all the simulators, as a result we must
+        //         limit our selves the frame rate which is also helpful to capture data
+        //         as it happens in order for debugging later.
+        await_for_all!(cmd.wait_periodic(Duration::from_millis(cmd.frame_rate_ms())));
+
+        for (index, sim) in sims.iter().enumerate() {
+            if !active_simulations[index] {
+                continue;
+            }
+
+            let run_duration = now.elapsed();
+
+            match sim.run(responders.clone(), index, cmd, run_duration) {
+                Ok(step_result) => {
+                    if matches!(step_result, SimStepResult::DidWork) {
+                        any_work_done = true;
+                    }
+                    match simulation_states[index].record_step_result(&step_result) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            active_simulations[index] = false;
+                            active_count = active_count.saturating_sub(1); // Prevent underflow
+                            info!("Simulation {} completed", index);
+                        }
+                        Err(timeout_error) => {
+                            error!("Simulation {} timed out: {}", index, timeout_error);
+                            cmd.request_shutdown().await;
+                            return Err(timeout_error);
                         }
                     }
                 }
-            )
-        })
-    }
-}
-
-
-
-
-/// Executes multiple simulation runners concurrently using the provided command context.
-///
-/// This function initializes an `Arc<Mutex<C>>` around the given `cmd` context and
-/// drives each simulation runner in parallel, returning `Ok(())` when all simulations
-/// complete successfully or an error if any simulation fails.
-pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
-    cmd: C,
-    sims: Vec<&dyn IntoSimRunner<C>>,
-) -> Result<(), Box<dyn Error>> {
-    if let Some(responder) = cmd.sidechannel_responder() {
-        let cmd_mutex = Arc::new(Mutex::new(cmd));
-
-        let mut tasks: Vec<Pin<Box<dyn Future<Output = ()>>>> = Vec::new();
-        for (i, behave) in sims.into_iter().enumerate() {
-            let cmd_mutex = cmd_mutex.clone();
-            let sim = behave.into_sim_runner();
-            let task = sim(cmd_mutex, responder.clone(), i);
-            // trace!("adding simulator for {:?}",i);
-            tasks.push(task);
-        }
-        //NOTE: Since all our sims are here on one thread we must be carefull and every
-        //      simulator must have regular async for other simulations to get a time slice
-        join_all(tasks).await;
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod simulate_edge_tests {
-    use super::*;
-    use std::sync::Arc;
-    use futures_util::lock::Mutex;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    use std::future::Future;
-
-    // Simple mock commander for testing
-    #[derive(Clone)]
-    struct TestCommander {
-        running: Arc<AtomicBool>,
-        call_count: Arc<AtomicUsize>,
-        has_responder: bool,
-    }
-
-    impl TestCommander {
-        fn new(running: bool, has_responder: bool) -> Self {
-            Self {
-                running: Arc::new(AtomicBool::new(running)),
-                call_count: Arc::new(AtomicUsize::new(0)),
-                has_responder,
+                Err(sim_error) => {
+                    error!("Simulation {} failed: {}", index, sim_error);
+                    active_simulations[index] = false;
+                    active_count = active_count.saturating_sub(1); // Prevent underflow
+                    cmd.request_shutdown().await;
+                    return Err(format!("Simulation {} failed: {}", index, sim_error).into());
+                }
             }
         }
 
-        fn stop(&self) {
-            self.running.store(false, Ordering::SeqCst);
-        }
-
-        fn call_count(&self) -> usize {
-            self.call_count.load(Ordering::SeqCst)
+        if !any_work_done && active_count > 0 {
+            trace!("No work done this cycle, continuing...");
         }
     }
 
-
-    #[test]
-    fn test_sim_runner_type_creation() {
-        let _ = crate::util::steady_logger::initialize();
-
-        // Test that we can create the function type
-        let _runner: SimRunner<TestCommander> = Box::new(|_cmd, _responder, _index| {
-            Box::pin(async move {
-                // Simple test runner that does nothing
-            })
-        });
+    if active_count > 0 {
+        warn!("Exiting with {} active simulations due to shutdown", active_count);
+    } else {
+        info!("All simulations completed successfully");
     }
 
+    Ok(())
 }

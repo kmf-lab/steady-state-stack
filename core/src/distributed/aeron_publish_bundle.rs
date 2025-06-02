@@ -10,6 +10,7 @@ use crate::distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamR
 use crate::{SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
+use crate::simulate_edge::IntoSimRunner;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 

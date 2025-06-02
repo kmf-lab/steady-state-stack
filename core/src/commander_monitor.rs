@@ -97,11 +97,11 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     /// Delegates to `simulate_edge::simulated_behavior`, initializing the monitor
     /// as the command context and executing each provided simulation task in parallel.
     pub async fn simulated_behavior(
-        self,
+        mut self,
         sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>>
     {
-        simulate_edge::simulated_behavior::<Self>(self, sims).await
+        simulate_edge::simulated_behavior::<Self>(&mut self, sims).await
     }
 
     /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
@@ -177,9 +177,9 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         rx.is_showstopper(threshold)
     }
 
-    async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>
+    async fn simulated_behavior(mut self, sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>> {
-        simulate_edge::simulated_behavior::<LocalMonitor<RX_LEN, TX_LEN>>(self, sims).await
+        simulate_edge::simulated_behavior::<LocalMonitor<RX_LEN, TX_LEN>>(&mut self, sims).await
     }
 
     /// set loglevel for the application
@@ -1160,6 +1160,9 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         result.load(Ordering::Relaxed)
     }
 
+    fn frame_rate_ms(&self) -> u64 {
+        self.frame_rate_ms
+    }
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> LocalMonitor<RX_LEN, TX_LEN> {

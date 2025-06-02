@@ -150,6 +150,8 @@ impl<X> SendOutcome<X> {
 #[allow(async_fn_in_trait)]
 pub trait SteadyCommander {
 
+    fn frame_rate_ms(&self) -> u64;
+
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>>;
 
     async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<Self>>) -> Result<(), Box<dyn Error>>;

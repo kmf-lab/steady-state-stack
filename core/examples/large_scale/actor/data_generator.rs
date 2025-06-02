@@ -1,3 +1,4 @@
+use crate::simulate_edge::IntoSimRunner;
 use std::error::Error;
 use std::mem;
 use std::time::{Duration};

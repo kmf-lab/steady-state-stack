@@ -98,8 +98,8 @@ impl SteadyCommander for SteadyContext {
         Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
     }
 
-    async fn simulated_behavior(self, sims: Vec<&dyn IntoSimRunner<SteadyContext>>) -> Result<(), Box<dyn Error>> {
-        simulate_edge::simulated_behavior::<SteadyContext>(self, sims).await
+    async fn simulated_behavior(mut self, sims: Vec<&dyn IntoSimRunner<SteadyContext>>) -> Result<(), Box<dyn Error>> {
+        simulate_edge::simulated_behavior::<SteadyContext>(&mut self, sims).await
     }
 
     /// Initializes the logger with the specified log level.
@@ -707,4 +707,7 @@ impl SteadyCommander for SteadyContext {
             result.load(Ordering::Relaxed)
         }
 
+    fn frame_rate_ms(&self) -> u64 {
+        self.frame_rate_ms
+    }
 }
