@@ -26,7 +26,7 @@ use crate::telemetry::metrics_server;
 
 /// Represents the state of metrics for the graph, including nodes and edges.
 #[derive(Default)]
-pub struct MetricState {
+pub struct DotState {
     pub(crate) nodes: Vec<Node>, // Position matches the node ID
     pub(crate) edges: Vec<Edge>, // Position matches the channel ID
     pub seq: u64,
@@ -126,7 +126,7 @@ impl Edge {
 ///
 /// * `state` - The current metric state.
 /// * `txt_metric` - The buffer to store the metrics text.
-pub(crate) fn build_metric(state: &MetricState, txt_metric: &mut BytesMut) {
+pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
     txt_metric.clear(); // Clear the buffer for reuse
 
     state.nodes.iter().filter(|n| {
@@ -156,7 +156,7 @@ pub(crate) struct Config {
 /// * `state` - The current metric state.
 /// * `rankdir` - The rank direction for the DOT graph.
 /// * `dot_graph` - The buffer to store the DOT graph.
-pub(crate) fn build_dot(state: &MetricState, dot_graph: &mut BytesMut, config: &Config) {
+pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut, config: &Config) {
     dot_graph.clear(); // Clear the buffer for reuse
 
     dot_graph.put_slice(b"digraph G {\nrankdir=");
@@ -303,7 +303,7 @@ pub struct DotGraphFrames {
 /// * `channels_out` - The output channels.
 /// * `frame_rate_ms` - The frame rate in milliseconds.
 pub fn apply_node_def(
-    local_state: &mut MetricState,
+    local_state: &mut DotState,
     actor: Arc<ActorMetaData>,
     channels_in: &[Arc<ChannelMetaData>],
     channels_out: &[Arc<ChannelMetaData>],
@@ -350,7 +350,7 @@ pub fn apply_node_def(
 /// * `mdvec` - The metadata of the channels.
 /// * `set_to` - A boolean indicating if the edges are set to the node.
 /// * `frame_rate_ms` - The frame rate in milliseconds.
-fn define_unified_edges(local_state: &mut MetricState, node_name: ActorName, mdvec: &[Arc<ChannelMetaData>], set_to: bool, frame_rate_ms: u64) {
+fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec: &[Arc<ChannelMetaData>], set_to: bool, frame_rate_ms: u64) {
     mdvec.iter().for_each(|meta| {
         let idx = meta.id;
         // info!("define_unified_edges: {} {} {}", idx, node_id, set_to);
@@ -714,7 +714,7 @@ mod dot_tests {
 
     #[test]
     fn test_build_metric() {
-        let state = MetricState {
+        let state = DotState {
             nodes: vec![
                 Node {
                     id: Some(ActorName::new("1",None)),
@@ -756,7 +756,7 @@ mod dot_tests {
 
     #[test]
     fn test_build_dot() {
-        let state = MetricState {
+        let state = DotState {
             nodes: vec![
                 Node {
                     id: Some(ActorName::new("1",None)),
@@ -855,7 +855,7 @@ mod dot_tests {
 
     #[test]
     fn test_define_unified_edges() {
-        let mut metric_state = MetricState::default();
+        let mut metric_state = DotState::default();
         let node_name = ActorName::new("node1", None);
         let channels = vec![Arc::new(ChannelMetaData::default())];
 
@@ -923,7 +923,7 @@ mod dot_tests {
     #[test]
     fn test_build_metric_with_edges() {
         // Test line 141 - edge metric text handling
-        let state = MetricState {
+        let state = DotState {
             nodes: vec![
                 Node {
                     id: Some(ActorName::new("node1", None)),
@@ -962,7 +962,7 @@ mod dot_tests {
     #[test]
     fn test_build_dot_with_node_suffix() {
         // Test lines 186-191 - node suffix handling
-        let state = MetricState {
+        let state = DotState {
             nodes: vec![
                 Node {
                     id: Some(ActorName::new("node", Some(42))),
@@ -997,7 +997,7 @@ mod dot_tests {
             direction: "in",
         };
 
-        let state = MetricState {
+        let state = DotState {
             nodes: vec![
                 Node {
                     id: Some(ActorName::new("remote_node", None)),
@@ -1028,7 +1028,7 @@ mod dot_tests {
     #[test]
     fn test_build_dot_with_edges_and_sidecar() {
         // Test lines 222-283 - edge processing including sidecar
-        let state = MetricState {
+        let state = DotState {
             nodes: vec![
                 Node {
                     id: Some(ActorName::new("from_node", None)),
@@ -1081,7 +1081,7 @@ mod dot_tests {
     #[test]
     fn test_apply_node_def() {
         // Test lines 305-342 - apply_node_def function
-        let mut local_state = MetricState::default();
+        let mut local_state = DotState::default();
 
         let actor = Arc::new(ActorMetaData {
             ident: ActorIdentity {
@@ -1178,7 +1178,7 @@ mod dot_tests {
     #[test]
     fn test_define_unified_edges_from_side() {
         // Test the "from" side of edge definition (lines 382-386)
-        let mut metric_state = MetricState::default();
+        let mut metric_state = DotState::default();
         let node_name = ActorName::new("from_node", None);
 
         let channel = Arc::new(ChannelMetaData {
@@ -1263,7 +1263,7 @@ mod dot_tests {
     #[test]
     fn test_node_with_unknown_id() {
         // Test lines 189-191 - unknown node handling in build_dot
-        let state = MetricState {
+        let state = DotState {
             nodes: vec![
                 Node {
                     id: None, // This will trigger the "unknown" branch
@@ -1292,7 +1292,7 @@ mod dot_tests {
     #[test]
     fn test_edge_with_unknown_nodes() {
         // Test lines 239-249 - unknown node handling in edges
-        let state = MetricState {
+        let state = DotState {
             nodes: vec![],
             edges: vec![
                 Edge {

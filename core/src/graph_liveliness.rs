@@ -993,6 +993,7 @@ impl Graph {
                         }
                     }
                 }
+                eprintln!("\n\n"); //space in case we need it between stacks
             }
 
 

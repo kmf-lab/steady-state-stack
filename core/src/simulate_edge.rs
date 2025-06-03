@@ -11,7 +11,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use futures::lock::Mutex as AsyncMutex; // Use futures::lock::Mutex for async compatibility
-use crate::{await_for_all, SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamSessionMessage, StreamSimpleMessage};
+use crate::{await_for_all, wait_for_all, SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamSessionMessage, StreamSimpleMessage};
 use crate::graph_testing::SideChannelResponder;
 use crate::i;
 use log::*;
@@ -61,7 +61,7 @@ impl SimulationState {
                 Ok(true)
             }
             SimStepResult::Finished => {
-                debug!("Simulation '{}' completed successfully", self.simulation_name);
+                trace!("Simulation '{}' completed successfully", self.simulation_name);
                 Ok(false)
             }
         }
@@ -214,15 +214,14 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     let mut active_simulations: Vec<bool> = vec![true; sims.len()];
     let mut active_count = sims.len();
 
-    info!("Starting simulation with {} runners for {:?}", sims.len(), cmd.identity());
+    trace!("Starting simulation with {} runners for {:?}", sims.len(), cmd.identity());
     let now = Instant::now();
 
     //NOTE: each runner detects shutdown and closes its outgoign connections as needed.
     while cmd.is_running(&mut || 0==active_count) {
         let mut any_work_done = false;
 
-        //we stop here until some message arrives then we can then determine how to process it
-        responder.wait_avail().await;
+        cmd.call_async(responder.wait_avail()).await;
 
         for (index, sim) in sims.iter().enumerate() {
             if !active_simulations[index] {
@@ -241,12 +240,13 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
                         Ok(false) => {
                             active_simulations[index] = false;
                             active_count = active_count.saturating_sub(1); // Prevent underflow
-                            info!("Simulation {} completed", index);
+                            //trace!("Simulation {} completed", index);
                         }
                         Err(timeout_error) => {
                             error!("Simulation {} timed out: {}", index, timeout_error);
                             cmd.request_shutdown().await;
-                            return Err(timeout_error);
+                            active_simulations[index] = false;
+                            active_count = active_count.saturating_sub(1);
                         }
                     }
                 }
@@ -268,7 +268,7 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     if active_count > 0 {
         warn!("Exiting with {} active simulations due to shutdown", active_count);
     } else {
-        info!("All simulations completed successfully");
+        trace!("All simulations completed successfully");
     }
 
     Ok(())

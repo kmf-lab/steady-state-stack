@@ -6,7 +6,7 @@ use bytes::BytesMut;
 #[allow(unused_imports)]
 use log::*;
 use crate::*;
-use crate::dot::{apply_node_def, build_dot, build_metric, Config, DotGraphFrames, FrameHistory, MetricState};
+use crate::dot::{apply_node_def, build_dot, build_metric, Config, DotGraphFrames, FrameHistory, DotState};
 use crate::telemetry::metrics_collector::*;
 use futures::io;
 use futures::channel::oneshot::Receiver;
@@ -18,7 +18,7 @@ use crate::commander_context::SteadyContext;
 pub const NAME: &str = "metrics_server";
 
 #[derive(Clone)]
-struct State {
+struct MetricState {
     doc: Vec<u8>,
     metric: Vec<u8>,
 }
@@ -56,17 +56,8 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
 
 
 
-    let mut rxg = rx.lock().await;
-    let mut metrics_state = MetricState::default();
-
-    let mut frames = DotGraphFrames {
-        active_metric: BytesMut::new(),
-        last_generated_graph: Instant::now(),
-        active_graph: BytesMut::new(),
-    };
-
     // Define a new instance of the state.
-    let state = Arc::new(Mutex::new(State {
+    let state = Arc::new(Mutex::new(MetricState {
         doc: Vec::new(),
         metric: Vec::new(),
     }));
@@ -78,11 +69,7 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
         
     }));
 
-    let mut history = FrameHistory::new(frame_rate_ms);
-
     let (tcp_sender_tx, tcp_receiver_tx) = oneshot::channel::<Option<Duration>>();
-    let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
-
 
     //Only spin up server if addr is provided, this allows for unit testing where we cannot open that port.
     if let Some(ref addr) = addr {
@@ -110,14 +97,25 @@ async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64,
             warn!("skipping telemetry due to binding issues")
         }
         //NOTE: this is probably a mistake this loop could be its own actor.
+        let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
         spawn_detached(async move {
             if let Some(ref listener_new) = *opt_tcp {
                 handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
             }
         });
-
-
     }
+    let mut metrics_state = DotState::default();
+    let mut history = FrameHistory::new(frame_rate_ms);
+
+    let mut frames = DotGraphFrames {
+        active_metric: BytesMut::new(),
+        last_generated_graph: Instant::now(),
+        active_graph: BytesMut::new(),
+    };
+
+    //might block here as we are still building the graph
+    let mut rxg = rx.lock().await;
+
 
     while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
         //TODO: merge the above connection loop into this wait so we only have 1 thread and 1 loop.
@@ -207,7 +205,7 @@ pub(crate) fn check_addr(addr: &str) -> Option<String> {
 
 async fn handle_new_requests (
     tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<Option<Duration>>>>,
-    state: Arc<Mutex<State>>,
+    state: Arc<Mutex<MetricState>>,
     config: Arc<Mutex<Config>>,
     listener: &Box<dyn AsyncListener + Send + Sync>,
 ) {
@@ -269,13 +267,13 @@ async fn handle_new_requests (
 
 #[allow(clippy::too_many_arguments)]
 async fn process_msg(msg: DiagramData
-                     , metrics_state: &mut MetricState
+                     , metrics_state: &mut DotState
                      , history: &mut FrameHistory
                      , frames: &mut DotGraphFrames
                      , frame_rate_ms: u64
                      , flush_all: bool
                      , rxg: &MutexGuard<'_, Rx<DiagramData>>
-                     , state: Arc<Mutex<State>>
+                     , state: Arc<Mutex<MetricState>>
                      , config: Arc<Mutex<Config>>
 
 ) {
@@ -320,7 +318,7 @@ async fn process_msg(msg: DiagramData
     }
 }
 
-async fn generate_reports(metrics_state: &mut MetricState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<Mutex<State>>, config: Arc<Mutex<Config>>, flush_frame: bool) {
+async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<Mutex<MetricState>>, config: Arc<Mutex<Config>>, flush_frame: bool) {
     if steady_config::TELEMETRY_HISTORY {
         history.update(flush_all).await;
         history.mark_position();
@@ -438,7 +436,7 @@ const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SER
 //   pub trait AsyncReadExt: AsyncRead     for the .write_all
 
 async fn handle_request<T>(mut stream: T,
-                           state: Arc<Mutex<State>>,
+                           state: Arc<Mutex<MetricState>>,
                            _config: Arc<Mutex<Config>>) -> io::Result<()>
 where
     T: AsyncRead + AsyncWrite + Unpin

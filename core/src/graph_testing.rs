@@ -179,7 +179,6 @@ impl StageManager {
             core_exec::block_on( async move {
                 let mut sc_guard = sc.lock().await;
                 let (tx, rx) = sc_guard.deref_mut();
-                error!("push sidechanle msg {:?}",msg);
                 match tx.push(msg).await {
                     Ok(_) => {
                         if let Some(response) = rx.pop().await {
@@ -246,7 +245,6 @@ impl SideChannelResponder {
                         Some(msg) => {
                             match  msg {
                                 StageDirection::Echo(m) => {
-                                    error!("direction try echo {:?}",m);
                                     match cmd.try_send(tx_core,m.clone()) {
                                         SendOutcome::Success => {Some(Box::new(OK_MESSAGE))}
                                         SendOutcome::Blocked(msg) => {
@@ -257,7 +255,6 @@ impl SideChannelResponder {
                                 }
                                 StageDirection::EchoAt(i, m) => {
                                     if *i == index {
-                                        error!("direction try echo at {} {:?}", i,m);
                                         match cmd.try_send(tx_core, m.clone()) {
                                             SendOutcome::Success => { Some(Box::new(OK_MESSAGE)) }
                                             SendOutcome::Blocked(msg) => {
@@ -311,7 +308,6 @@ impl SideChannelResponder {
                     if let Some((expected, timeout)) = message {
                         match cmd_guard.try_take(rx_core) {
                             Some(measured) => {
-                                error!("some measured {:?}",&measured);
                                 if expected.eq(&measured) {
                                     Some(Box::new(OK_MESSAGE))
                                 } else {
