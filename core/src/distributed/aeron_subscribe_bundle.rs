@@ -9,7 +9,7 @@ use aeron::concurrent::logbuffer::header::Header;
 use aeron::subscription::Subscription;
 use log::{error, warn};
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamTxBundle, StreamSessionMessage};
+use crate::distributed::distributed_stream::{SteadyStreamTxBundle, StreamIngress};
 use crate::{SteadyCommander, SteadyState, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait};
 use crate::commander_context::SteadyContext;
 use crate::core_tx::TxCore;
@@ -25,7 +25,7 @@ const ROUND_ROBIN:Option<Duration> = None;// Some(Duration::from_millis(5)); //T
 
 pub async fn run<const GIRTH: usize>(
     context: SteadyContext,
-    tx: SteadyStreamTxBundle<StreamSessionMessage, GIRTH>,
+    tx: SteadyStreamTxBundle<StreamIngress, GIRTH>,
     aeron_connect: Channel,
     stream_id: i32,
     state: SteadyState<AeronSubscribeSteadyState>,
@@ -51,7 +51,7 @@ pub async fn run<const GIRTH: usize>(
 }
 
 async fn poll_aeron_subscription<C: SteadyCommander>(
-    tx_item: &mut StreamTx<StreamSessionMessage>,
+    tx_item: &mut StreamTx<StreamIngress>,
     sub: &mut Subscription,
     cmd: &mut C
 
@@ -132,7 +132,7 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
 
 async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
     mut cmd: C,
-    tx: SteadyStreamTxBundle<StreamSessionMessage, GIRTH>,
+    tx: SteadyStreamTxBundle<StreamIngress, GIRTH>,
     aeron_channel: Channel,
     stream_id: i32,
     aeron: Arc<futures_util::lock::Mutex<Aeron>>,

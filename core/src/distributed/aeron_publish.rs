@@ -7,7 +7,7 @@ use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use futures_util::SinkExt;
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamRx, StreamSimpleMessage};
+use crate::distributed::distributed_stream::{SteadyStreamRx, StreamEgress};
 use crate::{SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
@@ -21,7 +21,7 @@ pub struct AeronPublishSteadyState {
 }
 
 pub async fn run(context: SteadyContext
-             , rx: SteadyStreamRx<StreamSimpleMessage>
+             , rx: SteadyStreamRx<StreamEgress>
              , aeron_connect: Channel
              , stream_id: i32
              , state: SteadyState<AeronPublishSteadyState>
@@ -47,7 +47,7 @@ pub async fn run(context: SteadyContext
 }
 
 async fn internal_behavior<C: SteadyCommander>(mut cmd: C
-                                                                 , rx: SteadyStreamRx<StreamSimpleMessage>
+                                                                 , rx: SteadyStreamRx<StreamEgress>
                                                                  , aeron_channel: Channel
                                                                  , stream_id: i32
                                                                  , aeron:Arc<futures_util::lock::Mutex<Aeron>>
@@ -201,7 +201,7 @@ pub(crate) mod aeron_tests {
     use super::*;
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::distributed_builder::AqueductBuilder;
-    use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
+    use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamIngress, StreamTxBundleTrait};
 
     //NOTE: bump this up for longer running load tests
     //       20_000_000_000;
@@ -224,7 +224,7 @@ pub(crate) mod aeron_tests {
     // sudo ss -m -p | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
 
     pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyContext
-                                                     , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
+                                                     , tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
         let mut cmd = context.into_monitor([], tx.control_meta_data());
         let mut tx = tx.lock().await;
@@ -233,7 +233,7 @@ pub(crate) mod aeron_tests {
         let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
 
         const BATCH_SIZE:usize = 5000;
-        let items: [StreamSimpleMessage; BATCH_SIZE] = [StreamSimpleMessage::new(8);BATCH_SIZE];
+        let items: [StreamEgress; BATCH_SIZE] = [StreamEgress::new(8);BATCH_SIZE];
         let mut data: [[u8;8]; BATCH_SIZE] = [data1; BATCH_SIZE];
         for i in 0..BATCH_SIZE {
             if i % 2 == 0 {
@@ -284,7 +284,7 @@ pub(crate) mod aeron_tests {
     }
 
     pub async fn mock_receiver_run<const GIRTH:usize>(context: SteadyContext
-                                                      , rx: SteadyStreamRxBundle<StreamSessionMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
+                                                      , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
         let mut cmd = context.into_monitor(rx.control_meta_data(), []);
         let mut rx = rx.lock().await;

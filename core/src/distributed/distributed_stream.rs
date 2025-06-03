@@ -239,7 +239,7 @@ pub trait StreamItem: Copy + Send + Sync {
 ///
 /// `StreamFragment` includes metadata about the session and arrival time.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StreamSessionMessage {
+pub struct StreamIngress {
     pub length: i32,
     pub session_id: IdType,
     pub arrival: Instant,
@@ -247,14 +247,14 @@ pub struct StreamSessionMessage {
 
 }
 
-impl StreamSessionMessage {
+impl StreamIngress {
     /// Creates a new `StreamFragment`.
     ///
     /// # Panics
     /// - Panics if `length < 0`.
     pub fn new(length: i32, session_id: i32, arrival: Instant, finished: Instant) -> Self {
         assert!(length >= 0, "Fragment length cannot be negative");
-        StreamSessionMessage {
+        StreamIngress {
             length,
             session_id,
             arrival,
@@ -262,15 +262,21 @@ impl StreamSessionMessage {
         }
     }
 
-    pub fn wrap(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamSessionMessage, &[u8]) {
-            (StreamSessionMessage::new(p0.len() as i32,session_id,arrival,finished), p0) //TODO: target type is not boxed ??
+    pub fn by_box(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamIngress, Box<[u8]>)
+    {
+        (StreamIngress::new(p0.len() as i32, session_id, arrival, finished), p0.into())
     }
+    pub fn by_ref(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamIngress, &[u8])
+    {
+        (StreamIngress::new(p0.len() as i32, session_id, arrival, finished), p0)
+    }
+
 
 }
 
-impl StreamItem for StreamSessionMessage {
+impl StreamItem for StreamIngress {
     fn testing_new(length: i32) -> Self {
-        StreamSessionMessage {
+        StreamIngress {
             length,
             session_id: 0,
             arrival: Instant::now(),
@@ -283,7 +289,7 @@ impl StreamItem for StreamSessionMessage {
     }
     
     fn from_defrag(defrag_entry: &Defrag<Self>) -> Self {
-        StreamSessionMessage{
+        StreamIngress {
             length: defrag_entry.running_length as i32,
             session_id: defrag_entry.session_id,
             arrival: defrag_entry.arrival.expect("defrag must have needed Instant"),
@@ -294,30 +300,36 @@ impl StreamItem for StreamSessionMessage {
 
 /// A simple stream message, typically for outgoing single-part messages.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct StreamSimpleMessage {
+pub struct StreamEgress {
     pub(crate) length: i32,
 }
 
-impl StreamSimpleMessage {
-    pub fn wrap(p0: &[u8]) -> (StreamSimpleMessage, &[u8]) {
-        (StreamSimpleMessage::new(p0.len() as i32), p0)
+impl StreamEgress {
+    pub fn by_box(p0: &[u8]) -> (StreamEgress, Box<[u8]>)
+    {
+        (StreamEgress::new(p0.len() as i32), p0.into())
     }
+    pub fn by_ref(p0: &[u8]) -> (StreamEgress, &[u8])
+    {
+        (StreamEgress::new(p0.len() as i32), p0)
+    }
+
 }
 
-impl StreamSimpleMessage {
+impl StreamEgress {
     /// Creates a new `StreamMessage` from a `Length` wrapper.
     ///
     /// # Panics
     /// - Panics if `length.0 < 0` (should never happen due to `Length` checks).
     pub fn new(length: i32) -> Self {
         assert!(length >= 0, "Message length cannot be negative");
-        StreamSimpleMessage { length }
+        StreamEgress { length }
     }
 }
 
-impl StreamItem for StreamSimpleMessage {
+impl StreamItem for StreamEgress {
     fn testing_new(length: i32) -> Self {
-        StreamSimpleMessage { length }
+        StreamEgress { length }
     }
 
     fn length(&self) -> i32 {
@@ -325,7 +337,7 @@ impl StreamItem for StreamSimpleMessage {
     }
     
     fn from_defrag(defrag_entry: &Defrag<Self>) -> Self {
-        StreamSimpleMessage::new(defrag_entry.running_length as i32)
+        StreamEgress::new(defrag_entry.running_length as i32)
     }
 }
 
@@ -1102,19 +1114,19 @@ mod extra_stream_tests {
         let mut on_first = true;
         let mut idx = 0;
         // First slice: take 2 bytes from p1
-        let (a1, b1) = StreamRx::<StreamSimpleMessage>::extract_stream_payload_slices(&mut p1, &mut p2, &mut on_first, &mut idx, 2);
+        let (a1, b1) = StreamRx::<StreamEgress>::extract_stream_payload_slices(&mut p1, &mut p2, &mut on_first, &mut idx, 2);
         assert_eq!(a1, &mut [1u8, 2][..]);
         assert_eq!(b1.len(), 0);
         assert!(on_first);
         assert_eq!(idx, 2);
         // Second slice: p1 has 1 left, so a from p1[2..3], b from p2[0..1]
-        let (a2, b2) = StreamRx::<StreamSimpleMessage>::extract_stream_payload_slices(&mut p1, &mut p2, &mut on_first, &mut idx, 2);
+        let (a2, b2) = StreamRx::<StreamEgress>::extract_stream_payload_slices(&mut p1, &mut p2, &mut on_first, &mut idx, 2);
         assert_eq!(a2, &mut [3u8][..]);
         assert_eq!(b2, &mut [4u8][..]);
         assert!(!on_first);
         assert_eq!(idx, 1);
         // Third slice: on_first=false, consume from p2
-        let (a3, b3) = StreamRx::<StreamSimpleMessage>::extract_stream_payload_slices(&mut p1, &mut p2, &mut on_first, &mut idx, 2);
+        let (a3, b3) = StreamRx::<StreamEgress>::extract_stream_payload_slices(&mut p1, &mut p2, &mut on_first, &mut idx, 2);
         assert_eq!(a3, &mut [5u8, 6][..]);
         assert_eq!(b3.len(), 0);
     }
@@ -1125,7 +1137,7 @@ mod extra_stream_tests {
         let items = 3;
         let bytes = 5;
         let session_id = 42;
-        let def: Defrag<StreamSimpleMessage> = Defrag::new(session_id, items, bytes);
+        let def: Defrag<StreamEgress> = Defrag::new(session_id, items, bytes);
         assert_eq!(def.session_id, session_id);
         assert_eq!(def.running_length, 0);
         assert!(def.arrival.is_none());
@@ -1139,11 +1151,11 @@ mod extra_stream_tests {
     fn test_stream_session_message_new_and_from_defrag() {
         let arrival = Instant::now();
         let finish = arrival + Duration::from_secs(1);
-        let mut def = Defrag::<StreamSessionMessage>::new(7, 4, 4);
+        let mut def = Defrag::<StreamIngress>::new(7, 4, 4);
         def.arrival = Some(arrival);
         def.finish = Some(finish);
         def.running_length = 8;
-        let msg = StreamSessionMessage::from_defrag(&def);
+        let msg = StreamIngress::from_defrag(&def);
         assert_eq!(msg.length(), 8);
         assert_eq!(msg.session_id, 7);
         assert_eq!(msg.arrival, arrival);
@@ -1156,7 +1168,7 @@ mod extra_stream_tests {
     /// Test testing_new and length for StreamSessionMessage
     #[test]
     fn test_testing_new_methods() {
-        let tn = StreamSessionMessage::testing_new(9);
+        let tn = StreamIngress::testing_new(9);
         assert_eq!(tn.length(), 9);
     }
 
@@ -1172,7 +1184,7 @@ mod extra_stream_tests {
     /// Test StreamTxBundleTrait.mark_closed on empty and non-empty bundles
     #[test]
     fn test_stream_tx_bundle_trait_empty() {
-        type Bundle = StreamTxBundle<'static, StreamSimpleMessage>;
+        type Bundle = StreamTxBundle<'static, StreamEgress>;
         let mut bundle: Bundle = Vec::new();
         assert!(bundle.mark_closed(), "even Empty bundle should return true");
     }
@@ -1180,7 +1192,7 @@ mod extra_stream_tests {
     /// Test StreamRxBundleTrait on empty bundles
     #[test]
     fn test_stream_rx_bundle_trait_empty() {
-        type Bundle = StreamRxBundle<'static, StreamSimpleMessage>;
+        type Bundle = StreamRxBundle<'static, StreamEgress>;
         let mut bundle: Bundle = Vec::new();
         assert!(bundle.is_closed_and_empty());
         assert!(bundle.is_closed());
@@ -1191,8 +1203,8 @@ mod extra_stream_tests {
     /// Even a zero‐length LazySteadyStreamTxBundle should clone cleanly to an empty SteadyStreamTxBundle.
     #[test]
     fn test_lazy_tx_bundle_clone_empty() {
-        let empty: [LazyStreamTx<StreamSimpleMessage>; 0] = [];
-        let cloned: SteadyStreamTxBundle<StreamSimpleMessage, 0> = empty.clone();
+        let empty: [LazyStreamTx<StreamEgress>; 0] = [];
+        let cloned: SteadyStreamTxBundle<StreamEgress, 0> = empty.clone();
         // An Arc<[..;0]> has length 0
         assert_eq!(Arc::as_ref(&cloned).len(), 0);
     }
@@ -1200,15 +1212,15 @@ mod extra_stream_tests {
     /// Even a zero‐length LazySteadyStreamRxBundle should clone cleanly to an empty SteadyStreamRxBundle.
     #[test]
     fn test_lazy_rx_bundle_clone_empty() {
-        let empty: [LazyStreamRx<StreamSimpleMessage>; 0] = [];
-        let cloned: SteadyStreamRxBundle<StreamSimpleMessage, 0> = empty.clone();
+        let empty: [LazyStreamRx<StreamEgress>; 0] = [];
+        let cloned: SteadyStreamRxBundle<StreamEgress, 0> = empty.clone();
         assert_eq!(Arc::as_ref(&cloned).len(), 0);
     }
 
     /// SteadyStreamRxBundleTrait on empty should produce an immediate empty lock and empty metadata arrays.
     #[test]
     fn test_steady_rx_bundle_trait_empty() {
-        let bundle: SteadyStreamRxBundle<StreamSimpleMessage, 0> = Arc::new([]);
+        let bundle: SteadyStreamRxBundle<StreamEgress, 0> = Arc::new([]);
         // lock() is a JoinAll over zero futures: completes immediately
         let guards: Vec<_> = core_exec::block_on(bundle.lock());
         assert!(guards.is_empty());
@@ -1222,7 +1234,7 @@ mod extra_stream_tests {
     /// SteadyStreamTxBundleTrait on empty should produce an immediate empty lock and empty metadata arrays.
     #[test]
     fn test_steady_tx_bundle_trait_empty() {
-        let bundle: SteadyStreamTxBundle<StreamSimpleMessage, 0> = Arc::new([]);
+        let bundle: SteadyStreamTxBundle<StreamEgress, 0> = Arc::new([]);
         let guards: Vec<_> = core_exec::block_on(bundle.lock());
         assert!(guards.is_empty());
 

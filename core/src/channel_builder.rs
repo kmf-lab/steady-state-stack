@@ -8,7 +8,7 @@ use async_ringbuf::AsyncRb;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use std::thread::sleep;
 use async_ringbuf::producer::AsyncProducer;
-use crate::{core_exec, StreamSimpleMessage};
+use crate::{core_exec, StreamEgress};
 
 pub(crate) type ChannelBacking<T> = Heap<T>;
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
@@ -980,8 +980,8 @@ macro_rules! assert_steady_rx_eq_take {
 }
 
 // Simple helper function for streams
-fn stream_bytes(bytes: &[u8]) -> (StreamSimpleMessage, Box<[u8]>) {
-    (StreamSimpleMessage::new(bytes.len() as i32), bytes.to_vec().into_boxed_slice())
+fn stream_bytes(bytes: &[u8]) -> (StreamEgress, Box<[u8]>) {
+    (StreamEgress::new(bytes.len() as i32), bytes.to_vec().into_boxed_slice())
 }
 
 

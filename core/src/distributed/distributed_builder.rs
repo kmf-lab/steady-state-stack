@@ -3,7 +3,7 @@ use crate::{new_state, LazyStreamRx, LazyStreamTx, ScheduleAs};
 use crate::actor_builder::ActorBuilder;
 use crate::distributed::aeron_channel_builder::AqueTech;
 use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
-use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamSessionMessage, StreamSimpleMessage};
+use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamIngress, StreamEgress};
 
 pub trait AqueductBuilder {
     fn build_aqueduct(
@@ -14,7 +14,7 @@ pub trait AqueductBuilder {
     );
 }
 
-impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
+impl AqueductBuilder for LazyStreamRx<StreamEgress> {
     fn build_aqueduct(
         self,
         tech: AqueTech,
@@ -53,7 +53,7 @@ impl AqueductBuilder for LazyStreamRx<StreamSimpleMessage> {
 
 }
 
-impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
+impl AqueductBuilder for LazyStreamTx<StreamIngress> {
     fn build_aqueduct(
         self,
         tech: AqueTech,
@@ -94,7 +94,7 @@ impl AqueductBuilder for LazyStreamTx<StreamSessionMessage> {
     }
 
 }
-impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimpleMessage, GIRTH> {
+impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamEgress, GIRTH> {
     fn build_aqueduct(
         self,
         tech: AqueTech,
@@ -134,7 +134,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamSimp
 
 }
 
-impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamSessionMessage, GIRTH> {
+impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamIngress, GIRTH> {
     fn build_aqueduct(
         self,
         tech: AqueTech,
@@ -220,7 +220,7 @@ mod distributed_builder_tests {
         const GIRTH: usize = 1;
         let cb = graph.channel_builder();
 
-        let (lazy_tx, lazy_rx_bundle) = cb.build_stream_bundle::<StreamSimpleMessage, GIRTH>(100);
+        let (lazy_tx, lazy_rx_bundle) = cb.build_stream_bundle::<StreamEgress, GIRTH>(100);
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
         let mut threading = ScheduleAs::SoloAct;
@@ -234,7 +234,7 @@ mod distributed_builder_tests {
         const GIRTH: usize = 1;
         let cb = graph.channel_builder();
 
-        let (lazy_tx_bundle, lazy_rx_bundle) = cb.build_stream_bundle::<StreamSessionMessage, GIRTH>(100);
+        let (lazy_tx_bundle, lazy_rx_bundle) = cb.build_stream_bundle::<StreamIngress, GIRTH>(100);
 
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);

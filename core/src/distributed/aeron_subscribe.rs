@@ -9,7 +9,7 @@ use aeron::concurrent::logbuffer::header::Header;
 use aeron::subscription::Subscription;
 use log::{error, warn};
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamTx, StreamSessionMessage};
+use crate::distributed::distributed_stream::{SteadyStreamTx, StreamIngress};
 use crate::{SteadyCommander, SteadyState, StreamTx};
 use crate::commander_context::SteadyContext;
 use crate::core_tx::TxCore;
@@ -23,7 +23,7 @@ pub struct AeronSubscribeSteadyState {
 
 pub async fn run(
     context: SteadyContext,
-    tx: SteadyStreamTx<StreamSessionMessage>,
+    tx: SteadyStreamTx<StreamIngress>,
     aeron_connect: Channel,
     stream_id: i32,
     state: SteadyState<AeronSubscribeSteadyState>,
@@ -48,7 +48,7 @@ pub async fn run(
 
 async fn internal_behavior<C: SteadyCommander>(
     mut cmd: C,
-    tx: SteadyStreamTx<StreamSessionMessage>,
+    tx: SteadyStreamTx<StreamIngress>,
     aeron_channel: Channel,
     stream_id: i32,
     aeron: Arc<futures_util::lock::Mutex<Aeron>>,
@@ -129,7 +129,7 @@ async fn internal_behavior<C: SteadyCommander>(
 }
 
 async fn poll_aeron_subscription<C: SteadyCommander>(
-    tx: &mut StreamTx<StreamSessionMessage>,
+    tx: &mut StreamTx<StreamIngress>,
     sub: &mut Subscription,
     cmd: &mut C,
 ) -> Duration {
@@ -204,7 +204,7 @@ pub(crate) mod aeron_media_driver_tests {
     use log::info;
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
-    use crate::distributed::distributed_stream::StreamSimpleMessage;
+    use crate::distributed::distributed_stream::StreamEgress;
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aeron_publish::aeron_tests::STREAM_ID;
     use crate::distributed::distributed_builder::AqueductBuilder;
@@ -232,7 +232,7 @@ pub(crate) mod aeron_media_driver_tests {
         const STREAMS_COUNT:usize = 1;
         let (to_aeron_tx,to_aeron_rx) = channel_builder
             .with_capacity(500)
-            .build_stream_bundle::<StreamSimpleMessage,STREAMS_COUNT>( 6);
+            .build_stream_bundle::<StreamEgress,STREAMS_COUNT>( 6);
 
         let aeron_config = AeronConfig::new()
             .with_media_type(MediaType::Ipc) //for testing
@@ -260,7 +260,7 @@ pub(crate) mod aeron_media_driver_tests {
 
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_capacity(500)
-            .build_stream_bundle::<StreamSessionMessage,STREAMS_COUNT>(6);
+            .build_stream_bundle::<StreamIngress,STREAMS_COUNT>(6);
 
         //do not simulate yet the main graph will simulate. cfg!(test)
         from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_config, STREAM_ID)

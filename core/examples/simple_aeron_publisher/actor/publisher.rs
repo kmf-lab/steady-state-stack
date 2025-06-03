@@ -5,7 +5,7 @@ pub const TEST_ITEMS: usize = 20_000_000_000;
 pub const STREAM_ID: i32 = 1234;
 
 pub async fn run<const GIRTH: usize>(context: SteadyContext
-                                     , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>>  {
+                                     , tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>>  {
 
     let mut cmd = context.into_monitor([], tx.control_meta_data());
     let mut tx = tx.lock().await;

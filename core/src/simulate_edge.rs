@@ -11,7 +11,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use futures::lock::Mutex as AsyncMutex; // Use futures::lock::Mutex for async compatibility
-use crate::{await_for_all, wait_for_all, SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamSessionMessage, StreamSimpleMessage};
+use crate::{await_for_all, wait_for_all, SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamIngress, StreamEgress};
 use crate::graph_testing::SideChannelResponder;
 use crate::i;
 use log::*;
@@ -26,7 +26,7 @@ pub enum SimStepResult {
 }
 
 /// A function type that executes a single step of simulation work.
-pub type SimRunner<C: SteadyCommander + 'static> = Box<
+pub type SimRunner<C: SteadyCommander> = Box<
     dyn Fn(SideChannelResponder, usize, &mut C) -> Pin<Box<dyn Future<Output = Result<SimStepResult, Box<dyn Error>>>>>
 >;
 
@@ -94,7 +94,7 @@ where
     }
 }
 
-impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamSessionMessage>
+impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamIngress>
 where
     C: SteadyCommander + 'static,
 {
@@ -114,7 +114,7 @@ where
     }
 }
 
-impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamSimpleMessage>
+impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamEgress>
 where
     C: SteadyCommander + 'static,
 {
@@ -156,7 +156,7 @@ where
     }
 }
 
-impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamSessionMessage>
+impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamIngress>
 where
     C: SteadyCommander + 'static,
 {
@@ -175,7 +175,7 @@ where
     }
 }
 
-impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamSimpleMessage>
+impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamEgress>
 where
     C: SteadyCommander + 'static,
 {
@@ -218,7 +218,7 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     let now = Instant::now();
 
     //NOTE: each runner detects shutdown and closes its outgoign connections as needed.
-    while cmd.is_running(&mut || 0==active_count) {
+    while cmd.is_running(&mut || i!(0==active_count)) {
         let mut any_work_done = false;
 
         cmd.call_async(responder.wait_avail()).await;

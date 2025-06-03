@@ -11,7 +11,7 @@ use async_ringbuf::producer::AsyncProducer;
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
-use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamSessionMessage, StreamSimpleMessage, Tx, MONITOR_NOT};
+use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamIngress, StreamEgress, Tx, MONITOR_NOT};
 use crate::distributed::distributed_stream::{StreamItem, StreamTx};
 use crate::core_exec;
 use crate::yield_now;
@@ -277,9 +277,9 @@ impl<T> TxCore for Tx<T> {
 
 }
 
-impl TxCore for StreamTx<StreamSessionMessage> {
-    type MsgIn<'a> = (StreamSessionMessage, &'a[u8]);
-    type MsgOut = StreamSessionMessage;
+impl TxCore for StreamTx<StreamIngress> {
+    type MsgIn<'a> = (StreamIngress, &'a[u8]);
+    type MsgOut = StreamIngress;
     type MsgSize = (usize, usize);
 
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
@@ -565,9 +565,9 @@ impl TxCore for StreamTx<StreamSessionMessage> {
 
 
 
-impl TxCore for StreamTx<StreamSimpleMessage> {
+impl TxCore for StreamTx<StreamEgress> {
     type MsgIn<'a> = &'a[u8]; 
-    type MsgOut = StreamSimpleMessage;
+    type MsgOut = StreamEgress;
     type MsgSize = (usize, usize);
 
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
@@ -621,7 +621,7 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
                 core_exec::block_on(self.payload_channel.tx.wait_vacant(payload.len()));
             }
             let _ = self.payload_channel.tx.push_slice(payload);
-            let _ = self.item_channel.tx.try_push(StreamSimpleMessage{ length: payload.len() as i32 });
+            let _ = self.item_channel.tx.try_push(StreamEgress { length: payload.len() as i32 });
             count += 1;
         }
         count
@@ -721,10 +721,10 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
         if self.payload_channel.tx.vacant_len() >= payload.len() as usize &&
             self.item_channel.tx.vacant_len() >= 1 {
             let _ = self.payload_channel.tx.push_slice(payload);
-            let _ = self.item_channel.tx.try_push(StreamSimpleMessage{ length: payload.len() as i32 });
+            let _ = self.item_channel.tx.try_push(StreamEgress { length: payload.len() as i32 });
             Ok(TxDone::Stream(1,payload.len()))
         } else {
-            Err(StreamSimpleMessage{ length: payload.len() as i32 })
+            Err(StreamEgress { length: payload.len() as i32 })
         }
     }
 
@@ -752,10 +752,10 @@ impl TxCore for StreamTx<StreamSimpleMessage> {
             if payload_tx.vacant_len() >= payload.len() as usize && item_tx.vacant_len() >= 1 {
                 let payload_size = payload_tx.push_slice(payload);
                 debug_assert_eq!(payload_size, payload.len() as usize);
-                let _ = item_tx.try_push(StreamSimpleMessage { length: payload.len() as i32 });
+                let _ = item_tx.try_push(StreamEgress { length: payload.len() as i32 });
                 Ok(())
             } else {
-                Err(StreamSimpleMessage { length: payload.len() as i32 })
+                Err(StreamEgress { length: payload.len() as i32 })
             }
         };
 

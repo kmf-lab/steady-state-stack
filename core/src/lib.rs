@@ -170,7 +170,7 @@ pub use crate::distributed::distributed_builder::AqueductBuilder;
 pub use commander::SteadyCommander;
 pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-pub use distributed::distributed_stream::{StreamSessionMessage, StreamSimpleMessage};
+pub use distributed::distributed_stream::{StreamIngress, StreamEgress};
 pub use distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
 pub use distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};
 pub use distributed::distributed_stream::{LazyStreamRx, LazyStreamTx};

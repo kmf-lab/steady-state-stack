@@ -97,7 +97,6 @@ pub mod steady_logger {
     /// Guard to manage log capturing in tests.
     pub struct LogCaptureGuard {
         thread_id: ThreadId,
-        start_time: std::time::Instant,
     }
 
     impl Drop for LogCaptureGuard {
@@ -109,9 +108,6 @@ pub mod steady_logger {
     /// Starts capturing logs for the current test thread, returns a guard.
     pub fn start_log_capture() -> LogCaptureGuard {
         let thread_id = thread::current().id();
-        //eprintln!("a thread {:?} ",thread_id);
-
-        let start_time = std::time::Instant::now();
 
         // Enable test mode when capture starts
         IS_TEST_MODE.store(true, Ordering::SeqCst);
@@ -129,7 +125,7 @@ pub mod steady_logger {
             contexts.insert(thread_id, test_state);
         }
 
-        LogCaptureGuard { thread_id, start_time }
+        LogCaptureGuard { thread_id }
     }
 
     /// Initializes the logger based on the compilation context with a default level.

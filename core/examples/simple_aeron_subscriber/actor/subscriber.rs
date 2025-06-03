@@ -4,7 +4,7 @@ use steady_state::*;
 pub const TEST_ITEMS: usize = 20_000_000_000;
 
 pub async fn run<const GIRTH:usize>(context: SteadyContext
-                                    , rx: SteadyStreamRxBundle<StreamSessionMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
+                                    , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
     let mut cmd = context.into_monitor(rx.control_meta_data(), []);
     let mut rx = rx.lock().await;

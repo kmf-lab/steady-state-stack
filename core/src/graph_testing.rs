@@ -235,8 +235,8 @@ pub (crate) const TIMEOUT: &'static str = "timeout, no message";
 impl SideChannelResponder {
 
     pub fn simulate_direction<'a, T: 'static + Debug + Clone, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self
-                                                                                                                  , tx_core: &mut X, cmd: &mut  C
-                                                                                                                  , index: usize) -> Result<SimStepResult, Box<dyn Error>>
+                                                      , tx_core: &mut X, cmd: &mut  C
+                                                      , index: usize) -> Result<SimStepResult, Box<dyn Error>>
     where <X as TxCore>::MsgOut: Send, <X as TxCore>::MsgOut: Sync, <X as TxCore>::MsgOut: 'static {
                 //NOTE: we block here await until some direction comes in.
                 let r = self.respond_with(move |message,cmd| {
@@ -245,10 +245,10 @@ impl SideChannelResponder {
                         Some(msg) => {
                             match  msg {
                                 StageDirection::Echo(m) => {
-                                    match cmd.try_send(tx_core,m.clone()) {
+                                    match cmd.try_send(tx_core, m.clone()) {
                                         SendOutcome::Success => {Some(Box::new(OK_MESSAGE))}
                                         SendOutcome::Blocked(msg) => {
-                                            error!("blocked msg {:?}",m);
+                                            //trace!("blocked msg {:?}",msg);
                                             Some(Box::new(msg))
                                         }
                                     }
@@ -258,7 +258,7 @@ impl SideChannelResponder {
                                         match cmd.try_send(tx_core, m.clone()) {
                                             SendOutcome::Success => { Some(Box::new(OK_MESSAGE)) }
                                             SendOutcome::Blocked(msg) => {
-                                                error!("blocked msg {:?}",m);
+                                                //trace!("blocked msg {:?}",msg);
                                                 Some(Box::new(msg))
                                             }
                                         }
@@ -293,10 +293,8 @@ impl SideChannelResponder {
                                                          , run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>
     where <X as RxCore>::MsgOut: std::fmt::Debug {
               let r =  self.respond_with(move |message,cmd_guard| {
-                  let type_string_name = std::any::type_name::<T>();
-
-                  let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<T>>()
-                                                        .expect(format!("error casting to {}", type_string_name).as_str());
+                  let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<X::MsgOut>>()
+                                                        .expect(format!("Unable to take message and downcast it to: {}", std::any::type_name::<T>()).as_str());
 
                     let message = match wait_for {
                         StageWaitFor::Message(m,t) => Some((m,t)),

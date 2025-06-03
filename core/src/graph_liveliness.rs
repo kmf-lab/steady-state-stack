@@ -743,78 +743,13 @@ impl Graph {
         // Runtime disable of fail-fast so we can unit test the recovery of panics
         // where normally in a test condition we would want to fail fast
         if !self.block_fail_fast {
-            std::panic::set_hook(Box::new(|panic_info| {
-                Self::fail_fast_stack_trace(panic_info,&mut std::io::stderr());
+            let default_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |panic_info| {
+                default_hook(panic_info);
                 std::process::exit(-1);
             }));
         }
     }
-
-    pub(crate) fn fail_fast_stack_trace<T, W>(panic_info: &T, writer: &mut W)
-    where
-        T: Debug,
-        W: Write,
-    {
-        // Write panic information with a header
-        writeln!(writer, "\n=== Panic Occurred ===").unwrap();
-        writeln!(writer, "Details: {:?}", panic_info).unwrap();
-
-        // Capture the backtrace
-        let backtrace = Backtrace::capture();
-
-        match backtrace.status() {
-            BacktraceStatus::Captured => {
-                writeln!(writer, "\nStack Trace:").unwrap();
-                let backtrace_str = format!("{:#?}", backtrace);
-                let lines: Vec<&str> = backtrace_str.lines().collect();
-                let mut i = 0;
-
-                while i < lines.len() {
-                    let line = lines[i].trim();
-                    // Identify frame start (lines beginning with a digit followed by ':')
-                    if line.starts_with(|c: char| c.is_digit(10)) && line.contains(':') {
-                        let colon_pos = line.find(':').expect("bad line did not contain : ");
-                        let frame_num = &line[..colon_pos].trim();
-                        let fn_name = line[colon_pos + 1..].trim();
-
-                        // Find the location line (starts with "at")
-                        let mut j = i + 1;
-                        let mut location = "unknown location";
-                        while j < lines.len() && !lines[j].trim().starts_with("at") {
-                            j += 1;
-                        }
-                        if j < lines.len() {
-                            let location_line = lines[j].trim();
-                            location = location_line.strip_prefix("at ").unwrap_or(location_line);
-                        }
-
-                        // Apply filtering
-                        let is_user_code = fn_name.contains("steady_state") || fn_name.contains("i::proactor::") ||
-                            location.contains("steady_state") || location.contains("i::proactor::");
-                        let is_panic_related = fn_name.contains("::panicking::") || fn_name.contains("begin_unwind");
-                        let is_excluded = fn_name.contains("graph_liveliness::<impl steady_state::Graph>::enable_fail_fast");
-                        let is_launch_actor = fn_name.contains("steady_state::actor_builder::launch_actor");
-
-                        if (is_user_code && !is_excluded) || is_panic_related {
-                            writeln!(writer, "  {}: {} at {}", frame_num, fn_name, location).unwrap();
-                            if is_launch_actor {
-                                break; // Stop after launch_actor, matching original behavior
-                            }
-                        }
-
-                        i = j; // Move to the location line or next frame
-                    } else {
-                        i += 1; // Skip non-frame lines
-                    }
-                }
-            }
-            _ => {
-                writeln!(writer, "\nStack Trace: Could not be captured.").unwrap();
-            }
-        }
-        writeln!(writer, "=== End of Trace ===").unwrap();
-    }
-
 
 
     /// Starts the graph.
@@ -1070,18 +1005,6 @@ impl Graph {
 mod graph_liveliness_tests {
     use crate::{Graph, GraphLivelinessState};
 
-    #[test]
-    fn test_fail_fast_stack_trace() {
-        let mut buffer = Vec::new();
-        let panic_info = "Test Panic Info";
-
-        // Call the function with the buffer
-        Graph::fail_fast_stack_trace(&panic_info, &mut buffer);
-
-        // Convert the buffer to a string to check the output
-        let output = String::from_utf8(buffer).expect("iternal error");
-        assert!(output.contains("Test Panic Info"));
-    }
 
 
     #[test]
