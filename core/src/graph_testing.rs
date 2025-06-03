@@ -293,8 +293,10 @@ impl SideChannelResponder {
                                                          , run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>
     where <X as RxCore>::MsgOut: std::fmt::Debug {
               let r =  self.respond_with(move |message,cmd_guard| {
-                    let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<T>>()
-                                                        .expect("error casting");
+                  let type_string_name = std::any::type_name::<T>();
+
+                  let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<T>>()
+                                                        .expect(format!("error casting to {}", type_string_name).as_str());
 
                     let message = match wait_for {
                         StageWaitFor::Message(m,t) => Some((m,t)),
