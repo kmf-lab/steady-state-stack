@@ -6,7 +6,7 @@ use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamSimpleMessage};
+use crate::distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamEgress};
 use crate::{SteadyCommander, SteadyState};
 use crate::*;
 use crate::commander_context::SteadyContext;
@@ -21,7 +21,7 @@ pub struct AeronPublishSteadyState {
 }
 
 pub async fn run<const GIRTH:usize,>(context: SteadyContext
-                                     , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
+                                     , rx: SteadyStreamRxBundle<StreamEgress,GIRTH>
                                      , aeron_connect: Channel
                                      , stream_id: i32
                                      , state: SteadyState<AeronPublishSteadyState>
@@ -51,7 +51,7 @@ pub async fn run<const GIRTH:usize,>(context: SteadyContext
 
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
-                                                                 , rx: SteadyStreamRxBundle<StreamSimpleMessage,GIRTH>
+                                                                 , rx: SteadyStreamRxBundle<StreamEgress,GIRTH>
                                                                  , aeron_channel: Channel
                                                                  , stream_id: i32
                                                                  , aeron:Arc<futures_util::lock::Mutex<Aeron>>
@@ -227,8 +227,8 @@ pub(crate) mod aeron_publish_bundle_tests {
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::distributed_builder::AqueductBuilder;
-    use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamSessionMessage, StreamTxBundleTrait};
-    use crate::distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamSimpleMessage};
+    use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamIngress, StreamTxBundleTrait};
+    use crate::distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamEgress};
 
     //NOTE: bump this up for longer running load tests
     //       20_000_000_000;
@@ -252,7 +252,7 @@ pub(crate) mod aeron_publish_bundle_tests {
     // sudo ss -m -p | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
 
     pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyContext
-                                                     , tx: SteadyStreamTxBundle<StreamSimpleMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
+                                                     , tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
         let mut cmd = context.into_monitor([], tx.control_meta_data());
         let mut tx = tx.lock().await;
@@ -261,7 +261,7 @@ pub(crate) mod aeron_publish_bundle_tests {
         let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
 
         const BATCH_SIZE:usize = 5000;
-        let items: [StreamSimpleMessage; BATCH_SIZE] = [StreamSimpleMessage::new(8);BATCH_SIZE];
+        let items: [StreamEgress; BATCH_SIZE] = [StreamEgress::new(8);BATCH_SIZE];
         let mut data: [[u8;8]; BATCH_SIZE] = [data1; BATCH_SIZE];
         for i in 0..BATCH_SIZE {
             if i % 2 == 0 {
@@ -312,7 +312,7 @@ pub(crate) mod aeron_publish_bundle_tests {
     }
 
     pub async fn mock_receiver_run<const GIRTH:usize>(context: SteadyContext
-                                                      , rx: SteadyStreamRxBundle<StreamSessionMessage, GIRTH>) -> Result<(), Box<dyn Error>> {
+                                                      , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
         let mut cmd = context.into_monitor(rx.control_meta_data(), []);
         let mut rx = rx.lock().await;
@@ -405,7 +405,7 @@ pub(crate) mod aeron_publish_bundle_tests {
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
             .with_capacity(4*1024*1024)
-            .build_stream_bundle::<StreamSimpleMessage,1>(8);
+            .build_stream_bundle::<StreamEgress,1>(8);
 
         let (from_aeron_tx,from_aeron_rx) = channel_builder
             .with_avg_rate()
@@ -414,7 +414,7 @@ pub(crate) mod aeron_publish_bundle_tests {
             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
             .with_capacity(4*1024*1024)
-            .build_stream_bundle::<StreamSessionMessage,1>(8);
+            .build_stream_bundle::<StreamIngress,1>(8);
 
         //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
         let aeron_config = AeronConfig::new()            
