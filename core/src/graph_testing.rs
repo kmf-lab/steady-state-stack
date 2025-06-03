@@ -179,6 +179,7 @@ impl StageManager {
             core_exec::block_on( async move {
                 let mut sc_guard = sc.lock().await;
                 let (tx, rx) = sc_guard.deref_mut();
+                error!("push sidechanle msg {:?}",msg);
                 match tx.push(msg).await {
                     Ok(_) => {
                         if let Some(response) = rx.pop().await {
@@ -187,10 +188,21 @@ impl StageManager {
                                 .or_else(|| response.downcast_ref::<String>()
                                     .map(|msg| msg == OK_MESSAGE))
                                 .unwrap_or(false);
+
+                            let is_timeout = response.downcast_ref::<&str>()
+                                .map(|msg| *msg == TIMEOUT)
+                                .or_else(|| response.downcast_ref::<String>()
+                                    .map(|msg| msg == TIMEOUT))
+                                .unwrap_or(false);
+
                             if is_ok {
                                 Ok(response)
                             } else {
-                                Err("Actor responded with unexpected message".into())
+                                if is_timeout {
+                                    Err(TIMEOUT.into())
+                                } else {
+                                    Err("Actor responded with unexpected message".into())
+                                }
                             }
                         } else {
                             error!("Actor responded unexpected message");
@@ -219,6 +231,7 @@ pub struct SideChannelResponder {
 
 const WAIT_FOR_QUANT:Duration = Duration::from_millis(50);
 pub (crate) const OK_MESSAGE: &'static str = "ok";
+pub (crate) const TIMEOUT: &'static str = "timeout, no message";
 
 impl SideChannelResponder {
 
@@ -226,24 +239,31 @@ impl SideChannelResponder {
                                                                                                                   , tx_core: &mut X, cmd: &mut  C
                                                                                                                   , index: usize) -> Result<SimStepResult, Box<dyn Error>>
     where <X as TxCore>::MsgOut: Send, <X as TxCore>::MsgOut: Sync, <X as TxCore>::MsgOut: 'static {
-
                 //NOTE: we block here await until some direction comes in.
                 let r = self.respond_with(move |message,cmd| {
-                   match message.downcast_ref::<StageDirection<X::MsgIn<'a>>>() {
+
+                    match message.downcast_ref::<StageDirection<X::MsgIn<'a>>>() {
                         Some(msg) => {
                             match  msg {
                                 StageDirection::Echo(m) => {
+                                    error!("direction try echo {:?}",m);
                                     match cmd.try_send(tx_core,m.clone()) {
                                         SendOutcome::Success => {Some(Box::new(OK_MESSAGE))}
-                                        SendOutcome::Blocked(msg) => {Some(Box::new(msg))}
+                                        SendOutcome::Blocked(msg) => {
+                                            error!("blocked msg {:?}",m);
+                                            Some(Box::new(msg))
+                                        }
                                     }
                                 }
                                 StageDirection::EchoAt(i, m) => {
-                                    //trace!("echo at {} vs {} ", i, index);
                                     if *i == index {
+                                        error!("direction try echo at {} {:?}", i,m);
                                         match cmd.try_send(tx_core, m.clone()) {
                                             SendOutcome::Success => { Some(Box::new(OK_MESSAGE)) }
-                                            SendOutcome::Blocked(msg) => { Some(Box::new(msg)) }
+                                            SendOutcome::Blocked(msg) => {
+                                                error!("blocked msg {:?}",m);
+                                                Some(Box::new(msg))
+                                            }
                                         }
                                     } else {
                                         None //this is not for us because we want index i
@@ -252,7 +272,7 @@ impl SideChannelResponder {
                             }
                         },
                         None => {
-                            error!("Unable to cast stage direction to target type: {}", std::any::type_name::<StageDirection<X::MsgIn<'a>>>());
+                            error!("direction Unable to cast stage direction to target type: {}", std::any::type_name::<StageDirection<X::MsgIn<'a>>>());
                             None
                         }
                     }
@@ -268,33 +288,30 @@ impl SideChannelResponder {
 
     }
 
-    //   Ok(true)  //did something keep going
-    //   Ok(false) //did nothing becuase it does not pertain - if we are here beyond timeout we must trigger shutdown
-    //   Err("")  // exit now failure, shutdown.
-    pub fn simulate_wait_for<T: Debug + Eq + 'static, X: RxCore<MsgOut = T>, C: SteadyCommander>(&self, rx_core: &mut X
-                                                                                                 , cmd: &mut C
-                                                                                                 , index: usize
-                                                                                                 , run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>
-    where <X as RxCore>::MsgOut: std::fmt::Debug {
 
-                   let r =  self.respond_with(move |message,cmd_guard| {
+    pub fn simulate_wait_for<T: Debug + Eq + 'static, X: RxCore<MsgOut = T>, C: SteadyCommander>(&self
+                                                         , rx_core: &mut X
+                                                         , cmd: &mut C
+                                                         , index: usize
+                                                         , run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>
+    where <X as RxCore>::MsgOut: std::fmt::Debug {
+              let r =  self.respond_with(move |message,cmd_guard| {
                     let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<T>>()
                                                         .expect("error casting");
 
                     let message = match wait_for {
                         StageWaitFor::Message(m,t) => Some((m,t)),
                         StageWaitFor::MessageAt(i,m,t) => if *i == index
-                                                                                    {Some((m,t))}
-                                                                                   else
-                                                                                    {None}
+                                                            {Some((m,t))}
+                                                           else
+                                                            {None}
                     };
+                  //error!("checking for expected message {:?}",message);
 
                     if let Some((expected, timeout)) = message {
-                        if run_duration.gt(timeout) {
-                            Some(Box::new("timeout, no message".to_string()));
-                        }
                         match cmd_guard.try_take(rx_core) {
                             Some(measured) => {
+                                error!("some measured {:?}",&measured);
                                 if expected.eq(&measured) {
                                     Some(Box::new(OK_MESSAGE))
                                 } else {
@@ -303,7 +320,12 @@ impl SideChannelResponder {
                                 }
                             }
                             None => {
-                                None
+                                if run_duration.gt(timeout) {
+                                    error!("timeout: {:?}",timeout);
+                                    Some(Box::new(TIMEOUT.to_string()))
+                                } else {
+                                    None
+                                }
                             }
                         }
                     } else {
@@ -464,6 +486,15 @@ impl SideChannelResponder {
             // No message available to peek at
             None
         }
+    }
+
+    /// wait until we have at least 1 message to process
+    pub async fn wait_avail(&self)
+    {
+        let mut guard = self.arc.lock().await;
+        let ((_, rx), _) = guard.deref_mut();
+
+        rx.wait_occupied(1).await;
     }
     
     /// Responds to messages from the side channel using the provided function.

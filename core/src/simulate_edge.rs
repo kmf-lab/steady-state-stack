@@ -32,22 +32,20 @@ pub type SimRunner<C: SteadyCommander + 'static> = Box<
 
 /// Converts components into a simulation runner function.
 pub trait IntoSimRunner<C: SteadyCommander + 'static> {
-    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>;
+    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>;
 }
 
 /// Tracks the state of an individual simulation runner for timeout and error handling.
 #[derive(Debug)]
 struct SimulationState {
-    consecutive_no_work_cycles: usize,
-    max_no_work_cycles: usize,
+    consecutive_no_work_cycles: u64,
     simulation_name: String,
 }
 
 impl SimulationState {
-    fn new(simulation_name: String, max_no_work_cycles: usize) -> Self {
+    fn new(simulation_name: String) -> Self {
         Self {
             consecutive_no_work_cycles: 0,
-            max_no_work_cycles,
             simulation_name,
         }
     }
@@ -60,15 +58,7 @@ impl SimulationState {
             }
             SimStepResult::NoWork => {
                 self.consecutive_no_work_cycles += 1;
-                if self.consecutive_no_work_cycles > self.max_no_work_cycles {
-                    Err(format!(
-                        "Simulation '{}' exceeded maximum consecutive no-work cycles ({}). \
-                         Check test setup for stalled runners.",
-                        self.simulation_name, self.max_no_work_cycles
-                    ).into())
-                } else {
-                    Ok(true)
-                }
+                Ok(true)
             }
             SimStepResult::Finished => {
                 debug!("Simulation '{}' completed successfully", self.simulation_name);
@@ -85,7 +75,7 @@ where
     T: 'static + Debug + Eq + Send + Sync,
     C: SteadyCommander + 'static,
 {
-    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
         let value = this.clone();
 
@@ -108,7 +98,7 @@ impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamSessionMessage>
 where
     C: SteadyCommander + 'static,
 {
-    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
                 let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
@@ -128,7 +118,7 @@ impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamSimpleMessage>
 where
     C: SteadyCommander + 'static,
 {
-    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
@@ -149,7 +139,7 @@ where
     T: 'static + Debug + Clone + Send + Sync,
     C: SteadyCommander + 'static,
 {
-    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
@@ -170,7 +160,7 @@ impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamSessionMessage>
 where
     C: SteadyCommander + 'static,
 {
-    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
@@ -189,7 +179,7 @@ impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamSimpleMessage>
 where
     C: SteadyCommander + 'static,
 {
-    fn run(&self, responder: SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
@@ -215,10 +205,10 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     cmd: &mut C,
     sims: Vec<&dyn IntoSimRunner<C>>,
 ) -> Result<(), Box<dyn Error>> {
-    let responders = cmd.sidechannel_responder().ok_or("No responder")?;
+    let responder = cmd.sidechannel_responder().ok_or("No responder")?;
 
     let mut simulation_states: Vec<SimulationState> = (0..sims.len())
-        .map(|i| SimulationState::new(format!("sim_{}", i), 10000))
+        .map(|i| SimulationState::new(format!("sim_{}", i)))
         .collect();
 
     let mut active_simulations: Vec<bool> = vec![true; sims.len()];
@@ -231,10 +221,8 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     while cmd.is_running(&mut || 0==active_count) {
         let mut any_work_done = false;
 
-        //WARNING: this is a tight loop over all the simulators, as a result we must
-        //         limit our selves the frame rate which is also helpful to capture data
-        //         as it happens in order for debugging later.
-        await_for_all!(cmd.wait_periodic(Duration::from_millis(cmd.frame_rate_ms())));
+        //we stop here until some message arrives then we can then determine how to process it
+        responder.wait_avail().await;
 
         for (index, sim) in sims.iter().enumerate() {
             if !active_simulations[index] {
@@ -243,7 +231,7 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
 
             let run_duration = now.elapsed();
 
-            match sim.run(responders.clone(), index, cmd, run_duration) {
+            match sim.run(&responder, index, cmd, run_duration) {
                 Ok(step_result) => {
                     if matches!(step_result, SimStepResult::DidWork) {
                         any_work_done = true;
