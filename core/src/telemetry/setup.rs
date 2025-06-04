@@ -294,7 +294,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                 }
                                 true
                             }
-                            Err(a) => {
+                            Err(_a) => {
                                 let now = Instant::now();
                                 let dif = now.duration_since(actor_status.last_telemetry_error);
                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {

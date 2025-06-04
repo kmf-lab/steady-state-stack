@@ -3,7 +3,7 @@
 //! and the liveliness state handles the shutdown process and state transitions.
 
 use crate::{steady_config, util, Troupe};
-use std::ops::{Deref, Sub};
+use std::ops::{Deref};
 use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
 use std::time::{Duration, Instant};
@@ -19,7 +19,6 @@ use std::fmt::Debug;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
-use std::io::Write;
 use futures::channel::oneshot;
 use futures::channel::oneshot::Sender;
 

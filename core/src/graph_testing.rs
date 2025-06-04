@@ -21,7 +21,7 @@ use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
 use futures_util::select;
 use ringbuf::consumer::Consumer;
-use crate::{block_on, ActorIdentity, ActorName, Rx, RxBundle, SteadyCommander, Tx, TxBundle};
+use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyCommander, TxBundle};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
 use crate::abstract_executor_async_std::core_exec;
@@ -29,7 +29,6 @@ use crate::actor_builder::NodeTxRx;
 use crate::commander::SendOutcome;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use futures::FutureExt;
 use ringbuf::producer::Producer;
 use crate::simulate_edge::SimStepResult;
 

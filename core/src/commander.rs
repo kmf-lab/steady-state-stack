@@ -8,7 +8,6 @@ use std::sync::{Arc};
 use aeron::aeron::Aeron;
 use futures_util::lock::Mutex;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
-use crate::core_exec;
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;

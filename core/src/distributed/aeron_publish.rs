@@ -5,7 +5,6 @@ use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
-use futures_util::SinkExt;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamRx, StreamEgress};
 use crate::{SteadyCommander, SteadyState};

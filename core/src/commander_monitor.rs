@@ -36,7 +36,6 @@ use crate::monitor_telemetry::SteadyTelemetry;
 use crate::simulate_edge::{ IntoSimRunner};
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::steady_rx::RxDone;
-use crate::steady_tx::TxDone;
 use crate::telemetry::setup;
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::util::steady_logger;

@@ -52,7 +52,7 @@ pub(crate) mod core_exec {
     ///
     /// Since `async-std` does not support dynamically adding threads to its executor, this function
     /// returns `Ok(0)` as a no-op, maintaining interface compatibility with the `nuclei` version.
-    pub async fn spawn_more_threads(count: usize) -> Result<usize> {
+    pub async fn spawn_more_threads(_count: usize) -> Result<usize> {
         Ok(0) // async-std doesn’t allow dynamic thread addition
     }
 
