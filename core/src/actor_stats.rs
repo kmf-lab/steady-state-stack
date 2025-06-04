@@ -463,7 +463,7 @@ impl ActorStatsComputer {
         if let Some(c) = &self.current_mcpu {
             compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits, 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits), c.runner, c.sum_of_squares)
         } else {
-            info!("skipping std no current data");
+            trace!("skipping std no current data");
             0f32
         }
     }

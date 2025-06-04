@@ -32,7 +32,7 @@ use clap::*;
 // if you discover a problem with the command line args. Fail fast is a good thing.
 // Note that the main function is not async. This keeps it simple.
 // Further note the main function is not a test. It is not run by any test. Keep it small.
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::parse();
 
@@ -58,8 +58,9 @@ fn main() {
                 graph.request_shutdown();
             }
         }
-        graph.block_until_stopped(Duration::from_secs(2));
+        graph.block_until_stopped(Duration::from_secs(2))?;
     }
+    Ok(())
 }
 
 fn build_simple_widgets_graph(mut graph: steady_state::Graph) -> (steady_state::Graph, Arc<Mutex<InternalState>>) {

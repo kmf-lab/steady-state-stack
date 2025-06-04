@@ -21,7 +21,7 @@ pub const STREAM_ID: i32 = 1234;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         env::set_var("TELEMETRY_SERVER_PORT",
         "9102");
@@ -49,7 +49,7 @@ fn main() {
 
     if graph.aeron_media_driver().is_none() {
         info!("aeron test skipped, no media driver present");
-        return;
+        return Ok(());
     }
 
     let channel_builder = graph.channel_builder();
@@ -79,5 +79,5 @@ fn main() {
                                  , ScheduleAs::SoloAct);
 
     graph.start(); //startup the graph
-    graph.block_until_stopped(Duration::from_secs(21));
+    graph.block_until_stopped(Duration::from_secs(21))
 }

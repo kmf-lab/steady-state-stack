@@ -11,9 +11,9 @@ use futures::lock::Mutex;
 use crate::core_exec;
 
 #[allow(unused_imports)]
-use log::{error, info, log_enabled, trace, warn};
+use log::*;
 use std::any::Any;
-use std::backtrace::{Backtrace, BacktraceStatus};
+use std::backtrace::{Backtrace};
 use std::error::Error;
 use std::fmt::Debug;
 
@@ -192,9 +192,11 @@ impl GraphLiveliness {
     /// This call only returns when all listeners have been notified. They may delay in acting
     /// on the request but they are aware.
     ///
-    pub(crate) async fn internal_request_shutdown(&mut self) {
-        if self.state.eq(&GraphLivelinessState::Running) {
-            let voters = self.registered_voters.len();
+    pub(crate) async fn internal_request_shutdown(runtime_state: Arc<RwLock<GraphLiveliness>>) {
+        if runtime_state.read().state.eq(&GraphLivelinessState::Running) {
+            let read = runtime_state.read();
+
+            let voters = read.registered_voters.len();
 
             // // Print new ballots for this new election
             // let votes: Vec<Mutex<ShutdownVote>> = (0..voters)
@@ -205,7 +207,7 @@ impl GraphLiveliness {
             //     }))
             //     .collect();
 
-            let votes: Vec<Mutex<ShutdownVote>> = self.registered_voters.iter().enumerate().map(|(i,v)| {
+            let votes: Vec<Mutex<ShutdownVote>> = read.registered_voters.iter().enumerate().map(|(i,v)| {
                 Mutex::new(ShutdownVote {
                     id: i,
                     signature: None,
@@ -215,17 +217,19 @@ impl GraphLiveliness {
                     veto_reason: None,
                 })
             }).collect();
+            let local_oss = read.shutdown_one_shot_vec.clone();
 
+            drop(read);
 
-            self.votes = Arc::new(votes.into_boxed_slice());
-            self.vote_in_favor_total.store(0, Ordering::SeqCst); // Redundant but safe for clarity
+            let mut write = runtime_state.write();
 
-            self.vote_for_the_dead();
-
+            write.votes = Arc::new(votes.into_boxed_slice());
+            write.vote_in_favor_total.store(0, Ordering::SeqCst); // Redundant but safe for clarity
             // Trigger all actors to vote now
-            self.state = GraphLivelinessState::StopRequested;
+            write.state = GraphLivelinessState::StopRequested;
+            drop(write);
 
-            let local_oss = self.shutdown_one_shot_vec.clone();
+            GraphLiveliness::vote_for_the_dead(runtime_state);
 
             let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
             while let Some(f) = one_shots.pop() {
@@ -234,31 +238,53 @@ impl GraphLiveliness {
             }
                         
             trace!("every actor has had one shot shutdown fired now");
-        } else if self.is_in_state(&[GraphLivelinessState::Building]) {
+        } else if runtime_state.read().is_in_state(&[GraphLivelinessState::Building]) {
             warn!("request_shutdown should only be called after start");
         }
 
     }
 
     /// ensure all stopped actors are in favor of shutdown
-    pub(crate) fn vote_for_the_dead(&mut self) {
-        // Find all dead voters and vote for them
-        for (i, voter) in self.registered_voters.iter().enumerate() {
-            if let VoterStatus::Dead(ident) = voter {
-                let my_ballot = &self.votes[i];
+    pub(crate) fn vote_for_the_dead(runtime_state: Arc<RwLock<GraphLiveliness>>) {
+
+        let read = runtime_state.read();
+        let the_dead:Vec<(usize,ActorIdentity)> = read.registered_voters.iter().enumerate().flat_map(|(i,v)| {
+            if let VoterStatus::Dead(ident) = v {
+                //confirm we have not already voted
+                let my_ballot = &read.votes[i];
                 if let Some(mut vote) = my_ballot.try_lock() {
                     //we can only vote once as a dead actor
                     if !vote.in_favor {
-                        assert_eq!(vote.id, i);
-                        vote.signature = Some(*ident); // Signature it is me
-                        vote.in_favor = true; // The dead are in favor of shutdown
-                        self.vote_in_favor_total.fetch_add(1, Ordering::SeqCst);
+                        Some((i,ident.clone()))
+                    } else {
+                        None
                     }
                 } else {
                     error!("voting integrity error, someone else has my ballot {:?} in_favor of shutdown", ident);
+                    None
                 }
+            } else {
+                None
             }
+        }).collect();
+        drop(read);
+
+        //we only grab the write lock if we have dead voters who have not voted.
+        if !the_dead.is_empty() {
+            let write = runtime_state.write();
+            the_dead.iter().for_each(|(i,ident)| {
+                let my_ballot = &write.votes[*i];
+                if let Some(mut vote) = my_ballot.try_lock() {
+                    assert_eq!(vote.id, *i);
+                    vote.signature = Some(*ident); // Signature it is me
+                    vote.in_favor = true; // The dead are in favor of shutdown
+                    write.vote_in_favor_total.fetch_add(1, Ordering::SeqCst);
+                } else {
+                    error!("voting integrity error, someone else has my ballot {:?} in_favor of shutdown", ident);
+                }
+            })
         }
+
     }
 
     /// Checks if the graph is stopped.
@@ -580,7 +606,7 @@ impl GraphBuilder {
                 let value1 = ctrlc_runtime_state.clone();
                 let value2 = ctrlc_runtime_state.clone();
 
-                core_exec::block_on(async move { value1.write().internal_request_shutdown().await });
+                core_exec::block_on(async move { GraphLiveliness::internal_request_shutdown(value1).await });
                 if let Some(timeout) = value2.read().shutdown_timeout {
                     timeout
                 } else {
@@ -592,7 +618,7 @@ impl GraphBuilder {
 
         });
         if let Err(e) = result {
-            error!("Error setting up CTRL-C hook: {}", e);
+            trace!("Error setting up CTRL-C hook: {}", e);
         }
         g
     }
@@ -611,7 +637,6 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     pub(crate) backplane: Arc<Mutex<Option<StageManager>>>, // Only used in testing
-    pub(crate) noise_threshold: Instant,
     pub(crate) block_fail_fast: bool,
     pub(crate) telemetry_production_rate_ms: u64,
     pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
@@ -781,9 +806,8 @@ impl Graph {
 
     /// Stops the graph procedure requested.
     pub fn request_shutdown(&mut self) {
-        let mut a = self.runtime_state.write();
-        core_exec::block_on(async move {   a.internal_request_shutdown().await });
-    
+        let mut a = self.runtime_state.clone();
+        core_exec::block_on(async move {  GraphLiveliness::internal_request_shutdown(a).await });
     }
 
     /// Blocks until the graph is stopped.
@@ -800,11 +824,10 @@ impl Graph {
         let timeout = clean_shutdown_timeout.max(Duration::from_millis(3 * self.telemetry_production_rate_ms));
 
         if let Some(wait_on) = {
-            let mut state = self.runtime_state.write();
-            state.shutdown_timeout = Some(timeout);
-            if state.is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
+            self.runtime_state.write().shutdown_timeout = Some(timeout);
+            if self.runtime_state.read().is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
                 let (tx, rx) = oneshot::channel();
-                let v = state.shutdown_one_shot_vec.clone();
+                let v = self.runtime_state.read().shutdown_one_shot_vec.clone();
                 core_exec::block_on(async move {
                     v.lock().await.push(tx);
                 });
@@ -832,12 +855,11 @@ impl Graph {
                 rs.read().check_is_stopped(now, timeout)
             };
             if let Some(shutdown) = is_stopped {
-                let mut state = rs.write();
-                state.state = shutdown;
-
-                if state.state.eq(&GraphLivelinessState::StoppedUncleanly) {
+                let is_unclean = shutdown.eq(&GraphLivelinessState::StoppedUncleanly);
+                rs.write().state = shutdown;
+                if is_unclean {
                     warn!("graph stopped uncleanly");
-                    Self::report_votes(&mut state);
+                    Self::report_votes(&mut rs.write());
                     return Err("graph stopped uncleanly".into());
                 }
                 return Ok(());
@@ -845,8 +867,7 @@ impl Graph {
                 thread::sleep(tel_prod_rate);
                 //in case any actors just returned Ok(()) without normal is_running call
                 //those need be set to approved votes for the shutdown
-                let mut state = rs.write();
-                state.vote_for_the_dead();
+                GraphLiveliness::vote_for_the_dead(rs.clone());
             }
         }
     }
@@ -969,7 +990,6 @@ impl Graph {
             thread_lock: Arc::new(Mutex::new(())),
             oneshot_shutdown_vec,
             backplane: Arc::new(Mutex::new(builder.backplane)),
-            noise_threshold: Instant::now().sub(Duration::from_secs(steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64)),
             block_fail_fast: builder.block_fail_fast,
             telemetry_production_rate_ms: if builder.telemetry_metric_features {
                                                  builder.telemtry_production_rate_ms

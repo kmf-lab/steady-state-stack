@@ -6,8 +6,7 @@ use log::*;
 use args::Args;
 use std::time::Duration;
 use steady_state::*;
-use steady_state::actor_builder::{Troupe, ScheduleAs, TroupeGuard};
-use steady_state::actor_builder::ScheduleAs::*;
+use steady_state::actor_builder::{ScheduleAs};
 
 
 // here are the actors that will be used in the graph.
@@ -35,7 +34,7 @@ use steady_state::channel_builder::Filled;
 // if you discover a problem with the command line args. Fail fast is a good thing.
 // Note that the main function is not async. This keeps it simple.
 // Further note the main function is not a test. It is not run by any test. Keep it small.
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // a typical begging by fetching the command line args and starting logging
     let opt = Args::parse();
 
@@ -54,7 +53,7 @@ fn main() {
         graph.request_shutdown();
     }
 
-    graph.block_until_stopped(Duration::from_secs(80));
+    graph.block_until_stopped(Duration::from_secs(80))
 
 }
 

@@ -12,7 +12,7 @@ mod actor {
         pub mod tick_relay;
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let opt = Args::parse();
 
     if let Err(e) = steady_state::init_logging(opt.loglevel) {
@@ -31,7 +31,7 @@ fn main() {
        graph.request_shutdown(); //actors can also call stop as desired on the context or monitor
     }
 
-    graph.block_until_stopped(Duration::from_secs(2));
+    graph.block_until_stopped(Duration::from_secs(2))
 }
 
 fn build_graph(mut graph: Graph) -> steady_state::Graph {

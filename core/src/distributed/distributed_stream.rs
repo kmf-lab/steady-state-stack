@@ -270,8 +270,10 @@ impl StreamIngress {
     {
         (StreamIngress::new(p0.len() as i32, session_id, arrival, finished), p0)
     }
-
-
+    pub fn build(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamIngress, &[u8])
+    {
+        StreamIngress::by_ref(session_id, arrival, finished, p0)
+    }
 }
 
 impl StreamItem for StreamIngress {
@@ -305,6 +307,9 @@ pub struct StreamEgress {
 }
 
 impl StreamEgress {
+    pub fn build(p0: &[u8]) -> (StreamEgress, Box<[u8]>) {
+        StreamEgress::by_box(p0)
+    }
     pub fn by_box(p0: &[u8]) -> (StreamEgress, Box<[u8]>)
     {
         (StreamEgress::new(p0.len() as i32), p0.into())

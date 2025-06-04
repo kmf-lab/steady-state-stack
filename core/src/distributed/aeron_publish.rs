@@ -283,7 +283,7 @@ pub(crate) mod aeron_tests {
         Ok(())
     }
 
-    pub async fn mock_receiver_run<const GIRTH:usize>(context: SteadyContext
+    async fn mock_receiver_run<const GIRTH:usize>(context: SteadyContext
                                                       , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
         let mut cmd = context.into_monitor(rx.control_meta_data(), []);

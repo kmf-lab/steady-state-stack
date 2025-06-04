@@ -228,7 +228,6 @@ pub struct SideChannelResponder {
     pub(crate) identity: ActorIdentity,
 }
 
-const WAIT_FOR_QUANT:Duration = Duration::from_millis(50);
 pub (crate) const OK_MESSAGE: &'static str = "ok";
 pub (crate) const TIMEOUT: &'static str = "timeout, no message";
 
@@ -492,7 +491,15 @@ impl SideChannelResponder {
 
         rx.wait_occupied(1).await;
     }
-    
+
+    pub fn avail(&self) -> usize
+    {
+        let mut guard = self.arc.try_lock().expect("internal lock issue");
+        let ((_, rx), _) = guard.deref_mut();
+        rx.occupied_len()
+    }
+
+
     /// Responds to messages from the side channel using the provided function.
     ///
     /// # Arguments

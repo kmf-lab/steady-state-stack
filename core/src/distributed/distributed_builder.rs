@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use log::*;
 use crate::{new_state, LazyStreamRx, LazyStreamTx, ScheduleAs};
 use crate::actor_builder::ActorBuilder;

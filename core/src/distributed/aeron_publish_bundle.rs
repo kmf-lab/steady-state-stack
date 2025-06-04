@@ -72,7 +72,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
            //trace!("holding add_exclusive_publication lock");
             for f in 0..GIRTH {
                 if state.pub_reg_id[f].is_none() { //only add if we have not already done this
-                    warn!("adding new pub {} {:?}",f as i32 +stream_id,aeron_channel.cstring() );
+                    trace!("adding new pub {} {:?}",f as i32 +stream_id,aeron_channel.cstring() );
                     match aeron.add_exclusive_publication(aeron_channel.cstring(), f as i32 + stream_id) {
                         Ok(reg_id) => state.pub_reg_id[f] = Some(reg_id),
                         Err(e) => {

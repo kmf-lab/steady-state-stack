@@ -6,7 +6,6 @@ use std::time::Duration;
 use steady_state::*;
 use crate::Args;
 use std::error::Error;
-use steady_state::steady_tx::TxMetaDataProvider;
 
 #[derive(Default,Clone,Copy,Debug,Eq,PartialEq)]
 pub struct Tick {

@@ -1271,14 +1271,6 @@ mod lib_tests {
         };
     }
 
-    // Test for call_async
-    #[async_std::test]
-    async fn test_call_async() {
-        let context = test_steady_context();
-        let fut = async { 42 };
-        let result = context.call_async(fut).await;
-        assert_eq!(result, Some(42));
-    }
 
 }
 

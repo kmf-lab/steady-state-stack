@@ -535,17 +535,6 @@ pub(crate) mod monitor_tests {
         };
     }
 
-    // Test for call_async
-    #[async_std::test]
-    async fn test_call_async() {
-        let context = test_steady_context();
-        let monitor = context.into_monitor([],[]);
-
-        let fut = async { 42 };
-        let result = monitor.call_async(fut).await;
-        assert_eq!(result, Some(42));
-    }
-
     // Common function to create a test SteadyContext
     fn test_steady_context() -> SteadyContext {
         let (_tx, rx) = build_tx_rx();
@@ -953,12 +942,13 @@ pub(crate) mod monitor_tests {
         let monitor = context.into_monitor([], []);
         // Simulate shutdown
         {
-            let mut liveliness = monitor.runtime_state.write();
-            liveliness.state = GraphLivelinessState::Running;
-            liveliness.internal_request_shutdown().await;
+            {
+                let mut liveliness = monitor.runtime_state.write();
+                liveliness.state = GraphLivelinessState::Running;
+            }
+            GraphLiveliness::internal_request_shutdown(monitor.runtime_state.clone()).await;
         }
-        let result = monitor.wait_shutdown().await;
-        assert!(result);
+        assert!(monitor.wait_shutdown().await);
     }
 
     // Test for wait_periodic
@@ -1151,16 +1141,6 @@ pub(crate) mod monitor_tests {
     //     };
     // }
 
-    // Test for call_async with future that returns an error
-    #[async_std::test]
-    async fn test_call_async_with_error() {
-        let context = test_steady_context();
-        let monitor = context.into_monitor([], []);
-
-        let fut = async { Err::<i32, &str>("error") };
-        let result = monitor.call_async(fut).await;
-        assert_eq!(result, Some(Err("error")));
-    }
  
     // Test for args method with String
     #[test]

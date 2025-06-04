@@ -5,7 +5,7 @@ use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
-use steady_state::actor_builder::{Troupe, ScheduleAs};
+use steady_state::actor_builder::{ScheduleAs};
 
 mod actor {
         pub mod console_printer;

@@ -164,7 +164,7 @@ pub trait SteadyCommander {
     ///
     /// This method holds the data if it is called more frequently than the collector can consume the data.
     /// It is designed for use in tight loops where telemetry data is collected frequently.
-    fn relay_stats_smartly(&mut self);
+    fn relay_stats_smartly(&mut self) -> bool;
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     /// NOTE: This does NOTHING unless called on the LocalMonitor instance

@@ -195,17 +195,21 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     ///
     /// This method holds the data if it is called more frequently than the collector can consume the data.
     /// It is designed for use in tight loops where telemetry data is collected frequently.
-    fn relay_stats_smartly(&mut self) {
+    fn relay_stats_smartly(&mut self) -> bool {
         let last_elapsed = self.last_telemetry_send.elapsed();
         if last_elapsed.as_micros() as u64 * (REAL_CHANNEL_LENGTH_TO_COLLECTOR as u64) >= (1000u64 * self.frame_rate_ms) {
             setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
             self.last_telemetry_send = Instant::now();
+            true
         } else {
             //if this is our first iteration flush to get initial usage
             //if the telemetry has no data flush to ensure we dump stale data
             if 0==self.is_running_iteration_count || setup::is_empty_local_telemetry(self) {
                 setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
                 self.last_telemetry_send = Instant::now();
+                true
+            } else {
+                false
             }
         }
     }
@@ -717,7 +721,11 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
         let _guard = self.start_profile(CALL_OTHER);
 
         let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
-        select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), }
+        if one_down.is_terminated() {
+            None
+        } else {
+            select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), }
+        }
     }
 
     /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
@@ -1046,8 +1054,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// `true` if the monitor is running, otherwise `false`.
     #[inline]
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
-        // in case we are in a tight loop and need to let other actors run on this thread.
-        executor::block_on(yield_now::yield_now());
 
         loop {
             let result = {
@@ -1061,13 +1067,16 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
                     self.relay_stats(); //testing mutable self and self flush of relay data.
                 } else {
                     //if the frame rate dictates do a refresh
-                    self.relay_stats_smartly();
+                    if self.relay_stats_smartly() {
+                        // in case we are in a tight loop and need to let other actors run on this thread.
+                        executor::block_on(yield_now::yield_now());
+                    };
                 }
                 self.is_running_iteration_count += 1;
                 return result;
             } else {
-                //wait until we are in a running state
-                executor::block_on(Delay::new(Duration::from_millis(10)));
+                //wait until we are finished building this actor (ie still in startup)
+                executor::block_on(Delay::new(Duration::from_millis(20)));
             }
         }
     }
@@ -1080,8 +1089,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
             // Wait for all required actors to reach the barrier
             barrier.clone().wait().await;
         }
-        let mut liveliness = self.runtime_state.write();
-        liveliness.internal_request_shutdown().await;
+        GraphLiveliness::internal_request_shutdown(self.runtime_state.clone()).await;
     }
 
     /// Retrieves the actor's arguments, cast to the specified type.

@@ -108,8 +108,9 @@ impl SteadyCommander for SteadyContext {
     }
 
     /// No op, and only relays stats upon the LocalMonitor instance
-    fn relay_stats_smartly(&mut self) {
+    fn relay_stats_smartly(&mut self) -> bool {
         //do nothing this is only implemented for the monitor
+        false
     }
 
     /// No op, and only relays stats upon the LocalMonitor instance
@@ -439,7 +440,11 @@ impl SteadyCommander for SteadyContext {
         F: Future,
     {
         let one_down = &mut self.oneshot_shutdown.lock().await;
-        select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), }
+        if one_down.is_terminated() {
+            None // if alraady terminated we do not call the method
+        } else {
+            select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), }
+        }
     }
     /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
     ///
@@ -613,7 +618,7 @@ impl SteadyCommander for SteadyContext {
             if let Some(result) = result {
                 return result;
             } else {
-                //wait until we are in a running state
+                //wait until we are finished building the actor (ie still in startup)
                 thread::yield_now();
             }
         }
@@ -626,8 +631,7 @@ impl SteadyCommander for SteadyContext {
             // Wait for all required actors to reach the barrier
             barrier.clone().wait().await;
         }
-        let mut liveliness = self.runtime_state.write();
-        liveliness.internal_request_shutdown().await;
+        GraphLiveliness::internal_request_shutdown(self.runtime_state.clone()).await;
     }
    
     

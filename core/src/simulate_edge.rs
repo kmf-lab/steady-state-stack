@@ -8,7 +8,6 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use futures::lock::Mutex as AsyncMutex; // Use futures::lock::Mutex for async compatibility
 use crate::{await_for_all, wait_for_all, SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamIngress, StreamEgress};
@@ -78,18 +77,18 @@ where
     fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
         let value = this.clone();
-
                 match value.try_lock() {
                     Some(mut guard) => {
-                        if cmd.is_running(&mut || guard.is_closed_and_empty()) {
+                        if cmd.is_running(&mut || i!(0==responder.avail()) && i!(guard.is_closed())) {  // do not care if guard is empty!
                             responder.simulate_wait_for(&mut guard, cmd, index, run_duration)
                         } else {
                             Ok(SimStepResult::Finished)
                         }
                     }
-                    None => Ok(SimStepResult::NoWork),
+                    None => {
+                        Ok(SimStepResult::NoWork)
+                    },
                 }
-
 
     }
 }
@@ -102,13 +101,15 @@ where
                 let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
-                        if cmd.is_running(&mut || guard.is_closed_and_empty()) {
+                        if cmd.is_running(&mut || i!(0==responder.avail()) && i!(guard.is_closed())) {  // do not care if guard is empty!
                             responder.simulate_wait_for(&mut guard, cmd, index, run_duration)
                         } else {
                             Ok(SimStepResult::Finished)
                         }
                     }
-                    None => Ok(SimStepResult::NoWork),
+                    None => {
+                        Ok(SimStepResult::NoWork)
+                    },
                 }
 
     }
@@ -122,13 +123,15 @@ where
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
-                        if cmd.is_running(&mut || guard.is_closed_and_empty()) {
+                        if cmd.is_running(&mut || i!(0==responder.avail()) && i!(guard.is_closed())) {  // do not care if guard is empty!
                             responder.simulate_wait_for(&mut guard, cmd, index, run_duration)
                         } else {
                             Ok(SimStepResult::Finished)
                         }
                     }
-                    None => Ok(SimStepResult::NoWork),
+                    None => {
+                        Ok(SimStepResult::NoWork)
+                    },
                 }
 
     }
@@ -222,7 +225,7 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
         let mut any_work_done = false;
 
         cmd.call_async(responder.wait_avail()).await;
-
+        //trace!("is running for {:?}", cmd.identity());
         for (index, sim) in sims.iter().enumerate() {
             if !active_simulations[index] {
                 continue;
@@ -236,22 +239,24 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
                         any_work_done = true;
                     }
                     match simulation_states[index].record_step_result(&step_result) {
-                        Ok(true) => {}
+                        Ok(true) => {
+                            //trace!("ok we did someing");
+                        }
                         Ok(false) => {
                             active_simulations[index] = false;
                             active_count = active_count.saturating_sub(1); // Prevent underflow
-                            //trace!("Simulation {} completed", index);
+                            //trace!("Simulation {} completed, new count {}", index, active_count);
                         }
                         Err(timeout_error) => {
-                            error!("Simulation {} timed out: {}", index, timeout_error);
                             cmd.request_shutdown().await;
                             active_simulations[index] = false;
                             active_count = active_count.saturating_sub(1);
+                            error!("Simulation {} timed out: {} new count {}", index, timeout_error, active_count);
                         }
                     }
                 }
                 Err(sim_error) => {
-                    error!("Simulation {} failed: {}", index, sim_error);
+                    // trace!("Simulation {} failed: {}", index, sim_error);
                     active_simulations[index] = false;
                     active_count = active_count.saturating_sub(1); // Prevent underflow
                     cmd.request_shutdown().await;
