@@ -114,7 +114,7 @@ pub mod steady_logger {
         IS_TEST_MODE.store(true, Ordering::SeqCst);
 
         // Initialize logger in test mode if not already done
-        let _ = initialize_with_level(LogLevel::Trace);
+        let _ = initialize();
 
         let test_state = TestCaptureState {
             is_capturing: Arc::new(AtomicBool::new(true)),
@@ -163,11 +163,11 @@ pub mod steady_logger {
         if let Ok(mut contexts) = TEST_CONTEXTS.lock() {
             if let Some(test_state) = contexts.get(&thread_id) {
                 test_state.is_capturing.store(false, Ordering::SeqCst);
-                if let Ok(buf) = test_state.log_buffer.lock() {
-                    if !buf.is_empty() {
-                        eprintln!("Test logs captured: {:?}", *buf);
-                    }
-                }
+                // if let Ok(buf) = test_state.log_buffer.lock() {
+                //     if !buf.is_empty() {
+                //         eprintln!("Test logs captured: {:?}", *buf);
+                //     }
+                // }
             }
             contexts.remove(&thread_id);
         }
@@ -201,7 +201,7 @@ macro_rules! assert_in_logs {
         } else {
             Vec::new()
         };
-        eprintln!("logged_messages texts: {:?}", logged_messages);
+        //eprintln!("logged_messages texts: {:?}", logged_messages);
 
         let texts = $texts;
         let mut text_index = 0;
@@ -212,7 +212,7 @@ macro_rules! assert_in_logs {
         }
         if text_index < texts.len() {
             // Print all the content for easier check with index
-            eprintln!("Captured logs ({} messages):", logged_messages.len());
+            //eprintln!("Captured logs ({} messages):", logged_messages.len());
             for (i, msg) in logged_messages.iter().enumerate() {
                 eprintln!("[{}]: {}", i, msg);
             }
@@ -258,7 +258,7 @@ mod test_log_tests {
     fn test_parallel_test_isolation_a() {
         let _guard = start_log_capture();
 
-        trace!("Parallel test A");
+        info!("Parallel test A");
         thread::sleep(Duration::from_millis(10)); // Small delay to ensure log is processed
 
         // This might see logs from other parallel tests, but should at least see its own
@@ -284,7 +284,7 @@ mod test_log_tests {
     fn test_parallel_test_isolation_b() {
         let _guard = start_log_capture();
 
-        trace!("Parallel test B");
+        info!("Parallel test B");
         thread::sleep(Duration::from_millis(10)); // Small delay to ensure log is processed
 
         // This might see logs from other parallel tests, but should at least see its own
@@ -314,7 +314,7 @@ mod test_log_tests {
         // Initialize in non-test mode
         let _ = initialize();
 
-        trace!("This should not be captured");
+        info!("This should not be captured");
 
         // Since no guard exists, there should be no test context
         let thread_id = thread::current().id();
@@ -347,7 +347,7 @@ mod test_log_tests {
         // Test that captures don't interfere with each other
         for i in 0..3 {
             let _guard = start_log_capture();
-            trace!("Sequential test {}", i);
+            info!("Sequential test {}", i);
             assert_in_logs!([&format!("Sequential test {}", i)]);
         }
     }

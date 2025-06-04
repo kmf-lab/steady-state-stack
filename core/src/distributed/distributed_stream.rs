@@ -564,16 +564,16 @@ impl<T: StreamItem> StreamTx<T> {
     }
 
     //call this when we have no data in from poll to clear out anything waiting.
-    pub(crate) fn fragment_flush_all<C: SteadyCommander>(&mut self, cmd: &mut C) {
-        self.ready_msg_session.clear();
-        for de in self.defrag.values_mut().filter(|f| !f.ringbuffer_items.0.is_empty()) {
-                     if let (msgs,bytes,Some(more_session_id)) = cmd.flush_defrag_messages( &mut self.item_channel
-                                                                , &mut self.payload_channel
-                                                                , de) {
-                         self.ready_msg_session.push_back(more_session_id);
-                     }
-        }
-    }
+    // pub(crate) fn fragment_flush_all<C: SteadyCommander>(&mut self, cmd: &mut C) {
+    //     self.ready_msg_session.clear();
+    //     for de in self.defrag.values_mut().filter(|f| !f.ringbuffer_items.0.is_empty()) {
+    //                  if let (msgs,bytes,Some(more_session_id)) = cmd.flush_defrag_messages( &mut self.item_channel
+    //                                                             , &mut self.payload_channel
+    //                                                             , de) {
+    //                      self.ready_msg_session.push_back(more_session_id);
+    //                  }
+    //     }
+    // }
 
     pub(crate) fn fragment_flush_ready<C: SteadyCommander>(&mut self, cmd: &mut C) -> (u32,u32) {
         let mut total_messages = 0;

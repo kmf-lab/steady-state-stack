@@ -195,17 +195,6 @@ impl GraphLiveliness {
         if runtime_state.read().state.eq(&GraphLivelinessState::Running) {
             let read = runtime_state.read();
 
-            let voters = read.registered_voters.len();
-
-            // // Print new ballots for this new election
-            // let votes: Vec<Mutex<ShutdownVote>> = (0..voters)
-            //     .map(|i| Mutex::new(ShutdownVote {
-            //                         id: i,
-            //                         ident: None,
-            //                         in_favor: false,
-            //     }))
-            //     .collect();
-
             let votes: Vec<Mutex<ShutdownVote>> = read.registered_voters.iter().enumerate().map(|(i,v)| {
                 Mutex::new(ShutdownVote {
                     id: i,
@@ -259,7 +248,6 @@ impl GraphLiveliness {
                         None
                     }
                 } else {
-                    error!("voting integrity error, someone else has my ballot {:?} in_favor of shutdown", ident);
                     None
                 }
             } else {
@@ -383,8 +371,7 @@ impl GraphLiveliness {
                     drop(vote);
                     Some(!in_favor) // Return the opposite to keep running when we vote no
                 } else {
-                    // NOTE: this may be the reader not a voter:
-                    error!("voting integrity error, someone else has my ballot {:?} in_favor of shutdown: {:?}", ident, in_favor);
+                    trace!("just try again later, unable to get the lock");
                     Some(true) // If we can't vote we oppose the shutdown by continuing to run
                 }
 
@@ -883,10 +870,11 @@ impl Graph {
 
         // Now iterate over the sorted voters and log the results
         voters.iter().for_each(|voter| {
-            warn!("#{:?} Status:{:?} Voted: {:?} Ident: {:?}"
+            warn!("#{:?} Status:{:?} Voted: {:?} {:?} Ident: {:?}"
                    , voter.as_ref().map_or(usize::MAX, |f| f.id)
                    , voter.as_ref().map_or(Default::default(), |f| f.voter_status.clone())
                    , voter.as_ref().is_some_and(|f| f.in_favor)
+                   , if voter.as_ref().is_some_and(|f| f.in_favor) {""} else {voter.as_ref().map_or(&None, |f| &f.veto_reason).map_or("", |f| f)}
                    , voter.as_ref().map_or(Default::default(), |f| f.signature));
         });
         warn!("graph stopped uncleanly");
@@ -904,51 +892,54 @@ impl Graph {
 
             if !skip_internal {
                 let backtrace = voter.as_ref().map_or(&None, |f| &f.veto_backtrace);
-                let reason = voter.as_ref().map_or(&None, |f| &f.veto_reason);
-                if let Some(r) = reason {
-                    eprintln!("veto expression: {:#?}", r);
-                }
-                if let Some(bt) = backtrace {
-                    let text = format!("{:#?}", bt);
-                    let adj = text.trim();
-                    let adj = adj.strip_prefix("Backtrace ").unwrap_or(adj);
-                    let adj = adj.strip_prefix("[").unwrap_or(adj).trim();
-                    let adj = adj.strip_suffix("]").unwrap_or(adj).trim();
+                let is_veto = !voter.as_ref().is_some_and(|f| f.in_favor);
+                if is_veto {
+                    let reason = voter.as_ref().map_or(&None, |f| &f.veto_reason);
+                    if let Some(r) = reason {
+                        debug!("veto expression: {:#?}", r);
+                    }
+                    if let Some(bt) = backtrace {
+                        let text = format!("{:#?}", bt);
+                        let adj = text.trim();
+                        let adj = adj.strip_prefix("Backtrace ").unwrap_or(adj);
+                        let adj = adj.strip_prefix("[").unwrap_or(adj).trim();
+                        let adj = adj.strip_suffix("]").unwrap_or(adj).trim();
 
-                    let mut level = 1; // Start inside the list
-                    let mut is_header = true;
-                    let mut start = 0; // Index of the start of the current frame
+                        let mut level = 1; // Start inside the list
+                        let mut is_header = true;
+                        let mut start = 0; // Index of the start of the current frame
 
-                    // Parse frames by tracking nesting levels and indices
-                    for (i, c) in adj.char_indices() {
-                        if c == '{' {
-                            level += 1;
-                        } else if c == '}' {
-                            level -= 1;
-                        }
-                        if c == ',' && level == 1 {
-                            // End of a frame
-                            let end = i; // Up to but not including the ','
-                            let frame = &adj[start..end];
-                            let frame = frame.trim();
-                            if is_header
-                                && !frame.starts_with("{ fn: \"std::backtrace")
-                                && !frame.starts_with("{ fn: \"steady_state::graph_liveliness::GraphLiveliness::is_running")
-                                && !frame.starts_with("{ fn: \"steady_state::commander_") {
-                                is_header = false;
+                        // Parse frames by tracking nesting levels and indices
+                        for (i, c) in adj.char_indices() {
+                            if c == '{' {
+                                level += 1;
+                            } else if c == '}' {
+                                level -= 1;
                             }
-                            if !is_header {
-                                eprintln!("{}", frame);
-                                if frame.starts_with("{ fn: \"steady_state::actor_builder::launch_actor") {
-                                    break; //all done
+                            if c == ',' && level == 1 {
+                                // End of a frame
+                                let end = i; // Up to but not including the ','
+                                let frame = &adj[start..end];
+                                let frame = frame.trim();
+                                if is_header
+                                    && !frame.starts_with("{ fn: \"std::backtrace")
+                                    && !frame.starts_with("{ fn: \"steady_state::graph_liveliness::GraphLiveliness::is_running")
+                                    && !frame.starts_with("{ fn: \"steady_state::commander_") {
+                                    is_header = false;
                                 }
-                            }
+                                if !is_header {
+                                    debug!("{}", frame);
+                                    if frame.starts_with("{ fn: \"steady_state::actor_builder::launch_actor") {
+                                        break; //all done
+                                    }
+                                }
 
-                            start = i + 1; // Start after the ','
+                                start = i + 1; // Start after the ','
+                            }
                         }
                     }
+                    debug!("\n\n"); //space in case we need it between stacks
                 }
-                eprintln!("\n\n"); //space in case we need it between stacks
             }
 
 

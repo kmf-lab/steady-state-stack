@@ -269,7 +269,7 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     }
 
     if active_count > 0 {
-        warn!("Exiting with {} active simulations due to shutdown", active_count);
+        trace!("Exiting with {} active simulations due to shutdown", active_count);
     } else {
         trace!("All simulations completed successfully");
     }

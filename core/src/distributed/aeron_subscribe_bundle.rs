@@ -7,7 +7,7 @@ use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
 use aeron::subscription::Subscription;
-use log::{error, warn};
+use log::{error, trace, warn};
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTxBundle, StreamIngress};
 use crate::{SteadyCommander, SteadyState, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait};
@@ -175,7 +175,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
                             || e.to_string().contains("not ready") {
                             Delay::new(Duration::from_millis(7)).await;
                             if cmd.is_liveliness_stop_requested() {
-                                warn!("stop detected before finding publication");
+                                trace!("stop detected before finding publication");
                                 subs[f] = Err("Shutdown requested while waiting".into());
                                 found = true;
                             }
@@ -222,7 +222,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
         }
     }
 
-    error!("running subscriber '{:?}' all subscriptions in place", cmd.identity());
+    trace!("running subscriber '{:?}' all subscriptions in place", cmd.identity());
     let mut now = Instant::now();
     let mut next_times = [now; GIRTH];
 

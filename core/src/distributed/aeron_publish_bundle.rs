@@ -133,13 +133,16 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             }
         }
 
-        error!("running publish '{:?}' all publications in place",cmd.identity());
+        trace!("running publish '{:?}' all publications in place",cmd.identity());
 
         let wait_for = 1;//(512*1024).min(rx.capacity());
         let in_channels = 1;
 
     //TODO: need to do this for the single publish
     //TODO: can we poll less if we see they are not flushing?
+    
+    //TODO: not good enought as we still loose th elast message, we reuqire waiting for subs to let go?
+    
         let mut all_streams_flushed = false;
         while cmd.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
 
