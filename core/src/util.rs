@@ -42,7 +42,6 @@ impl LogWriter for MemoryWriter {
     fn write(&self, now: &mut DeferredNow, record: &Record) -> io::Result<()> {
         let mut buffer = Vec::new();
         (self.format)(&mut buffer, now, record)?;
-        let thread_id = thread::current().id();
         let formatted = String::from_utf8_lossy(&buffer).to_string();
         // In test mode, write to ALL active test contexts
         if let Ok(contexts) = TEST_CONTEXTS.lock() {

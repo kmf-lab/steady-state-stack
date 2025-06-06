@@ -5,7 +5,6 @@ use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
-use steady_state::actor_builder::{ScheduleAs};
 
 mod actor {
         pub mod console_printer;
@@ -35,9 +34,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !systemd_command {
 
         let mut graph = build_graph(GraphBuilder::for_production()
-                        .with_telemtry_production_rate_ms(200)
-                        .with_shutdown_barrier(2)
-                        .build(opt.clone()) );
+                                    .with_telemtry_production_rate_ms(200)
+                                    .with_shutdown_barrier(2)
+                                    .build(opt.clone()) );
         graph.start();
 
         graph.block_until_stopped(Duration::from_millis(500))
@@ -97,7 +96,7 @@ fn build_graph(mut graph: Graph) -> Graph {
            .with_explicit_core(8)
            .build(move |context| actor::div_by_3_producer::run(context
                                             , divby3producer_numbers_tx.clone()),
-                  ScheduleAs::SoloAct
+                  SoloAct
                  );
     }
     {
@@ -109,7 +108,7 @@ fn build_graph(mut graph: Graph) -> Graph {
            .with_explicit_core(8)
            .build(move |context| actor::div_by_5_producer::run(context
                                             , divby5producer_numbers_tx.clone()),
-                  ScheduleAs::SoloAct
+                  SoloAct
                  );
     }
 
@@ -121,7 +120,7 @@ fn build_graph(mut graph: Graph) -> Graph {
                                             , fizzbuzzprocessor_numbers_rx.clone()
                                             , fizzbuzzprocessor_fizzbuzz_messages_tx.clone()
                                             , fizzbuzzprocessor_errors_tx.clone(), state.clone()),
-                        ScheduleAs::SoloAct
+                   SoloAct
                  );
     }
     {
@@ -131,7 +130,7 @@ fn build_graph(mut graph: Graph) -> Graph {
             .with_explicit_core(9)
             .build(move |context| actor::timer_actor::run(context
                                                            , timeractor_print_signal_tx.clone()),
-                   ScheduleAs::SoloAct
+                   SoloAct
             );
     }
 
@@ -141,7 +140,7 @@ fn build_graph(mut graph: Graph) -> Graph {
             .build(move |context| actor::console_printer::run(context
                                                                , consoleprinter_fizzbuzz_messages_rx.clone()
                                                                , consoleprinter_print_signal_rx.clone()),
-                   ScheduleAs::SoloAct
+                   SoloAct
             );
     }
     {
@@ -149,7 +148,7 @@ fn build_graph(mut graph: Graph) -> Graph {
             .with_explicit_core(9)
             .build(move |context| actor::error_logger::run(context
                                                             , errorlogger_errors_rx.clone()),
-                   ScheduleAs::SoloAct
+                   SoloAct
             );
     }
     graph

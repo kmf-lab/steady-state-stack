@@ -33,7 +33,7 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
         {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_TX_GIRTH:usize,{% endif -%}
     {%- endfor -%}
   {%- if has_bundles -%}>{% endif -%}
-  (context: SteadyContext
+  (actor: SteadyActorShadow
     {%- for channel in rx_channels %}
         ,{{channel[0].name}}_rx: {% if channel.len()>1 %}SteadyRxBundle<{{channel[0].message_type}}, {{channel[0].name|uppercase}}_RX_GIRTH>
                                   {%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor %}
@@ -44,18 +44,18 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
     ) -> Result<(),Box<dyn Error>> {
 
   // if needed CLI Args can be pulled into state from _cli_args
-  let _cli_args = context.args::<Args>();
+  let _cli_args = actor.args::<Args>();
   // monitor consumes context and ensures all the traffic on the chosen channels is monitored
   // monitor and context both implement SteadyCommander. SteadyContext is used to avoid monitoring
-  let cmd =  context.into_monitor([{%- for def in rx_monitor_defs -%}
+  let actor =  actor.into_spotlight([{%- for def in rx_monitor_defs -%}
                         &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}],[{% for def in tx_monitor_defs -%}
                         &{{def}}{%- if loop.last %}{% else -%},{%- endif %}{% endfor %}]);
   {% if is_on_graph_edge %}
-  if cmd.use_internal_behavior { {% endif %}
-     internal_behavior(cmd {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx{%- endfor -%}, state).await
+  if actor.use_internal_behavior { {% endif %}
+     internal_behavior(actor {%- for channel in rx_channels %},{{channel[0].name}}_rx{%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx{%- endfor -%}, state).await
   {% if is_on_graph_edge %}
   } else {
-     cmd.simulated_behavior(vec!(
+     actor.simulated_behavior(vec!(
            {%- for channel in tx_channels -%}
                  &{{channel[0].name}}_tx{%- if loop.last %}{% else -%},{%- endif %}
              {%- endfor -%}
@@ -67,14 +67,14 @@ pub async fn run{%- if has_bundles -%}<{% endif -%}
   } {% endif %}
 }
 
-async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
+async fn internal_behavior<A: SteadyActor{%- if has_bundles -%},{% endif -%}
     {%- for channel in rx_channels -%}
         {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_RX_GIRTH:usize
 ,{% endif -%}{%- endfor -%}
     {%- for channel in tx_channels -%}
         {%- if channel.len()>1 %}const {{channel[0].name|uppercase}}_TX_GIRTH:usize
 ,{% endif -%}
-    {%- endfor -%}{%- if has_bundles -%}{% endif -%}>(mut cmd: C{%- for channel in rx_channels %},{{channel[0].name}}_rx: {% if channel.len()>1 %}SteadyRxBundle<{{channel[0].message_type}}
+    {%- endfor -%}{%- if has_bundles -%}{% endif -%}>(mut actor: A{%- for channel in rx_channels %},{{channel[0].name}}_rx: {% if channel.len()>1 %}SteadyRxBundle<{{channel[0].message_type}}
 , {{channel[0].name|uppercase}}_RX_GIRTH>{%- else %}SteadyRx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
     {%- for channel in tx_channels -%},{{channel[0].name}}_tx: {% if channel.len()>1 %}SteadyTxBundle<{{channel[0].message_type}}
 , {{channel[0].name|uppercase}}_TX_GIRTH>{%- else %}SteadyTx<{{channel[0].message_type}}>{% endif %}{%- endfor -%}
@@ -89,7 +89,7 @@ async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
 
    //this is the main loop of the actor, will run until shutdown is requested.
    //the closure is called upon shutdown to determine if we need to postpone the shutdown
-   while cmd.is_running(&mut || {%- for channel in rx_channels -%}
+   while actor.is_running(&mut || {%- for channel in rx_channels -%}
         {{channel[0].name}}_rx.is_closed_and_empty()
         {%- if loop.last %}{% else %} && {% endif -%}{% endfor %}{%- for channel in tx_channels %}
         {%- if loop.first && !rx_channels.is_empty() %} && {% else %}{% endif -%}
@@ -104,7 +104,7 @@ async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
  {%- for channel in rx_channels %}
   {% if 1==channel.len() %}
           {{note_for_the_user}} here is an example reading from {{channel[0].name}}_rx
-          match cmd.try_take(&mut {{channel[0].name}}_rx) {
+          match actor.try_take(&mut {{channel[0].name}}_rx) {
               Some(rec) => {
                   trace!("got rec: {:?}", rec);
               }
@@ -116,7 +116,7 @@ async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
           }
   {% else %}
          {{note_for_the_user}} here is an example reading from one of the {{channel[0].name}}_rx bundle of {{channel.len()}}
-         match cmd.try_take(&mut {{channel[0].name}}_rx[0]) {
+         match actor.try_take(&mut {{channel[0].name}}_rx[0]) {
              Some(rec) => {
                  trace!("got rec: {:?}", rec);
              }
@@ -131,7 +131,7 @@ async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
 {%- for channel in tx_channels %}
   {% if 1==channel.len() %}
         {{note_for_the_user}} here is an example writing to {{channel[0].name}}_tx
-        match cmd.try_send(&mut {{channel[0].name}}_tx, {{channel[0].message_type}}::default() ) {
+        match actor.try_send(&mut {{channel[0].name}}_tx, {{channel[0].message_type}}::default() ) {
             SendOutcome::Success => {
             },
             SendOutcome::Blocked(msg) => { //in the above await we should have confirmed space is available
@@ -140,7 +140,7 @@ async fn internal_behavior<C: SteadyCommander{%- if has_bundles -%},{% endif -%}
         }
   {% else %}
         {{note_for_the_user}} here is an example writing to one of the {{channel[0].name}}_tx bundle of {{channel.len()}}
-        match cmd.try_send(&mut {{channel[0].name}}_tx[0], {{channel[0].message_type}}::default() ) {
+        match actor.try_send(&mut {{channel[0].name}}_tx[0], {{channel[0].message_type}}::default() ) {
             SendOutcome::Success => {
             },
             SendOutcome::Blocked(msg) => { //in the above await we should have confirmed space is available
@@ -164,7 +164,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_process() {
+    fn test_simple_process() -> Result<(),Box<dyn Error>> {
        let mut graph = GraphBuilder::for_testing().build(());
        {%- for channel in rx_channels %}
        let (test_{{channel[0].name}}_tx,{{channel[0].name}}_rx) = graph.channel_builder().with_capacity(4).{% if channel.len()>1 %}build_channel_bundle::<_, {{channel.len()}}>();{% else %}build();{% endif %}
@@ -175,8 +175,8 @@ pub(crate) mod tests {
        let state = new_state();
        graph.actor_builder()
                     .with_name("UnitTest")
-                    .build( move |context|
-                            internal_behavior(context {%- for channel in rx_channels %}, {{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx.clone(){%- endfor -%}, state.clone())
+                    .build( move |actor|
+                            internal_behavior(actor {%- for channel in rx_channels %}, {{channel[0].name}}_rx.clone(){%- endfor -%}{%- for channel in tx_channels %}, {{channel[0].name}}_tx.clone(){%- endfor -%}, state.clone())
                      , SoloAct );
 
        graph.start(); //startup the graph
@@ -194,7 +194,7 @@ pub(crate) mod tests {
 
         {% endfor %}
        graph.request_shutdown();
-       graph.block_until_stopped(Duration::from_secs(15));
+       let _ = graph.block_until_stopped(Duration::from_secs(15));
 
         {%- for channel in tx_channels %}
             {%- if 1==channel.len() %}
@@ -207,5 +207,6 @@ pub(crate) mod tests {
        //    assert_steady_rx_eq_take!(&test_{{channel[0].name}}_rx[0],vec!());
             {%- endif %}
         {% endfor -%}
+       Ok(())
     }
 }

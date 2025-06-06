@@ -8,12 +8,12 @@ use std::error::Error;
 use crate::actor::div_by_3_producer::NumberMessage;
 use crate::actor::fizz_buzz_processor;
 
-pub async fn run(context: SteadyContext, numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([],[&numbers_tx]);
+pub async fn run(context: SteadyActorShadow, numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
+    let actor = context.into_spotlight([], [&numbers_tx]);
     if cfg!(not(test)) {
-        internal_behavior(cmd, numbers_tx).await
+        internal_behavior(actor, numbers_tx).await
     } else {
-        cmd.simulated_behavior(vec!(&numbers_tx)).await
+        actor.simulated_behavior(vec!(&numbers_tx)).await
     }
 }
 
@@ -22,33 +22,33 @@ const BATCH_SIZE: usize = 4000;
 const STEP_SIZE: u64 = 5;
 
 
-async fn internal_behavior<C:SteadyCommander>(mut cmd: C
-                           ,numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
+async fn internal_behavior<A: SteadyActor>(mut actor: A
+                                           , numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
 
     let mut numbers_tx = numbers_tx.lock().await;
 
     let mut buffer:[NumberMessage; BATCH_SIZE] = [NumberMessage::default(); BATCH_SIZE];
     let mut index:u64 = 0;
 
-    while cmd.is_running(&mut || i!(numbers_tx.mark_closed())) {
-        let _clean = await_for_all!(cmd.wait_vacant(&mut numbers_tx, BATCH_SIZE>>1));
+    while actor.is_running(&mut || i!(numbers_tx.mark_closed())) {
+        let _clean = await_for_all!(actor.wait_vacant(&mut numbers_tx, BATCH_SIZE>>1));
 
         let mut i = 0;
-        let limit = BATCH_SIZE.min(cmd.vacant_units(&mut numbers_tx));
+        let limit = BATCH_SIZE.min(actor.vacant_units(&mut numbers_tx));
         loop {
             index = index + STEP_SIZE;
             buffer[i] = NumberMessage{value:index};
             i = i + 1;
             if i >= limit || index == fizz_buzz_processor::STOP_VALUE {
                 if index >= fizz_buzz_processor::STOP_VALUE {
-                    cmd.request_shutdown().await;
+                    actor.request_shutdown().await;
                 }
                 break;
             }
         }
-        let _sent_count = cmd.send_slice_until_full(&mut numbers_tx, &buffer[0..i]);
+        let _sent_count = actor.send_slice_until_full(&mut numbers_tx, &buffer[0..i]);
     }
-    cmd.request_shutdown().await;
+    actor.request_shutdown().await;
     Ok(())
 }
 
@@ -71,8 +71,8 @@ pub(crate) mod tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn(move |context|
-                internal_behavior(context, numbers_tx.clone())
+            .build(move |context|
+                internal_behavior(context, numbers_tx.clone()), SoloAct
             );
 
         graph.start(); //startup the graph

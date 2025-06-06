@@ -211,10 +211,10 @@ fn build_driver_block(actor: &Actor) -> String {
     actor.driver.iter().for_each(|f| {
         match f {
             ActorDriver::AtLeastEvery(d) => {
-                at_least_every = Some(format!("cmd.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
+                at_least_every = Some(format!("actor.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
             }
             ActorDriver::AtMostEvery(d) => {
-                andy_drivers.push(format!("cmd.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
+                andy_drivers.push(format!("actor.wait_periodic(Duration::from_millis({:?}))",d.as_millis()));
             }
             ActorDriver::EventDriven(t) => {
                 let mut each: Vec<String> = t.iter().map(|v| {
@@ -231,7 +231,7 @@ fn build_driver_block(actor: &Actor) -> String {
                     //2 may want the default channels_count or this may be a single
                     //  we ensure girth is 1 to confirm this choice.
                     if v.len()==2 && 1==girth {
-                        format!("cmd.wait_avail(&mut {}_rx,{})", v[0], v[1])
+                        format!("actor.wait_avail(&mut {}_rx,{})", v[0], v[1])
                     } else {
                         let channels_count = if girth>1 && v.len()>2 {
                             if let Some(p) = extract_percent(v[2].clone()) {
@@ -242,7 +242,7 @@ fn build_driver_block(actor: &Actor) -> String {
                         } else {
                             1 //if we got no girth assume 1 by default
                         };
-                        format!("cmd.wait_avail_bundle(&mut {}_rx,{},{})", v[0], v[1], channels_count)
+                        format!("actor.wait_avail_bundle(&mut {}_rx,{},{})", v[0], v[1], channels_count)
                     }
                 }).collect();
                 andy_drivers.append(&mut each);
@@ -260,7 +260,7 @@ fn build_driver_block(actor: &Actor) -> String {
                     }
 
                     if v.len() == 2 && 1==girth {
-                        format!("cmd.wait_shutdown_or_vacant_units(&mut {}_tx,{})", v[0], v[1])
+                        format!("actor.wait_shutdown_or_vacant_units(&mut {}_tx,{})", v[0], v[1])
                     } else {
                         let girth = actor.tx_channels
                             .iter()
@@ -276,14 +276,14 @@ fn build_driver_block(actor: &Actor) -> String {
                             warn!("Failed to find more than one channel in the bundle: {}", v[0]);
                             1 //if we got no girth assume 1 by default
                         };
-                        format!("cmd.wait_shutdown_or_vacant_units_bundle(&mut {}_tx,{},{})", v[0], v[1], channels_count)
+                        format!("actor.wait_shutdown_or_vacant_units_bundle(&mut {}_tx,{},{})", v[0], v[1], channels_count)
                     }
                 }).collect();
                 andy_drivers.append(&mut each);
             }
             ActorDriver::Other(t) => {
                 let mut each: Vec<String> = t.iter().map(|name| {
-                    format!("cmd.call_async({}())", name) 
+                    format!("actor.call_async({}())", name)
                 }).collect();
                 andy_drivers.append(&mut each);
             }
@@ -525,11 +525,11 @@ fn do_cargo_cache_install(test_name: &str) {
         let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
 
         // Choose the cargo command based on the platform //TODO: not yet working.
-        let cargo_cmd = if cfg!(windows) { "check" } else { "build" };
+        let cargo_actor = if cfg!(windows) { "check" } else { "build" };
 
         // Execute the cargo command and capture its output
         let output = Command::new("cargo")
-            .arg(cargo_cmd) // Use "check" on Windows, "build" elsewhere
+            .arg(cargo_actor) // Use "check" on Windows, "build" elsewhere
             .arg("--verbose") // Keep verbose output for detailed information
             .arg("--manifest-path")
             .arg(build_me_absolute.join("Cargo.toml").to_str().unwrap()) // Path to Cargo.toml
@@ -545,15 +545,15 @@ fn do_cargo_cache_install(test_name: &str) {
         // Print output for debugging regardless of success
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        println!("{} stdout for {}:\n{}", cargo_cmd, test_name, stdout);
-        eprintln!("{} stderr for {}:\n{}", cargo_cmd, test_name, stderr);
+        println!("{} stdout for {}:\n{}", cargo_actor, test_name, stdout);
+        eprintln!("{} stderr for {}:\n{}", cargo_actor, test_name, stderr);
 
         // Check if the command failed and handle accordingly
         if !output.status.success() {
-            eprintln!("{}", format!("{} failed for {}:", cargo_cmd, test_name).red());
-            panic!("{} failed for {}", cargo_cmd, test_name); // Panic after printing output
+            eprintln!("{}", format!("{} failed for {}:", cargo_actor, test_name).red());
+            panic!("{} failed for {}", cargo_actor, test_name); // Panic after printing output
         } else {
-            println!("{} succeeded for {}", cargo_cmd, test_name);
+            println!("{} succeeded for {}", cargo_actor, test_name);
         }
     }
 
@@ -752,7 +752,7 @@ mod more_tests {
         };
 
         let result = build_driver_block(&actor);
-        let expected = "cmd.wait_periodic(Duration::from_millis(5000))";
+        let expected = "actor.wait_periodic(Duration::from_millis(5000))";
         assert!(result.contains(expected));
     }
 
@@ -785,7 +785,7 @@ mod more_tests {
         };
 
         let result = build_driver_block(&actor);
-        let expected = "cmd.wait_avail(&mut input_rx,1)";
+        let expected = "actor.wait_avail(&mut input_rx,1)";
         assert!(result.contains(expected));
     }
 

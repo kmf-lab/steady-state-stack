@@ -15,20 +15,20 @@ pub struct Packet {
 }
 
 
-pub async fn run<const GIRTH:usize>(context: SteadyContext
+pub async fn run<const GIRTH:usize>(context: SteadyActorShadow
                                                   , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([], tx.meta_data());
+    let actor = context.into_spotlight([], tx.meta_data());
     if cfg!(not(test)) {
-        internal_behavior(cmd, tx).await
+        internal_behavior(actor, tx).await
     } else {
         let test_echos:Vec<_> = tx.iter().map(|f| (*f).clone()).collect();
         let sims: Vec<&dyn IntoSimRunner<_>> = test_echos.iter().map(|te| te as &dyn IntoSimRunner<_>).collect();
-        cmd.simulated_behavior(sims).await
+        actor.simulated_behavior(sims).await
     }
 }
 
-async fn internal_behavior<const GIRTH:usize,C:SteadyCommander>(mut cmd: C
-                                    , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
+async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
+                                                             , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
 
@@ -38,11 +38,11 @@ async fn internal_behavior<const GIRTH:usize,C:SteadyCommander>(mut cmd: C
     let capacity = tx[0].capacity();
     let limit:usize = capacity/2;
 
-    while cmd.is_running(&mut || tx.mark_closed()) {
+    while actor.is_running(&mut || tx.mark_closed()) {
 
         let _clean = await_for_all!(
-            cmd.wait_periodic(Duration::from_millis(500)),
-            cmd.wait_vacant_bundle(&mut tx, limit, GIRTH)
+            actor.wait_periodic(Duration::from_millis(500)),
+            actor.wait_vacant_bundle(&mut tx, limit, GIRTH)
         );
 
 
@@ -63,9 +63,9 @@ async fn internal_behavior<const GIRTH:usize,C:SteadyCommander>(mut cmd: C
         for i in 0..GIRTH {
             let replace = mem::replace(&mut buffers[i], Vec::with_capacity(limit * 2));
             let iter = replace.into_iter();
-            cmd.send_iter_until_full(&mut tx[i], iter);
+            actor.send_iter_until_full(&mut tx[i], iter);
         }
-        cmd.relay_stats_smartly();
+        actor.relay_stats_smartly();
 
     }
     Ok(())

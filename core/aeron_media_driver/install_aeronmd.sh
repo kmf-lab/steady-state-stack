@@ -9,7 +9,7 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 DOCKER_OS="alpine" # alpine is smaller and recommended, but debian is also available
 DOCKER_FILE="Dockerfile.aeronmd_${DOCKER_OS}"
 DOCKER_IMAGE="aeron-${DOCKER_OS}"
-DOCKER_CMD="/build/binaries/aeronmd"
+DOCKER_actor="/build/binaries/aeronmd"
 DESCRIPTION="steady_state:${SERVICE_NAME}"
 AFTER="docker.service"
 WANTED_BY="multi-user.target"
@@ -79,7 +79,7 @@ After=$AFTER
 ExecStart=/usr/bin/docker run --rm --cpuset-cpus="0-2" --ipc=host --network=host \
  --shm-size=4g --cap-add=sys_nice --cap-add=ipc_lock --cap-add=SYS_ADMIN \
  -v /dev/shm:/dev/shm -u ${USER_ID}:${GROUP_ID} --name $SERVICE_NAME $DOCKER_IMAGE \
- nice -10 $DOCKER_CMD
+ nice -10 $DOCKER_actor
 User=$SERVICE_USER
 Group=$SERVICE_USER
 UMask=0002

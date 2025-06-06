@@ -10,8 +10,8 @@ use aeron::subscription::Subscription;
 use log::{error, trace, warn};
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTxBundle, StreamIngress};
-use crate::{SteadyCommander, SteadyState, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait};
-use crate::commander_context::SteadyContext;
+use crate::{SteadyActor, SteadyState, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait};
+use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::core_tx::TxCore;
 use crate::distributed::polling;
 use crate::simulate_edge::IntoSimRunner;
@@ -21,56 +21,59 @@ pub struct AeronSubscribeSteadyState {
     sub_reg_id: Vec<Option<i64>>,
 }
 
-const ROUND_ROBIN:Option<Duration> = None;// Some(Duration::from_millis(5)); //TODO: hack for testing
+const ROUND_ROBIN:Option<Duration> = None;//Some(Duration::from_millis(5)); //TODO: hack for testing
 
 pub async fn run<const GIRTH: usize>(
-    context: SteadyContext,
+    context: SteadyActorShadow,
     tx: SteadyStreamTxBundle<StreamIngress, GIRTH>,
     aeron_connect: Channel,
     stream_id: i32,
     state: SteadyState<AeronSubscribeSteadyState>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut cmd = context.into_monitor([], tx.control_meta_data());
-    if cmd.use_internal_behavior {
-        while cmd.aeron_media_driver().is_none() {
+    let mut actor = context.into_spotlight([], tx.control_meta_data());
+    if actor.use_internal_behavior {
+        while actor.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
             let mut tx = tx.lock().await;
-            if cmd.is_running(&mut || tx.mark_closed()) {
-                let _ = cmd.wait_periodic(Duration::from_secs(15)).await;
+            if actor.is_running(&mut || tx.mark_closed()) {
+                let _ = actor.wait_periodic(Duration::from_secs(15)).await;
             } else {
                 return Ok(());
             }
         }
-        let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
-        internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await
+        let aeron_media_driver = actor.aeron_media_driver().expect("media driver");
+        internal_behavior(actor, tx, aeron_connect, stream_id, aeron_media_driver, state).await
     } else {
         let te: Vec<_> = tx.iter().map(|f| f.clone()).collect();
         let sims: Vec<_> = te.iter().map(|f| f as &dyn IntoSimRunner<_>).collect();
-        cmd.simulated_behavior(sims).await
+        actor.simulated_behavior(sims).await
     }
 }
 
-async fn poll_aeron_subscription<C: SteadyCommander>(
+async fn poll_aeron_subscription<C: SteadyActor>(
     tx_item: &mut StreamTx<StreamIngress>,
     sub: &mut Subscription,
-    cmd: &mut C
+    actor: &mut C,
+    now: Instant
 
 ) -> Duration {
-    if sub.channel_status() != aeron::concurrent::status::status_indicator_reader::CHANNEL_ENDPOINT_ACTIVE {
-        error!("Subscription {} not active, status: {}", sub.stream_id(), sub.channel_status());
-        return tx_item.max_poll_latency;
-    }
+    //trace!("polling subscription {}", sub.stream_id());
+
 
     let mut input_bytes: u32 = 0;
     let mut input_frags: u32 = 0;
-    let now = Instant::now();
 
     // Poll the subscription
     loop {
         let remaining_poll = if let Some(s) = tx_item.smallest_space() { s } else {
             tx_item.item_channel.capacity()
         };
-        if 0 >= sub.poll(&mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
+        if remaining_poll == 0 {
+            //trace!("No space left in the buffer, exiting tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
+            break;
+        }
+        //trace!("sub.poll remaining_poll: {}", remaining_poll);
+        let got_count = sub.poll(&mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
             let flags = header.flags();
             let is_begin = 0 != (flags & frame_descriptor::BEGIN_FRAG);
             let is_end = 0 != (flags & frame_descriptor::END_FRAG);
@@ -83,18 +86,21 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
             );
             input_bytes += length as u32;
             input_frags += 1;
-        }, remaining_poll as i32) {
+        }, remaining_poll as i32);
+        //trace!("polling max of {} resulted in {}", remaining_poll, got_count);
 
-            
-            
-            break; // No data received, exit loop
+        if got_count<=0 || got_count==(remaining_poll as i32) {
+            break; // No data received, or we have data to pass on so exit loop
         }
         yield_now().await; // Allow more data in this pass
+
     }
+
 
     // Flush ready messages and update state
     if !tx_item.ready_msg_session.is_empty() {
-        let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(cmd);
+        //trace!("flushing ready messages");
+        let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(actor);
 
         // Get current vacant units after flushing
         let current_vacant_items = tx_item.item_channel.shared_vacant_units() as i32;
@@ -109,6 +115,7 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
         tx_item.set_stored_vacant_values(current_vacant_items, current_vacant_bytes);
     }
 
+    //trace!("store rate data");
     // Store input data rate if fragments were received
     if input_frags > 0 {
         let duration = now.duration_since(tx_item.last_input_instant);
@@ -116,22 +123,26 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
         tx_item.last_input_instant = now;
     }
 
+
+
+    //trace!("schedule next poll");
     // Schedule next poll
     let (avg, std) = tx_item.guess_duration_between_arrivals();
     let (min, max) = tx_item.next_poll_bounds();
 
-    let mut scheduler = polling::PollScheduler::new();
+    let mut scheduler = polling::PollScheduler::new(); //too expensive??
     scheduler.set_max_delay_ns(max.as_nanos() as u64);
     scheduler.set_min_delay_ns(min.as_nanos() as u64);
     scheduler.set_std_dev_ns(std.as_nanos() as u64);
     scheduler.set_expected_moment_ns(avg.as_nanos() as u64);
     let waited_ns = now.duration_since(tx_item.last_input_instant).as_nanos() as u64;
     let ns = scheduler.compute_next_delay_ns(waited_ns);
+    trace!("end of poll method {} ",ns);
     Duration::from_nanos(ns)
 }
 
-async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
-    mut cmd: C,
+async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
+    mut actor: C,
     tx: SteadyStreamTxBundle<StreamIngress, GIRTH>,
     aeron_channel: Channel,
     stream_id: i32,
@@ -148,7 +159,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
 
     for f in 0..GIRTH {
         if state.sub_reg_id[f].is_none() {
-            let mut meda_driver = aeron.lock();
+            let meda_driver = aeron.lock();
             let connection_string = aeron_channel.cstring();
             let stream_id = f as i32 + stream_id;
 
@@ -167,33 +178,39 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
     for f in 0..GIRTH {
         if let Some(id) = state.sub_reg_id[f] {
             let mut found = false;
-            while cmd.is_running(&mut || tx_guards.mark_closed()) && !found {
+            while actor.is_running(&mut || tx_guards.mark_closed()) && !found {
                 let sub = aeron.lock().await.find_subscription(id);
                 match sub {
                     Err(e) => {
                         if e.to_string().contains("Awaiting")
                             || e.to_string().contains("not ready") {
                             Delay::new(Duration::from_millis(7)).await;
-                            if cmd.is_liveliness_stop_requested() {
+                            if actor.is_liveliness_stop_requested() {
                                 trace!("stop detected before finding publication");
                                 subs[f] = Err("Shutdown requested while waiting".into());
                                 found = true;
                             }
                         } else {
-                            warn!("Idx: {} Error finding subscription: {:?}, trying registration process again", f, e);
-                            subs[f] = Err(e.into());
-                            let mut meda_driver = aeron.lock();
-                            let connection_string = aeron_channel.cstring();
-                            let stream_id = f as i32 + stream_id;
-                            match meda_driver.await.add_subscription(connection_string, stream_id) {
-                                Ok(reg_id) => {
-                                    state.sub_reg_id[f] = Some(reg_id);
-                                },
-                                Err(e) => {
-                                    warn!("Unable to register subscription: {:?}", e);
-                                }
-                            };
+                            actor.wait(Duration::from_millis(100)); //TODO: wait and wit periodic??
+                            actor.relay_stats();
+
                         }
+
+                        // else { // not sure we need this.
+                        //     warn!("Idx: {} Error finding subscription: {:?}, trying registration process again", f, e);
+                        //     subs[f] = Err(e.into());
+                        //     let meda_driver = aeron.lock();
+                        //     let connection_string = aeron_channel.cstring();
+                        //     let stream_id = f as i32 + stream_id;
+                        //     match meda_driver.await.add_subscription(connection_string, stream_id) {
+                        //         Ok(reg_id) => {
+                        //             state.sub_reg_id[f] = Some(reg_id);
+                        //         },
+                        //         Err(e) => {
+                        //             warn!("Unable to register subscription: {:?}", e);
+                        //         }
+                        //     };
+                        // }
                     },
                     Ok(subscription) => {
                         match Arc::try_unwrap(subscription) {
@@ -222,24 +239,11 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
         }
     }
 
-    trace!("running subscriber '{:?}' all subscriptions in place", cmd.identity());
+    trace!("running subscriber '{:?}' all subscriptions in place", actor.identity());
     let mut now = Instant::now();
     let mut next_times = [now; GIRTH];
 
-    let mut log_count_down = 0;
-    let mut loop_count = 0;
-
-    while cmd.is_running(&mut || tx_guards.mark_closed() ) {
-        // if 0 == (loop_count % 10000) {
-        //     log_count_down = 20;
-        //     error!("---------------------------------------------------------------")
-        // }
-        // loop_count += 1;
-        // let log_this = log_count_down > 0;
-        // if log_this {
-        //     log_count_down -= 1;
-        // }
-
+    while actor.is_running(&mut || tx_guards.mark_closed() ) {
         let mut earliest_idx = 0;
         let mut earliest_time = next_times[0];
         for i in 1..GIRTH {
@@ -250,18 +254,23 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyCommander>(
         }
         if earliest_time > now {
             let time_to_wait = earliest_time - now;
-            cmd.wait_periodic(time_to_wait).await;    //TODO: we need some kind of check in the runtime to ensure cmd is in the stack for await.
-        } 
+            let tx_stream = &mut tx_guards[earliest_idx];
+            if time_to_wait > tx_stream.max_poll_latency {
+                trace!("time to wait is outside of the expected max {:?}",time_to_wait);
+            }
+
+            actor.wait_periodic(time_to_wait).await;    //TODO: we need some kind of check in the runtime to ensure actor is in the stack for await.
+        }
         now = Instant::now();
         {
             let tx_stream = &mut tx_guards[earliest_idx];
-           // error!("AA earliest index selecte {:?} {:?} of {:?}", earliest_idx, tx_stream.shared_vacant_units(), tx_stream.capacity());
 
             let dynamic = match &mut subs[earliest_idx] {
                         Ok(subscription) => {
-                                poll_aeron_subscription(tx_stream, subscription, &mut cmd).await
+                                poll_aeron_subscription(tx_stream, subscription, &mut actor, now).await
                         }
-                        Err(e) => {error!("Internal error, the subscription should be present: {:?}",e);
+                        Err(e) => {
+                            error!("Internal error, the subscription should be present: {:?}",e);
                             //moving this out of the way to avoid checking again
                             Duration::from_secs(i32::MAX as u64)
                         }

@@ -6,27 +6,27 @@ use steady_state::*;
 use steady_state::SteadyRx;
 use crate::actor::data_generator::Packet;
 
-pub async fn run(context: SteadyContext
+pub async fn run(context: SteadyActorShadow
                  , rx: SteadyRx<Packet>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([&rx], []);
+    let actor = context.into_spotlight([&rx], []);
     if cfg!(not(test)) {
-        internal_behavior(cmd, rx).await
+        internal_behavior(actor, rx).await
     } else {
-        cmd.simulated_behavior( vec!(&rx) ).await
+        actor.simulated_behavior( vec!(&rx) ).await
     }
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Packet>) -> Result<(), Box<dyn Error>> {
     
     let mut rx = rx.lock().await;
     let mut _count = 0;
-    while cmd.is_running(&mut || rx.is_closed_and_empty()) {
+    while actor.is_running(&mut || rx.is_closed_and_empty()) {
 
         //we only added two here to force the macro test of two items
-        await_for_any!( cmd.wait_shutdown()
-                       ,cmd.wait_avail(&mut rx, 1));
+        await_for_any!( actor.wait_shutdown()
+                       ,actor.wait_avail(&mut rx, 1));
 
-        while let Some(packet) = cmd.try_take(&mut rx) {
+        while let Some(packet) = actor.try_take(&mut rx) {
             assert_eq!(packet.data.len(), 62);
             _count += 1;
 

@@ -3,39 +3,39 @@ use std::time::Duration;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
-use steady_state::commander::SendOutcome;
+use steady_state::steady_actor::SendOutcome;
 
 use steady_state::SteadyRx;
 use steady_state::SteadyTx;
 use crate::actor::data_generator::Packet;
 
-pub async fn run(context: SteadyContext
+pub async fn run(context: SteadyActorShadow
                  , rx: SteadyRx<Packet>
                  , tx: SteadyTx<Packet>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([&rx], [&tx]);
+    let actor = context.into_spotlight([&rx], [&tx]);
 
-    internal_behavior(cmd, rx, tx).await
+    internal_behavior(actor, rx, tx).await
 }
 
-async fn internal_behavior<C:SteadyCommander>(mut cmd: C, rx: SteadyRx<Packet>, tx: SteadyTx<Packet>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Packet>, tx: SteadyTx<Packet>) -> Result<(), Box<dyn Error>> {
 
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
     let count = rx.capacity().min(tx.capacity()) / 2;
-    while cmd.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
+    while actor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
         let _clean = await_for_all_or_proceed_upon!(
-             cmd.wait_periodic(Duration::from_millis(20))
-            ,cmd.wait_avail(&mut rx,count)
-            ,cmd.wait_vacant(&mut tx,count)
+             actor.wait_periodic(Duration::from_millis(20))
+            ,actor.wait_avail(&mut rx,count)
+            ,actor.wait_vacant(&mut tx,count)
         );
 
-        let count = cmd.avail_units(&mut rx).min(cmd.vacant_units(&mut tx));
+        let count = actor.avail_units(&mut rx).min(actor.vacant_units(&mut tx));
         if count > 0 {
             for _ in 0..count {
-                if let Some(packet) = cmd.try_take(&mut rx) {
-                    match cmd.try_send(&mut tx, packet) {
+                if let Some(packet) = actor.try_take(&mut rx) {
+                    match actor.try_send(&mut tx, packet) {
                         SendOutcome::Success => {}
                         SendOutcome::Blocked(packet) => {error!("Error sending packet: {:?}",packet); break;}
                     }

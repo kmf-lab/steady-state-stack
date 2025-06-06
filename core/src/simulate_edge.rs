@@ -9,7 +9,7 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
-use crate::{SteadyCommander, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamIngress, StreamEgress};
+use crate::{SteadyActor, SteadyRx, SteadyStreamRx, SteadyStreamTx, SteadyTx, StreamIngress, StreamEgress};
 use crate::graph_testing::SideChannelResponder;
 use crate::i;
 use log::*;
@@ -23,13 +23,13 @@ pub enum SimStepResult {
 }
 
 /// A function type that executes a single step of simulation work.
-pub type SimRunner<C: SteadyCommander> = Box<
-    dyn Fn(SideChannelResponder, usize, &mut C) -> Pin<Box<dyn Future<Output = Result<SimStepResult, Box<dyn Error>>>>>
+pub type SimRunner = Box<
+    dyn Fn(SideChannelResponder, usize, &mut dyn SteadyActor) -> Pin<Box<dyn Future<Output = Result<SimStepResult, Box<dyn Error>>>>>
 >;
 
 /// Converts components into a simulation runner function.
-pub trait IntoSimRunner<C: SteadyCommander + 'static> {
-    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>;
+pub trait IntoSimRunner<C: SteadyActor + 'static> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>;
 }
 
 /// Tracks the state of an individual simulation runner for timeout and error handling.
@@ -70,15 +70,15 @@ impl SimulationState {
 impl<T, C> IntoSimRunner<C> for SteadyRx<T>
 where
     T: 'static + Debug + Eq + Send + Sync,
-    C: SteadyCommander + 'static,
+    C: SteadyActor + 'static,
 {
-    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
         let value = this.clone();
                 match value.try_lock() {
                     Some(mut guard) => {
-                        if cmd.is_running(&mut || i!(0==responder.avail()) && i!(guard.is_closed())) {  // do not care if guard is empty!
-                            responder.simulate_wait_for(&mut guard, cmd, index, run_duration)
+                        if actor.is_running(&mut || i!(0==responder.avail()) && i!(guard.is_closed())) {  // do not care if guard is empty!
+                            responder.simulate_wait_for(&mut guard, actor, index, run_duration)
                         } else {
                             Ok(SimStepResult::Finished)
                         }
@@ -93,14 +93,14 @@ where
 
 impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamIngress>
 where
-    C: SteadyCommander + 'static,
+    C: SteadyActor + 'static,
 {
-    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
                 let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
-                        if cmd.is_running(&mut || i!(0==responder.avail()) && i!(guard.is_closed())) {  // do not care if guard is empty!
-                            responder.simulate_wait_for(&mut guard, cmd, index, run_duration)
+                        if actor.is_running(&mut || i!(0==responder.avail()) && i!(guard.is_closed())) {  // do not care if guard is empty!
+                            responder.simulate_wait_for(&mut guard, actor, index, run_duration)
                         } else {
                             Ok(SimStepResult::Finished)
                         }
@@ -115,14 +115,14 @@ where
 
 impl<C> IntoSimRunner<C> for SteadyStreamRx<StreamEgress>
 where
-    C: SteadyCommander + 'static,
+    C: SteadyActor + 'static,
 {
-    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
-                        if cmd.is_running(&mut || i!(0==responder.avail()) && i!(guard.is_closed())) {  // do not care if guard is empty!
-                            responder.simulate_wait_for(&mut guard, cmd, index, run_duration)
+                        if actor.is_running(&mut || i!(0==responder.avail()) && i!(guard.is_closed())) {  // do not care if guard is empty!
+                            responder.simulate_wait_for(&mut guard, actor, index, run_duration)
                         } else {
                             Ok(SimStepResult::Finished)
                         }
@@ -138,14 +138,14 @@ where
 impl<T, C> IntoSimRunner<C> for SteadyTx<T>
 where
     T: 'static + Debug + Clone + Send + Sync,
-    C: SteadyCommander + 'static,
+    C: SteadyActor + 'static,
 {
-    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
-                        if cmd.is_running(&mut || guard.mark_closed()) {
-                            responder.simulate_direction(&mut guard, cmd, index)
+                        if actor.is_running(&mut || guard.mark_closed()) {
+                            responder.simulate_direction(&mut guard, actor, index)
                         } else {
                             Ok(SimStepResult::Finished)
                         }
@@ -159,14 +159,14 @@ where
 
 impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamIngress>
 where
-    C: SteadyCommander + 'static,
+    C: SteadyActor + 'static,
 {
-    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
-                        if cmd.is_running(&mut || guard.mark_closed()) {
-                            responder.simulate_direction(&mut guard, cmd, index)
+                        if actor.is_running(&mut || guard.mark_closed()) {
+                            responder.simulate_direction(&mut guard, actor, index)
                         } else {
                             Ok(SimStepResult::Finished)
                         }
@@ -178,14 +178,14 @@ where
 
 impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamEgress>
 where
-    C: SteadyCommander + 'static,
+    C: SteadyActor + 'static,
 {
-    fn run(&self, responder: &SideChannelResponder, index: usize, cmd: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
-                        if cmd.is_running(&mut || guard.mark_closed()) {
-                            responder.simulate_direction(&mut guard, cmd, index)
+                        if actor.is_running(&mut || guard.mark_closed()) {
+                            responder.simulate_direction(&mut guard, actor, index)
                         } else {
                             Ok(SimStepResult::Finished)
                         }
@@ -202,11 +202,11 @@ where
 ///
 /// Uses round-robin scheduling to ensure fairness, with per-runner state tracking
 /// for timeouts and detailed error reporting.
-pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
-    cmd: &mut C,
+pub(crate) async fn simulated_behavior<C: SteadyActor + 'static>(
+    actor: &mut C,
     sims: Vec<&dyn IntoSimRunner<C>>,
 ) -> Result<(), Box<dyn Error>> {
-    let responder = cmd.sidechannel_responder().ok_or("No responder")?;
+    let responder = actor.sidechannel_responder().ok_or("No responder")?;
 
     let mut simulation_states: Vec<SimulationState> = (0..sims.len())
         .map(|i| SimulationState::new(format!("sim_{}", i)))
@@ -215,15 +215,15 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
     let mut active_simulations: Vec<bool> = vec![true; sims.len()];
     let mut active_count = sims.len();
 
-    trace!("Starting simulation with {} runners for {:?}", sims.len(), cmd.identity());
+    trace!("Starting simulation with {} runners for {:?}", sims.len(), actor.identity());
     let now = Instant::now();
 
     //NOTE: each runner detects shutdown and closes its outgoign connections as needed.
-    while cmd.is_running(&mut || i!(0==active_count)) {
+    while actor.is_running(&mut || i!(0==active_count)) {
         let mut any_work_done = false;
 
-        cmd.call_async(responder.wait_avail()).await;
-        //trace!("is running for {:?}", cmd.identity());
+        actor.call_async(responder.wait_avail()).await;
+        //trace!("is running for {:?}", actor.identity());
         for (index, sim) in sims.iter().enumerate() {
             if !active_simulations[index] {
                 continue;
@@ -231,7 +231,7 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
 
             let run_duration = now.elapsed();
 
-            match sim.run(&responder, index, cmd, run_duration) {
+            match sim.run(&responder, index, actor, run_duration) {
                 Ok(step_result) => {
                     if matches!(step_result, SimStepResult::DidWork) {
                         any_work_done = true;
@@ -246,7 +246,7 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
                             //trace!("Simulation {} completed, new count {}", index, active_count);
                         }
                         Err(timeout_error) => {
-                            cmd.request_shutdown().await;
+                            actor.request_shutdown().await;
                             active_simulations[index] = false;
                             active_count = active_count.saturating_sub(1);
                             error!("Simulation {} timed out: {} new count {}", index, timeout_error, active_count);
@@ -256,8 +256,9 @@ pub(crate) async fn simulated_behavior<C: SteadyCommander + 'static>(
                 Err(sim_error) => {
                     // trace!("Simulation {} failed: {}", index, sim_error);
                     active_simulations[index] = false;
-                    active_count = active_count.saturating_sub(1); // Prevent underflow
-                    cmd.request_shutdown().await;
+                    //we return error so no need to update count
+                    // active_count = active_count.saturating_sub(1); // Prevent underflow
+                    actor.request_shutdown().await;
                     return Err(format!("Simulation {} failed: {}", index, sim_error).into());
                 }
             }

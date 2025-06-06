@@ -5,7 +5,7 @@
 //! `aeron_subscribe`.
 
 use crate::core_tx::TxCore;
-use crate::{channel_builder::ChannelBuilder, Rx, SteadyCommander, Tx};
+use crate::{channel_builder::ChannelBuilder, Rx, SteadyActor, Tx};
 use ahash::AHashMap;
 use async_ringbuf::wrap::AsyncWrap;
 use async_ringbuf::AsyncRb;
@@ -564,10 +564,10 @@ impl<T: StreamItem> StreamTx<T> {
     }
 
     //call this when we have no data in from poll to clear out anything waiting.
-    // pub(crate) fn fragment_flush_all<C: SteadyCommander>(&mut self, cmd: &mut C) {
+    // pub(crate) fn fragment_flush_all<C: SteadyCommander>(&mut self, actor: &mut C) {
     //     self.ready_msg_session.clear();
     //     for de in self.defrag.values_mut().filter(|f| !f.ringbuffer_items.0.is_empty()) {
-    //                  if let (msgs,bytes,Some(more_session_id)) = cmd.flush_defrag_messages( &mut self.item_channel
+    //                  if let (msgs,bytes,Some(more_session_id)) = actor.flush_defrag_messages( &mut self.item_channel
     //                                                             , &mut self.payload_channel
     //                                                             , de) {
     //                      self.ready_msg_session.push_back(more_session_id);
@@ -575,7 +575,7 @@ impl<T: StreamItem> StreamTx<T> {
     //     }
     // }
 
-    pub(crate) fn fragment_flush_ready<C: SteadyCommander>(&mut self, cmd: &mut C) -> (u32,u32) {
+    pub(crate) fn fragment_flush_ready<C: SteadyActor>(&mut self, actor: &mut C) -> (u32, u32) {
         let mut total_messages = 0;
         let mut total_bytes = 0;
         let mut to_consume = self.ready_msg_session.len();
@@ -583,7 +583,7 @@ impl<T: StreamItem> StreamTx<T> {
             to_consume -= 1;
             if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
                 //how do we know how much we wrote??
-                if let (msgs,bytes,Some(needs_more_work_for_session_id)) = cmd.flush_defrag_messages(&mut self.item_channel,
+                if let (msgs,bytes,Some(needs_more_work_for_session_id)) = actor.flush_defrag_messages(&mut self.item_channel,
                                                                    &mut self.payload_channel,
                                                                    defrag_entry) {
                     total_messages += msgs;
@@ -710,9 +710,9 @@ impl<T: StreamItem> StreamRx<T> {
             && self.payload_channel.is_empty()
     }
 
-    pub(crate) fn consume_messages<C: SteadyCommander>(
+    pub(crate) fn consume_messages<C: SteadyActor>(
         &mut self,
-        cmd: &mut C,
+        actor: &mut C,
         byte_limit: usize,
         mut fun: impl FnMut(&mut [u8], &mut [u8]) -> bool,
     ) {
@@ -740,9 +740,9 @@ impl<T: StreamItem> StreamRx<T> {
             // Apply the provided function to the payload slices
             if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
                 // If the limit is reached or the function returns false, advance the read indices and exit
-                let x = cmd.advance_read_index(&mut self.payload_channel, active_data);
+                let x = actor.advance_read_index(&mut self.payload_channel, active_data);
                 debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
-                let x = cmd.advance_read_index(&mut self.item_channel, active_items);
+                let x = actor.advance_read_index(&mut self.item_channel, active_items);
                 debug_assert_eq!(x, active_items, "Item channel advance mismatch");
                 return;
             }
@@ -766,9 +766,9 @@ impl<T: StreamItem> StreamRx<T> {
             // Apply the provided function to the payload slices
             if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
                 // If the limit is reached or the function returns false, advance the read indices and exit
-                let x = cmd.advance_read_index(&mut self.payload_channel, active_data);
+                let x = actor.advance_read_index(&mut self.payload_channel, active_data);
                 debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
-                let x = cmd.advance_read_index(&mut self.item_channel, active_items);
+                let x = actor.advance_read_index(&mut self.item_channel, active_items);
                 debug_assert_eq!(x, active_items, "Item channel advance mismatch");
                 return;
             }
@@ -780,12 +780,12 @@ impl<T: StreamItem> StreamRx<T> {
 
         // !("we made it to the end with {}",active_items);
         // If all items are processed successfully, advance the read indices
-        let x = cmd.advance_read_index(&mut self.payload_channel, active_data);
+        let x = actor.advance_read_index(&mut self.payload_channel, active_data);
         debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
-        let x = cmd.advance_read_index(&mut self.item_channel, active_items);
+        let x = actor.advance_read_index(&mut self.item_channel, active_items);
         debug_assert_eq!(x, active_items, "Item channel advance mismatch");
 
-        let avail = self.item_channel.shared_avail_units();
+        //let avail = self.item_channel.shared_avail_units();
        //warn!("published {:?} on {:?} avail {:?}",active_items, self.item_channel.channel_meta_data.meta_data.id, avail);
 
     }

@@ -36,7 +36,6 @@ impl AqueTech {
         match self {
             AqueTech::None => "none",
             AqueTech::Aeron(_, _) => "Aeron",
-            _ => "Unknown",
         }
     }
 
@@ -52,7 +51,6 @@ impl AqueTech {
             AqueTech::Aeron(channel, _) => {
                 channel.cstring().into_string().expect("Valid CString conversion")
             }
-            _ => "Unknown".to_string(),
         }
     }
 

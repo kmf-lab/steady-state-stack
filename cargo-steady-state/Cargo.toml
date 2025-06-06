@@ -13,7 +13,8 @@ log = "0.4.22"
 dot-parser = "0.3.3"
 askama = "0.12.1"
 num-traits = "0.2.19"
-clap = { version = "4.5.31", features = ["derive"] }  # Use clap with derive feature
+clap = { version = "4.5.31", features = ["derive"] }
+async-std = "1.13.1"  # Use clap with derive feature
 
 [dev-dependencies]
 colored = "3.0.0"

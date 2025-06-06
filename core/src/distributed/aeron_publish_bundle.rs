@@ -7,9 +7,9 @@ use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamRxBundleTrait, StreamEgress};
-use crate::{SteadyCommander, SteadyState};
+use crate::{SteadyActor, SteadyState};
 use crate::*;
-use crate::commander_context::SteadyContext;
+use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::simulate_edge::IntoSimRunner;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
@@ -20,42 +20,42 @@ pub struct AeronPublishSteadyState {
     pub(crate) _items_taken: usize,
 }
 
-pub async fn run<const GIRTH:usize,>(context: SteadyContext
+pub async fn run<const GIRTH:usize,>(context: SteadyActorShadow
                                      , rx: SteadyStreamRxBundle<StreamEgress,GIRTH>
                                      , aeron_connect: Channel
                                      , stream_id: i32
                                      , state: SteadyState<AeronPublishSteadyState>
                                      ) -> Result<(), Box<dyn Error>> {
-    let mut cmd = context.into_monitor( rx.control_meta_data(), []);
+    let mut actor = context.into_spotlight(rx.control_meta_data(), []);
 
-    if cmd.use_internal_behavior {
-        while cmd.aeron_media_driver().is_none() {
+    if actor.use_internal_behavior {
+        while actor.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
             let mut rx = rx.lock().await;
-            if cmd.is_running( &mut || rx.is_closed_and_empty() ) {
-                let _ = cmd.wait_periodic(Duration::from_secs(15)).await;
+            if actor.is_running( &mut || rx.is_closed_and_empty() ) {
+                let _ = actor.wait_periodic(Duration::from_secs(15)).await;
             } else {
                 return Ok(());
             }
         }
-        let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
-        return internal_behavior(cmd, rx, aeron_connect, stream_id, aeron_media_driver, state).await;
+        let aeron_media_driver = actor.aeron_media_driver().expect("media driver");
+        return internal_behavior(actor, rx, aeron_connect, stream_id, aeron_media_driver, state).await;
     }
     let te:Vec<_> = rx.iter()
         .map(|f| f.clone() ).collect();
     let sims:Vec<_> = te.iter()
         .map(|f| f as &dyn IntoSimRunner<_>).collect();
-    cmd.simulated_behavior(sims).await
+    actor.simulated_behavior(sims).await
 }
 
 
 
-async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
-                                                                 , rx: SteadyStreamRxBundle<StreamEgress,GIRTH>
-                                                                 , aeron_channel: Channel
-                                                                 , stream_id: i32
-                                                                 , aeron:Arc<futures_util::lock::Mutex<Aeron>>
-                                                                 , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
+                                                             , rx: SteadyStreamRxBundle<StreamEgress,GIRTH>
+                                                             , aeron_channel: Channel
+                                                             , stream_id: i32
+                                                             , aeron:Arc<futures_util::lock::Mutex<Aeron>>
+                                                             , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
 
     let mut rx = rx.lock().await;
     let mut state = state.lock(|| AeronPublishSteadyState::default()).await;
@@ -89,7 +89,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
         for f in 0..GIRTH {
             if let Some(id) = state.pub_reg_id[f] {
                 let mut found = false;
-                while cmd.is_running(&mut || rx.is_closed_and_empty()) && !found {
+                while actor.is_running(&mut || rx.is_closed_and_empty()) && !found {
                     let ex_pub = {
                         let mut aeron = aeron.lock().await;
                         aeron.find_exclusive_publication(id)
@@ -100,7 +100,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                 || e.to_string().contains("not ready") {
                                 //important that we do not poll fast while driver is setting up
                                 Delay::new(Duration::from_millis(4)).await;
-                                if cmd.is_liveliness_stop_requested() {
+                                if actor.is_liveliness_stop_requested() {
                                     //trace!("stop detected before finding publication");
                                     //we are done, shutdown happened before we could start up.
                                     pubs[f] = Err("Shutdown requested while waiting".into());
@@ -116,7 +116,9 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                             match Arc::try_unwrap(publication) {
                                 Ok(mutex) => {   // Take ownership of the inner Mutex
                                     match mutex.into_inner() {
+
                                         Ok(publication) => {
+
                                             pubs[f] = Ok(publication);
                                             found = true;
                                         }
@@ -133,7 +135,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             }
         }
 
-        trace!("running publish '{:?}' all publications in place",cmd.identity());
+        trace!("running publish '{:?}' all publications in place",actor.identity());
 
         let wait_for = 1;//(512*1024).min(rx.capacity());
         let in_channels = 1;
@@ -142,18 +144,25 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
     //TODO: can we poll less if we see they are not flushing?
     
     //TODO: not good enought as we still loose th elast message, we reuqire waiting for subs to let go?
-    
-        let mut all_streams_flushed = false;
-        while cmd.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
+
+    let mut a_counters = [0;GIRTH];
+    let mut b_counters = [0;GIRTH];
+    let mut c_counters = [0;GIRTH];
+    let mut d_counters = [0;GIRTH];
+
+
+
+    let mut all_streams_flushed = false;
+        while actor.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
 
             let _clean = await_for_any!(
-                           cmd.wait_periodic(Duration::from_millis(16))
-                          ,cmd.wait_avail_bundle(&mut rx, wait_for, in_channels)
+                           actor.wait_periodic(Duration::from_millis(16))
+                          ,actor.wait_avail_bundle(&mut rx, wait_for, in_channels)
                          );
 
             let mut flushed_count = 0;
-            for i in 0..GIRTH {
-                match &mut pubs[i] {
+            for index in 0..GIRTH {
+                match &mut pubs[index] {
                     Ok(p) => {
                         //trace!("AA {} stream:{}",i, p.stream_id());
 
@@ -162,12 +171,16 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                             let mut count_bytes = 0;
                             let vacant_aeron_bytes = p.available_window().unwrap_or(0);
                             if vacant_aeron_bytes > 0 {
-                                rx[i].consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
+                                rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len > 0);
                                     let response = if slice2.is_empty() {
+                                        a_counters[index] += 1;
+
                                         p.offer_part(AtomicBuffer::wrap_slice(&mut slice1), 0, msg_len as Index)
                                     } else {  // TODO: p.try_claim() is probably a beter  way to move our datarather than AtomicBuffer usage..
+                                        b_counters[index] += 1;
+
                                         let a_len = msg_len.min(slice1.len());
                                         let remaining_read = msg_len - a_len;
                                         let aligned_buffer = AlignedBuffer::with_capacity(msg_len as Index);
@@ -181,8 +194,9 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                     };
                                     match response {
                                         Ok(value) => {
+                                            c_counters[index] += 1;
                                             if value>=0 {
-                                                last_position[i]= value;
+                                                last_position[index]= value;
                                                 count_done += 1;
                                                 count_bytes += msg_len;
                                                 true
@@ -190,7 +204,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
                                                 false
                                             }
                                         }
-                                        Err(aeron_error) => {
+                                        Err(_aeron_error) => {
+                                            d_counters[index] += 1;
                                             false
                                         }
                                     }
@@ -202,11 +217,23 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
 
                         }
 
+
                         if let Ok(position) = p.position() {
-                            if last_position[i] <= position {
-                                flushed_count += 1;
-                            };
+
+                            if rx[index].is_closed_and_empty() {
+                                if let Ok(position) = p.position() {
+                                    if position >= last_position[index] {
+                                        error!("\nA totals {:?} \nB totals {:?} \nC totals {:?}\nD totals {:?}",a_counters,b_counters,c_counters,d_counters);
+
+                                        if !p.is_connected() { // Wait until subscribers disconnect
+                                            flushed_count += 1;
+                                        }
+                                    }
+                                }
+                            }
+
                         } else {
+                            error!("error getting position");
                             //is closed
                             flushed_count +=1; //not sure...
                         }
@@ -219,6 +246,18 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyCommander>(mut cmd: C
             }
             all_streams_flushed = GIRTH == flushed_count;
          }
+
+    // After loop, ensure all messages are delivered
+    for index in 0..GIRTH {
+        if let Ok(p) = &mut pubs[index] {
+            while p.position().unwrap_or(0) < last_position[index] || p.is_connected() {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            p.close(); // Explicitly close the publication
+        }
+    } // TODO: if this does not work then we need a zombie check
+
+
     Ok(())
 }
 
@@ -254,10 +293,10 @@ pub(crate) mod aeron_publish_bundle_tests {
     // sudo ss -tulnpe | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
     // sudo ss -m -p | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
 
-    pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyContext
+    pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyActorShadow
                                                      , tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
-        let mut cmd = context.into_monitor([], tx.control_meta_data());
+        let mut actor = context.into_spotlight([], tx.control_meta_data());
         let mut tx = tx.lock().await;
 
         let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -276,28 +315,28 @@ pub(crate) mod aeron_publish_bundle_tests {
         let all_bytes: Vec<u8> = data.iter().flatten().map(|f| *f).collect();
 
         let mut sent_count = 0;
-        while cmd.is_running(&mut || tx.mark_closed()) {
+        while actor.is_running(&mut || tx.mark_closed()) {
 
             //waiting for at least 1 channel in the stream has room for 2 made of 6 bytes
             let vacant_items = 200000;
             let data_size = 8;
             let vacant_bytes = vacant_items * data_size;
 
-            let _clean = await_for_all!(cmd.wait_vacant_bundle(&mut tx
+            let _clean = await_for_all!(actor.wait_vacant_bundle(&mut tx
                                        , (vacant_items, vacant_bytes), 1));
 
             let mut remaining = TEST_ITEMS;
             let idx:usize = (0 - STREAM_ID) as usize;
-            while remaining > 0 && cmd.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
+            while remaining > 0 && actor.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
 
-                //cmd.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
-                cmd.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
-                cmd.send_slice_until_full(&mut tx[idx].item_channel, &items);
+                //actor.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
+                actor.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
+                actor.send_slice_until_full(&mut tx[idx].item_channel, &items);
 
                 // this old solution worked but consumed more core
                 // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
-                //     let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data1);
-                //     let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data2);
+                //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data1);
+                //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data2);
                 // }
                 sent_count += BATCH_SIZE;
                 remaining -= BATCH_SIZE
@@ -314,10 +353,10 @@ pub(crate) mod aeron_publish_bundle_tests {
         Ok(())
     }
 
-    pub async fn mock_receiver_run<const GIRTH:usize>(context: SteadyContext
+    pub async fn mock_receiver_run<const GIRTH:usize>(context: SteadyActorShadow
                                                       , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
-        let mut cmd = context.into_monitor(rx.control_meta_data(), []);
+        let mut actor = context.into_spotlight(rx.control_meta_data(), []);
         let mut rx = rx.lock().await;
 
         let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
@@ -333,32 +372,32 @@ pub(crate) mod aeron_publish_bundle_tests {
         // });
 
         let mut received_count = 0;
-        while cmd.is_running(&mut || rx.is_closed_and_empty()) {
+        while actor.is_running(&mut || rx.is_closed_and_empty()) {
 
-            let _clean = await_for_all!(cmd.wait_avail_bundle(&mut rx, LEN, 1));
+            let _clean = await_for_all!(actor.wait_avail_bundle(&mut rx, LEN, 1));
 
             //we waited above for 2 messages so we know there are 2 to consume
             //reading from a single channel with a single stream id
 
-            //let taken = cmd.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
+            //let taken = actor.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
 
-            let bytes = cmd.avail_units(&mut rx[0].payload_channel);
-            cmd.advance_read_index(&mut rx[0].payload_channel, bytes);
-            let taken = cmd.avail_units(&mut rx[0].item_channel);
-            cmd.advance_read_index(&mut rx[0].item_channel, taken);
+            let bytes = actor.avail_units(&mut rx[0].payload_channel);
+            actor.advance_read_index(&mut rx[0].payload_channel, bytes);
+            let taken = actor.avail_units(&mut rx[0].item_channel);
+            actor.advance_read_index(&mut rx[0].item_channel, taken);
 
 
-            //  let avail = cmd.avail_units(&mut rx[0].item_channel);
+            //  let avail = actor.avail_units(&mut rx[0].item_channel);
 
            // TODO: need a way to test this..
 
 
             // for i in 0..(avail>>1) {
-            //     if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
+            //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
             //         //warn!("test data {:?}",d.payload);
             //         debug_assert_eq!(&*data1, &*d.payload);
             //     }
-            //     if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
+            //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
             //         //warn!("test data {:?}",d.payload);
             //         debug_assert_eq!(&*data2, &*d.payload);
             //     }
@@ -366,12 +405,12 @@ pub(crate) mod aeron_publish_bundle_tests {
 
 
             received_count += taken;
-            //cmd.relay_stats_smartly(); //should not be needed.
+            //actor.relay_stats_smartly(); //should not be needed.
 
             //here we request shutdown but we only leave after our upstream actors are done
             if received_count >= (TEST_ITEMS-taken) {
                 error!("stop requested");
-                cmd.request_shutdown().await;
+                actor.request_shutdown().await;
                 return Ok(());
             }
         }

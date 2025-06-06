@@ -68,7 +68,7 @@ pub(crate) mod core_exec {
     /// `async-std` doesn’t use `nuclei`’s io_uring-based proactor model. Includes panic handling for robustness.
     pub(crate) fn init(enable_driver: bool, _proactor_config: ProactorConfig, _queue_length: u32) {
         INIT.call_once(|| {
-            //if enable_driver {
+            if enable_driver {
                 trace!("Starting async-std driver");
                 thread::spawn(|| {
                     loop {
@@ -83,7 +83,7 @@ pub(crate) mod core_exec {
                         }
                     }
                 });
-           // }
+            }
         });
     }
 }

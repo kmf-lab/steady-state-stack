@@ -7,9 +7,9 @@ use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamRx, StreamEgress};
-use crate::{SteadyCommander, SteadyState};
+use crate::{SteadyActor, SteadyState};
 use crate::*;
-use crate::commander_context::SteadyContext;
+use crate::steady_actor_shadow::SteadyActorShadow;
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
 
@@ -19,38 +19,38 @@ pub struct AeronPublishSteadyState {
     pub(crate) items_taken: usize,
 }
 
-pub async fn run(context: SteadyContext
+pub async fn run(context: SteadyActorShadow
              , rx: SteadyStreamRx<StreamEgress>
              , aeron_connect: Channel
              , stream_id: i32
              , state: SteadyState<AeronPublishSteadyState>
              ) -> Result<(), Box<dyn Error>> {
 
-    let mut cmd = context.into_monitor([&rx], []);
-    if cmd.use_internal_behavior {
-        while cmd.aeron_media_driver().is_none() {
+    let mut actor = context.into_spotlight([&rx], []);
+    if actor.use_internal_behavior {
+        while actor.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
             let mut rx = rx.lock().await;
-            if cmd.is_running( &mut || rx.is_closed_and_empty() ) {
-                let _ = cmd.wait_periodic(Duration::from_secs(15)).await;
+            if actor.is_running( &mut || rx.is_closed_and_empty() ) {
+                let _ = actor.wait_periodic(Duration::from_secs(15)).await;
             } else {
                 return Ok(());
             }
         }
-        let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
-        internal_behavior(cmd, rx, aeron_connect, stream_id, aeron_media_driver, state).await
+        let aeron_media_driver = actor.aeron_media_driver().expect("media driver");
+        internal_behavior(actor, rx, aeron_connect, stream_id, aeron_media_driver, state).await
     } else {
-        cmd.simulated_behavior(vec!(&rx)).await
+        actor.simulated_behavior(vec!(&rx)).await
     }
 
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C
-                                                                 , rx: SteadyStreamRx<StreamEgress>
-                                                                 , aeron_channel: Channel
-                                                                 , stream_id: i32
-                                                                 , aeron:Arc<futures_util::lock::Mutex<Aeron>>
-                                                                 , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<C: SteadyActor>(mut actor: C
+                                           , rx: SteadyStreamRx<StreamEgress>
+                                           , aeron_channel: Channel
+                                           , stream_id: i32
+                                           , aeron:Arc<futures_util::lock::Mutex<Aeron>>
+                                           , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
     let is_shared_connection = false; //TODO: perhaps channel should define this??
 
     let mut rx = rx.lock().await;
@@ -75,7 +75,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         let mut my_pub = Err("");
                 if let Some(id) = state.pub_reg_id {
                     let mut found = false;
-                    while cmd.is_running(&mut || rx.is_closed_and_empty() && (is_shared_connection || close_areon(&my_pub)) ) && !found {
+                    while actor.is_running(&mut || rx.is_closed_and_empty() && (is_shared_connection || close_areon(&my_pub)) ) && !found {
                            let ex_pub = {
                                     let mut aeron = aeron.lock().await; //other actors need this so jit
                                     aeron.find_exclusive_publication(id)
@@ -86,7 +86,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                     || e.to_string().contains("not ready") {
                                     //important that we do not poll fast while driver is setting up
                                     Delay::new(Duration::from_millis(4)).await;
-                                    if cmd.is_liveliness_stop_requested() {
+                                    if actor.is_liveliness_stop_requested() {
                                         //trace!("stop detected before finding publication");
                                         //we are done, shutdown happened before we could start up.
                                         my_pub = Err("Shutdown requested while waiting");
@@ -120,14 +120,14 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                     return Err("Check if Media Driver is running.".into());
                 }
 
-        warn!("running publish '{:?}' all publications in place",cmd.identity());
+        warn!("running publish '{:?}' all publications in place",actor.identity());
         let capacity:usize = rx.capacity().into();
         let wait_for = (512*1024).min(capacity);
 
-        while cmd.is_running(&mut || rx.is_closed_and_empty() && (is_shared_connection || close_areon(&my_pub)) ) {
+        while actor.is_running(&mut || rx.is_closed_and_empty() && (is_shared_connection || close_areon(&my_pub)) ) {
     
-            let _clean = await_for_any!(cmd.wait_periodic(Duration::from_millis(10))
-                                           ,cmd.wait_avail(&mut rx, wait_for)
+            let _clean = await_for_any!(actor.wait_periodic(Duration::from_millis(10))
+                                           ,actor.wait_avail(&mut rx, wait_for)
                            );
 
 
@@ -147,7 +147,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                             //TODO: if this is zero from the call then there are no subscribers so just hold back.
 
                             //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
-                                rx.consume_messages(&mut cmd, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
+                                rx.consume_messages(&mut actor, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len>0);
                                     let response = if slice2.len() == 0 {
@@ -222,10 +222,10 @@ pub(crate) mod aeron_tests {
     // sudo ss -tulnpe | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
     // sudo ss -m -p | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
 
-    pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyContext
+    pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyActorShadow
                                                      , tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
-        let mut cmd = context.into_monitor([], tx.control_meta_data());
+        let mut actor = context.into_spotlight([], tx.control_meta_data());
         let mut tx = tx.lock().await;
 
         let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -244,28 +244,28 @@ pub(crate) mod aeron_tests {
         let all_bytes: Vec<u8> = data.iter().flatten().map(|f| *f).collect();
 
         let mut sent_count = 0;
-        while cmd.is_running(&mut || tx.mark_closed()) {
+        while actor.is_running(&mut || tx.mark_closed()) {
 
             //waiting for at least 1 channel in the stream has room for 2 made of 6 bytes
             let vacant_items = 200000;
             let data_size = 8;
             let vacant_bytes = vacant_items * data_size;
 
-            let _clean = await_for_all!(cmd.wait_vacant_bundle(&mut tx
+            let _clean = await_for_all!(actor.wait_vacant_bundle(&mut tx
                                        , (vacant_items, vacant_bytes), 1));
 
             let mut remaining = TEST_ITEMS;
             let idx:usize = (11 - STREAM_ID) as usize;
-            while remaining > 0 && cmd.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
+            while remaining > 0 && actor.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
 
-                //cmd.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
-                cmd.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
-                cmd.send_slice_until_full(&mut tx[idx].item_channel, &items);
+                //actor.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
+                actor.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
+                actor.send_slice_until_full(&mut tx[idx].item_channel, &items);
 
                 // this old solution worked but consumed more core
                 // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
-                //     let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data1);
-                //     let _result = cmd.try_stream_send(&mut tx, STREAM_ID, &data2);
+                //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data1);
+                //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data2);
                 // }
                 sent_count += BATCH_SIZE;
                 remaining -= BATCH_SIZE
@@ -282,10 +282,10 @@ pub(crate) mod aeron_tests {
         Ok(())
     }
 
-    async fn mock_receiver_run<const GIRTH:usize>(context: SteadyContext
+    async fn mock_receiver_run<const GIRTH:usize>(context: SteadyActorShadow
                                                       , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
-        let mut cmd = context.into_monitor(rx.control_meta_data(), []);
+        let mut actor = context.into_spotlight(rx.control_meta_data(), []);
         let mut rx = rx.lock().await;
 
         let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
@@ -301,32 +301,32 @@ pub(crate) mod aeron_tests {
         // });
         trace!("started mock receiver------");
         let mut received_count = 0;
-        while cmd.is_running(&mut || rx.is_closed_and_empty()) {
+        while actor.is_running(&mut || rx.is_closed_and_empty()) {
 
-            let _clean = await_for_all!(cmd.wait_avail_bundle(&mut rx, LEN, 1));
+            let _clean = await_for_all!(actor.wait_avail_bundle(&mut rx, LEN, 1));
 
             //we waited above for 2 messages so we know there are 2 to consume
             //reading from a single channel with a single stream id
 
-            //let taken = cmd.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
+            //let taken = actor.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
 
-            let bytes = cmd.avail_units(&mut rx[0].payload_channel);
-            cmd.advance_read_index(&mut rx[0].payload_channel, bytes);
-            let taken = cmd.avail_units(&mut rx[0].item_channel);
-            cmd.advance_read_index(&mut rx[0].item_channel, taken);
+            let bytes = actor.avail_units(&mut rx[0].payload_channel);
+            actor.advance_read_index(&mut rx[0].payload_channel, bytes);
+            let taken = actor.avail_units(&mut rx[0].item_channel);
+            actor.advance_read_index(&mut rx[0].item_channel, taken);
 
 
-            //  let avail = cmd.avail_units(&mut rx[0].item_channel);
+            //  let avail = actor.avail_units(&mut rx[0].item_channel);
 
            // TODO: need a way to test this..
 
 
             // for i in 0..(avail>>1) {
-            //     if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
+            //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
             //         //warn!("test data {:?}",d.payload);
             //         debug_assert_eq!(&*data1, &*d.payload);
             //     }
-            //     if let Some(d) = cmd.try_take_stream(&mut rx[0]) {
+            //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
             //         //warn!("test data {:?}",d.payload);
             //         debug_assert_eq!(&*data2, &*d.payload);
             //     }
@@ -334,12 +334,12 @@ pub(crate) mod aeron_tests {
 
 
             received_count += taken;
-            //cmd.relay_stats_smartly(); //should not be needed.
+            //actor.relay_stats_smartly(); //should not be needed.
 
             //here we request shutdown but we only leave after our upstream actors are done
             if received_count >= (TEST_ITEMS-taken) {
                 //error!("stop requested");
-                cmd.request_shutdown().await;
+                actor.request_shutdown().await;
                 return Ok(());
             }
         }

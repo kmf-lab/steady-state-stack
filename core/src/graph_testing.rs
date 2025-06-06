@@ -21,12 +21,12 @@ use futures::channel::oneshot::Receiver;
 use futures_util::future::FusedFuture;
 use futures_util::select;
 use ringbuf::consumer::Consumer;
-use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyCommander, TxBundle};
+use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyActor, TxBundle};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
 use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
-use crate::commander::SendOutcome;
+use crate::steady_actor::SendOutcome;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use ringbuf::producer::Producer;
@@ -80,7 +80,7 @@ impl Debug for StageManager {
 /// Type alias for a side channel, which is a pair of internal sender and receiver.
 pub(crate) type SideChannel = (InternalSender<Box<dyn Any + Send + Sync>>, InternalReceiver<Box<dyn Any + Send + Sync>>);
 
-trait StageAction {}
+pub trait StageAction {}
 
 // Define StageDirection
 pub enum StageDirection<T> {
@@ -232,18 +232,18 @@ pub (crate) const TIMEOUT: &'static str = "timeout, no message";
 
 impl SideChannelResponder {
 
-    pub fn simulate_direction<'a, T: 'static + Debug + Clone, X: TxCore<MsgIn<'a> = T>, C: SteadyCommander>(&self
-                                                      , tx_core: &mut X, cmd: &mut  C
-                                                      , index: usize) -> Result<SimStepResult, Box<dyn Error>>
+    pub fn simulate_direction<'a, T: 'static + Debug + Clone, X: TxCore<MsgIn<'a> = T>, C: SteadyActor>(&self
+                                                                                                        , tx_core: &mut X, actor: &mut  C
+                                                                                                        , index: usize) -> Result<SimStepResult, Box<dyn Error>>
     where <X as TxCore>::MsgOut: Send, <X as TxCore>::MsgOut: Sync, <X as TxCore>::MsgOut: 'static {
                 //NOTE: we block here await until some direction comes in.
-                let r = self.respond_with(move |message,cmd| {
+                let r = self.respond_with(move |message,actor| {
 
                     match message.downcast_ref::<StageDirection<X::MsgIn<'a>>>() {
                         Some(msg) => {
                             match  msg {
                                 StageDirection::Echo(m) => {
-                                    match cmd.try_send(tx_core, m.clone()) {
+                                    match actor.try_send(tx_core, m.clone()) {
                                         SendOutcome::Success => {Some(Box::new(OK_MESSAGE))}
                                         SendOutcome::Blocked(msg) => {
                                             //trace!("blocked msg {:?}",msg);
@@ -253,7 +253,7 @@ impl SideChannelResponder {
                                 }
                                 StageDirection::EchoAt(i, m) => {
                                     if *i == index {
-                                        match cmd.try_send(tx_core, m.clone()) {
+                                        match actor.try_send(tx_core, m.clone()) {
                                             SendOutcome::Success => { Some(Box::new(OK_MESSAGE)) }
                                             SendOutcome::Blocked(msg) => {
                                                 //trace!("blocked msg {:?}",msg);
@@ -272,7 +272,7 @@ impl SideChannelResponder {
                         }
                     }
 
-                },cmd);
+                },actor);
 
                 match r {
                     Ok(true) => Ok(SimStepResult::DidWork),
@@ -284,13 +284,13 @@ impl SideChannelResponder {
     }
 
 
-    pub fn simulate_wait_for<T: Debug + Eq + 'static, X: RxCore<MsgOut = T>, C: SteadyCommander>(&self
-                                                         , rx_core: &mut X
-                                                         , cmd: &mut C
-                                                         , index: usize
-                                                         , run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>
+    pub fn simulate_wait_for<T: Debug + Eq + 'static, X: RxCore<MsgOut = T>, C: SteadyActor>(&self
+                                                                                             , rx_core: &mut X
+                                                                                             , actor: &mut C
+                                                                                             , index: usize
+                                                                                             , run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>>
     where <X as RxCore>::MsgOut: std::fmt::Debug {
-              let r =  self.respond_with(move |message,cmd_guard| {
+              let r =  self.respond_with(move |message,actor_guard| {
                   let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<X::MsgOut>>()
                                                         .expect(format!("Unable to take message and downcast it to: {}", std::any::type_name::<T>()).as_str());
 
@@ -304,7 +304,7 @@ impl SideChannelResponder {
                   //error!("checking for expected message {:?}",message);
 
                     if let Some((expected, timeout)) = message {
-                        match cmd_guard.try_take(rx_core) {
+                        match actor_guard.try_take(rx_core) {
                             Some(measured) => {
                                 if expected.eq(&measured) {
                                     Some(Box::new(OK_MESSAGE))
@@ -325,7 +325,7 @@ impl SideChannelResponder {
                     } else {
                         None //not applicable by index
                     }
-                },cmd);
+                },actor);
                 match r {
                     Ok(true) => Ok(SimStepResult::DidWork),
                     Ok(false) => Ok(SimStepResult::NoWork),
@@ -377,30 +377,30 @@ impl SideChannelResponder {
     /// An async function that listens for a message and echoes it to all outgoing channels in a bundle.
     ///
     /// # Parameters
-    /// - `cmd`: A mutable reference to the SteadyCommander handling command operations.
+    /// - `actor`: A mutable reference to the SteadyCommander handling command operations.
     /// - `target_tx_bundle`: A mutable reference to the bundle of outgoing channels to send the echoed message.
     ///
     /// # Returns
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn echo_responder_bundle<M: 'static + Clone + Debug + Send, C: SteadyCommander>(
+    pub async fn echo_responder_bundle<M: 'static + Clone + Debug + Send, C: SteadyActor>(
         &self,
-        cmd: &mut C,
+        actor: &mut C,
         target_tx_bundle: &mut TxBundle<'_,M>,
     ) -> Result<bool,Box<dyn Error>> {
         if let Some(true) = self.should_apply::<M>().await {
             let girth = target_tx_bundle.len();
 
             for t in target_tx_bundle.iter_mut() {
-                if !cmd.wait_vacant(&mut *t, 1).await {
+                if !actor.wait_vacant(&mut *t, 1).await {
                     return Ok(true);
                 };
             }
 
-            self.respond_with(|message, cmd| {
+            self.respond_with(|message, actor| {
                 let msg = message.downcast_ref::<M>().expect("error casting");
                 let total: usize = (0..girth)
                     .filter(|&c| {
-                        cmd.try_send(&mut target_tx_bundle[c], msg.clone()).is_sent()
+                        actor.try_send(&mut target_tx_bundle[c], msg.clone()).is_sent()
                     })
                     .count();
     
@@ -410,7 +410,7 @@ impl SideChannelResponder {
                     let failure = format!("failed to echo to {:?} channels", girth - total);
                     Some(Box::new(failure))
                 }
-            },cmd)
+            },actor)
         } 
         else 
         { Ok(false) }
@@ -420,14 +420,14 @@ impl SideChannelResponder {
     /// An async function that verifies a message matches all incoming messages from a bundle of channels.
     ///
     /// # Parameters
-    /// - `cmd`: A mutable reference to the SteadyCommander handling command operations.
+    /// - `actor`: A mutable reference to the SteadyCommander handling command operations.
     /// - `source_rx`: A mutable reference to the bundle of incoming channels to read messages from.
     ///
     /// # Returns
     /// - `bool`: `true` if the operation succeeded; otherwise, `false`.
-    pub async fn equals_responder_bundle<M: 'static + Clone + Debug + Send + Eq, C: SteadyCommander>(
+    pub async fn equals_responder_bundle<M: 'static + Clone + Debug + Send + Eq, C: SteadyActor>(
         &self,
-        cmd: &mut C,
+        actor: &mut C,
         source_rx: &mut RxBundle<'_, M>,
     ) -> Result<bool, Box<dyn Error>> {
         if let Some(true) = self.should_apply::<M>().await {
@@ -435,15 +435,15 @@ impl SideChannelResponder {
 
             for x in 0..girth {
                 let srx: &mut MutexGuard<Rx<M>> =  &mut source_rx[x];
-                if !cmd.wait_avail(srx, 1).await {
+                if !actor.wait_avail(srx, 1).await {
                     return Ok(true);
                 };
             }
 
-            self.respond_with(|message,cmd| {
+            self.respond_with(|message,actor| {
                 let msg: &M = message.downcast_ref::<M>().expect("error casting");
                 let total = (0..girth)
-                    .filter_map(|c| cmd.try_take(&mut source_rx[c]))
+                    .filter_map(|c| actor.try_take(&mut source_rx[c]))
                     .filter(|m| m.eq(msg))
                     .count();
 
@@ -453,7 +453,7 @@ impl SideChannelResponder {
                     let failure = format!("match failure {:?} of {:?}", msg, girth - total);
                     Some(Box::new(failure))
                 }
-            },cmd)
+            },actor)
         } else {
             Ok(false)
         }
@@ -506,15 +506,15 @@ impl SideChannelResponder {
     /// * `f` - A function that takes a message and returns a response.
     ///
     ///
-    pub fn respond_with<F,C>(&self, mut f: F, cmd: &mut C) -> Result<bool, Box<dyn Error>>
+    pub fn respond_with<F,C>(&self, mut f: F, actor: &mut C) -> Result<bool, Box<dyn Error>>
         where
-            C: SteadyCommander,
+            C: SteadyActor,
             F: FnMut(&Box<dyn Any + Send + Sync>, &mut C) -> Option<Box<dyn Any + Send + Sync>>,
     {
 
 
         let mut guard = self.arc.try_lock().expect("internal lock error, should probably try again");
-        let ((tx, rx), shutdown) = guard.deref_mut();
+        let ((tx, rx), _shutdown) = guard.deref_mut();
 
         if rx.is_empty() {
             return Ok(true);
@@ -526,7 +526,7 @@ impl SideChannelResponder {
             //      happen if the main test block is not consuming the answers to the questions
             //NOTE: this should never block on shutdown since above we immediately pull the answer
 
-            if let Some(r) = f(q, cmd) {
+            if let Some(r) = f(q, actor) {
                 match tx.try_push(r) {
                     Ok(_) => {
                         let _ = rx.try_pop(); //we know f(q) accepted it so now remove it from the channel.
@@ -555,9 +555,9 @@ mod graph_testing_tests {
     use std::time::Instant;
     use super::*;
     use futures::channel::oneshot;
-    use crate::{GraphLiveliness, LazySteadyRx, LazySteadyTx, Rx, SteadyCommander};
+    use crate::{GraphLiveliness, LazySteadyRx, LazySteadyTx, Rx, SteadyActor};
     use crate::channel_builder::ChannelBuilder;
-    use crate::commander_context::SteadyContext;
+    use crate::steady_actor_shadow::SteadyActorShadow;
     use crate::monitor::ActorMetaData;
     use crate::core_tx::TxCore;
 
@@ -606,9 +606,9 @@ mod graph_testing_tests {
     }
 
     // Common function to create a test SteadyContext
-    fn test_steady_context() -> SteadyContext {
+    fn test_steady_context() -> SteadyActorShadow {
         let (_tx, rx) = build_tx_rx();
-        SteadyContext {
+        SteadyActorShadow {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
                 Default::default(),
                 Default::default()

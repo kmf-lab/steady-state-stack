@@ -11,16 +11,16 @@ use crate::actor::tick_generator::Tick;
 
 const BATCH:usize = 1000;
 
-pub async fn run(context: SteadyContext
+pub async fn run(context: SteadyActorShadow
         ,ticks_rx: SteadyRx<Tick>
         ,ticks_tx: SteadyTx<Tick>) -> Result<(),Box<dyn Error>> {
     internal_behavior(context, ticks_rx, ticks_tx).await
 }
 
-async fn internal_behavior(context: SteadyContext, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior(context: SteadyActorShadow, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {
     let _cli_args = context.args::<Args>();
 
-    let mut monitor = context.into_monitor( [&ticks_rx], [&ticks_tx]);
+    let mut monitor = context.into_spotlight([&ticks_rx], [&ticks_tx]);
 
     let mut ticks_rx = ticks_rx.lock().await;
     let mut ticks_tx = ticks_tx.lock().await;

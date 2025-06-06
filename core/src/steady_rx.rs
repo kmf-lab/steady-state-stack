@@ -104,6 +104,7 @@ impl <T> Rx<T> {
     }
 
 
+    //TODO: this is a problem used by test macro yet pub!!!
     pub fn try_take(&mut self) -> Option<T> {
         if let Some((done, msg)) = self.shared_try_take() {
             Some(msg)

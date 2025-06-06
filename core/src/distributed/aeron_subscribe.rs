@@ -10,8 +10,8 @@ use aeron::subscription::Subscription;
 use log::{error, warn};
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::distributed_stream::{SteadyStreamTx, StreamIngress};
-use crate::{SteadyCommander, SteadyState, StreamTx};
-use crate::commander_context::SteadyContext;
+use crate::{SteadyActor, SteadyState, StreamTx};
+use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::core_tx::TxCore;
 use crate::distributed::polling;
 use crate::yield_now;
@@ -22,32 +22,32 @@ pub struct AeronSubscribeSteadyState {
 }
 
 pub async fn run(
-    context: SteadyContext,
+    context: SteadyActorShadow,
     tx: SteadyStreamTx<StreamIngress>,
     aeron_connect: Channel,
     stream_id: i32,
     state: SteadyState<AeronSubscribeSteadyState>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut cmd = context.into_monitor([], [&tx]);
-    if cmd.use_internal_behavior {
-        while cmd.aeron_media_driver().is_none() {
+    let mut actor = context.into_spotlight([], [&tx]);
+    if actor.use_internal_behavior {
+        while actor.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
             let mut tx = tx.lock().await;
-            if cmd.is_running(&mut || tx.mark_closed()) {
-                cmd.wait_periodic(Duration::from_secs(15)).await;
+            if actor.is_running(&mut || tx.mark_closed()) {
+                actor.wait_periodic(Duration::from_secs(15)).await;
             } else {
                 return Ok(());
             }
         }
-        let aeron_media_driver = cmd.aeron_media_driver().expect("media driver");
-        internal_behavior(cmd, tx, aeron_connect, stream_id, aeron_media_driver, state).await
+        let aeron_media_driver = actor.aeron_media_driver().expect("media driver");
+        internal_behavior(actor, tx, aeron_connect, stream_id, aeron_media_driver, state).await
     } else {
-        cmd.simulated_behavior(vec![&tx]).await
+        actor.simulated_behavior(vec![&tx]).await
     }
 }
 
-async fn internal_behavior<C: SteadyCommander>(
-    mut cmd: C,
+async fn internal_behavior<C: SteadyActor>(
+    mut actor: C,
     tx: SteadyStreamTx<StreamIngress>,
     aeron_channel: Channel,
     stream_id: i32,
@@ -87,7 +87,7 @@ async fn internal_behavior<C: SteadyCommander>(
                 Err(e) => {
                     if e.to_string().contains("Awaiting") || e.to_string().contains("not ready") {
                         Delay::new(Duration::from_millis(2)).await;
-                        if cmd.is_liveliness_stop_requested() {
+                        if actor.is_liveliness_stop_requested() {
                             warn!("shutdown requested while waiting for subscription");
                             return Ok(());
                         }
@@ -105,15 +105,15 @@ async fn internal_behavior<C: SteadyCommander>(
     let mut next_poll_time = Instant::now();
 
     // Step 3: Main polling loop
-    error!("running subscriber '{:?}' with subscription in place", cmd.identity());
-    while cmd.is_running(&mut || tx.mark_closed()) {
+    error!("running subscriber '{:?}' with subscription in place", actor.identity());
+    while actor.is_running(&mut || tx.mark_closed()) {
         let now = Instant::now();
         if now < next_poll_time {
-            cmd.wait_periodic(next_poll_time - now).await;
+            actor.wait_periodic(next_poll_time - now).await;
         }
 
         if !tx.shared_is_full() {
-            let delay = poll_aeron_subscription(&mut tx, &mut sub, &mut cmd).await;
+            let delay = poll_aeron_subscription(&mut tx, &mut sub, &mut actor).await;
             next_poll_time = now + delay;
         } else {
             let fastest_duration = tx.fastest_byte_processing_duration();
@@ -128,10 +128,10 @@ async fn internal_behavior<C: SteadyCommander>(
     Ok(())
 }
 
-async fn poll_aeron_subscription<C: SteadyCommander>(
+async fn poll_aeron_subscription<C: SteadyActor>(
     tx: &mut StreamTx<StreamIngress>,
     sub: &mut Subscription,
-    cmd: &mut C,
+    actor: &mut C,
 ) -> Duration {
     let mut input_bytes: u32 = 0;
     let mut input_frags: u32 = 0;
@@ -161,7 +161,7 @@ async fn poll_aeron_subscription<C: SteadyCommander>(
 
     // Flush ready messages if any
     if !tx.ready_msg_session.is_empty() {
-        let (now_sent_messages, now_sent_bytes) = tx.fragment_flush_ready(cmd);
+        let (now_sent_messages, now_sent_bytes) = tx.fragment_flush_ready(actor);
         let (stored_vacant_items, stored_vacant_bytes) = tx.get_stored_vacant_values();
 
         if stored_vacant_items > measured_vacant_items as i32 {

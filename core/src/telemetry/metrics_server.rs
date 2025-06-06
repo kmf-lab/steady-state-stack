@@ -12,7 +12,7 @@ use futures::io;
 use futures::channel::oneshot::Receiver;
 use std::io::Write;
 use futures_util::{AsyncReadExt, AsyncWriteExt};
-use crate::commander_context::SteadyContext;
+use crate::steady_actor_shadow::SteadyActorShadow;
 
 // The name of the metrics server actor
 pub const NAME: &str = "metrics_server";
@@ -37,7 +37,7 @@ struct MetricState {
 ///
 /// # Errors
 /// This function returns an error if the server fails to start or encounters a runtime error.
-pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Result<(), Box<dyn Error>> {
+pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>) -> Result<(), Box<dyn Error>> {
     
     //NOTE: we could use this to turn off the server if desired.
     let addr = Some(format!("{}:{}"
@@ -52,7 +52,7 @@ pub(crate) async fn run(context: SteadyContext, rx: SteadyRx<DiagramData>) -> Re
     internal_behavior(ctrl, frame_rate_ms, rx, addr).await
 }
 
-async fn internal_behavior<C : SteadyCommander>(mut ctrl: C, frame_rate_ms: u64, rx: SteadyRx<DiagramData>, addr: Option<String>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx: SteadyRx<DiagramData>, addr: Option<String>) -> Result<(), Box<dyn Error>> {
 
 
 
@@ -193,15 +193,7 @@ pub fn bind_to_port(addr: &str) -> Arc<Option<Box<dyn AsyncListener + Send + Syn
     }
 }
 
-/// Checks if an address can be bound to and returns the local address if successful.
-pub(crate) fn check_addr(addr: &str) -> Option<String> {
-    if let Ok(h) = TcpListener::bind(addr) {
-        let local_addr = h.local_addr().expect("Unable to get local address");
-        Some(format!("{}", local_addr))
-    } else {
-        None
-    }
-}
+
 
 async fn handle_new_requests (
     tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<Option<Duration>>>>,
@@ -211,7 +203,7 @@ async fn handle_new_requests (
 ) {
     //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
     //      for per/second metrics and many telemetry observers with slower refresh rates
-    let mut shutdown_wait = None;
+    let shutdown_wait;// = None;
     loop {
         let mut shutdown = tcp_receiver_tx_oneshot_shutdown.lock().await;
         select! {
@@ -724,7 +716,15 @@ mod http_telemetry_tests {
         }
     }
 
-
+    /// Checks if an address can be bound to and returns the local address if successful.
+    pub(crate) fn check_addr(addr: &str) -> Option<String> {
+        if let Ok(h) = TcpListener::bind(addr) {
+            let local_addr = h.local_addr().expect("Unable to get local address");
+            Some(format!("{}", local_addr))
+        } else {
+            None
+        }
+    }
 
     fn stand_up_test_server(addr: &str) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
         // Step 1: Set up a minimal graph

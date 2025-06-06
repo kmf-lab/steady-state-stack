@@ -21,10 +21,9 @@ use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use std::ops::DerefMut;
 use aeron::aeron::Aeron;
-use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle};
-use crate::abstract_executor_async_std::core_exec;
+use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
-use crate::commander::SendOutcome;
+use crate::steady_actor::SendOutcome;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
@@ -36,7 +35,7 @@ use crate::util::steady_logger;
 use crate::yield_now::yield_now;
 
 /// Context for managing actor state and interactions within the Steady framework.
-pub struct SteadyContext {
+pub struct SteadyActorShadow {
     pub(crate) ident: ActorIdentity,
     pub(crate) instance_id: u32,
     pub(crate) is_in_graph: bool,
@@ -59,9 +58,9 @@ pub struct SteadyContext {
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,     
 }
 
-impl Clone for SteadyContext {
+impl Clone for SteadyActorShadow {
     fn clone(&self) -> Self {
-        SteadyContext {
+        SteadyActorShadow {
             ident: self.ident,
             instance_id: self.instance_id,
             is_in_graph: self.is_in_graph,
@@ -85,7 +84,7 @@ impl Clone for SteadyContext {
     }
 }
 
-impl SteadyCommander for SteadyContext {
+impl SteadyActor for SteadyActorShadow {
 
 
     /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
@@ -98,8 +97,8 @@ impl SteadyCommander for SteadyContext {
         Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
     }
 
-    async fn simulated_behavior(mut self, sims: Vec<&dyn IntoSimRunner<SteadyContext>>) -> Result<(), Box<dyn Error>> {
-        simulate_edge::simulated_behavior::<SteadyContext>(&mut self, sims).await
+    async fn simulated_behavior(mut self, sims: Vec<&dyn IntoSimRunner<SteadyActorShadow>>) -> Result<(), Box<dyn Error>> {
+        simulate_edge::simulated_behavior::<SteadyActorShadow>(&mut self, sims).await
     }
 
     /// Initializes the logger with the specified log level.
@@ -626,7 +625,7 @@ impl SteadyCommander for SteadyContext {
     /// Requests a graph stop for the actor.
     ///
     #[inline]
-    async fn request_shutdown(&self) {
+    async fn request_shutdown(&mut self) {
         if let Some(barrier) = &self.shutdown_barrier {
             // Wait for all required actors to reach the barrier
             barrier.clone().wait().await;

@@ -20,8 +20,8 @@ use crate::telemetry::metrics_collector::CollectorDetail;
 
 
 use crate::core_exec;
-use crate::commander_context::SteadyContext;
-use crate::commander_monitor::LocalMonitor;
+use crate::steady_actor_shadow::SteadyActorShadow;
+use crate::steady_actor_spotlight::SteadyActorSpotlight;
 use crate::core_tx::TxCore;
 
 /// Constructs telemetry channels for the given context and metadata.
@@ -36,7 +36,7 @@ use crate::core_tx::TxCore;
 /// # Returns
 /// A tuple containing optional TX send, RX send, and actor send telemetry.
 pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(
-    that: &SteadyContext,
+    that: &SteadyActorShadow,
     rx_meta_data: Vec<Arc<ChannelMetaData>>,
     rx_inverse_local_idx: [usize; RX_LEN],
     tx_meta_data: Vec<Arc<ChannelMetaData>>,
@@ -186,7 +186,7 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
 }
 
 pub(crate) fn is_empty_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
-    this: &mut LocalMonitor<RX_LEN, TX_LEN>) -> bool {
+    this: &mut SteadyActorSpotlight<RX_LEN, TX_LEN>) -> bool {
     if let Some(ref mut actor_status) = this.telemetry.state {
         if let Some(ref mut lock_guard) = actor_status.tx.try_lock() {
             lock_guard.deref_mut().is_empty()
@@ -220,7 +220,7 @@ fn get_current_cpu() -> i32 {
 /// - `this`: The local monitor to send telemetry for.
 #[inline]
 pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
-    this: &mut LocalMonitor<RX_LEN, TX_LEN>, elapsed_micros: Option<u64>
+    this: &mut SteadyActorSpotlight<RX_LEN, TX_LEN>, elapsed_micros: Option<u64>
 ) {
 
             if let Some(ref mut actor_status) = this.telemetry.state {

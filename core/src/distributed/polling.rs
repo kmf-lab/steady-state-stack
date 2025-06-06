@@ -1,4 +1,4 @@
-
+#[allow(unused_imports)]
 use log::*;
 
 /// A scheduler for polling with adaptive delays based on a bell curve.

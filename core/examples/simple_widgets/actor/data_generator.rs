@@ -12,23 +12,23 @@ pub struct WidgetInventory {
     pub(crate) _payload: u64,
 }
 
-pub async fn run(context: SteadyContext
+pub async fn run(context: SteadyActorShadow
                                , feedback: SteadyRx<ChangeRequest>
                                , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([&feedback], [&tx]);
+    let actor = context.into_spotlight([&feedback], [&tx]);
     if cfg!(not(test)) {
-        internal_behavior(cmd, feedback, tx).await
+        internal_behavior(actor, feedback, tx).await
     } else {
-        cmd.simulated_behavior(vec!(&tx)).await
+        actor.simulated_behavior(vec!(&tx)).await
     }
 }
 
 
-async fn internal_behavior<C:SteadyCommander>(mut cmd:C
-                            , feedback: SteadyRx<ChangeRequest>
-                            , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
+async fn internal_behavior<C: SteadyActor>(mut actor:C
+                                           , feedback: SteadyRx<ChangeRequest>
+                                           , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
 
-    let gen_rate_micros = if let Some(a) = cmd.args::<crate::Args>() {
+    let gen_rate_micros = if let Some(a) = actor.args::<crate::Args>() {
         a.gen_rate_micros
     } else {
         10_000 //default
@@ -40,9 +40,9 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd:C
 
     const MULTIPLIER:usize = 256;   //500_000 per second at 500 micros
 
-    while cmd.is_running(&mut || tx.mark_closed() ) {
+    while actor.is_running(&mut || tx.mark_closed() ) {
 
-        let _clean = await_for_all!(cmd.wait_vacant(&mut tx, MULTIPLIER));
+        let _clean = await_for_all!(actor.wait_vacant(&mut tx, MULTIPLIER));
 
         let len_out = tx.vacant_units().min(MULTIPLIER);
 
@@ -58,15 +58,15 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd:C
 
         count+= len_out as u64;
 
-        let _sent = cmd.send_slice_until_full(&mut tx, &wids);
+        let _sent = actor.send_slice_until_full(&mut tx, &wids);
  
-        if let Some(feedback) = cmd.try_take(&mut feedback) {
+        if let Some(feedback) = actor.try_take(&mut feedback) {
               trace!("data_generator feedback: {:?}", feedback);
         }
         
         //this is an example of a telemetry running periodically
         //we send telemetry and wait for the next time we are to run here
-        let _clean = cmd.relay_stats_periodic(std::time::Duration::from_micros(gen_rate_micros)).await;
+        let _clean = actor.relay_stats_periodic(std::time::Duration::from_micros(gen_rate_micros)).await;
 
     }
     Ok(())

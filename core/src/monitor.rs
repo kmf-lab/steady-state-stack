@@ -321,8 +321,8 @@ pub(crate) mod monitor_tests {
     use std::time::Instant;
     use std::sync::atomic::AtomicUsize;
     use crate::channel_builder::ChannelBuilder;
-    use crate::commander::SendOutcome;
-    use crate::commander_context::SteadyContext;
+    use crate::steady_actor::SendOutcome;
+    use crate::steady_actor_shadow::SteadyActorShadow;
     use crate::core_tx::TxCore;
     use crate::steady_tx::TxDone;
 
@@ -340,7 +340,7 @@ pub(crate) mod monitor_tests {
     fn test_try_peek() {
         let (_tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx],[]);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let result = monitor.try_peek(&mut rx);
@@ -354,7 +354,7 @@ pub(crate) mod monitor_tests {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let mut slice = [0; 3];
         let context = test_steady_context();
-        let mut monitor = context.into_monitor([&rx],[]);
+        let mut monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let count = monitor.take_slice(&mut rx, &mut slice);
@@ -369,7 +369,7 @@ pub(crate) mod monitor_tests {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let mut slice = [0; 3];
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx],[]);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let count = monitor.try_peek_slice(&mut rx, &mut slice);
@@ -384,7 +384,7 @@ pub(crate) mod monitor_tests {
     fn test_is_empty() {
         let context = test_steady_context();
         let (_tx,rx) = create_rx::<String>(vec![]); // Creating an empty Rx
-        let monitor = context.into_monitor([&rx],[]);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             assert!(monitor.is_empty(&mut rx));
@@ -398,7 +398,7 @@ pub(crate) mod monitor_tests {
         let (tx, _rx) = create_test_channel::<String>(10);
         let context = test_steady_context();
         let tx = tx.clone();
-        let monitor = context.into_monitor([],[&tx]);
+        let monitor = context.into_spotlight([], [&tx]);
 
         if let Some(mut tx) = tx.try_lock() {
             assert!(!monitor.is_full(&mut tx));
@@ -411,7 +411,7 @@ pub(crate) mod monitor_tests {
         let (tx, _rx) = create_test_channel::<String>(13);
         let context = test_steady_context();
         let tx = tx.clone();
-        let monitor = context.into_monitor([],[&tx]);
+        let monitor = context.into_spotlight([], [&tx]);
 
         if let Some(mut tx) = tx.try_lock() {
             let vacant_units = monitor.vacant_units(&mut tx);
@@ -425,7 +425,7 @@ pub(crate) mod monitor_tests {
         let (tx, _rx) = create_test_channel::<String>(10);
         let tx  = tx.clone();
         let context = test_steady_context();
-        let monitor = context.into_monitor([],[&tx]);
+        let monitor = context.into_spotlight([], [&tx]);
 
         if let Some(mut tx) = tx.try_lock() {
             let empty = monitor.wait_empty(&mut tx).await;
@@ -443,7 +443,7 @@ pub(crate) mod monitor_tests {
     fn test_avail_units() {
         let (_tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
-        let monitor = context.into_monitor_internal([],[]);
+        let monitor = context.into_spotlight_internal([], []);
            // context.into_monitor((context,[],[]);
 
         if let Some(mut rx) = rx.try_lock() {
@@ -456,7 +456,7 @@ pub(crate) mod monitor_tests {
     fn test_try_peek_iter() {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx],[]);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let mut iter = monitor.try_peek_iter(&mut rx);
@@ -471,7 +471,7 @@ pub(crate) mod monitor_tests {
     async fn test_peek_async_iter() {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx],[]);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             monitor.wait_avail(&mut rx,3).await;
@@ -487,7 +487,7 @@ pub(crate) mod monitor_tests {
     async fn test_peek_async() {
         let (_tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx],[]);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let result = monitor.peek_async(&mut rx).await;
@@ -503,7 +503,7 @@ pub(crate) mod monitor_tests {
         let tx = tx.clone();
         let rx = rx.clone();
 
-        let mut monitor = context.into_monitor([],[&tx]);
+        let mut monitor = context.into_spotlight([], [&tx]);
 
         let slice = [1, 2, 3];
         if let Some(mut tx) = tx.try_lock() {
@@ -524,7 +524,7 @@ pub(crate) mod monitor_tests {
         let (tx, _rx) = create_test_channel(10);
         let context = test_steady_context();
         let tx = tx.clone();
-        let mut monitor = context.into_monitor([],[&tx]);
+        let mut monitor = context.into_spotlight([], [&tx]);
 
         if let Some(mut tx) = tx.try_lock() {
             let result = match monitor.try_send(&mut tx, 42) {
@@ -536,9 +536,9 @@ pub(crate) mod monitor_tests {
     }
 
     // Common function to create a test SteadyContext
-    fn test_steady_context() -> SteadyContext {
+    fn test_steady_context() -> SteadyActorShadow {
         let (_tx, rx) = build_tx_rx();
-        SteadyContext {
+        SteadyActorShadow {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
                 Default::default(),
                 Default::default()
@@ -589,14 +589,14 @@ pub(crate) mod monitor_tests {
     #[test]
     fn test_simple_monitor_build() {
         let context = test_steady_context();
-        let monitor = context.into_monitor([],[]);
+        let monitor = context.into_spotlight([], []);
         assert_eq!("test_actor",monitor.ident.label.name);
     }
 
     #[test]
     fn test_macro_monitor_build() {
         let context = test_steady_context();
-        let monitor = context.into_monitor([],[]);
+        let monitor = context.into_spotlight([], []);
         assert_eq!("test_actor",monitor.ident.label.name);
 
     }
@@ -613,7 +613,7 @@ pub(crate) mod monitor_tests {
         let rx_string = rx_string.clone();
 
         let context = graph.new_testing_test_monitor("test");
-        let mut monitor = context.into_monitor([&rx_string], [&tx_string]);
+        let mut monitor = context.into_spotlight([&rx_string], [&tx_string]);
 
         let mut rxd = rx_string.lock().await;
         let mut txd = tx_string.lock().await;
@@ -667,7 +667,7 @@ pub(crate) mod monitor_tests {
         let tx_string = tx_string.clone();
         let rx_string = rx_string.clone();
 
-        let mut monitor = monitor.into_monitor([&rx_string], [&tx_string]);
+        let mut monitor = monitor.into_spotlight([&rx_string], [&tx_string]);
 
         let mut rx_string_guard = rx_string.lock().await;
         let mut tx_string_guard = tx_string.lock().await;
@@ -716,7 +716,7 @@ pub(crate) mod monitor_tests {
         let context = test_steady_context();
         let tx = tx.clone();
         let rx = rx.clone();
-        let mut monitor = context.into_monitor([],[&tx]);
+        let mut monitor = context.into_spotlight([], [&tx]);
 
         let iter = vec![1, 2, 3].into_iter();
         if let Some(mut tx) = tx.try_lock() {
@@ -743,7 +743,7 @@ pub(crate) mod monitor_tests {
         }
         let rx = rx1.clone();
         let context = test_steady_context();
-        let mut monitor = context.into_monitor([&rx],[]);
+        let mut monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             {
@@ -830,7 +830,7 @@ pub(crate) mod monitor_tests {
         let (_tx1,rx1) = create_rx(vec![1, 2]);
         let (_tx2,rx2) = create_rx(vec![3, 4]);
         
-        let monitor = context.into_monitor([&rx1, &rx2], []);
+        let monitor = context.into_spotlight([&rx1, &rx2], []);
         let mut rx_bundle = RxBundle::new();
         if let Some(rx1) = rx1.try_lock() {
             rx_bundle.push(rx1);
@@ -851,7 +851,7 @@ pub(crate) mod monitor_tests {
         let context = test_steady_context();
         let (_tx1,rx1) = create_rx(vec![1, 2]);
         let (_tx2,rx2) = create_rx(vec![3, 4]);
-        let monitor = context.into_monitor([&rx1, &rx2], []);
+        let monitor = context.into_spotlight([&rx1, &rx2], []);
 
         let mut rx_bundle = RxBundle::new();
         if let Some(rx1) = rx1.try_lock() {
@@ -873,7 +873,7 @@ pub(crate) mod monitor_tests {
         let context = test_steady_context();
         let (_tx1,rx1) = create_rx(vec![1, 2]);
         let (_tx2,rx2) = create_rx(vec![3, 4]);
-        let monitor = context.into_monitor([&rx1, &rx2], []);
+        let monitor = context.into_spotlight([&rx1, &rx2], []);
 
         let mut rx_bundle = RxBundle::new();
         if let Some(rx1) = rx1.try_lock() {
@@ -897,7 +897,7 @@ pub(crate) mod monitor_tests {
         let tx1 =tx1.clone();
         let tx2 =tx2.clone();
         
-        let monitor = context.into_monitor([], [&tx1, &tx2]);
+        let monitor = context.into_spotlight([], [&tx1, &tx2]);
 
         let mut tx_bundle = TxBundle::new();
         if let Some(tx1) = tx1.try_lock() {
@@ -921,7 +921,7 @@ pub(crate) mod monitor_tests {
         let context = test_steady_context();
         let tx1 =tx1.clone();
         let tx2 =tx2.clone();
-        let monitor = context.into_monitor([], [&tx1, &tx2]);
+        let monitor = context.into_spotlight([], [&tx1, &tx2]);
 
         let mut tx_bundle = TxBundle::new();
         if let Some(tx1) = tx1.try_lock() {
@@ -939,7 +939,7 @@ pub(crate) mod monitor_tests {
     #[async_std::test]
     async fn test_wait_shutdown() {
         let context = test_steady_context();
-        let monitor = context.into_monitor([], []);
+        let monitor = context.into_spotlight([], []);
         // Simulate shutdown
         {
             {
@@ -955,7 +955,7 @@ pub(crate) mod monitor_tests {
     #[async_std::test]
     async fn test_wait_periodic() {
         let context = test_steady_context();
-        let monitor = context.into_monitor([], []);
+        let monitor = context.into_spotlight([], []);
 
         let duration = Duration::from_millis(100);
         let result = monitor.wait_periodic(duration).await;
@@ -966,7 +966,7 @@ pub(crate) mod monitor_tests {
     #[async_std::test]
     async fn test_wait() {
         let context = test_steady_context();
-        let monitor = context.into_monitor([], []);
+        let monitor = context.into_spotlight([], []);
 
         let duration = Duration::from_millis(100);
         let start = Instant::now();
@@ -980,7 +980,7 @@ pub(crate) mod monitor_tests {
     async fn test_wait_shutdown_or_avail_units() {
         let (_tx,rx) = create_rx::<i32>(vec![1,2]);
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx], []);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let result = monitor.wait_avail(&mut rx, 1).await;
@@ -993,7 +993,7 @@ pub(crate) mod monitor_tests {
     async fn test_wait_closed_or_avail_units() {
         let (_tx,rx) = create_rx::<i32>(vec![1]);
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx], []);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let result = monitor.wait_avail(&mut rx, 1).await;
@@ -1006,7 +1006,7 @@ pub(crate) mod monitor_tests {
     async fn test_wait_avail_units() {
         let (_tx,rx) = create_rx::<i32>(vec![1, 2, 3]);
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx], []);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let result = monitor.wait_avail(&mut rx, 3).await;
@@ -1020,7 +1020,7 @@ pub(crate) mod monitor_tests {
         let (tx, _rx) = create_test_channel::<i32>(10);
         let context = test_steady_context();
         let tx = tx.clone();
-        let mut monitor = context.into_monitor([], [&tx]);
+        let mut monitor = context.into_spotlight([], [&tx]);
 
         if let Some(mut tx) = tx.try_lock() {
             let result = monitor.send_async(&mut tx, 42, SendSaturation::WarnThenAwait).await;
@@ -1033,7 +1033,7 @@ pub(crate) mod monitor_tests {
     fn test_args() {
         let args = 42u32;
         let context = test_steady_context_with_args(args);
-        let monitor = context.into_monitor([], []);
+        let monitor = context.into_spotlight([], []);
 
         let retrieved_args: Option<&u32> = monitor.args();
         assert_eq!(retrieved_args, Some(&42u32));
@@ -1043,16 +1043,16 @@ pub(crate) mod monitor_tests {
     #[test]
     fn test_identity() {
         let context = test_steady_context();
-        let monitor = context.into_monitor( [], []);
+        let monitor = context.into_spotlight([], []);
 
         let identity = monitor.identity();
         assert_eq!(identity.label.name, "test_actor");
     }
 
     // Helper function to create a test context with arguments
-    fn test_steady_context_with_args<A: Any + Send + Sync>(args: A) -> SteadyContext {
+    fn test_steady_context_with_args<A: Any + Send + Sync>(args: A) -> SteadyActorShadow {
         let (_tx, rx) = build_tx_rx();
-        SteadyContext {
+        SteadyActorShadow {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
                 Default::default(),
                 Default::default(),
@@ -1082,7 +1082,7 @@ pub(crate) mod monitor_tests {
     #[test]
     fn test_is_liveliness_in() {
         let context = test_steady_context();
-        let monitor = context.into_monitor( [], []);
+        let monitor = context.into_spotlight([], []);
 
         // Initially, the liveliness state should be Building
         assert!(monitor.is_liveliness_in(&[GraphLivelinessState::Building]));
@@ -1093,7 +1093,7 @@ pub(crate) mod monitor_tests {
     #[async_std::test]
     async fn test_yield_now() {
         let context = test_steady_context();
-        let monitor = context.into_monitor([], []);
+        let monitor = context.into_spotlight([], []);
 
         monitor.yield_now().await;
         // If it didn't hang, the test passes
@@ -1107,7 +1107,7 @@ pub(crate) mod monitor_tests {
         let (tx,rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();
         let rx = rx.clone();
-        let monitor = context.into_monitor([&rx], []);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut tx) = tx.try_lock() {
             tx.mark_closed();            
@@ -1147,7 +1147,7 @@ pub(crate) mod monitor_tests {
     fn test_args_string() {
         let args = "test_args".to_string();
         let context = test_steady_context_with_args(args.clone());
-        let monitor = context.into_monitor([], []);
+        let monitor = context.into_spotlight([], []);
 
         let retrieved_args: Option<&String> = monitor.args();
         assert_eq!(retrieved_args, Some(&args));
@@ -1161,7 +1161,7 @@ pub(crate) mod monitor_tests {
         let (_tx,rx) = create_rx::<i32>(vec![]);
         let mut slice = [0; 3];
         let context = test_steady_context();
-        let mut monitor = context.into_monitor( [&rx], []);
+        let mut monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let count = monitor.take_slice(&mut rx, &mut slice);
@@ -1175,7 +1175,7 @@ pub(crate) mod monitor_tests {
         let (tx, _rx) = create_test_channel::<i32>(1);
         let context = test_steady_context();
         let tx = tx.clone();
-        let mut monitor = context.into_monitor([], [&tx]);
+        let mut monitor = context.into_spotlight([], [&tx]);
 
         if let Some(mut tx) = tx.try_lock() {
             // Fill the channel
@@ -1193,7 +1193,7 @@ pub(crate) mod monitor_tests {
     fn test_take_into_iter_empty_channel() {
         let (_tx,rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();
-        let mut monitor = context.into_monitor([&rx], []);
+        let mut monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let mut iter = monitor.take_into_iter(&mut rx);
@@ -1207,7 +1207,7 @@ pub(crate) mod monitor_tests {
         let (_tx,rx) = create_rx::<i32>(vec![]);
         let mut slice = [0; 3];
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx], []);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let count = monitor.try_peek_slice(&mut rx, &mut slice);
@@ -1220,7 +1220,7 @@ pub(crate) mod monitor_tests {
     fn test_try_take_empty_channel() {
         let (_tx,rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();
-        let mut monitor = context.into_monitor([&rx], []);
+        let mut monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             let result = monitor.try_take(&mut rx);
@@ -1233,7 +1233,7 @@ pub(crate) mod monitor_tests {
     fn test_is_empty_with_elements() {
         let (_tx,rx) = create_rx::<i32>(vec![1, 2, 3]);
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx], []);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
             assert!(!monitor.is_empty(&mut rx));
@@ -1246,7 +1246,7 @@ pub(crate) mod monitor_tests {
         let (tx, _rx) = create_test_channel::<i32>(1);
         let context = test_steady_context();
         let tx = tx.clone();
-        let mut monitor = context.into_monitor([], [&tx]);
+        let mut monitor = context.into_spotlight([], [&tx]);
 
         if let Some(mut tx) = tx.try_lock() {
             // Fill the channel
@@ -1261,7 +1261,7 @@ pub(crate) mod monitor_tests {
     async fn test_wait_closed_or_avail_units_closed_channel() {
         let (tx,rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();
-        let monitor = context.into_monitor([&rx], []);
+        let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut tx) = tx.try_lock() {
             tx.mark_closed();

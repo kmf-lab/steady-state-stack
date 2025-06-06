@@ -14,7 +14,7 @@ pub struct TickCount {
 }
 
 
-pub async fn run(context: SteadyContext
+pub async fn run(context: SteadyActorShadow
         ,ticks_rx: SteadyRx<Tick>
         ,tick_counts_tx: SteadyTx<TickCount>) -> Result<(),Box<dyn Error>> {
     internal_behavior(context, ticks_rx, tick_counts_tx).await
@@ -23,10 +23,10 @@ pub async fn run(context: SteadyContext
 const BATCH: usize = 2000;
 const WAIT_AVAIL: usize = 250;
 
-async fn internal_behavior(context: SteadyContext, rx: SteadyRx<Tick>, tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior(context: SteadyActorShadow, rx: SteadyRx<Tick>, tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
     let _cli_args = context.args::<Args>();
 
-    let mut monitor = context.into_monitor([&rx], [&tx]);
+    let mut monitor = context.into_spotlight([&rx], [&tx]);
 
     let mut ticks_rx = rx.lock().await;
     let mut tick_counts_tx = tx.lock().await;

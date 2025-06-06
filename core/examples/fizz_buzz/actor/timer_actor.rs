@@ -5,37 +5,37 @@ use log::*;
 use std::time::Duration;
 use steady_state::*;
 use std::error::Error;
-use steady_state::commander::SendOutcome;
+use steady_state::steady_actor::SendOutcome;
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub(crate) struct PrintSignal {
    pub(crate) tick: u32
 }
 
-pub async fn run(context: SteadyContext, print_signal_tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([], [&print_signal_tx]);
+pub async fn run(actor: SteadyActorShadow, print_signal_tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
+    let actor = actor.into_spotlight([], [&print_signal_tx]);
 
     if cfg!(not(test)) {
-        internal_behavior(cmd, print_signal_tx).await
+        internal_behavior(actor, print_signal_tx).await
     } else {
-       cmd.simulated_behavior(vec!(&print_signal_tx)).await
+       actor.simulated_behavior(vec!(&print_signal_tx)).await
     }
 }
 
-async fn internal_behavior<C:SteadyCommander>(mut cmd: C
-        ,print_signal_tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
+async fn internal_behavior<A: SteadyActor>(mut actor: A
+                                           , print_signal_tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
 
     let mut print_signal_tx = print_signal_tx.lock().await;
     let mut tick = 0;
-    while cmd.is_running(&mut || i!(print_signal_tx.mark_closed())) {
-         let clean = await_for_any!(cmd.wait_periodic(Duration::from_secs(2)));
+    while actor.is_running(&mut || i!(print_signal_tx.mark_closed())) {
+         let clean = await_for_any!(actor.wait_periodic(Duration::from_secs(2)));
          if clean {
              tick += 1;
-             match cmd.try_send(&mut print_signal_tx, PrintSignal { tick }) {
+             match actor.try_send(&mut print_signal_tx, PrintSignal { tick }) {
                  SendOutcome::Success => {}
                  SendOutcome::Blocked(signal) => {error!("channel backed up, failed to send tick: {:?}",signal.tick);}
              }
-             cmd.relay_stats();
+             actor.relay_stats();
          }
     }
     Ok(())
@@ -54,8 +54,8 @@ pub(crate) mod tests {
         let (print_signal_tx,test_print_signal_rx) = graph.channel_builder().with_capacity(4).build_channel();
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context|
-                internal_behavior(context,print_signal_tx.clone())
+            .build( move |context|
+                internal_behavior(context,print_signal_tx.clone()), SoloAct
             );
         graph.start(); //startup the graph
         sleep(Duration::from_secs(5));

@@ -1,6 +1,6 @@
 use std::future::pending;
 use log::{error, trace, warn};
-use futures_util::{select, FutureExt, SinkExt};
+use futures_util::{select, FutureExt};
 use std::time::{Duration, Instant};
 use futures::pin_mut;
 use futures_timer::Delay;

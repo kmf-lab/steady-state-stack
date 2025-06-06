@@ -117,15 +117,15 @@ pub mod steady_rx;
     /// module to yield in our actor
 pub mod yield_now;
     /// module for all commands for channels used by actors
-pub mod commander;
+pub mod steady_actor;
 mod core_rx;
 use crate::core_rx::RxCore;
 mod core_tx;
 use crate::core_tx::TxCore;
 
 
-pub mod commander_context;
-pub mod commander_monitor;
+pub mod steady_actor_shadow;
+pub mod steady_actor_spotlight;
 mod stream_iterator;
 mod abstract_executor_tests;
 
@@ -141,9 +141,9 @@ pub use loop_driver::steady_await_for_all_or_proceed_upon_five;
 
 
 pub use clap::*;
-pub use commander::SendOutcome;
+pub use steady_actor::SendOutcome;
 pub use simulate_edge::SimRunner;
-pub use commander_context::*;
+pub use steady_actor_shadow::*;
 pub use futures_timer::Delay; //for easy use
 pub use graph_testing::GraphTestResult;
 pub use monitor::{RxMetaDataHolder, TxMetaDataHolder};
@@ -167,7 +167,7 @@ pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
 pub use crate::distributed::distributed_builder::AqueductBuilder;
 
-pub use commander::SteadyCommander;
+pub use steady_actor::SteadyActor;
 pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
 pub use distributed::distributed_stream::{StreamIngress, StreamEgress};
@@ -204,7 +204,7 @@ use futures::AsyncWrite;
 pub use futures::future::Future;
 use futures::channel::oneshot;
 use futures_util::lock::{MappedMutexGuard, MutexGuard};
-pub use commander_monitor::LocalMonitor;
+pub use steady_actor_spotlight::SteadyActorSpotlight;
 
 use crate::yield_now::yield_now;
 
@@ -799,8 +799,8 @@ mod lib_tests {
     use crate::channel_builder::ChannelBuilder;
     use parking_lot::RwLock;
     use futures::lock::Mutex;
-    use commander::SteadyCommander;
-    use crate::commander_context::SteadyContext;
+    use steady_actor::SteadyActor;
+    use crate::steady_actor_shadow::SteadyActorShadow;
     use crate::core_tx::TxCore;
 
 
@@ -936,7 +936,7 @@ mod lib_tests {
         let tx = tx.clone();
         let rx = rx.clone();
         // Use the macro
-        let _monitor = context.into_monitor([&rx], [&tx]);
+        let _monitor = context.into_spotlight([&rx], [&tx]);
         // Since we cannot directly test the internal state of the monitor,
         // we ensure that the macro compiles and runs without errors
         assert!(true);
@@ -948,9 +948,9 @@ mod lib_tests {
     }
 
     // Common function to create a test SteadyContext
-    fn test_steady_context() -> SteadyContext {
+    fn test_steady_context() -> SteadyActorShadow {
         let (_tx, rx) = build_tx_rx();
-        SteadyContext {
+        SteadyActorShadow {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
                 Default::default(),
                 Default::default()

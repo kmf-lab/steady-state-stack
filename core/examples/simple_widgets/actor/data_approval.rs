@@ -20,15 +20,15 @@ pub struct ApprovedWidgets {
 }
 
 
-pub async fn run(context: SteadyContext
+pub async fn run(context: SteadyActorShadow
                  , rx: SteadyRx<WidgetInventory>
                  , tx: SteadyTx<ApprovedWidgets>
                  , feedback: SteadyTx<FailureFeedback>
                 ) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context.into_monitor([&rx],[&tx,&feedback]), rx, tx, feedback).await
+    internal_behavior(context.into_spotlight([&rx], [&tx,&feedback]), rx, tx, feedback).await
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<WidgetInventory>, tx: SteadyTx<ApprovedWidgets>, feedback: SteadyTx<FailureFeedback>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<WidgetInventory>, tx: SteadyTx<ApprovedWidgets>, feedback: SteadyTx<FailureFeedback>) -> Result<(), Box<dyn Error>> {
 
     let mut tx = tx.lock().await;
     let mut rx = rx.lock().await;
@@ -36,15 +36,15 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<WidgetIn
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 
-    while cmd.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed() && feedback.mark_closed()) {
+    while actor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed() && feedback.mark_closed()) {
 
-        let _clean = await_for_all_or_proceed_upon!(cmd.wait_periodic(Duration::from_millis(300))
-                            ,cmd.wait_avail(&mut rx, BATCH_SIZE)
-                            ,cmd.wait_vacant(&mut tx, BATCH_SIZE)
-                            ,cmd.wait_vacant(&mut feedback, 1)
+        let _clean = await_for_all_or_proceed_upon!(actor.wait_periodic(Duration::from_millis(300))
+                            ,actor.wait_avail(&mut rx, BATCH_SIZE)
+                            ,actor.wait_vacant(&mut tx, BATCH_SIZE)
+                            ,actor.wait_vacant(&mut feedback, 1)
         );
 
-        let count = cmd.take_slice(&mut rx, &mut buffer);
+        let count = actor.take_slice(&mut rx, &mut buffer);
         let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
         for b in buffer.iter().take(count) {
             approvals.push(ApprovedWidgets {
@@ -53,21 +53,21 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<WidgetIn
             });
             if b.count % 20000 == 0 {
 
-                let _ = cmd.try_send(&mut feedback, FailureFeedback {
+                let _ = actor.try_send(&mut feedback, FailureFeedback {
                     count: b.count,
                     message: "count is a multiple of 20000".to_string(),
                 });
             }
         }
 
-        let sent = cmd.send_slice_until_full(&mut tx, &approvals);
+        let sent = actor.send_slice_until_full(&mut tx, &approvals);
         //iterator of sent until the end
         let send = approvals.into_iter().skip(sent);
         for send_me in send {
-            let _ = cmd.try_send(&mut tx, send_me);
+            let _ = actor.try_send(&mut tx, send_me);
         }
 
-        cmd.relay_stats_smartly();
+        actor.relay_stats_smartly();
     }
     Ok(())
 }

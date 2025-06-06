@@ -88,9 +88,6 @@ impl AqueductBuilder for LazyStreamTx<StreamIngress> {
                 #[cfg(not(test))]
                 warn!("no AqueTech provided, probably testing or still under development");
             }
-            _ => {
-                panic!("unsupported distribution type");
-            }
         };
     }
 
@@ -127,9 +124,6 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamEgre
                 #[cfg(not(test))]
                 warn!("no AqueTech provided, probably testing or still under development");
             },
-            x => {
-                panic!("unsupported distribution type: {:?}", x);
-            }
         };
     }
 
@@ -168,9 +162,6 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamIngr
                 #[cfg(not(test))]
                 warn!("no AqueTech provided, probably testing or still under development");
             },
-            x => {
-                panic!("unsupported distribution type {:?}",x);
-            }
         };
     }
 

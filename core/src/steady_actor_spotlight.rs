@@ -24,10 +24,10 @@ use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
-use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyCommander, Tx, TxCoreBundle, MONITOR_NOT};
+use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
-use crate::commander::SendOutcome;
+use crate::steady_actor::SendOutcome;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
@@ -41,7 +41,7 @@ use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::util::steady_logger;
 
 /// Automatically sends the last telemetry data when a `LocalMonitor` instance is dropped.
-impl<const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
+impl<const RXL: usize, const TXL: usize> Drop for SteadyActorSpotlight<RXL, TXL> {
     fn drop(&mut self) {
         if self.is_in_graph {
             // finish sending the last telemetry if we are in a graph & have monitoring
@@ -65,7 +65,7 @@ impl<const RXL: usize, const TXL: usize> Drop for LocalMonitor<RXL, TXL> {
 /// # Type Parameters
 /// - `RX_LEN`: The length of the receiver array.
 /// - `TX_LEN`: The length of the transmitter array.
-pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
+pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) ident: ActorIdentity,
     pub(crate) is_in_graph: bool,
     pub(crate) telemetry: SteadyTelemetry<RX_LEN, TX_LEN>,
@@ -87,7 +87,7 @@ pub struct LocalMonitor<const RX_LEN: usize, const TX_LEN: usize> {
 }
 
 /// Implementation of `LocalMonitor`.
-impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
+impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
 
 
     #[allow(async_fn_in_trait)]
@@ -164,7 +164,7 @@ impl<const RXL: usize, const TXL: usize> LocalMonitor<RXL, TXL> {
     }
 }
 
-impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<RX_LEN, TX_LEN> {
+impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotlight<RX_LEN, TX_LEN> {
 
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
         Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
@@ -178,7 +178,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
 
     async fn simulated_behavior(mut self, sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>> {
-        simulate_edge::simulated_behavior::<LocalMonitor<RX_LEN, TX_LEN>>(&mut self, sims).await
+        simulate_edge::simulated_behavior::<SteadyActorSpotlight<RX_LEN, TX_LEN>>(&mut self, sims).await
     }
 
     /// set loglevel for the application
@@ -1083,7 +1083,11 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     /// Requests a stop of the graph.
     ///
     #[inline]
-    async fn request_shutdown(&self) {
+    async fn request_shutdown(&mut self) {
+
+        //must relay all our final stats for the chart in case we hit the barrier
+        self.relay_stats();
+
         if let Some(barrier) = &self.shutdown_barrier {
             // Wait for all required actors to reach the barrier
             barrier.clone().wait().await;
@@ -1172,7 +1176,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyCommander for LocalMonitor<
     }
 }
 
-impl<const RX_LEN: usize, const TX_LEN: usize> LocalMonitor<RX_LEN, TX_LEN> {
+impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActorSpotlight<RX_LEN, TX_LEN> {
     fn telemetry_remaining_micros(&self) -> i64 {
        (1000i64 * self.frame_rate_ms as i64) - (self.last_telemetry_send.elapsed().as_micros() as i64
        * CONSUMED_MESSAGES_BY_COLLECTOR as i64)

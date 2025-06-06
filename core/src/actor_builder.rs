@@ -31,7 +31,7 @@ use aeron::aeron::Aeron;
 use async_lock::Barrier;
 #[allow(unused_imports)]
 
-use crate::commander_context::SteadyContext;
+use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::dot::RemoteDetails;
 
 /// The `ActorBuilder` struct is responsible for building and configuring actors.
@@ -160,7 +160,7 @@ pub struct Troupe {
 
 
 pub type PinnedFuture = Pin<Box<dyn Future<Output = Result<(), Box<dyn Error>>> + 'static>>;
-pub type DynCall = Box<dyn Fn(SteadyContext) -> PinnedFuture + 'static>;
+pub type DynCall = Box<dyn Fn(SteadyActorShadow) -> PinnedFuture + 'static>;
 
 
 type ActorRuntime = NonSendWrapper<DynCall>;
@@ -183,7 +183,7 @@ impl FutureBuilderType {
         build_actor_registration(&self.fun) 
     }
     
-    fn context(&self, team_display_id: usize) -> SteadyContext {
+    fn context(&self, team_display_id: usize) -> SteadyActorShadow {
         build_actor_context(&self.fun, self.frame_rate_ms, team_display_id, self.is_for_test)
     }
     
@@ -274,11 +274,12 @@ impl Troupe {
         let super_task = {
             async move {
                 // Determine the core to use based on the provided options
-                let core = team_id;//  TODO: new work goes here to select cores
 
                 // Pin the thread to the selected core if the `core_affinity` feature is enabled
                 #[cfg(feature = "core_affinity")]
                 {
+                    let core = team_id;//  TODO: new work goes here to select cores
+
                     if let Err(e) = pin_thread_to_core(core) {
                         eprintln!("Failed to pin thread to core {}: {:?}", core, e);
                     }
@@ -291,7 +292,7 @@ impl Troupe {
                 count_task.store(double_vec.len(),Ordering::SeqCst);
                 let _ = local_send.send(()); //may now return we have count and started
 
-                let triplet_vec:Vec<(ActorRuntime, SteadyContext, bool)> = self.future_builder.iter()
+                let triplet_vec:Vec<(ActorRuntime, SteadyActorShadow, bool)> = self.future_builder.iter()
                     .zip(double_vec)
                     .map(|(f,(e,b))| (e,f.context(team_id),b)) 
                     .collect();
@@ -365,7 +366,7 @@ impl Troupe {
         count.load(Ordering::SeqCst)
     }
 
-    fn build_async_fun<'a>(fun: &'a ActorRuntime, ctx: SteadyContext) -> Pin<Box<impl Future<Output=Result<(), Box<dyn Error>>> + Sized + 'a > > {
+    fn build_async_fun<'a>(fun: &'a ActorRuntime, ctx: SteadyActorShadow) -> Pin<Box<impl Future<Output=Result<(), Box<dyn Error>>> + Sized + 'a > > {
         Box::pin(async move {
             let guard_fun = fun.lock().await;
             guard_fun(ctx.clone()).await
@@ -692,7 +693,7 @@ impl ActorBuilder {
     /// * `exec` - The execution logic for the actor.
     fn build_spawn<F, I>(self, build_actor_exec: I)
         where
-            I: Fn(SteadyContext) -> F + 'static,
+            I: Fn(SteadyActorShadow) -> F + 'static,
             F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         // Clone the necessary fields to avoid moving `self` into the closure
@@ -715,7 +716,7 @@ impl ActorBuilder {
                Err(e) => {error!("Failed to spawn one more thread: {:?}", e);}
            }
             let fun:NonSendWrapper<DynCall> =  build_actor_registration(&context_archetype);
-            let master_ctx:SteadyContext = build_actor_context(&context_archetype, rate_ms, default_core, is_for_test);
+            let master_ctx: SteadyActorShadow = build_actor_context(&context_archetype, rate_ms, default_core, is_for_test);
 
             core_exec::spawn_detached(async move {
                 // Determine the core to use based on the provided options
@@ -790,7 +791,7 @@ impl ActorBuilder {
     /// * `target` - The `ActorTeam` to which the actor will be added.
     fn build_join<F, I>(self, build_actor_exec: I, target: &mut Troupe)
         where
-            I: Fn(SteadyContext) -> F + 'static,
+            I: Fn(SteadyActorShadow) -> F + 'static,
             F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         let rate = self.frame_rate_ms;
@@ -812,7 +813,7 @@ impl ActorBuilder {
     /// * `threading` - The `Threading` to use for the actor.
     pub fn build<F, I>(self, build_actor_exec: I, desired_scheduling: ScheduleAs)
     where
-        I: Fn(SteadyContext) -> F + 'static,
+        I: Fn(SteadyActorShadow) -> F + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         match desired_scheduling {
@@ -823,9 +824,9 @@ impl ActorBuilder {
 
 
     // Example adapter: converting a user’s generic Fn -> F into a pinned trait object
-    fn to_dyn_call<I, F>(f: I) -> Box<dyn Fn(SteadyContext) -> PinnedFuture>
+    fn to_dyn_call<I, F>(f: I) -> Box<dyn Fn(SteadyActorShadow) -> PinnedFuture>
     where
-        I: Fn(SteadyContext) -> F + 'static,
+        I: Fn(SteadyActorShadow) -> F + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         Box::new(move |ctx| Pin::from(Box::new(f(ctx))))
@@ -848,7 +849,7 @@ impl ActorBuilder {
     /// A `SteadyContextArchetype` instance configured with the actor's execution logic.
     fn single_actor_exec_archetype<F, I>(self, build_actor_exec: I) -> SteadyContextArchetype<DynCall>
         where
-            I: Fn(SteadyContext) -> F + 'static,
+            I: Fn(SteadyActorShadow) -> F + 'static,
             F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         let telemetry_tx = self.telemetry_tx.clone();
@@ -1024,10 +1025,10 @@ fn build_actor_context<I: ?Sized>(
     frame_rate_ms: u64,
     team_id: usize,
     is_test: bool
-) -> SteadyContext
+) -> SteadyActorShadow
 {
     let uib = builder_source.never_simulate || !is_test;
-    SteadyContext {
+    SteadyActorShadow {
          runtime_state: builder_source.runtime_state.clone(),
          channel_count: builder_source.channel_count.clone(),
          ident: builder_source.ident,
@@ -1379,7 +1380,7 @@ mod tests {
 
 #[cfg(test)]
 mod test_actor_builder {
-    use crate::{GraphBuilder, GraphLivelinessState, SteadyCommander};
+    use crate::{GraphBuilder, GraphLivelinessState, SteadyActor};
     use super::*;
 
     #[test]

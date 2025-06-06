@@ -46,18 +46,18 @@ impl RuntimeState {
 pub(crate) const STOP_VALUE: u64        = 1_200_000_000_000;
 pub(crate) const PANIC_COUNTDOWN: usize =     6_000_000_000;
 
-pub async fn run<const NUMBERS_RX_GIRTH:usize,>(context: SteadyContext
+pub async fn run<const NUMBERS_RX_GIRTH:usize,>(actor: SteadyActorShadow
                                                 , numbers_rx: SteadyRxBundle<NumberMessage, NUMBERS_RX_GIRTH>
                                                 , fizzbuzz_messages_tx: SteadyTx<FizzBuzzMessage>
                                                 , errors_tx: SteadyTx<ErrorMessage>, state: SteadyState<RuntimeState>) -> Result<(),Box<dyn Error>> {
 
-  internal_behavior(context.into_monitor(numbers_rx.meta_data(),[&fizzbuzz_messages_tx, &errors_tx])
-                    ,STOP_VALUE,numbers_rx,fizzbuzz_messages_tx,errors_tx, state).await
+  internal_behavior(actor.into_spotlight(numbers_rx.meta_data(), [&fizzbuzz_messages_tx, &errors_tx])
+                    , STOP_VALUE, numbers_rx, fizzbuzz_messages_tx, errors_tx, state).await
 }
 
 
-async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
-    mut cmd: C,
+async fn internal_behavior<A: SteadyActor,const NUMBERS_RX_GIRTH: usize>(
+    mut actor: A,
     stop_value: u64,
     numbers_rx: SteadyRxBundle<NumberMessage, NUMBERS_RX_GIRTH>,
     fizzbuzz_messages_tx: SteadyTx<FizzBuzzMessage>,
@@ -70,7 +70,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
         let mut errors_tx = errors_tx.lock().await;
 
         if state.value > 1 {
-            let _ = cmd
+            let _ = actor
                 .send_async(
                     &mut errors_tx,
                     ErrorMessage {
@@ -85,7 +85,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
         let c1 = threes_rx[0].capacity() >> 1;
         let c2 = fives_rx[0].capacity() >> 1;
         let vacant_block = BATCH_SIZE.min(fizzbuzz_messages_tx.capacity());
-        while cmd.is_running(&mut || {
+        while actor.is_running(&mut || {
                                     state.value == stop_value
                                         && i!(threes_rx[0].is_closed_and_empty())
                                         && i!(fives_rx[0].is_closed_and_empty())
@@ -93,9 +93,9 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
                                         && i!(errors_tx.mark_closed())
                                 }) {
             let _clean = await_for_all!(
-                cmd.wait_avail(&mut threes_rx[0], c1),
-                cmd.wait_avail(&mut fives_rx[0], c2),
-                cmd.wait_vacant(&mut fizzbuzz_messages_tx, vacant_block)
+                actor.wait_avail(&mut threes_rx[0], c1),
+                actor.wait_avail(&mut fives_rx[0], c2),
+                actor.wait_vacant(&mut fizzbuzz_messages_tx, vacant_block)
             );
 
             let start_value = state.value;
@@ -109,7 +109,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
 
             // Step 2: Use iterators from channels to replace values with Fizz, Buzz, or FizzBuzz
             {
-                let mut iter_threes = cmd.take_into_iter(&mut threes_rx[0]);
+                let mut iter_threes = actor.take_into_iter(&mut threes_rx[0]);
 
                 if state.i_three.is_none() {
                     state.i_three = iter_threes.next();
@@ -126,7 +126,7 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
             }
 
             {
-                let mut iter_fives = cmd.take_into_iter(&mut fives_rx[0]);
+                let mut iter_fives = actor.take_into_iter(&mut fives_rx[0]);
 
                 if state.i_five.is_none() {
                     state.i_five = iter_fives.next();
@@ -150,10 +150,10 @@ async fn internal_behavior<C: SteadyCommander,const NUMBERS_RX_GIRTH: usize>(
             state.value += buffer_count as u64;
 
             // Step 3: Send the buffer slice
-            let _done = cmd.send_slice_until_full(&mut fizzbuzz_messages_tx, &state.buffer[0..buffer_count]);
+            let _done = actor.send_slice_until_full(&mut fizzbuzz_messages_tx, &state.buffer[0..buffer_count]);
 
             if state.value == stop_value {
-                cmd.request_shutdown().await;
+                actor.request_shutdown().await;
             }
 
             panic_countdown -= buffer_count as isize;
@@ -183,8 +183,8 @@ pub(crate) mod tests {
        let value = new_state();
         graph.actor_builder()
                    .with_name("UnitTest")
-                   .build_spawn( move |context|
-                           internal_behavior(context, 15, numbers_rx.clone(), fizzbuzz_messages_tx.clone(), errors_tx.clone(), value.clone())
+                   .build( move |context|
+                           internal_behavior(context, 15, numbers_rx.clone(), fizzbuzz_messages_tx.clone(), errors_tx.clone(), value.clone()), SoloAct
                     );
 
         graph.start(); //startup the graph

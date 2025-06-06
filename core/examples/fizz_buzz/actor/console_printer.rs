@@ -9,23 +9,23 @@ use std::ops::DerefMut;
 use crate::actor::fizz_buzz_processor::FizzBuzzMessage;
 use crate::actor::timer_actor::PrintSignal;
 
-pub async fn run(context: SteadyContext
-        ,fizzbuzz_rx: SteadyRx<FizzBuzzMessage>
-        ,print_signal_rx: SteadyRx<PrintSignal>) -> Result<(),Box<dyn Error>> {
+pub async fn run(actor: SteadyActorShadow
+                 , fizzbuzz_rx: SteadyRx<FizzBuzzMessage>
+                 , print_signal_rx: SteadyRx<PrintSignal>) -> Result<(),Box<dyn Error>> {
 
-    let cmd = context.into_monitor([&fizzbuzz_rx, &print_signal_rx],[] );
+    let actor = actor.into_spotlight([&fizzbuzz_rx, &print_signal_rx], [] );
     if cfg!(not(test)) {
-        internal_behavior(cmd, fizzbuzz_rx, print_signal_rx).await
+        internal_behavior(actor, fizzbuzz_rx, print_signal_rx).await
     } else {
-        cmd.simulated_behavior(vec!(&fizzbuzz_rx, &print_signal_rx)).await
+        actor.simulated_behavior(vec!(&fizzbuzz_rx, &print_signal_rx)).await
     }
 }
 
 
 const BATCH_SIZE: usize = 20000;
-async fn internal_behavior<C:SteadyCommander>(mut cmd: C
-        ,fizzbuzz_messages_rx: SteadyRx<FizzBuzzMessage>
-        ,print_signal_rx: SteadyRx<PrintSignal>) -> Result<(),Box<dyn Error>> {
+async fn internal_behavior<A: SteadyActor>(mut actor: A
+                                           , fizzbuzz_messages_rx: SteadyRx<FizzBuzzMessage>
+                                           , print_signal_rx: SteadyRx<PrintSignal>) -> Result<(),Box<dyn Error>> {
 
     let mut fizzbuzz_messages_rx = fizzbuzz_messages_rx.lock().await;
     let mut print_signal_rx = print_signal_rx.lock().await;
@@ -39,15 +39,15 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
     let mut total_fizzbuzz:u64 = 0;
 
     let wait_for_count = fizzbuzz_messages_rx.capacity()/200;
-    while cmd.is_running(&mut || i!(fizzbuzz_messages_rx.is_closed_and_empty()) &&
+    while actor.is_running(&mut || i!(fizzbuzz_messages_rx.is_closed_and_empty()) &&
                                                i!(print_signal_rx.is_closed_and_empty())) {
 
-        let _clean = await_for_any!(cmd.wait_avail(&mut fizzbuzz_messages_rx, wait_for_count),
-                                               cmd.wait_avail(&mut print_signal_rx,1));
+        let _clean = await_for_any!(actor.wait_avail(&mut fizzbuzz_messages_rx, wait_for_count),
+                                               actor.wait_avail(&mut print_signal_rx,1));
 
-        while cmd.avail_units(&mut fizzbuzz_messages_rx) > 0 {
+        while actor.avail_units(&mut fizzbuzz_messages_rx) > 0 {
 
-            let count = cmd.take_slice(&mut fizzbuzz_messages_rx, buffer.deref_mut());
+            let count = actor.take_slice(&mut fizzbuzz_messages_rx, buffer.deref_mut());
             buffer[..count].iter().for_each(|msg| match msg {
                 FizzBuzzMessage::Fizz => total_fizz += 1,
                 FizzBuzzMessage::Buzz => total_buzz += 1,
@@ -57,7 +57,7 @@ async fn internal_behavior<C:SteadyCommander>(mut cmd: C
             total_count += count;
         }
 
-        match cmd.try_take(&mut print_signal_rx) {
+        match actor.try_take(&mut print_signal_rx) {
             Some(_t) => {
                 println!("Total:{} Fizz:{}({}%) Buzz:{}({}%) FizzBuzz:{}({}%) values:{}", total_count,
                          total_fizz, ((total_fizzbuzz + total_fizz) as f64 * 100f64) / total_count as f64,
@@ -94,8 +94,8 @@ pub(crate) mod tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context|
-                internal_behavior(context,fizzbuzz_messages_rx.clone(),print_signal_rx.clone())
+            .build( move |context|
+                internal_behavior(context,fizzbuzz_messages_rx.clone(),print_signal_rx.clone()), SoloAct
             );
 
         graph.start(); //startup the graph

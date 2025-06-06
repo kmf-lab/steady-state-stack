@@ -7,8 +7,7 @@ use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use std::thread::sleep;
-use async_ringbuf::producer::AsyncProducer;
-use crate::{core_exec, StreamEgress};
+use crate::{core_exec};
 
 pub(crate) type ChannelBacking<T> = Heap<T>;
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
@@ -34,7 +33,7 @@ use futures::channel::oneshot;
 use log::*;
 use async_ringbuf::traits::Split;
 use ringbuf::producer::Producer;
-use crate::{AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle, Trigger};
+use crate::{AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyTx, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
 use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamItem, TxChannelMetaDataWrapper};
 use crate::monitor::ChannelMetaData;
@@ -281,21 +280,21 @@ impl ChannelBuilder {
     ///
     /// # Returns
     /// A tuple containing bundles of transmitters and receivers.
-    pub(crate) fn build_eager_bundle<T, const GIRTH: usize>(&self) -> (SteadyTxBundle<T, GIRTH>, SteadyRxBundle<T, GIRTH>) {
-        let mut tx_vec = Vec::with_capacity(GIRTH);
-        let mut rx_vec = Vec::with_capacity(GIRTH);
-
-        (0..GIRTH).for_each(|_| {
-            let (t, r) = self.eager_build();
-            tx_vec.push(t);
-            rx_vec.push(r);
-        });
-
-        (
-            Arc::new(tx_vec.try_into().expect("Incorrect length")),
-            Arc::new(rx_vec.try_into().expect("Incorrect length")),
-        )
-    }
+    // pub(crate) fn build_eager_bundle<T, const GIRTH: usize>(&self) -> (SteadyTxBundle<T, GIRTH>, SteadyRxBundle<T, GIRTH>) {
+    //     let mut tx_vec = Vec::with_capacity(GIRTH);
+    //     let mut rx_vec = Vec::with_capacity(GIRTH);
+    //
+    //     (0..GIRTH).for_each(|_| {
+    //         let (t, r) = self.eager_build();
+    //         tx_vec.push(t);
+    //         rx_vec.push(r);
+    //     });
+    //
+    //     (
+    //         Arc::new(tx_vec.try_into().expect("Incorrect length")),
+    //         Arc::new(rx_vec.try_into().expect("Incorrect length")),
+    //     )
+    // }
 
     /// Build as a bundle fo channels. Consumes the builder. Makes use of Lazy version which will
     /// postpone allocation until after the first clone() is called.
@@ -979,10 +978,10 @@ macro_rules! assert_steady_rx_eq_take {
     }};
 }
 
-// Simple helper function for streams
-fn stream_bytes(bytes: &[u8]) -> (StreamEgress, Box<[u8]>) {
-    (StreamEgress::new(bytes.len() as i32), bytes.to_vec().into_boxed_slice())
-}
+// // Simple helper function for streams
+// fn stream_bytes(bytes: &[u8]) -> (StreamEgress, Box<[u8]>) {
+//     (StreamEgress::new(bytes.len() as i32), bytes.to_vec().into_boxed_slice())
+// }
 
 
 

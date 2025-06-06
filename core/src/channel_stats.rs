@@ -1150,12 +1150,12 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn filled_avg_percent_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_filled = true;
 
@@ -1177,12 +1177,12 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn filled_avg_fixed_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_filled = true;
 
@@ -1210,12 +1210,12 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn filled_std_dev_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_filled = true;
 
@@ -1256,20 +1256,20 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn filled_percentile_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
 
-        cmd.percentiles_filled.push(Percentile::p25());
-        cmd.percentiles_filled.push(Percentile::p50());
-        cmd.percentiles_filled.push(Percentile::p75());
-        cmd.percentiles_filled.push(Percentile::p90());
+        actor.percentiles_filled.push(Percentile::p25());
+        actor.percentiles_filled.push(Percentile::p50());
+        actor.percentiles_filled.push(Percentile::p75());
+        actor.percentiles_filled.push(Percentile::p90());
 
         let mut computer = ChannelStatsComputer::default();
         computer.frame_rate_ms = 3;
         assert!(computer.percentiles_filled.is_empty());
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
         assert!(!computer.percentiles_filled.is_empty());
 
         let mean = computer.capacity as f64 * 0.13;
@@ -1302,12 +1302,12 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn rate_avg_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 4;
-        cmd.refresh_rate_in_bits = 8;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 4;
+        actor.refresh_rate_in_bits = 8;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1",None)
+        computer.init(&Arc::new(actor), ActorName::new("1",None)
                                     , ActorName::new("2",None)
                                     , 30);
         computer.show_avg_rate = true;
@@ -1368,12 +1368,12 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn rate_std_dev_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_rate = true;
 
@@ -1413,17 +1413,17 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn rate_percentile_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
-        cmd.percentiles_rate.push(Percentile::p25());
-        cmd.percentiles_rate.push(Percentile::p50());
-        cmd.percentiles_rate.push(Percentile::p75());
-        cmd.percentiles_rate.push(Percentile::p90());
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
+        actor.percentiles_rate.push(Percentile::p25());
+        actor.percentiles_rate.push(Percentile::p50());
+        actor.percentiles_rate.push(Percentile::p75());
+        actor.percentiles_rate.push(Percentile::p90());
         let mut computer = ChannelStatsComputer::default();
         computer.frame_rate_ms = 3;
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
 
         let mean = computer.capacity as f64 * 0.13;
         let expected_std_dev = 10.0; // Standard deviation
@@ -1470,12 +1470,12 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn latency_avg_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer.frame_rate_ms = 3;
         computer.show_avg_latency = true;
 
@@ -1511,12 +1511,12 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn latency_std_dev_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
         computer
 
             .frame_rate_ms = 3;
@@ -1551,17 +1551,17 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn latency_percentile_trigger() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 256;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
-        cmd.percentiles_latency.push(Percentile::p25());
-        cmd.percentiles_latency.push(Percentile::p50());
-        cmd.percentiles_latency.push(Percentile::p75());
-        cmd.percentiles_latency.push(Percentile::p90());
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 256;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
+        actor.percentiles_latency.push(Percentile::p25());
+        actor.percentiles_latency.push(Percentile::p50());
+        actor.percentiles_latency.push(Percentile::p75());
+        actor.percentiles_latency.push(Percentile::p90());
         let mut computer = ChannelStatsComputer::default();
         computer.frame_rate_ms = 3;
-        computer.init(&Arc::new(cmd), ActorName::new("1",None), ActorName::new("2",None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
 
         // Simulate rate data accumulation
         let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
@@ -1584,12 +1584,12 @@ pub(crate) mod channel_stats_tests {
 
     /// Helper function to set up a `ChannelStatsComputer` with specified parameters.
     fn setup_computer(capacity: usize, window_bits: u8, refresh_bits: u8) -> ChannelStatsComputer {
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = capacity;
-        cmd.window_bucket_in_bits = window_bits;
-        cmd.refresh_rate_in_bits = refresh_bits;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = capacity;
+        actor.window_bucket_in_bits = window_bits;
+        actor.refresh_rate_in_bits = refresh_bits;
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 42);
         computer.frame_rate_ms = 3;
         computer
     }
@@ -1599,11 +1599,11 @@ pub(crate) mod channel_stats_tests {
     #[test]
     pub(crate) fn histogram_failure() {
         let _ = util::steady_logger::initialize();
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = usize::MAX; // Extremely large capacity to simulate failure
-        cmd.percentiles_filled.push(Percentile::p50()); // Force histogram creation
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = usize::MAX; // Extremely large capacity to simulate failure
+        actor.percentiles_filled.push(Percentile::p50()); // Force histogram creation
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 42);
+        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 42);
         computer.accumulate_data_frame(0, 100);
         // Expect error logging or graceful handling; no panic should occur
     }
@@ -1658,15 +1658,15 @@ pub(crate) mod channel_stats_tests {
     fn test_init_with_labels_and_show_type() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 100;
-        cmd.labels = vec!["test_label1", "test_label2"];
-        cmd.show_type = Some("test_type");
-        cmd.display_labels = true;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 100;
+        actor.labels = vec!["test_label1", "test_label2"];
+        actor.show_type = Some("test_type");
+        actor.display_labels = true;
 
         let mut computer = ChannelStatsComputer::default();
         computer.init(
-            &Arc::new(cmd),
+            &Arc::new(actor),
             ActorName::new("from_actor", Some(42)),
             ActorName::new("to_actor", Some(99)),
             1000
@@ -1689,15 +1689,15 @@ pub(crate) mod channel_stats_tests {
         let _ = util::steady_logger::initialize();
 
         // Test with capacity that might cause histogram errors
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = u64::MAX as usize; // Extreme capacity
-        cmd.percentiles_filled.push(Percentile::p50());
-        cmd.percentiles_rate.push(Percentile::p50());
-        cmd.percentiles_latency.push(Percentile::p50());
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = u64::MAX as usize; // Extreme capacity
+        actor.percentiles_filled.push(Percentile::p50());
+        actor.percentiles_rate.push(Percentile::p50());
+        actor.percentiles_latency.push(Percentile::p50());
 
         let mut computer = ChannelStatsComputer::default();
         // This should handle histogram creation gracefully and log errors
-        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
     }
 
 
@@ -1708,26 +1708,26 @@ pub(crate) mod channel_stats_tests {
     // fn test_compute_full_prometheus_metrics() {
     //     let _ = util::steady_logger::initialize();
     //
-    //     let mut cmd = ChannelMetaData::default();
-    //     cmd.capacity = 100;
-    //     cmd.show_type = Some("test_type");
-    //     cmd.display_labels = true;
-    //     cmd.labels = vec!["label1", "label2"];
-    //     cmd.window_bucket_in_bits = 2;
-    //     cmd.refresh_rate_in_bits = 2;
-    //     cmd.show_total = true;
-    //     cmd.avg_filled = true;
-    //     cmd.avg_rate = true;
-    //     cmd.avg_latency = true;
-    //     cmd.percentiles_filled.push(Percentile::p50());
-    //     cmd.std_dev_inflight.push(StdDev::one());
-    //     cmd.trigger_filled.push((Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow));
-    //     cmd.trigger_rate.push((Trigger::AvgAbove(Rate::per_millis(100)), AlertColor::Orange));
-    //     cmd.trigger_latency.push((Trigger::AvgAbove(Duration::from_millis(100)), AlertColor::Red));
-    //     cmd.line_expansion = 1.5;
+    //     let mut actor = ChannelMetaData::default();
+    //     actor.capacity = 100;
+    //     actor.show_type = Some("test_type");
+    //     actor.display_labels = true;
+    //     actor.labels = vec!["label1", "label2"];
+    //     actor.window_bucket_in_bits = 2;
+    //     actor.refresh_rate_in_bits = 2;
+    //     actor.show_total = true;
+    //     actor.avg_filled = true;
+    //     actor.avg_rate = true;
+    //     actor.avg_latency = true;
+    //     actor.percentiles_filled.push(Percentile::p50());
+    //     actor.std_dev_inflight.push(StdDev::one());
+    //     actor.trigger_filled.push((Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow));
+    //     actor.trigger_rate.push((Trigger::AvgAbove(Rate::per_millis(100)), AlertColor::Orange));
+    //     actor.trigger_latency.push((Trigger::AvgAbove(Duration::from_millis(100)), AlertColor::Red));
+    //     actor.line_expansion = 1.5;
     //
     //     let mut computer = ChannelStatsComputer::default();
-    //     computer.init(&Arc::new(cmd), ActorName::new("from", None), ActorName::new("to", None), 1000);
+    //     computer.init(&Arc::new(actor), ActorName::new("from", None), ActorName::new("to", None), 1000);
     //
     //     // Accumulate enough data to trigger bucket rotation
     //     let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
@@ -1807,15 +1807,15 @@ pub(crate) mod channel_stats_tests {
     fn test_line_thickness_calculation() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 100;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
-        cmd.percentiles_rate.push(Percentile::p80());
-        cmd.line_expansion = 2.0; // Test non-NaN line expansion
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 100;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
+        actor.percentiles_rate.push(Percentile::p80());
+        actor.line_expansion = 2.0; // Test non-NaN line expansion
 
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
 
         // Accumulate data to get current_rate
         let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
@@ -1902,12 +1902,12 @@ pub(crate) mod channel_stats_tests {
     fn test_show_total_number_formatting() {
         let _ = util::steady_logger::initialize();
 
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 100;
-        cmd.show_total = true;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 100;
+        actor.show_total = true;
 
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
 
         let mut display_label = String::new();
         let mut metric_text = String::new();
@@ -1921,13 +1921,13 @@ pub(crate) mod channel_stats_tests {
 
     /// Helper function to create a basic computer for testing
     fn setup_basic_computer() -> ChannelStatsComputer {
-        let mut cmd = ChannelMetaData::default();
-        cmd.capacity = 100;
-        cmd.window_bucket_in_bits = 2;
-        cmd.refresh_rate_in_bits = 2;
+        let mut actor = ChannelMetaData::default();
+        actor.capacity = 100;
+        actor.window_bucket_in_bits = 2;
+        actor.refresh_rate_in_bits = 2;
 
         let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
 
         // Accumulate some data to get current values
         let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
@@ -1957,16 +1957,16 @@ pub(crate) mod channel_stats_tests {
     // fn test_bucket_refresh_histogram_errors() {
     //     let _ = util::steady_logger::initialize();
     //
-    //     let mut cmd = ChannelMetaData::default();
-    //     cmd.capacity = 100;
-    //     cmd.window_bucket_in_bits = 1; // Small window to trigger refresh quickly
-    //     cmd.refresh_rate_in_bits = 1;
-    //     cmd.percentiles_filled.push(Percentile::p50());
-    //     cmd.percentiles_rate.push(Percentile::p50());
-    //     cmd.percentiles_latency.push(Percentile::p50());
+    //     let mut actor = ChannelMetaData::default();
+    //     actor.capacity = 100;
+    //     actor.window_bucket_in_bits = 1; // Small window to trigger refresh quickly
+    //     actor.refresh_rate_in_bits = 1;
+    //     actor.percentiles_filled.push(Percentile::p50());
+    //     actor.percentiles_rate.push(Percentile::p50());
+    //     actor.percentiles_latency.push(Percentile::p50());
     //
     //     let mut computer = ChannelStatsComputer::default();
-    //     computer.init(&Arc::new(cmd), ActorName::new("1", None), ActorName::new("2", None), 1000);
+    //     computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
     //
     //     // Force bucket refresh multiple times
     //     for _ in 0..10 {

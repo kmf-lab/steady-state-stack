@@ -1,7 +1,8 @@
 # Stage 1: Build Stage
 FROM debian:bullseye-slim AS builder
 
-ENV AERON_VERSION=1.46.7
+ENV AERON_VERSION=1.48.0
+                # 1.46.7
 ENV AERON_SRC=/opt/aeron
 ENV BUILD_DIR=/build
 
@@ -23,10 +24,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     file \
     wget \
+    openssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade CMake to the latest version (manual download and install)
-RUN wget -qO- https://github.com/Kitware/CMake/releases/download/v3.27.6/cmake-3.27.6-linux-x86_64.tar.gz | tar --strip-components=1 -xz -C /usr/local
+RUN wget -qO- https://github.com/Kitware/CMake/releases/download/v3.30.3/cmake-3.27.6-linux-x86_64.tar.gz | tar --strip-components=1 -xz -C /usr/local
 
 # Clone the Aeron source repository
 RUN git clone --depth 1 --branch $AERON_VERSION https://github.com/real-logic/aeron.git $AERON_SRC
@@ -71,7 +73,7 @@ ENV AERON_MEDIA_DRIVER_THREAD_PRIORITY=10
 ENV AERON_TERM_BUFFER_PRE_ZERO=0
 
 
-CMD ["sh"]
+actor ["sh"]
 
 #  docker build -t aeron-debian -f Dockerfile.aeronmd_debian .
 #  docker run --rm -it --network=host aeron-debian /build/binaries/aeronmd

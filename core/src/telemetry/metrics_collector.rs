@@ -20,9 +20,9 @@ use futures_util::stream::FuturesUnordered;
 use num_traits::One;
 use crate::graph_liveliness::ActorIdentity;
 use crate::{GraphLivelinessState, SteadyRx};
-use crate::commander::SteadyCommander;
+use crate::steady_actor::SteadyActor;
 #[allow(unused_imports)]
-use crate::commander_context::SteadyContext;
+use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::SendOutcome::{Blocked, Success};
@@ -72,7 +72,7 @@ struct RawDiagramState {
 
 /// Runs the metrics collector actor, collecting telemetry data from all actors and consolidating it for sharing and logging.
 pub(crate) async fn run<const GIRTH: usize>(
-    context: SteadyContext,
+    context: SteadyActorShadow,
     dynamic_senders_vec: Arc<RwLock<Vec<crate::telemetry::metrics_collector::CollectorDetail>>>,
     optional_servers: SteadyTxBundle<DiagramData, GIRTH>,
 ) -> Result<(), Box<dyn Error>> {
@@ -80,7 +80,7 @@ pub(crate) async fn run<const GIRTH: usize>(
 }
 
 async fn internal_behavior<const GIRTH: usize>(
-    context: SteadyContext,
+    context: SteadyActorShadow,
     dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>>,
     optional_servers: SteadyTxBundle<DiagramData, GIRTH>,
 ) -> Result<(), Box<dyn Error>> {

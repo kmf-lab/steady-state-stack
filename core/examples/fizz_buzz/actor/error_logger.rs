@@ -8,32 +8,32 @@ use std::error::Error;
 use crate::actor::fizz_buzz_processor::ErrorMessage;
 
 
-pub async fn run(context: SteadyContext
-        ,errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
+pub async fn run(actor: SteadyActorShadow
+                 , errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
 
-    let cmd = context.into_monitor([&errors_rx],[]);
+    let actor = actor.into_spotlight([&errors_rx], []);
     if cfg!(not(test)) {
-        internal_behavior(cmd, errors_rx).await
+        internal_behavior(actor, errors_rx).await
     } else {
-        cmd .simulated_behavior(vec!(&errors_rx)).await
+        actor.simulated_behavior(vec!(&errors_rx)).await
     }
 }
 
 
-async fn internal_behavior<C:SteadyCommander>(mut cmd: C
-                ,errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
+async fn internal_behavior<A: SteadyActor>(mut actor: A
+                                           , errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
 
     let mut errors_rx = errors_rx.lock().await;
 
-    while cmd.is_running(&mut || i!(errors_rx.is_closed_and_empty())) {
+    while actor.is_running(&mut || i!(errors_rx.is_closed_and_empty())) {
 
-         let clean = await_for_all!(cmd.wait_avail(&mut errors_rx,1) );
+         let clean = await_for_all!(actor.wait_avail(&mut errors_rx,1) );
 
-         match cmd.try_take(&mut errors_rx) {
+         match actor.try_take(&mut errors_rx) {
                 Some(_message) => {
                     #[cfg(not(test))]
                     error!("Error: {:?}",_message);
-                    cmd.relay_stats();
+                    actor.relay_stats();
                 },
                 None => {
                     if clean {
@@ -60,8 +60,8 @@ pub(crate) mod tests {
         let (test_errors_tx,errors_rx) = graph.channel_builder().with_capacity(4).build_channel();
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context|
-                internal_behavior(context,errors_rx.clone())
+            .build( move |context|
+                internal_behavior(context,errors_rx.clone()), SoloAct
             );
 
         graph.start(); //startup the graph

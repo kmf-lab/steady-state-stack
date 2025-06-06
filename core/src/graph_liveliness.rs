@@ -29,7 +29,7 @@ use async_lock::Barrier;
 use crate::actor_builder::{ActorBuilder, TroupeGuard};
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
-use crate::commander_context::SteadyContext;
+use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::distributed::aeron_channel_structs::aeron_utils::aeron_context;
 use crate::graph_testing::StageManager;
 use crate::inspect_short_bools::i_take_expression;
@@ -240,7 +240,7 @@ impl GraphLiveliness {
             if let VoterStatus::Dead(ident) = v {
                 //confirm we have not already voted
                 let my_ballot = &read.votes[i];
-                if let Some(mut vote) = my_ballot.try_lock() {
+                if let Some(vote) = my_ballot.try_lock() {
                     //we can only vote once as a dead actor
                     if !vote.in_favor {
                         Some((i,ident.clone()))
@@ -588,7 +588,7 @@ impl GraphBuilder {
             println!("Ctrl-C received, initiating shutdown...");
             let now = Instant::now();
 
-            let mut timeout = {
+            let timeout = {
                 let value1 = ctrlc_runtime_state.clone();
                 let value2 = ctrlc_runtime_state.clone();
 
@@ -693,7 +693,7 @@ impl Graph {
     ///
     /// A new `SteadyContext` for testing.
     ///
-    pub fn new_testing_test_monitor(&self, name: &'static str) -> SteadyContext {
+    pub fn new_testing_test_monitor(&self, name: &'static str) -> SteadyActorShadow {
         info!("this is for testing only, never run as part of your release");
         let channel_count = self.channel_count.clone();
         let all_telemetry_rx = self.all_telemetry_rx.clone();
@@ -710,7 +710,7 @@ impl Graph {
         let now = Instant::now();
 
 
-        SteadyContext {
+        SteadyActorShadow {
             channel_count,
             ident: ActorIdentity::new(usize::MAX, name, None), //no Id this is for testing
             args: self.args.clone(),
@@ -792,7 +792,7 @@ impl Graph {
 
     /// Stops the graph procedure requested.
     pub fn request_shutdown(&mut self) {
-        let mut a = self.runtime_state.clone();
+        let a = self.runtime_state.clone();
         core_exec::block_on(async move {  GraphLiveliness::internal_request_shutdown(a).await });
     }
 

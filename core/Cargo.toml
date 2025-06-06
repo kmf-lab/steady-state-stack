@@ -93,16 +93,14 @@ uuid             = { version = "1.16.0", features = ["v4"] }
 num-traits       = "0.2.19" # for num::Zero and other generic math traits
 itoa             = "1.0.15"
 ctrlc            = "3.4.7"
-time             = { version = "0.3.41", features = ["macros", "formatting", "parsing"] }
+time             = { version = "0.3.41", features = ["macros", "formatting", "parsing"] } # used in dot regardles of what IDE reports
 dirs             = "5.0.1"
 clap              = { version = "4.5.35", features = ["derive"] }  # Use clap with derive feature
 futures          = "0.3.31"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3.31"
 parking_lot      = "0.12.3"
 tempfile         = "3.19.1"
-#num_cpus         = "1.16.0"
-#smallvec         = "1.13.2"
-#pin-project      = "1.1.7"
+
 ahash            = "0.8.11" # fastest hash map so far
 async-io         = "2.4.0"
 async-lock       = "3.4"  # Use the latest version
@@ -118,7 +116,9 @@ async-lock       = "3.4"  # Use the latest version
 #h3             = "0.0.7"
 #################################################
 
-
+#num_cpus         = "1.16.0"
+#smallvec         = "1.13.2"
+#pin-project      = "1.1.7"
 
 # buldign in MQTT for IoT and Lambdas, for soon 0.2 release
 #mqttrs           = "0.4.1"
@@ -179,7 +179,9 @@ winapi = { version = "0.3", optional = true, features = ["winbase", "processthre
 #          Added aeron power script for windows
 #          Added new Test Enums and Macros to simplify actors
 #
+# TODO: write out timeline here.
 #
+
 #   We are here doing more work on 0.1.4
 #            dot files remote ips?? full graph testing macros??
 #

@@ -24,39 +24,39 @@ impl InternalState {
     }
 }
 
-pub async fn run(context: SteadyContext
+pub async fn run(context: SteadyActorShadow
                  , rx: SteadyRx<ApprovedWidgets>
                  , state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([&rx],[]);
+    let actor = context.into_spotlight([&rx], []);
     if cfg!(not(test)) {
-        internal_behavior(cmd, rx, state).await
+        internal_behavior(actor, rx, state).await
     } else {
-        cmd.simulated_behavior(vec!(&rx)).await
+        actor.simulated_behavior(vec!(&rx)).await
     }
 }
 
-pub(crate) async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<ApprovedWidgets>, state: Arc<Mutex<InternalState>>) -> Result<(), Box<dyn Error>> {
+pub(crate) async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<ApprovedWidgets>, state: Arc<Mutex<InternalState>>) -> Result<(), Box<dyn Error>> {
     //let args:Option<&Args> = context.args(); //you can make the type explicit
-    let _args = cmd.args::<Args>(); //or you can turbo fish here to get your args
+    let _args = actor.args::<Args>(); //or you can turbo fish here to get your args
     //trace!("running {:?} {:?}",context.id(),context.name());
 
     let mut rx = rx.lock().await;
     let mut state = state.lock().await;
 
     //predicate which affirms or denies the shutdown request
-    while cmd.is_running(&mut || rx.is_closed_and_empty()) {
-        let _clean = await_for_all!(cmd.wait_avail(&mut rx,1));
+    while actor.is_running(&mut || rx.is_closed_and_empty()) {
+        let _clean = await_for_all!(actor.wait_avail(&mut rx,1));
 
         //example of high volume processing, we stay here until there is no more work BUT
         //we must also relay our telemetry data periodically
         while !rx.is_empty() {
             let mut buf = state.buffer;
-            let count = cmd.take_slice(&mut rx, &mut buf);
+            let count = actor.take_slice(&mut rx, &mut buf);
             for x in 0..count {
                 state.last_approval = Some(buf[x].to_owned());
             }
             //based on the channel capacity this will send batched updates so most calls do nothing.
-            cmd.relay_stats_smartly();
+            actor.relay_stats_smartly();
 
         }
     }

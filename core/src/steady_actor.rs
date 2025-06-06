@@ -14,14 +14,14 @@ use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::{TxMetaDataProvider};
 use crate::telemetry::setup;
-use crate::commander_context::SteadyContext;
-use crate::commander_monitor::LocalMonitor;
+use crate::steady_actor_shadow::SteadyActorShadow;
+use crate::steady_actor_spotlight::SteadyActorSpotlight;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::simulate_edge::{IntoSimRunner};
 
-impl SteadyContext {
+impl SteadyActorShadow {
     /// Converts the context into a local monitor.
     ///
     /// # Parameters
@@ -30,11 +30,11 @@ impl SteadyContext {
     ///
     /// # Returns
     /// A `LocalMonitor` instance.
-    pub fn into_monitor<const RX_LEN: usize, const TX_LEN: usize>(
+    pub fn into_spotlight<const RX_LEN: usize, const TX_LEN: usize>(
         self,
         rx_mons: [&dyn RxMetaDataProvider; RX_LEN], //todo T: RxDef and TxDef
         tx_mons: [&dyn TxMetaDataProvider; TX_LEN],
-    ) -> LocalMonitor<RX_LEN, TX_LEN> {
+    ) -> SteadyActorSpotlight<RX_LEN, TX_LEN> {
         let rx_meta = rx_mons
             .iter()
             .map(|rx| rx.meta_data())
@@ -49,7 +49,7 @@ impl SteadyContext {
             .try_into()
             .expect("Length mismatch should never occur");
 
-        self.into_monitor_internal(rx_meta, tx_meta)
+        self.into_spotlight_internal(rx_meta, tx_meta)
     }
     /// Internal method to convert the context into a local monitor.
     ///
@@ -59,11 +59,11 @@ impl SteadyContext {
     ///
     /// # Returns
     /// A `LocalMonitor` instance.
-    pub fn into_monitor_internal<const RX_LEN: usize, const TX_LEN: usize>(
+    pub fn into_spotlight_internal<const RX_LEN: usize, const TX_LEN: usize>(
         self,
         rx_mons: [RxMetaData; RX_LEN],
         tx_mons: [TxMetaData; TX_LEN],
-    ) -> LocalMonitor<RX_LEN, TX_LEN> {
+    ) -> SteadyActorSpotlight<RX_LEN, TX_LEN> {
         let (send_rx, send_tx, state) = if (self.frame_rate_ms > 0)
             && (steady_config::TELEMETRY_HISTORY || steady_config::TELEMETRY_SERVER) {
             let mut rx_meta_data = Vec::new();
@@ -93,7 +93,7 @@ impl SteadyContext {
             (None, None, None)
         };
 
-        LocalMonitor::<RX_LEN, TX_LEN> {
+        SteadyActorSpotlight::<RX_LEN, TX_LEN> {
             telemetry: SteadyTelemetry {
                 send_rx,
                 send_tx,
@@ -147,7 +147,7 @@ impl<X> SendOutcome<X> {
 ///      we need not worry about these methods needing Send. We also know that T will come
 ///      from other actors so we can assume that T is Send + Sync
 #[allow(async_fn_in_trait)]
-pub trait SteadyCommander {
+pub trait SteadyActor {
 
     fn frame_rate_ms(&self) -> u64;
 
@@ -513,7 +513,7 @@ pub trait SteadyCommander {
     /// Requests a graph stop for the actor.
     /// will await if a barrier is in place needing more actor approvals
     /// for the simple case will return immediately upon changing the state
-    async fn request_shutdown(&self);  // see with_graph_stop_barrier_count
+    async fn request_shutdown(&mut self);  // see with_graph_stop_barrier_count
 
     /// Retrieves the actor's arguments, cast to the specified type.
     ///

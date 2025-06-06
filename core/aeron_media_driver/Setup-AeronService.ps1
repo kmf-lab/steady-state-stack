@@ -69,11 +69,11 @@ $toolsToInstall = @(
 
 foreach ($tool in $toolsToInstall) {
     Log-Message "Installing $($tool.Name)..."
-    $installCmd = "choco install $($tool.Package) -y"
+    $installactor = "choco install $($tool.Package) -y"
     if ($tool.Params) {
-        $installCmd += " --package-parameters `"$($tool.Params)`""
+        $installactor += " --package-parameters `"$($tool.Params)`""
     }
-    Invoke-Expression $installCmd 2>&1 | Out-File -Append -FilePath $logFile
+    Invoke-Expression $installactor 2>&1 | Out-File -Append -FilePath $logFile
     if ($LASTEXITCODE -ne 0) {
         Log-Message "Failed to install $($tool.Name)." -level "ERROR"
         Exit 1
