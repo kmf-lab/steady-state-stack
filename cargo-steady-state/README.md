@@ -62,10 +62,10 @@ Here is an example output that I would save to disk as input to my code generato
 
 ```
 diagraph PRODUCT {
-     AwsEc2Manager [label="Spin up EC2 instances mod::aws AtLeastEvery(60sec) && OnEvent(cmd:1)"];
+     AwsEc2Manager [label="Spin up EC2 instances mod::aws AtLeastEvery(60sec) && OnEvent(actor:1)"];
      BigBrain [label="Deside what to do mod::brain OnEvent(txt:1||status:1)"];
      TextTaker [label="Consume test messages mod::text_message Other(socket)"];
-     BigBrain -> AwsEc2Manager [label="name::cmd <Ec2Command> >>PeekCopy #20"];
+     BigBrain -> AwsEc2Manager [label="name::actor <Ec2Command> >>PeekCopy #20"];
      AwsEc2Manager -> BigBrain [label="name::status <Ec2Status> >>PeekCopy #20"];
      TextTaker -> BigBrain [label="name::txt <FreeFormText> >>Take #100"];     
 }
