@@ -218,7 +218,7 @@ if (-not $serviceObj) {
     & $NSSM_EXE set $SERVICE_NAME Description $SERVICE_DESC 2>&1 | Out-File -Append -FilePath $logFile
     & $NSSM_EXE set $SERVICE_NAME Start SERVICE_AUTO_START 2>&1 | Out-File -Append -FilePath $logFile
     & $NSSM_EXE set $SERVICE_NAME AppThrottle 0 2>&1 | Out-File -Append -FilePath $logFile
-	& $NSSM_EXE set $SERVICE_NAME AppEnvironmentExtra `
+    & $NSSM_EXE set $SERVICE_NAME AppEnvironmentExtra `
 		"AERON_DIR=$AERON_DIR" `
 		"AERON_THREADING_MODE=DEDICATED" `
 		"AERON_SOCKET_SO_RCVBUF=4194304" `

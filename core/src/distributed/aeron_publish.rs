@@ -371,7 +371,7 @@ pub(crate) mod aeron_tests {
     //         .with_telemetry_metric_features(true)
     //         .with_telemtry_production_rate_ms(400)
     //         .build(());
-    //     let md = graph.aeron_media_driver();
+    //     let md = graph.aeron();
     //
     //     if let Some(temp_md) = &md {
     //         if let Some(guard_md) = temp_md.try_lock() {

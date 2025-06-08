@@ -21,7 +21,7 @@ pub struct AeronSubscribeSteadyState {
     sub_reg_id: Vec<Option<i64>>,
 }
 
-const ROUND_ROBIN:Option<Duration> = None;//Some(Duration::from_millis(5)); //TODO: hack for testing
+const ROUND_ROBIN:Option<Duration> =Some(Duration::from_millis(5)); //TODO: hack for testing
 
 pub async fn run<const GIRTH: usize>(
     context: SteadyActorShadow,
@@ -69,10 +69,10 @@ async fn poll_aeron_subscription<C: SteadyActor>(
             tx_item.item_channel.capacity()
         };
         if remaining_poll == 0 {
-            //trace!("No space left in the buffer, exiting tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
+            error!("No space left in the buffer, exiting tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
             break;
         }
-        //trace!("sub.poll remaining_poll: {}", remaining_poll);
+        error!("sub.poll remaining_poll: {}", remaining_poll);
         let got_count = sub.poll(&mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
             let flags = header.flags();
             let is_begin = 0 != (flags & frame_descriptor::BEGIN_FRAG);
@@ -87,7 +87,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
             input_bytes += length as u32;
             input_frags += 1;
         }, remaining_poll as i32);
-        //trace!("polling max of {} resulted in {}", remaining_poll, got_count);
+        error!("polling max of {} resulted in {} for sub {:?}", remaining_poll, got_count, sub.stream_id());
 
         if got_count<=0 || got_count==(remaining_poll as i32) {
             break; // No data received, or we have data to pass on so exit loop
@@ -191,7 +191,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
                                 found = true;
                             }
                         } else {
-                            actor.wait(Duration::from_millis(100)); //TODO: wait and wit periodic??
+                            actor.wait(Duration::from_millis(100)).await; //TODO: wait and wit periodic??
                             actor.relay_stats();
 
                         }
@@ -258,13 +258,17 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
             if time_to_wait > tx_stream.max_poll_latency {
                 trace!("time to wait is outside of the expected max {:?}",time_to_wait);
             }
+            if time_to_wait > Duration::from_millis(5) {
+                error!("big wait {:?} for {:?}",time_to_wait,earliest_idx);
+            }
+
 
             actor.wait_periodic(time_to_wait).await;    //TODO: we need some kind of check in the runtime to ensure actor is in the stack for await.
         }
         now = Instant::now();
         {
             let tx_stream = &mut tx_guards[earliest_idx];
-
+            error!("calling poll for {}",earliest_idx);
             let dynamic = match &mut subs[earliest_idx] {
                         Ok(subscription) => {
                                 poll_aeron_subscription(tx_stream, subscription, &mut actor, now).await

@@ -398,7 +398,7 @@ pub struct StreamTx<T: StreamItem> {
     pub(crate) ready_msg_session: VecDeque<i32>,
     pub(crate) last_input_instant: Instant,
     pub(crate) last_output_instant: Instant,
-    pub(crate) vacant_fragments: usize, //cache for polling
+   /// pub(crate) vacant_fragments: usize, //cache for polling
     pub(crate) input_rate_index: usize,
     pub(crate) input_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
     pub(crate) max_poll_latency: Duration, //for polling systems must check at least this often
@@ -448,7 +448,7 @@ impl<T: StreamItem> StreamTx<T> {
     pub fn new(item_channel: Tx<T>, payload_channel: Tx<u8>) -> Self {
         StreamTx {
             max_poll_latency: Duration::from_millis(1000), //TODO: expose?
-            vacant_fragments: item_channel.capacity() as usize,
+         //   vacant_fragments: item_channel.capacity() as usize,
             stored_vacant_values: (item_channel.capacity() as i32, payload_channel.capacity() as i32),
             item_channel,
             payload_channel,
@@ -952,23 +952,23 @@ impl<T: StreamItem> LazyStreamTx<T> {
     /// # Panics
     /// - If the entire payload can’t be sent.
     /// - If sending metadata fails.
-    pub(crate) fn testing_send_frame(&self, data: &[u8]) {
-        let s = self.clone();
-
-        let mut l = s.try_lock().expect("internal error: try_lock");
-
-        let x = l.payload_channel.shared_send_slice_until_full(data);
-
-        assert_eq!(x, data.len(), "Not all bytes were sent!");
-        assert_ne!(x, 0);
-
-        match l.item_channel.shared_try_send(T::testing_new(x as i32)) {
-            Ok(_) => {}
-            Err(_) => {
-                panic!("error sending metadata");
-            }
-        };
-    }
+    // pub(crate) fn testing_send_frame(&self, data: &[u8]) {
+    //     let s = self.clone();
+    //
+    //     let mut l = s.try_lock().expect("internal error: try_lock");
+    //
+    //     let x = l.payload_channel.shared_send_slice_until_full(data);
+    //
+    //     assert_eq!(x, data.len(), "Not all bytes were sent!");
+    //     assert_ne!(x, 0);
+    //
+    //     match l.item_channel.shared_try_send(T::testing_new(x as i32)) {
+    //         Ok(_) => {}
+    //         Err(_) => {
+    //             panic!("error sending metadata");
+    //         }
+    //     };
+    // }
 
     pub fn testing_send_all(&self, data: Vec<(T,&[u8])>, close: bool) {
 

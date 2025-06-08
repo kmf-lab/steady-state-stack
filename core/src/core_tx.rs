@@ -63,7 +63,7 @@ impl<T> TxCore for Tx<T> {
     type MsgOut = T;
     type MsgSize = usize;
 
-    fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
+    fn done_one(&self, _one: &Self::MsgIn<'_>) -> TxDone {
         TxDone::Normal(1)
     }
     fn shared_mark_closed(&mut self) -> bool {

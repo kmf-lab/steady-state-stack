@@ -214,14 +214,10 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                             if 0==count_done {
                                 break;
                             }
-
                         }
 
-
                         if let Ok(position) = p.position() {
-
                             if rx[index].is_closed_and_empty() {
-                                if let Ok(position) = p.position() {
                                     if position >= last_position[index] {
                                         error!("\nA totals {:?} \nB totals {:?} \nC totals {:?}\nD totals {:?}",a_counters,b_counters,c_counters,d_counters);
 
@@ -229,7 +225,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                             flushed_count += 1;
                                         }
                                     }
-                                }
                             }
 
                         } else {
@@ -239,8 +234,9 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                         }
                     }
                     Err(e) => {
-                        warn!("error details {}",e);
-                        flushed_count +=1; //not sure...
+                        warn!("{}",e);
+                        //flushed_count +=1; //not sure...
+                        yield_now().await;
                     }
                 }
             }
