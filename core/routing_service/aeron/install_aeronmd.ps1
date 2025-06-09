@@ -293,14 +293,16 @@ try {
     & $NSSM_EXE set $SERVICE_NAME AppStdout "$tempDir\AeronService.log"
     & $NSSM_EXE set $SERVICE_NAME AppStderr "$tempDir\AeronService.err.log"
     & $NSSM_EXE set $SERVICE_NAME Start SERVICE_AUTO_START
+	& $NSSM_EXE set $SERVICE_NAME AppPriority ABOVE_NORMAL_PRIORITY_CLASS
     & $NSSM_EXE set $SERVICE_NAME ObjectName $TargetUser  # Set service to run as TargetUser
 
     # Set environment variables for the service
     $nssmEnvVars = @(
         "AERON_DIR=C:\Temp\aeron",
         "AERON_THREADING_MODE=DEDICATED",
-        "AERON_SOCKET_SO_RCVBUF=4194304",
-        "AERON_SOCKET_SO_SNDBUF=4194304",
+        "AERON_SOCKET_SO_RCVBUF=8388608",
+        "AERON_SOCKET_SO_SNDBUF=8388608",
+		"AERON_TERM_BUFFER_LENGTH=67108864",
         "AERON_EVENT_LOG_FILENAME=$tempDir\aeron_event.log"
     )
     $nssmEnvString = $nssmEnvVars -join "`r`n"

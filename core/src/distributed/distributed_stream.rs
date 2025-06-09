@@ -952,23 +952,23 @@ impl<T: StreamItem> LazyStreamTx<T> {
     /// # Panics
     /// - If the entire payload can’t be sent.
     /// - If sending metadata fails.
-    // pub(crate) fn testing_send_frame(&self, data: &[u8]) {
-    //     let s = self.clone();
-    //
-    //     let mut l = s.try_lock().expect("internal error: try_lock");
-    //
-    //     let x = l.payload_channel.shared_send_slice_until_full(data);
-    //
-    //     assert_eq!(x, data.len(), "Not all bytes were sent!");
-    //     assert_ne!(x, 0);
-    //
-    //     match l.item_channel.shared_try_send(T::testing_new(x as i32)) {
-    //         Ok(_) => {}
-    //         Err(_) => {
-    //             panic!("error sending metadata");
-    //         }
-    //     };
-    // }
+    pub fn testing_send_frame(&self, data: &[u8]) {
+        let s = self.clone();
+
+        let mut l = s.try_lock().expect("internal error: try_lock");
+
+        let x = l.payload_channel.shared_send_slice_until_full(data);
+
+        assert_eq!(x, data.len(), "Not all bytes were sent!");
+        assert_ne!(x, 0);
+
+        match l.item_channel.shared_try_send(T::testing_new(x as i32)) {
+            Ok(_) => {}
+            Err(_) => {
+                panic!("error sending metadata");
+            }
+        };
+    }
 
     pub fn testing_send_all(&self, data: Vec<(T,&[u8])>, close: bool) {
 

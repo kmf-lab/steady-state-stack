@@ -90,6 +90,13 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
             if let Some(id) = state.pub_reg_id[f] {
                 let mut found = false;
                 while actor.is_running(&mut || rx.is_closed_and_empty()) && !found {
+
+                    // aeron.lock().await.subsc
+                    // let status = aeron.subscription_status(reg_id).await;
+                    // if status == SubscriptionStatus::Ready {
+                    //
+                    // }
+
                     let ex_pub = {
                         let mut aeron = aeron.lock().await;
                         aeron.find_exclusive_publication(id)
@@ -137,22 +144,13 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
 
         trace!("running publish '{:?}' all publications in place",actor.identity());
 
+         ///this does not help much
         let wait_for = 1;//(512*1024).min(rx.capacity());
         let in_channels = 1;
 
-    //TODO: need to do this for the single publish
-    //TODO: can we poll less if we see they are not flushing?
-    
-    //TODO: not good enought as we still loose th elast message, we reuqire waiting for subs to let go?
-
-    let mut a_counters = [0;GIRTH];
-    let mut b_counters = [0;GIRTH];
-    let mut c_counters = [0;GIRTH];
-    let mut d_counters = [0;GIRTH];
 
 
-
-    let mut all_streams_flushed = false;
+        let mut all_streams_flushed = false;
         while actor.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
 
             let _clean = await_for_any!(
@@ -174,13 +172,11 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                 rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len > 0);
-                                    let response = if slice2.is_empty() {
-                                        a_counters[index] += 1;
+                                    //TODO: we can get zero copy with try_claim?  much better desing?
 
+                                    let response = if slice2.is_empty() {
                                         p.offer_part(AtomicBuffer::wrap_slice(&mut slice1), 0, msg_len as Index)
                                     } else {  // TODO: p.try_claim() is probably a beter  way to move our datarather than AtomicBuffer usage..
-                                        b_counters[index] += 1;
-
                                         let a_len = msg_len.min(slice1.len());
                                         let remaining_read = msg_len - a_len;
                                         let aligned_buffer = AlignedBuffer::with_capacity(msg_len as Index);
@@ -194,7 +190,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                     };
                                     match response {
                                         Ok(value) => {
-                                            c_counters[index] += 1;
                                             if value>=0 {
                                                 last_position[index]= value;
                                                 count_done += 1;
@@ -205,7 +200,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                             }
                                         }
                                         Err(_aeron_error) => {
-                                            d_counters[index] += 1;
                                             false
                                         }
                                     }
@@ -219,7 +213,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                         if let Ok(position) = p.position() {
                             if rx[index].is_closed_and_empty() {
                                     if position >= last_position[index] {
-                                        error!("\nA totals {:?} \nB totals {:?} \nC totals {:?}\nD totals {:?}",a_counters,b_counters,c_counters,d_counters);
 
                                         if !p.is_connected() { // Wait until subscribers disconnect
                                             flushed_count += 1;
@@ -247,7 +240,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
     for index in 0..GIRTH {
         if let Ok(p) = &mut pubs[index] {
             while p.position().unwrap_or(0) < last_position[index] || p.is_connected() {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+                std::thread::sleep(std::time::Duration::from_millis(16));
             }
             p.close(); // Explicitly close the publication
         }

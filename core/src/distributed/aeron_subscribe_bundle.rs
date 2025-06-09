@@ -21,7 +21,9 @@ pub struct AeronSubscribeSteadyState {
     sub_reg_id: Vec<Option<i64>>,
 }
 
-const ROUND_ROBIN:Option<Duration> =Some(Duration::from_millis(5)); //TODO: hack for testing
+//TODO: time schedule has large waits we need to track down
+const ROUND_ROBIN:Option<Duration> = Some(Duration::from_millis(2)); //TODO: hack for testing
+//TODO: if publish is running some how subscribe needs to try again if too soon to get subcribe?
 
 pub async fn run<const GIRTH: usize>(
     context: SteadyActorShadow,
@@ -41,8 +43,7 @@ pub async fn run<const GIRTH: usize>(
                 return Ok(());
             }
         }
-        let aeron_media_driver = actor.aeron_media_driver().expect("media driver");
-        internal_behavior(actor, tx, aeron_connect, stream_id, aeron_media_driver, state).await
+        internal_behavior(actor, tx, aeron_connect, stream_id, state).await
     } else {
         let te: Vec<_> = tx.iter().map(|f| f.clone()).collect();
         let sims: Vec<_> = te.iter().map(|f| f as &dyn IntoSimRunner<_>).collect();
@@ -60,73 +61,83 @@ async fn poll_aeron_subscription<C: SteadyActor>(
     //trace!("polling subscription {}", sub.stream_id());
 
 
-    let mut input_bytes: u32 = 0;
-    let mut input_frags: u32 = 0;
-
-    // Poll the subscription
+    //read until count is zero or we have a pass without data.
+    let mut count_down = 100;
     loop {
-        let remaining_poll = if let Some(s) = tx_item.smallest_space() { s } else {
-            tx_item.item_channel.capacity()
-        };
-        if remaining_poll == 0 {
-            error!("No space left in the buffer, exiting tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
+        let mut input_bytes: u32 = 0;
+        let mut input_frags: u32 = 0;
+
+        // Poll the subscription until no data or defrag is full
+        loop {
+            let remaining_poll = if let Some(s) = tx_item.smallest_space() { s } else {
+                tx_item.item_channel.capacity()
+            };
+            if remaining_poll == 0 {
+                if tx_item.shared_vacant_units()>0 {
+                    error!("No space left in the buffer, exiting tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
+                }
+                break;
+            }
+            //trace!("sub.poll remaining_poll: {}", remaining_poll);
+            let got_count = sub.poll(&mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
+                let flags = header.flags();
+                let is_begin = 0 != (flags & frame_descriptor::BEGIN_FRAG);
+                let is_end = 0 != (flags & frame_descriptor::END_FRAG);
+                tx_item.fragment_consume(
+                    header.session_id(),
+                    buffer.as_sub_slice(offset, length),
+                    is_begin,
+                    is_end,
+                    now,
+                );
+                input_bytes += length as u32;
+                input_frags += 1;
+            }, remaining_poll as i32);
+            // error!("polling max of {} resulted in {} for sub {:?}", remaining_poll, got_count, sub.stream_id());
+
+            if got_count <= 0 || got_count == (remaining_poll as i32) {
+                break; // No data received, or we have data to pass on so exit loop
+            }
+            yield_now().await; // Allow more data in this pass
+        }
+
+
+        // Flush ready messages and update state
+        if !tx_item.ready_msg_session.is_empty() {
+            //trace!("flushing ready messages");
+            let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(actor);
+
+            // Get current vacant units after flushing
+            let current_vacant_items = tx_item.item_channel.shared_vacant_units() as i32;
+            let current_vacant_bytes = tx_item.payload_channel.shared_vacant_units() as i32;
+
+            // Store output data rate using actual sent values
+            let duration = now.duration_since(tx_item.last_output_instant);
+            tx_item.store_output_data_rate(duration, now_sent_messages, now_sent_bytes);
+            tx_item.last_output_instant = now;
+
+            // Update stored vacant values with current state
+            tx_item.set_stored_vacant_values(current_vacant_items, current_vacant_bytes);
+        }
+        // Store input data rate if fragments were received
+        if input_frags > 0 {
+            let duration = now.duration_since(tx_item.last_input_instant);
+            tx_item.store_input_data_rate(duration, input_frags, input_bytes);
+            tx_item.last_input_instant = now;
+        } else {
             break;
         }
-        error!("sub.poll remaining_poll: {}", remaining_poll);
-        let got_count = sub.poll(&mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
-            let flags = header.flags();
-            let is_begin = 0 != (flags & frame_descriptor::BEGIN_FRAG);
-            let is_end = 0 != (flags & frame_descriptor::END_FRAG);
-            tx_item.fragment_consume(
-                header.session_id(),
-                buffer.as_sub_slice(offset, length),
-                is_begin,
-                is_end,
-                now,
-            );
-            input_bytes += length as u32;
-            input_frags += 1;
-        }, remaining_poll as i32);
-        error!("polling max of {} resulted in {} for sub {:?}", remaining_poll, got_count, sub.stream_id());
-
-        if got_count<=0 || got_count==(remaining_poll as i32) {
-            break; // No data received, or we have data to pass on so exit loop
+        count_down -= 1;
+        if 0 == count_down {
+            break;
         }
-        yield_now().await; // Allow more data in this pass
-
-    }
-
-
-    // Flush ready messages and update state
-    if !tx_item.ready_msg_session.is_empty() {
-        //trace!("flushing ready messages");
-        let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(actor);
-
-        // Get current vacant units after flushing
-        let current_vacant_items = tx_item.item_channel.shared_vacant_units() as i32;
-        let current_vacant_bytes = tx_item.payload_channel.shared_vacant_units() as i32;
-
-        // Store output data rate using actual sent values
-        let duration = now.duration_since(tx_item.last_output_instant);
-        tx_item.store_output_data_rate(duration, now_sent_messages, now_sent_bytes);
-        tx_item.last_output_instant = now;
-
-        // Update stored vacant values with current state
-        tx_item.set_stored_vacant_values(current_vacant_items, current_vacant_bytes);
-    }
-
-    //trace!("store rate data");
-    // Store input data rate if fragments were received
-    if input_frags > 0 {
-        let duration = now.duration_since(tx_item.last_input_instant);
-        tx_item.store_input_data_rate(duration, input_frags, input_bytes);
-        tx_item.last_input_instant = now;
     }
 
 
 
-    //trace!("schedule next poll");
+    /////////////////////////////////////////////////
     // Schedule next poll
+    /////////////////////////////////////////////////
     let (avg, std) = tx_item.guess_duration_between_arrivals();
     let (min, max) = tx_item.next_poll_bounds();
 
@@ -146,7 +157,6 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
     tx: SteadyStreamTxBundle<StreamIngress, GIRTH>,
     aeron_channel: Channel,
     stream_id: i32,
-    aeron: Arc<futures_util::lock::Mutex<Aeron>>,
     state: SteadyState<AeronSubscribeSteadyState>,
 ) -> Result<(), Box<dyn Error>> {
     let tx_bundle = tx;
@@ -156,6 +166,9 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
     while state.sub_reg_id.len() < GIRTH {
         state.sub_reg_id.push(None);
     }
+
+
+    let aeron = actor.aeron_media_driver().expect("media driver");
 
     for f in 0..GIRTH {
         if state.sub_reg_id[f].is_none() {
@@ -179,60 +192,58 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         if let Some(id) = state.sub_reg_id[f] {
             let mut found = false;
             while actor.is_running(&mut || tx_guards.mark_closed()) && !found {
-                let sub = aeron.lock().await.find_subscription(id);
-                match sub {
-                    Err(e) => {
-                        if e.to_string().contains("Awaiting")
-                            || e.to_string().contains("not ready") {
-                            Delay::new(Duration::from_millis(7)).await;
+                    let sub = {aeron.lock().await.find_subscription(id)};
+                    match sub {
+                        Err(e) => {
                             if actor.is_liveliness_stop_requested() {
                                 trace!("stop detected before finding publication");
                                 subs[f] = Err("Shutdown requested while waiting".into());
-                                found = true;
+                                found = true; //needed to exit now
                             }
-                        } else {
-                            actor.wait(Duration::from_millis(100)).await; //TODO: wait and wit periodic??
+                            actor.wait(Duration::from_millis(13)).await; //TODO: wait and wit periodic??
                             actor.relay_stats();
+                        },
+                        Ok(subscription) => {
+                            match Arc::try_unwrap(subscription) {
+                                Ok(mutex) => {
+                                    match mutex.into_inner() {
+                                        Ok(subscription) => {
+                                            //trace!("new sub {:?} status: {:?} connected: {:?}",subscription.stream_id(), subscription.channel_status(), subscription.is_connected());
+                                            let mut timeout = 100;
+                                            while !subscription.is_connected() && timeout>0 {
+                                                Delay::new(Duration::from_millis(20)).await;
+                                                timeout -= 1;
+                                            }
 
-                        }
+                                            if subscription.is_connected() {
+                                                subs[f] = Ok(subscription);
+                                                found = true;
+                                            } else {
+                                                drop(subscription);
+                                                let media_driver = aeron.lock();
 
-                        // else { // not sure we need this.
-                        //     warn!("Idx: {} Error finding subscription: {:?}, trying registration process again", f, e);
-                        //     subs[f] = Err(e.into());
-                        //     let meda_driver = aeron.lock();
-                        //     let connection_string = aeron_channel.cstring();
-                        //     let stream_id = f as i32 + stream_id;
-                        //     match meda_driver.await.add_subscription(connection_string, stream_id) {
-                        //         Ok(reg_id) => {
-                        //             state.sub_reg_id[f] = Some(reg_id);
-                        //         },
-                        //         Err(e) => {
-                        //             warn!("Unable to register subscription: {:?}", e);
-                        //         }
-                        //     };
-                        // }
-                    },
-                    Ok(subscription) => {
-                        match Arc::try_unwrap(subscription) {
-                            Ok(mutex) => {
-                                match mutex.into_inner() {
-                                    Ok(subscription) => {
-                                        //trace!("new sub {:?} status: {:?} connected: {:?}",subscription.stream_id(), subscription.channel_status(), subscription.is_connected());
-                                        if subscription.is_connected() {
-                                            subs[f] = Ok(subscription);
-                                            found = true;                                            
-                                        } else {
-                                            Delay::new(Duration::from_millis(7)).await;
-                                        }                                 
-                                       
-                                    },
-                                    Err(_) => panic!("Failed to unwrap Mutex"),
-                                }
-                            },
-                            Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
+                                                let connection_string = aeron_channel.cstring();
+                                                let stream_id = f as i32 + stream_id;
+
+                                                match media_driver.await.add_subscription(connection_string, stream_id) {
+                                                    Ok(reg_id) => {
+                                                        state.sub_reg_id[f] = Some(reg_id);
+                                                    },
+                                                    Err(e) => {
+                                                        warn!("Unable to register subscription: {:?}", e);
+                                                    }
+                                                };
+                                                error!("unable to find open conneciton, remove and add subcription to try again");
+                                            }
+                                        },
+                                        Err(_) => panic!("Failed to unwrap Mutex"),
+                                    }
+                                },
+                                Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
+                            }
                         }
                     }
-                }
+
             }
         } else {
             return Err("Check if Media Driver is running.".into());
@@ -261,14 +272,13 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
             if time_to_wait > Duration::from_millis(5) {
                 error!("big wait {:?} for {:?}",time_to_wait,earliest_idx);
             }
-
-
+            // TODO: testing skip of wait
             actor.wait_periodic(time_to_wait).await;    //TODO: we need some kind of check in the runtime to ensure actor is in the stack for await.
         }
         now = Instant::now();
         {
             let tx_stream = &mut tx_guards[earliest_idx];
-            error!("calling poll for {}",earliest_idx);
+            //trace!("calling poll for {}",earliest_idx);
             let dynamic = match &mut subs[earliest_idx] {
                         Ok(subscription) => {
                                 poll_aeron_subscription(tx_stream, subscription, &mut actor, now).await

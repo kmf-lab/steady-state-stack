@@ -9,6 +9,10 @@ pub(crate) mod aeron_utils {
     use aeron::context::Context;
     use aeron::utils::errors::AeronError;
     use log::*;
+    use std::time::Instant;
+    use std::fs::File;
+    use std::io::{Read, Seek, SeekFrom};
+    use std::time::{SystemTime, UNIX_EPOCH, Duration};
 
     /// Handles Aeron errors by logging them at the warn level.
     ///
@@ -18,38 +22,42 @@ pub(crate) mod aeron_utils {
         error!("Aeron Error: {:?}", error);
     }
 
-    /// Creates a new Aeron context with default configurations.
-    ///
-    /// This function configures an Aeron context with an error handler, disables pre-touching
-    /// of mapped memory, and sets the Aeron directory to "/dev/shm/aeron-default". For more
-    /// details on channel configuration, see: <https://github.com/real-logic/aeron/wiki/Channel-Configuration>.
-    ///
-    /// # Arguments
-    /// - `aeron_context`: A mutable `Context` to configure.
-    ///
-    /// # Returns
-    /// - `Some(Arc<Mutex<Aeron>>)` if the context is successfully created.
-    /// - `None` if there was an error creating the context, with the error logged at trace level.
-    pub(crate) fn aeron_context(mut aeron_context: Context) -> Option<Arc<Mutex<Aeron>>> {
-        // Set the error handler to log warnings for any Aeron errors
-        aeron_context.set_error_handler(Box::new(error_handler));
-        // Disable pre-touching to avoid unnecessary memory mapping overhead
-        aeron_context.set_pre_touch_mapped_memory(false);
 
-        // Set the Aeron directory to a shared memory location for IPC
+    pub(crate) fn aeron_context_with_retry(
+        mut aeron_context: Context,
+        max_wait: Duration,
+        retry_interval: Duration,
+    ) -> Option<Arc<Mutex<Aeron>>> {
+        aeron_context.set_error_handler(Box::new(error_handler));
+        aeron_context.set_pre_touch_mapped_memory(true);
+
         #[cfg(not(windows))]
         aeron_context.set_aeron_dir("/dev/shm/aeron-default".parse().expect("valid path"));
         #[cfg(windows)]
         aeron_context.set_aeron_dir("C:\\Temp\\aeron".parse().expect("valid path"));
 
-        match Aeron::new(aeron_context) {
-            Ok(aeron) => {
-                trace!("Aeron context created using: {:?} client_id: {:?}", aeron.context().cnc_file_name(),  aeron.client_id());
-                Some(Arc::new(Mutex::new(aeron)))
-            }
-            Err(e) => {
-                trace!("Failed to create Aeron context: {:?}", e);
-                None
+        let start = Instant::now();
+        loop {
+            match Aeron::new(aeron_context.clone()) {
+                Ok(aeron) => {
+                    trace!(
+                    "Aeron context created using: {:?} client_id: {:?}",
+                    aeron.context().cnc_file_name(),
+                    aeron.client_id()
+                );
+                    return Some(Arc::new(Mutex::new(aeron)));
+                }
+                Err(e) => {
+                    warn!(
+                    "Failed to create Aeron context: {:?}. Retrying in {:?}...",
+                    e, retry_interval
+                );
+                    if start.elapsed() > max_wait {
+                        trace!("Giving up after {:?}", max_wait);
+                        return None;
+                    }
+                    std::thread::sleep(retry_interval);
+                }
             }
         }
     }

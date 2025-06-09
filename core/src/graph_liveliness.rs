@@ -30,7 +30,7 @@ use crate::actor_builder::{ActorBuilder, TroupeGuard};
 use crate::telemetry;
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_actor_shadow::SteadyActorShadow;
-use crate::distributed::aeron_channel_structs::aeron_utils::aeron_context;
+use crate::distributed::aeron_channel_structs::aeron_utils::*;
 use crate::graph_testing::StageManager;
 use crate::inspect_short_bools::i_take_expression;
 use crate::monitor::ActorMetaData;
@@ -664,7 +664,7 @@ impl Graph {
         Self::aeron_media_driver_internal(&self.aeron)
     }
     pub(crate) fn aeron_media_driver_internal(holder: &OnceLock<Option<Arc<Mutex<Aeron>>>>) -> Option<Arc<Mutex<Aeron>>> {
-        holder.get_or_init(|| aeron_context(Context::new())).clone()
+        holder.get_or_init(|| aeron_context_with_retry(Context::new(),Duration::from_secs(60),Duration::from_millis(200))).clone()
     }
 
 
