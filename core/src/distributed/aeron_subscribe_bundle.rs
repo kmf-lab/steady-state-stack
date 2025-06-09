@@ -78,7 +78,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
                 }
                 break;
             }
-            //trace!("sub.poll remaining_poll: {}", remaining_poll);
+            warn!("sub.poll remaining_poll: {}", remaining_poll);
             let got_count = sub.poll(&mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
                 let flags = header.flags();
                 let is_begin = 0 != (flags & frame_descriptor::BEGIN_FRAG);
@@ -93,7 +93,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
                 input_bytes += length as u32;
                 input_frags += 1;
             }, remaining_poll as i32);
-            // error!("polling max of {} resulted in {} for sub {:?}", remaining_poll, got_count, sub.stream_id());
+            warn!("polling max of {} resulted in {} for sub {:?}", remaining_poll, got_count, sub.stream_id());
 
             if got_count <= 0 || got_count == (remaining_poll as i32) {
                 break; // No data received, or we have data to pass on so exit loop

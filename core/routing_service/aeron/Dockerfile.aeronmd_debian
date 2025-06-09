@@ -73,7 +73,7 @@ ENV AERON_MEDIA_DRIVER_THREAD_PRIORITY=10
 ENV AERON_TERM_BUFFER_PRE_ZERO=0
 
 
-actor ["sh"]
+cmd ["sh"]
 
 #  docker build -t aeron-debian -f Dockerfile.aeronmd_debian .
 #  docker run --rm -it --network=host aeron-debian /build/binaries/aeronmd

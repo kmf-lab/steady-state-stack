@@ -162,13 +162,18 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
             for index in 0..GIRTH {
                 match &mut pubs[index] {
                     Ok(p) => {
-                        //trace!("AA {} stream:{}",i, p.stream_id());
-
+                        let mut vacant_aeron_bytes = p.available_window().unwrap_or(0);
+                        let mut avail_messages = rx[index].avail_units();
+                        let orig_vacant = vacant_aeron_bytes;
+                        let orig_avail = avail_messages;
+                        let mut total_done = 0;
                         loop {
                             let mut count_done = 0;
                             let mut count_bytes = 0;
-                            let vacant_aeron_bytes = p.available_window().unwrap_or(0);
-                            if vacant_aeron_bytes > 0 {
+
+                            if vacant_aeron_bytes > 0 && avail_messages > 0 {
+
+
                                 rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len > 0);
@@ -190,24 +195,43 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                     };
                                     match response {
                                         Ok(value) => {
-                                            if value>=0 {
+                                            if value>0 {
                                                 last_position[index]= value;
                                                 count_done += 1;
                                                 count_bytes += msg_len;
                                                 true
                                             } else {
+                                                warn!("error code {:?}",value);
                                                 false
                                             }
                                         }
-                                        Err(_aeron_error) => {
+                                        Err(aeron_error) => {
+                                            warn!("error {:?}",aeron_error);
+                                            //if backpressujred but we see more room keep going?
+
                                             false
                                         }
                                     }
                                 });
                             }
+
+                            total_done += count_done;
                             if 0==count_done {
+                                if total_done>0  {
+                                    warn!("channel {} befor-- vacant {} , avail {}",index, orig_vacant,orig_avail);
+
+                                    warn!("channel {} after-- vacant {} , avail {}, total_done {}",index, p.available_window().unwrap_or(0),rx[index].avail_units(),total_done);
+                                    warn!("--------------------");
+
+                                }
                                 break;
+                            } else {
+                                warn!("channel {} publish batch of {} bytes and {} messages and {} window and  {} avail_msgs",index, count_bytes, count_done,vacant_aeron_bytes,avail_messages);
                             }
+                            //before we return to the top
+                            vacant_aeron_bytes = p.available_window().unwrap_or(0);
+                            avail_messages = rx[index].avail_units();
+
                         }
 
                         if let Ok(position) = p.position() {

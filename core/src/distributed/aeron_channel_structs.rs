@@ -41,10 +41,13 @@ pub(crate) mod aeron_utils {
             match Aeron::new(aeron_context.clone()) {
                 Ok(aeron) => {
                     trace!(
-                    "Aeron context created using: {:?} client_id: {:?}",
-                    aeron.context().cnc_file_name(),
-                    aeron.client_id()
-                );
+                        "Aeron context created using: {:?} client_id: {:?}",
+                        aeron.context().cnc_file_name(),
+                        aeron.client_id()
+                    );
+                    
+                    
+                    
                     return Some(Arc::new(Mutex::new(aeron)));
                 }
                 Err(e) => {
