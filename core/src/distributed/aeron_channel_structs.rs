@@ -28,27 +28,28 @@ pub(crate) mod aeron_utils {
         max_wait: Duration,
         retry_interval: Duration,
     ) -> Option<Arc<Mutex<Aeron>>> {
+        // Existing setup (error handler, directories, etc.)
         aeron_context.set_error_handler(Box::new(error_handler));
         aeron_context.set_pre_touch_mapped_memory(true);
 
         #[cfg(not(windows))]
-        aeron_context.set_aeron_dir("/dev/shm/aeron-default".parse().expect("valid path"));
+        aeron_context.set_aeron_dir("/dev/shm/aeron-default".parse().unwrap());
         #[cfg(windows)]
-        aeron_context.set_aeron_dir("C:\\Temp\\aeron".parse().expect("valid path"));
+        aeron_context.set_aeron_dir("C:\\Temp\\aeron".parse().unwrap());
 
         let start = Instant::now();
         loop {
             match Aeron::new(aeron_context.clone()) {
                 Ok(aeron) => {
-                    trace!(
-                        "Aeron context created using: {:?} client_id: {:?}",
-                        aeron.context().cnc_file_name(),
+                    if is_cnc_stable(&aeron, Duration::from_millis(500)) {
+                        trace!(
+                        "Aeron context created successfully. CNC file stable. Client ID: {:?}",
                         aeron.client_id()
                     );
-                    
-                    
-                    
-                    return Some(Arc::new(Mutex::new(aeron)));
+                        return Some(Arc::new(Mutex::new(aeron)));
+                    } else {
+                        warn!("CNC file unstable. Retrying...");
+                    }
                 }
                 Err(e) => {
                     warn!(
@@ -63,6 +64,41 @@ pub(crate) mod aeron_utils {
                 }
             }
         }
+    }
+
+    use std::path::PathBuf;
+
+    /// Checks if the CNC file's modification time has stabilized for `stabilization_period`.
+    fn is_cnc_stable(aeron: &Aeron, stabilization_period: Duration) -> bool {
+        use std::fs;
+        // Convert String to PathBuf correctly
+        let cnc_path = PathBuf::from(aeron.context().cnc_file_name());
+
+        // Get initial metadata and modification time
+        let initial_metadata = match fs::metadata(&cnc_path) {
+            Ok(meta) => meta,
+            Err(_) => return false,
+        };
+        let initial_mtime = match initial_metadata.modified() {
+            Ok(mtime) => mtime,
+            Err(_) => return false,
+        };
+
+        // Wait for the stabilization period
+        std::thread::sleep(stabilization_period);
+
+        // Get new metadata and modification time
+        let new_metadata = match fs::metadata(&cnc_path) {
+            Ok(meta) => meta,
+            Err(_) => return false,
+        };
+        let new_mtime = match new_metadata.modified() {
+            Ok(mtime) => mtime,
+            Err(_) => return false,
+        };
+
+        // Check if the modification time has remained the same
+        new_mtime == initial_mtime
     }
 }
 

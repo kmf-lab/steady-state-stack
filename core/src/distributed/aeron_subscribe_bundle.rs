@@ -22,7 +22,7 @@ pub struct AeronSubscribeSteadyState {
 }
 
 //TODO: time schedule has large waits we need to track down
-const ROUND_ROBIN:Option<Duration> = Some(Duration::from_millis(2)); //TODO: hack for testing
+const ROUND_ROBIN:Option<Duration> = Some(Duration::from_millis(1)); //TODO: hack for testing
 //TODO: if publish is running some how subscribe needs to try again if too soon to get subcribe?
 
 pub async fn run<const GIRTH: usize>(
@@ -62,7 +62,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
 
 
     //read until count is zero or we have a pass without data.
-    let mut count_down = 100;
+    let mut count_down = 1;
     loop {
         let mut input_bytes: u32 = 0;
         let mut input_frags: u32 = 0;
@@ -74,11 +74,11 @@ async fn poll_aeron_subscription<C: SteadyActor>(
             };
             if remaining_poll == 0 {
                 if tx_item.shared_vacant_units()>0 {
-                    error!("No space left in the buffer, exiting tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
+                    error!("No space left in the buffer, tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
                 }
                 break;
             }
-            warn!("sub.poll remaining_poll: {}", remaining_poll);
+            // warn!("sub.poll remaining_poll: {}", remaining_poll);
             let got_count = sub.poll(&mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
                 let flags = header.flags();
                 let is_begin = 0 != (flags & frame_descriptor::BEGIN_FRAG);
@@ -93,7 +93,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
                 input_bytes += length as u32;
                 input_frags += 1;
             }, remaining_poll as i32);
-            warn!("polling max of {} resulted in {} for sub {:?}", remaining_poll, got_count, sub.stream_id());
+            //  warn!("polling max of {} resulted in {} for sub {:?}", remaining_poll, got_count, sub.stream_id());
 
             if got_count <= 0 || got_count == (remaining_poll as i32) {
                 break; // No data received, or we have data to pass on so exit loop
@@ -172,12 +172,14 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 
     for f in 0..GIRTH {
         if state.sub_reg_id[f].is_none() {
-            let meda_driver = aeron.lock();
+            let media_driver = aeron.lock();
             let connection_string = aeron_channel.cstring();
             let stream_id = f as i32 + stream_id;
 
-            match meda_driver.await.add_subscription(connection_string, stream_id) {
+            match media_driver.await.add_subscription(connection_string, stream_id) {
                 Ok(reg_id) => {
+
+                    error!("got this id {}",reg_id);
                     state.sub_reg_id[f] = Some(reg_id);
                 },
                 Err(e) => {

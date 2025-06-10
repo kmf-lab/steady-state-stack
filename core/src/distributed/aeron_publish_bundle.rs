@@ -148,8 +148,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
         let wait_for = 1;//(512*1024).min(rx.capacity());
         let in_channels = 1;
 
-
-
         let mut all_streams_flushed = false;
         while actor.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
 
@@ -172,7 +170,6 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                             let mut count_bytes = 0;
 
                             if vacant_aeron_bytes > 0 && avail_messages > 0 {
-
 
                                 rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
@@ -201,12 +198,12 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                                 count_bytes += msg_len;
                                                 true
                                             } else {
-                                                warn!("error code {:?}",value);
+                                            //    warn!("error code {:?}",value);
                                                 false
                                             }
                                         }
                                         Err(aeron_error) => {
-                                            warn!("error {:?}",aeron_error);
+                                           // warn!("error {:?}",aeron_error);
                                             //if backpressujred but we see more room keep going?
 
                                             false
@@ -217,17 +214,17 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
 
                             total_done += count_done;
                             if 0==count_done {
-                                if total_done>0  {
-                                    warn!("channel {} befor-- vacant {} , avail {}",index, orig_vacant,orig_avail);
-
-                                    warn!("channel {} after-- vacant {} , avail {}, total_done {}",index, p.available_window().unwrap_or(0),rx[index].avail_units(),total_done);
-                                    warn!("--------------------");
-
-                                }
+                                // if total_done>0  {
+                                //     warn!("channel {} befor-- vacant {} , avail {}",index, orig_vacant,orig_avail);
+                                //
+                                //     warn!("channel {} after-- vacant {} , avail {}, total_done {}",index, p.available_window().unwrap_or(0),rx[index].avail_units(),total_done);
+                                //     warn!("--------------------");
+                                //
+                                // }
                                 break;
-                            } else {
-                                warn!("channel {} publish batch of {} bytes and {} messages and {} window and  {} avail_msgs",index, count_bytes, count_done,vacant_aeron_bytes,avail_messages);
-                            }
+                            } // else {
+                               // warn!("channel {} publish batch of {} bytes and {} messages and {} window and  {} avail_msgs",index, count_bytes, count_done,vacant_aeron_bytes,avail_messages);
+                            //}
                             //before we return to the top
                             vacant_aeron_bytes = p.available_window().unwrap_or(0);
                             avail_messages = rx[index].avail_units();
