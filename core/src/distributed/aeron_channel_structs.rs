@@ -13,6 +13,7 @@ pub(crate) mod aeron_utils {
     use std::fs::File;
     use std::io::{Read, Seek, SeekFrom};
     use std::time::{SystemTime, UNIX_EPOCH, Duration};
+    use std::path::Path;
 
     /// Handles Aeron errors by logging them at the warn level.
     ///
@@ -22,6 +23,29 @@ pub(crate) mod aeron_utils {
         error!("Aeron Error: {:?}", error);
     }
 
+
+
+    /// if this is still zero then the driver is not ready for use
+    fn is_cnc_version_marker_set<P: AsRef<Path>>(cnc_path: P) -> bool {
+        // The version marker is a 32-bit int at offset 0
+        const VERSION_OFFSET: u64 = 0;
+        let mut file = match File::open(&cnc_path) {
+            Ok(f) => f,
+            Err(_) => return false,
+        };
+
+        if file.seek(SeekFrom::Start(VERSION_OFFSET)).is_err() {
+            return false;
+        }
+
+        let mut buf = [0u8; 4];
+        if file.read_exact(&mut buf).is_err() {
+            return false;
+        }
+
+        let version = u32::from_le_bytes(buf);
+        version != 0
+    }
 
     pub(crate) fn aeron_context_with_retry(
         mut aeron_context: Context,
@@ -41,12 +65,17 @@ pub(crate) mod aeron_utils {
         loop {
             match Aeron::new(aeron_context.clone()) {
                 Ok(aeron) => {
-                    if is_cnc_stable(&aeron, Duration::from_millis(500)) {
-                        trace!(
-                        "Aeron context created successfully. CNC file stable. Client ID: {:?}",
-                        aeron.client_id()
-                    );
-                        return Some(Arc::new(Mutex::new(aeron)));
+                    let cnc_path = PathBuf::from(aeron.context().cnc_file_name());
+                    if is_cnc_stable(&aeron, Duration::from_millis(300)) {
+                        if is_cnc_version_marker_set(&cnc_path) {
+                            trace!(
+                                    "Aeron context created successfully. CNC file stable and version marker set. Client ID: {:?}",
+                                    aeron.client_id()
+                                );
+                            return Some(Arc::new(Mutex::new(aeron)));
+                        } else {
+                            warn!("CNC file version marker not set. Retrying...");
+                        }
                     } else {
                         warn!("CNC file unstable. Retrying...");
                     }

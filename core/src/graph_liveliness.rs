@@ -664,7 +664,7 @@ impl Graph {
         Self::aeron_media_driver_internal(&self.aeron)
     }
     pub(crate) fn aeron_media_driver_internal(holder: &OnceLock<Option<Arc<Mutex<Aeron>>>>) -> Option<Arc<Mutex<Aeron>>> {
-        holder.get_or_init(|| aeron_context_with_retry(Context::new(),Duration::from_secs(60),Duration::from_millis(200))).clone()
+        holder.get_or_init(|| aeron_context_with_retry(Context::new(),Duration::from_secs(60),Duration::from_millis(50))).clone()
     }
 
 

@@ -172,14 +172,13 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 
     for f in 0..GIRTH {
         if state.sub_reg_id[f].is_none() {
-            let media_driver = aeron.lock();
             let connection_string = aeron_channel.cstring();
             let stream_id = f as i32 + stream_id;
 
-            match media_driver.await.add_subscription(connection_string, stream_id) {
+            match aeron.lock().await.add_subscription(connection_string, stream_id) {
                 Ok(reg_id) => {
 
-                    error!("got this id {}",reg_id);
+                    error!("got this id {} for {}",reg_id,f);
                     state.sub_reg_id[f] = Some(reg_id);
                 },
                 Err(e) => {
@@ -194,6 +193,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         if let Some(id) = state.sub_reg_id[f] {
             let mut found = false;
             while actor.is_running(&mut || tx_guards.mark_closed()) && !found {
+                    error!("looking for subscription {}",id);
                     let sub = {aeron.lock().await.find_subscription(id)};
                     match sub {
                         Err(e) => {
@@ -202,41 +202,43 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
                                 subs[f] = Err("Shutdown requested while waiting".into());
                                 found = true; //needed to exit now
                             }
+                            error!("error {:?} while looking for subscription {}",e,id);
                             actor.wait(Duration::from_millis(13)).await; //TODO: wait and wit periodic??
                             actor.relay_stats();
                         },
                         Ok(subscription) => {
+                            error!("found subscription {}",id);
                             match Arc::try_unwrap(subscription) {
-                                Ok(mutex) => {
+                                Ok(mutex) => { //we do NOT check is connected now because we only want to collect all the subscriptions.
                                     match mutex.into_inner() {
                                         Ok(subscription) => {
                                             //trace!("new sub {:?} status: {:?} connected: {:?}",subscription.stream_id(), subscription.channel_status(), subscription.is_connected());
-                                            let mut timeout = 100;
-                                            while !subscription.is_connected() && timeout>0 {
-                                                Delay::new(Duration::from_millis(20)).await;
-                                                timeout -= 1;
-                                            }
-
-                                            if subscription.is_connected() {
+                                            // let mut timeout = 100;
+                                            // while !subscription.is_connected() && timeout>0 {
+                                            //     Delay::new(Duration::from_millis(40)).await;
+                                            //     timeout -= 1;
+                                            // }
+                                            //
+                                            // if timeout>0 {
                                                 subs[f] = Ok(subscription);
                                                 found = true;
-                                            } else {
-                                                drop(subscription);
-                                                let media_driver = aeron.lock();
-
-                                                let connection_string = aeron_channel.cstring();
-                                                let stream_id = f as i32 + stream_id;
-
-                                                match media_driver.await.add_subscription(connection_string, stream_id) {
-                                                    Ok(reg_id) => {
-                                                        state.sub_reg_id[f] = Some(reg_id);
-                                                    },
-                                                    Err(e) => {
-                                                        warn!("Unable to register subscription: {:?}", e);
-                                                    }
-                                                };
-                                                error!("unable to find open conneciton, remove and add subcription to try again");
-                                            }
+                                            // } else {
+                                            //     drop(subscription);
+                                            //      error!("unable to find open conneciton, remove and add subcription to try again");
+                                            //     let connection_string = aeron_channel.cstring();
+                                            //     let stream_id = f as i32 + stream_id;
+                                            //
+                                            //     match aeron.lock().await.add_subscription(connection_string, stream_id) {
+                                            //         Ok(reg_id) => {
+                                            //             error!("now got this id {} for {}",reg_id,f);
+                                            //             state.sub_reg_id[f] = Some(reg_id);
+                                            //         },
+                                            //         Err(e) => {
+                                            //             warn!("Unable to register subscription: {:?}", e);
+                                            //         }
+                                            //     };
+                                            //     error!("unable to find open conneciton, remove and add subcription to try again");
+                                            // }
                                         },
                                         Err(_) => panic!("Failed to unwrap Mutex"),
                                     }
@@ -252,9 +254,26 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         }
     }
 
-    trace!("running subscriber '{:?}' all subscriptions in place", actor.identity());
+    error!("running subscriber '{:?}' all subscriptions in place", actor.identity());
+    let mut assume_connected = [false; GIRTH];
+
+    for i in 0..GIRTH {
+        match &subs[i] {
+            Ok(subscription) => {
+                let ref_images = subscription.images();
+                assume_connected[i] = subscription.is_connected();
+                warn!("{:?} connected: {:?} statuss: {:?} images: {:?}",i,assume_connected[i], subscription.channel_status(), ref_images.len());
+
+            },
+            Err(e) => {warn!("{:?} {:?}",i,e);}
+        }
+
+    }
+
+
     let mut now = Instant::now();
     let mut next_times = [now; GIRTH];
+    let mut iteration = 0;
 
     while actor.is_running(&mut || tx_guards.mark_closed() ) {
         let mut earliest_idx = 0;
@@ -280,21 +299,49 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         now = Instant::now();
         {
             let tx_stream = &mut tx_guards[earliest_idx];
-            //trace!("calling poll for {}",earliest_idx);
-            let dynamic = match &mut subs[earliest_idx] {
+            if 0 == iteration &  ((1<<12)-1) {
+                error!("calling poll for {} iter {}",earliest_idx,iteration);
+                for i in 0..GIRTH {
+                    match &mut subs[i] {
                         Ok(subscription) => {
-                                poll_aeron_subscription(tx_stream, subscription, &mut actor, now).await
-                        }
-                        Err(e) => {
-                            error!("Internal error, the subscription should be present: {:?}",e);
-                            //moving this out of the way to avoid checking again
-                            Duration::from_secs(i32::MAX as u64)
-                        }
-                    };
+                            //if !assume_connected[earliest_idx] || 0 == iteration &  ((1<<12)-1) {
+                                warn!("rechecking connection for {}",i);
+                                assume_connected[i] = subscription.is_connected();
 
+                            //}
+
+                        },
+                        Err(e) => {warn!("{:?} {:?}",i,e);}
+                    }
+                }
+            }
+
+
+            let dynamic =
+                match &mut subs[earliest_idx] {
+                    Ok(subscription) => {
+                        if assume_connected[earliest_idx] {
+                            poll_aeron_subscription(tx_stream, subscription, &mut actor, now).await
+                        } else { //not connected so wait a bit
+                            Duration::from_millis(20)
+                        }
+
+                    }
+                    Err(e) => {
+                        error!("Internal error, the subscription should be present: {:?}",e);
+                        //moving this out of the way to avoid checking again
+                        Duration::from_secs(i32::MAX as u64)
+                    }
+                };
+
+
+            if 0 == iteration & ((1 << 12) - 1) {
+                error!("done calling poll for {} iter {}",earliest_idx,iteration);
+            }
             next_times[earliest_idx] = now + if let Some(fixed) = ROUND_ROBIN { fixed } else { dynamic };
 
         }
+        iteration += 1;
     }
     Ok(())
 }
