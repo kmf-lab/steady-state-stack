@@ -304,11 +304,11 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
                 for i in 0..GIRTH {
                     match &mut subs[i] {
                         Ok(subscription) => {
-                            //if !assume_connected[earliest_idx] || 0 == iteration &  ((1<<12)-1) {
+                            if !assume_connected[earliest_idx]|| 0 == iteration &  ((1<<13)-1) {
                                 warn!("rechecking connection for {}",i);
                                 assume_connected[i] = subscription.is_connected();
-
-                            //}
+                                //TODO: set this back to false if we have not been geeting any data??
+                            }
 
                         },
                         Err(e) => {warn!("{:?} {:?}",i,e);}
