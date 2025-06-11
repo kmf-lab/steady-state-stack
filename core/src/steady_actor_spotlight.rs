@@ -127,7 +127,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
             count
         } else {
             let capacity = this.shared_capacity();
-            if this.log_perodic() {
+            if this.log_periodic() {
                 warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
             }
             capacity
@@ -278,7 +278,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn try_peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+    fn peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
     where
         T: Copy
     {
@@ -286,36 +286,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     }
 
 
-    /// Asynchronously peeks at a slice of messages, waiting for a specified count to be available.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    /// - `wait_for_count`: The number of messages to wait for before peeking.
-    /// - `elems`: A mutable slice to store the peeked messages.
-    ///
-    /// # Returns
-    /// The number of messages peeked and stored in `elems`. this can be less than wait_for_count.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    ///
-    /// # Asynchronous
-    async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
-    where
-        T: Copy
-    {
-        let timeout = if self.telemetry.is_dirty() {
-            let remaining_micros = self.telemetry_remaining_micros();
-            if remaining_micros <= 0 {
-                Some(Duration::from_micros(0)) //immediate timeout
-            } else {
-                Some(Duration::from_micros(remaining_micros as u64))
-            }
-        } else {
-            None
-        };
-        this.shared_peek_async_slice_timeout(wait_for_count, elems, timeout).await
-    }
+
 
     /// Retrieves and removes a slice of messages from the channel.
     ///
@@ -335,7 +306,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
-        let done = this.shared_take_slice(slice);
+        let done = this.deprecated_shared_take_slice(slice);
 
         if let Some(ref mut tel) = self.telemetry.send_rx {
             this.telemetry_inc(RxDone::Normal(done), tel);
@@ -445,7 +416,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn send_slice_until_full<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
+    fn send_slice<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
         where
             T: Copy,
     {

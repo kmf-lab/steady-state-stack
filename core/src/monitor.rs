@@ -372,7 +372,7 @@ pub(crate) mod monitor_tests {
         let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
-            let count = monitor.try_peek_slice(&mut rx, &mut slice);
+            let count = monitor.peek_slice(&mut rx, &mut slice);
             assert_eq!(count, 3);
             assert_eq!(slice, [1, 2, 3]);
         };
@@ -507,7 +507,7 @@ pub(crate) mod monitor_tests {
 
         let slice = [1, 2, 3];
         if let Some(mut tx) = tx.try_lock() {
-            let sent_count = monitor.send_slice_until_full(&mut tx, &slice);
+            let sent_count = monitor.send_slice(&mut tx, &slice);
             assert_eq!(sent_count, slice.len());
             if let Some(mut rx) = rx.try_lock() {
                 assert_eq!(monitor.try_take(&mut rx), Some(1));
@@ -1183,7 +1183,7 @@ pub(crate) mod monitor_tests {
 
             // Now the channel is full
             let slice = [2, 3, 4];
-            let sent_count = monitor.send_slice_until_full(&mut tx, &slice);
+            let sent_count = monitor.send_slice(&mut tx, &slice);
             assert_eq!(sent_count, 0);
         };
     }
@@ -1210,7 +1210,7 @@ pub(crate) mod monitor_tests {
         let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
-            let count = monitor.try_peek_slice(&mut rx, &mut slice);
+            let count = monitor.peek_slice(&mut rx, &mut slice);
             assert_eq!(count, 0);
         };
     }

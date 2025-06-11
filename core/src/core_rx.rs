@@ -18,6 +18,15 @@ pub trait RxCore {
     type MsgOut;
     type MsgPeek<'a> where Self: 'a;
     type MsgSize: Copy;
+    type SliceSource<'a> where Self: 'a;  // source is for zero copy (inverse of Tx)
+    type SliceTarget<'a> where Self: 'a;  // target is where to copy data into on take
+
+
+    fn shared_take_slice<'a>(&'a mut self, target: Self::SliceTarget<'a>) -> RxDone
+        where
+         Self::MsgOut: Copy; // with target   arg_in     (&[T], &[u8])
+    fn shared_peek_slice<'a>(&'a mut self) -> Self::SliceSource<'a>; //  for zero copy result_out (&[T], &[T], &[u8], &[u8])
+
 
     #[allow(async_fn_in_trait)]
     async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'_>>;
@@ -28,7 +37,7 @@ pub trait RxCore {
 
     fn shared_capacity(&self) -> usize;
 
-    fn log_perodic(&mut self) -> bool;
+    fn log_periodic(&mut self) -> bool;
 
     fn shared_is_empty(&self) -> bool;
 
@@ -55,6 +64,14 @@ impl <T>RxCore for Rx<T> {
     type MsgOut = T;
     type MsgPeek<'a> = &'a T where T: 'a;
     type MsgSize = usize;
+
+    type SliceSource<'a> = (&'a [T],&'a [T]) where Self: 'a;  // source is for zero copy (inverse of Tx)
+    type SliceTarget<'a> = &'a mut [T] where Self: 'a;  // target is where to copy data into on take
+
+
+    // shared_peek_slice for zero copy result_out (&[T], &[T], &[u8], &[u8])
+    // shared_take_slice with target   arg_in     (&[T], &[u8])
+
 
     fn is_closed_and_empty(&mut self) -> bool {
         if self.is_closed.is_terminated() {
@@ -111,7 +128,7 @@ impl <T>RxCore for Rx<T> {
         result
     }
 
-    fn log_perodic(&mut self) -> bool {
+    fn log_periodic(&mut self) -> bool {
         if self.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
         } else {
@@ -215,16 +232,58 @@ impl <T>RxCore for Rx<T> {
         }
     }
 
+    fn shared_take_slice<'a>(&'a mut self, target: Self::SliceTarget<'a>) -> RxDone where
+        T: Copy
+    {
+        // Get the available slices from the ring buffer
+        let (a, b) = self.rx.as_slices();
+        let mut copied = 0;
 
+        // Copy from the first slice
+        let n = a.len().min(target.len());
+        if n > 0 {
+            // SAFETY: target is &[T], so we can't mutate it, but the trait
+            // probably should be &mut [T] for this to make sense.
+            // If you meant to copy into a mutable slice, change the trait to &mut [T].
+            // For now, let's assume it's a typo and use &mut [T].
+            let target = unsafe { &mut *(target as *const [T] as *mut [T]) };
+            target[..n].copy_from_slice(&a[..n]);
+            copied += n;
+        }
+
+        // Copy from the second slice if there's still space
+        if copied < target.len() {
+            let m = b.len().min(target.len() - copied);
+            if m > 0 {
+                let target = unsafe { &mut *(target as *const [T] as *mut [T]) };
+                target[copied..copied + m].copy_from_slice(&b[..m]);
+                copied += m;
+            }
+        }
+
+        // Advance the read index by the number of items copied
+        unsafe { self.rx.advance_read_index(copied); }
+        RxDone::Normal(copied)
+    }
+
+    fn shared_peek_slice<'a>(&'a mut self ) -> Self::SliceSource<'a> {
+        // Get the available slices from the ring buffer
+        self.rx.as_slices()
+    }
 }
 
 impl <T: StreamItem> RxCore for StreamRx<T> {
 
-    //TODO: we have no shared_try_peek ???
 
     type MsgOut = (T, Box<[u8]>);
     type MsgPeek<'a> = (&'a T, &'a[u8],&'a[u8]) where T: 'a;
     type MsgSize = (usize, usize);
+    type SliceSource<'a> = (&'a [T], &'a [T], &'a[u8], &'a[u8] ) where Self: 'a;  // source is for zero copy (inverse of Tx)
+    type SliceTarget<'a> = (&'a mut [T], &'a mut [u8] ) where Self: 'a;  // target is where to copy data into on take
+
+    // shared_peek_slice for zero copy result_out (&[T], &[T], &[u8], &[u8])
+    // shared_take_slice with target   arg_in     (&[T], &[u8])
+
 
     fn is_closed_and_empty(&mut self) -> bool {
         //debug!("closed_empty {} {}", self.item_channel.is_closed_and_empty(), self.payload_channel.is_closed_and_empty());
@@ -291,7 +350,7 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
         }
     }
 
-    fn log_perodic(&mut self) -> bool {
+    fn log_periodic(&mut self) -> bool {
         if self.item_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
         } else {
@@ -394,12 +453,82 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
         }
     }
 
+    fn shared_take_slice<'a>(
+        &'a mut self,
+        target: Self::SliceTarget<'a>,
+    ) -> RxDone
+    where
+        Self::MsgOut: Copy,
+    {
+        let (item_target, payload_target) = target;
+
+        // Get available item slices
+        let (item_a, item_b) = self.item_channel.rx.as_slices();
+
+        // Flatten the items into a single iterator
+        let items_iter = item_a.iter().chain(item_b.iter());
+
+        let mut items_copied = 0;
+        let mut payload_bytes_needed = 0;
+
+        // We need to keep track of how many items and bytes we can fit
+        let max_items = item_target.len();
+        let max_payload = payload_target.len();
+
+        // We'll copy items into item_target, and sum up the payload bytes needed
+        for (i, item) in items_iter.enumerate() {
+            let item_len = item.length() as usize;
+            if items_copied < max_items && payload_bytes_needed + item_len <= max_payload {
+                item_target[items_copied] = *item;
+                items_copied += 1;
+                payload_bytes_needed += item_len;
+            } else {
+                break;
+            }
+        }
+
+        // Now copy the payload bytes
+        let (payload_a, payload_b) = self.payload_channel.rx.as_slices();
+        let mut payload_copied = 0;
+
+        // Copy from payload_a
+        let n = payload_a.len().min(payload_bytes_needed);
+        if n > 0 {
+            payload_target[..n].copy_from_slice(&payload_a[..n]);
+            payload_copied += n;
+        }
+        // Copy from payload_b if needed
+        if payload_copied < payload_bytes_needed {
+            let m = payload_b.len().min(payload_bytes_needed - payload_copied);
+            if m > 0 {
+                payload_target[payload_copied..payload_copied + m]
+                    .copy_from_slice(&payload_b[..m]);
+                payload_copied += m;
+            }
+        }
+
+        // Advance both read indices
+        unsafe {
+            self.item_channel.rx.advance_read_index(items_copied);
+            self.payload_channel.rx.advance_read_index(payload_copied);
+        }
+
+        RxDone::Stream(items_copied, payload_copied)
+    }
+
+    fn shared_peek_slice<'a>(&'a mut self) -> Self::SliceSource<'a> {
+        let (item_a, item_b) = self.item_channel.rx.as_slices();
+        let (payload_a, payload_b) = self.payload_channel.rx.as_slices();
+        (item_a, item_b, payload_a, payload_b)
+    }
 }
 
 impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     type MsgOut = <T as RxCore>::MsgOut;
     type MsgPeek<'a> =  <T as RxCore>::MsgPeek<'a> where Self: 'a;
     type MsgSize = <T as RxCore>::MsgSize;
+    type SliceSource<'a> = <T as RxCore>::SliceSource<'a> where Self: 'a;
+    type SliceTarget<'a> = <T as RxCore>::SliceTarget<'a> where Self: 'a;
 
     fn is_closed_and_empty(&mut self) -> bool {
         <T as RxCore>::is_closed_and_empty(&mut **self)
@@ -410,8 +539,8 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
                                                  ,timeout).await
     }
 
-    fn log_perodic(&mut self) -> bool {
-        <T as RxCore>::log_perodic(&mut **self)
+    fn log_periodic(&mut self) -> bool {
+        <T as RxCore>::log_periodic(&mut **self)
     }
 
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
@@ -453,14 +582,22 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize {
         <T as RxCore>::shared_advance_index(&mut **self, count)
     }
+
+    fn shared_take_slice<'a>(&'a mut self, target: Self::SliceTarget<'a>) -> RxDone
+     where
+         Self::MsgOut: Copy {
+        <T as RxCore>::shared_take_slice(&mut **self, target)
+    }
+
+    fn shared_peek_slice<'a>(&'a mut self) -> Self::SliceSource<'a> {
+        <T as RxCore>::shared_peek_slice(&mut **self)
+    }
 }
 
 #[cfg(test)]
 mod core_rx_async_tests {
     use super::*;
-    use crate::channel_builder::ChannelBuilder;
-    use crate::core_exec::block_on;
-    use crate::steady_rx::{Rx, RxDone};
+    use crate::steady_rx::{Rx};
     use crate::steady_tx::Tx;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
@@ -468,7 +605,6 @@ mod core_rx_async_tests {
     use crate::core_tx::TxCore;
     use crate::{ActorIdentity, SendSaturation};
     use crate::*;
-    use std::sync::atomic::AtomicUsize;
 
     /// Helper function to set up a channel for tests.
     ///

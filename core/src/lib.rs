@@ -1040,7 +1040,7 @@ mod lib_tests {
         let mut slice = [0; 3];
         let context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
-            let count = context.try_peek_slice(&mut rx, &mut slice);
+            let count = context.peek_slice(&mut rx, &mut slice);
             assert_eq!(count, 3);
             assert_eq!(slice, [1, 2, 3]);
         };
@@ -1193,7 +1193,7 @@ mod lib_tests {
         let slice = [1, 2, 3];
         let tx = tx.clone();
         if let Some(mut tx) = tx.try_lock() {
-            let sent_count = context.send_slice_until_full(&mut tx, &slice);
+            let sent_count = context.send_slice(&mut tx, &slice);
             assert_eq!(sent_count, slice.len());
         };
     }

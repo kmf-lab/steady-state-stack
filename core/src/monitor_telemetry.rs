@@ -7,6 +7,7 @@ use std::ops::DerefMut;
 use num_traits::Zero;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
 use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
+use crate::core_rx::RxCore;
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
 
@@ -177,7 +178,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let count_of_actor_status_events = {
                 if let Some(mut actor_status_rx) = act.try_lock() {
                     //TODO: if we have no messages then we also do not get any status on graph.dot.
-                    actor_status_rx.deref_mut().shared_take_slice(&mut buffer)
+                    actor_status_rx.deref_mut().deprecated_shared_take_slice(&mut buffer)
                 } else {
                     error!("Internal error, unable to lock the actor!!!! {:?} ",&self.actor);
                     0
@@ -253,7 +254,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let count = {
                 if let Some(mut rx_guard) = take.rx.try_lock() {
                     let rx = rx_guard.deref_mut();
-                    rx.shared_take_slice(&mut buffer)
+                    rx.deprecated_shared_take_slice(&mut buffer)
                 } else {
                     0
                 }
@@ -307,7 +308,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             let count = {
                 if let Some(mut tx_guard) = send.rx.try_lock() {
                     let tx = tx_guard.deref_mut();
-                    tx.shared_take_slice(&mut buffer)
+                    tx.deprecated_shared_take_slice(&mut buffer)
                 } else {
                     0
                 }

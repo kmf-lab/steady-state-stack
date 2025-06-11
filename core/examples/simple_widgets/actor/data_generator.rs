@@ -58,7 +58,7 @@ async fn internal_behavior<C: SteadyActor>(mut actor:C
 
         count+= len_out as u64;
 
-        let _sent = actor.send_slice_until_full(&mut tx, &wids);
+        let _sent = actor.send_slice(&mut tx, &wids);
  
         if let Some(feedback) = actor.try_take(&mut feedback) {
               trace!("data_generator feedback: {:?}", feedback);

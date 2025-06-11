@@ -41,7 +41,7 @@ async fn internal_behavior(context: SteadyActorShadow, ticks_rx: SteadyRx<Tick>,
                                     actor.wait_vacant(&mut tick_counts_tx,1)
                                    );
 
-        let count = actor.try_peek_slice(&mut ticks_rx, &mut buffer);
+        let count = actor.peek_slice(&mut ticks_rx, &mut buffer);
         if count > 0 {
             let max_count = TickCount { count: buffer[count - 1].value };
             let _ = actor.try_send(&mut tick_counts_tx, max_count);

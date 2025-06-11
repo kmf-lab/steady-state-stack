@@ -51,7 +51,7 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
                             break;
                         }
         }
-        let _sent_count = actor.send_slice_until_full(&mut numbers_tx, &buffer[0..i]); //TOOD: zero length? test?
+        let _sent_count = actor.send_slice(&mut numbers_tx, &buffer[0..i]); //TOOD: zero length? test?
     }
     actor.request_shutdown().await;
     Ok(())

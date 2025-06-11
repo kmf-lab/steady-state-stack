@@ -33,9 +33,9 @@ async fn internal_behavior(context: SteadyActorShadow, ticks_rx: SteadyRx<Tick>,
                                     monitor.wait_vacant(&mut ticks_tx,BATCH)
                                    );
 
-        let count = monitor.try_peek_slice(&mut ticks_rx, &mut buffer);
+        let count = monitor.peek_slice(&mut ticks_rx, &mut buffer);
         //do something
-        monitor.send_slice_until_full(&mut ticks_tx, &buffer[0..count]);
+        monitor.send_slice(&mut ticks_tx, &buffer[0..count]);
         let _ = monitor.take_slice(&mut ticks_rx, &mut buffer[0..count]);
 
         monitor.relay_stats_smartly();

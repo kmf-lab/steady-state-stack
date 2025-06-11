@@ -171,32 +171,13 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn try_peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+    fn peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
     where
         T: Copy
-    {
+    {        
         this.shared_try_peek_slice(elems)
     }
-    /// Asynchronously peeks at a slice of messages, waiting for a specified count to be available.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    /// - `wait_for_count`: The number of messages to wait for before peeking.
-    /// - `elems`: A mutable slice to store the peeked messages.
-    ///
-    /// # Returns
-    /// The number of messages peeked and stored in `elems`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    ///
-    /// # Asynchronous
-    async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
-    where
-        T: Copy
-    {
-        this.shared_peek_async_slice(wait_for_count, elems).await
-    }
+
     /// Retrieves and removes a slice of messages from the channel.
     ///
     /// # Parameters
@@ -212,7 +193,8 @@ impl SteadyActor for SteadyActorShadow {
     where
         T: Copy,
     {
-        this.shared_take_slice(slice)
+        
+        this.deprecated_shared_take_slice(slice)
     }
     /// Attempts to peek at the next message in the channel without removing it.
     ///
@@ -280,10 +262,11 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn send_slice_until_full<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
+    fn send_slice<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
     where
         T: Copy
     {
+        
         this.shared_send_slice_until_full(slice)
     }
     /// Sends messages from an iterator to the Tx channel until it is full.

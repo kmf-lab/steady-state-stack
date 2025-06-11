@@ -20,6 +20,9 @@ pub trait TxCore {
     type MsgIn<'a>;
     type MsgOut;
     type MsgSize: Copy;
+    type SliceSource<'a> where Self: 'a;
+    type SliceTarget<'a> where Self: 'a;
+
 
     fn shared_mark_closed(&mut self) -> bool;
 
@@ -39,6 +42,17 @@ pub trait TxCore {
     async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool;
     #[allow(async_fn_in_trait)]
     async fn shared_wait_empty(&mut self) -> bool;
+
+    fn shared_send_slice<'a>(&'a mut self, slice: Self::SliceSource<'a> ) -> TxDone
+        where Self::MsgOut : Copy
+    ; //Rename to source not slice
+
+    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
+                    where
+                        Self::MsgOut : Copy,
+                        F: FnOnce(Self::SliceTarget<'a>) -> TxDone;
+
+
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
     #[allow(async_fn_in_trait)]
     async fn shared_send_async_core(
@@ -62,6 +76,8 @@ impl<T> TxCore for Tx<T> {
     type MsgIn<'a> = T;
     type MsgOut = T;
     type MsgSize = usize;
+    type SliceSource<'a> = &'a[T] where T: 'a;
+    type SliceTarget<'a> = (&'a mut [std::mem::MaybeUninit<T>], &'a mut [std::mem::MaybeUninit<T>]) where T: 'a;
 
     fn done_one(&self, _one: &Self::MsgIn<'_>) -> TxDone {
         TxDone::Normal(1)
@@ -190,6 +206,27 @@ impl<T> TxCore for Tx<T> {
     }
 
     #[inline]
+    fn shared_send_slice(&mut self, slice: Self::SliceSource<'_>) -> TxDone
+        where Self::MsgOut : Copy {
+        // Try to push as many items as possible from the slice.
+        // Returns the number of items actually pushed.
+        let pushed = self.tx.push_slice(slice);
+        TxDone::Normal(pushed)
+    }
+
+    #[inline]
+    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
+    where
+        Self::MsgOut : Copy,
+        F: FnOnce(Self::SliceTarget<'a>) -> TxDone,
+    {
+        // Get the vacant slices from the ring buffer.
+        let (a, b) = self.tx.vacant_slices_mut();
+        // Call the provided closure with the slices.
+        f((a, b))
+    }
+
+    #[inline]
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
         debug_assert!(self.make_closed.is_some(),"Send called after channel marked closed");
 
@@ -281,6 +318,13 @@ impl TxCore for StreamTx<StreamIngress> {
     type MsgIn<'a> = (StreamIngress, &'a[u8]);
     type MsgOut = StreamIngress;
     type MsgSize = (usize, usize);
+    type SliceSource<'a> = (&'a[StreamIngress], &'a[u8]);
+    type SliceTarget<'a> = (
+        &'a mut [std::mem::MaybeUninit<StreamIngress>],
+        &'a mut [std::mem::MaybeUninit<StreamIngress>],
+        &'a mut [std::mem::MaybeUninit<u8>],
+        &'a mut [std::mem::MaybeUninit<u8>],
+    );
 
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
        TxDone::Stream(1, one.1.len())
@@ -423,6 +467,50 @@ impl TxCore for StreamTx<StreamIngress> {
         } else {
             self.item_channel.tx.capacity().get() == self.item_channel.tx.vacant_len()
         }
+    }
+
+    #[inline]
+    fn shared_send_slice(&mut self, slice: Self::SliceSource<'_>) -> TxDone
+    where
+        Self::MsgOut: Copy,
+    {
+        let (ingress_items, payload_bytes) = slice;
+
+        let item_vacant = self.item_channel.tx.vacant_len();
+        let payload_vacant = self.payload_channel.tx.vacant_len();
+
+        let mut items_sent = 0;
+        let mut bytes_sent = 0;
+
+        for &ingress in ingress_items.iter().take(item_vacant) {
+            let len = ingress.length() as usize;
+            if bytes_sent + len > payload_bytes.len() || bytes_sent + len > payload_vacant {
+                break;
+            }
+            let payload_chunk = &payload_bytes[bytes_sent..bytes_sent + len];
+            let pushed = self.payload_channel.tx.push_slice(payload_chunk);
+            if pushed != len {
+                break;
+            }
+            if self.item_channel.tx.try_push(ingress).is_err() {
+                break;
+            }
+            items_sent += 1;
+            bytes_sent += len;
+        }
+
+        TxDone::Stream(items_sent, bytes_sent)
+    }
+
+    #[inline]
+    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
+    where
+        Self::MsgOut: Copy,
+        F: FnOnce(Self::SliceTarget<'a>) -> TxDone,
+    {
+        let (item_a, item_b) = self.item_channel.tx.vacant_slices_mut();
+        let (payload_a, payload_b) = self.payload_channel.tx.vacant_slices_mut();
+        f((item_a, item_b, payload_a, payload_b))
     }
 
     #[inline]
@@ -569,6 +657,13 @@ impl TxCore for StreamTx<StreamEgress> {
     type MsgIn<'a> = &'a[u8]; 
     type MsgOut = StreamEgress;
     type MsgSize = (usize, usize);
+    type SliceSource<'a> = (&'a[StreamEgress], &'a[u8]);
+    type SliceTarget<'a> = (
+        &'a mut [std::mem::MaybeUninit<StreamEgress>],
+        &'a mut [std::mem::MaybeUninit<StreamEgress>],
+        &'a mut [std::mem::MaybeUninit<u8>],
+        &'a mut [std::mem::MaybeUninit<u8>]
+    );
 
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
         TxDone::Stream(1, one.len())
@@ -713,6 +808,58 @@ impl TxCore for StreamTx<StreamEgress> {
     }
 
     #[inline]
+    fn shared_send_slice(&mut self, slice: Self::SliceSource<'_>) -> TxDone
+    where
+        Self::MsgOut: Copy,
+    {
+        let (egress_items, payload_bytes) = slice;
+
+        // We'll send as many as we can, limited by both item and payload channel space
+        let item_vacant = self.item_channel.tx.vacant_len();
+        let payload_vacant = self.payload_channel.tx.vacant_len();
+
+        // Each egress item corresponds to a payload chunk of length egress_item.length()
+        // But for StreamEgress, the convention is that each item is just a length marker for a payload chunk.
+        // In this case, we expect egress_items.len() == 1 and payload_bytes.len() == egress_items[0].length() as usize
+        // But for a batch, we can support multiple.
+
+        let mut items_sent = 0;
+        let mut bytes_sent = 0;
+
+        for &egress in egress_items.iter().take(item_vacant) {
+            let len = egress.length as usize;
+            if bytes_sent + len > payload_bytes.len() || bytes_sent + len > payload_vacant {
+                break;
+            }
+            // Push the payload chunk
+            let payload_chunk = &payload_bytes[bytes_sent..bytes_sent + len];
+            let pushed = self.payload_channel.tx.push_slice(payload_chunk);
+            if pushed != len {
+                break;
+            }
+            // Push the egress item
+            if self.item_channel.tx.try_push(egress).is_err() {
+                break;
+            }
+            items_sent += 1;
+            bytes_sent += len;
+        }
+
+        TxDone::Stream(items_sent, bytes_sent)
+    }
+
+    #[inline]
+    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
+    where
+        Self::MsgOut: Copy,
+        F: FnOnce(Self::SliceTarget<'a>) -> TxDone,
+    {
+        let (item_a, item_b) = self.item_channel.tx.vacant_slices_mut();
+        let (payload_a, payload_b) = self.payload_channel.tx.vacant_slices_mut();
+        f((item_a, item_b, payload_a, payload_b))
+    }
+
+    #[inline]
     fn shared_try_send(&mut self, payload: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
 
         debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
@@ -851,6 +998,9 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;
     type MsgOut = <T as TxCore>::MsgOut;
     type MsgSize =  <T as TxCore>::MsgSize;
+    type SliceSource<'a> = <T as TxCore>::SliceSource<'a> where Self: 'a;
+    type SliceTarget<'a> = <T as TxCore>::SliceTarget<'a> where Self: 'a;
+
 
     fn shared_mark_closed(&mut self) -> bool {<T as TxCore>::shared_mark_closed(&mut **self)}
 
@@ -910,6 +1060,21 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     #[inline]
     async fn shared_wait_empty(&mut self) -> bool {
         <T as TxCore>::shared_wait_empty(&mut **self).await
+    }
+
+    #[inline]
+    fn shared_send_slice<'a>(&'a mut self, slice: Self::SliceSource<'a> ) -> TxDone
+     where Self::MsgOut : Copy {
+        <T as TxCore>::shared_send_slice(&mut **self, slice)
+    }
+    #[inline]
+    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
+    where
+        Self::MsgOut : Copy,
+        F: FnOnce(Self::SliceTarget<'a>) -> TxDone
+    {
+        <T as TxCore>::shared_send_direct(&mut **self, f)
+
     }
 
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
@@ -1008,6 +1173,7 @@ mod extended_coverage {
     use crate::TxCore;
     use crate::{ActorIdentity, SendSaturation, SendOutcome};
     use std::time::Duration;
+    use crate::GraphBuilder;
 
     /// FakeTx implements TxCore with predictable behavior for testing the MutexGuard<TxCore> forwarding.
     struct FakeTx {
@@ -1031,6 +1197,9 @@ mod extended_coverage {
         type MsgIn<'a> = usize;
         type MsgOut = usize;
         type MsgSize = usize;
+        type SliceSource<'a> = &'a [usize];
+        type SliceTarget<'a> = (&'a [usize],&'a [usize]);
+
 
         fn shared_mark_closed(&mut self) -> bool {
             self.closed = true;
@@ -1087,6 +1256,19 @@ mod extended_coverage {
 
         async fn shared_wait_empty(&mut self) -> bool {
             true
+        }
+
+
+        #[inline]
+        fn shared_send_slice(&mut self, slice: Self::SliceSource<'_> ) -> TxDone {
+            TxDone::Normal(1)
+        }
+        #[inline]
+        fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
+        where
+            F: FnOnce(Self::SliceTarget<'a>) -> TxDone
+        {
+            TxDone::Normal(1)
         }
 
         fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
@@ -1178,15 +1360,6 @@ mod extended_coverage {
         assert_eq!(guard.done_one(&9), TxDone::Normal(9));
     }
 
-}
-#[cfg(test)]
-mod advanced_tx_core_tests {
-    use super::*;
-    use crate::channel_builder::ChannelBuilder;
-    use crate::monitor_telemetry::SteadyTelemetrySend;
-    use futures::executor::block_on;
-    use std::time::{Duration, Instant};
-    use crate::GraphBuilder;
 
     /// A tiny helper to build a fresh Tx<u8> and its matching Rx<u8>.
     fn new_tx() -> Tx<u8> {

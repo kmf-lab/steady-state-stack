@@ -142,24 +142,6 @@ impl <T> Rx<T> {
         self.shared_try_peek_slice(elems)
     }
 
-    /// Asynchronously waits to peek at a slice of messages from the channel without removing them.
-    /// Waits until the specified number of messages is available or the channel is closed.
-    ///
-    /// Requires T: Copy but this is still up for debate as it is not clear if this is the best way to handle this
-    ///
-    /// # Parameters
-    /// - `wait_for_count`: The number of messages to wait for before peeking.
-    /// - `elems`: A mutable slice to store the peeked messages.
-    ///
-    /// # Returns
-    /// The number of messages actually peeked and stored in `elems`.
-    ///
-    /// # Example Usage
-    /// Suitable for use cases requiring a specific number of messages to be available for batch processing.
-    pub async fn peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
-        where T: Copy {
-        self.shared_peek_async_slice(wait_for_count, elems).await
-    }
 
 
     /// Returns an iterator over the messages currently in the channel without removing them.
@@ -176,41 +158,27 @@ impl <T> Rx<T> {
 
 
 
-    #[inline]
-    pub(crate) async fn shared_peek_async_slice(&mut self, wait_for_count: usize, elems: &mut [T]) -> usize
-        where T: Copy
-    {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-            select! { _ = one_down => {}
-                    , _ = operation => {}
-                    , };
-        }
-        self.shared_try_peek_slice(elems)
-    }
-
-    #[inline]
-    pub(crate) async fn shared_peek_async_slice_timeout(&mut self, wait_for_count: usize, elems: &mut [T], timeout: Option<Duration>) -> usize
-    where T: Copy
-    {
-        let mut one_down = &mut self.oneshot_shutdown;
-        if !one_down.is_terminated() {
-            let mut operation = &mut self.rx.wait_occupied(wait_for_count);
-            if let Some(timeout) = timeout {
-                let mut timeout = Delay::new(timeout).fuse();
-                select! { _ = one_down => {}
-                        , _ = operation => {}
-                        , _ = timeout => {}
-                }
-            } else {
-                select! { _ = one_down => {}
-                        , _ = operation => {}
-                }
-            }            
-        }
-        self.shared_try_peek_slice(elems)
-    }
+    // #[inline]
+    // pub(crate) async fn shared_peek_async_slice_timeout(&mut self, wait_for_count: usize, elems: &mut [T], timeout: Option<Duration>) -> usize
+    // where T: Copy
+    // {
+    //     let mut one_down = &mut self.oneshot_shutdown;
+    //     if !one_down.is_terminated() {
+    //         let mut operation = &mut self.rx.wait_occupied(wait_for_count);
+    //         if let Some(timeout) = timeout {
+    //             let mut timeout = Delay::new(timeout).fuse();
+    //             select! { _ = one_down => {}
+    //                     , _ = operation => {}
+    //                     , _ = timeout => {}
+    //             }
+    //         } else {
+    //             select! { _ = one_down => {}
+    //                     , _ = operation => {}
+    //             }
+    //         }
+    //     }
+    //     self.shared_try_peek_slice(elems)
+    // }
 
 
 }
@@ -401,8 +369,9 @@ impl<T> Rx<T> {
         self.rx.iter()
     }
 
+    //delete
     //  very difficult to move because we have copy on T plus dual slice
-    pub(crate) fn shared_take_slice(&mut self, elems: &mut [T]) -> usize
+    pub(crate) fn deprecated_shared_take_slice(&mut self, elems: &mut [T]) -> usize
     where T: Copy {
         let count = self.rx.pop_slice(elems);
         self.take_count.fetch_add(count as u32, Ordering::Relaxed); //wraps on overflow

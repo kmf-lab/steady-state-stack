@@ -44,7 +44,7 @@ async fn internal_behavior<const TICKS_TX_GIRTH:usize,C: SteadyActor>(mut actor:
                  count = count + 1;
                  buffers[n] = Tick { value: count };
              }
-             actor.send_slice_until_full(&mut ticks_tx[i], &buffers[..c]);
+             actor.send_slice(&mut ticks_tx[i], &buffers[..c]);
              
          }
         actor.relay_stats_smartly();

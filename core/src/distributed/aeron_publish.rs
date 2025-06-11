@@ -259,8 +259,8 @@ pub(crate) mod aeron_tests {
             while remaining > 0 && actor.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
 
                 //actor.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
-                actor.send_slice_until_full(&mut tx[idx].payload_channel, &all_bytes);
-                actor.send_slice_until_full(&mut tx[idx].item_channel, &items);
+                actor.send_slice(&mut tx[idx].payload_channel, &all_bytes);
+                actor.send_slice(&mut tx[idx].item_channel, &items);
 
                 // this old solution worked but consumed more core
                 // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important

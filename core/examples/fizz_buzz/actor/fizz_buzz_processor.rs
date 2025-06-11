@@ -150,7 +150,7 @@ async fn internal_behavior<A: SteadyActor,const NUMBERS_RX_GIRTH: usize>(
             state.value += buffer_count as u64;
 
             // Step 3: Send the buffer slice
-            let _done = actor.send_slice_until_full(&mut fizzbuzz_messages_tx, &state.buffer[0..buffer_count]);
+            let _done = actor.send_slice(&mut fizzbuzz_messages_tx, &state.buffer[0..buffer_count]);
 
             if state.value == stop_value {
                 actor.request_shutdown().await;

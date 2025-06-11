@@ -231,6 +231,15 @@ pub trait SteadyActor {
     ///
     async fn wait_periodic(&self, duration_rate: Duration) -> bool;
 
+
+    /// Asynchronously waits for a specified duration.
+    ///
+    /// # Parameters
+    /// - `duration`: The duration to wait.
+    ///
+    /// # Asynchronous
+    async fn wait(&self, duration: Duration);
+    
     async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
 
 
@@ -274,53 +283,35 @@ pub trait SteadyActor {
     /// # Returns
     /// true
     async fn wait_shutdown(&self) -> bool;
-    
-    /// Attempts to peek at a slice of messages without removing them from the channel.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance for peeking.
-    /// - `elems`: A mutable slice to store the peeked messages.
-    ///
-    /// # Returns
-    /// The number of messages peeked and stored in `elems`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    fn try_peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+
+
+
+
+
+
+    /// will call shared_peek_slice  
+    fn peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
     where
         T: Copy;
-    /// Asynchronously peeks at a slice of messages, waiting for a specified count to be available.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    /// - `wait_for_count`: The number of messages to wait for before peeking.
-    /// - `elems`: A mutable slice to store the peeked messages.
-    ///
-    /// # Returns
-    /// The number of messages peeked and stored in `elems`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    ///
-    /// # Asynchronous
-    async fn peek_async_slice<T>(&self, this: &mut Rx<T>, wait_for_count: usize, elems: &mut [T]) -> usize
-    where
-        T: Copy;
-    /// Retrieves and removes a slice of messages from the channel.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    /// - `slice`: A mutable slice where the taken messages will be stored.
-    ///
-    /// # Returns
-    /// The number of messages actually taken and stored in `slice`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
+    /// will call shared_take_slice
     fn take_slice<T>(&mut self, this: &mut Rx<T>, slice: &mut [T]) -> usize
     where
         T: Copy,
     ;
+
+    /// will call shared_send_slice   
+    fn send_slice<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
+    where
+        T: Copy;
+
+    // will call shared_send_direct
+    // new method  fn  send_slice_direct
+
+
+
+
+
+
     /// Attempts to peek at the next message in the channel without removing it.
     ///
     /// # Parameters
@@ -366,20 +357,7 @@ pub trait SteadyActor {
     /// # Asynchronous
     async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<T::MsgPeek<'a>>;
 
-    /// Sends a slice of messages to the Tx channel until it is full.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    /// - `slice`: A slice of messages to be sent.
-    ///
-    /// # Returns
-    /// The number of messages successfully sent before the channel became full.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    fn send_slice_until_full<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
-    where
-        T: Copy;
+
     /// Sends messages from an iterator to the Tx channel until it is full.
     ///
     /// # Parameters
@@ -483,14 +461,6 @@ pub trait SteadyActor {
     async fn take_async_with_timeout<T>(&mut self, this: &mut Rx<T>, timeout: Duration) -> Option<T>;
 
 
-
-    /// Asynchronously waits for a specified duration.
-    ///
-    /// # Parameters
-    /// - `duration`: The duration to wait.
-    ///
-    /// # Asynchronous
-    async fn wait(&self, duration: Duration);
 
     /// Yield so other actors may be able to make use of this thread. Returns
     /// immediately if there is nothing scheduled to check.
