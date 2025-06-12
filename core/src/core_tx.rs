@@ -20,7 +20,7 @@ pub trait TxCore {
     type MsgIn<'a>;
     type MsgOut;
     type MsgSize: Copy;
-    type SliceSource<'b> where Self: 'b;  //TODO: this seems a bad idea..
+    type SliceSource<'b> where Self::MsgOut: 'b;
     type SliceTarget<'a> where Self: 'a;
 
 
@@ -43,7 +43,7 @@ pub trait TxCore {
     #[allow(async_fn_in_trait)]
     async fn shared_wait_empty(&mut self) -> bool;
 
-    fn shared_send_slice<'a>(&'a mut self, slice: Self::SliceSource<'a> ) -> TxDone
+    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_> ) -> TxDone
         where Self::MsgOut : Copy
     ; //Rename to source not slice
 
@@ -998,7 +998,7 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;
     type MsgOut = <T as TxCore>::MsgOut;
     type MsgSize =  <T as TxCore>::MsgSize;
-    type SliceSource<'b> = <T as TxCore>::SliceSource<'b> where Self: 'b; //TODO: not a good idea?
+    type SliceSource<'b> = <T as TxCore>::SliceSource<'b> where Self::MsgOut: 'b;
     type SliceTarget<'a> = <T as TxCore>::SliceTarget<'a> where Self: 'a;
 
 
@@ -1063,7 +1063,7 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     }
 
     #[inline]
-    fn shared_send_slice<'a>(&'a mut self, slice: Self::SliceSource<'a> ) -> TxDone
+    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_> ) -> TxDone
      where Self::MsgOut : Copy {
         <T as TxCore>::shared_send_slice(self, slice)
     }
