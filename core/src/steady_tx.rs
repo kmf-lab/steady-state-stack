@@ -263,6 +263,22 @@ pub enum TxDone {
     Stream(usize,usize)
 }
 
+
+impl TxDone {
+    pub fn message_count(&self) -> usize {
+        match *self {
+            TxDone::Normal(count) => count,
+            TxDone::Stream(first, _) => first,
+        }
+    }
+    pub fn payload_count(&self) -> usize {
+        match *self {
+            TxDone::Normal(_count) => 0,
+            TxDone::Stream(_, second) => second,
+        }
+    }
+}
+
 // LazySteadyTx / LazySteadyRx smoke tests
 #[cfg(test)]
 mod steady_lazy_tests {

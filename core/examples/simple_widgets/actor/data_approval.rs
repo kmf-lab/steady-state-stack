@@ -60,9 +60,9 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<WidgetInve
             }
         }
 
-        let sent = actor.send_slice(&mut tx, &approvals);
+        let done = actor.send_slice(&mut tx, &approvals);
         //iterator of sent until the end
-        let send = approvals.into_iter().skip(sent);
+        let send = approvals.into_iter().skip(done.message_count());
         for send_me in send {
             let _ = actor.try_send(&mut tx, send_me);
         }

@@ -507,8 +507,8 @@ pub(crate) mod monitor_tests {
 
         let slice = [1, 2, 3];
         if let Some(mut tx) = tx.try_lock() {
-            let sent_count = monitor.send_slice(&mut tx, &slice);
-            assert_eq!(sent_count, slice.len());
+            let done = monitor.send_slice(&mut tx, &slice);
+            assert_eq!(done.message_count(), slice.len());
             if let Some(mut rx) = rx.try_lock() {
                 assert_eq!(monitor.try_take(&mut rx), Some(1));
                 assert_eq!(monitor.try_peek(&mut rx), Some(&2));
@@ -1183,8 +1183,8 @@ pub(crate) mod monitor_tests {
 
             // Now the channel is full
             let slice = [2, 3, 4];
-            let sent_count = monitor.send_slice(&mut tx, &slice);
-            assert_eq!(sent_count, 0);
+            let done = monitor.send_slice(&mut tx, &slice);
+            assert_eq!(done.message_count(), 0);
         };
     }
 

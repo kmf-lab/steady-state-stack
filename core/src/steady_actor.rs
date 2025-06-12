@@ -12,7 +12,7 @@ use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_rx::RxMetaDataProvider;
-use crate::steady_tx::{TxMetaDataProvider};
+use crate::steady_tx::{TxDone, TxMetaDataProvider};
 use crate::telemetry::setup;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::steady_actor_spotlight::SteadyActorSpotlight;
@@ -300,9 +300,9 @@ pub trait SteadyActor {
     ;
 
     /// will call shared_send_slice   
-    fn send_slice<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
+    fn send_slice<'b,T: TxCore>(&'b mut self, this: &'b mut T, slice: T::SliceSource<'b>) -> TxDone
     where
-        T: Copy;
+        T::MsgOut : Copy;
 
     // will call shared_send_direct
     // new method  fn  send_slice_direct

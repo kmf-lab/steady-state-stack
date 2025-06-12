@@ -25,7 +25,6 @@ use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle, MONITOR_NOT};
-use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
 use crate::steady_actor::SendOutcome;
 use crate::core_rx::RxCore;
@@ -36,6 +35,7 @@ use crate::monitor_telemetry::SteadyTelemetry;
 use crate::simulate_edge::{ IntoSimRunner};
 use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
 use crate::steady_rx::RxDone;
+use crate::steady_tx::TxDone;
 use crate::telemetry::setup;
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::util::steady_logger;
@@ -319,7 +319,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
 
 
-    fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize {
+    fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize { //TODO: return done?
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
@@ -416,21 +416,19 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn send_slice<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
-        where
-            T: Copy,
-    {
+    fn send_slice<'b, T: TxCore>(&'b mut self, this: &'b mut T, slice: T::SliceSource<'b>) -> TxDone
+    where
+        T::MsgOut : Copy  {
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
-
-        let done = this.shared_send_slice_until_full(slice);
-
-        this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-            tel.process_event(this.local_index, this.channel_meta_data.meta_data.id, done as isize)
-        } else {
-            MONITOR_NOT
-        };
+        let done = this.shared_send_slice(slice);
+        
+         if let Some(ref mut tel) = self.telemetry.send_rx {
+             this.telemetry_inc(done, tel);
+         } else {
+             this.monitor_not();
+         };
 
         done
     }

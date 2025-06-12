@@ -1187,14 +1187,14 @@ mod lib_tests {
 
     // Test for send_slice_until_full
     #[test]
-    fn test_send_slice_until_full() {
+    fn test_send_slice() {
         let (tx, _rx) = create_test_channel();
         let mut context = test_steady_context();
         let slice = [1, 2, 3];
         let tx = tx.clone();
         if let Some(mut tx) = tx.try_lock() {
-            let sent_count = context.send_slice(&mut tx, &slice);
-            assert_eq!(sent_count, slice.len());
+            let done = context.send_slice(&mut tx, &slice);
+            assert_eq!(done.message_count(), slice.len());
         };
     }
 

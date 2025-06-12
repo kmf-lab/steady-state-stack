@@ -30,6 +30,7 @@ use crate::distributed::distributed_stream::{Defrag, StreamItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
 use crate::simulate_edge::{IntoSimRunner};
+use crate::steady_tx::TxDone;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::steady_logger;
 use crate::yield_now::yield_now;
@@ -262,12 +263,10 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn send_slice<T>(&mut self, this: &mut Tx<T>, slice: &[T]) -> usize
+    fn send_slice<'b, T: TxCore>(&'b mut self, this: &'b mut T, slice: T::SliceSource<'b>) -> TxDone
     where
-        T: Copy
-    {
-        
-        this.shared_send_slice_until_full(slice)
+        T::MsgOut : Copy  {
+        this.shared_send_slice(slice)
     }
     /// Sends messages from an iterator to the Tx channel until it is full.
     ///

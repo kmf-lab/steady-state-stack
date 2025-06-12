@@ -20,7 +20,7 @@ pub trait TxCore {
     type MsgIn<'a>;
     type MsgOut;
     type MsgSize: Copy;
-    type SliceSource<'a> where Self: 'a;
+    type SliceSource<'b> where Self: 'b;  //TODO: this seems a bad idea..
     type SliceTarget<'a> where Self: 'a;
 
 
@@ -76,7 +76,7 @@ impl<T> TxCore for Tx<T> {
     type MsgIn<'a> = T;
     type MsgOut = T;
     type MsgSize = usize;
-    type SliceSource<'a> = &'a[T] where T: 'a;
+    type SliceSource<'b> = &'b [T] where T: 'b;
     type SliceTarget<'a> = (&'a mut [std::mem::MaybeUninit<T>], &'a mut [std::mem::MaybeUninit<T>]) where T: 'a;
 
     fn done_one(&self, _one: &Self::MsgIn<'_>) -> TxDone {
@@ -206,7 +206,7 @@ impl<T> TxCore for Tx<T> {
     }
 
     #[inline]
-    fn shared_send_slice(&mut self, slice: Self::SliceSource<'_>) -> TxDone
+    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_>) -> TxDone
         where Self::MsgOut : Copy {
         // Try to push as many items as possible from the slice.
         // Returns the number of items actually pushed.
@@ -318,7 +318,7 @@ impl TxCore for StreamTx<StreamIngress> {
     type MsgIn<'a> = (StreamIngress, &'a[u8]);
     type MsgOut = StreamIngress;
     type MsgSize = (usize, usize);
-    type SliceSource<'a> = (&'a[StreamIngress], &'a[u8]);
+    type SliceSource<'b> = (&'b [StreamIngress], &'b [u8]);
     type SliceTarget<'a> = (
         &'a mut [std::mem::MaybeUninit<StreamIngress>],
         &'a mut [std::mem::MaybeUninit<StreamIngress>],
@@ -470,7 +470,7 @@ impl TxCore for StreamTx<StreamIngress> {
     }
 
     #[inline]
-    fn shared_send_slice(&mut self, slice: Self::SliceSource<'_>) -> TxDone
+    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_>) -> TxDone
     where
         Self::MsgOut: Copy,
     {
@@ -657,7 +657,7 @@ impl TxCore for StreamTx<StreamEgress> {
     type MsgIn<'a> = &'a[u8]; 
     type MsgOut = StreamEgress;
     type MsgSize = (usize, usize);
-    type SliceSource<'a> = (&'a[StreamEgress], &'a[u8]);
+    type SliceSource<'b> = (&'b [StreamEgress], &'b [u8]);
     type SliceTarget<'a> = (
         &'a mut [std::mem::MaybeUninit<StreamEgress>],
         &'a mut [std::mem::MaybeUninit<StreamEgress>],
@@ -808,7 +808,7 @@ impl TxCore for StreamTx<StreamEgress> {
     }
 
     #[inline]
-    fn shared_send_slice(&mut self, slice: Self::SliceSource<'_>) -> TxDone
+    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_>) -> TxDone
     where
         Self::MsgOut: Copy,
     {
@@ -998,7 +998,7 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;
     type MsgOut = <T as TxCore>::MsgOut;
     type MsgSize =  <T as TxCore>::MsgSize;
-    type SliceSource<'a> = <T as TxCore>::SliceSource<'a> where Self: 'a;
+    type SliceSource<'b> = <T as TxCore>::SliceSource<'b> where Self: 'b; //TODO: not a good idea?
     type SliceTarget<'a> = <T as TxCore>::SliceTarget<'a> where Self: 'a;
 
 
@@ -1065,7 +1065,7 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     #[inline]
     fn shared_send_slice<'a>(&'a mut self, slice: Self::SliceSource<'a> ) -> TxDone
      where Self::MsgOut : Copy {
-        <T as TxCore>::shared_send_slice(&mut **self, slice)
+        <T as TxCore>::shared_send_slice(self, slice)
     }
     #[inline]
     fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
@@ -1197,7 +1197,7 @@ mod extended_coverage {
         type MsgIn<'a> = usize;
         type MsgOut = usize;
         type MsgSize = usize;
-        type SliceSource<'a> = &'a [usize];
+        type SliceSource<'b> = &'b [usize];
         type SliceTarget<'a> = (&'a [usize],&'a [usize]);
 
 
@@ -1260,7 +1260,7 @@ mod extended_coverage {
 
 
         #[inline]
-        fn shared_send_slice(&mut self, slice: Self::SliceSource<'_> ) -> TxDone {
+        fn shared_send_slice<'a,'b>(&'a mut self, slice: Self::SliceSource<'b> ) -> TxDone {
             TxDone::Normal(1)
         }
         #[inline]
