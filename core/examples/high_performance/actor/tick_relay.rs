@@ -27,7 +27,7 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A, ticks_rx: SteadyRx<Tick
                                 actor.wait_avail(&mut ticks_rx_lock,BATCH),
                                 actor.wait_vacant(&mut ticks_tx_lock,BATCH)
                                );
-        let count = actor.take_slice(&mut ticks_rx_lock, &mut buffer);
+        let count = actor.take_slice(&mut ticks_rx_lock, &mut buffer).item_count();
         actor.send_slice(&mut ticks_tx_lock, &buffer[0..count]);
     }
     Ok(())

@@ -35,7 +35,7 @@ use async_ringbuf::traits::Split;
 use ringbuf::producer::Producer;
 use crate::{AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyTx, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
-use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamItem, TxChannelMetaDataWrapper};
+use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamControlItem, TxChannelMetaDataWrapper};
 use crate::monitor::ChannelMetaData;
 use crate::steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
 use crate::steady_rx::{Rx};
@@ -331,8 +331,8 @@ impl ChannelBuilder {
         )
     }
 
-    pub fn build_stream_bundle<T: StreamItem, const GIRTH: usize>(&self
-                                                                  , bytes_per_item: usize
+    pub fn build_stream_bundle<T: StreamControlItem, const GIRTH: usize>(&self
+                                                                         , bytes_per_item: usize
                                                ) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
 
         let mut tx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
@@ -358,7 +358,7 @@ impl ChannelBuilder {
             ,
         )
     }
-    pub fn build_stream<T: StreamItem>(&self, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
+    pub fn build_stream<T: StreamControlItem>(&self, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
         let bytes_capacity = self.capacity*bytes_per_item;
         let lazy_stream = Arc::new(LazyStream::new(self
                                                    , &self.with_capacity(bytes_capacity)));

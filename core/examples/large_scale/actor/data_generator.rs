@@ -94,7 +94,7 @@ mod generator_tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn(move |context| internal_behavior(context,approved_widget_tx_out.clone()));
+            .build(move |context| internal_behavior(context,approved_widget_tx_out.clone()), SoloAct);
 
         graph.start();
         sleep(Duration::from_secs(1));

@@ -256,11 +256,11 @@ pub(crate) mod aeron_tests {
 
             let mut remaining = TEST_ITEMS;
             let idx:usize = (11 - STREAM_ID) as usize;
-            while remaining > 0 && actor.vacant_units(&mut tx[idx].item_channel) >= BATCH_SIZE {
+            while remaining > 0 && actor.vacant_units(&mut tx[idx].control_channel) >= BATCH_SIZE {
 
                 //actor.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
                 actor.send_slice(&mut tx[idx].payload_channel, &all_bytes.as_ref());
-                actor.send_slice(&mut tx[idx].item_channel, &items.as_ref());
+                actor.send_slice(&mut tx[idx].control_channel, &items.as_ref());
 
                 // this old solution worked but consumed more core
                 // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
@@ -312,8 +312,8 @@ pub(crate) mod aeron_tests {
 
             let bytes = actor.avail_units(&mut rx[0].payload_channel);
             actor.advance_read_index(&mut rx[0].payload_channel, bytes);
-            let taken = actor.avail_units(&mut rx[0].item_channel);
-            actor.advance_read_index(&mut rx[0].item_channel, taken);
+            let taken = actor.avail_units(&mut rx[0].control_channel);
+            actor.advance_read_index(&mut rx[0].control_channel, taken);
 
 
             //  let avail = actor.avail_units(&mut rx[0].item_channel);

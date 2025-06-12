@@ -16,6 +16,7 @@ use crate::monitor::{ChannelMetaData};
 use crate::core_rx::RxCore;
 use crate::{RxBundle, SteadyRxBundle};
 use crate::distributed::distributed_stream::RxChannelMetaDataWrapper;
+use crate::steady_tx::TxDone;
 
 /// Represents a receiver that consumes messages from a channel.
 ///
@@ -568,11 +569,35 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
     }
 }
 
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum RxDone {
     Normal(usize),
     Stream(usize,usize)
 }
+impl RxDone {
+    pub fn item_count(&self) -> usize {
+        match *self {
+            RxDone::Normal(count) => count,
+            RxDone::Stream(first, _) => first,
+        }
+    }
+    pub fn payload_count(&self) -> Option<usize> {
+        match *self {
+            RxDone::Normal(_count) => None,
+            RxDone::Stream(_, second) => Some(second),
+        }
+    }
+}
+impl Deref for RxDone {
+    type Target = usize;
 
+    fn deref(&self) -> &usize {
+        match self {
+            RxDone::Normal(count) => count,
+            RxDone::Stream(first, _) => first,
+        }
+    }
+}
 /////////////////////////////////////////////////////////////////
 
 

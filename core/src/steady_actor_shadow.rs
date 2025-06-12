@@ -26,10 +26,11 @@ use crate::actor_builder::NodeTxRx;
 use crate::steady_actor::SendOutcome;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{Defrag, StreamItem};
+use crate::distributed::distributed_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
 use crate::simulate_edge::{IntoSimRunner};
+use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::steady_logger;
@@ -172,31 +173,23 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+    fn peek_slice<'a,'b,T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
     where
-        T: Copy
+        T: RxCore,
+        T::MsgOut: Copy
     {        
-        this.shared_try_peek_slice(elems)
+        this.shared_peek_slice()
     }
 
-    /// Retrieves and removes a slice of messages from the channel.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    /// - `slice`: A mutable slice where the taken messages will be stored.
-    ///
-    /// # Returns
-    /// The number of messages actually taken and stored in `slice`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    fn take_slice<T>(&mut self, this: &mut Rx<T>, slice: &mut [T]) -> usize
+
+    fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone
     where
-        T: Copy,
+        T::MsgOut: Copy,
     {
         
-        this.deprecated_shared_take_slice(slice)
+        this.shared_take_slice(slice)
     }
+
     /// Attempts to peek at the next message in the channel without removing it.
     ///
     /// # Parameters
@@ -263,11 +256,21 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn send_slice<'b, T: TxCore>(&'b mut self, this: &'b mut T, slice: T::SliceSource<'b>) -> TxDone
+    fn send_slice<T: TxCore>(& mut self, this: & mut T, slice: T::SliceSource<'_>) -> TxDone
     where
         T::MsgOut : Copy  {
         this.shared_send_slice(slice)
     }
+
+    fn send_slice_direct<T: TxCore, F>(&mut self, this: &mut T, f: F) -> TxDone
+    where
+        T::MsgOut: Copy,
+        F: FnOnce(T::SliceTarget<'_>) -> TxDone
+    {
+        this.shared_send_direct(f)
+    }
+
+
     /// Sends messages from an iterator to the Tx channel until it is full.
     ///
     /// # Parameters
@@ -294,7 +297,7 @@ impl SteadyActor for SteadyActorShadow {
         }
     }
 
-    fn flush_defrag_messages<S: StreamItem>(
+    fn flush_defrag_messages<S: StreamControlItem>(
         &mut self,
         out_item: &mut Tx<S>,
         out_data: &mut Tx<u8>,
@@ -695,4 +698,6 @@ impl SteadyActor for SteadyActorShadow {
     fn frame_rate_ms(&self) -> u64 {
         self.frame_rate_ms
     }
+
+
 }

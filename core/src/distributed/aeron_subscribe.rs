@@ -137,12 +137,12 @@ async fn poll_aeron_subscription<C: SteadyActor>(
     let mut input_frags: u32 = 0;
     let now = Instant::now();
 
-    let measured_vacant_items = tx.item_channel.shared_vacant_units() as u32;
+    let measured_vacant_items = tx.control_channel.shared_vacant_units() as u32;
     let measured_vacant_bytes = tx.payload_channel.shared_vacant_units() as u32;
 
     loop {
         // tx is already locked by the caller (internal_behavior), so we use it directly
-        let remaining_poll = tx.smallest_space().unwrap_or(tx.item_channel.capacity()) as i32;
+        let remaining_poll = tx.smallest_space().unwrap_or(tx.control_channel.capacity()) as i32;
         if 0 >= sub.poll(
             &mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
                 let flags = header.flags();

@@ -44,7 +44,7 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<WidgetInve
                             ,actor.wait_vacant(&mut feedback, 1)
         );
 
-        let count = actor.take_slice(&mut rx, &mut buffer);
+        let count = actor.take_slice(&mut rx, &mut buffer).item_count();
         let mut approvals: Vec<ApprovedWidgets> = Vec::with_capacity(count);
         for b in buffer.iter().take(count) {
             approvals.push(ApprovedWidgets {
@@ -62,7 +62,7 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<WidgetInve
 
         let done = actor.send_slice(&mut tx, &approvals);
         //iterator of sent until the end
-        let send = approvals.into_iter().skip(done.message_count());
+        let send = approvals.into_iter().skip(done.item_count());
         for send_me in send {
             let _ = actor.try_send(&mut tx, send_me);
         }
@@ -95,10 +95,10 @@ pub(crate) mod approval_tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context
+            .build( move |context| internal_behavior(context
                                                            , widget_inventory_rx_in.clone()
                                                            , approved_widget_tx_out.clone()
-                                                           , feedback_tx_out.clone()) );
+                                                           , feedback_tx_out.clone()), SoloAct );
 
         graph.start();
 

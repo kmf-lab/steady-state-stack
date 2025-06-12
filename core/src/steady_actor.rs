@@ -11,14 +11,14 @@ use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
 use crate::monitor_telemetry::SteadyTelemetry;
-use crate::steady_rx::RxMetaDataProvider;
+use crate::steady_rx::{RxDone, RxMetaDataProvider};
 use crate::steady_tx::{TxDone, TxMetaDataProvider};
 use crate::telemetry::setup;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::steady_actor_spotlight::SteadyActorSpotlight;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{Defrag, StreamItem};
+use crate::distributed::distributed_stream::{Defrag, StreamControlItem};
 use crate::simulate_edge::{IntoSimRunner};
 
 impl SteadyActorShadow {
@@ -204,10 +204,10 @@ pub trait SteadyActor {
     /// if we are shutting down return the optional timeout before we force the exit
     fn is_liveliness_shutdown_timeout(&self) -> Option<Duration>;
 
-    fn flush_defrag_messages<S: StreamItem>(&mut self
-                                            , item: &mut Tx<S>
-                                            , data: &mut Tx<u8>
-                                            , defrag: &mut Defrag<S>
+    fn flush_defrag_messages<S: StreamControlItem>(&mut self
+                                                   , item: &mut Tx<S>
+                                                   , data: &mut Tx<u8>
+                                                   , defrag: &mut Defrag<S>
     ) -> (u32,u32,Option<i32>);
 
 
@@ -287,29 +287,27 @@ pub trait SteadyActor {
 
 
 
+    fn peek_slice<'a,'b,T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
+    where
+        T: RxCore,
+        T::MsgOut: Copy;
 
 
-    /// will call shared_peek_slice  
-    fn peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+    fn take_slice<T: RxCore>(&mut self, this: &mut T, target: T::SliceTarget<'_>) -> RxDone
     where
-        T: Copy;
-    /// will call shared_take_slice
-    fn take_slice<T>(&mut self, this: &mut Rx<T>, slice: &mut [T]) -> usize
-    where
-        T: Copy,
+        T::MsgOut: Copy,
     ;
 
-    /// first done, calls shared_send_slice
-    fn send_slice<'b,T: TxCore>(&'b mut self, this: &'b mut T, slice: T::SliceSource<'b>) -> TxDone
+
+    fn send_slice<T: TxCore>(& mut self, this: & mut T, source: T::SliceSource<'_>) -> TxDone
     where
         T::MsgOut : Copy;
 
-    // will call shared_send_direct
-    // new method   fn send_slice_direct <'b,T: TxCore>(&'b mut self, this: &'b mut T, slice: T::SliceSource<'b>) -> TxDone
-    //                       where
-    //                             T::MsgOut : Copy;
 
-
+    fn send_slice_direct<T: TxCore, F>(& mut self, this: & mut T, f: F) -> TxDone
+    where
+        T::MsgOut : Copy,
+        F: FnOnce(T::SliceTarget<'_>) -> TxDone;
 
 
 

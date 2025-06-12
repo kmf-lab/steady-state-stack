@@ -34,7 +34,8 @@ async fn internal_behavior<const TICK_COUNTS_RX_GIRTH:usize,C: SteadyActor>(mut 
         let _clean = await_for_all!(actor.wait_avail_bundle(&mut tick_counts_rx, 1, TICK_COUNTS_RX_GIRTH)    );
 
         for i in 0..TICK_COUNTS_RX_GIRTH {
-            let count = actor.peek_slice(&mut tick_counts_rx[i], &mut buffer);
+            let slice = actor.peek_slice(&mut tick_counts_rx[i]);
+            let count = slice.copy_into_slice(&mut buffer).item_count();
             if count > 0 {
                 my_max_count = buffer[count - 1].count.max(my_max_count);
                 for _n in 0..count {
@@ -65,7 +66,7 @@ pub(crate) mod actor_tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone()) );
+            .build( move |context| internal_behavior(context, ticks_rx_in.clone()) , SoloAct);
 
         graph.start();
         graph.request_shutdown();

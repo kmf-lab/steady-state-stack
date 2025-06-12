@@ -422,7 +422,7 @@ checksum = "87ccbba4460cca3070e466e87ed2b1a50206d6a09dd2e2249da23c434a3e6535"
 
 [[package]]
 name = "cargo-steady-state"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "askama",
  "async-std",
@@ -2171,7 +2171,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "steady_state"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "aeron",
  "ahash",

@@ -12,7 +12,7 @@ use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
 use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamIngress, StreamEgress, Tx, MONITOR_NOT};
-use crate::distributed::distributed_stream::{StreamItem, StreamTx};
+use crate::distributed::distributed_stream::{StreamControlItem, StreamTx};
 use crate::core_exec;
 use crate::yield_now;
 
@@ -45,7 +45,7 @@ pub trait TxCore {
 
     fn shared_send_slice(& mut self, slice: Self::SliceSource<'_> ) -> TxDone
         where Self::MsgOut : Copy
-    ; //Rename to source not slice
+    ; //TODO: Rename to source not slice
 
     fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
                     where
@@ -331,7 +331,7 @@ impl TxCore for StreamTx<StreamIngress> {
     }
 
     fn shared_mark_closed(&mut self) -> bool {
-        if let Some(c) = self.item_channel.make_closed.take() {
+        if let Some(c) = self.control_channel.make_closed.take() {
             let result = c.send(());
             if result.is_err() {
                 //not a serious issue, may happen with bundles
@@ -349,25 +349,25 @@ impl TxCore for StreamTx<StreamIngress> {
     }
 
     fn one(&self) -> Self::MsgSize {
-        (1,self.payload_channel.capacity()/self.item_channel.capacity())
+        (1,self.payload_channel.capacity()/self.control_channel.capacity())
     }
     fn log_perodic(&mut self) -> bool {
-        if self.item_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+        if self.control_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
         } else {
-            self.item_channel.last_error_send = Instant::now();
+            self.control_channel.last_error_send = Instant::now();
             true
         }
     }
 
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
-        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.control_channel.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
 
         let mut count = 0;
 
         //while we have room keep going.
-        let item_limit = self.item_channel.tx.vacant_len();
+        let item_limit = self.control_channel.tx.vacant_len();
         let limited_iter = iter
             .take(item_limit);
 
@@ -378,7 +378,7 @@ impl TxCore for StreamTx<StreamIngress> {
                 core_exec::block_on(self.payload_channel.tx.wait_vacant(payload.len()));
             }
             let _ = self.payload_channel.tx.push_slice(payload);
-            let _ = self.item_channel.tx.try_push(item);
+            let _ = self.control_channel.tx.try_push(item);
             count += 1;
         }
         count
@@ -389,10 +389,10 @@ impl TxCore for StreamTx<StreamIngress> {
         match done_count {
             TxDone::Normal(i) => {
                 warn!("internal error should have gotten Stream");
-                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+                self.control_channel.local_index = tel.process_event(self.control_channel.local_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
             },
             TxDone::Stream(i,p) => {
-                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+                self.control_channel.local_index = tel.process_event(self.control_channel.local_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
                 self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
             },
         }
@@ -400,43 +400,43 @@ impl TxCore for StreamTx<StreamIngress> {
 
     #[inline]
     fn monitor_not(&mut self) {
-        self.item_channel.local_index = MONITOR_NOT;
+        self.control_channel.local_index = MONITOR_NOT;
         self.payload_channel.local_index = MONITOR_NOT;
     }
 
      #[inline]
     fn shared_capacity(&self) -> usize {
-        self.item_channel.tx.capacity().get()
+        self.control_channel.tx.capacity().get()
     }
 
     #[inline]
     fn shared_is_full(&self) -> bool {
-        self.item_channel.tx.is_full()
+        self.control_channel.tx.is_full()
     }
 
     #[inline]
     fn shared_is_empty(&self) -> bool {
-        self.item_channel.tx.is_empty()
+        self.control_channel.tx.is_empty()
     }
 
     #[inline]
     fn shared_vacant_units(&self) -> usize {
-        self.item_channel.tx.vacant_len()
+        self.control_channel.tx.vacant_len()
     }
 
     #[inline]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool {
-        if self.item_channel.tx.vacant_len() >= count.0 &&
+        if self.control_channel.tx.vacant_len() >= count.0 &&
             self.payload_channel.tx.vacant_len() >= count.1 {
             true
         } else {
-            let icap = self.item_channel.capacity();
+            let icap = self.control_channel.capacity();
             let pcap = self.payload_channel.capacity();
 
-            let mut one_down = &mut self.item_channel.oneshot_shutdown;
+            let mut one_down = &mut self.control_channel.oneshot_shutdown;
             if !one_down.is_terminated() {
                 let operation = async {
-                                       self.item_channel.tx.wait_vacant(count.0.min(icap)).await;
+                                       self.control_channel.tx.wait_vacant(count.0.min(icap)).await;
                                        self.payload_channel.tx.wait_vacant(count.1.min(pcap)).await;
                                    };
                 select! { _ = one_down => false, _ = operation.fuse() => true, }
@@ -448,11 +448,11 @@ impl TxCore for StreamTx<StreamIngress> {
     }
     #[inline]
     async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool {
-        if self.item_channel.tx.vacant_len() >= count.0 &&
+        if self.control_channel.tx.vacant_len() >= count.0 &&
             self.payload_channel.tx.vacant_len() >= count.1 {
             true
         } else {
-            self.item_channel.tx.wait_vacant(count.0.min(self.item_channel.capacity())).await;
+            self.control_channel.tx.wait_vacant(count.0.min(self.control_channel.capacity())).await;
             self.payload_channel.tx.wait_vacant(count.1.min(self.payload_channel.capacity())).await;
             true
         }
@@ -460,12 +460,12 @@ impl TxCore for StreamTx<StreamIngress> {
 
     #[inline]
     async fn shared_wait_empty(&mut self) -> bool {
-        let mut one_down = &mut self.item_channel.oneshot_shutdown;
+        let mut one_down = &mut self.control_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
-            let mut operation = &mut self.item_channel.tx.wait_vacant(usize::from(self.item_channel.tx.capacity()));
+            let mut operation = &mut self.control_channel.tx.wait_vacant(usize::from(self.control_channel.tx.capacity()));
             select! { _ = one_down => false, _ = operation => true, }
         } else {
-            self.item_channel.tx.capacity().get() == self.item_channel.tx.vacant_len()
+            self.control_channel.tx.capacity().get() == self.control_channel.tx.vacant_len()
         }
     }
 
@@ -476,7 +476,7 @@ impl TxCore for StreamTx<StreamIngress> {
     {
         let (ingress_items, payload_bytes) = slice;
 
-        let item_vacant = self.item_channel.tx.vacant_len();
+        let item_vacant = self.control_channel.tx.vacant_len();
         let payload_vacant = self.payload_channel.tx.vacant_len();
 
         let mut items_sent = 0;
@@ -492,7 +492,7 @@ impl TxCore for StreamTx<StreamIngress> {
             if pushed != len {
                 break;
             }
-            if self.item_channel.tx.try_push(ingress).is_err() {
+            if self.control_channel.tx.try_push(ingress).is_err() {
                 break;
             }
             items_sent += 1;
@@ -508,7 +508,7 @@ impl TxCore for StreamTx<StreamIngress> {
         Self::MsgOut: Copy,
         F: FnOnce(Self::SliceTarget<'a>) -> TxDone,
     {
-        let (item_a, item_b) = self.item_channel.tx.vacant_slices_mut();
+        let (item_a, item_b) = self.control_channel.tx.vacant_slices_mut();
         let (payload_a, payload_b) = self.payload_channel.tx.vacant_slices_mut();
         f((item_a, item_b, payload_a, payload_b))
     }
@@ -518,13 +518,13 @@ impl TxCore for StreamTx<StreamIngress> {
         let (item,payload) = msg;
         assert_eq!(item.length(),payload.len() as i32);
 
-        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.control_channel.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
 
         if self.payload_channel.tx.vacant_len() >= item.length() as usize &&
-           self.item_channel.tx.vacant_len() >= 1 {
+           self.control_channel.tx.vacant_len() >= 1 {
             let _ = self.payload_channel.tx.push_slice(payload);
-            let _ = self.item_channel.tx.try_push(item);
+            let _ = self.control_channel.tx.try_push(item);
             Ok(TxDone::Stream(1,payload.len()))
         } else {
             Err(item)
@@ -543,7 +543,7 @@ impl TxCore for StreamTx<StreamIngress> {
         assert_eq!(item.length(), payload.len() as i32);
 
         debug_assert!(
-            self.item_channel.make_closed.is_some(),
+            self.control_channel.make_closed.is_some(),
             "Send called after channel marked closed"
         );
         debug_assert!(
@@ -554,7 +554,7 @@ impl TxCore for StreamTx<StreamIngress> {
         // Try to push immediately
         let push_result = {
             let payload_tx = &mut self.payload_channel.tx;
-            let item_tx = &mut self.item_channel.tx;
+            let item_tx = &mut self.control_channel.tx;
             if payload_tx.vacant_len() >= item.length() as usize && item_tx.vacant_len() >= 1 {
                 let payload_size = payload_tx.push_slice(payload);
                 debug_assert_eq!(payload_size, item.length() as usize);
@@ -573,13 +573,13 @@ impl TxCore for StreamTx<StreamIngress> {
                     SendSaturation::AwaitForRoom => {}
                     SendSaturation::ReturnBlockedMsg => return SendOutcome::Blocked(item),
                     SendSaturation::WarnThenAwait => {
-                        self.item_channel.report_tx_full_warning(ident);
+                        self.control_channel.report_tx_full_warning(ident);
                         self.payload_channel.report_tx_full_warning(ident);
                     }
                     SendSaturation::DebugWarnThenAwait => {
                         #[cfg(debug_assertions)]
                         {
-                            self.item_channel.report_tx_full_warning(ident);
+                            self.control_channel.report_tx_full_warning(ident);
                             self.payload_channel.report_tx_full_warning(ident);
                         }
                     }
@@ -588,11 +588,11 @@ impl TxCore for StreamTx<StreamIngress> {
                 // Wait for vacant space, shutdown, or timeout
                 let has_room = async {
                     self.payload_channel.tx.wait_vacant(payload.len()).await;
-                    self.item_channel.tx.wait_vacant(1).await;
+                    self.control_channel.tx.wait_vacant(1).await;
                 }
                     .fuse();
                 pin_mut!(has_room);
-                let mut one_down = &mut self.item_channel.oneshot_shutdown;
+                let mut one_down = &mut self.control_channel.oneshot_shutdown;
                 let timeout_future = match timeout {
                     Some(duration) => Either::Left(Delay::new(duration).fuse()),
                     None => Either::Right(pending::<()>().fuse()),
@@ -610,7 +610,7 @@ impl TxCore for StreamTx<StreamIngress> {
                             return SendOutcome::Blocked(item);
                         }
                         // Push item
-                        match self.item_channel.tx.push(item).await {
+                        match self.control_channel.tx.push(item).await {
                             Ok(_) => SendOutcome::Success,
                             Err(t) => {
                                 error!("channel is closed");
@@ -669,7 +669,7 @@ impl TxCore for StreamTx<StreamEgress> {
         TxDone::Stream(1, one.len())
     }
     fn shared_mark_closed(&mut self) -> bool {
-        if let Some(c) = self.item_channel.make_closed.take() {
+        if let Some(c) = self.control_channel.make_closed.take() {
             let result = c.send(());
             if result.is_err() {
                 //not a serious issue, may happen with bundles
@@ -687,26 +687,26 @@ impl TxCore for StreamTx<StreamEgress> {
     }
 
     fn one(&self) -> Self::MsgSize {
-        (1,self.payload_channel.capacity()/self.item_channel.capacity())      
+        (1,self.payload_channel.capacity()/self.control_channel.capacity())
     }
 
     fn log_perodic(&mut self) -> bool {
-        if self.item_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+        if self.control_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
         } else {
-            self.item_channel.last_error_send = Instant::now();
+            self.control_channel.last_error_send = Instant::now();
             true
         }
     }
 
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
-        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.control_channel.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
 
         let mut count = 0;
 
         //while we have room keep going.
-        let item_limit = self.item_channel.tx.vacant_len();
+        let item_limit = self.control_channel.tx.vacant_len();
         let limited_iter = iter
             .take(item_limit);
 
@@ -716,7 +716,7 @@ impl TxCore for StreamTx<StreamEgress> {
                 core_exec::block_on(self.payload_channel.tx.wait_vacant(payload.len()));
             }
             let _ = self.payload_channel.tx.push_slice(payload);
-            let _ = self.item_channel.tx.try_push(StreamEgress { length: payload.len() as i32 });
+            let _ = self.control_channel.tx.try_push(StreamEgress { length: payload.len() as i32 });
             count += 1;
         }
         count
@@ -727,10 +727,10 @@ impl TxCore for StreamTx<StreamEgress> {
         match done_count {
             TxDone::Normal(i) => {
                 warn!("internal error should have gotten Stream");
-                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+                self.control_channel.local_index = tel.process_event(self.control_channel.local_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
             },
             TxDone::Stream(i,p) => {
-                self.item_channel.local_index = tel.process_event(self.item_channel.local_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+                self.control_channel.local_index = tel.process_event(self.control_channel.local_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
                 self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
             },
         }
@@ -738,43 +738,43 @@ impl TxCore for StreamTx<StreamEgress> {
 
     #[inline]
     fn monitor_not(&mut self) {
-        self.item_channel.local_index = MONITOR_NOT;
+        self.control_channel.local_index = MONITOR_NOT;
         self.payload_channel.local_index = MONITOR_NOT;
     }
 
     #[inline]
     fn shared_capacity(&self) -> usize {
-        self.item_channel.tx.capacity().get()
+        self.control_channel.tx.capacity().get()
     }
 
     #[inline]
     fn shared_is_full(&self) -> bool {
-        self.item_channel.tx.is_full()
+        self.control_channel.tx.is_full()
     }
 
     #[inline]
     fn shared_is_empty(&self) -> bool {
-        self.item_channel.tx.is_empty()
+        self.control_channel.tx.is_empty()
     }
 
     #[inline]
     fn shared_vacant_units(&self) -> usize {
-        self.item_channel.tx.vacant_len()
+        self.control_channel.tx.vacant_len()
     }
 
     #[inline]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool {
-        if self.item_channel.tx.vacant_len() >= count.0 &&
+        if self.control_channel.tx.vacant_len() >= count.0 &&
             self.payload_channel.tx.vacant_len() >= count.1 {
             true
         } else {
-            let icap = self.item_channel.capacity();
+            let icap = self.control_channel.capacity();
             let pcap = self.payload_channel.capacity();
 
-            let mut one_down = &mut self.item_channel.oneshot_shutdown;
+            let mut one_down = &mut self.control_channel.oneshot_shutdown;
             if !one_down.is_terminated() {
                 let operation = async {
-                    self.item_channel.tx.wait_vacant(count.0.min(icap)).await;
+                    self.control_channel.tx.wait_vacant(count.0.min(icap)).await;
                     self.payload_channel.tx.wait_vacant(count.1.min(pcap)).await;
                 };
                 select! { _ = one_down => false, _ = operation.fuse() => true, }
@@ -786,11 +786,11 @@ impl TxCore for StreamTx<StreamEgress> {
     }
     #[inline]
     async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool {
-        if self.item_channel.tx.vacant_len() >= count.0 &&
+        if self.control_channel.tx.vacant_len() >= count.0 &&
             self.payload_channel.tx.vacant_len() >= count.1 {
             true
         } else {
-            self.item_channel.tx.wait_vacant(count.0.min(self.item_channel.capacity())).await;
+            self.control_channel.tx.wait_vacant(count.0.min(self.control_channel.capacity())).await;
             self.payload_channel.tx.wait_vacant(count.1.min(self.payload_channel.capacity())).await;
             true
         }
@@ -798,12 +798,12 @@ impl TxCore for StreamTx<StreamEgress> {
 
     #[inline]
     async fn shared_wait_empty(&mut self) -> bool {
-        let mut one_down = &mut self.item_channel.oneshot_shutdown;
+        let mut one_down = &mut self.control_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
-            let mut operation = &mut self.item_channel.tx.wait_vacant(usize::from(self.item_channel.tx.capacity()));
+            let mut operation = &mut self.control_channel.tx.wait_vacant(usize::from(self.control_channel.tx.capacity()));
             select! { _ = one_down => false, _ = operation => true, }
         } else {
-            self.item_channel.tx.capacity().get() == self.item_channel.tx.vacant_len()
+            self.control_channel.tx.capacity().get() == self.control_channel.tx.vacant_len()
         }
     }
 
@@ -815,7 +815,7 @@ impl TxCore for StreamTx<StreamEgress> {
         let (egress_items, payload_bytes) = slice;
 
         // We'll send as many as we can, limited by both item and payload channel space
-        let item_vacant = self.item_channel.tx.vacant_len();
+        let item_vacant = self.control_channel.tx.vacant_len();
         let payload_vacant = self.payload_channel.tx.vacant_len();
 
         // Each egress item corresponds to a payload chunk of length egress_item.length()
@@ -838,7 +838,7 @@ impl TxCore for StreamTx<StreamEgress> {
                 break;
             }
             // Push the egress item
-            if self.item_channel.tx.try_push(egress).is_err() {
+            if self.control_channel.tx.try_push(egress).is_err() {
                 break;
             }
             items_sent += 1;
@@ -854,7 +854,7 @@ impl TxCore for StreamTx<StreamEgress> {
         Self::MsgOut: Copy,
         F: FnOnce(Self::SliceTarget<'a>) -> TxDone,
     {
-        let (item_a, item_b) = self.item_channel.tx.vacant_slices_mut();
+        let (item_a, item_b) = self.control_channel.tx.vacant_slices_mut();
         let (payload_a, payload_b) = self.payload_channel.tx.vacant_slices_mut();
         f((item_a, item_b, payload_a, payload_b))
     }
@@ -862,13 +862,13 @@ impl TxCore for StreamTx<StreamEgress> {
     #[inline]
     fn shared_try_send(&mut self, payload: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
 
-        debug_assert!(self.item_channel.make_closed.is_some(),"Send called after channel marked closed");
+        debug_assert!(self.control_channel.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
 
         if self.payload_channel.tx.vacant_len() >= payload.len() as usize &&
-            self.item_channel.tx.vacant_len() >= 1 {
+            self.control_channel.tx.vacant_len() >= 1 {
             let _ = self.payload_channel.tx.push_slice(payload);
-            let _ = self.item_channel.tx.try_push(StreamEgress { length: payload.len() as i32 });
+            let _ = self.control_channel.tx.try_push(StreamEgress { length: payload.len() as i32 });
             Ok(TxDone::Stream(1,payload.len()))
         } else {
             Err(StreamEgress { length: payload.len() as i32 })
@@ -884,7 +884,7 @@ impl TxCore for StreamTx<StreamEgress> {
         timeout: Option<Duration>,
     ) -> SendOutcome<Self::MsgOut> {
         debug_assert!(
-            self.item_channel.make_closed.is_some(),
+            self.control_channel.make_closed.is_some(),
             "Send called after channel marked closed"
         );
         debug_assert!(
@@ -895,7 +895,7 @@ impl TxCore for StreamTx<StreamEgress> {
         // Try to push immediately
         let push_result = {
             let payload_tx = &mut self.payload_channel.tx;
-            let item_tx = &mut self.item_channel.tx;
+            let item_tx = &mut self.control_channel.tx;
             if payload_tx.vacant_len() >= payload.len() as usize && item_tx.vacant_len() >= 1 {
                 let payload_size = payload_tx.push_slice(payload);
                 debug_assert_eq!(payload_size, payload.len() as usize);
@@ -914,13 +914,13 @@ impl TxCore for StreamTx<StreamEgress> {
                     SendSaturation::AwaitForRoom => {}
                     SendSaturation::ReturnBlockedMsg => return SendOutcome::Blocked(item),
                     SendSaturation::WarnThenAwait => {
-                        self.item_channel.report_tx_full_warning(ident);
+                        self.control_channel.report_tx_full_warning(ident);
                         self.payload_channel.report_tx_full_warning(ident);
                     }
                     SendSaturation::DebugWarnThenAwait => {
                         #[cfg(debug_assertions)]
                         {
-                            self.item_channel.report_tx_full_warning(ident);
+                            self.control_channel.report_tx_full_warning(ident);
                             self.payload_channel.report_tx_full_warning(ident);
                         }
                     }
@@ -929,11 +929,11 @@ impl TxCore for StreamTx<StreamEgress> {
                 // Wait for vacant space, shutdown, or timeout
                 let has_room = async {
                     self.payload_channel.tx.wait_vacant(payload.len()).await;
-                    self.item_channel.tx.wait_vacant(1).await;
+                    self.control_channel.tx.wait_vacant(1).await;
                 }
                     .fuse();
                 pin_mut!(has_room);
-                let mut one_down = &mut self.item_channel.oneshot_shutdown;
+                let mut one_down = &mut self.control_channel.oneshot_shutdown;
                 let timeout_future = match timeout {
                     Some(duration) => Either::Left(Delay::new(duration).fuse()),
                     None => Either::Right(pending::<()>().fuse()),
@@ -951,7 +951,7 @@ impl TxCore for StreamTx<StreamEgress> {
                             return SendOutcome::Blocked(item);
                         }
                         // Push item
-                        match self.item_channel.tx.push(item).await {
+                        match self.control_channel.tx.push(item).await {
                             Ok(_) => SendOutcome::Success,
                             Err(t) => {
                                 error!("channel is closed");

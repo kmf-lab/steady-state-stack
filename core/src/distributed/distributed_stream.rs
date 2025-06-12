@@ -46,17 +46,17 @@ pub type LazySteadyStreamRxBundle<T, const GIRTH: usize> = [LazyStreamRx<T>; GIR
 /// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
 /// This one is special because its clone will lazy create teh channels.
 ///
-pub trait LazySteadyStreamTxBundleClone<T: StreamItem, const GIRTH: usize> {
+pub trait LazySteadyStreamTxBundleClone<T: StreamControlItem, const GIRTH: usize> {
     /// Clone the bundle of transmitters. But MORE. This is the lazy init of the channel as well.
     fn clone(&self) -> SteadyStreamTxBundle<T, GIRTH>;
 }
-pub trait LazySteadyStreamRxBundleClone<T: StreamItem, const GIRTH: usize> {
+pub trait LazySteadyStreamRxBundleClone<T: StreamControlItem, const GIRTH: usize> {
     /// Clone the bundle of transmitters. But MORE. This is the lazy init of the channel as well.
     fn clone(&self) -> SteadyStreamRxBundle<T, GIRTH>;
 }
 
 
-impl<T: StreamItem, const GIRTH: usize> LazySteadyStreamTxBundleClone<T, GIRTH> for LazySteadyStreamTxBundle<T, GIRTH> {
+impl<T: StreamControlItem, const GIRTH: usize> LazySteadyStreamTxBundleClone<T, GIRTH> for LazySteadyStreamTxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyStreamTxBundle<T, GIRTH> {
         let tx_clones:Vec<SteadyStreamTx<T>> = self.iter().map(|l|l.clone()).collect();
         match tx_clones.try_into() {
@@ -67,7 +67,7 @@ impl<T: StreamItem, const GIRTH: usize> LazySteadyStreamTxBundleClone<T, GIRTH> 
         }
     }
 }
-impl<T: StreamItem, const GIRTH: usize> LazySteadyStreamRxBundleClone<T, GIRTH> for LazySteadyStreamRxBundle<T, GIRTH> {
+impl<T: StreamControlItem, const GIRTH: usize> LazySteadyStreamRxBundleClone<T, GIRTH> for LazySteadyStreamRxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyStreamRxBundle<T, GIRTH> {
         let rx_clones:Vec<SteadyStreamRx<T>> = self.iter().map(|l|l.clone()).collect();
         match rx_clones.try_into() {
@@ -83,7 +83,7 @@ pub type SteadyStreamRxBundle<T, const GIRTH: usize> = Arc<[SteadyStreamRx<T>; G
 pub type SteadyStreamTxBundle<T, const GIRTH: usize> = Arc<[SteadyStreamTx<T>; GIRTH]>;
 
 
-pub trait SteadyStreamRxBundleTrait<T: StreamItem, const GIRTH: usize> {
+pub trait SteadyStreamRxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
     /// Locks all receivers in the bundle.
     ///
     /// # Returns
@@ -99,7 +99,7 @@ pub trait SteadyStreamRxBundleTrait<T: StreamItem, const GIRTH: usize> {
 
 }
 
-impl<T: StreamItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRTH> for SteadyStreamRxBundle<T, GIRTH> {
+impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRTH> for SteadyStreamRxBundle<T, GIRTH> {
 
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamRx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
@@ -123,7 +123,7 @@ impl<T: StreamItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRTH> for 
 
 }
 
-pub trait SteadyStreamTxBundleTrait<T: StreamItem, const GIRTH: usize> {
+pub trait SteadyStreamTxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
     /// Locks all receivers in the bundle.
     ///
     /// # Returns
@@ -140,7 +140,7 @@ pub trait SteadyStreamTxBundleTrait<T: StreamItem, const GIRTH: usize> {
 
 }
 
-impl<T: StreamItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRTH> for SteadyStreamTxBundle<T, GIRTH> {
+impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRTH> for SteadyStreamTxBundle<T, GIRTH> {
 
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamTx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
@@ -186,7 +186,7 @@ pub trait StreamRxBundleTrait {
 
 }
 
-impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
+impl<T: StreamControlItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
     fn mark_closed(&mut self) -> bool {
         if self.is_empty() {
             trace!("bundle has no streams, nothing found to be closed");
@@ -200,7 +200,7 @@ impl<T: StreamItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
 
 }
 
-impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
+impl<T: StreamControlItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
     fn is_closed_and_empty(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed_and_empty()
         )
@@ -221,9 +221,8 @@ impl<T: StreamItem> StreamRxBundleTrait for StreamRxBundle<'_,T> {
 
 /// A trait to unify items that can be streamed.
 ///
-/// This allows both `StreamFragment` and `StreamMessage` to share
-/// functionality in testing and real code.
-pub trait StreamItem: Copy + Send + Sync {
+/// These controllers of ingress and egress never have any refs and are copy
+pub trait StreamControlItem: Copy + Send + Sync + 'static {
     /// Creates a new instance with the given length, used for testing.
     fn testing_new(length: i32) -> Self;
 
@@ -276,7 +275,7 @@ impl StreamIngress {
     }
 }
 
-impl StreamItem for StreamIngress {
+impl StreamControlItem for StreamIngress {
     fn testing_new(length: i32) -> Self {
         StreamIngress {
             length,
@@ -332,7 +331,7 @@ impl StreamEgress {
     }
 }
 
-impl StreamItem for StreamEgress {
+impl StreamControlItem for StreamEgress {
     fn testing_new(length: i32) -> Self {
         StreamEgress { length }
     }
@@ -391,8 +390,8 @@ pub const RATE_COLLECTOR_LEN:usize = 32;
 
 /// A transmitter for a steady stream. Holds two channels:
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
-pub struct StreamTx<T: StreamItem> {
-    pub(crate) item_channel: Tx<T>,
+pub struct StreamTx<T: StreamControlItem> {
+    pub(crate) control_channel: Tx<T>,
     pub(crate) payload_channel: Tx<u8>,
     defrag: AHashMap<i32, Defrag<T>>,
     pub(crate) ready_msg_session: VecDeque<i32>,
@@ -408,7 +407,7 @@ pub struct StreamTx<T: StreamItem> {
     pub(crate) stored_vacant_values: (i32,i32)
 
 }
-impl<T: StreamItem> Debug for StreamTx<T> {
+impl<T: StreamControlItem> Debug for StreamTx<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StreamTx")
             .field("item_channel", &"Tx<T>")
@@ -420,7 +419,7 @@ impl<T: StreamItem> Debug for StreamTx<T> {
 }
 
 
-pub struct Defrag<T: StreamItem> {
+pub struct Defrag<T: StreamControlItem> {
     pub(crate) arrival: Option<Instant>,
     pub(crate) finish: Option<Instant>,
     pub(crate) session_id: i32,
@@ -429,7 +428,7 @@ pub struct Defrag<T: StreamItem> {
     pub(crate) ringbuffer_bytes: (AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>, AsyncWrap<Arc<AsyncRb<Heap<u8>>>,false, true>)
 }
 
-impl <T: StreamItem> Defrag<T> {
+impl <T: StreamControlItem> Defrag<T> {
 
     pub fn new(session_id: i32, items: usize, bytes: usize) -> Self {
         Defrag {
@@ -443,14 +442,14 @@ impl <T: StreamItem> Defrag<T> {
     }
 }
 
-impl<T: StreamItem> StreamTx<T> {
+impl<T: StreamControlItem> StreamTx<T> {
     /// Creates a new `StreamTx` wrapping the given channels and `stream_id`.
-    pub fn new(item_channel: Tx<T>, payload_channel: Tx<u8>) -> Self {
+    pub fn new(control_channel: Tx<T>, payload_channel: Tx<u8>) -> Self {
         StreamTx {
             max_poll_latency: Duration::from_millis(1000), //TODO: expose?
          //   vacant_fragments: item_channel.capacity() as usize,
-            stored_vacant_values: (item_channel.capacity() as i32, payload_channel.capacity() as i32),
-            item_channel,
+            stored_vacant_values: (control_channel.capacity() as i32, payload_channel.capacity() as i32),
+            control_channel,
             payload_channel,
             defrag: Default::default(),
             ready_msg_session: VecDeque::with_capacity(4),
@@ -554,13 +553,13 @@ impl<T: StreamItem> StreamTx<T> {
 
     /// Marks both control and payload channels as closed. Returns `true` for convenience.
     pub fn mark_closed(&mut self) -> bool {
-        self.item_channel.mark_closed();
+        self.control_channel.mark_closed();
         self.payload_channel.mark_closed();
         true
     }
 
     pub fn capacity(&self) -> usize {
-        self.item_channel.capacity()
+        self.control_channel.capacity()
     }
 
     //call this when we have no data in from poll to clear out anything waiting.
@@ -583,9 +582,9 @@ impl<T: StreamItem> StreamTx<T> {
             to_consume -= 1;
             if let Some(defrag_entry) = self.defrag.get_mut(&session_id) {
                 //how do we know how much we wrote??
-                if let (msgs,bytes,Some(needs_more_work_for_session_id)) = actor.flush_defrag_messages(&mut self.item_channel,
-                                                                   &mut self.payload_channel,
-                                                                   defrag_entry) {
+                if let (msgs,bytes,Some(needs_more_work_for_session_id)) = actor.flush_defrag_messages(&mut self.control_channel,
+                                                                                                       &mut self.payload_channel,
+                                                                                                       defrag_entry) {
                     total_messages += msgs;
                     total_bytes += bytes;
                     self.ready_msg_session.push_back(needs_more_work_for_session_id);
@@ -617,7 +616,7 @@ impl<T: StreamItem> StreamTx<T> {
 
         //Get or create the Defrag entry for the session ID
         let defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
-            Defrag::new(session_id, self.item_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
+            Defrag::new(session_id, self.control_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
         });
 
         // // If this is the beginning of a fragment, assert the ringbuffer is empty
@@ -659,16 +658,16 @@ impl<T: StreamItem> StreamTx<T> {
 /// A receiver for a steady stream. Holds two channels:
 /// one for control (`control_channel`) and one for payload (`payload_channel`).
 #[derive(Debug)]
-pub struct StreamRx<T: StreamItem> {
-    pub(crate) item_channel: Rx<T>,
+pub struct StreamRx<T: StreamControlItem> {
+    pub(crate) control_channel: Rx<T>,
     pub(crate) payload_channel: Rx<u8>
 }
 
-impl<T: StreamItem> StreamRx<T> {
+impl<T: StreamControlItem> StreamRx<T> {
     /// Creates a new `StreamRx` wrapping the given channels and `stream_id`.
-    pub(crate) fn new(item_channel: Rx<T>, payload_channel: Rx<u8>) -> Self {
+    pub(crate) fn new(control_channel: Rx<T>, payload_channel: Rx<u8>) -> Self {
         StreamRx {
-            item_channel,
+            control_channel,
             payload_channel
         }
     }
@@ -686,7 +685,7 @@ impl<T: StreamItem> StreamRx<T> {
     //     self.item_channel.shared_wait_closed_or_avail_units(full_messages).await
     // }
     pub fn capacity(&mut self) -> usize {
-        self.item_channel.capacity()
+        self.control_channel.capacity()
     }
 
     pub fn avail_units(&mut self) -> usize {
@@ -702,11 +701,11 @@ impl<T: StreamItem> StreamRx<T> {
     /// Checks if both channels are closed and empty.
     pub fn is_closed(&mut self) -> bool {
         //debug!("closed {} {}", self.item_channel.is_closed(), self.payload_channel.is_closed());
-        self.item_channel.is_closed() && self.payload_channel.is_closed()
+        self.control_channel.is_closed() && self.payload_channel.is_closed()
     }
 
     pub fn is_empty(&mut self) -> bool {
-        self.item_channel.is_empty()
+        self.control_channel.is_empty()
             && self.payload_channel.is_empty()
     }
 
@@ -717,7 +716,7 @@ impl<T: StreamItem> StreamRx<T> {
         mut fun: impl FnMut(&mut [u8], &mut [u8]) -> bool,
     ) {
         // Obtain mutable slices from the item and payload channels
-        let (item1, item2) = self.item_channel.rx.as_mut_slices();
+        let (item1, item2) = self.control_channel.rx.as_mut_slices();
         let (payload1, payload2) = self.payload_channel.rx.as_mut_slices();
 
         // Variables to track the state of the iteration
@@ -742,7 +741,7 @@ impl<T: StreamItem> StreamRx<T> {
                 // If the limit is reached or the function returns false, advance the read indices and exit
                 let x = actor.advance_read_index(&mut self.payload_channel, active_data);
                 debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
-                let x = actor.advance_read_index(&mut self.item_channel, active_items);
+                let x = actor.advance_read_index(&mut self.control_channel, active_items);
                 debug_assert_eq!(x, active_items, "Item channel advance mismatch");
                 return;
             }
@@ -768,7 +767,7 @@ impl<T: StreamItem> StreamRx<T> {
                 // If the limit is reached or the function returns false, advance the read indices and exit
                 let x = actor.advance_read_index(&mut self.payload_channel, active_data);
                 debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
-                let x = actor.advance_read_index(&mut self.item_channel, active_items);
+                let x = actor.advance_read_index(&mut self.control_channel, active_items);
                 debug_assert_eq!(x, active_items, "Item channel advance mismatch");
                 return;
             }
@@ -782,7 +781,7 @@ impl<T: StreamItem> StreamRx<T> {
         // If all items are processed successfully, advance the read indices
         let x = actor.advance_read_index(&mut self.payload_channel, active_data);
         debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
-        let x = actor.advance_read_index(&mut self.item_channel, active_items);
+        let x = actor.advance_read_index(&mut self.control_channel, active_items);
         debug_assert_eq!(x, active_items, "Item channel advance mismatch");
 
         //let avail = self.item_channel.shared_avail_units();
@@ -835,10 +834,11 @@ pub type SteadyStreamTx<T> = Arc<Mutex<StreamTx<T>>>;
 /// A lazy-initialized wrapper that stores channel builders and the resulting Tx/Rx pairs.
 /// It only builds the channels once they are first needed.
 #[derive(Debug)]
-pub(crate) struct LazyStream<T: StreamItem> {
+pub(crate) struct LazyStream<T: StreamControlItem> {
+
     /// Builder for the control channel. Wrapped in a `Mutex<Option<…>>` so we can
     /// take ownership once we decide to build channels.
-    item_builder: Mutex<Option<ChannelBuilder>>,
+    control_builder: Mutex<Option<ChannelBuilder>>,
 
     /// Builder for the payload channel. Wrapped in a `Mutex<Option<…>>` so we can
     /// take ownership once we decide to build channels.
@@ -851,17 +851,17 @@ pub(crate) struct LazyStream<T: StreamItem> {
 
 /// A lazily-initialized transmitter wrapper for a steady stream.
 #[derive(Debug)]
-pub struct LazyStreamTx<T: StreamItem> {
+pub struct LazyStreamTx<T: StreamControlItem> {
     lazy_channel: Arc<LazyStream<T>>,
 }
 
 /// A lazily-initialized receiver wrapper for a steady stream.
 #[derive(Debug)]
-pub struct LazyStreamRx<T: StreamItem> {
+pub struct LazyStreamRx<T: StreamControlItem> {
     lazy_channel: Arc<LazyStream<T>>,
 }
 
-impl<T: StreamItem> LazyStream<T> {
+impl<T: StreamControlItem> LazyStream<T> {
 
 
 
@@ -872,7 +872,7 @@ impl<T: StreamItem> LazyStream<T> {
         payload_builder: &ChannelBuilder,
     ) -> Self {
         LazyStream {
-            item_builder: Mutex::new(Some(item_builder.clone())),
+            control_builder: Mutex::new(Some(item_builder.clone())),
             payload_builder: Mutex::new(Some(payload_builder.clone())),
             channel: Mutex::new(None),
         }
@@ -883,7 +883,7 @@ impl<T: StreamItem> LazyStream<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
             let meta_builder = self
-                .item_builder
+                .control_builder
                 .lock()
                 .await
                 .take()
@@ -897,6 +897,12 @@ impl<T: StreamItem> LazyStream<T> {
 
             let (meta_tx, meta_rx) = meta_builder.eager_build_internal();
             let (data_tx, data_rx) = data_builder.eager_build_internal();
+
+            //TODO: create shared state object  Arc<Mutex<StreamState>>
+            //              holds what we are monitoring on both ends for agrreement.
+            //              upon wait/usage/into_spotlight we store pub and sub actor idents for query later
+            //              ensures only same ident can relock!!
+            // also add to Tx and Rx construction to fix the payload_metadata match issue.
 
             let tx = Arc::new(Mutex::new(StreamTx::new(meta_tx, data_tx)));
             let rx = Arc::new(Mutex::new(StreamRx::new(meta_rx, data_rx)));
@@ -910,7 +916,7 @@ impl<T: StreamItem> LazyStream<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
             let meta_builder = self
-                .item_builder
+                .control_builder
                 .lock()
                 .await
                 .take()
@@ -925,6 +931,11 @@ impl<T: StreamItem> LazyStream<T> {
             let (meta_tx, meta_rx) = meta_builder.eager_build_internal();
             let (data_tx, data_rx) = data_builder.eager_build_internal();
 
+            //TODO: create shared state object  Arc<Mutex<StreamState>>
+            //              holds what we are monitoring on both ends for agrreement.
+            //              upon wait/usage we store pub and sub actor idents for query later
+            //              ensures only same ident can relock!!
+
             let tx = Arc::new(Mutex::new(StreamTx::new(meta_tx, data_tx)));
             let rx = Arc::new(Mutex::new(StreamRx::new(meta_rx, data_rx)));
             *channel = Some((tx, rx));
@@ -933,7 +944,7 @@ impl<T: StreamItem> LazyStream<T> {
     }
 }
 
-impl<T: StreamItem> LazyStreamTx<T> {
+impl<T: StreamControlItem> LazyStreamTx<T> {
     /// Creates a new `LazyStreamTx` from an existing `Arc<LazyStream<T>>`.
     pub(crate) fn new(lazy_channel: Arc<LazyStream<T>>) -> Self {
         LazyStreamTx { lazy_channel }
@@ -962,7 +973,7 @@ impl<T: StreamItem> LazyStreamTx<T> {
         assert_eq!(x, data.len(), "Not all bytes were sent!");
         assert_ne!(x, 0);
 
-        match l.item_channel.shared_try_send(T::testing_new(x as i32)) {
+        match l.control_channel.shared_try_send(T::testing_new(x as i32)) {
             Ok(_) => {}
             Err(_) => {
                 panic!("error sending metadata");
@@ -978,7 +989,7 @@ impl<T: StreamItem> LazyStreamTx<T> {
         //TODO: we might want to wait for room.
         for d in data.into_iter() {
             let x = l.payload_channel.shared_send_slice_until_full(&d.1);
-            match l.item_channel.shared_try_send(T::testing_new(x as i32)) {
+            match l.control_channel.shared_try_send(T::testing_new(x as i32)) {
                 Ok(_) => {}
                 Err(_) => {
                     panic!("error sending metadata");
@@ -999,11 +1010,11 @@ impl<T: StreamItem> LazyStreamTx<T> {
         let mut l = s.try_lock().expect("internal error: try_lock");
 
         l.payload_channel.mark_closed();
-        l.item_channel.mark_closed();
+        l.control_channel.mark_closed();
     }
 }
 
-impl<T: StreamItem> LazyStreamRx<T> {
+impl<T: StreamControlItem> LazyStreamRx<T> {
 
     /// For testing simulates taking data from the actor in a controlled manner.
     pub async fn testing_avail_units(&self) -> usize {
@@ -1082,25 +1093,25 @@ impl<T: StreamItem> LazyStreamRx<T> {
 
 //TODO: these two methods control streams showing items not bytes, this may need to be corrected.
 
-impl<T: StreamItem> RxMetaDataProvider for SteadyStreamRx<T> {
+impl<T: StreamControlItem> RxMetaDataProvider for SteadyStreamRx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
-            Some(guard) => guard.item_channel.channel_meta_data.meta_data(),
+            Some(guard) => guard.control_channel.channel_meta_data.meta_data(),
             None => {
                 let guard = core_exec::block_on(self.lock());
-                guard.item_channel.channel_meta_data.meta_data()
+                guard.control_channel.channel_meta_data.meta_data()
             }
         }
     }
 }
 
-impl<T: StreamItem> TxMetaDataProvider for SteadyStreamTx<T> {
+impl<T: StreamControlItem> TxMetaDataProvider for SteadyStreamTx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
-            Some(guard) => guard.item_channel.channel_meta_data.meta_data(),
+            Some(guard) => guard.control_channel.channel_meta_data.meta_data(),
             None => {
                 let guard = core_exec::block_on(self.lock());
-                guard.item_channel.channel_meta_data.meta_data()
+                guard.control_channel.channel_meta_data.meta_data()
             }
         }
     }

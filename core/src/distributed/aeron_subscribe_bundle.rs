@@ -32,7 +32,7 @@ pub async fn run<const GIRTH: usize>(
     stream_id: i32,
     state: SteadyState<AeronSubscribeSteadyState>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut actor = context.into_spotlight([], tx.control_meta_data());
+    let mut actor = context.into_spotlight([], tx.payload_meta_data()); // TODO: must ensusre the other end had a payload selection!!!!!
     if actor.use_internal_behavior {
         while actor.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
@@ -70,7 +70,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
         // Poll the subscription until no data or defrag is full
         loop {
             let remaining_poll = if let Some(s) = tx_item.smallest_space() { s } else {
-                tx_item.item_channel.capacity()
+                tx_item.control_channel.capacity()
             };
             if remaining_poll == 0 {
                 if tx_item.shared_vacant_units()>0 {
@@ -108,7 +108,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
             let (now_sent_messages, now_sent_bytes) = tx_item.fragment_flush_ready(actor);
 
             // Get current vacant units after flushing
-            let current_vacant_items = tx_item.item_channel.shared_vacant_units() as i32;
+            let current_vacant_items = tx_item.control_channel.shared_vacant_units() as i32;
             let current_vacant_bytes = tx_item.payload_channel.shared_vacant_units() as i32;
 
             // Store output data rate using actual sent values

@@ -74,7 +74,7 @@ mod tests {
         
          graph.actor_builder()
              .with_name("UnitTest")
-             .build_spawn(move |context| internal_behavior(context, failure_feedback_rx_out.clone(), change_request_tx_out.clone()));
+             .build(move |context| internal_behavior(context, failure_feedback_rx_out.clone(), change_request_tx_out.clone()), SoloAct);
 
         failure_feedback_tx_out.testing_send_all((0..10).map(|i| crate::actor::data_feedback::FailureFeedback { count: i, message: "test".to_string() }).collect(),true);
         graph.start();

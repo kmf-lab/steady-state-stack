@@ -72,9 +72,9 @@ mod process_tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn(move |context| internal_behavior(context
+            .build(move |context| internal_behavior(context
                                                           , approved_widget_in_rx.clone()
-                                                          , approved_widget_out_tx.clone() ));
+                                                          , approved_widget_out_tx.clone() ), SoloAct);
 
         graph.start();
         

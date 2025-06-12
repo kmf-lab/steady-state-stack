@@ -41,7 +41,8 @@ async fn internal_behavior(context: SteadyActorShadow, ticks_rx: SteadyRx<Tick>,
                                     actor.wait_vacant(&mut tick_counts_tx,1)
                                    );
 
-        let count = actor.peek_slice(&mut ticks_rx, &mut buffer);
+        let slice = actor.peek_slice(&mut ticks_rx);
+        let count = slice.copy_into_slice(&mut buffer).item_count();
         if count > 0 {
             let max_count = TickCount { count: buffer[count - 1].value };
             let _ = actor.try_send(&mut tick_counts_tx, max_count);
@@ -74,7 +75,7 @@ pub(crate) mod hd_actor_tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );
+            .build( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()), SoloAct );
 
         graph.start_with_timeout(Duration::from_secs(2)); //startup the graph
 

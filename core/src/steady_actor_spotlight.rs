@@ -29,7 +29,7 @@ use crate::actor_builder::NodeTxRx;
 use crate::steady_actor::SendOutcome;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{Defrag, StreamItem};
+use crate::distributed::distributed_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::simulate_edge::{ IntoSimRunner};
@@ -278,38 +278,29 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn peek_slice<T>(&self, this: &mut Rx<T>, elems: &mut [T]) -> usize
+    fn peek_slice<'a,'b,T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
     where
-        T: Copy
+        T: RxCore,
+        T::MsgOut: Copy
     {
-        this.shared_try_peek_slice(elems)
+
+        this.shared_peek_slice()
     }
 
 
 
 
-    /// Retrieves and removes a slice of messages from the channel.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    /// - `slice`: A mutable slice where the taken messages will be stored.
-    ///
-    /// # Returns
-    /// The number of messages actually taken and stored in `slice`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    fn take_slice<T>(&mut self, this: &mut Rx<T>, slice: &mut [T]) -> usize
-        where
-            T: Copy,
+    fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone
+    where
+        T::MsgOut: Copy,
     {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
-        let done = this.deprecated_shared_take_slice(slice);
+        let done = this.shared_take_slice(slice);
 
         if let Some(ref mut tel) = self.telemetry.send_rx {
-            this.telemetry_inc(RxDone::Normal(done), tel);
+            this.telemetry_inc(done, tel);
         } else {
             this.monitor_not();
         };
@@ -416,7 +407,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn send_slice<'b, T: TxCore>(&'b mut self, this: &'b mut T, slice: T::SliceSource<'b>) -> TxDone
+    fn send_slice<T: TxCore>(& mut self, this: & mut T, slice: T::SliceSource<'_>) -> TxDone
     where
         T::MsgOut : Copy  {
         if let Some(ref mut st) = self.telemetry.state {
@@ -429,6 +420,26 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
          } else {
              this.monitor_not();
          };
+
+        done
+    }
+
+
+    fn send_slice_direct<T: TxCore, F>(&mut self, this: &mut T, f: F) -> TxDone
+    where
+        T::MsgOut: Copy,
+        F: FnOnce(T::SliceTarget<'_>) -> TxDone
+    {
+        if let Some(ref mut st) = self.telemetry.state {
+            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+        let done = this.shared_send_direct(f);
+
+        if let Some(ref mut tel) = self.telemetry.send_rx {
+            this.telemetry_inc(done, tel);
+        } else {
+            this.monitor_not();
+        };
 
         done
     }
@@ -487,7 +498,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
 
 
-    fn flush_defrag_messages<S: StreamItem>(
+    fn flush_defrag_messages<S: StreamControlItem>(
         &mut self,
         out_item: &mut Tx<S>,
         out_data: &mut Tx<u8>,
@@ -1138,6 +1149,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     fn frame_rate_ms(&self) -> u64 {
         self.frame_rate_ms
     }
+
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActorSpotlight<RX_LEN, TX_LEN> {

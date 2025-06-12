@@ -51,7 +51,7 @@ pub(crate) async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx
         //we must also relay our telemetry data periodically
         while !rx.is_empty() {
             let mut buf = state.buffer;
-            let count = actor.take_slice(&mut rx, &mut buf);
+            let count = *actor.take_slice(&mut rx, &mut buf);
             for x in 0..count {
                 state.last_approval = Some(buf[x].to_owned());
             }
@@ -81,7 +81,7 @@ mod consumer_tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state.clone()));
+            .build(move |context| internal_behavior(context, approved_widget_rx_out.clone(), state.clone()), SoloAct);
 
         graph.start();
         graph.request_shutdown();

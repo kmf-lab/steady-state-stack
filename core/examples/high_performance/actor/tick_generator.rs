@@ -69,7 +69,7 @@ pub(crate) mod actor_tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context, ticks_tx_out.clone()) );
+            .build( move |context| internal_behavior(context, ticks_tx_out.clone()), SoloAct );
 
         graph.start(); //startup the graph
         sleep(Duration::from_millis(40)); //if too long telemetry will back up

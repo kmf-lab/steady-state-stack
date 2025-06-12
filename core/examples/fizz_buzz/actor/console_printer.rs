@@ -47,7 +47,7 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
 
         while actor.avail_units(&mut fizzbuzz_messages_rx) > 0 {
 
-            let count = actor.take_slice(&mut fizzbuzz_messages_rx, buffer.deref_mut());
+            let count = actor.take_slice(&mut fizzbuzz_messages_rx, buffer.deref_mut()).item_count();
             buffer[..count].iter().for_each(|msg| match msg {
                 FizzBuzzMessage::Fizz => total_fizz += 1,
                 FizzBuzzMessage::Buzz => total_buzz += 1,

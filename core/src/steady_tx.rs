@@ -262,19 +262,27 @@ pub enum TxDone {
     Normal(usize),
     Stream(usize,usize)
 }
-
-
 impl TxDone {
-    pub fn message_count(&self) -> usize {
+    pub fn item_count(&self) -> usize {
         match *self {
             TxDone::Normal(count) => count,
             TxDone::Stream(first, _) => first,
         }
     }
-    pub fn payload_count(&self) -> usize {
+    pub fn payload_count(&self) -> Option<usize> {
         match *self {
-            TxDone::Normal(_count) => 0,
-            TxDone::Stream(_, second) => second,
+            TxDone::Normal(_count) => None,
+            TxDone::Stream(_, second) => Some(second),
+        }
+    }
+}
+impl Deref for TxDone {
+    type Target = usize;
+
+    fn deref(&self) -> &usize {
+        match self {
+            TxDone::Normal(count) => count,
+            TxDone::Stream(first, _) => first,
         }
     }
 }

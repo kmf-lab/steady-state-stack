@@ -120,6 +120,10 @@ pub mod yield_now;
 pub mod steady_actor;
 mod core_rx;
 use crate::core_rx::RxCore;
+pub use crate::core_rx::DoubleSlice;
+pub use crate::core_rx::DoubleSliceCopy;
+pub use crate::core_rx::QuadSlice;
+pub use crate::core_rx::StreamQuadSliceCopy;
 mod core_tx;
 use crate::core_tx::TxCore;
 
@@ -165,6 +169,8 @@ pub use steady_rx::SteadyRxBundleTrait;
 pub use steady_tx::SteadyTxBundleTrait;
 pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
+pub use steady_rx::RxDone;
+pub use steady_tx::TxDone;
 pub use crate::distributed::distributed_builder::AqueductBuilder;
 
 pub use steady_actor::SteadyActor;
@@ -800,6 +806,7 @@ mod lib_tests {
     use parking_lot::RwLock;
     use futures::lock::Mutex;
     use steady_actor::SteadyActor;
+    use crate::core_rx::DoubleSlice;
     use crate::steady_actor_shadow::SteadyActorShadow;
     use crate::core_tx::TxCore;
 
@@ -1028,7 +1035,7 @@ mod lib_tests {
         let mut context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
             let count = context.take_slice(&mut rx, &mut slice);
-            assert_eq!(count, 3);
+            assert_eq!(count.item_count(), 3);
             assert_eq!(slice, [1, 2, 3]);
         };
     }
@@ -1037,12 +1044,11 @@ mod lib_tests {
     #[test]
     fn test_try_peek_slice() {
         let rx = create_rx(vec![1, 2, 3, 4, 5]);
-        let mut slice = [0; 3];
         let context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
-            let count = context.peek_slice(&mut rx, &mut slice);
-            assert_eq!(count, 3);
-            assert_eq!(slice, [1, 2, 3]);
+            let slice = context.peek_slice(&mut rx);
+            assert_eq!(slice.total_len(), 3);
+            assert_eq!(slice.to_vec(), [1, 2, 3]);
         };
     }
 
@@ -1194,7 +1200,7 @@ mod lib_tests {
         let tx = tx.clone();
         if let Some(mut tx) = tx.try_lock() {
             let done = context.send_slice(&mut tx, &slice);
-            assert_eq!(done.message_count(), slice.len());
+            assert_eq!(done.item_count(), slice.len());
         };
     }
 

@@ -33,7 +33,9 @@ async fn internal_behavior(context: SteadyActorShadow, ticks_rx: SteadyRx<Tick>,
                                     monitor.wait_vacant(&mut ticks_tx,BATCH)
                                    );
 
-        let count = monitor.peek_slice(&mut ticks_rx, &mut buffer);
+        let slice = monitor.peek_slice(&mut ticks_rx);
+        let count = slice.copy_into_slice(&mut buffer).item_count();
+
         //do something
         monitor.send_slice(&mut ticks_tx, &buffer[0..count]);
         let _ = monitor.take_slice(&mut ticks_rx, &mut buffer[0..count]);
@@ -61,7 +63,7 @@ pub(crate) mod hd_actor_tests {
             .with_capacity(BATCH).build_channel();
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()) );
+            .build( move |context| internal_behavior(context, ticks_rx_in.clone(), ticks_tx_out.clone()), SoloAct );
 
         //add test data to the input channels
 

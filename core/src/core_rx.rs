@@ -9,23 +9,180 @@ use futures_timer::Delay;
 use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{steady_config, Rx, MONITOR_NOT};
-use crate::distributed::distributed_stream::{StreamItem, StreamRx};
+use crate::distributed::distributed_stream::{StreamControlItem, StreamRx};
 use crate::steady_rx::{RxDone};
 use futures_util::{FutureExt};
 use crate::yield_now;
+
+
+pub trait DoubleSlice<'a, T: 'a> {
+    fn as_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a>;
+    fn to_vec(&self) -> Vec<T> where T: Clone;
+    fn total_len(&self) -> usize;
+
+}
+
+impl<'a, T: 'a> DoubleSlice<'a, T> for (&'a [T], &'a [T]) {
+    fn as_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a> {
+        Box::new(self.0.iter().chain(self.1.iter()))
+    }
+    fn to_vec(&self) -> Vec<T> where T: Clone {
+        let mut v = Vec::with_capacity(self.0.len() + self.1.len());
+        v.extend_from_slice(self.0);
+        v.extend_from_slice(self.1);
+        v
+    }
+    fn total_len(&self) -> usize {
+        self.0.len() + self.1.len()
+    }
+}
+pub trait DoubleSliceCopy<'a, T: 'a> {
+    fn copy_into_slice(&self, target: &mut [T]) -> RxDone
+    where
+        T: Copy;
+}
+
+impl<'a, T: 'a> DoubleSliceCopy<'a, T> for (&'a [T], &'a [T]) {
+    fn copy_into_slice(&self, target: &mut [T]) -> RxDone
+    where
+        T: Copy,
+    {
+        let (a, b) = *self;
+        let mut copied = 0;
+
+        let n = a.len().min(target.len());
+        if n > 0 {
+            target[..n].copy_from_slice(&a[..n]);
+            copied += n;
+        }
+
+        if copied < target.len() {
+            let m = b.len().min(target.len() - copied);
+            if m > 0 {
+                target[copied..copied + m].copy_from_slice(&b[..m]);
+                copied += m;
+            }
+        }
+
+        RxDone::Normal(copied)
+    }
+}
+
+pub trait QuadSlice<'a, T: 'a, U: 'a> {
+    fn items_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a>;
+    fn payload_iter(&'a self) -> Box<dyn Iterator<Item = &'a U> + 'a>;
+    fn items_vec(&self) -> Vec<T> where T: Clone;
+    fn payload_vec(&self) -> Vec<U> where U: Clone;
+    fn items_len(&self) -> usize;
+    fn payload_len(&self) -> usize;
+}
+
+impl<'a, T: 'a, U: 'a> QuadSlice<'a, T, U> for (&'a [T], &'a [T], &'a [U], &'a [U]) {
+    fn items_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a> {
+        Box::new(self.0.iter().chain(self.1.iter()))
+    }
+    fn payload_iter(&'a self) -> Box<dyn Iterator<Item = &'a U> + 'a> {
+        Box::new(self.2.iter().chain(self.3.iter()))
+    }
+    fn items_vec(&self) -> Vec<T> where T: Clone {
+        let mut v = Vec::with_capacity(self.0.len() + self.1.len());
+        v.extend_from_slice(self.0);
+        v.extend_from_slice(self.1);
+        v
+    }
+    fn payload_vec(&self) -> Vec<U> where U: Clone {
+        let mut v = Vec::with_capacity(self.2.len() + self.3.len());
+        v.extend_from_slice(self.2);
+        v.extend_from_slice(self.3);
+        v
+    }
+    fn items_len(&self) -> usize {
+        self.0.len() + self.1.len()
+    }
+    fn payload_len(&self) -> usize {
+        self.2.len() + self.3.len()
+    }
+}
+pub trait StreamQuadSliceCopy<'a, T: StreamControlItem> {
+    /// Copies as many items and their payloads as will fit into the targets.
+    /// Returns (items_copied, bytes_copied).
+    fn copy_items_and_payloads(
+        &self,
+        item_target: &mut [T],
+        payload_target: &mut [u8],
+    ) -> (usize, usize)
+    where
+        T: Copy;
+}
+
+impl<'a, T: StreamControlItem> StreamQuadSliceCopy<'a, T> for (&'a [T], &'a [T], &'a [u8], &'a [u8]) {
+    fn copy_items_and_payloads(
+        &self,
+        item_target: &mut [T],
+        payload_target: &mut [u8],
+    ) -> (usize, usize)
+    where
+        T: Copy,
+    {
+        let (a, b, c, d) = self;
+
+        // Flatten the items into a single iterator
+        let items_iter = a.iter().chain(b.iter());
+
+        let mut items_copied = 0;
+        let mut bytes_needed = 0;
+
+        // Figure out how many items and bytes we can fit
+        for item in items_iter.clone() {
+            let item_len = item.length() as usize;
+            if items_copied < item_target.len() && bytes_needed + item_len <= payload_target.len() {
+                items_copied += 1;
+                bytes_needed += item_len;
+            } else {
+                break;
+            }
+        }
+
+        // Copy the items
+        let mut copied = 0;
+        for item in items_iter.take(items_copied) {
+            item_target[copied] = *item;
+            copied += 1;
+        }
+
+        // Copy the payload bytes
+        let mut payload_copied = 0;
+        let n = c.len().min(bytes_needed);
+        if n > 0 {
+            payload_target[..n].copy_from_slice(&c[..n]);
+            payload_copied += n;
+        }
+        if payload_copied < bytes_needed {
+            let m = d.len().min(bytes_needed - payload_copied);
+            if m > 0 {
+                payload_target[payload_copied..payload_copied + m].copy_from_slice(&d[..m]);
+                payload_copied += m;
+            }
+        }
+
+        (items_copied, payload_copied)
+    }
+}
+
+
 
 pub trait RxCore {
     type MsgOut;
     type MsgPeek<'a> where Self: 'a;
     type MsgSize: Copy;
     type SliceSource<'a> where Self: 'a;  // source is for zero copy (inverse of Tx)
-    type SliceTarget<'a> where Self: 'a;  // target is where to copy data into on take
+    type SliceTarget<'b> where Self::MsgOut: 'b; // target is where to copy data into on take
 
 
-    fn shared_take_slice<'a>(&'a mut self, target: Self::SliceTarget<'a>) -> RxDone
+    fn shared_take_slice(& mut self, target: Self::SliceTarget<'_>) -> RxDone
         where
          Self::MsgOut: Copy; // with target   arg_in     (&[T], &[u8])
-    fn shared_peek_slice<'a>(&'a mut self) -> Self::SliceSource<'a>; //  for zero copy result_out (&[T], &[T], &[u8], &[u8])
+    fn shared_peek_slice(& mut self) -> Self::SliceSource<'_>; //  for zero copy result_out (&[T], &[T], &[u8], &[u8])
 
 
     #[allow(async_fn_in_trait)]
@@ -66,7 +223,7 @@ impl <T>RxCore for Rx<T> {
     type MsgSize = usize;
 
     type SliceSource<'a> = (&'a [T],&'a [T]) where Self: 'a;  // source is for zero copy (inverse of Tx)
-    type SliceTarget<'a> = &'a mut [T] where Self: 'a;  // target is where to copy data into on take
+    type SliceTarget<'b> = & 'b mut [T] where T: 'b ;  // target is where to copy data into on take
 
 
     // shared_peek_slice for zero copy result_out (&[T], &[T], &[u8], &[u8])
@@ -232,7 +389,7 @@ impl <T>RxCore for Rx<T> {
         }
     }
 
-    fn shared_take_slice<'a>(&'a mut self, target: Self::SliceTarget<'a>) -> RxDone where
+    fn shared_take_slice(& mut self, target: Self::SliceTarget<'_>) -> RxDone where
         T: Copy
     {
         // Get the available slices from the ring buffer
@@ -266,20 +423,20 @@ impl <T>RxCore for Rx<T> {
         RxDone::Normal(copied)
     }
 
-    fn shared_peek_slice<'a>(&'a mut self ) -> Self::SliceSource<'a> {
+    fn shared_peek_slice(& mut self ) -> Self::SliceSource<'_> {
         // Get the available slices from the ring buffer
         self.rx.as_slices()
     }
 }
 
-impl <T: StreamItem> RxCore for StreamRx<T> {
+impl <T: StreamControlItem> RxCore for StreamRx<T> {
 
 
     type MsgOut = (T, Box<[u8]>);
     type MsgPeek<'a> = (&'a T, &'a[u8],&'a[u8]) where T: 'a;
     type MsgSize = (usize, usize);
-    type SliceSource<'a> = (&'a [T], &'a [T], &'a[u8], &'a[u8] ) where Self: 'a;  // source is for zero copy (inverse of Tx)
-    type SliceTarget<'a> = (&'a mut [T], &'a mut [u8] ) where Self: 'a;  // target is where to copy data into on take
+    type SliceSource<'a> = (&'a [T], &'a [T], &'a[u8], &'a[u8] ) where T: 'a;  // source is for zero copy (inverse of Tx)
+    type SliceTarget<'b> = (&'b mut [T],&'b mut [u8]) where T: 'b;  // target is where to copy data into on take
 
     // shared_peek_slice for zero copy result_out (&[T], &[T], &[u8], &[u8])
     // shared_take_slice with target   arg_in     (&[T], &[u8])
@@ -287,7 +444,7 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
 
     fn is_closed_and_empty(&mut self) -> bool {
         //debug!("closed_empty {} {}", self.item_channel.is_closed_and_empty(), self.payload_channel.is_closed_and_empty());
-        self.item_channel.is_closed_and_empty()
+        self.control_channel.is_closed_and_empty()
             && self.payload_channel.is_closed_and_empty()
     }
 
@@ -301,22 +458,22 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
        };
        unsafe { self.payload_channel.rx.advance_read_index(payload_step); }
 
-       let avail = self.item_channel.rx.occupied_len();
+       let avail = self.control_channel.rx.occupied_len();
         let index_step = if count.0>avail {
             avail
         } else {
             count.0
         };
-        unsafe { self.item_channel.rx.advance_read_index(index_step); }
+        unsafe { self.control_channel.rx.advance_read_index(index_step); }
 
        (index_step, payload_step)
     }
 
     async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>)
                         -> Option<Self::MsgPeek<'a>> {
-        let mut one_down = &mut self.item_channel.oneshot_shutdown;
+        let mut one_down = &mut self.control_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
-            let mut operation = &mut self.item_channel.rx.wait_occupied(1);
+            let mut operation = &mut self.control_channel.rx.wait_occupied(1);
             if let Some(timeout) = timeout {
                 let mut timeout = Delay::new(timeout).fuse();
                 select! { _ = one_down => {}
@@ -329,15 +486,15 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
                 };
             }
         }
-        let result = self.item_channel.rx.first();
+        let result = self.control_channel.rx.first();
         if let Some(item) = result {
-            let take_count = self.item_channel.take_count.load(Ordering::Relaxed);
-            let cached_take_count = self.item_channel.cached_take_count.load(Ordering::Relaxed);
+            let take_count = self.control_channel.take_count.load(Ordering::Relaxed);
+            let cached_take_count = self.control_channel.cached_take_count.load(Ordering::Relaxed);
             if !cached_take_count == take_count {
-                self.item_channel.peek_repeats.store(0, Ordering::Relaxed);
-                self.item_channel.cached_take_count.store(take_count, Ordering::Relaxed);
+                self.control_channel.peek_repeats.store(0, Ordering::Relaxed);
+                self.control_channel.cached_take_count.store(take_count, Ordering::Relaxed);
             } else {
-                self.item_channel.peek_repeats.fetch_add(1, Ordering::Relaxed);
+                self.control_channel.peek_repeats.fetch_add(1, Ordering::Relaxed);
             }
             let (a,b) = self.payload_channel.rx.as_slices();
             let count_a = a.len().min(item.length() as usize);
@@ -345,16 +502,16 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
             Some((item, &a[0..count_a], &b[0..count_b]))
 
         } else {
-            self.item_channel.peek_repeats.store(0, Ordering::Relaxed);
+            self.control_channel.peek_repeats.store(0, Ordering::Relaxed);
             None
         }
     }
 
     fn log_periodic(&mut self) -> bool {
-        if self.item_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
+        if self.control_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
         } else {
-            self.item_channel.last_error_send = Instant::now();
+            self.control_channel.last_error_send = Instant::now();
             true
         }
     }
@@ -363,10 +520,10 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:RxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
             RxDone::Normal(i) => {
-                self.item_channel.local_monitor_index = tel.process_event(self.item_channel.local_monitor_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
                 warn!("internal error should have gotten Stream")},
             RxDone::Stream(i,p) => {
-                self.item_channel.local_monitor_index = tel.process_event(self.item_channel.local_monitor_index, self.item_channel.channel_meta_data.meta_data.id, i as isize);
+                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
                 self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
             },
         }
@@ -374,55 +531,55 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
 
     #[inline]
     fn monitor_not(&mut self) {
-        self.item_channel.local_monitor_index = MONITOR_NOT;
+        self.control_channel.local_monitor_index = MONITOR_NOT;
         self.payload_channel.local_monitor_index = MONITOR_NOT;
     }
 
     fn shared_capacity(&self) -> usize {
-        self.item_channel.rx.capacity().get()
+        self.control_channel.rx.capacity().get()
     }
 
     fn shared_is_empty(&self) -> bool  {
-        self.item_channel.rx.is_empty()
+        self.control_channel.rx.is_empty()
     }
 
     fn shared_avail_units(&mut self) -> usize {
-        self.item_channel.rx.occupied_len()
+        self.control_channel.rx.occupied_len()
     }
 
 
     async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
 
-        let mut one_down = &mut self.item_channel.oneshot_shutdown;
+        let mut one_down = &mut self.control_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
-            let mut operation = &mut self.item_channel.rx.wait_occupied(count);
+            let mut operation = &mut self.control_channel.rx.wait_occupied(count);
             select! { _ = one_down => false, _ = operation => true }
         } else {
-            self.item_channel.rx.occupied_len() >= count
+            self.control_channel.rx.occupied_len() >= count
         }
 
     }
 
     async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool {
-        if self.item_channel.rx.occupied_len() >= count {
+        if self.control_channel.rx.occupied_len() >= count {
             true
         } else {//we always return true if we have count regardless of the shutdown status
-            let mut one_closed = &mut self.item_channel.is_closed;
+            let mut one_closed = &mut self.control_channel.is_closed;
             if !one_closed.is_terminated() {
-                let mut operation = &mut self.item_channel.rx.wait_occupied(count);
-                select! { _ = one_closed => self.item_channel.rx.occupied_len() >= count, _ = operation => true }
+                let mut operation = &mut self.control_channel.rx.wait_occupied(count);
+                select! { _ = one_closed => self.control_channel.rx.occupied_len() >= count, _ = operation => true }
             } else {
                 yield_now::yield_now().await; //this is a big help in closed shutdown tight loop
-                self.item_channel.rx.occupied_len() >= count // if closed, we can still take
+                self.control_channel.rx.occupied_len() >= count // if closed, we can still take
             }
         }
     }
 
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
-        if self.item_channel.rx.occupied_len() >= count {
+        if self.control_channel.rx.occupied_len() >= count {
             true
         } else {
-            let operation = &mut self.item_channel.rx.wait_occupied(count);
+            let operation = &mut self.control_channel.rx.wait_occupied(count);
             operation.await;
             true
         }
@@ -431,16 +588,16 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
 
     #[inline]
     fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)> {
-        if let Some(item) = self.item_channel.rx.try_peek() {
+        if let Some(item) = self.control_channel.rx.try_peek() {
             if item.length() <= self.payload_channel.rx.occupied_len() as i32 {
 
                 let mut payload = vec![0u8; item.length() as usize];
                 self.payload_channel.rx.peek_slice(&mut payload);
                 let payload = payload.into_boxed_slice();
 
-                if let Some(item) = self.item_channel.rx.try_pop() {
+                if let Some(item) = self.control_channel.rx.try_pop() {
                     unsafe { self.payload_channel.rx.advance_read_index(payload.len()); }
-                    self.item_channel.take_count.fetch_add(1,Ordering::Relaxed); //for DLQ!
+                    self.control_channel.take_count.fetch_add(1, Ordering::Relaxed); //for DLQ!
                     Some( (RxDone::Stream(1,payload.len()),(item,payload)) )
                 } else {
                     None
@@ -463,7 +620,7 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
         let (item_target, payload_target) = target;
 
         // Get available item slices
-        let (item_a, item_b) = self.item_channel.rx.as_slices();
+        let (item_a, item_b) = self.control_channel.rx.as_slices();
 
         // Flatten the items into a single iterator
         let items_iter = item_a.iter().chain(item_b.iter());
@@ -509,7 +666,7 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
 
         // Advance both read indices
         unsafe {
-            self.item_channel.rx.advance_read_index(items_copied);
+            self.control_channel.rx.advance_read_index(items_copied);
             self.payload_channel.rx.advance_read_index(payload_copied);
         }
 
@@ -517,7 +674,7 @@ impl <T: StreamItem> RxCore for StreamRx<T> {
     }
 
     fn shared_peek_slice<'a>(&'a mut self) -> Self::SliceSource<'a> {
-        let (item_a, item_b) = self.item_channel.rx.as_slices();
+        let (item_a, item_b) = self.control_channel.rx.as_slices();
         let (payload_a, payload_b) = self.payload_channel.rx.as_slices();
         (item_a, item_b, payload_a, payload_b)
     }
@@ -528,7 +685,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     type MsgPeek<'a> =  <T as RxCore>::MsgPeek<'a> where Self: 'a;
     type MsgSize = <T as RxCore>::MsgSize;
     type SliceSource<'a> = <T as RxCore>::SliceSource<'a> where Self: 'a;
-    type SliceTarget<'a> = <T as RxCore>::SliceTarget<'a> where Self: 'a;
+    type SliceTarget<'b> = <T as RxCore>::SliceTarget<'b> where Self::MsgOut: 'b;
 
     fn is_closed_and_empty(&mut self) -> bool {
         <T as RxCore>::is_closed_and_empty(&mut **self)
@@ -583,7 +740,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_advance_index(&mut **self, count)
     }
 
-    fn shared_take_slice<'a>(&'a mut self, target: Self::SliceTarget<'a>) -> RxDone
+    fn shared_take_slice(& mut self, target: Self::SliceTarget<'_>) -> RxDone
      where
          Self::MsgOut: Copy {
         <T as RxCore>::shared_take_slice(&mut **self, target)

@@ -321,6 +321,7 @@ pub(crate) mod monitor_tests {
     use std::time::Instant;
     use std::sync::atomic::AtomicUsize;
     use crate::channel_builder::ChannelBuilder;
+    use crate::core_rx::DoubleSlice;
     use crate::steady_actor::SendOutcome;
     use crate::steady_actor_shadow::SteadyActorShadow;
     use crate::core_tx::TxCore;
@@ -358,7 +359,7 @@ pub(crate) mod monitor_tests {
 
         if let Some(mut rx) = rx.try_lock() {
             let count = monitor.take_slice(&mut rx, &mut slice);
-            assert_eq!(count, 3);
+            assert_eq!(count.item_count(), 3);
             assert_eq!(slice, [1, 2, 3]);
         };
     }
@@ -372,9 +373,9 @@ pub(crate) mod monitor_tests {
         let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
-            let count = monitor.peek_slice(&mut rx, &mut slice);
-            assert_eq!(count, 3);
-            assert_eq!(slice, [1, 2, 3]);
+            let slice = monitor.peek_slice(&mut rx);
+            assert_eq!(slice.total_len(), 3);
+            assert_eq!(slice.to_vec(), [1, 2, 3]);
         };
     }
 
@@ -508,7 +509,7 @@ pub(crate) mod monitor_tests {
         let slice = [1, 2, 3];
         if let Some(mut tx) = tx.try_lock() {
             let done = monitor.send_slice(&mut tx, &slice);
-            assert_eq!(done.message_count(), slice.len());
+            assert_eq!(done.item_count(), slice.len());
             if let Some(mut rx) = rx.try_lock() {
                 assert_eq!(monitor.try_take(&mut rx), Some(1));
                 assert_eq!(monitor.try_peek(&mut rx), Some(&2));
@@ -1165,7 +1166,7 @@ pub(crate) mod monitor_tests {
 
         if let Some(mut rx) = rx.try_lock() {
             let count = monitor.take_slice(&mut rx, &mut slice);
-            assert_eq!(count, 0);
+            assert_eq!(count.item_count(), 0);
         };
     }
 
@@ -1184,7 +1185,7 @@ pub(crate) mod monitor_tests {
             // Now the channel is full
             let slice = [2, 3, 4];
             let done = monitor.send_slice(&mut tx, &slice);
-            assert_eq!(done.message_count(), 0);
+            assert_eq!(done.item_count(), 0);
         };
     }
 
@@ -1210,8 +1211,8 @@ pub(crate) mod monitor_tests {
         let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut rx) = rx.try_lock() {
-            let count = monitor.peek_slice(&mut rx, &mut slice);
-            assert_eq!(count, 0);
+            let slice = monitor.peek_slice(&mut rx);
+            assert_eq!(slice.total_len(), 0);
         };
     }
 
