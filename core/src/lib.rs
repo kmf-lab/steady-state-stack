@@ -1047,8 +1047,11 @@ mod lib_tests {
         let context = test_steady_context();
         if let Some(mut rx) = rx.try_lock() {
             let slice = context.peek_slice(&mut rx);
-            assert_eq!(slice.total_len(), 3);
-            assert_eq!(slice.to_vec(), [1, 2, 3]);
+            assert_eq!(slice.total_len(), 5);
+            assert_eq!(slice.to_vec(), [1, 2, 3, 4, 5]);
+            let mut buf = [0;3];
+            slice.copy_into_slice(&mut buf);
+            assert_eq!(buf, [1, 2, 3]);
         };
     }
 
