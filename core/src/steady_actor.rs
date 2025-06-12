@@ -299,13 +299,15 @@ pub trait SteadyActor {
         T: Copy,
     ;
 
-    /// will call shared_send_slice   
+    /// first done, calls shared_send_slice
     fn send_slice<'b,T: TxCore>(&'b mut self, this: &'b mut T, slice: T::SliceSource<'b>) -> TxDone
     where
         T::MsgOut : Copy;
 
     // will call shared_send_direct
-    // new method  fn  send_slice_direct
+    // new method   fn send_slice_direct <'b,T: TxCore>(&'b mut self, this: &'b mut T, slice: T::SliceSource<'b>) -> TxDone
+    //                       where
+    //                             T::MsgOut : Copy;
 
 
 
