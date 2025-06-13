@@ -443,10 +443,10 @@ pub trait SteadyActor {
 
 
     /// Move the read index forward count items, ie jump over these
-    fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize;
+    fn advance_read_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone;
 
 
-    /// Attempts to take a message from the channel when available.
+        /// Attempts to take a message from the channel when available.
     /// Returns early if shutdown signal is detected
     ///
     /// # Returns

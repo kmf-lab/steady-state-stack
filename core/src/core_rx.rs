@@ -1,3 +1,4 @@
+use std::error::Error;
 use log::warn;
 use futures_util::{select, task};
 use std::sync::atomic::Ordering;
@@ -211,7 +212,8 @@ pub trait RxCore {
 
     fn shared_try_take(&mut self) -> Option<(RxDone,Self::MsgOut)>;
 
-    fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize;
+    /// returns how many we advanced which may be smaller than requested
+    fn shared_advance_index(&mut self, request: Self::MsgSize) -> RxDone;
 
     fn is_closed_and_empty(&mut self) -> bool;
 }
@@ -242,15 +244,16 @@ impl <T>RxCore for Rx<T> {
         }
     }
 
-    fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize {
+    /// returns count of how many positions we advanced
+    fn shared_advance_index(&mut self, request: Self::MsgSize) -> RxDone {
         let avail = self.rx.occupied_len();
-        let idx = if count>avail {
+        let idx = if request>avail {
             avail
         } else {
-            count
+            request
         };
         unsafe { self.rx.advance_read_index(idx); }
-        idx
+        RxDone::Normal(idx)
     }
 
     async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'a>> {
@@ -448,25 +451,22 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
             && self.payload_channel.is_closed_and_empty()
     }
 
-   fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize {
+   fn shared_advance_index(&mut self, count: Self::MsgSize) -> RxDone {
 
-       let avail = self.payload_channel.rx.occupied_len();
-       let payload_step = if count.1>avail {
-           avail
+       let control_avail = self.control_channel.rx.occupied_len();
+       let payload_avail = self.payload_channel.rx.occupied_len();
+       //NOTE: we only have two counts so either we do all or none because we can
+       //      not compute a safe cut point. so it is all or nothing
+
+       if count.0 <= control_avail && count.1 <= payload_avail {
+           unsafe {
+               self.payload_channel.rx.advance_read_index(count.1);
+               self.control_channel.rx.advance_read_index(count.0);
+           }
+           RxDone::Stream(count.0,count.1)
        } else {
-           count.1
-       };
-       unsafe { self.payload_channel.rx.advance_read_index(payload_step); }
-
-       let avail = self.control_channel.rx.occupied_len();
-        let index_step = if count.0>avail {
-            avail
-        } else {
-            count.0
-        };
-        unsafe { self.control_channel.rx.advance_read_index(index_step); }
-
-       (index_step, payload_step)
+           RxDone::Stream(0,0)
+       }
     }
 
     async fn shared_peek_async_timeout<'a>(&'a mut self, timeout: Option<Duration>)
@@ -736,7 +736,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_try_take(&mut **self)
     }
 
-    fn shared_advance_index(&mut self, count: Self::MsgSize) -> Self::MsgSize {
+    fn shared_advance_index(&mut self, count: Self::MsgSize) -> RxDone {
         <T as RxCore>::shared_advance_index(&mut **self, count)
     }
 

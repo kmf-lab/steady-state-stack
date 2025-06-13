@@ -374,8 +374,12 @@ pub(crate) mod monitor_tests {
 
         if let Some(mut rx) = rx.try_lock() {
             let slice = monitor.peek_slice(&mut rx);
-            assert_eq!(slice.total_len(), 3);
-            assert_eq!(slice.to_vec(), [1, 2, 3]);
+            assert_eq!(slice.total_len(), 5);
+            assert_eq!(slice.to_vec(), [1, 2, 3, 4, 5]);
+            let mut target = [0; 3];
+            slice.copy_into_slice(&mut target);
+            assert_eq!(target, [1, 2, 3]);
+
         };
     }
 

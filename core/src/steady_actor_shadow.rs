@@ -541,7 +541,7 @@ impl SteadyActor for SteadyActorShadow {
         this.shared_take_async_timeout(Some(timeout)).await
     }
 
-    fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize {
+    fn advance_read_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone  {
         this.shared_advance_index(count)
     }
 

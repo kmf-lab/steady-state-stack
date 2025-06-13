@@ -243,7 +243,17 @@ pub struct StreamIngress {
     pub session_id: IdType,
     pub arrival: Instant,
     pub finished: Instant,
-
+}
+impl Default for StreamIngress {
+    fn default() -> Self {
+        let now = Instant::now();
+        StreamIngress {
+            length: 0,
+            session_id: 0,
+            arrival: now,
+            finished: now,
+        }
+    }
 }
 
 impl StreamIngress {
@@ -740,9 +750,9 @@ impl<T: StreamControlItem> StreamRx<T> {
             if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
                 // If the limit is reached or the function returns false, advance the read indices and exit
                 let x = actor.advance_read_index(&mut self.payload_channel, active_data);
-                debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
+                debug_assert_eq!(x.item_count(), active_data, "Payload channel advance mismatch");
                 let x = actor.advance_read_index(&mut self.control_channel, active_items);
-                debug_assert_eq!(x, active_items, "Item channel advance mismatch");
+                debug_assert_eq!(x.item_count(), active_items, "Item channel advance mismatch");
                 return;
             }
 
@@ -766,9 +776,9 @@ impl<T: StreamControlItem> StreamRx<T> {
             if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
                 // If the limit is reached or the function returns false, advance the read indices and exit
                 let x = actor.advance_read_index(&mut self.payload_channel, active_data);
-                debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
+                debug_assert_eq!(x.item_count(), active_data, "Payload channel advance mismatch");
                 let x = actor.advance_read_index(&mut self.control_channel, active_items);
-                debug_assert_eq!(x, active_items, "Item channel advance mismatch");
+                debug_assert_eq!(x.item_count(), active_items, "Item channel advance mismatch");
                 return;
             }
 
@@ -780,9 +790,9 @@ impl<T: StreamControlItem> StreamRx<T> {
         // !("we made it to the end with {}",active_items);
         // If all items are processed successfully, advance the read indices
         let x = actor.advance_read_index(&mut self.payload_channel, active_data);
-        debug_assert_eq!(x, active_data, "Payload channel advance mismatch");
+        debug_assert_eq!(x.item_count(), active_data, "Payload channel advance mismatch");
         let x = actor.advance_read_index(&mut self.control_channel, active_items);
-        debug_assert_eq!(x, active_items, "Item channel advance mismatch");
+        debug_assert_eq!(x.item_count(), active_items, "Item channel advance mismatch");
 
         //let avail = self.item_channel.shared_avail_units();
        //warn!("published {:?} on {:?} avail {:?}",active_items, self.item_channel.channel_meta_data.meta_data.id, avail);

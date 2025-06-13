@@ -310,17 +310,16 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
 
 
-    fn advance_read_index<T>(&mut self, this: &mut Rx<T>, count: usize) -> usize { //TODO: return done?
+    fn advance_read_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone  {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
         let done = this.shared_advance_index(count);
         if let Some(ref mut tel) = self.telemetry.send_rx {
-            this.telemetry_inc(RxDone::Normal(done), tel);
+            this.telemetry_inc(done, tel);
         } else {
             this.monitor_not();
         };
-
         done
     }
 
