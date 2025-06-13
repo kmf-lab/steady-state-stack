@@ -43,13 +43,10 @@ pub trait TxCore {
     #[allow(async_fn_in_trait)]
     async fn shared_wait_empty(&mut self) -> bool;
 
-    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_> ) -> TxDone
-        where Self::MsgOut : Copy
-    ; //TODO: Rename to source not slice
+    fn shared_send_slice(& mut self, source: Self::SliceSource<'_> ) -> TxDone  where Self::MsgOut: Copy;
 
     fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
                     where
-                        Self::MsgOut : Copy,
                         F: FnOnce(Self::SliceTarget<'a>) -> TxDone;
 
 
@@ -206,8 +203,7 @@ impl<T> TxCore for Tx<T> {
     }
 
     #[inline]
-    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_>) -> TxDone
-        where Self::MsgOut : Copy {
+    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_>) -> TxDone where Self::MsgOut: Copy {
         // Try to push as many items as possible from the slice.
         // Returns the number of items actually pushed.
         let pushed = self.tx.push_slice(slice);
@@ -217,7 +213,6 @@ impl<T> TxCore for Tx<T> {
     #[inline]
     fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
     where
-        Self::MsgOut : Copy,
         F: FnOnce(Self::SliceTarget<'a>) -> TxDone,
     {
         // Get the vacant slices from the ring buffer.
@@ -1063,14 +1058,12 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     }
 
     #[inline]
-    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_> ) -> TxDone
-     where Self::MsgOut : Copy {
+    fn shared_send_slice(& mut self, slice: Self::SliceSource<'_> ) -> TxDone  where Self::MsgOut: Copy {
         <T as TxCore>::shared_send_slice(self, slice)
     }
     #[inline]
     fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
     where
-        Self::MsgOut : Copy,
         F: FnOnce(Self::SliceTarget<'a>) -> TxDone
     {
         <T as TxCore>::shared_send_direct(&mut **self, f)

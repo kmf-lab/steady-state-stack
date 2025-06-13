@@ -175,18 +175,14 @@ impl SteadyActor for SteadyActorShadow {
     /// - `T`: Must implement `Copy`.
     fn peek_slice<'a,'b,T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
     where
-        T: RxCore,
-        T::MsgOut: Copy
+        T: RxCore
     {        
         this.shared_peek_slice()
     }
 
 
-    fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone
-    where
-        T::MsgOut: Copy,
+    fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone  where T::MsgItem: Copy
     {
-        
         this.shared_take_slice(slice)
     }
 
@@ -256,16 +252,13 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn send_slice<T: TxCore>(& mut self, this: & mut T, slice: T::SliceSource<'_>) -> TxDone
-    where
-        T::MsgOut : Copy  {
+    fn send_slice<T: TxCore>(& mut self, this: & mut T, slice: T::SliceSource<'_>) -> TxDone  where T::MsgOut: Copy
+     {
         this.shared_send_slice(slice)
     }
 
     fn send_slice_direct<T: TxCore, F>(&mut self, this: &mut T, f: F) -> TxDone
-    where
-        T::MsgOut: Copy,
-        F: FnOnce(T::SliceTarget<'_>) -> TxDone
+     where F: FnOnce(T::SliceTarget<'_>) -> TxDone
     {
         this.shared_send_direct(f)
     }

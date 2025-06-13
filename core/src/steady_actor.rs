@@ -289,26 +289,16 @@ pub trait SteadyActor {
 
     fn peek_slice<'a,'b,T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
     where
-        T: RxCore,
-        T::MsgOut: Copy;
+        T::MsgItem: Copy,
+        T: RxCore;
 
+    fn take_slice<T: RxCore>(&mut self, this: &mut T, target: T::SliceTarget<'_>) -> RxDone  where T::MsgItem: Copy;
 
-    fn take_slice<T: RxCore>(&mut self, this: &mut T, target: T::SliceTarget<'_>) -> RxDone
-    where
-        T::MsgOut: Copy,
-    ;
-
-
-    fn send_slice<T: TxCore>(& mut self, this: & mut T, source: T::SliceSource<'_>) -> TxDone
-    where
-        T::MsgOut : Copy;
-
+    fn send_slice<T: TxCore>(& mut self, this: & mut T, source: T::SliceSource<'_>) -> TxDone where T::MsgOut: Copy;
 
     fn send_slice_direct<T: TxCore, F>(& mut self, this: & mut T, f: F) -> TxDone
-    where
-        T::MsgOut : Copy,
+    where T::MsgOut: Copy,
         F: FnOnce(T::SliceTarget<'_>) -> TxDone;
-
 
 
 

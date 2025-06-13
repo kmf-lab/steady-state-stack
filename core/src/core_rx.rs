@@ -173,6 +173,7 @@ impl<'a, T: StreamControlItem> StreamQuadSliceCopy<'a, T> for (&'a [T], &'a [T],
 
 
 pub trait RxCore {
+    type MsgItem;
     type MsgOut;
     type MsgPeek<'a> where Self: 'a;
     type MsgSize: Copy;
@@ -180,9 +181,7 @@ pub trait RxCore {
     type SliceTarget<'b> where Self::MsgOut: 'b; // target is where to copy data into on take
 
 
-    fn shared_take_slice(& mut self, target: Self::SliceTarget<'_>) -> RxDone
-        where
-         Self::MsgOut: Copy; // with target   arg_in     (&[T], &[u8])
+    fn shared_take_slice(& mut self, target: Self::SliceTarget<'_>) -> RxDone where Self::MsgItem: Copy; // with target   arg_in     (&[T], &[u8])
     fn shared_peek_slice(& mut self) -> Self::SliceSource<'_>; //  for zero copy result_out (&[T], &[T], &[u8], &[u8])
 
 
@@ -219,7 +218,7 @@ pub trait RxCore {
 }
 
 impl <T>RxCore for Rx<T> {
-
+    type MsgItem = T;
     type MsgOut = T;
     type MsgPeek<'a> = &'a T where T: 'a;
     type MsgSize = usize;
@@ -392,8 +391,8 @@ impl <T>RxCore for Rx<T> {
         }
     }
 
-    fn shared_take_slice(& mut self, target: Self::SliceTarget<'_>) -> RxDone where
-        T: Copy
+    fn shared_take_slice(& mut self, target: Self::SliceTarget<'_>) -> RxDone
+      where Self::MsgItem : Copy
     {
         // Get the available slices from the ring buffer
         let (a, b) = self.rx.as_slices();
@@ -434,7 +433,7 @@ impl <T>RxCore for Rx<T> {
 
 impl <T: StreamControlItem> RxCore for StreamRx<T> {
 
-
+    type MsgItem =T;
     type MsgOut = (T, Box<[u8]>);
     type MsgPeek<'a> = (&'a T, &'a[u8],&'a[u8]) where T: 'a;
     type MsgSize = (usize, usize);
@@ -613,9 +612,7 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
     fn shared_take_slice<'a>(
         &'a mut self,
         target: Self::SliceTarget<'a>,
-    ) -> RxDone
-    where
-        Self::MsgOut: Copy,
+    ) -> RxDone where Self::MsgItem: Copy
     {
         let (item_target, payload_target) = target;
 
@@ -681,6 +678,7 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
 }
 
 impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
+    type MsgItem = <T as RxCore>::MsgItem;
     type MsgOut = <T as RxCore>::MsgOut;
     type MsgPeek<'a> =  <T as RxCore>::MsgPeek<'a> where Self: 'a;
     type MsgSize = <T as RxCore>::MsgSize;
@@ -740,9 +738,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_advance_index(&mut **self, count)
     }
 
-    fn shared_take_slice(& mut self, target: Self::SliceTarget<'_>) -> RxDone
-     where
-         Self::MsgOut: Copy {
+    fn shared_take_slice(& mut self, target: Self::SliceTarget<'_>) -> RxDone where Self::MsgItem: Copy {
         <T as RxCore>::shared_take_slice(&mut **self, target)
     }
 

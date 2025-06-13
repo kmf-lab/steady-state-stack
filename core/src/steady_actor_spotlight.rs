@@ -280,8 +280,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     /// - `T`: Must implement `Copy`.
     fn peek_slice<'a,'b,T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
     where
-        T: RxCore,
-        T::MsgOut: Copy
+        T: RxCore
     {
 
         this.shared_peek_slice()
@@ -290,9 +289,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
 
 
-    fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone
-    where
-        T::MsgOut: Copy,
+    fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone where T::MsgItem: Copy
     {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -406,9 +403,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn send_slice<T: TxCore>(& mut self, this: & mut T, slice: T::SliceSource<'_>) -> TxDone
-    where
-        T::MsgOut : Copy  {
+    fn send_slice<T: TxCore>(& mut self, this: & mut T, slice: T::SliceSource<'_>) -> TxDone where T::MsgOut: Copy
+    {
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
@@ -426,7 +422,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     fn send_slice_direct<T: TxCore, F>(&mut self, this: &mut T, f: F) -> TxDone
     where
-        T::MsgOut: Copy,
         F: FnOnce(T::SliceTarget<'_>) -> TxDone
     {
         if let Some(ref mut st) = self.telemetry.state {
