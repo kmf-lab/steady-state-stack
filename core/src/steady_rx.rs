@@ -16,7 +16,6 @@ use crate::monitor::{ChannelMetaData};
 use crate::core_rx::RxCore;
 use crate::{RxBundle, SteadyRxBundle};
 use crate::distributed::distributed_stream::RxChannelMetaDataWrapper;
-use crate::steady_tx::TxDone;
 
 /// Represents a receiver that consumes messages from a channel.
 ///
@@ -107,7 +106,7 @@ impl <T> Rx<T> {
 
     //TODO: this is a problem used by test macro yet pub!!!
     pub fn try_take(&mut self) -> Option<T> {
-        if let Some((done, msg)) = self.shared_try_take() {
+        if let Some((_done, msg)) = self.shared_try_take() {
             Some(msg)
         } else {
             None

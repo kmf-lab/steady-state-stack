@@ -12,7 +12,7 @@ pub(crate) mod aeron_utils {
     use std::time::Instant;
     use std::fs::File;
     use std::io::{Read, Seek, SeekFrom};
-    use std::time::{SystemTime, UNIX_EPOCH, Duration};
+    use std::time::{Duration};
     use std::path::Path;
 
     /// Handles Aeron errors by logging them at the warn level.

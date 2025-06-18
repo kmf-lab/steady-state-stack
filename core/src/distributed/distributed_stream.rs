@@ -375,14 +375,14 @@ impl RxMetaDataProvider for RxChannelMetaDataWrapper {
     }
 }
 
-/// Metadata about control and payload channels for a transmitter,
-/// often used for diagnostics or debugging.
-pub struct StreamTxMetaData {
-    /// Metadata about the control channel.
-    pub(crate) control: TxChannelMetaDataWrapper,
-    /// Metadata about the payload channel.
-    pub(crate) payload: TxChannelMetaDataWrapper,
-}
+// /// Metadata about control and payload channels for a transmitter,
+// /// often used for diagnostics or debugging.
+// pub struct StreamTxMetaData {
+//     /// Metadata about the control channel.
+//     pub(crate) control: TxChannelMetaDataWrapper,
+//     /// Metadata about the payload channel.
+//     pub(crate) payload: TxChannelMetaDataWrapper,
+// }
 
 #[derive(Debug)]
 pub struct TxChannelMetaDataWrapper {

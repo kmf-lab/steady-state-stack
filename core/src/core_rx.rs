@@ -1,4 +1,3 @@
-use std::error::Error;
 use log::warn;
 use futures_util::{select, task};
 use std::sync::atomic::Ordering;
@@ -619,8 +618,6 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
         // Get available item slices
         let (item_a, item_b) = self.control_channel.rx.as_slices();
 
-        // Flatten the items into a single iterator
-        let items_iter = item_a.iter().chain(item_b.iter());
 
         let mut items_copied = 0;
         let mut payload_bytes_needed = 0;
@@ -630,7 +627,17 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
         let max_payload = payload_target.len();
 
         // We'll copy items into item_target, and sum up the payload bytes needed
-        for (i, item) in items_iter.enumerate() {
+        for item in item_a {
+            let item_len = item.length() as usize;
+            if items_copied < max_items && payload_bytes_needed + item_len <= max_payload {
+                item_target[items_copied] = *item;
+                items_copied += 1;
+                payload_bytes_needed += item_len;
+            } else {
+                break;
+            }
+        }
+        for item in item_b {
             let item_len = item.length() as usize;
             if items_copied < max_items && payload_bytes_needed + item_len <= max_payload {
                 item_target[items_copied] = *item;
@@ -662,9 +669,9 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
         }
 
         // Advance both read indices
-        unsafe {
-            self.control_channel.rx.advance_read_index(items_copied);
+        unsafe { //payload first
             self.payload_channel.rx.advance_read_index(payload_copied);
+            self.control_channel.rx.advance_read_index(items_copied);
         }
 
         RxDone::Stream(items_copied, payload_copied)

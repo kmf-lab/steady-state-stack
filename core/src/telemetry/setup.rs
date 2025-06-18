@@ -223,12 +223,18 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
     this: &mut SteadyActorSpotlight<RX_LEN, TX_LEN>, elapsed_micros: Option<u64>
 ) {
 
+            // trace!("try_send_all_local_telemetry for {:?} !!!!TOP TOP TOP!!!!!!!!!!!!!!!!!!!!!!!", this.ident);
             if let Some(ref mut actor_status) = this.telemetry.state {
+                // trace!("!!! only sending actor since telemtry.state is supported !!!");
+
                 let clear_status = {
                     if let Some(ref mut lock_guard) = actor_status.tx.try_lock() {
+
                         let tx = lock_guard.deref_mut();                       
                         let capacity = tx.capacity();
                         let vacant_units = tx.vacant_units();
+                        //trace!("lock send {:?} !!!!CRITIAL ACTOR SEND!!!!!!!!!!!!!!!!!!!!!!!!!!!{:?} vacant: {:?}", this.ident,tx,vacant_units);
+
                         if vacant_units >= (capacity >> 1) {
                         } else {
                             let scale = calculate_exponential_channel_backoff(capacity, vacant_units);
@@ -257,7 +263,6 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         //TODO: we may need to only build this every N iterations to save time...
                         let thread_info = if this.show_thread_info {
                             let current_thread = thread::current(); //WARN: we trust this thread is ours.
-
                             Some(ThreadInfo{
                                 thread_id: current_thread.id(),
                                 team_id: this.team_id,
@@ -269,10 +274,12 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         };
 
                         let msg = actor_status.status_message(this.is_running_iteration_count, thread_info);
+                        // trace!("message to send {:?} for {:?}",msg, this.ident);
                         match tx.shared_try_send(msg) {
                             Ok(_) => {
                                 if let Some(ref mut send_tx) = this.telemetry.send_tx {
                                     if tx.local_index.lt(&MONITOR_NOT) {
+                                        //happy path
                                         send_tx.count[tx.local_index] += 1;
                                         if let Some(last_elapsed) = elapsed_micros {
                                             if last_elapsed >= this.frame_rate_ms {
@@ -286,9 +293,18 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                             }
                                         }
                                     } else if tx.local_index.eq(&MONITOR_UNKNOWN) {
+                                        //happy path
                                         tx.local_index = find_my_index(send_tx, tx.channel_meta_data.meta_data.id);
                                         if tx.local_index.lt(&MONITOR_NOT) {
                                             send_tx.count[tx.local_index] += 1;
+                                        } else {
+                                            //we did not find our index, should not happen unless there is a code error in in shutdown
+                                            if tx.local_index.eq(&MONITOR_UNKNOWN) {
+                                                trace!("MONITOR_UNKNOWN try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
+                                            } else {
+                                                trace!("MONITOR_NOT try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
+                                            }
+
                                         }
                                     }
                                 }
@@ -316,27 +332,43 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                             }
                         }
                     } else {
-                        warn!("unable to get lock");
+                        warn!("unable to get ACTOR DATA lock !!!!!!!!!!!!!!!!!");
                         false
                     }
                 };
                 if clear_status {
                     actor_status.status_reset(this.is_running_iteration_count);
                 }
+            } else {
+                trace!("try_send_all_local_telemetry skipped actor for {:?}", this.ident);
             }
             if let Some(ref mut send_tx) = this.telemetry.send_tx {
                 if let Some(ref mut lock_guard) = send_tx.tx.try_lock() {
+
+                    //trace!("lock send {:?} tx!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!{:?} ", this.ident,send_tx.count);
+
                     if send_tx.count.iter().any(|x| !x.is_zero()) {
                         let tx = lock_guard.deref_mut();
+                        //trace!("try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
                         match tx.shared_try_send(send_tx.count) {
                             Ok(_) => {
                                 send_tx.count.fill(0);
                                 if tx.local_index.lt(&MONITOR_NOT) {
+                                    //happy path
                                     send_tx.count[tx.local_index] = 1;
                                 } else if tx.local_index.eq(&MONITOR_UNKNOWN) {
                                     tx.local_index = find_my_index(send_tx, tx.channel_meta_data.meta_data.id);
                                     if tx.local_index.lt(&MONITOR_NOT) {
+                                        //happy path
                                         send_tx.count[tx.local_index] = 1;
+                                    } else {
+                                        //we did not find our index, should not happen often unless we have code error
+                                        if tx.local_index.eq(&MONITOR_UNKNOWN) {
+                                            trace!("MONITOR_UNKNOWN try send telemetry tx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
+                                        } else {
+                                            trace!("MONITOR_NOT try send telemetry tx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
+                                        }
+
                                     }
                                 }
                             }
@@ -354,20 +386,36 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                 } else {
                     warn!("unable to get lock");
                 }
+            } else {
+                trace!("try_send_all_local_telemetry skipped tx for {:?}", this.ident);
             }
+
             if let Some(ref mut send_rx) = this.telemetry.send_rx {
                 if let Some(ref mut lock_guard) = send_rx.tx.try_lock() {
+
+                    //trace!("lock send {:?} rx!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!{:?} ", this.ident,send_rx.count);
+
                     if send_rx.count.iter().any(|x| !x.is_zero()) {
                         let rx = lock_guard.deref_mut();
                         match rx.shared_try_send(send_rx.count) {
                             Ok(_) => {
                                 send_rx.count.fill(0);
+                                // above MONITOR_NOT is the MONITOR_UNKNOWN and below are actual index values
                                 if rx.local_index.lt(&MONITOR_NOT) {
+                                    //happy path
                                     send_rx.count[rx.local_index] = 1;
                                 } else if rx.local_index.eq(&MONITOR_UNKNOWN) {
                                     rx.local_index = find_my_index(send_rx, rx.channel_meta_data.meta_data.id);
                                     if rx.local_index.lt(&MONITOR_NOT) {
+                                        //happy path
                                         send_rx.count[rx.local_index] = 1;
+                                    } else {
+                                        //we did not find our index, should not happen unless we have a code error.
+                                        if rx.local_index.eq(&MONITOR_UNKNOWN) {
+                                            trace!("MONITOR_UNKNOWN try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_rx.count, rx.local_index);
+                                        } else {
+                                            trace!("MONITOR_NOT try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_rx.count, rx.local_index);
+                                        }
                                     }
                                 }
                             }
@@ -385,6 +433,8 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                 } else {
                     warn!("unable to get lock");
                 }
+            } else {
+                trace!("try_send_all_local_telemetry skipped rx for {:?}", this.ident);
             }
 
 }

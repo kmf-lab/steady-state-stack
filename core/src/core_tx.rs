@@ -204,10 +204,15 @@ impl<T> TxCore for Tx<T> {
 
     #[inline]
     fn shared_send_slice(& mut self, slice: Self::SliceSource<'_>) -> TxDone where Self::MsgOut: Copy {
-        // Try to push as many items as possible from the slice.
-        // Returns the number of items actually pushed.
-        let pushed = self.tx.push_slice(slice);
-        TxDone::Normal(pushed)
+
+        if !slice.is_empty() {
+            // Try to push as many items as possible from the slice.
+            // Returns the number of items actually pushed.
+            let pushed = self.tx.push_slice(slice);
+            TxDone::Normal(pushed)
+        } else {
+            TxDone::Normal(0)
+        }
     }
 
     #[inline]
@@ -469,31 +474,32 @@ impl TxCore for StreamTx<StreamIngress> {
     where
         Self::MsgOut: Copy,
     {
-        let (ingress_items, payload_bytes) = slice;
-
-        let item_vacant = self.control_channel.tx.vacant_len();
-        let payload_vacant = self.payload_channel.tx.vacant_len();
-
         let mut items_sent = 0;
         let mut bytes_sent = 0;
+        let (ingress_items, payload_bytes) = slice;
 
-        for &ingress in ingress_items.iter().take(item_vacant) {
-            let len = ingress.length() as usize;
-            if bytes_sent + len > payload_bytes.len() || bytes_sent + len > payload_vacant {
-                break;
+        if !ingress_items.is_empty() {
+            let item_vacant = self.control_channel.tx.vacant_len();
+            let payload_vacant = self.payload_channel.tx.vacant_len();
+
+
+            for &ingress in ingress_items.iter().take(item_vacant) {
+                let len = ingress.length() as usize;
+                if bytes_sent + len > payload_bytes.len() || bytes_sent + len > payload_vacant {
+                    break;
+                }
+                let payload_chunk = &payload_bytes[bytes_sent..bytes_sent + len];
+                let pushed = self.payload_channel.tx.push_slice(payload_chunk);
+                if pushed != len {
+                    break;
+                }
+                if self.control_channel.tx.try_push(ingress).is_err() {
+                    break;
+                }
+                items_sent += 1;
+                bytes_sent += len;
             }
-            let payload_chunk = &payload_bytes[bytes_sent..bytes_sent + len];
-            let pushed = self.payload_channel.tx.push_slice(payload_chunk);
-            if pushed != len {
-                break;
-            }
-            if self.control_channel.tx.try_push(ingress).is_err() {
-                break;
-            }
-            items_sent += 1;
-            bytes_sent += len;
         }
-
         TxDone::Stream(items_sent, bytes_sent)
     }
 
@@ -807,39 +813,41 @@ impl TxCore for StreamTx<StreamEgress> {
     where
         Self::MsgOut: Copy,
     {
-        let (egress_items, payload_bytes) = slice;
-
-        // We'll send as many as we can, limited by both item and payload channel space
-        let item_vacant = self.control_channel.tx.vacant_len();
-        let payload_vacant = self.payload_channel.tx.vacant_len();
-
-        // Each egress item corresponds to a payload chunk of length egress_item.length()
-        // But for StreamEgress, the convention is that each item is just a length marker for a payload chunk.
-        // In this case, we expect egress_items.len() == 1 and payload_bytes.len() == egress_items[0].length() as usize
-        // But for a batch, we can support multiple.
 
         let mut items_sent = 0;
         let mut bytes_sent = 0;
+        let (egress_items, payload_bytes) = slice;
 
-        for &egress in egress_items.iter().take(item_vacant) {
-            let len = egress.length as usize;
-            if bytes_sent + len > payload_bytes.len() || bytes_sent + len > payload_vacant {
-                break;
+        if !egress_items.is_empty() {
+            // We'll send as many as we can, limited by both item and payload channel space
+            let item_vacant = self.control_channel.tx.vacant_len();
+            let payload_vacant = self.payload_channel.tx.vacant_len();
+
+            // Each egress item corresponds to a payload chunk of length egress_item.length()
+            // But for StreamEgress, the convention is that each item is just a length marker for a payload chunk.
+            // In this case, we expect egress_items.len() == 1 and payload_bytes.len() == egress_items[0].length() as usize
+            // But for a batch, we can support multiple.
+
+
+            for &egress in egress_items.iter().take(item_vacant) {
+                let len = egress.length as usize;
+                if bytes_sent + len > payload_bytes.len() || bytes_sent + len > payload_vacant {
+                    break;
+                }
+                // Push the payload chunk
+                let payload_chunk = &payload_bytes[bytes_sent..bytes_sent + len];
+                let pushed = self.payload_channel.tx.push_slice(payload_chunk);
+                if pushed != len {
+                    break;
+                }
+                // Push the egress item
+                if self.control_channel.tx.try_push(egress).is_err() {
+                    break;
+                }
+                items_sent += 1;
+                bytes_sent += len;
             }
-            // Push the payload chunk
-            let payload_chunk = &payload_bytes[bytes_sent..bytes_sent + len];
-            let pushed = self.payload_channel.tx.push_slice(payload_chunk);
-            if pushed != len {
-                break;
-            }
-            // Push the egress item
-            if self.control_channel.tx.try_push(egress).is_err() {
-                break;
-            }
-            items_sent += 1;
-            bytes_sent += len;
         }
-
         TxDone::Stream(items_sent, bytes_sent)
     }
 

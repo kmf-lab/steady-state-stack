@@ -1,8 +1,6 @@
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use futures_timer::Delay;
-use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
@@ -22,7 +20,7 @@ pub struct AeronSubscribeSteadyState {
 }
 
 //TODO: time schedule has large waits we need to track down
-const ROUND_ROBIN:Option<Duration> = Some(Duration::from_millis(1)); //TODO: hack for testing
+const ROUND_ROBIN:Option<Duration> = Some(Duration::from_micros(50)); //TODO: hack for testing
 //TODO: if publish is running some how subscribe needs to try again if too soon to get subcribe?
 
 pub async fn run<const GIRTH: usize>(
@@ -299,14 +297,15 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         now = Instant::now();
         {
             let tx_stream = &mut tx_guards[earliest_idx];
-            if 0 == iteration &  ((1<<12)-1) {
-                error!("calling poll for {} iter {}",earliest_idx,iteration);
+            if 0 == iteration &  ((1<<14)-1) {
+               // trace!("calling poll for {} iter {}",earliest_idx,iteration);
                 for i in 0..GIRTH {
                     match &mut subs[i] {
                         Ok(subscription) => {
-                            if !assume_connected[earliest_idx]|| 0 == iteration &  ((1<<13)-1) {
-                                warn!("rechecking connection for {}",i);
-                                assume_connected[i] = subscription.is_connected();
+                            //TODO: should be updated to N non messages before callng this again. not simple iterations.
+                            if !assume_connected[earliest_idx] || 0 == iteration &  ((1<<15)-1) {
+                                warn!("expensive rechecking connection for {}",i);
+                                assume_connected[i] = subscription.is_connected(); //this is heavey in that it invalidates the cache and pulls the status
                                 //TODO: set this back to false if we have not been geeting any data??
                             }
 
@@ -335,9 +334,9 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
                 };
 
 
-            if 0 == iteration & ((1 << 12) - 1) {
-                error!("done calling poll for {} iter {}",earliest_idx,iteration);
-            }
+            // if 0 == iteration & ((1 << 12) - 1) {
+            //     trace!("done calling poll for {} iter {}",earliest_idx,iteration);
+            // }
             next_times[earliest_idx] = now + if let Some(fixed) = ROUND_ROBIN { fixed } else { dynamic };
 
         }

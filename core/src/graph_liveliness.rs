@@ -464,7 +464,7 @@ pub enum ProactorConfig {
 #[derive(Clone, Debug)]
 pub struct GraphBuilder {
     is_for_testing: bool,
-    block_fail_fast: bool,
+    _block_fail_fast: bool,
     telemetry_metric_features: bool,
     enable_io_driver: bool,
     backplane: Option<StageManager>,
@@ -490,7 +490,7 @@ impl GraphBuilder {
         #[cfg(not(test))]
       GraphBuilder {
           is_for_testing: false,
-          block_fail_fast: true,
+          _block_fail_fast: true,
           telemetry_metric_features: steady_config::TELEMETRY_SERVER,
           enable_io_driver: true,
           backplane: None,
@@ -508,7 +508,7 @@ impl GraphBuilder {
         let _ = util::steady_logger::initialize();
         GraphBuilder {
             is_for_testing: true,
-            block_fail_fast: false,
+            _block_fail_fast: false,
             telemetry_metric_features: false,
             enable_io_driver: false,
             backplane: Some(StageManager::default()),
@@ -523,7 +523,7 @@ impl GraphBuilder {
     #[cfg(test)]
     pub(crate) fn with_block_fail_fast(&self) -> Self {
         let mut result = self.clone();
-        result.block_fail_fast = true;
+        result._block_fail_fast = true;
         result
     }
 
@@ -623,7 +623,7 @@ pub struct Graph { //TODO: redo as  T: StructOpt
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     pub(crate) backplane: Arc<Mutex<Option<StageManager>>>, // Only used in testing
-    pub(crate) block_fail_fast: bool,
+    pub(crate) _block_fail_fast: bool,
     pub(crate) telemetry_production_rate_ms: u64,
     pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
@@ -753,7 +753,7 @@ impl Graph {
     fn apply_fail_fast(&self) {
         // Runtime disable of fail-fast so we can unit test the recovery of panics
         // where normally in a test condition we would want to fail fast
-        if !self.block_fail_fast {
+        if !self._block_fail_fast {
             let default_hook = std::panic::take_hook();
             std::panic::set_hook(Box::new(move |panic_info| {
                 default_hook(panic_info);
@@ -764,6 +764,10 @@ impl Graph {
 
 
     /// Starts the graph.
+    /// Actors are given 40 seconds to call is_running which indicates we are done building
+    /// If more time is required for Actor init work please call start_with_timout
+    /// It is typical for actors to do init work at the top of internal_behavior but before
+    /// the first call to is_running.
     ///
     /// This should be done after building the graph.
     pub fn start(&mut self) {
@@ -980,7 +984,7 @@ impl Graph {
             thread_lock: Arc::new(Mutex::new(())),
             oneshot_shutdown_vec,
             backplane: Arc::new(Mutex::new(builder.backplane)),
-            block_fail_fast: builder.block_fail_fast,
+            _block_fail_fast: builder._block_fail_fast,
             telemetry_production_rate_ms: if builder.telemetry_metric_features {
                                                  builder.telemtry_production_rate_ms
                                              } else {
@@ -1013,7 +1017,7 @@ impl Graph {
 
 #[cfg(test)]
 mod graph_liveliness_tests {
-    use crate::{Graph, GraphLivelinessState};
+    use crate::{GraphLivelinessState};
 
 
 

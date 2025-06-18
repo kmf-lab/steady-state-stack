@@ -68,6 +68,7 @@ pub mod monitor;
 pub mod channel_builder;
     /// module for all actor features
 pub mod actor_builder;
+pub use actor_builder::CoreBalancer;
 
 /// Installation modules for setting up various deployment methods.
 pub mod install {

@@ -140,7 +140,7 @@ where
     T: 'static + Debug + Clone + Send + Sync,
     C: SteadyActor + 'static,
 {
-    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, _: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
@@ -161,7 +161,7 @@ impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamIngress>
 where
     C: SteadyActor + 'static,
 {
-    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, _run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {
@@ -180,7 +180,7 @@ impl<C> IntoSimRunner<C> for SteadyStreamTx<StreamEgress>
 where
     C: SteadyActor + 'static,
 {
-    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+    fn run(&self, responder: &SideChannelResponder, index: usize, actor: &mut C, _run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
         let this = self.clone();
                 match this.try_lock() {
                     Some(mut guard) => {

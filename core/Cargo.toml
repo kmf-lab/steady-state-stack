@@ -41,7 +41,7 @@ proactor_tokio = ["nuclei/tokio", "nuclei/iouring"]
 exec_async_std = ["async-std"]  # works
 
 
-proactor_windows = ["nuclei/async-exec"] # invalid TODO: can not have proactor on windows.
+#proactor_windows = ["nuclei/async-exec"] # invalid TODO: can not have proactor on windows.
 
 # provide prometheus compatible pullable metrics
 prometheus_metrics = [] # (default)

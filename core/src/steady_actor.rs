@@ -240,7 +240,7 @@ pub trait SteadyActor {
     /// # Asynchronous
     async fn wait(&self, duration: Duration);
     
-    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool; //TODO
 
 
 //TODO: soon

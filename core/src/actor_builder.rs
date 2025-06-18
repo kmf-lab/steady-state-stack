@@ -78,11 +78,11 @@ pub struct CoreBalancer {
 }
 
 impl CoreBalancer {
-    fn new(total_cores: usize) -> Self {
-        CoreBalancer {
-            core_usage: vec![0; total_cores],
-        }
-    }
+    // fn new(total_cores: usize) -> Self {
+    //     CoreBalancer {
+    //         core_usage: vec![0; total_cores],
+    //     }
+    // }
 
     fn allocate_core(&mut self, excluded_cores: &[usize]) -> usize {
         // Step 1: Find the core with the least usage (immutable borrow)
@@ -102,7 +102,7 @@ impl CoreBalancer {
 }
 
 #[cfg(feature = "core_affinity")]
-fn get_num_cores() -> usize {
+fn _get_num_cores() -> usize {
     #[cfg(unix)]
     unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) as usize }
     #[cfg(windows)]
@@ -721,7 +721,7 @@ impl ActorBuilder {
             core_exec::spawn_detached(async move {
                 // Determine the core to use based on the provided options
                 let default = if let Some(exp) = explicit_core {exp} else {default_core};
-                let core = if let Some(mut balancer) = core_balancer {
+                let _core = if let Some(mut balancer) = core_balancer {
                     // Use the balancer to allocate a core, respecting exclusions
                     balancer.allocate_core(&excluded_cores)
                 } else if !excluded_cores.is_empty() {
@@ -742,8 +742,8 @@ impl ActorBuilder {
                 // Pin the thread to the selected core if the `core_affinity` feature is enabled
                 #[cfg(feature = "core_affinity")]
                 {
-                    if let Err(e) = pin_thread_to_core(core) {
-                        eprintln!("Failed to pin thread to core {}: {:?}", core, e);
+                    if let Err(e) = pin_thread_to_core(_core) {
+                        eprintln!("Failed to pin thread to core {}: {:?}", _core, e);
                     }
                  //   trace!("Actor assigned to core: {}", core);
                 }

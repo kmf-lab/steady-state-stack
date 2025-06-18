@@ -906,10 +906,9 @@ mod extra_tests {
         assert!(nan.is_nan(), "expected NaN for overflow branch");
     }
 
-    use super::*;
+
     use std::sync::Arc;
     use crate::util;
-    use crate::monitor::ThreadInfo;
 
     /// Test init method with actor suffix
     #[test]

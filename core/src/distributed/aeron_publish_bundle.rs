@@ -148,15 +148,15 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
 
         trace!("running publish '{:?}' all publications in place",actor.identity());
 
-         ///this does not help much
-        let wait_for = 1;//(512*1024).min(rx.capacity());
+// this does not help much TODO: revisit
+        let wait_for = rx.capacity()/16;
         let in_channels = 1;
 
         let mut all_streams_flushed = false;
         while actor.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
 
             let _clean = await_for_any!(
-                           actor.wait_periodic(Duration::from_millis(16))
+                           actor.wait_periodic(Duration::from_millis(500))
                           ,actor.wait_avail_bundle(&mut rx, wait_for, in_channels)
                          );
 
@@ -166,9 +166,10 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                     Ok(p) => {
                         let mut vacant_aeron_bytes = p.available_window().unwrap_or(0);
                         let mut avail_messages = rx[index].avail_units();
-                        let orig_vacant = vacant_aeron_bytes;
-                        let orig_avail = avail_messages;
-                        let mut total_done = 0;
+                        //let orig_vacant = vacant_aeron_bytes;
+                        //let orig_avail = avail_messages;
+                        //let mut total_done = 0;
+                        //let mut done_pass = 0;
                         loop {
                             let mut count_done = 0;
                             let mut count_bytes = 0;
@@ -207,7 +208,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                             }
                                         }
                                         Err(aeron_error) => {
-                                           // warn!("error {:?}",aeron_error);
+                                           trace!("error {:?}",aeron_error);
                                             //if backpressujred but we see more room keep going?
 
                                             false
@@ -216,8 +217,9 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                 });
                             }
 
-                            total_done += count_done;
+                            //total_done += count_done;
                             if 0==count_done {
+                               // done_pass += 1;
                                 // if total_done>0  {
                                 //     warn!("channel {} befor-- vacant {} , avail {}",index, orig_vacant,orig_avail);
                                 //
@@ -225,7 +227,10 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                 //     warn!("--------------------");
                                 //
                                 // }
-                                break;
+                                //if done_pass>=4 {
+                                    break;
+                               // }
+                                // break;
                             } // else {
                                // warn!("channel {} publish batch of {} bytes and {} messages and {} window and  {} avail_msgs",index, count_bytes, count_done,vacant_aeron_bytes,avail_messages);
                             //}
