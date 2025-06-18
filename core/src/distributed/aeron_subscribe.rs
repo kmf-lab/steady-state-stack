@@ -212,9 +212,9 @@ pub(crate) mod aeron_media_driver_tests {
 
     #[test]
     fn test_bytes_process() {
-        // if std::env::var("GITHUB_ACTIONS").is_ok() {
-        //     return;
-        // }
+        if std::env::var("GITHUB_ACTIONS").is_ok() {
+            return;
+        }
 
         let mut graph = GraphBuilder::for_testing().build(());
         if let Some(md) = graph.aeron_media_driver() {

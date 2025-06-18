@@ -117,7 +117,7 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
     let mut rxg = rx.lock().await;
 
 
-    while ctrl.is_running(&mut || rxg.is_empty() && rxg.is_closed()) {
+    while ctrl.is_running(&mut || i!(rxg.is_empty()) && i!(rxg.is_closed())) {
         //TODO: merge the above connection loop into this wait so we only have 1 thread and 1 loop.
         let _clean = await_for_all!( ctrl.wait_avail(&mut rxg,1) );
 

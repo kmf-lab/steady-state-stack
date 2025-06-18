@@ -399,6 +399,7 @@ mod code_generation_tests {
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
     use std::str::FromStr;
+    use colored::Colorize;
     use flexi_logger::{Logger, LogSpecBuilder};
     use log::{error, info, trace, LevelFilter};
     use crate::process_dot_file;

@@ -18,7 +18,7 @@ use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
 use num_traits::{One, Zero};
 use crate::graph_liveliness::ActorIdentity;
-use crate::{GraphLivelinessState, SteadyRx};
+use crate::{i, GraphLivelinessState, SteadyRx};
 use crate::steady_actor::SteadyActor;
 #[allow(unused_imports)]
 use crate::steady_actor_shadow::SteadyActorShadow;
@@ -107,9 +107,9 @@ async fn internal_behavior<const GIRTH: usize>(
         // Check if the system should continue running or begin shutdown.
         if !ctrl.is_running(&mut || {
             trying_to_shutdown = true;
-            is_all_empty_and_closed(Ok(dynamic_senders_vec.read()))
-                && state.fill == 0
-                && locked_servers.mark_closed()
+            i!(is_all_empty_and_closed(Ok(dynamic_senders_vec.read())))
+                && i!(state.fill == 0)
+                && i!(locked_servers.mark_closed())
         }) {
             break; // Exit loop if shutdown conditions are met.
         }

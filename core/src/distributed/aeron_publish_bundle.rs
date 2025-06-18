@@ -52,7 +52,7 @@ pub async fn run<const GIRTH:usize,>(context: SteadyActorShadow
     actor.simulated_behavior(sims).await
 }
 
-
+const SHUTDOWN_ON_INIT_MESSAGE: &'static str = "Shutdown requested while waiting";
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                                              , rx: SteadyStreamRxBundle<StreamEgress,GIRTH>
@@ -114,7 +114,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                 if actor.is_liveliness_stop_requested() {
                                     //trace!("stop detected before finding publication");
                                     //we are done, shutdown happened before we could start up.
-                                    pubs[f] = Err("Shutdown requested while waiting".into());
+                                    pubs[f] = Err(SHUTDOWN_ON_INIT_MESSAGE.into());
                                     found = true;
                                 }
                             } else {
@@ -146,6 +146,10 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
             }
         }
 
+    
+       //TODO: if we already got a shutdown before we found publication we should just exit.
+       
+    
         trace!("running publish '{:?}' all publications in place",actor.identity());
 
 // this does not help much TODO: revisit

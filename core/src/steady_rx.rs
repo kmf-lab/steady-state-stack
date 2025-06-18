@@ -71,7 +71,7 @@ impl <T> Rx<T> {
     pub(crate) fn shared_try_peek(&self) -> Option<&T> {
 
         let result = self.rx.try_peek();
-        if result.is_some() {
+        if result.is_some() { ///TODO: this totally wrong !! we needed to check the positon!!!
             let take_count = self.take_count.load(Ordering::Relaxed);
             let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
             if !cached_take_count == take_count {
@@ -99,8 +99,14 @@ impl <T> Rx<T> {
         assert_ne!(threshold, 0); // Never checked
         assert_ne!(threshold, 1); // We have the first unique item
 
-        // If we have a lot of repeats, then we have a problem
-        self.peek_repeats.load(Ordering::Relaxed) >= threshold
+        let result = self.rx.try_peek();
+        if result.is_some() {
+
+            // If we have a lot of repeats, then we have a problem
+            self.peek_repeats.load(Ordering::Relaxed) >= threshold
+        } else {
+            false
+        }
     }
 
 
@@ -305,7 +311,7 @@ impl<T> Rx<T> {
         } else {
             self.rx.try_pop()
         };
-        if result.is_some() {
+        if result.is_some() { //mut be done on every possible take method
             self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
         }
         result
@@ -329,7 +335,7 @@ impl<T> Rx<T> {
         } else {
             self.rx.try_pop()
         };
-        if result.is_some() {
+        if result.is_some() { //mut be done on every possible take method
             self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
         }
         result
@@ -341,6 +347,10 @@ impl<T> Rx<T> {
     pub(crate) fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
         CountingIterator::new(self.rx.pop_iter(), &self.take_count)
         // self.rx.pop_iter()
+        //TODO: this needs help to do for an iterator.
+        // if result.is_some() { //mut be done on every possible take method
+        //     self.take_count.fetch_add(1,Ordering::Relaxed); //wraps on overflow
+        // }
     }
 
 
@@ -369,8 +379,7 @@ impl<T> Rx<T> {
         self.rx.iter()
     }
 
-    //delete
-    //  very difficult to move because we have copy on T plus dual slice
+    //TODO: delete this used by telemtry
     pub(crate) fn deprecated_shared_take_slice(&mut self, elems: &mut [T]) -> usize
     where T: Copy {
         let count = self.rx.pop_slice(elems);

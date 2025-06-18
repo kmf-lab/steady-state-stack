@@ -102,8 +102,8 @@ impl CoreBalancer {
 }
 
 #[cfg(feature = "core_affinity")]
-fn _get_num_cores() -> usize {
-    #[cfg(unix)]
+#[cfg(unix)]
+fn get_num_cores() -> usize {
     unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) as usize }
     #[cfg(windows)]
     unsafe {

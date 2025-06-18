@@ -226,10 +226,6 @@ impl <T>RxCore for Rx<T> {
     type SliceTarget<'b> = & 'b mut [T] where T: 'b ;  // target is where to copy data into on take
 
 
-    // shared_peek_slice for zero copy result_out (&[T], &[T], &[u8], &[u8])
-    // shared_take_slice with target   arg_in     (&[T], &[u8])
-
-
     fn is_closed_and_empty(&mut self) -> bool {
         if self.is_closed.is_terminated() {
             self.shared_is_empty()
@@ -421,6 +417,11 @@ impl <T>RxCore for Rx<T> {
 
         // Advance the read index by the number of items copied
         unsafe { self.rx.advance_read_index(copied); }
+
+        if copied>0 { //mut be done on every possible take method
+            self.take_count.fetch_add(1,Ordering::Relaxed); //for DLQ
+        }
+
         RxDone::Normal(copied)
     }
 
@@ -673,6 +674,14 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
             self.payload_channel.rx.advance_read_index(payload_copied);
             self.control_channel.rx.advance_read_index(items_copied);
         }
+
+
+        // if items_copied>0 { //TODO: mut be done on every possible take method
+        //     self.control_channel.fetch_add(1,Ordering::Relaxed); //for DLQ
+        //     self.payload_channel.fetch_add(1,Ordering::Relaxed); //for DLQ
+        //
+        // }
+
 
         RxDone::Stream(items_copied, payload_copied)
     }
