@@ -156,32 +156,35 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
         let outgoing = [tx.clone()]; 
         let optional_servers = steady_tx_bundle(outgoing);
 
-        let bldr = graph.actor_builder();
-
-        #[cfg(feature = "telemetry_on_telemetry")]
-            let bldr = bldr
-            .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10))
-            .with_mcpu_avg()
-            .with_load_avg();
-
-        bldr.with_name(metrics_server::NAME).build(move |context| {
-            metrics_server::run(context, rx.clone())
-        }, ScheduleAs::SoloAct);
-
+        ////////////////////////////////////
+        //create collector first to get the lower id for flow debug later.
+        ////////////////////////////////////
         let all_tel_rx = graph.all_telemetry_rx.clone();
-
         let bldr = graph.actor_builder();
-
         #[cfg(feature = "telemetry_on_telemetry")]
-            let bldr = bldr
+        let bldr = bldr
             .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10))
             .with_mcpu_avg()
             .with_load_avg();
-
         bldr.with_name(metrics_collector::NAME).build(move |context| {
             let all_rx = all_tel_rx.clone();
             metrics_collector::run(context, all_rx, optional_servers.clone())
         }, ScheduleAs::SoloAct);
+        
+        
+        ////////////////////////////////////
+        let bldr = graph.actor_builder();
+        #[cfg(feature = "telemetry_on_telemetry")]
+            let bldr = bldr
+            .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10))
+            .with_mcpu_avg()
+            .with_load_avg();
+        bldr.with_name(metrics_server::NAME).build(move |context| {
+            metrics_server::run(context, rx.clone())
+        }, ScheduleAs::SoloAct);
+
+        
+
     }
 }
 

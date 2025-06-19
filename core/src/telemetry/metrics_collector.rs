@@ -17,6 +17,7 @@ use futures_util::{select, StreamExt};
 use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
 use num_traits::{One, Zero};
+use ringbuf::consumer::Consumer;
 use crate::graph_liveliness::ActorIdentity;
 use crate::{i, GraphLivelinessState, SteadyRx};
 use crate::steady_actor::SteadyActor;
@@ -133,104 +134,106 @@ async fn internal_behavior<const GIRTH: usize>(
         let mut _trigger = "none"; // Debugging aid to track what triggered this iteration.
         let mut _tcount = 0;       // Debugging aid to count timelords.
 
-        if let Some(ref scan) = all_actors_to_scan {
-            let mut futures_unordered = FuturesUnordered::new(); // Collection of futures for actor responses.
+        {
+            if let Some(ref scan) = all_actors_to_scan {
+                let mut futures_unordered = FuturesUnordered::new(); // Collection of futures for actor responses.
 
-            if let Some(ref timelords) = timelords {
-                _trigger = "waiting for timelords";
-                _tcount = timelords.len();
-                if ENABLE_DEBUG_LOGGING {
-                    info!("[{:?}] Waiting for data from {} timelords", ident, timelords.len());
-                }
-                // Queue futures to check timelord responsiveness.
-                timelords.iter().for_each(|steady_rxf| {
-                    futures_unordered.push(future_checking_avail(steady_rxf, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR));
-                });
-
-                // Wait for a full frame or timeout to ensure frame production isn't blocked.
-                let mut got_full_frame = false;
-                while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
-                    if full_frame_of_data {
-                        got_full_frame = true;
-                        if ENABLE_DEBUG_LOGGING {
-                            info!("[{:?}] Received full frame from actor id={:?}", ident, id);
-                        }
-                        break; // Exit once a full frame is received.
-                    }
-                }
-
-                // Track consecutive timeouts to decide when to reselect timelords.
-                if got_full_frame {
-                    consecutive_timeouts = 0; // Reset on successful frame.
-                } else {
-                    consecutive_timeouts += 1;
+                if let Some(ref timelords) = timelords {
+                    _trigger = "waiting for timelords";
+                    _tcount = timelords.len();
                     if ENABLE_DEBUG_LOGGING {
-                        info!("[{:?}] Timelords timed out (consecutive: {})", ident, consecutive_timeouts);
+                        info!("[{:?}] Waiting for data from {} timelords", ident, timelords.len());
                     }
-                    if consecutive_timeouts >= 3 { // Rebuild after 3 failures to avoid thrashing.
-                        rebuild_scan_requested = true;
-                        consecutive_timeouts = 0;
+                    // Queue futures to check timelord responsiveness.
+                    timelords.iter().for_each(|steady_rxf| {
+                        futures_unordered.push(future_checking_avail(steady_rxf, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR));
+                    });
+
+                    // Wait for a full frame or timeout to ensure frame production isn't blocked.
+                    let mut got_full_frame = false;
+                    while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
+                        if full_frame_of_data {
+                            got_full_frame = true;
+                            if ENABLE_DEBUG_LOGGING {
+                                info!("[{:?}] Received full frame from actor id={:?}", ident, id);
+                            }
+                            break; // Exit once a full frame is received.
+                        }
+                    }
+
+                    // Track consecutive timeouts to decide when to reselect timelords.
+                    if got_full_frame {
+                        consecutive_timeouts = 0; // Reset on successful frame.
+                    } else {
+                        consecutive_timeouts += 1;
                         if ENABLE_DEBUG_LOGGING {
-                            info!("[{:?}] 3 consecutive timeouts, requesting timelord rebuild", ident);
+                            info!("[{:?}] Timelords timed out (consecutive: {})", ident, consecutive_timeouts);
+                        }
+                        if consecutive_timeouts >= 3 { // Rebuild after 3 failures to avoid thrashing.
+                            rebuild_scan_requested = true;
+                            consecutive_timeouts = 0;
+                            if ENABLE_DEBUG_LOGGING {
+                                info!("[{:?}] 3 consecutive timeouts, requesting timelord rebuild", ident);
+                            }
+                        }
+                    }
+                } else {
+                    _trigger = "selecting timelords";
+                    if ENABLE_DEBUG_LOGGING {
+                        debug!("[{:?}] Selecting new timelords", ident);
+                    }
+
+                    // Queue futures to select new timelords from all actors.
+                    scan.iter().for_each(|f| {
+                        futures_unordered.push(future_checking_avail(&*f.1, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR));
+                    });
+                    let count = futures_unordered.len().min(MAX_TIMELORDS); // Cap timelord selection.
+                    let mut pending_actors: Vec<usize> = scan.iter().map(|(id, _, _)| *id).collect(); // Actors still to check.
+                    let mut timelord_collector = Vec::new(); // Selected timelords.
+                    let mut non_responsive_actors = Vec::new(); // Actors that didn’t respond.
+
+                    while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
+                        if full_frame_of_data {
+                            let id = id.expect("Internal error: full frame should have an ID");
+                            pending_actors.retain(|&x| x != id); // Remove responsive actor.
+                            scan.iter().find(|f| f.0 == id).iter().for_each(|rx| {
+                                timelord_collector.push(&rx.1); // Add to timelords.
+                            });
+                            if ENABLE_DEBUG_LOGGING {
+                                debug!("[{:?}] Selected timelord: actor id={}", ident, id);
+                            }
+                            if timelord_collector.len() >= count {
+                                break; // Stop once we have enough timelords.
+                            }
+                        } else if id.is_none() {
+                            non_responsive_actors.extend(pending_actors.iter().copied()); // Mark all remaining as non-responsive.
+                            break;
+                        }
+                    }
+
+                    timelords = if timelord_collector.is_empty() { None } else { Some(timelord_collector) };
+                    if timelords.is_none() && !non_responsive_actors.is_empty() {
+                        let non_responsive_ids = non_responsive_actors
+                            .iter()
+                            .flat_map(|id| scan.iter().find(|f| f.0 == *id).map(|f| f.2.clone()))
+                            .collect::<Vec<_>>();
+                        if ENABLE_DEBUG_LOGGING {
+                            debug!("[{:?}] No actors responded within {}ms: {:?}", ident, ctrl.frame_rate_ms, non_responsive_ids);
                         }
                     }
                 }
             } else {
-                _trigger = "selecting timelords";
-                if ENABLE_DEBUG_LOGGING {
-                    debug!("[{:?}] Selecting new timelords", ident);
-                }
-
-                // Queue futures to select new timelords from all actors.
-                scan.iter().for_each(|f| {
-                    futures_unordered.push(future_checking_avail(&*f.1, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR));
-                });
-                let count = futures_unordered.len().min(MAX_TIMELORDS); // Cap timelord selection.
-                let mut pending_actors: Vec<usize> = scan.iter().map(|(id, _, _)| *id).collect(); // Actors still to check.
-                let mut timelord_collector = Vec::new(); // Selected timelords.
-                let mut non_responsive_actors = Vec::new(); // Actors that didn’t respond.
-
-                while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
-                    if full_frame_of_data {
-                        let id = id.expect("Internal error: full frame should have an ID");
-                        pending_actors.retain(|&x| x != id); // Remove responsive actor.
-                        scan.iter().find(|f| f.0 == id).iter().for_each(|rx| {
-                            timelord_collector.push(&rx.1); // Add to timelords.
-                        });
-                        if ENABLE_DEBUG_LOGGING {
-                            debug!("[{:?}] Selected timelord: actor id={}", ident, id);
-                        }
-                        if timelord_collector.len() >= count {
-                            break; // Stop once we have enough timelords.
-                        }
-                    } else if id.is_none() {
-                        non_responsive_actors.extend(pending_actors.iter().copied()); // Mark all remaining as non-responsive.
-                        break;
-                    }
-                }
-
-                timelords = if timelord_collector.is_empty() { None } else { Some(timelord_collector) };
-                if timelords.is_none() && !non_responsive_actors.is_empty() {
-                    let non_responsive_ids = non_responsive_actors
-                        .iter()
-                        .flat_map(|id| scan.iter().find(|f| f.0 == *id).map(|f| f.2.clone()))
-                        .collect::<Vec<_>>();
-                    if ENABLE_DEBUG_LOGGING {
-                        debug!("[{:?}] No actors responded within {}ms: {:?}", ident, ctrl.frame_rate_ms, non_responsive_ids);
-                    }
-                }
+                _trigger = "no actors to scan";
+                yield_now().await; // Yield control if there’s nothing to do.
             }
-        } else {
-            _trigger = "no actors to scan";
-            yield_now().await; // Yield control if there’s nothing to do.
         }
 
         // Collect telemetry data and detect structural changes.
         let (nodes, to_pop) = {
-            let guard = dynamic_senders_vec.read();
+            let mut guard = dynamic_senders_vec.read();
             let dynamic_senders = guard.deref();
             let structure_unchanged = dynamic_senders.len() == state.actor_count;
-            if structure_unchanged {
+            if structure_unchanged && !trying_to_shutdown {
                 (None, collect_channel_data(&mut state, dynamic_senders)) // No structural update needed.
             } else {
                 rebuild_scan_requested = true; // Trigger rebuild on actor count change.
@@ -324,11 +327,22 @@ fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<'_, Vec<Collec
     match m_channels {
         Ok(channels) => {
             for c in channels.iter() {
-                for t in c.telemetry_take.iter() {
+                //last one is the only one which gets marked closed because it is current
+                let mut idx = c.telemetry_take.len()-1;
+                if let Some(t) = c.telemetry_take.get(idx) {
                     if !t.is_empty_and_closed() {
-                        return false; // Found active channel, shutdown not complete.
+                        return false; // Found an active channel, shutdown not complete.
+                    } else {
+                        while idx > 0 {
+                            idx -= 1;
+                            if let Some(t) = c.telemetry_take.get(idx) {
+                                if !t.is_empty() {
+                                    return false; // Found an active data, shutdown not complete.
+                                }
+                            }
+                        }
                     }
-                }
+                };
             }
             true // All channels are empty and closed.
         }
@@ -363,16 +377,16 @@ fn gather_valid_actor_telemetry_to_scan(
 }
 
 /// Collects telemetry data from actors, updating state and identifying data to clean up.
-fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[CollectorDetail]) -> Vec<ActorIdentity> {
+fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: & [CollectorDetail]) -> Vec<ActorIdentity> {
     state.fill = (state.fill + 1) & 0xF; // Increment fill, capped at 15 to avoid overflow.
     let working: Vec<(bool, &CollectorDetail)> = dynamic_senders
         .iter()
-        .map(|f| {
-            let has_data = f.telemetry_take[0].consume_send_into(&mut state.total_take_send, &mut state.future_send);
-            #[cfg(debug_assertions)]
-            if f.telemetry_take.len() > 1 {
-                trace!("can see new telemetry channel"); // Debug new channels.
-            }
+        .map(|mut f| {
+            let has_data = if let Some(x) = f.telemetry_take.iter().find(|f|!f.is_empty()) {
+                x.consume_send_into(&mut state.total_take_send, &mut state.future_send)
+            } else {
+                false
+            };
             (has_data, f)
         })
         .collect();
@@ -380,11 +394,16 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[Collecto
     let working: Vec<(bool, &CollectorDetail)> = working
         .iter()
         .map(|(has_data_in, f)| {
-            let has_data = f.telemetry_take[0].consume_take_into(
-                &mut state.total_take_send,
-                &mut state.future_take,
-                &mut state.future_send,
-            );
+            let has_data = if let Some(x) = f.telemetry_take.iter().find(|f|!f.is_empty()) {
+                x.consume_take_into(
+                    &mut state.total_take_send,
+                    &mut state.future_take,
+                    &mut state.future_send,
+                )
+            } else {
+                false
+            };
+
             (has_data || *has_data_in, *f) // Combine send and take data availability.
         })
         .collect();
@@ -409,7 +428,7 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: &[Collecto
                     state.actor_last_update.resize(actor_id + 1, 0);
                 }
                 state.actor_last_update[actor_id] = state.sequence; // Mark actor as updated.
-                false // No cleanup needed for actor status updates.
+                f.telemetry_take[0].is_empty() && f.telemetry_take.len().gt(&1)
             } else {
                 !has_data_in && f.telemetry_take.len().gt(&1) // Clean up if no data and extra telemetry exists.
             }

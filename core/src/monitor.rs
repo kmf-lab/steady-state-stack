@@ -214,6 +214,9 @@ pub trait RxTel: Send + Sync {
 
     /// Checks if the telemetry is empty and closed.
     fn is_empty_and_closed(&self) -> bool;
+    
+    fn is_empty(&self) -> bool;
+
 }
 
 
