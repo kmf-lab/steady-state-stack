@@ -328,20 +328,22 @@ fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<'_, Vec<Collec
         Ok(channels) => {
             for c in channels.iter() {
                 //last one is the only one which gets marked closed because it is current
-                let mut idx = c.telemetry_take.len()-1;
-                if let Some(t) = c.telemetry_take.get(idx) {
-                    if !t.is_empty_and_closed() {
-                        return false; // Found an active channel, shutdown not complete.
-                    } else {
-                        while idx > 0 {
-                            idx -= 1;
-                            if let Some(t) = c.telemetry_take.get(idx) {
-                                if !t.is_empty() {
-                                    return false; // Found an active data, shutdown not complete.
+                if !c.telemetry_take.is_empty() {
+                    let mut idx = c.telemetry_take.len() - 1;
+                    if let Some(t) = c.telemetry_take.get(idx) {
+                        if !t.is_empty_and_closed() {
+                            return false; // Found an active channel, shutdown not complete.
+                        } else {
+                            while idx > 0 {
+                                idx -= 1;
+                                if let Some(t) = c.telemetry_take.get(idx) {
+                                    if !t.is_empty() {
+                                        return false; // Found an active data, shutdown not complete.
+                                    }
                                 }
                             }
                         }
-                    }
+                    };
                 };
             }
             true // All channels are empty and closed.
@@ -428,7 +430,7 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: & [Collect
                     state.actor_last_update.resize(actor_id + 1, 0);
                 }
                 state.actor_last_update[actor_id] = state.sequence; // Mark actor as updated.
-                f.telemetry_take[0].is_empty() && f.telemetry_take.len().gt(&1)
+                f.telemetry_take.len().gt(&1) && f.telemetry_take[0].is_empty() 
             } else {
                 !has_data_in && f.telemetry_take.len().gt(&1) // Clean up if no data and extra telemetry exists.
             }
