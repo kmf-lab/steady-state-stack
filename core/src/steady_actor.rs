@@ -286,7 +286,7 @@ pub trait SteadyActor {
 
 
 
-
+//TOOD: remove copy
     fn peek_slice<'a,'b,T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
     where
         T::MsgItem: Copy,
@@ -296,9 +296,9 @@ pub trait SteadyActor {
 
     fn send_slice<T: TxCore>(& mut self, this: & mut T, source: T::SliceSource<'_>) -> TxDone where T::MsgOut: Copy;
 
-    fn send_slice_direct<T: TxCore, F>(& mut self, this: & mut T, f: F) -> TxDone
-    where T::MsgOut: Copy,
-        F: FnOnce(T::SliceTarget<'_>) -> TxDone;
+    fn send_slice_direct<'a, T: TxCore, F>(& mut self, this: &'a mut T, f: F) -> TxDone
+    where
+        F: for<'b> FnOnce(T::SliceTarget<'b>) -> TxDone;
 
 
 

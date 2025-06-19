@@ -257,9 +257,9 @@ impl SteadyActor for SteadyActorShadow {
         this.shared_send_slice(slice)
     }
 
-    fn send_slice_direct<T: TxCore, F>(&mut self, this: &mut T, f: F) -> TxDone
-     where F: FnOnce(T::SliceTarget<'_>) -> TxDone
-    {
+    fn send_slice_direct<'a, T: TxCore, F>(&mut self, this: &'a mut T, f: F) -> TxDone
+     where F: for<'b> FnOnce(T::SliceTarget<'b>) -> TxDone
+    {        
         this.shared_send_direct(f)
     }
 

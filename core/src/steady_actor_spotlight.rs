@@ -341,8 +341,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
-    fn send_slice_direct<T: TxCore, F>(&mut self, this: &mut T, f: F) -> TxDone
-    where F: FnOnce(T::SliceTarget<'_>) -> TxDone {
+    fn send_slice_direct<'a, T: TxCore, F>(&mut self, this: &'a mut T, f: F) -> TxDone
+    where F: for<'b>  FnOnce(T::SliceTarget<'b>) -> TxDone {
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
