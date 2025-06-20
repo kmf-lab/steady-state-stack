@@ -78,7 +78,7 @@ impl<T> TxCore for Tx<T> {
 
 
     fn shared_advance_index(&mut self, request: Self::MsgSize) -> TxDone {
-        let avail = self.tx.occupied_len();
+        let avail = self.tx.vacant_len();
         let idx = if request>avail {
             avail
         } else {
@@ -340,8 +340,8 @@ impl TxCore for StreamTx<StreamIngress> {
 
     fn shared_advance_index(&mut self, count: Self::MsgSize) -> TxDone {
 
-        let control_avail = self.control_channel.tx.occupied_len();
-        let payload_avail = self.payload_channel.tx.occupied_len();
+        let control_avail = self.control_channel.tx.vacant_len();
+        let payload_avail = self.payload_channel.tx.vacant_len();
         //NOTE: we only have two counts so either we do all or none because we can
         //      not compute a safe cut point. so it is all or nothing
 
@@ -691,8 +691,8 @@ impl TxCore for StreamTx<StreamEgress> {
 
     fn shared_advance_index(&mut self, count: Self::MsgSize) -> TxDone {
 
-        let control_avail = self.control_channel.tx.occupied_len();
-        let payload_avail = self.payload_channel.tx.occupied_len();
+        let control_avail = self.control_channel.tx.vacant_len();
+        let payload_avail = self.payload_channel.tx.vacant_len();
         //NOTE: we only have two counts so either we do all or none because we can
         //      not compute a safe cut point. so it is all or nothing
 
