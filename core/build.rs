@@ -109,7 +109,7 @@ fn main() {
 /// Returns true if the file was skipped (already exists), false if copied.
 fn simple_copy(source_file: &Path, target_file: &PathBuf) -> bool {
     if target_file.exists() {
-        println!("cargo:warning={:?} already exists, skipping copy", target_file);
+        println!("cargo:trace={:?} already exists, skipping copy", target_file);
         return true;
     }
 
@@ -162,7 +162,7 @@ fn gzip_encode(target: &Path, file_path: &str, skip_if_exists: bool) {
     }
 
     if skip_if_exists && target_file.exists() {
-        println!("cargo:warning={:?} already exists, skipping compression", target_file);
+        println!("cargo:trace={:?} already exists, skipping compression", target_file);
         return;
     }
 
@@ -175,5 +175,5 @@ fn gzip_encode(target: &Path, file_path: &str, skip_if_exists: bool) {
     io::copy(&mut input, &mut encoder).expect("Failed to compress file");
     encoder.finish().expect("Failed to finalize compression");
 
-    println!("cargo:warning=Compressed {:?} to {:?}", file_path, target_file);
+    println!("cargo:trace=Compressed {:?} to {:?}", file_path, target_file);
 }

@@ -25,7 +25,7 @@ async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    let count = rx.capacity().clone()/4;
+    let count = rx.capacity()/4;
     let tx_girth = tx.len();
 
     while actor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
@@ -38,8 +38,8 @@ async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_
         );
        // info!("router b");
 
-        let mut iter = actor.take_into_iter(&mut rx);
-        while let Some(t) = iter.next() {
+        let iter = actor.take_into_iter(&mut rx);
+        for t in iter {
             let index = (t.route as usize / one_of)  % tx.len();
 
          //   info!("name: {:?} one_of: {:?} block_size: {:?} route: {:?} index: {:?}", monitor.ident(), one_of, block_size, t.route, index);
@@ -56,13 +56,13 @@ async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_
 
 #[cfg(test)]
 mod router_tests {
+    use std::error::Error;
     use std::thread::sleep;
     use std::time::Duration;
-    use futures_timer::Delay;
     use steady_state::GraphBuilder;
 
     #[test]
-    fn test_router() {
+    fn test_router() -> Result<(), Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
 
     //     // let (approved_widget_tx_out, approved_widget_rx_out) = graph.channel_builder()
@@ -84,12 +84,13 @@ mod router_tests {
         graph.start();
         sleep(Duration::from_millis(60));
         graph.request_shutdown();
-        graph.block_until_stopped(Duration::from_secs(15));
+        graph.block_until_stopped(Duration::from_secs(15))?;
         
     //     //4. assert expected results
     //     // TODO: not sure how to make this work.
     //     //  println!("last approval: {:?}", &state.last_approval);
     //     //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
+        Ok(())
      }
 
 

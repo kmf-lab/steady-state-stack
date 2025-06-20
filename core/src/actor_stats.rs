@@ -8,73 +8,100 @@ use crate::*;
 use crate::channel_stats::{compute_labels, ComputeLabelsConfig, ComputeLabelsLabels, DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW, PLACES_TENS};
 use crate::monitor::ThreadInfo;
 
-/// `ActorStatsComputer` computes and maintains statistics for an actor.
+/// The `ActorStatsComputer` struct is responsible for computing and maintaining statistics for an actor within the system.
+/// It tracks CPU and workload utilization, manages histograms for percentile calculations, and evaluates trigger conditions for alerts.
 #[derive(Default)]
 pub struct ActorStatsComputer {
+    /// The unique identifier for the actor, including its name and optional suffix.
     pub(crate) ident: ActorIdentity,
 
-    /// CPU utilization triggers for the actor.
+    /// A list of CPU utilization triggers paired with their corresponding alert colors.
     pub(crate) mcpu_trigger: Vec<(Trigger<MCPU>, AlertColor)>, // If used base is green
 
-    /// Work utilization triggers for the actor.
+    /// A list of workload utilization triggers paired with their corresponding alert colors.
     pub(crate) work_trigger: Vec<(Trigger<Work>, AlertColor)>, // If used base is green
 
-    /// The count of frames in the current bucket.
+    /// The count of frames accumulated in the current bucket before it is finalized and added to history.
     pub(crate) bucket_frames_count: usize, // When this bucket is full we add a new one
 
+    /// The bit shift value representing the refresh rate for telemetry collection.
     pub(crate) refresh_rate_in_bits: u8,
+
+    /// The bit shift value representing the window bucket size for telemetry aggregation.
     pub(crate) window_bucket_in_bits: u8,
 
+    /// The frame rate in milliseconds, used for timing calculations and unit testing.
     pub(crate) frame_rate_ms: u64, // Const at runtime but needed here for unit testing
+
+    /// A string label representing the time window for the current statistics.
     pub(crate) time_label: String,
 
-    /// Percentile values for CPU utilization.
+    /// A list of percentiles to monitor for CPU utilization.
     pub(crate) percentiles_mcpu: Vec<Percentile>, // To show
 
-    /// Percentile values for work utilization.
+    /// A list of percentiles to monitor for workload utilization.
     pub(crate) percentiles_work: Vec<Percentile>, // To show
 
-    /// Standard deviation values for CPU utilization.
+    /// A list of standard deviations to monitor for CPU utilization variability.
     pub(crate) std_dev_mcpu: Vec<StdDev>, // To show
 
-    /// Standard deviation values for work utilization.
+    /// A list of standard deviations to monitor for workload variability.
     pub(crate) std_dev_work: Vec<StdDev>, // To show
 
+    /// Flag to indicate whether to display average CPU utilization in telemetry.
     pub(crate) show_avg_mcpu: bool,
+
+    /// Flag to indicate whether to display average workload in telemetry.
     pub(crate) show_avg_work: bool,
+
+    /// Flag to enable usage review in telemetry for detailed analysis.
     pub(crate) usage_review: bool,
 
+    /// Flag indicating whether to build a histogram for CPU utilization.
     pub(crate) build_mcpu_histogram: bool,
+
+    /// Flag indicating whether to build a histogram for workload utilization.
     pub(crate) build_work_histogram: bool,
 
-    /// History of CPU utilization data.
+    /// A deque containing historical CPU utilization data blocks.
     pub(crate) history_mcpu: VecDeque<ChannelBlock<u16>>,
 
-    /// History of work utilization data.
+    /// A deque containing historical workload utilization data blocks.
     pub(crate) history_work: VecDeque<ChannelBlock<u8>>,
 
+    /// The current CPU utilization data block being accumulated.
     pub(crate) current_mcpu: Option<ChannelBlock<u16>>,
+
+    /// The current workload utilization data block being accumulated.
     pub(crate) current_work: Option<ChannelBlock<u8>>,
 
+    /// A string containing Prometheus-style labels for metrics.
     pub(crate) prometheus_labels: String,
+
+    /// Flag to indicate whether to display thread information in telemetry.
+    pub(crate) show_thread_id: bool
 }
 
 impl ActorStatsComputer {
-
-    /// Computes the metrics and updates the provided labels.
+    /// Computes the actor's statistics and updates the provided labels for visualization and metrics.
+    ///
+    /// This method processes the current CPU and workload utilization, accumulates data frames, and generates
+    /// labels for DOT visualization and Prometheus metrics. It also determines the appropriate line color
+    /// and width based on trigger conditions.
     ///
     /// # Arguments
     ///
-    /// * `dot_label` - A mutable reference to the dot label string.
-    /// * `metric_text` - A mutable reference to the metric text string.
-    /// * `mcpu` - The current CPU utilization.
-    /// * `work` - The current work utilization.
-    /// * `total_count_restarts` - The total number of restarts.
-    /// * `bool_stop` - A boolean indicating if the actor has stopped.
+    /// * `dot_label` - A mutable reference to the string that will hold the DOT label for visualization.
+    /// * `metric_text` - A mutable reference to the string that will hold the Prometheus metrics text.
+    /// * `mcpu` - The current CPU utilization value.
+    /// * `work` - The current workload utilization value.
+    /// * `total_count_restarts` - The total number of times the actor has been restarted.
+    /// * `bool_stop` - A boolean indicating whether the actor has stopped.
+    /// * `thread_info` - Optional thread information to include in the DOT label.
     ///
     /// # Returns
     ///
-    /// A tuple containing the line color and line width.
+    /// A tuple containing the line color and line width for visualization.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute(
         &mut self,
@@ -105,6 +132,7 @@ impl ActorStatsComputer {
 
         dot_label.push('\n');
 
+        //TODO: ThreadId  is dissaperaing!
         if let Some(thread) = thread_info {    //new line for thread info
 
             //this could be better looking but will require unstable features today Oct 2024.
@@ -185,19 +213,22 @@ impl ActorStatsComputer {
                 line_color = DOT_RED;
             }
         }
-        let line_width = "3";
+        let line_width = crate::dot::DEFAULT_PEN_WIDTH;
 
         //println!("input mcpu {} work {} line_color {} ", mcpu, work, line_color);
 
         (line_color, line_width)
     }
 
-    /// Initializes the `ActorStatsComputer` with metadata and frame rate.
+    /// Initializes the `ActorStatsComputer` with the provided actor metadata and frame rate.
+    ///
+    /// This method sets up the internal state based on the actor's configuration, including triggers,
+    /// percentiles, and standard deviations to monitor. It also prepares the histograms if needed.
     ///
     /// # Arguments
     ///
-    /// * `meta` - The actor metadata.
-    /// * `frame_rate_ms` - The frame rate in milliseconds.
+    /// * `meta` - The metadata of the actor, containing configuration for telemetry and triggers.
+    /// * `frame_rate_ms` - The frame rate in milliseconds for telemetry data collection.
     pub(crate) fn init(&mut self, meta: Arc<ActorMetaData>, frame_rate_ms: u64) {
         self.ident = meta.ident;
 
@@ -230,6 +261,7 @@ impl ActorStatsComputer {
         self.std_dev_mcpu.clone_from(&meta.std_dev_mcpu);
         self.std_dev_work.clone_from(&meta.std_dev_work);
         self.usage_review = meta.usage_review;
+        self.show_thread_id = meta.show_thread_info;
 
         let trigger_uses_histogram = self.mcpu_trigger.iter().any(|t|
             matches!(t, (Trigger::PercentileAbove(_, _), _) | (Trigger::PercentileBelow(_, _), _))
@@ -278,12 +310,15 @@ impl ActorStatsComputer {
         }
     }
 
-    /// Accumulates data frames for CPU and work utilization.
+    /// Accumulates a new data frame for CPU and workload utilization.
+    ///
+    /// This method updates the running totals and histograms for the current bucket. When the bucket
+    /// is full, it is moved to the history, and a new bucket is started.
     ///
     /// # Arguments
     ///
-    /// * `mcpu` - The current CPU utilization.
-    /// * `work` - The current work utilization.
+    /// * `mcpu` - The CPU utilization value for the current frame.
+    /// * `work` - The workload utilization value for the current frame.
     pub(crate) fn accumulate_data_frame(&mut self, mcpu: u64, work: u64) {
         assert!(mcpu <= 1024, "mcpu out of range {}", mcpu);
 
@@ -356,7 +391,10 @@ impl ActorStatsComputer {
         }
     }
 
-    /// Checks if any alert levels have been triggered.
+    /// Checks if any triggers for a specific alert level have been activated.
+    ///
+    /// This method evaluates all triggers associated with the given alert color and returns `true`
+    /// if any of them are currently active based on the accumulated statistics.
     ///
     /// # Arguments
     ///
@@ -364,37 +402,38 @@ impl ActorStatsComputer {
     ///
     /// # Returns
     ///
-    /// A boolean indicating if the alert level has been triggered.
+    /// `true` if any trigger for the specified alert level is active, otherwise `false`.
     fn trigger_alert_level(&mut self, c1: &AlertColor) -> bool {
-
         //TODO: create vec for each color to avoid the filter here.
 
         (self.mcpu_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_mcpu(&f.0)))
-         ||
-        (self.work_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_work(&f.0)))
+            ||
+            (self.work_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_work(&f.0)))
     }
 
-    /// Checks if a CPU utilization trigger has been activated.
+    /// Determines if a specific CPU utilization trigger condition is met.
+    ///
+    /// This method evaluates the given trigger rule against the current CPU utilization statistics.
     ///
     /// # Arguments
     ///
-    /// * `rule` - The trigger rule to check.
+    /// * `rule` - The trigger rule to evaluate.
     ///
     /// # Returns
     ///
-    /// A boolean indicating if the trigger has been activated.
+    /// `true` if the trigger condition is satisfied, otherwise `false`.
     fn triggered_mcpu(&self, rule: &Trigger<MCPU>) -> bool {
         match rule {
             Trigger::AvgBelow(mcpu) => {
                 //println!("check below: {:?} {:?}", mcpu, self.current_mcpu);
                 let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
                 avg_rational(run_divisor, 1 , &self.current_mcpu, (mcpu.mcpu() as u64, 1)  ).is_lt()
-               
+
             },
             Trigger::AvgAbove(mcpu) => {
-               // println!("check above: {:?} {:?}", mcpu, self.current_mcpu);
+                // println!("check above: {:?} {:?}", mcpu, self.current_mcpu);
                 let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
-                avg_rational(run_divisor, 1, &self.current_mcpu, (mcpu.mcpu() as u64,1)).is_gt()            
+                avg_rational(run_divisor, 1, &self.current_mcpu, (mcpu.mcpu() as u64,1)).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, mcpu) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
@@ -413,28 +452,30 @@ impl ActorStatsComputer {
         }
     }
 
-    /// Checks if a work utilization trigger has been activated.
+    /// Determines if a specific workload utilization trigger condition is met.
+    ///
+    /// This method evaluates the given trigger rule against the current workload utilization statistics.
     ///
     /// # Arguments
     ///
-    /// * `rule` - The trigger rule to check.
+    /// * `rule` - The trigger rule to evaluate.
     ///
     /// # Returns
     ///
-    /// A boolean indicating if the trigger has been activated.
+    /// `true` if the trigger condition is satisfied, otherwise `false`.
     fn triggered_work(&self, rule: &Trigger<Work>) -> bool {
         match rule {
             Trigger::AvgBelow(work) => {
-               // println!("check below: {:?} {:?}", work, self.current_mcpu);
+                // println!("check below: {:?} {:?}", work, self.current_mcpu);
                 let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
                 avg_rational(run_divisor, 100, &self.current_work, work.rational()).is_lt()
 
             },
             Trigger::AvgAbove(work) => {
-               // println!("check below: {:?} {:?}", work, self.current_mcpu);
+                // println!("check below: {:?} {:?}", work, self.current_mcpu);
                 let run_divisor = 1 << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
                 avg_rational(run_divisor, 100, &self.current_work, work.rational()).is_gt()
-             
+
             },
             Trigger::StdDevsBelow(std_devs, work) => {
                 let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
@@ -453,11 +494,13 @@ impl ActorStatsComputer {
         }
     }
 
-    /// Computes the standard deviation for CPU utilization.
+    /// Computes the standard deviation of CPU utilization based on the current data.
+    ///
+    /// This method calculates the standard deviation using the accumulated sum of squares and runner values.
     ///
     /// # Returns
     ///
-    /// The standard deviation as a float.
+    /// The standard deviation as a float, or 0.0 if no data is available.
     #[inline]
     fn mcpu_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_mcpu {
@@ -468,11 +511,13 @@ impl ActorStatsComputer {
         }
     }
 
-    /// Computes the standard deviation for work utilization.
+    /// Computes the standard deviation of workload utilization based on the current data.
+    ///
+    /// This method calculates the standard deviation using the accumulated sum of squares and runner values.
     ///
     /// # Returns
     ///
-    /// The standard deviation as a float.
+    /// The standard deviation as a float, or 0.0 if no data is available.
     #[inline]
     fn work_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_work {
@@ -487,7 +532,10 @@ impl ActorStatsComputer {
     }
 }
 
-/// Computes a time label for a given duration in milliseconds.
+/// Converts a duration in milliseconds to a human-readable time label string.
+///
+/// This function determines the most appropriate unit (seconds, minutes, hours, or days) based on the duration
+/// and formats the label accordingly.
 ///
 /// # Arguments
 ///
@@ -495,7 +543,7 @@ impl ActorStatsComputer {
 ///
 /// # Returns
 ///
-/// A string representing the time label.
+/// A string representing the duration in a human-readable format.
 pub(crate) fn time_label(total_ms: u128) -> String {
     let seconds = total_ms as f64 / 1000.0;
     let minutes = seconds / 60.0;
@@ -511,17 +559,20 @@ pub(crate) fn time_label(total_ms: u128) -> String {
     } else if seconds < 1.1 { "sec".to_string() } else { format!("{:.1} secs", seconds) }
 }
 
-/// Computes the average rational value for a given window.
+/// Compares the average value from the current data block to a given rational threshold.
+///
+/// This function calculates the average based on the runner and divisor, then compares it to the provided rational value.
 ///
 /// # Arguments
 ///
-/// * `window_in_ms` - The window duration in milliseconds.
-/// * `current` - The current channel block.
-/// * `rational` - The rational value as a tuple.
+/// * `run_divisor` - The divisor for calculating the average from the runner.
+/// * `units` - The units for scaling the rational comparison.
+/// * `current` - The optional current channel block containing the runner.
+/// * `rational` - The rational threshold as a tuple (numerator, denominator).
 ///
 /// # Returns
 ///
-/// A comparison ordering result.
+/// A `cmp::Ordering` indicating whether the average is less than, equal to, or greater than the threshold.
 pub(crate) fn avg_rational<T: Counter>(run_divisor: u128, units: u128, current: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> cmp::Ordering {
     if let Some(current) = current {
         //println!("current.runner {} run_divisor {} rational.0 {} rational.1 {}", current.runner, run_divisor, rational.0, rational.1);
@@ -532,19 +583,21 @@ pub(crate) fn avg_rational<T: Counter>(run_divisor: u128, units: u128, current: 
     }
 }
 
-/// Computes the standard deviation rational value for a given window.
+/// Compares a value derived from standard deviation to a given rational threshold.
+///
+/// This function calculates a value based on the average and standard deviation, then compares it to the provided rational value.
 ///
 /// # Arguments
 ///
 /// * `std_dev` - The standard deviation value.
-/// * `window_bits` - The window bits.
-/// * `std_devs` - The standard deviation value.
-/// * `current` - The current channel block.
-/// * `expected` - The expected value as a tuple.
+/// * `window_bits` - The number of bits representing the window size.
+/// * `std_devs` - The standard deviation multiplier.
+/// * `current` - The optional current channel block containing the runner.
+/// * `expected` - The expected rational value as a tuple (numerator, denominator).
 ///
 /// # Returns
 ///
-/// A comparison ordering result.
+/// A `cmp::Ordering` indicating whether the computed value is less than, equal to, or greater than the threshold.
 pub(crate) fn stddev_rational<T: Counter>(
     std_dev: f32,
     window_bits: u8,
@@ -560,17 +613,19 @@ pub(crate) fn stddev_rational<T: Counter>(
     }
 }
 
-/// Computes the percentile rational value for a given window.
+/// Compares a percentile value from the histogram to a given rational threshold.
+///
+/// This function retrieves the value at the specified percentile from the histogram and compares it to the provided rational value.
 ///
 /// # Arguments
 ///
-/// * `percentile` - The percentile value.
-/// * `consumed` - The current channel block.
-/// * `rational` - The rational value as a tuple.
+/// * `percentile` - The percentile to evaluate.
+/// * `consumed` - The optional current channel block containing the histogram.
+/// * `rational` - The rational threshold as a tuple (numerator, denominator).
 ///
 /// # Returns
 ///
-/// A comparison ordering result.
+/// A `cmp::Ordering` indicating whether the percentile value is less than, equal to, or greater than the threshold.
 pub(crate) fn percentile_rational<T: Counter>(percentile: &Percentile, consumed: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> cmp::Ordering {
     if let Some(current_consumed) = consumed {
         if let Some(h) = &current_consumed.histogram {
@@ -584,18 +639,20 @@ pub(crate) fn percentile_rational<T: Counter>(percentile: &Percentile, consumed:
     }
 }
 
-/// Computes the standard deviation for a given window.
+/// Computes the standard deviation for a given set of parameters.
+///
+/// This function calculates the standard deviation using the sum of squares and runner values, handling large numbers carefully to avoid overflow.
 ///
 /// # Arguments
 ///
-/// * `bits` - The number of bits.
-/// * `window` - The window size.
-/// * `runner` - The runner value.
-/// * `sum_sqr` - The sum of squares.
+/// * `bits` - The number of bits used in calculations.
+/// * `window` - The size of the window for averaging.
+/// * `runner` - The accumulated runner value.
+/// * `sum_sqr` - The accumulated sum of squares.
 ///
 /// # Returns
 ///
-/// The standard deviation as a float.
+/// The computed standard deviation as a float.
 #[inline]
 pub(crate) fn compute_std_dev(bits: u8, window: usize, runner: u128, sum_sqr: u128) -> f32 {
     if runner < SQUARE_LIMIT {
@@ -610,17 +667,23 @@ pub(crate) fn compute_std_dev(bits: u8, window: usize, runner: u128, sum_sqr: u1
     }
 }
 
+/// The maximum value for the runner before special handling is needed in standard deviation calculations.
 pub(crate) const SQUARE_LIMIT: u128 = (1 << 64) - 1;
 
-/// `ChannelBlock` stores the histogram, runner, and sum of squares for a channel.
+/// The `ChannelBlock` struct holds statistical data for a channel, including an optional histogram and running totals for calculations.
 ///
 /// # Type Parameters
 ///
-/// * `T` - The counter type.
+/// * `T` - The counter type used in the histogram.
 #[derive(Default, Debug)]
 pub(crate) struct ChannelBlock<T> where T: Counter {
+    /// An optional histogram for storing distribution data.
     pub(crate) histogram: Option<Histogram<T>>,
+
+    /// The accumulated runner value for average calculations.
     pub(crate) runner: u128,
+
+    /// The accumulated sum of squares for variance calculations.
     pub(crate) sum_of_squares: u128,
 }
 
@@ -635,6 +698,7 @@ mod test_actor_stats {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
             percentiles_work: vec![Percentile::p50(), Percentile::p90()],
             std_dev_mcpu: vec![StdDev::new(1.0).expect("")],
@@ -683,8 +747,6 @@ mod test_actor_stats {
         assert_eq!(work_histogram.value_at_quantile(0.5), 51);
     }
 
-
-
     #[test]
     fn test_compute_labels() {
         let metadata = create_mock_metadata();
@@ -707,11 +769,10 @@ mod test_actor_stats {
         );
 
         assert_eq!(line_color, DOT_GREEN);
-        assert_eq!(line_width, "3");
+        assert_eq!(line_width, "4");
         assert!(dot_label.contains("test_actor"));
 
     }
-
 
     #[test]
     fn test_percentile_rational() {
@@ -742,6 +803,7 @@ mod test_actor_stats_triggers {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
             percentiles_work: vec![Percentile::p50(), Percentile::p90()],
             std_dev_mcpu: vec![StdDev::new(1.0).expect("")],
@@ -816,7 +878,7 @@ mod test_actor_stats_triggers {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
         actor_stats.init(metadata.clone(), 1000);
-    
+
         // Need enough frames to fill the window and set current_mcpu
         let total_frames = 1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits);
         //println!("total_frames: {}", total_frames);
@@ -860,14 +922,13 @@ mod test_actor_stats_triggers {
             "Expected avg below trigger NOT to be activated for work."
         );
     }
-
-
 }
+
 /// Additional tests to achieve 100% coverage for all utility functions and edge cases.
 #[cfg(test)]
 mod extra_tests {
     use super::*;
-    use std::cmp::Ordering;
+
 
     /// Verify `time_label` produces the correct text for various durations.
     #[test]
@@ -890,10 +951,6 @@ mod extra_tests {
         assert_eq!(time_label(172_800_000), "2.0 days");
     }
 
-
-
-    /// Test `percentile_rational` returns Equal when no histogram or no data.
- 
     /// Test both branches of `compute_std_dev`.
     #[test]
     fn test_compute_std_dev_branches() {
@@ -905,7 +962,6 @@ mod extra_tests {
         let nan = compute_std_dev(0, 1, SQUARE_LIMIT, 0);
         assert!(nan.is_nan(), "expected NaN for overflow branch");
     }
-
 
     use std::sync::Arc;
     use crate::util;
@@ -920,6 +976,7 @@ mod extra_tests {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![],
             percentiles_work: vec![],
             std_dev_mcpu: vec![],
@@ -976,8 +1033,6 @@ mod extra_tests {
             assert!(dot_label.contains("[123]"));
         }
     }
-
-
 
     /// Test compute method with window display
     #[test]
@@ -1134,7 +1189,6 @@ mod extra_tests {
         assert_eq!(color, DOT_ORANGE);
     }
 
-
     /// Test histogram creation errors during init
     #[test]
     fn test_init_histogram_creation_errors() {
@@ -1145,6 +1199,7 @@ mod extra_tests {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![Percentile::p50()], // Force histogram creation
             percentiles_work: vec![Percentile::p50()], // Force histogram creation
             std_dev_mcpu: vec![],
@@ -1165,8 +1220,6 @@ mod extra_tests {
         assert!(actor_stats.build_mcpu_histogram);
         assert!(actor_stats.build_work_histogram);
     }
-
-
 
     /// Test Percentile triggers for mcpu
     #[test]
@@ -1191,52 +1244,6 @@ mod extra_tests {
         assert!(actor_stats.triggered_mcpu(&Trigger::PercentileBelow(Percentile::p50(), MCPU::m1024())));
     }
 
-    /// Test StdDevs triggers for work
-    // #[test]
-    // fn test_triggered_work_stddevs() {
-    //     let _ = util::steady_logger::initialize();
-    //
-    //     let mut actor_stats = setup_actor_with_data();
-    //     actor_stats.std_dev_work.push(StdDev::one());
-    //
-    //     // Accumulate data to get current_work
-    //     let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
-    //     for _ in 0..total_frames {
-    //         actor_stats.accumulate_data_frame(500, 60);
-    //     }
-    //
-    //     // Test StdDevsAbove trigger
-    //     assert!(!actor_stats.triggered_work(&Trigger::StdDevsAbove(StdDev::one(), Work::p90())));
-    //     assert!(actor_stats.triggered_work(&Trigger::StdDevsAbove(StdDev::one(), Work::p20())));
-    //
-    //     // Test StdDevsBelow trigger
-    //     assert!(actor_stats.triggered_work(&Trigger::StdDevsBelow(StdDev::one(), Work::p90())));
-    //     assert!(!actor_stats.triggered_work(&Trigger::StdDevsBelow(StdDev::one(), Work::p20())));
-    // }
-
-    /// Test Percentile triggers for work
-    // #[test]
-    // fn test_triggered_work_percentiles() {
-    //     let _ = util::steady_logger::initialize();
-    //
-    //     let mut actor_stats = setup_actor_with_data();
-    //     actor_stats.percentiles_work.push(Percentile::p50());
-    //
-    //     // Accumulate data to get current_work with histogram
-    //     let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
-    //     for _ in 0..total_frames {
-    //         actor_stats.accumulate_data_frame(500, 60);
-    //     }
-    //
-    //     // Test PercentileAbove trigger
-    //     assert!(actor_stats.triggered_work(&Trigger::PercentileAbove(Percentile::p50(), Work::p40())));
-    //     assert!(!actor_stats.triggered_work(&Trigger::PercentileAbove(Percentile::p50(), Work::p80())));
-    //
-    //     // Test PercentileBelow trigger
-    //     assert!(!actor_stats.triggered_work(&Trigger::PercentileBelow(Percentile::p50(), Work::p40())));
-    //     assert!(actor_stats.triggered_work(&Trigger::PercentileBelow(Percentile::p50(), Work::p80())));
-    // }
-
     /// Test std dev functions when current data is None
     #[test]
     fn test_std_dev_functions_with_none_current() {
@@ -1248,8 +1255,6 @@ mod extra_tests {
         assert_eq!(actor_stats.mcpu_std_dev(), 0f32);
         assert_eq!(actor_stats.work_std_dev(), 0f32);
     }
-
-
 
     /// Test compute_std_dev alternative calculation branch
     #[test]
@@ -1272,8 +1277,8 @@ mod extra_tests {
         actor_stats.accumulate_data_frame(1024, 100); // Max valid mcpu
 
         // This should not panic and should handle errors gracefully
-        assert!(actor_stats.history_mcpu.len() > 0);
-        assert!(actor_stats.history_work.len() > 0);
+        assert!(!actor_stats.history_mcpu.is_empty());
+        assert!(!actor_stats.history_work.is_empty());
     }
 
     /// Test bucket refresh with histogram creation errors
@@ -1292,21 +1297,9 @@ mod extra_tests {
         }
 
         // Should have handled histogram creation during refresh
-        assert!(actor_stats.history_mcpu.len() > 0);
-        assert!(actor_stats.history_work.len() > 0);
+        assert!(!actor_stats.history_mcpu.is_empty());
+        assert!(!actor_stats.history_work.is_empty());
     }
-
-    // Test mcpu assertion with out-of-range value
-// value    #[test]
-//     #[should_panic(expected = "mcpu out of range")]
-//     fn test_accumulate_data_frame_mcpu_assertion() {
-//         let _ = util::steady_logger::initialize();
-//
-//         let mut actor_stats = ActorStatsComputer::default();
-//
-//         // This should panic due to mcpu > 1024
-//         actor_stats.accumulate_data_frame(2000, 50);
-//     }
 
     /// Helper function to set up actor with basic data
     fn setup_actor_with_data() -> ActorStatsComputer {
@@ -1315,6 +1308,7 @@ mod extra_tests {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![Percentile::p50()],
             percentiles_work: vec![Percentile::p50()],
             std_dev_mcpu: vec![StdDev::one()],
@@ -1338,6 +1332,7 @@ mod extra_tests {
             remote_details: None,
             avg_mcpu: false,
             avg_work: false,
+            show_thread_info: false,
             percentiles_mcpu: vec![],
             percentiles_work: vec![],
             std_dev_mcpu: vec![],
@@ -1380,16 +1375,4 @@ mod extra_tests {
         // Should be Red (highest priority) even though other triggers also fire
         assert_eq!(color, DOT_RED);
     }
-
-    // /// Test time_label edge cases for exact boundaries
-    // #[test]
-    // fn test_time_label_exact_boundaries() {
-    //     let _ = util::steady_logger::initialize();
-    //
-    //     // Test exact 1.1 boundaries
-    //     assert_eq!(time_label(1100), "1.1 secs"); // Exactly 1.1 seconds
-    //     assert_eq!(time_label(66_000), "1.1 mins"); // Exactly 1.1 minutes
-    //     assert_eq!(time_label(3_960_000), "1.1 hrs"); // Exactly 1.1 hours
-    //     assert_eq!(time_label(95_040_000), "1.1 days"); // Exactly 1.1 days
-    // }
 }

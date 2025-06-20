@@ -59,7 +59,7 @@ mod process_tests {
     use crate::actor::data_process::internal_behavior;
 
     #[test]
-    fn test_process() {
+    fn test_process() -> Result<(), Box<dyn Error>>{
 
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -83,10 +83,11 @@ mod process_tests {
          sleep(Duration::from_millis(100));
 
         graph.request_shutdown();
-        graph.block_until_stopped(Duration::from_secs(2));
+        graph.block_until_stopped(Duration::from_secs(2))?;
 
         let expected = 0;
         assert_steady_rx_gt_count!(&approved_widget_out_rx,expected);
+        Ok(())
     }
 
 

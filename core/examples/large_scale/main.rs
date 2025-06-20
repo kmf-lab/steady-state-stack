@@ -206,7 +206,7 @@ fn build_graph<const LEVEL_1: usize,
                                                     , ScheduleAs::dynamic_schedule(&mut b_troupe)
                                         );
 
-                                    count = count - 1;
+                                    count -= 1;
                                     if 0==count {
                                         break logging_rx;
                                     }

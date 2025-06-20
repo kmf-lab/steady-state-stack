@@ -16,8 +16,8 @@ use futures_timer::Delay;
 use futures_util::{select, StreamExt};
 use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
-use num_traits::{One, Zero};
-use ringbuf::consumer::Consumer;
+#[allow(unused_imports)]
+use num_traits::{One,Zero};
 use crate::graph_liveliness::ActorIdentity;
 use crate::{i, GraphLivelinessState, SteadyRx};
 use crate::steady_actor::SteadyActor;
@@ -81,13 +81,13 @@ pub(crate) async fn run<const GIRTH: usize>(
 
 /// Core logic of the metrics collector, ensuring continuous frame production with robust telemetry handling.
 async fn internal_behavior<const GIRTH: usize>(
-    context: SteadyActorShadow,
+    mut actor: SteadyActorShadow,
     dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>>,
     optional_servers: SteadyTxBundle<DiagramData, GIRTH>,
 ) -> Result<(), Box<dyn Error>> {
-    let ident = context.identity(); // Unique identifier for this collector instance.
-    let mut ctrl = context;         // Control structure for runtime state and configuration.
+    let ident = actor.identity(); // Unique identifier for this collector instance.
     let mut state = RawDiagramState::default(); // State for tracking telemetry and frames.
+    #[allow(clippy::type_complexity)]
     let mut all_actors_to_scan: Option<Vec<(usize, Box<SteadyRx<ActorStatus>>, ActorIdentity)>> = None; // List of actors to monitor.
     let mut timelords: Option<Vec<&Box<SteadyRx<ActorStatus>>>> = None; // Subset of actors used for timing optimization.
     let mut locked_servers = optional_servers.lock().await; // Access to output channels.
@@ -106,7 +106,7 @@ async fn internal_behavior<const GIRTH: usize>(
         }
 
         // Check if the system should continue running or begin shutdown.
-        if !ctrl.is_running(&mut || {
+        if !actor.is_running(&mut || {
             trying_to_shutdown = true;
             i!(is_all_empty_and_closed(Ok(dynamic_senders_vec.read())))
                 && i!(state.fill == 0)
@@ -114,7 +114,7 @@ async fn internal_behavior<const GIRTH: usize>(
         }) {
             break; // Exit loop if shutdown conditions are met.
         }
-        let instance_id = ctrl.instance_id; // Current instance ID for filtering telemetry.
+        let instance_id = actor.instance_id; // Current instance ID for filtering telemetry.
 
         // Rebuild the actor scan list if it's empty or a rebuild is requested due to changes or timeouts.
         if all_actors_to_scan.is_none() || rebuild_scan_requested {
@@ -127,7 +127,7 @@ async fn internal_behavior<const GIRTH: usize>(
                 }
             }
             timelords = None; // Reset timelords since the scan list has changed.
-            state.fill = 15;  // Force immediate frame production after rebuild.
+            state.fill = 0;  // Force two pass collection of data before the next frame
             rebuild_scan_requested = false; // Reset rebuild flag.
         }
 
@@ -149,9 +149,11 @@ async fn internal_behavior<const GIRTH: usize>(
                         futures_unordered.push(future_checking_avail(steady_rxf, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR));
                     });
 
+                    let timeout = Duration::from_millis(actor.frame_rate_ms >> 1);
+
                     // Wait for a full frame or timeout to ensure frame production isn't blocked.
                     let mut got_full_frame = false;
-                    while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
+                    while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, timeout).await {
                         if full_frame_of_data {
                             got_full_frame = true;
                             if ENABLE_DEBUG_LOGGING {
@@ -192,7 +194,9 @@ async fn internal_behavior<const GIRTH: usize>(
                     let mut timelord_collector = Vec::new(); // Selected timelords.
                     let mut non_responsive_actors = Vec::new(); // Actors that didn’t respond.
 
-                    while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, ctrl.frame_rate_ms).await {
+                    let timeout = Duration::from_millis(actor.frame_rate_ms >> 1);
+
+                    while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, timeout).await {
                         if full_frame_of_data {
                             let id = id.expect("Internal error: full frame should have an ID");
                             pending_actors.retain(|&x| x != id); // Remove responsive actor.
@@ -215,10 +219,10 @@ async fn internal_behavior<const GIRTH: usize>(
                     if timelords.is_none() && !non_responsive_actors.is_empty() {
                         let non_responsive_ids = non_responsive_actors
                             .iter()
-                            .flat_map(|id| scan.iter().find(|f| f.0 == *id).map(|f| f.2.clone()))
+                            .flat_map(|id| scan.iter().find(|f| f.0 == *id).map(|f| f.2))
                             .collect::<Vec<_>>();
                         if ENABLE_DEBUG_LOGGING {
-                            debug!("[{:?}] No actors responded within {}ms: {:?}", ident, ctrl.frame_rate_ms, non_responsive_ids);
+                            debug!("[{:?}] No actors responded within {}ms: {:?}", ident, actor.frame_rate_ms, non_responsive_ids);
                         }
                     }
                 }
@@ -237,7 +241,7 @@ async fn internal_behavior<const GIRTH: usize>(
                 (None, collect_channel_data(&mut state, dynamic_senders)) // No structural update needed.
             } else {
                 rebuild_scan_requested = true; // Trigger rebuild on actor count change.
-                let is_building = ctrl.is_liveliness_in(&[GraphLivelinessState::Building]);
+                let is_building = actor.is_liveliness_in(&[GraphLivelinessState::Building]);
                 if let Some(n) = gather_node_details(&mut state, dynamic_senders, is_building) {
                     (Some(n), collect_channel_data(&mut state, dynamic_senders)) // New structure and data.
                 } else {
@@ -269,23 +273,22 @@ async fn internal_behavior<const GIRTH: usize>(
                 info!("[{:?}] Sending structure details for {} nodes", ident, nodes.len());
             }
             send_structure_details(ident, &mut locked_servers, nodes).await;
-        }
-
-        // Produce and send a frame if enough data is collected or shutdown is in progress.
-        if state.fill >= 2 || trying_to_shutdown {
+            state.fill = 0; //accumulate more before sending new structure
+            //only if the stucture is satable already before we send the details
+            //consumer can get overwhelmed with data.
+        } else if (!rebuild_scan_requested && state.fill >= 2) || trying_to_shutdown {
             if ENABLE_DEBUG_LOGGING && state.fill >= 2 {
                 info!("[{:?}] Sending data details for sequence {}", ident, state.sequence);
             }
-            let warn = steady_config::TELEMETRY_SERVER && !trying_to_shutdown; // Warn if server lags.
-            let next_frame = send_data_details(ident, &mut locked_servers, &state, warn).await;
+            let next_frame = send_data_details(ident, &mut locked_servers, &state).await;
             if next_frame {
                 state.sequence += 1; // Increment sequence for the next frame.
-                state.fill = 0;      // Reset fill state.
                 #[cfg(debug_assertions)]
                 {
                     state.last_instant = Some(Instant::now()); // Record frame time for debugging.
                 }
             }
+            state.fill = 0;      // Reset fill state.
         }
     }
 
@@ -313,12 +316,12 @@ pub(crate) fn future_checking_avail<T: Send + Sync>(steady_rx: &SteadyRx<T>, cou
 /// Waits for a full frame of data from actors or times out to prevent frame misses.
 async fn full_frame_or_timeout(
     futures_unordered: &mut FuturesUnordered<BoxFuture<'_, (bool, Option<usize>)>>,
-    timeout_ms: u64,
+    timeout: Duration,
 ) -> Option<(bool, Option<usize>)> {
-    debug_assert!(!timeout_ms.is_zero(), "Timeout must be at least 1ms to avoid busy-waiting.");
+    debug_assert!(!timeout.is_zero(), "Timeout must be at least 1ms to avoid busy-waiting.");
     select! {
         x = futures_unordered.next().fuse() => x, // Return first available result.
-        _ = Delay::new(Duration::from_millis(timeout_ms >> 1)).fuse() => None, // Timeout to ensure progress.
+        _ = Delay::new(timeout).fuse() => None, // Timeout to ensure progress.
     }
 }
 
@@ -353,6 +356,7 @@ fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<'_, Vec<Collec
 }
 
 /// Builds a list of actors to scan for telemetry, filtering by instance ID and excluding self.
+#[allow(clippy::type_complexity)]
 fn gather_valid_actor_telemetry_to_scan(
     version: u32,
     dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>,
@@ -363,9 +367,9 @@ fn gather_valid_actor_telemetry_to_scan(
         .iter()
         .filter(|f| f.ident.label.name != metrics_collector::NAME) // Exclude metrics collector itself.
         .flat_map(|f| {
-            let ident = f.ident.clone();
+            let ident = f.ident;
             f.telemetry_take.iter().filter_map(move |g| {
-                g.actor_rx(version).map(|rx| (rx, ident.clone())) // Pair receiver with actor identity.
+                g.actor_rx(version).map(|rx| (rx, ident)) // Pair receiver with actor identity.
             })
         })
         .map(|(rx, ident)| (rx.meta_data().id, rx, ident)) // Include actor ID for reference.
@@ -380,7 +384,6 @@ fn gather_valid_actor_telemetry_to_scan(
 
 /// Collects telemetry data from actors, updating state and identifying data to clean up.
 fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: & [CollectorDetail]) -> Vec<ActorIdentity> {
-    state.fill = (state.fill + 1) & 0xF; // Increment fill, capped at 15 to avoid overflow.
     let working: Vec<(bool, &CollectorDetail)> = dynamic_senders
         .iter()
         .map(| f| {
@@ -415,7 +418,7 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: & [Collect
         state.actor_last_update.resize(state.actor_count, 0);
     }
 
-    let to_pop: Vec<ActorIdentity> = working
+    let zombie_actor_channels: Vec<ActorIdentity> = working
         .iter()
         .filter(|(has_data_in, f)| {
             if let Some(act) = f.telemetry_take[0].consume_actor() {
@@ -437,7 +440,13 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: & [Collect
         })
         .map(|(_, c)| c.ident)
         .collect();
-    to_pop // Return identities of telemetry to remove.
+
+    if zombie_actor_channels.is_empty() {
+        state.fill = (state.fill + 1) & 0xF; // Increment fill, capped at 15 to avoid overflow.
+    }
+
+    zombie_actor_channels // Return identities of telemetry to remove.
+
 }
 
 /// Gathers structural details for new or changed actors, ensuring consistency.
@@ -549,52 +558,44 @@ async fn send_structure_details(
 async fn send_data_details(
     ident: ActorIdentity,
     consumer_vec: &mut [MutexGuard<'_, Tx<DiagramData>>],
-    state: &RawDiagramState,
-    warn: bool,
+    state: &RawDiagramState
 ) -> bool {
     let mut next_frame = false;
     for consumer in consumer_vec.iter_mut() {
-        if consumer.vacant_units().ge(&2) { // Ensure space for at least two messages.
-            if !state.actor_status.is_empty() {
-                next_frame = true;
-                let modified_status: Vec<ActorStatus> = state.actor_status.iter().enumerate().map(|(id, status)| {
-                    let frames_missed = if id < state.actor_last_update.len() {
-                        state.sequence.saturating_sub(state.actor_last_update[id])
-                    } else {
-                        0 // New actor, no history yet.
-                    };
-                    if frames_missed >= 2 {
-                        let mut new_status = *status;
-                        new_status.await_total_ns = if status.bool_blocking { new_status.unit_total_ns } else { 0 }; // Proxy for stalled state.
-                        new_status
-                    } else {
-                        *status
-                    }
-                }).collect();
-
-                if let Blocked(e) = consumer.shared_send_async(
-                    DiagramData::NodeProcessData(state.sequence, modified_status.into_boxed_slice()),
-                    ident,
-                    SendSaturation::DebugWarnThenAwait,
-                ).await {
-                    error!("Error sending node process data {:?}", e);
+        if !state.actor_status.is_empty() {
+            next_frame = true;
+            let modified_status: Vec<ActorStatus> = state.actor_status.iter().enumerate().map(|(id, status)| {
+                let frames_missed = if id < state.actor_last_update.len() {
+                    state.sequence.saturating_sub(state.actor_last_update[id])
+                } else {
+                    0 // New actor, no history yet.
+                };
+                if frames_missed >= 2 {
+                    let mut new_status = *status;
+                    new_status.await_total_ns = if status.bool_blocking { new_status.unit_total_ns } else { 0 }; // Proxy for stalled state.
+                    new_status
+                } else {
+                    *status
                 }
+            }).collect();
 
-                if let Blocked(e) = consumer.shared_send_async(
-                    DiagramData::ChannelVolumeData(state.sequence, state.total_take_send.clone().into_boxed_slice()),
-                    ident,
-                    SendSaturation::DebugWarnThenAwait,
-                ).await {
-                    error!("Error sending channel volume data {:?}", e);
-                }
+            if let Blocked(e) = consumer.shared_send_async(
+                DiagramData::NodeProcessData(state.sequence, modified_status.into_boxed_slice()),
+                ident,
+                SendSaturation::DebugWarnThenAwait,
+            ).await {
+                error!("Error sending node process data {:?}", e);
             }
-        } else if warn {
-            #[cfg(not(test))]
-            warn!(
-                "{:?} is accumulating frames since consumer is not keeping up, consider increasing capacity of {:?}.",
-                ident, consumer.capacity()
-            );
+
+            if let Blocked(e) = consumer.shared_send_async(
+                DiagramData::ChannelVolumeData(state.sequence, state.total_take_send.clone().into_boxed_slice()),
+                ident,
+                SendSaturation::DebugWarnThenAwait,
+            ).await {
+                error!("Error sending channel volume data {:?}", e);
+            }
         }
+
     }
     next_frame // Indicate if a frame was successfully sent.
 }
@@ -613,7 +614,6 @@ mod metric_collector_tests {
     use std::sync::Arc;
     use parking_lot::RwLock;
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread::sleep;
     use futures::executor::block_on;
     use crate::{GraphBuilder, SoloAct};
@@ -673,14 +673,14 @@ mod metric_collector_tests {
         let ident = ActorIdentity::new(0, "test_actor", None);
         let mut consumer_vec: [MutexGuard<'_, Tx<DiagramData>>; 0] = [];
         let state = RawDiagramState::default();
-        let result = block_on(send_data_details(ident, &mut consumer_vec, &state, false));
+        let result = block_on(send_data_details(ident, &mut consumer_vec, &state));
         assert!(!result);
     }
 
     #[test]
     fn test_full_frame_or_timeout() {
         let mut futures_unordered = FuturesUnordered::new();
-        let telemetry_rate_ms = 1000;
+        let telemetry_rate_ms = Duration::from_millis(1000);
         let result = block_on(full_frame_or_timeout(&mut futures_unordered, telemetry_rate_ms));
         assert!(result.is_none());
     }
@@ -688,10 +688,12 @@ mod metric_collector_tests {
     #[cfg(not(windows))]
     #[test]
     fn test_actor() -> Result<(), Box<dyn std::error::Error>> {
-        use isahc::AsyncReadResponseExt;
+        use std::sync::atomic::Ordering;
+        
+        use std::sync::atomic::AtomicUsize;
 
         //only run this locally where we can open the default port
-        if !std::env::var("GITHUB_ACTIONS").is_ok() {
+        if std::env::var("GITHUB_ACTIONS").is_err() {
             // Smallest possible graph
             // It is not recommended to inline actors this way, but it is possible.
             let gen_count = Arc::new(AtomicUsize::new(0));
@@ -756,18 +758,18 @@ mod metric_collector_tests {
 
             //// now confirm we can see the telemetry collected into metrics_collector
             //wait for one page of telemetry
-            sleep(Duration::from_millis(graph.telemetry_production_rate_ms() * 40));
+            sleep(Duration::from_millis(graph.telemetry_production_rate_ms * 40));
 
             //hit the telemetry site and validate if it returns
             // this test will only work if the feature is on
             // hit 127.0.0.1:9100/metrics using isahc
             block_on(async {
                 match isahc::get_async("http://127.0.0.1:9100/metrics").await {
-                    Ok(mut response) => {
+                    Ok(response) => {
                         assert_eq!(200, response.status().as_u16());
                         // warn!("ok metrics");
-                        let body = response.text().await;
-                        info!("metrics: {:?}", body); //TODO: add more checks
+                        // let body = response.text().await;
+                        // info!("metrics: {:?}", body); //TODO: add more checks
                     }
                     Err(e) => {
                         warn!("failed to get metrics: {:?}", e);
@@ -801,10 +803,11 @@ mod metric_collector_tests {
             });
 
             graph.request_shutdown();
-            graph.block_until_stopped(Duration::from_secs(3))
-        } else {
-            Ok(())
+            let _ignore_unclean = graph.block_until_stopped(Duration::from_secs(3));
+
         }
+        Ok(())
+
     }
 
 }
@@ -821,7 +824,7 @@ mod extra_tests {
 
     #[test]
     fn test_raw_diagram_state_default() {
-        let mut state = RawDiagramState::default();
+        let state = RawDiagramState::default();
         // Defaults
         assert_eq!(state.sequence, 0);
         assert_eq!(state.fill, 0);
@@ -851,7 +854,7 @@ mod extra_tests {
     #[test]
     fn test_full_frame_or_timeout_empty() {
         let mut fu: FuturesUnordered<BoxFuture<'_, (bool, Option<usize>)>> = FuturesUnordered::new();
-        let res = block_on(full_frame_or_timeout(&mut fu, 100)); //for testing
+        let res = block_on(full_frame_or_timeout(&mut fu, Duration::from_millis(100))); //for testing
         assert!(res.is_none(), "Timeout with no futures returns None");
     }
 

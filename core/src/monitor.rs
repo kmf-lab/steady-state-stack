@@ -14,223 +14,255 @@ use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::TxMetaDataProvider;
 
-/// Represents the status of an actor.
+/// Represents the current status of an actor, including performance metrics and state flags.
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct ActorStatus {
+    /// Total number of times the actor has been restarted.
     pub(crate) total_count_restarts: u32,
+    /// Start time of the current iteration, typically measured in nanoseconds.
     pub(crate) iteration_start: u64,
+    /// Accumulated sum of iteration times or counts.
     pub(crate) iteration_sum: u64,
+    /// Indicates whether the actor has stopped.
     pub(crate) bool_stop: bool,
+    /// Indicates whether the actor is currently blocking.
     pub(crate) bool_blocking: bool,
+    /// Total time spent awaiting, measured in nanoseconds.
     pub(crate) await_total_ns: u64,
+    /// Total time spent in unit operations, measured in nanoseconds.
     pub(crate) unit_total_ns: u64,
+    /// Optional information about the thread running the actor.
     pub(crate) thread_info: Option<ThreadInfo>,
+    /// Array tracking counts of different operation types.
     pub(crate) calls: [u16; 6],
 }
 
-/// All the thread data to show for this actor
+/// Contains information about the thread on which an actor is running.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ThreadInfo {
+    /// Unique identifier of the thread.
     pub(crate) thread_id: ThreadId,
-    pub(crate) team_id:   usize,
     #[cfg(feature = "core_display")]
+    /// Core on which the thread is running, available if the `core_display` feature is enabled.
     pub(crate) core: i32,
 }
 
+/// Index for single read operations in the `calls` array of `ActorStatus`.
 pub(crate) const CALL_SINGLE_READ: usize = 0;
+/// Index for batch read operations in the `calls` array of `ActorStatus`.
 pub(crate) const CALL_BATCH_READ: usize = 1;
+/// Index for single write operations in the `calls` array of `ActorStatus`.
 pub(crate) const CALL_SINGLE_WRITE: usize = 2;
+/// Index for batch write operations in the `calls` array of `ActorStatus`.
 pub(crate) const CALL_BATCH_WRITE: usize = 3;
+/// Index for miscellaneous operations in the `calls` array of `ActorStatus`.
 pub(crate) const CALL_OTHER: usize = 4;
+/// Index for wait operations in the `calls` array of `ActorStatus`.
 pub(crate) const CALL_WAIT: usize = 5;
 
-/// Metadata for an actor.
+/// Metadata configuration for an actor, used for monitoring and performance analysis.
 ///
-/// The `ActorMetaData` struct contains information and configurations related to an actor within the
-/// Steady State framework. This metadata is used to monitor and manage the performance and behavior of the actor.
+/// This struct holds settings and identifiers for tracking an actor's behavior within the Steady State framework.
 #[derive(Clone, Default, Debug)]
 pub struct ActorMetaData {
-    /// The unique identifier for the actor.
-    ///
+    /// Unique identifier for the actor.
     pub(crate) ident: ActorIdentity,
-
-    /// If this actor is part of an aqueduct spanning to other machines this will be populated
-    /// To indicate where this actor is sending or receiving data.
+    /// Details for remote communication, present if the actor operates in a distributed system.
     pub(crate) remote_details: Option<RemoteDetails>,
-
-    /// Indicates whether the average microcontroller processing unit (MCPU) usage is monitored.
-    ///
-    /// If `true`, the average MCPU usage is tracked for this actor.
+    /// Indicates whether to monitor the average microcontroller processing unit (MCPU) usage.
     pub(crate) avg_mcpu: bool,
-
-    /// Indicates whether the average work performed by the actor is monitored.
-    ///
-    /// If `true`, the average work is tracked for this actor.
+    /// Indicates whether to monitor the average work performed by the actor.
     pub(crate) avg_work: bool,
-
-    /// A list of percentiles for the MCPU usage.
-    ///
-    /// This list defines various percentiles to be tracked for the MCPU usage of the actor.
+    /// Indicates whether to include thread information in telemetry data.
+    pub(crate) show_thread_info: bool,
+    /// Percentiles to track for MCPU usage metrics.
     pub percentiles_mcpu: Vec<Percentile>,
-
-    /// A list of percentiles for the work performed by the actor.
-    ///
-    /// This list defines various percentiles to be tracked for the work metrics of the actor.
+    /// Percentiles to track for work metrics.
     pub percentiles_work: Vec<Percentile>,
-
-    /// A list of standard deviations for the MCPU usage.
-    ///
-    /// This list defines various standard deviation metrics to be tracked for the MCPU usage of the actor.
+    /// Standard deviations to track for MCPU usage metrics.
     pub std_dev_mcpu: Vec<StdDev>,
-
-    /// A list of standard deviations for the work performed by the actor.
-    ///
-    /// This list defines various standard deviation metrics to be tracked for the work metrics of the actor.
+    /// Standard deviations to track for work metrics.
     pub std_dev_work: Vec<StdDev>,
-
-    /// A list of triggers for the MCPU usage with associated alert colors.
-    ///
-    /// This list defines conditions (triggers) for the MCPU usage that, when met, will raise alerts of specific colors.
+    /// Triggers for MCPU usage that raise alerts with associated colors.
     pub trigger_mcpu: Vec<(Trigger<MCPU>, AlertColor)>,
-
-    /// A list of triggers for the work performed by the actor with associated alert colors.
-    ///
-    /// This list defines conditions (triggers) for the work metrics that, when met, will raise alerts of specific colors.
+    /// Triggers for work metrics that raise alerts with associated colors.
     pub trigger_work: Vec<(Trigger<Work>, AlertColor)>,
-
-    /// The refresh rate for monitoring data, expressed in bits.
-    ///
-    /// This field defines how frequently the monitoring data should be refreshed.
+    /// Bit shift value determining the refresh rate of monitoring data.
     pub refresh_rate_in_bits: u8,
-
-    /// The size of the window bucket for metrics, expressed in bits.
-    ///
-    /// This field defines the size of the window bucket used for metrics aggregation.
+    /// Bit shift value determining the window bucket size for metrics aggregation.
     pub window_bucket_in_bits: u8,
-
-    /// Indicates whether usage review is enabled for the actor.
-    ///
-    /// If `true`, the actor's usage is periodically reviewed.
+    /// Indicates whether to periodically review the actor's usage.
     pub usage_review: bool,
-    
 }
 
-
-/// Metadata for a channel, which is immutable once built.
+/// Immutable metadata for a communication channel, defining its properties and monitoring settings.
+///
+/// This struct is finalized during channel creation and used for telemetry and performance tracking.
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct ChannelMetaData {
+    /// Unique identifier for the channel.
     pub(crate) id: usize,
+    /// Descriptive labels for the channel, aiding in identification.
     pub(crate) labels: Vec<&'static str>,
+    /// Maximum number of items the channel can hold.
     pub(crate) capacity: usize,
+    /// Indicates whether to display labels in telemetry output.
     pub(crate) display_labels: bool,
+    /// Factor for expanding line displays in visualizations.
     pub(crate) line_expansion: f32,
+    /// Optional type descriptor for display purposes.
     pub(crate) show_type: Option<&'static str>,
+    /// Bit shift value for the refresh rate of channel metrics.
     pub(crate) refresh_rate_in_bits: u8,
+    /// Bit shift value for the window bucket size in channel metrics aggregation.
     pub(crate) window_bucket_in_bits: u8,
+    /// Percentiles to track for the channel's filled state.
     pub(crate) percentiles_filled: Vec<Percentile>,
+    /// Percentiles to track for the data rate through the channel.
     pub(crate) percentiles_rate: Vec<Percentile>,
+    /// Percentiles to track for latency within the channel.
     pub(crate) percentiles_latency: Vec<Percentile>,
+    /// Standard deviations to track for inflight data.
     pub(crate) std_dev_inflight: Vec<StdDev>,
+    /// Standard deviations to track for consumed data.
     pub(crate) std_dev_consumed: Vec<StdDev>,
+    /// Standard deviations to track for latency.
     pub(crate) std_dev_latency: Vec<StdDev>,
+    /// Triggers for data rate that raise alerts with associated colors.
     pub(crate) trigger_rate: Vec<(Trigger<Rate>, AlertColor)>,
+    /// Triggers for filled state that raise alerts with associated colors.
     pub(crate) trigger_filled: Vec<(Trigger<Filled>, AlertColor)>,
+    /// Triggers for latency that raise alerts with associated colors.
     pub(crate) trigger_latency: Vec<(Trigger<Duration>, AlertColor)>,
+    /// Indicates whether to monitor the average filled state.
     pub(crate) avg_filled: bool,
+    /// Indicates whether to monitor the average data rate.
     pub(crate) avg_rate: bool,
+    /// Indicates whether to monitor the average latency.
     pub(crate) avg_latency: bool,
+    /// Indicates whether to monitor the minimum filled state.
     pub(crate) min_filled: bool,
+    /// Indicates whether to monitor the maximum filled state.
     pub(crate) max_filled: bool,
+    /// Indicates whether the channel connects to a sidecar process.
     pub(crate) connects_sidecar: bool,
+    /// Byte size of the data type transmitted through the channel.
     pub(crate) type_byte_count: usize,
+    /// Indicates whether to display total metrics in telemetry.
     pub(crate) show_total: bool,
 }
 
-/// Metadata for a transmitter channel.
-
+/// Type alias for transmitter channel metadata, shared via an atomic reference count.
 pub type TxMetaData = Arc<ChannelMetaData>;
-/// supports the macro as an easy way to get the metadata
+
+/// Provides access to transmitter metadata, facilitating macro usage.
+///
+/// This trait implementation allows easy retrieval of `TxMetaData` instances.
 impl TxMetaDataProvider for TxMetaData {
+    /// Returns a clone of the transmitter metadata.
     fn meta_data(&self) -> TxMetaData {
         self.clone()
     }
 }
 
+/// Holds a fixed-size array of transmitter metadata instances.
 pub struct TxMetaDataHolder<const LEN: usize> {
-    pub(crate) array:[TxMetaData;LEN]
+    /// Array of transmitter metadata.
+    pub(crate) array: [TxMetaData; LEN],
 }
-impl <const LEN: usize>TxMetaDataHolder<LEN> {
-    pub fn new(array: [TxMetaData;LEN]) -> Self {
+
+impl<const LEN: usize> TxMetaDataHolder<LEN> {
+    /// Creates a new holder with the specified array of transmitter metadata.
+    pub fn new(array: [TxMetaData; LEN]) -> Self {
         TxMetaDataHolder { array }
     }
-    pub fn meta_data(self) -> [TxMetaData;LEN] {
+
+    /// Returns the array of transmitter metadata.
+    pub fn meta_data(self) -> [TxMetaData; LEN] {
         self.array
     }
 }
 
-/// Metadata for a receiver channel.
+/// Type alias for receiver channel metadata, shared via an atomic reference count.
 pub type RxMetaData = Arc<ChannelMetaData>;
-/// supports the macro as an easy way to get the metadata
+
+/// Provides access to receiver metadata, facilitating macro usage.
+///
+/// This trait implementation allows easy retrieval of `RxMetaData` instances.
 impl RxMetaDataProvider for Arc<ChannelMetaData> {
+    /// Returns a clone of the receiver metadata.
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         self.clone()
     }
 }
+
+/// Holds a fixed-size array of receiver metadata instances.
 pub struct RxMetaDataHolder<const LEN: usize> {
-    pub(crate) array:[RxMetaData;LEN]
+    /// Array of receiver metadata.
+    pub(crate) array: [RxMetaData; LEN],
 }
-impl <const LEN: usize>RxMetaDataHolder<LEN> {
-    pub fn new(array: [RxMetaData;LEN]) -> Self {
+
+impl<const LEN: usize> RxMetaDataHolder<LEN> {
+    /// Creates a new holder with the specified array of receiver metadata.
+    pub fn new(array: [RxMetaData; LEN]) -> Self {
         RxMetaDataHolder { array }
     }
 
-    pub fn meta_data(self) -> [RxMetaData;LEN] {
+    /// Returns the array of receiver metadata.
+    pub fn meta_data(self) -> [RxMetaData; LEN] {
         self.array
     }
 }
 
-
-
-/// Trait for telemetry receiver.
+/// Defines methods for telemetry receivers to manage and access telemetry data.
+///
+/// This trait ensures that implementations are thread-safe and can be sent across threads.
 pub trait RxTel: Send + Sync {
-    /// Returns a vector of channel metadata for transmitter channels.
+    /// Returns a vector of metadata for all transmitter channels.
     fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>>;
 
-    /// Returns a vector of channel metadata for receiver channels.
+    /// Returns a vector of metadata for all receiver channels.
     fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>>;
 
-    /// Consumes actor status and returns it.
+    /// Consumes and returns the current actor status, if available.
     fn consume_actor(&self) -> Option<ActorStatus>;
 
-    /// Returns the metadata of the actor.
+    /// Returns the metadata associated with the actor.
     fn actor_metadata(&self) -> Arc<ActorMetaData>;
 
-    /// Consumes take data into the provided vectors.
-    fn consume_take_into(&self, take_send_source: &mut Vec<(i64, i64)>, future_take: &mut Vec<i64>, future_send: &mut Vec<i64>) -> bool;
+    /// Consumes take data into the provided vectors, indicating whether data was consumed.
+    fn consume_take_into(
+        &self,
+        take_send_source: &mut Vec<(i64, i64)>,
+        future_take: &mut Vec<i64>,
+        future_send: &mut Vec<i64>,
+    ) -> bool;
 
-    /// Consumes send data into the provided vectors.
-    fn consume_send_into(&self, take_send_source: &mut Vec<(i64, i64)>, future_send: &mut Vec<i64>) -> bool;
+    /// Consumes send data into the provided vectors, indicating whether data was consumed.
+    fn consume_send_into(
+        &self,
+        take_send_source: &mut Vec<(i64, i64)>,
+        future_send: &mut Vec<i64>,
+    ) -> bool;
 
-    /// Returns an actor receiver definition for the specified version.
+    /// Returns an actor receiver definition for the specified version, if available.
     fn actor_rx(&self, version: u32) -> Option<Box<SteadyRx<ActorStatus>>>;
 
-    /// Checks if the telemetry is empty and closed.
+    /// Checks if the telemetry is empty and the channel is closed.
     fn is_empty_and_closed(&self) -> bool;
-    
-    fn is_empty(&self) -> bool;
 
+    /// Checks if the telemetry is currently empty.
+    fn is_empty(&self) -> bool;
 }
 
-
-
-/// Finds the index of a given goal in the telemetry inverse local index.
+/// Finds the local index corresponding to a global index within the telemetry's inverse local index.
 ///
 /// # Parameters
-/// - `telemetry`: A reference to a `SteadyTelemetrySend` instance.
-/// - `goal`: The goal index to find.
+/// - `telemetry`: Reference to a `SteadyTelemetrySend` instance containing the index mapping.
+/// - `goal`: The global index to locate.
 ///
 /// # Returns
-/// The index of the goal if found, otherwise returns `MONITOR_NOT`.
+/// The local index if found, otherwise `MONITOR_NOT`.
 pub(crate) fn find_my_index<const LEN: usize>(telemetry: &SteadyTelemetrySend<LEN>, goal: usize) -> usize {
     let (idx, _) = telemetry.inverse_local_index
         .iter()
@@ -240,15 +272,19 @@ pub(crate) fn find_my_index<const LEN: usize>(telemetry: &SteadyTelemetrySend<LE
     idx
 }
 
-
+/// A guard that updates profiling information upon being dropped.
+///
+/// This struct ensures that profiling metrics are finalized when it goes out of scope.
 pub(crate) struct FinallyRollupProfileGuard<'a> {
+    /// Reference to the telemetry sender for updating profiling data.
     pub(crate) st: &'a SteadyTelemetryActorSend,
+    /// Start time of the operation being profiled.
     pub(crate) start: Instant,
 }
 
 impl Drop for FinallyRollupProfileGuard<'_> {
+    /// Updates the await time and decrements the concurrent profile counter when dropped.
     fn drop(&mut self) {
-        // this is ALWAYS run so we need to wait until our concurrent count is back down to zero
         if self.st.hot_profile_concurrent.fetch_sub(1, Ordering::SeqCst).is_one() {
             let p = self.st.hot_profile.load(Ordering::Relaxed);
             let _ = self.st.hot_profile_await_ns_unit.fetch_update(
@@ -260,10 +296,17 @@ impl Drop for FinallyRollupProfileGuard<'_> {
     }
 }
 
+/// Wraps an iterator to track and adjust for drift in item counts.
+///
+/// This struct monitors the difference between expected and actual yields, updating a shared drift counter.
 pub(crate) struct DriftCountIterator<I> {
+    /// The underlying iterator being wrapped.
     iter: I,
+    /// Number of items expected to be yielded.
     expected_count: usize,
+    /// Number of items actually yielded so far.
     actual_count: usize,
+    /// Shared counter for tracking cumulative drift across iterations.
     iterator_count_drift: Arc<AtomicIsize>,
 }
 
@@ -271,6 +314,12 @@ impl<I> DriftCountIterator<I>
 where
     I: Iterator + Send,
 {
+    /// Creates a new iterator wrapper with the specified expected count and drift counter.
+    ///
+    /// # Parameters
+    /// - `expected_count`: Expected number of items to be yielded.
+    /// - `iter`: The iterator to wrap.
+    /// - `iterator_count_drift`: Shared counter for tracking drift.
     pub fn new(
         expected_count: usize,
         iter: I,
@@ -286,6 +335,7 @@ where
 }
 
 impl<I> Drop for DriftCountIterator<I> {
+    /// Adjusts the shared drift counter based on the difference between actual and expected counts.
     fn drop(&mut self) {
         let drift = self.actual_count as isize - self.expected_count as isize;
         if drift != 0 {
@@ -300,6 +350,7 @@ where
 {
     type Item = I::Item;
 
+    /// Yields the next item from the wrapped iterator, incrementing the actual count.
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.iter.next();
         if item.is_some() {
@@ -308,7 +359,6 @@ where
         item
     }
 }
-
 
 #[cfg(test)]
 pub(crate) mod monitor_tests {
@@ -327,7 +377,7 @@ pub(crate) mod monitor_tests {
     use std::sync::atomic::AtomicUsize;
     use crate::channel_builder::ChannelBuilder;
     use crate::core_rx::DoubleSlice;
-    use crate::steady_actor::SendOutcome;
+    use crate::steady_actor::{SendOutcome};
     use crate::steady_actor_shadow::SteadyActorShadow;
     use crate::core_tx::TxCore;
     use crate::steady_tx::TxDone;
@@ -373,7 +423,6 @@ pub(crate) mod monitor_tests {
     #[test]
     fn test_try_peek_slice() {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
-        let mut slice = [0; 3];
         let context = test_steady_context();
         let monitor = context.into_spotlight([&rx], []);
 
@@ -388,7 +437,6 @@ pub(crate) mod monitor_tests {
         };
     }
 
-
     // Test is_empty method
     #[test]
     fn test_is_empty() {
@@ -400,7 +448,6 @@ pub(crate) mod monitor_tests {
             assert!(monitor.is_empty(&mut rx));
         };
     }
-
 
     // Test for is_full
     #[test]
@@ -442,11 +489,10 @@ pub(crate) mod monitor_tests {
             println!("Empty: {}", empty);
             println!("Vacant units: {}", monitor.vacant_units(&mut tx));
             println!("Capacity: {}", tx.capacity());
-                
+
             assert!(empty);
         };
     }
-
 
     // Test avail_units method
     #[test]
@@ -454,7 +500,7 @@ pub(crate) mod monitor_tests {
         let (_tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
         let monitor = context.into_spotlight_internal([], []);
-           // context.into_monitor((context,[],[]);
+        // context.into_monitor((context,[],[]);
 
         if let Some(mut rx) = rx.try_lock() {
             assert_eq!(monitor.avail_units(&mut rx), 3);
@@ -523,10 +569,9 @@ pub(crate) mod monitor_tests {
                 assert_eq!(monitor.try_take(&mut rx), Some(1));
                 assert_eq!(monitor.try_peek(&mut rx), Some(&2));
             }
-            
+
         };
     }
-
 
     // Test for try_send
     #[test]
@@ -571,6 +616,7 @@ pub(crate) mod monitor_tests {
             aeron_meda_driver: OnceLock::new(),
             use_internal_behavior: true,
             shutdown_barrier: None,
+
         }
     }
 
@@ -610,7 +656,6 @@ pub(crate) mod monitor_tests {
         assert_eq!("test_actor",monitor.ident.label.name);
 
     }
-
 
     /// Unit test for relay_stats_tx_custom.
     #[async_std::test]
@@ -718,7 +763,6 @@ pub(crate) mod monitor_tests {
         }
     }
 
-
     // Test for send_iter_until_full
     #[test]
     fn test_send_iter_until_full() {
@@ -780,8 +824,8 @@ pub(crate) mod monitor_tests {
                 let _ = send_guard.shared_try_send(item);
             }
         };
-        
-        
+
+
         if let Some(mut rx) = rx.try_lock() {
             {
                 assert_eq!(4, rx.avail_units());
@@ -811,17 +855,14 @@ pub(crate) mod monitor_tests {
                 let mut iter = monitor.take_into_iter(&mut rx);
                 assert_eq!(iter.next(), Some(9));
                 assert_eq!(iter.next(), Some(10));
-             //   drop(iter);
+                //   drop(iter);
                 //inject new data while we have an iterator open
                 if let Some(ref mut send_guard) = tx.try_lock() {
                     assert_eq!(1, send_guard.vacant_units());
                     for item in [13, 14, 15] {
-                        
-                        match send_guard.shared_try_send(item) {
-                            Ok(d) => {
-                                assert_eq!(TxDone::Normal(1), d );
-                            },
-                            Err(_) => {}
+
+                        if let Ok(d) = send_guard.shared_try_send(item) {
+                            assert_eq!(TxDone::Normal(1), d );
                         }
                     }
                     assert_eq!(0, send_guard.vacant_units());
@@ -839,7 +880,7 @@ pub(crate) mod monitor_tests {
         let context = test_steady_context();
         let (_tx1,rx1) = create_rx(vec![1, 2]);
         let (_tx2,rx2) = create_rx(vec![3, 4]);
-        
+
         let monitor = context.into_spotlight([&rx1, &rx2], []);
         let mut rx_bundle = RxBundle::new();
         if let Some(rx1) = rx1.try_lock() {
@@ -903,10 +944,10 @@ pub(crate) mod monitor_tests {
         let (tx1, _rx1) = create_test_channel::<i32>(10);
         let (tx2, _rx2) = create_test_channel::<i32>(10);
         let context = test_steady_context();
-        
+
         let tx1 =tx1.clone();
         let tx2 =tx2.clone();
-        
+
         let monitor = context.into_spotlight([], [&tx1, &tx2]);
 
         let mut tx_bundle = TxBundle::new();
@@ -1085,9 +1126,10 @@ pub(crate) mod monitor_tests {
             aeron_meda_driver: OnceLock::new(),
             use_internal_behavior: true,
             shutdown_barrier: None,
+
         }
     }
- 
+
     // Test for is_liveliness_in
     #[test]
     fn test_is_liveliness_in() {
@@ -1096,7 +1138,7 @@ pub(crate) mod monitor_tests {
 
         // Initially, the liveliness state should be Building
         assert!(monitor.is_liveliness_in(&[GraphLivelinessState::Building]));
-        
+
     }
 
     // Test for yield_now
@@ -1109,8 +1151,8 @@ pub(crate) mod monitor_tests {
         // If it didn't hang, the test passes
         assert!(true);
     }
-   
-  
+
+
     // Test for wait_shutdown_or_avail_units with closed channel
     #[async_std::test]
     async fn test_wait_shutdown_or_avail_units_closed_channel() {
@@ -1120,11 +1162,11 @@ pub(crate) mod monitor_tests {
         let monitor = context.into_spotlight([&rx], []);
 
         if let Some(mut tx) = tx.try_lock() {
-            tx.mark_closed();            
+            tx.mark_closed();
         }
 
         if let Some(mut rx) = rx.try_lock() {
-         
+
             let result = monitor.wait_avail(&mut rx, 1).await;
             assert!(!result);
         };
@@ -1151,7 +1193,7 @@ pub(crate) mod monitor_tests {
     //     };
     // }
 
- 
+
     // Test for args method with String
     #[test]
     fn test_args_string() {
@@ -1162,8 +1204,6 @@ pub(crate) mod monitor_tests {
         let retrieved_args: Option<&String> = monitor.args();
         assert_eq!(retrieved_args, Some(&args));
     }
-
-
 
     // Test for take_slice with empty channel
     #[test]
@@ -1215,7 +1255,6 @@ pub(crate) mod monitor_tests {
     #[test]
     fn test_try_peek_slice_empty_channel() {
         let (_tx,rx) = create_rx::<i32>(vec![]);
-        let mut slice = [0; 3];
         let context = test_steady_context();
         let monitor = context.into_spotlight([&rx], []);
 
@@ -1265,7 +1304,6 @@ pub(crate) mod monitor_tests {
         };
     }
 
-
     // Test for wait_closed_or_avail_units with closed channel
     #[async_std::test]
     async fn test_wait_closed_or_avail_units_closed_channel() {
@@ -1276,15 +1314,9 @@ pub(crate) mod monitor_tests {
         if let Some(mut tx) = tx.try_lock() {
             tx.mark_closed();
         }
-        if let Some(mut rx) = rx.try_lock() {         
+        if let Some(mut rx) = rx.try_lock() {
             let result = monitor.wait_avail(&mut rx, 1).await;
             assert!(!result);
         };
     }
-
-
-
-
-
-
 }

@@ -399,7 +399,6 @@ mod code_generation_tests {
     use std::path::PathBuf;
     use std::process::{Command, Stdio};
     use std::str::FromStr;
-    use colored::Colorize;
     use flexi_logger::{Logger, LogSpecBuilder};
     use log::{error, info, trace, LevelFilter};
     use crate::process_dot_file;
@@ -408,7 +407,7 @@ mod code_generation_tests {
         if live_test { //this will require open ports and drive access so we do not always run it
 
             let level = "info";
-            if let Ok(s) = LevelFilter::from_str(&level) {
+            if let Ok(s) = LevelFilter::from_str(level) {
                 let mut builder = LogSpecBuilder::new();
                 builder.default(s); // Set the default level
                 let log_spec = builder.build();
@@ -520,6 +519,8 @@ fn do_cargo_cache_install(test_name: &str) {
 }
     #[cfg(not(windows))]
     fn do_cargo_build_of_generated_code(test_name: &str) {
+        use colored::*;
+
         // Construct the absolute path to the directory containing Cargo.toml
         let build_me = PathBuf::from(test_name);
         let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
@@ -618,7 +619,7 @@ digraph PRODUCT {
 }
         "#;
 
-       build_and_parse("fizz_buzz", g, false, false,!std::env::var("GITHUB_ACTIONS").is_ok());
+       build_and_parse("fizz_buzz", g, false, false,std::env::var("GITHUB_ACTIONS").is_err());
 
     }
 
@@ -650,7 +651,7 @@ digraph PRODUCT {
 }
         "#;
 
-     build_and_parse("unnamed1", g, false, false,!std::env::var("GITHUB_ACTIONS").is_ok());
+     build_and_parse("unnamed1", g, false, false,std::env::var("GITHUB_ACTIONS").is_err());
 
     }
 
@@ -690,7 +691,7 @@ digraph PBFTDemo {
 
         "#;
 
-       build_and_parse("pbft_demo", g, false, true, !std::env::var("GITHUB_ACTIONS").is_ok());
+       build_and_parse("pbft_demo", g, false, true, std::env::var("GITHUB_ACTIONS").is_err());
 
     }
 
@@ -715,7 +716,7 @@ digraph PBFTDemo {
             }
         "#;
 
-       build_and_parse("circle", g, false, true, !std::env::var("GITHUB_ACTIONS").is_ok());
+       build_and_parse("circle", g, false, true, std::env::var("GITHUB_ACTIONS").is_err());
 
     }
 }

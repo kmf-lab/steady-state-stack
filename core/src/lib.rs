@@ -1,139 +1,279 @@
-
+//!
 //! # Steady State Core - Easy Performant Async
-//!  Steady State is a high performance, easy to use, actor based framework for building concurrent applications in Rust.
-//!  Guarantee your SLA with telemetry, alerts and Prometheus.
-//!  Build low latency high volume solutions.
-//TODO: look for cargo all testing coverage.
+//!
+//! Steady State is a high-performance, easy-to-use, actor-based framework for building concurrent applications in Rust.
+//! It provides a robust set of tools and utilities to guarantee your Service Level Agreements (SLAs) through comprehensive
+//! telemetry, alerts, and integration with Prometheus. Designed for low-latency, high-volume solutions, Steady State
+//! empowers developers to create scalable and resilient systems with ease.
+//!
+//! ## Key Features
+//!
+//! - **Actor Model**: Simplifies concurrent programming by encapsulating state and behavior within actors.
+//! - **Telemetry and Monitoring**: Built-in support for metrics collection, alerts, and Prometheus integration.
+//! - **Low Latency**: Optimized for high-performance applications with minimal overhead.
+//! - **High Volume**: Capable of handling large-scale data processing and communication.
+//!
+//! ## Getting Started
+//!
+//! Add Steady State to your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! steady_state = "0.1.0"  # Replace with the actual version
+//! ```
+//!
+//! Explore the [documentation](https://docs.rs/steady_state) and examples in the repository for more details.
+//!
+//! TODO: look for cargo all testing coverage.
+
+#![warn(missing_docs)]
+
+/// Ensures mutual exclusivity of executor features to prevent incompatible configurations.
+///
+/// The following feature gate checks enforce that only one executor feature is enabled at a time.
 #[cfg(all(feature = "proactor_nuclei", feature = "exec_async_std"))]
-compile_error!("Cannot enable both features at the same time");
+compile_error!("Cannot enable both 'proactor_nuclei' and 'exec_async_std' features at the same time");
+
 #[cfg(all(feature = "proactor_nuclei", feature = "proactor_tokio"))]
-compile_error!("Cannot enable both features at the same time");
+compile_error!("Cannot enable both 'proactor_nuclei' and 'proactor_tokio' features at the same time");
+
 #[cfg(all(feature = "exec_async_std", feature = "proactor_tokio"))]
-compile_error!("Cannot enable both features at the same time");
+compile_error!("Cannot enable both 'exec_async_std' and 'proactor_tokio' features at the same time");
 
+/// Requires at least one executor feature to be enabled for the framework to function.
+///
+/// This check ensures that an executor is selected for running actors and futures.
 #[cfg(not(any(feature = "proactor_nuclei", feature = "proactor_tokio", feature = "exec_async_std")))]
-compile_error!("Must enable one executor feature");
+compile_error!("Must enable one executor feature: 'proactor_nuclei', 'proactor_tokio', or 'exec_async_std'");
 
+/// Internal module for telemetry-related functionality.
+///
+/// This module contains submodules for collecting, consuming, and setting up telemetry in the Steady State framework.
 pub(crate) mod telemetry {
-    /// Telemetry module for monitoring and collecting metrics.
+    /// Collects runtime metrics for monitoring system performance.
     pub(crate) mod metrics_collector;
-    /// Telemetry module for consume of all collected metrics either for
-    /// Prometheus or for the local telemetry server. Also writes history file.
+
+    /// Consumes collected metrics for Prometheus export or local telemetry server, and manages history files.
     pub(crate) mod metrics_server;
-    /// Build logic for adding telemetry actors to an application graph.
+
+    /// Provides logic for integrating telemetry actors into an application graph.
     pub(crate) mod setup;
 }
 
+/// Internal module for serialization utilities.
+///
+/// This module provides tools for efficient data serialization, particularly for use in distributed systems.
 pub(crate) mod serialize {
-    /// Serialization module for efficient data packing.
+    /// Handles efficient packing of data into byte buffers.
     pub(crate) mod byte_buffer_packer;
-    /// Implementation of packed int/long from the FAST/FIX protocol
+
+    /// Implements packed integer/long serialization based on the FAST/FIX protocol.
     pub(crate) mod fast_protocol_packed;
 }
 
+/// Internal module for collecting channel statistics.
 pub(crate) mod channel_stats;
+
+/// Internal module for collecting actor statistics.
 pub(crate) mod actor_stats;
+
+/// Internal module for framework configuration settings.
 pub(crate) mod steady_config;
+
+/// Internal module for graph visualization and DOT language integration.
 pub(crate) mod dot;
 
-//TODO: check our errors returned and make them simp
+// TODO: check our errors returned and make them simp
 
+/// Manages the lifecycle states of actor graphs.
+///
+/// This module provides utilities for ensuring the liveliness and proper shutdown of actor graphs.
 mod graph_liveliness;
+
+/// Utilities for managing loops and futures in actor execution.
+///
+/// This module offers functions for selecting and awaiting multiple futures in a controlled manner.
 mod loop_driver;
 
+/// Executor abstraction for Nuclei-based runtimes.
+///
+/// Available when either the `proactor_nuclei` or `proactor_tokio` feature is enabled.
 #[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
 mod abstract_executor_nuclei;
 
 #[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
-use abstract_executor_nuclei::*;
+pub use abstract_executor_nuclei::*;
 
+/// Executor abstraction for the `async-std` runtime.
+///
+/// Available when the `exec_async_std` feature is enabled.
 #[cfg(feature = "exec_async_std")]
 mod abstract_executor_async_std;
 
 #[cfg(feature = "exec_async_std")]
 use abstract_executor_async_std::*;
 
-
-
-
+/// Utilities for capturing panics during testing.
+///
+/// This module is only available in test configurations.
 #[cfg(test)]
 mod test_panic_capture;
-mod monitor_telemetry;
-/////////////////////////////////////////////////
 
-    /// module for all monitor features
+/// Integrates monitoring with telemetry systems.
+///
+/// This module provides the glue between runtime monitoring and telemetry output.
+mod monitor_telemetry;
+
+/// Monitoring utilities for inspecting channel and actor metrics at runtime.
+///
+/// The `monitor` module provides types and traits for gathering and representing runtime metadata about channels and actors,
+/// enabling integration with telemetry systems and health checks.
 pub mod monitor;
-    /// module for all channel features
+
+/// Channel construction and configuration utilities.
+///
+/// This module provides a builder-pattern API and macros for creating and configuring channels.
+/// It is marked with `#[macro_use]` to allow macros defined within it to be used throughout the crate.
 #[macro_use]
 pub mod channel_builder;
-    /// module for all actor features
+
+/// Actor construction, configuration, and scheduling utilities.
+///
+/// The `actor_builder` module offers a builder-pattern API for defining actors, setting up their execution contexts,
+/// core affinity, and telemetry.
 pub mod actor_builder;
 pub use actor_builder::CoreBalancer;
 
-/// Installation modules for setting up various deployment methods.
+/// Installation utilities for various deployment methods.
+///
+/// This module contains submodules to support different installation strategies.
 pub mod install {
-    /// module with support for creating and removing systemd configuration
+    /// Supports creating and removing systemd service configurations.
     pub mod serviced;
-    /// module with support for creating local command line applications
+
+    /// Supports creating local command-line applications.
     pub mod local_cli;
 }
 
+/// Components and builders for distributed systems.
+///
+/// This module provides tools for building distributed systems, including Aeron streams and pub/sub mechanisms.
 pub mod distributed {
-    /// enums for making new aeron connection strings
+    /// Enums for constructing Aeron connection strings.
     pub mod aeron_channel_structs;
-    /// new channels for serialized data
+
+    /// Builder for creating serialized data channels with Aeron.
     pub mod aeron_channel_builder;
-    /// Stream channels
-    pub mod distributed_stream;
-    /// Publish message from stream to aeron
+
+    /// Manages stream-based channels in distributed systems.
+    pub mod aqueduct_stream;
+
+    /// Publishes messages from streams to Aeron.
     pub mod aeron_publish_bundle;
-    /// Subscribe to aeron and put incoming messages in streams
+
+    /// Subscribes to Aeron and forwards messages to streams.
     pub mod aeron_subscribe_bundle;
 
+    /// Single channel publish
     pub mod aeron_publish;
+
+    /// Single channel subscribe
     pub mod aeron_subscribe;
-    pub mod distributed_builder;
 
+    /// Aqueduct builder
+    pub mod aqueduct_builder;
+
+    /// Utility for polling for messages on a stream
     pub mod polling;
-
 }
 
 /// Blocks the current thread until the provided future completes, returning its result.
+///
+/// This function is useful for synchronously waiting on asynchronous operations.
 pub use core_exec::block_on;
-/// Async Spawns a blocking task on a separate thread for CPU-bound or blocking operations.
+
+/// Spawns a blocking task on a separate thread for CPU-bound or blocking operations.
+///
+/// This function allows offloading synchronous, blocking tasks to avoid blocking the async runtime.
 pub use core_exec::spawn_blocking;
+
 /// Spawns a future that can be sent across threads and detaches it for independent execution.
+///
+/// This function is useful for launching tasks that do not need to be awaited.
 pub use core_exec::spawn_detached;
 
-/// Optional, some runtimes limit thread count and others do not, may not remain in the future
+/// Optionally spawns additional threads to handle tasks (runtime-dependent).
+///
+/// Note: This function may be deprecated in the future as its behavior depends on the runtime.
 pub use core_exec::spawn_more_threads;
 
+/// Tools for simulating edge cases in testing.
+///
+/// This module provides utilities for testing the robustness of actors under various conditions.
 pub mod simulate_edge;
-/// module for testing full graphs of actors
+
+/// Utilities for testing full graphs of actors.
+///
+/// This module offers tools to validate the behavior of complex actor networks.
 pub mod graph_testing;
-    /// module for all tx channel features
+
+/// Transmitter channel features and utilities.
+///
+/// This module provides the core functionality for sending messages through channels.
 pub mod steady_tx;
-    /// module for all rx channel features
+
+/// Receiver channel features and utilities.
+///
+/// This module provides the core functionality for receiving messages from channels.
 pub mod steady_rx;
-    /// module to yield in our actor
+
+/// Utilities for yielding execution within actors.
+///
+/// This module allows actors to yield control back to the runtime, improving fairness and responsiveness.
 pub mod yield_now;
-    /// module for all commands for channels used by actors
+
+/// Commands and utilities for channels used by actors.
+///
+/// This module defines the core actor logic and channel interactions.
 pub mod steady_actor;
+
+/// Low-level receiver functionality.
+///
+/// This module contains internal implementations for receiving messages.
 mod core_rx;
-use crate::core_rx::RxCore;
+pub use crate::core_rx::RxCore;
 pub use crate::core_rx::DoubleSlice;
 pub use crate::core_rx::DoubleSliceCopy;
 pub use crate::core_rx::QuadSlice;
 pub use crate::core_rx::StreamQuadSliceCopy;
+
+/// Low-level transmitter functionality.
+///
+/// This module contains internal implementations for sending messages.
 mod core_tx;
-use crate::core_tx::TxCore;
+pub use crate::core_tx::TxCore;
 
+pub use crate::distributed::aqueduct_stream::StreamControlItem;
 
+/// Shadow utilities for steady actors.
+///
+/// This module provides additional functionality for managing actor shadows.
 pub mod steady_actor_shadow;
+
+/// Spotlight utilities for steady actors.
+///
+/// This module provides tools for highlighting or managing actor execution.
 pub mod steady_actor_spotlight;
-mod stream_iterator;
+
+
+/// Tests for executor abstractions.
+///
+/// This module contains tests for ensuring executor compatibility.
 mod abstract_executor_tests;
 
+/// Utilities for managing concurrent execution of futures.
+///
+/// These exports from `loop_driver` provide functions for selecting and awaiting multiple futures.
 pub use loop_driver::steady_fuse_future;
 pub use loop_driver::steady_select_two;
 pub use loop_driver::steady_select_three;
@@ -144,12 +284,12 @@ pub use loop_driver::steady_await_for_all_or_proceed_upon_three;
 pub use loop_driver::steady_await_for_all_or_proceed_upon_four;
 pub use loop_driver::steady_await_for_all_or_proceed_upon_five;
 
-
+// Public re-exports for convenience
 pub use clap::*;
 pub use steady_actor::SendOutcome;
 pub use simulate_edge::SimRunner;
 pub use steady_actor_shadow::*;
-pub use futures_timer::Delay; //for easy use
+pub use futures_timer::Delay; // for easy use
 pub use graph_testing::GraphTestResult;
 pub use monitor::{RxMetaDataHolder, TxMetaDataHolder};
 pub use channel_builder::Rate;
@@ -172,23 +312,23 @@ pub use steady_rx::RxBundleTrait;
 pub use steady_tx::TxBundleTrait;
 pub use steady_rx::RxDone;
 pub use steady_tx::TxDone;
-pub use crate::distributed::distributed_builder::AqueductBuilder;
-
+pub use crate::distributed::aqueduct_builder::AqueductBuilder;
 pub use steady_actor::SteadyActor;
 pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-pub use distributed::distributed_stream::{StreamIngress, StreamEgress};
-pub use distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
-pub use distributed::distributed_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};
-pub use distributed::distributed_stream::{LazyStreamRx, LazyStreamTx};
-pub use distributed::distributed_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
-pub use distributed::distributed_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
-pub use distributed::distributed_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
-pub use distributed::distributed_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamTx};
+pub use distributed::aqueduct_stream::{StreamIngress, StreamEgress};
+pub use distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
+pub use distributed::aqueduct_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};
+pub use distributed::aqueduct_stream::{LazyStreamRx, LazyStreamTx};
+pub use distributed::aqueduct_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
+pub use distributed::aqueduct_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
+pub use distributed::aqueduct_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
+pub use distributed::aqueduct_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamTx};
 pub use log::{debug, error, info, trace, warn};
 pub use std::time::{Duration, Instant};
 pub use std::error::Error;
 
+// Dependencies and internal utilities
 use futures_util::FutureExt;
 use futures::select;
 use std::fmt::Debug;
@@ -197,11 +337,16 @@ use futures::lock::Mutex;
 use std::ops::{Deref, DerefMut};
 #[allow(unused_imports)]
 use log::*;
-
 use crate::monitor::{ActorMetaData, ChannelMetaData};
 
-/// util module for various utility functions.
+/// Miscellaneous utility functions.
+///
+/// This module contains various helper functions used throughout the framework.
 pub mod util;
+
+/// Utilities for inspecting short boolean sequences.
+///
+/// This module provides tools for analyzing short sequences of boolean values.
 pub mod inspect_short_bools;
 pub use crate::inspect_short_bools::LAST_FALSE;
 
@@ -215,37 +360,64 @@ pub use steady_actor_spotlight::SteadyActorSpotlight;
 
 use crate::yield_now::yield_now;
 
-
-/// Type alias for a thread-safe steady state (S) wrapped in an `Arc` and `Mutex`.
+/// A thread-safe wrapper for actor state, preserved across restarts.
 ///
-/// Holds state of actors so it is not lost between restarts.
+/// The `SteadyState` struct encapsulates an actor's state within an `Arc<Mutex<Option<S>>>`, ensuring thread safety
+/// and persistence across restarts or panics.
+///
+/// # Type Parameters
+/// - `S`: The type of the state being stored.
 pub struct SteadyState<S>(Arc<Mutex<Option<S>>>);
 
 impl<S> Clone for SteadyState<S> {
+    /// Creates a new reference to the same underlying state.
+    ///
+    /// This method clones the `Arc`, allowing multiple references to the same state.
     fn clone(&self) -> Self {
         SteadyState(self.0.clone())
     }
 }
 
+/// Guard for accessing the inner state of a `SteadyState`.
+///
+/// The `StateGuard` provides safe, mutable access to the state held within a `SteadyState` while the guard is alive.
+///
+/// # Type Parameters
+/// - `S`: The type of the state being accessed.
 pub struct StateGuard<'a, S> {
     guard: MappedMutexGuard<'a, Option<S>, S>,
 }
 
-impl<'a, S> Deref for StateGuard<'a, S> {
+impl<S> Deref for StateGuard<'_, S> {
     type Target = S;
+
+    /// Provides immutable access to the underlying state.
     fn deref(&self) -> &Self::Target {
-        &*self.guard
+        &self.guard
     }
 }
 
-impl<'a, S> DerefMut for StateGuard<'a, S> {
+impl<S> DerefMut for StateGuard<'_, S> {
+    /// Provides mutable access to the underlying state.
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.guard
+        &mut self.guard
     }
 }
 
 impl<S> SteadyState<S> {
-
+    /// Asynchronously locks the state, initializing it if absent.
+    ///
+    /// If the state is `None`, the provided `init` closure is called to create the initial state.
+    ///
+    /// # Parameters
+    /// - `init`: A closure that produces the initial state if it doesn’t exist.
+    ///
+    /// # Returns
+    /// - `StateGuard<'_, S>`: A guard providing mutable access to the state.
+    ///
+    /// # Type Constraints
+    /// - `F: FnOnce() -> S`: The initialization function must produce a value of type `S`.
+    /// - `S: Send`: The state must be sendable across threads.
     pub async fn lock<F>(&self, init: F) -> StateGuard<'_, S>
     where
         F: FnOnce() -> S,
@@ -256,116 +428,158 @@ impl<S> SteadyState<S> {
         let mapped = MutexGuard::map(guard, |opt| opt.as_mut().expect("existing state"));
         StateGuard { guard: mapped }
     }
-
 }
 
-
-
-/// Create new SteadyState struct for holding state of actors across panics restarts.
-/// Should only be called in main when creating the actors
+/// Creates a new `SteadyState` for holding actor state across restarts.
 ///
+/// This function initializes a new `SteadyState` with no initial value, which can be set later via the `lock` method.
+///
+/// # Type Parameters
+/// - `S`: The type of the state to be stored.
+///
+/// # Returns
+/// - `SteadyState<S>`: A new, empty state wrapper.
+///
+/// # Remarks
+/// Should typically be called in `main` when setting up actors.
 pub fn new_state<S>() -> SteadyState<S> {
     SteadyState(Arc::new(Mutex::new(None)))
 }
 
-
-
-
-
-/// Type alias for a thread-safe transmitter (Tx) wrapped in an `Arc` and `Mutex`.
+/// Type alias for a thread-safe transmitter wrapped in an `Arc` and `Mutex`.
 ///
-/// This type alias simplifies the usage of a transmitter that can be shared across multiple threads.
+/// Simplifies the usage of a transmitter that can be shared across threads.
+///
+/// # Type Parameters
+/// - `T`: The type of data being transmitted.
 pub type SteadyTx<T> = Arc<Mutex<Tx<T>>>;
 
-/// Type alias for an array of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
+/// Type alias for an array of thread-safe transmitters with a fixed size, wrapped in an `Arc`.
 ///
-/// This type alias simplifies the usage of a bundle of transmitters that can be shared across multiple threads.
+/// Simplifies the usage of a bundle of transmitters shared across threads.
+///
+/// # Type Parameters
+/// - `T`: The type of data being transmitted.
+/// - `GIRTH`: The fixed size of the transmitter array.
 pub type SteadyTxBundle<T, const GIRTH: usize> = Arc<[SteadyTx<T>; GIRTH]>;
 
-/// Type alias for a thread-safe receiver (Rx) wrapped in an `Arc` and `Mutex`.
+/// Type alias for a thread-safe receiver wrapped in an `Arc` and `Mutex`.
 ///
-/// This type alias simplifies the usage of a receiver that can be shared across multiple threads.
+/// Simplifies the usage of a receiver that can be shared across threads.
+///
+/// # Type Parameters
+/// - `T`: The type of data being received.
 pub type SteadyRx<T> = Arc<Mutex<Rx<T>>>;
 
-/// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
+/// Type alias for an array of thread-safe receivers with a fixed size, wrapped in an `Arc`.
 ///
-/// This type alias simplifies the usage of a bundle of receivers that can be shared across multiple threads.
+/// Simplifies the usage of a bundle of receivers shared across threads.
+///
+/// # Type Parameters
+/// - `T`: The type of data being received.
+/// - `GIRTH`: The fixed size of the receiver array.
 pub type SteadyRxBundle<T, const GIRTH: usize> = Arc<[SteadyRx<T>; GIRTH]>;
 
-/// Type alias for a vector of `MutexGuard` references to transmitters (Tx).
+/// Type alias for a vector of `MutexGuard` references to transmitters.
 ///
-/// This type alias simplifies the usage of a collection of transmitter guards for batch operations.
+/// Simplifies batch operations over multiple transmitter guards.
+///
+/// # Type Parameters
+/// - `T`: The type of data being transmitted.
 pub type TxBundle<'a, T> = Vec<MutexGuard<'a, Tx<T>>>;
 
-/// Type alias for a vector of `MutexGuard` references to receivers (Rx).
+/// Type alias for a vector of `MutexGuard` references to receivers.
 ///
-/// This type alias simplifies the usage of a collection of receiver guards for batch operations.
+/// Simplifies batch operations over multiple receiver guards.
+///
+/// # Type Parameters
+/// - `T`: The type of data being received.
 pub type RxBundle<'a, T> = Vec<MutexGuard<'a, Rx<T>>>;
 
+/// Bundle of `TxCore` guards for batch locking of transmitters.
+///
+/// Represents a collection of locked transmitter guards for batch operations.
+///
+/// # Type Parameters
+/// - `T`: The type implementing `TxCore`.
 #[allow(type_alias_bounds)]
 pub type TxCoreBundle<'a, T: TxCore> = Vec<MutexGuard<'a, T>>;
+
+/// Bundle of `RxCore` guards for batch locking of receivers.
+///
+/// Represents a collection of locked receiver guards for batch operations.
+///
+/// # Type Parameters
+/// - `T`: The type implementing `RxCore`.
 #[allow(type_alias_bounds)]
 pub type RxCoreBundle<'a, T: RxCore> = Vec<MutexGuard<'a, T>>;
 
-
-
-/// Type alias for an array of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
+/// Type alias for an array of lazy-initialized transmitters with a fixed size.
 ///
-/// This type alias simplifies the usage of a bundle of transmitters that can be shared across multiple threads.
+/// Simplifies the usage of a bundle of transmitters that are initialized on first use.
+///
+/// # Type Parameters
+/// - `T`: The type of data being transmitted.
+/// - `GIRTH`: The fixed size of the transmitter array.
 pub type LazySteadyTxBundle<T, const GIRTH: usize> = [LazySteadyTx<T>; GIRTH];
 
-/// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
-/// This one is special because its clone will lazy create teh channels.
-/// 
+/// Trait for cloning lazy transmitter bundles with initialization.
+///
+/// Defines the behavior for cloning a bundle of lazy transmitters, triggering initialization.
 pub trait LazySteadyTxBundleClone<T, const GIRTH: usize> {
-    /// Clone the bundle of transmitters. But MORE. This is the lazy init of the channel as well.
+    /// Clones the bundle of transmitters, lazily initializing the channels.
+    ///
+    /// # Returns
+    /// - `SteadyTxBundle<T, GIRTH>`: A fully initialized bundle of transmitters.
     fn clone(&self) -> SteadyTxBundle<T, GIRTH>;
-
 }
 
 impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyTxBundle<T, GIRTH> {
-        let tx_clones:Vec<SteadyTx<T>> = self.iter().map(|l|l.clone()).collect();
+        let tx_clones: Vec<SteadyTx<T>> = self.iter().map(|l| l.clone()).collect();
         match tx_clones.try_into() {
             Ok(array) => steady_tx_bundle(array),
-            Err(_) => {
-                panic!("Internal error, bad length");
-            }
+            Err(_) => panic!("Internal error, bad length"),
         }
     }
-
 }
 
-/// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
+/// Type alias for an array of lazy-initialized receivers with a fixed size.
 ///
-/// This type alias simplifies the usage of a bundle of receivers that can be shared across multiple threads.
+/// Simplifies the usage of a bundle of receivers that are initialized on first use.
+///
+/// # Type Parameters
+/// - `T`: The type of data being received.
+/// - `GIRTH`: The fixed size of the receiver array.
 pub type LazySteadyRxBundle<T, const GIRTH: usize> = [LazySteadyRx<T>; GIRTH];
 
-/// Type alias for an array of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
+/// Trait for cloning lazy receiver bundles with initialization.
+///
+/// Defines the behavior for cloning a bundle of lazy receivers, triggering initialization.
 pub trait LazySteadyRxBundleClone<T, const GIRTH: usize> {
-    /// Clone the bundle of receivers. But MORE. This is the lazy init of the channel as well.
-    /// Use it as a normal clone the lazy init happens as an implementation detail.
+    /// Clones the bundle of receivers, lazily initializing the channels.
+    ///
+    /// # Returns
+    /// - `SteadyRxBundle<T, GIRTH>`: A fully initialized bundle of receivers.
     fn clone(&self) -> SteadyRxBundle<T, GIRTH>;
 }
 
-impl<T, const GIRTH: usize> crate::LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBundle<T, GIRTH> {
+impl<T, const GIRTH: usize> LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyRxBundle<T, GIRTH> {
-        let rx_clones:Vec<SteadyRx<T>> = self.iter().map(|l|l.clone()).collect();
+        let rx_clones: Vec<SteadyRx<T>> = self.iter().map(|l| l.clone()).collect();
         match rx_clones.try_into() {
             Ok(array) => steady_rx_bundle(array),
-            Err(_) => {
-                panic!("Internal error, bad length");
-            }
+            Err(_) => panic!("Internal error, bad length"),
         }
     }
 }
 
-/// Creates a bundle of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
+/// Creates a bundle of thread-safe transmitters with a fixed size, wrapped in an `Arc`.
 ///
-/// This function takes an array of transmitters and wraps it in an `Arc` for shared ownership.
+/// Wraps an array of transmitters in an `Arc` for shared ownership across threads.
 ///
 /// # Parameters
-/// - `internal_array`: An array of `SteadyTx<T>` with a fixed size (GIRTH).
+/// - `internal_array`: An array of `SteadyTx<T>` with a fixed size `GIRTH`.
 ///
 /// # Returns
 /// - `SteadyTxBundle<T, GIRTH>`: A bundle of transmitters wrapped in an `Arc`.
@@ -373,22 +587,12 @@ pub fn steady_tx_bundle<T, const GIRTH: usize>(internal_array: [SteadyTx<T>; GIR
     Arc::new(internal_array)
 }
 
-/// Creates a bundle of thread-safe transmitters (Tx) with a fixed size (GIRTH), wrapped in an `Arc`.
+/// Creates a bundle of thread-safe receivers with a fixed size, wrapped in an `Arc`.
 ///
-/// This function takes an array of transmitters and wraps it in an `Arc` for shared ownership.
-///
-/// # Parameters
-/// - `internal_array`: An array of `SteadyTx<T>` with a fixed size (GIRTH).
-///
-/// # Returns
-/// - `SteadyTxBundle<T, GIRTH>`: A bundle of transmitters wrapped in an `Arc`.
-///
-/// Creates a bundle of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
-///
-/// This function takes an array of receivers and wraps it in an `Arc` for shared ownership.
+/// Wraps an array of receivers in an `Arc` for shared ownership across threads.
 ///
 /// # Parameters
-/// - `internal_array`: An array of `SteadyRx<T>` with a fixed size (GIRTH).
+/// - `internal_array`: An array of `SteadyRx<T>` with a fixed size `GIRTH`.
 ///
 /// # Returns
 /// - `SteadyRxBundle<T, GIRTH>`: A bundle of receivers wrapped in an `Arc`.
@@ -396,41 +600,43 @@ pub fn steady_rx_bundle<T, const GIRTH: usize>(internal_array: [SteadyRx<T>; GIR
     Arc::new(internal_array)
 }
 
-/// Creates a bundle of thread-safe receivers (Rx) with a fixed size (GIRTH), wrapped in an `Arc`.
+/// Initializes logging for the Steady State crate.
 ///
-/// This function takes an array of receivers and wraps it in an `Arc` for shared ownership.
+/// This convenience function should be called at the beginning of `main` to set up logging.
 ///
 /// # Parameters
-/// - `internal_array`: An array of `SteadyRx<T>` with a fixed size (GIRTH).
+/// - `loglevel`: The desired logging level (e.g., `Info`, `Debug`).
 ///
 /// # Returns
-/// - `SteadyRxBundle<T, GIRTH>`: A bundle of receivers wrapped in an `Arc`.
-///
-/// Initialize logging for the steady_state crate.
-/// This is a convenience function that should be called at the beginning of main.
+/// - `Result<(), Box<dyn std::error::Error>>`: Ok if successful, or an error if initialization fails.
 pub fn init_logging(loglevel: LogLevel) -> Result<(), Box<dyn std::error::Error>> {
     steady_logger::initialize_with_level(loglevel)
 }
 
-
-
-
+/// Logging levels for controlling verbosity of the crate's logging output.
+///
+/// Maps to standard `log::LevelFilter` values for configuring application logging.
 #[derive(Copy, Clone, Debug, PartialEq, ValueEnum)]
 pub enum LogLevel {
-    /// A level lower than all log levels.
+    /// Disables all logging output.
     Off,
-    /// Corresponds to the `Error` log level.
+    /// Logs only errors.
     Error,
-    /// Corresponds to the `Warn` log level.
+    /// Logs warnings and errors.
     Warn,
-    /// Corresponds to the `Info` log level.
+    /// Logs informational messages, warnings, and errors.
     Info,
-    /// Corresponds to the `Debug` log level.
+    /// Logs debug messages, informational messages, warnings, and errors.
     Debug,
-    /// Corresponds to the `Trace` log level.
+    /// Logs all messages, including trace-level details.
     Trace,
 }
+
 impl LogLevel {
+    /// Converts this `LogLevel` to the corresponding `log::LevelFilter`.
+    ///
+    /// # Returns
+    /// - `log::LevelFilter`: The matching filter level for logging.
     pub fn to_level_filter(&self) -> log::LevelFilter {
         match self {
             LogLevel::Off => log::LevelFilter::Off,
@@ -443,37 +649,9 @@ impl LogLevel {
     }
 }
 
-
-// #[macro_export]
-// macro_rules! concat_arrays {
-//     ($arr1:expr, $arr2:expr) => {{
-//         [
-//             $($arr1[$i]),*, // Expand all items from the first array
-//             $($arr2[$i]),* // Expand all items from the second array
-//         ]
-// }};
-// }
-// #[macro_export]
-// macro_rules! concat_arrays {
-//     ($arr1:expr, $arr2:expr) => {{
-//         let mut result = [unsafe { std::mem::zeroed() }; GIRTH * 2];
-//         result[..GIRTH].copy_from_slice($arr1);
-//         result[GIRTH..].copy_from_slice($arr2);
-//         result
-//     }};
-// }
-
-// fn concat_arrays<T: Copy>(arr1: &[T], arr2: &[T]) -> [T; { arr1.len() + arr2.len() }] {
-//     let mut result = [unsafe { std::mem::zeroed() }; { arr1.len() + arr2.len() }];
-//     result[..arr1.len()].copy_from_slice(arr1);
-//     result[arr1.len()..].copy_from_slice(arr2);
-//     result
-// }
-
-/// Macro takes a SteadyContext and a list of Rx and Tx channels
-/// and returns a LocalMonitor. The Monitor is the only way to produce
-/// metrics for telemetry and prometheus.  The macro is used to ensure
-/// specifically which channels are monitored.
+/// Macro for creating a LocalMonitor from channels.
+///
+/// Takes a `SteadyContext` and lists of Rx and Tx channels, returning a `LocalMonitor` for telemetry and Prometheus metrics.
 #[macro_export]
 macro_rules! into_monitor {
     ($self:expr, [$($rx:expr),*], [$($tx:expr),*]) => {{
@@ -549,7 +727,7 @@ macro_rules! into_monitor {
 
         $self.into_monitor_internal(rx_mon, tx_mon)
     }};
-   ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*]), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
+    ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*]), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
         #[allow(unused_imports)]
         use steady_rx::RxMetaDataProvider;
         #[allow(unused_imports)]
@@ -587,66 +765,43 @@ macro_rules! into_monitor {
     }};
 }
 
-const MONITOR_UNKNOWN: usize = usize::MAX;
-const MONITOR_NOT: usize = MONITOR_UNKNOWN-1;
-
-
-/// Represents the behavior of the system when the channel is saturated (i.e., full).
+/// Constant representing an unknown monitor state.
 ///
-/// The `SendSaturation` enum defines how the system should respond when attempting to send a message
-/// to a channel that is already at capacity. This helps in managing backpressure and ensuring
-/// the system behaves predictably under load.
-#[derive(Default,PartialEq,Eq,Debug)]
+/// Used in monitoring logic to indicate an undefined or uninitialized state.
+const MONITOR_UNKNOWN: usize = usize::MAX;
+
+/// Constant representing a "not monitored" state.
+///
+/// Used in monitoring logic to differentiate from `MONITOR_UNKNOWN`.
+const MONITOR_NOT: usize = MONITOR_UNKNOWN - 1;
+
+/// Represents the behavior of the system when a channel is saturated (i.e., full).
+///
+/// Defines how the system responds when attempting to send to a full channel, managing backpressure.
+#[derive(Default, PartialEq, Eq, Debug)]
 pub enum SendSaturation {
-    /// Ignore the saturation and wait until space is available in the channel.
-    ///
-    /// This option blocks the sender until there is space in the channel, ensuring that
-    /// all messages are eventually sent. This can help maintain a reliable flow of messages
-    /// but may lead to increased latency under high load.
+    /// Blocks the sender until space is available in the channel.
     AwaitForRoom,
 
-    /// Ignore the saturation and return an error immediately.
-    ///
-    /// This option allows the sender to detect and handle the saturation condition
-    /// without blocking. It returns an error, which can be used to implement custom
-    /// backpressure handling or retry logic.
+    /// Returns an error immediately if the channel is full.
     ReturnBlockedMsg,
 
-    /// Warn about the saturation condition but allow the message to be sent anyway.
-    ///
-    /// This is the default behavior. It logs a warning when saturation occurs,
-    /// which can be useful for monitoring and diagnostics, but does not prevent the message
-    /// from being sent. This can help maintain throughput but may lead to resource exhaustion
-    /// if not monitored properly.
+    /// Logs a warning and waits for space (default behavior).
     #[default]
     WarnThenAwait,
 
-    /// Ignore the saturation condition entirely in release builds.
-    ///
-    /// This option is similar to `Warn`, but it does not generate warnings in release builds.
-    /// This can be useful for performance-critical applications where logging overhead needs to be minimized.
+    /// Logs a debug warning and waits, optimized for release builds.
     DebugWarnThenAwait,
 }
 
-
-
-
-/// Represents a standard deviation value.
+/// Represents a standard deviation value for metrics and alerts.
 ///
-/// The `StdDev` struct is used to encapsulate a standard deviation value within a specified range.
-/// This struct provides methods to create standard deviation values for use in metrics and alerts.
+/// Encapsulates a standard deviation within a valid range (0.0, 10.0).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StdDev(f32);
 
 impl StdDev {
-    /// Creates a new `StdDev` value if it falls within the valid range (0.0, 10.0).
-    ///
-    /// # Parameters
-    /// - `value`: The standard deviation value.
-    ///
-    /// # Returns
-    /// - `Some(StdDev)`: If the value is within the range (0.0, 10.0).
-    /// - `None`: If the value is outside the valid range.
+    /// Creates a new `StdDev` if the value is within (0.0, 10.0).
     fn new(value: f32) -> Option<Self> {
         if value > 0.0 && value < 10.0 {
             Some(Self(value))
@@ -655,147 +810,102 @@ impl StdDev {
         }
     }
 
-    /// Creates a `StdDev` value of 1.0.
-    ///
-    /// # Returns
-    /// - `StdDev(1.0)`: A standard deviation value of 1.0.
+    /// Creates a `StdDev` of 1.0.
     pub fn one() -> Self {
         Self(1.0)
     }
 
-    /// Creates a `StdDev` value of 1.5.
-    ///
-    /// # Returns
-    /// - `StdDev(1.5)`: A standard deviation value of 1.5.
+    /// Creates a `StdDev` of 1.5.
     pub fn one_and_a_half() -> Self {
         Self(1.5)
     }
 
-    /// Creates a `StdDev` value of 2.0.
-    ///
-    /// # Returns
-    /// - `StdDev(2.0)`: A standard deviation value of 2.0.
+    /// Creates a `StdDev` of 2.0.
     pub fn two() -> Self {
         Self(2.0)
     }
 
-    /// Creates a `StdDev` value of 2.5.
-    ///
-    /// # Returns
-    /// - `StdDev(2.5)`: A standard deviation value of 2.5.
+    /// Creates a `StdDev` of 2.5.
     pub fn two_and_a_half() -> Self {
         Self(2.5)
     }
 
-    /// Creates a `StdDev` value of 3.0.
-    ///
-    /// # Returns
-    /// - `StdDev(3.0)`: A standard deviation value of 3.0.
+    /// Creates a `StdDev` of 3.0.
     pub fn three() -> Self {
         Self(3.0)
     }
 
-    /// Creates a `StdDev` value of 4.0.
-    ///
-    /// # Returns
-    /// - `StdDev(4.0)`: A standard deviation value of 4.0.
+    /// Creates a `StdDev` of 4.0.
     pub fn four() -> Self {
         Self(4.0)
     }
 
-    /// Creates a `StdDev` value with a custom value if it falls within the valid range (0.0, 10.0).
-    ///
-    /// # Parameters
-    /// - `value`: The custom standard deviation value.
-    ///
-    /// # Returns
-    /// - `Some(StdDev)`: If the value is within the range (0.0, 10.0).
-    /// - `None`: If the value is outside the valid range.
+    /// Creates a custom `StdDev` if within (0.0, 10.0).
     pub fn custom(value: f32) -> Option<Self> {
         Self::new(value)
     }
 
-    /// Retrieves the value of the standard deviation.
-    ///
-    /// # Returns
-    /// - `f32`: The encapsulated standard deviation value.
+    /// Retrieves the standard deviation value.
     pub fn value(&self) -> f32 {
         self.0
     }
 }
 
-/// Base Trait for all metrics for use on Telemetry and Prometheus.
+/// Base trait for all metrics used in telemetry and Prometheus.
 pub trait Metric: PartialEq {}
 
-/// Represents a Metric suitable for channels which transfer data.
+/// Trait for metrics suitable for data channels.
 pub trait DataMetric: Metric {}
 
-/// Represents a Metric suitable for actors which perform computations.
+/// Trait for metrics suitable for computational actors.
 pub trait ComputeMetric: Metric {}
 
 impl Metric for Duration {}
 
-/// Represents the color of an alert in the Steady State framework.
+/// Represents the color of an alert.
 ///
-/// The `AlertColor` enum is used to indicate the severity level of an alert.
+/// Indicates the severity of an alert in the Steady State framework.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AlertColor {
-    /// Indicates a warning level alert.
-    ///
-    /// Typically used for non-critical issues that may require attention.
+    /// Warning level alert (non-critical).
     Yellow,
 
-    /// Indicates an elevated alert level.
-    ///
-    /// Used for more serious issues that need prompt attention.
+    /// Elevated alert level (serious).
     Orange,
 
-    /// Indicates a critical alert level.
-    ///
-    /// Used for severe issues that require immediate action.
+    /// Critical alert level (immediate action required).
     Red,
 }
 
-/// Represents a trigger condition for a metric in the Steady State framework.
+/// Represents a trigger condition for a metric.
 ///
-/// The `Trigger` enum is used to define various conditions that, when met, will trigger an alert.
-/// Each variant specifies a different type of condition.
+/// Defines conditions that trigger alerts based on metric values.
+///
+/// # Type Parameters
+/// - `T`: The metric type implementing `Metric`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Trigger<T>
-    where
-        T: Metric,
+where
+    T: Metric,
 {
-    /// Trigger an alert when the average value of the metric is above the specified threshold.
-    ///
-    /// Contains the threshold value of type `T`.
+    /// Triggers when the average exceeds the threshold.
     AvgAbove(T),
 
-    /// Trigger an alert when the average value of the metric is below the specified threshold.
-    ///
-    /// Contains the threshold value of type `T`.
+    /// Triggers when the average falls below the threshold.
     AvgBelow(T),
 
-    /// Trigger an alert when the value of the metric is above the mean plus a specified number of standard deviations.
-    ///
-    /// Contains the number of standard deviations and the mean value of type `T`.
+    /// Triggers when above mean plus standard deviations.
     StdDevsAbove(StdDev, T),
 
-    /// Trigger an alert when the value of the metric is below the mean minus a specified number of standard deviations.
-    ///
-    /// Contains the number of standard deviations and the mean value of type `T`.
+    /// Triggers when below mean minus standard deviations.
     StdDevsBelow(StdDev, T),
 
-    /// Trigger an alert when the value of the metric is above a specified percentile.
-    ///
-    /// Contains the percentile value and the threshold value of type `T`.
+    /// Triggers when above a percentile threshold.
     PercentileAbove(Percentile, T),
 
-    /// Trigger an alert when the value of the metric is below a specified percentile.
-    ///
-    /// Contains the percentile value and the threshold value of type `T`.
+    /// Triggers when below a percentile threshold.
     PercentileBelow(Percentile, T),
 }
-
 #[cfg(test)]
 mod lib_tests {
     use super::*;
@@ -810,7 +920,6 @@ mod lib_tests {
     use crate::core_rx::DoubleSlice;
     use crate::steady_actor_shadow::SteadyActorShadow;
     use crate::core_tx::TxCore;
-
 
     #[test]
     fn test_std_dev_valid_values() {
@@ -981,6 +1090,7 @@ mod lib_tests {
             aeron_meda_driver: OnceLock::new(),
             use_internal_behavior: true,
             shutdown_barrier: None,
+
         }
     }
 

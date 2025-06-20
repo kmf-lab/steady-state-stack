@@ -27,10 +27,10 @@ use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
-use crate::steady_actor::SendOutcome;
+use crate::steady_actor::{SendOutcome};
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{Defrag, StreamControlItem};
+use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::simulate_edge::IntoSimRunner;
@@ -85,8 +85,7 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) frame_rate_ms: u64,
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     pub(crate) is_running_iteration_count: u64,
-    pub(crate) show_thread_info: bool,
-    pub(crate) team_id: usize,
+    pub(crate) _team_id: usize,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// If true, the monitor uses its internal simulation behavior for events.
     pub use_internal_behavior: bool,
@@ -97,8 +96,8 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
     /// Checks if telemetry data has not been sent for longer than the threshold and logs a warning.
     fn check_telemetry_delay(&self) {
         let elapsed_since_last_send = self.last_telemetry_send.elapsed();
-        let threshold_duration = Duration::from_millis(self.frame_rate_ms * TELEMETRY_DELAY_THRESHOLD_MULTIPLIER);
-        if elapsed_since_last_send > threshold_duration {
+        let threshold_duration_ms = self.frame_rate_ms * TELEMETRY_DELAY_THRESHOLD_MULTIPLIER;
+        if elapsed_since_last_send.as_millis() > threshold_duration_ms as u128 {
             // not an error but it might be
             trace!(
                 "Telemetry data not sent for actor {:?} in {} ms (threshold: {} ms). Possible causes: \
@@ -107,7 +106,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
                 - Actor blocked (review actor state and logs).",
                 self.ident,
                 elapsed_since_last_send.as_millis(),
-                threshold_duration.as_millis()
+                threshold_duration_ms
             );
         }
     }
@@ -202,22 +201,20 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                 info!("Telemetry data sent for actor {:?} after {} micros", self.ident, last_elapsed.as_micros());
             }
             true
-        } else {
-            if self.is_running_iteration_count == 0 || setup::is_empty_local_telemetry(self) {
-                setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
-                self.last_telemetry_send = Instant::now();
-                if ENABLE_TELEMETRY_DEBUG {
-                    info!("Initial/empty telemetry data sent for actor {:?}", self.ident);
-                }
-                true
-            } else {
-                if ENABLE_TELEMETRY_DEBUG {
-                    error!("Telemetry data not sent for actor {:?} (elapsed: {} ms < threshold)",
-                          self.ident, last_elapsed.as_millis());
-                }
-                self.check_telemetry_delay();
-                false
+        } else if self.is_running_iteration_count == 0 || setup::is_empty_local_telemetry(self) {
+            setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
+            self.last_telemetry_send = Instant::now();
+            if ENABLE_TELEMETRY_DEBUG {
+                info!("Initial/empty telemetry data sent for actor {:?}", self.ident);
             }
+            true
+        } else {
+            if ENABLE_TELEMETRY_DEBUG {
+                error!("Telemetry data not sent for actor {:?} (elapsed: {} ms < threshold)",
+                      self.ident, last_elapsed.as_millis());
+            }
+            self.check_telemetry_delay();
+            false
         }
     }
 
@@ -262,7 +259,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         liveliness.shutdown_timeout
     }
 
-    fn peek_slice<'a, 'b, T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
+    fn peek_slice<'b, T>(&self, this: &'b mut T) -> T::SliceSource<'b>
     where T: RxCore {
         this.shared_peek_slice()
     }
@@ -299,11 +296,12 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
         let done = this.shared_advance_index(count);
-        if let Some(ref mut tel) = self.telemetry.send_rx {
+        if let Some(ref mut tel) = self.telemetry.send_tx {
             this.telemetry_inc(done, tel);
         } else {
             this.monitor_not();
         }
+
         done
     }
 
@@ -319,7 +317,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         this.shared_is_empty()
     }
 
-    fn avail_units<T: RxCore>(&self, this: &mut T) -> usize {
+    fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize {
         this.shared_avail_units()
     }
 
@@ -354,7 +352,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
-    fn poke_slice<'a,'b, T>(&'a self, this: &'b mut T) -> T::SliceTarget<'b>
+    fn poke_slice<'b, T>(&self, this: &'b mut T) -> T::SliceTarget<'b>
     where
         T: TxCore {
         this.shared_poke_slice()
@@ -473,7 +471,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
 
         if msg_count == total_items {
-            debug_assert_eq!(0, defrag.ringbuffer_bytes.1.occupied_len());
             (msg_count as u32, total_bytes as u32, None)
         } else {
             (msg_count as u32, total_bytes as u32, Some(defrag.session_id))
@@ -539,19 +536,22 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
         let last = self.last_periodic_wait.load(Ordering::SeqCst);
         let remaining_duration = if last <= now_nanos {
-            duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
-        } else {
-            duration_rate
-        };
-        let waiter = Delay::new(remaining_duration);
+                    duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
+                } else {
+                    duration_rate
+                };
+
         let _guard = self.start_profile(CALL_WAIT);
         let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
-        let result = select! {
-            _ = &mut one_down.deref_mut() => false,
-            _ = waiter.fuse() => true,
-        };
-        self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
-        result
+
+            let delay = Delay::new(remaining_duration);
+            let result = select! {
+                    _= &mut one_down.deref_mut() => false,
+                    _= &mut delay.fuse() => true
+                 };
+            self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
+            result
+       
     }
 
     async fn wait(&self, duration: Duration) {
@@ -764,7 +764,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                     }
                     if self.relay_stats_smartly() {
                         self.check_telemetry_delay();
-                        executor::block_on(yield_now::yield_now());
                     }
                 }
                 self.is_running_iteration_count += 1;

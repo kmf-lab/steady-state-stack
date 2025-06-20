@@ -1,7 +1,7 @@
 use std::env;
 use std::time::Duration;
 use steady_state::*;
-use steady_state::distributed::distributed_builder::AqueductBuilder;
+use steady_state::distributed::aqueduct_builder::AqueductBuilder;
 
 
 pub(crate) mod actor {
@@ -16,6 +16,7 @@ pub(crate) struct MainArg {
     pub(crate) beats: u64,
 }
 
+/// test ID for the unit tests
 pub const STREAM_ID: i32 = 1234;
 
 //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide

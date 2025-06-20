@@ -6,7 +6,7 @@ use bytes::BytesMut;
 #[allow(unused_imports)]
 use log::*;
 use crate::*;
-use crate::dot::{apply_node_def, build_dot, build_metric, Config, DotGraphFrames, FrameHistory, DotState};
+use crate::dot::{apply_node_def, build_dot, build_metric, DotGraphFrames, FrameHistory, DotState};
 use crate::telemetry::metrics_collector::*;
 use futures::io;
 use futures::channel::oneshot::Receiver;
@@ -61,13 +61,7 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         doc: Vec::new(),
         metric: Vec::new(),
     }));
-    let config = Arc::new(Mutex::new(Config {
-        rankdir: "LR".to_string()
-        
-        //TODO: context has our labels??? we must keep them here to flag our graph building.
-        //TODO: start with the use logic since it must be fast and work back.
-        
-    }));
+
 
     let (tcp_sender_tx, tcp_receiver_tx) = oneshot::channel::<Option<Duration>>();
 
@@ -75,7 +69,6 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
     if let Some(ref addr) = addr {
 
         let state2 = state.clone();
-        let config2 = config.clone();
 
         let opt_tcp = bind_to_port(addr);
         if let Some(ref listener_new) = *opt_tcp {
@@ -100,7 +93,7 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
         spawn_detached(async move {
             if let Some(ref listener_new) = *opt_tcp {
-                handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, config2, listener_new).await;
+                handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, listener_new).await;
             }
         });
     }
@@ -117,25 +110,29 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
     let mut rxg = rx.lock().await;
 
 
+
     while ctrl.is_running(&mut || i!(rxg.is_empty()) && i!(rxg.is_closed())) {
         //TODO: merge the above connection loop into this wait so we only have 1 thread and 1 loop.
         let _clean = await_for_all!( ctrl.wait_avail(&mut rxg,1) );
 
+        let flush_all = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped]);
 
-        if let Some(msg) = ctrl.try_take(&mut rxg) {
+        //we have many bursts so we must consume all since each actor shows up as a single
+        //full stats show up as 2 mesages. only on volume data however do we update the frame
+        while let Some(msg) = ctrl.try_take(&mut rxg) {
             process_msg(msg
                         , &mut metrics_state
                         , &mut history
                         , &mut frames
                         , frame_rate_ms
-                        , ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped])
+                        , flush_all
                         , &rxg
-                        , state.clone()
-                        , config.clone()).await;
+                        , state.clone()).await;
+
         }
     }
     //force all the data we may be holding to be written to history and telemetry before we exit
-    generate_reports(&mut metrics_state, &mut history, &mut frames, true, state, config, true).await;
+    generate_reports(&mut metrics_state, &mut history, &mut frames, true, state, true).await;
     let timeout = ctrl.is_liveliness_shutdown_timeout();
     let _ = tcp_sender_tx.send(timeout);
     Ok(())
@@ -152,6 +149,7 @@ pub trait AsyncListener {
     /// Accepts a new connection asynchronously.
     ///
     /// Returns a future resolving to a stream implementing `AsyncReadWrite` and an optional socket address.
+    #[allow(clippy::type_complexity)]
     fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output =std::io::Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>)>> + Send + 'a>>;
 
     /// Returns the local socket address of the listener.
@@ -198,7 +196,6 @@ pub fn bind_to_port(addr: &str) -> Arc<Option<Box<dyn AsyncListener + Send + Syn
 async fn handle_new_requests (
     tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<Option<Duration>>>>,
     state: Arc<Mutex<MetricState>>,
-    config: Arc<Mutex<Config>>,
     listener: &Box<dyn AsyncListener + Send + Sync>,
 ) {
     //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
@@ -225,7 +222,7 @@ async fn handle_new_requests (
                 result = listener.accept().fuse() => {
                     match result {
                        Ok((stream, _peer_addr)) => {
-                           let _ = handle_request(stream,state.clone(),config.clone()).await;
+                           let _ = handle_request(stream,state.clone()).await;
                        }
                        Err(e) => {
                            error!("Error accepting connection: {}",e);
@@ -244,7 +241,7 @@ async fn handle_new_requests (
                 result = listener.accept().fuse() => {
                     match result {
                         Ok((stream, _peer_addr)) => {
-                            let _ = handle_request(stream, state.clone(), config.clone()).await;
+                            let _ = handle_request(stream, state.clone()).await;
                         }
                         Err(e) => {
                             error!("Error accepting connection: {}", e);
@@ -266,7 +263,6 @@ async fn process_msg(msg: DiagramData
                      , flush_all: bool
                      , rxg: &MutexGuard<'_, Rx<DiagramData>>
                      , state: Arc<Mutex<MetricState>>
-                     , config: Arc<Mutex<Config>>
 
 ) {
     match msg {
@@ -305,30 +301,30 @@ async fn process_msg(msg: DiagramData
             }
             let flush_frame = flush_all || rxg.is_empty() || frames.last_generated_graph.elapsed().as_millis() >= 2 * frame_rate_ms as u128;
 
-            generate_reports(metrics_state, history, frames, flush_all, state, config, flush_frame).await;
+            generate_reports(metrics_state, history, frames, flush_all, state, flush_frame).await;
         },
     }
 }
 
-async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<Mutex<MetricState>>, config: Arc<Mutex<Config>>, flush_frame: bool) {
+async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<Mutex<MetricState>>, flush_frame: bool) {
     if steady_config::TELEMETRY_HISTORY {
         history.update(flush_all).await;
         history.mark_position();
     }
 
     if flush_frame {
-        let config = config.lock().await;
-        build_dot(metrics_state, &mut frames.active_graph, &config);
-        drop(config);
+        build_dot(metrics_state, &mut frames.active_graph);
 
         let graph_bytes = frames.active_graph.to_vec();
         build_metric(metrics_state, &mut frames.active_metric);
         let metric_bytes = frames.active_metric.to_vec();
 
-        let mut state = state.lock().await;
-        state.doc = graph_bytes;
-        state.metric = metric_bytes;
-        drop(state);
+        //only if we can get this update so if we have too many users they will get fewer updates
+        // but our channel will not fall behind or be blocked by slow clients
+        if let Some(mut state) = state.try_lock() {
+            state.doc = graph_bytes;
+            state.metric = metric_bytes;
+        }
         frames.last_generated_graph = Instant::now();
     }
 }
@@ -428,8 +424,7 @@ const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SER
 //   pub trait AsyncReadExt: AsyncRead     for the .write_all
 
 async fn handle_request<T>(mut stream: T,
-                           state: Arc<Mutex<MetricState>>,
-                           _config: Arc<Mutex<Config>>) -> io::Result<()>
+                           state: Arc<Mutex<MetricState>>) -> io::Result<()>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -471,32 +466,30 @@ where
             stream.write_all(&locked_state.doc).await?;
             return Ok(());
         } else if path.starts_with("/set?") { // example /set?rankdir=LR&show=label1,label2&hide=label3,label4
-            let mut rankdir = "LR";
             let mut parts = path.split("?");
             if let Some(_part) = parts.next() {
                 if let Some(part) = parts.next() {
                     let parts = part.split("&");
                     for part in parts {
-                        let mut parts = part.split("=");
-                        if let Some(key) = parts.next() {
-                            if let Some(value) = parts.next() {
-                                if "rankdir" == key {
-                                    rankdir = value;
-                                }
-                            }
-                        }
+                        let mut _parts = part.split("=");
+                        // if let Some(key) = parts.next() {
+                        //     if let Some(value) = parts.next() {
+                        //         if "rankdir" == key {
+                        //             rankdir = value;
+                        //         }
+                        //     }
+                        // }
                     }
                 }
             }
-            if rankdir.eq("LR") || rankdir.eq("TB") {
-                let mut c = _config.lock().await;
-                c.rankdir = rankdir.to_string();
-                // TODO: Labels feature (commented out in original code)
-                // if c.apply_labels(show, hide) {
-                //     stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Length: 0\r\n\r\n", cors_header).as_bytes()).await?;
-                //     return Ok(());
-                // }
-            }
+            // if rankdir.eq("LR") || rankdir.eq("TB") {
+            //     _config.rankdir = rankdir.to_string();
+            //     // TODO: Labels feature (commented out in original code)
+            //     // if c.apply_labels(show, hide) {
+            //     //     stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Length: 0\r\n\r\n", cors_header).as_bytes()).await?;
+            //     //     return Ok(());
+            //     // }
+            // }
             stream.write_all(format!("HTTP/1.1 400 Bad Request\r\n{}Content-Length: 0\r\n\r\n", cors_header).as_bytes()).await?;
             return Ok(());
         } else if path.eq("/") || path.starts_with("/in") || path.starts_with("/de") { // index
@@ -604,14 +597,15 @@ mod meteric_server_tests {
     use std::sync::Arc;
     use std::thread::{sleep};
     use std::time::Duration;
-    use futures_timer::Delay;
+    
     use crate::{ActorIdentity, GraphBuilder, SoloAct};
     use crate::monitor::ActorMetaData;
     use crate::telemetry::metrics_collector::DiagramData;
     use crate::telemetry::metrics_server::internal_behavior;
 
     #[test]
-    fn test_simple() {
+    #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
+    fn test_simple() -> Result<(), Box<dyn std::error::Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
          
         let (tx_in, rx_in) = graph.channel_builder()
@@ -636,7 +630,7 @@ mod meteric_server_tests {
 
         sleep(Duration::from_millis(60));
         graph.request_shutdown();
-        graph.block_until_stopped(Duration::from_secs(15));
+        graph.block_until_stopped(Duration::from_secs(15))
     
      }
 
@@ -649,12 +643,13 @@ mod http_telemetry_tests {
     use super::*;
     use crate::GraphBuilder;
     use std::time::Duration;
-    use futures_timer::Delay;
+    
     use isahc::ReadResponseExt;
     use crate::monitor::ActorStatus;
 
     #[test]
-    fn test_metrics_server() {
+    #[cfg(all(feature="prometheus_metrics",feature="telemetry_server_builtin"))]
+    fn test_metrics_server() -> Result<(), Box<dyn std::error::Error>> {
         if cfg!(not(windows)) && std::env::var("GITHUB_ACTIONS").is_err() {
             let (mut graph, server_ip, tx_in) =
                 stand_up_test_server("127.0.0.1:0");
@@ -663,14 +658,19 @@ mod http_telemetry_tests {
             // Fetch the metrics from the server
             if let Some(ref addr) = server_ip {
                 print!(".");
-                validate_path(&addr, Some("rankdir=LR"), "graph.dot");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("digraph"), "graph.dot");
                 print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("font-family: sans-serif;"), "dot-viewer.css");
                 print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js");
                 print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");
                 print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("<title>Telemetry</title>"), "index.html");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
@@ -712,7 +712,9 @@ mod http_telemetry_tests {
             // Step 6: Stop the graph
             tx_in.testing_close();
             graph.request_shutdown();
-            graph.block_until_stopped(Duration::from_secs(5));
+            graph.block_until_stopped(Duration::from_secs(5))
+        } else {
+            Ok(())
         }
     }
 

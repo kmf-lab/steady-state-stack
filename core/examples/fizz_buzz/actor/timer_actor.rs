@@ -49,7 +49,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_timer_actor() {
+    fn test_timer_actor() -> Result<(),Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
         let (print_signal_tx,test_print_signal_rx) = graph.channel_builder().with_capacity(4).build_channel();
         graph.actor_builder()
@@ -60,9 +60,10 @@ pub(crate) mod tests {
         graph.start(); //startup the graph
         sleep(Duration::from_secs(5));
         graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
-        graph.block_until_stopped(Duration::from_secs(1));
+        graph.block_until_stopped(Duration::from_secs(1))?;
 
         let expected = 2;
         assert_steady_rx_eq_count!(&test_print_signal_rx,expected);
+        Ok(())
     }
 }

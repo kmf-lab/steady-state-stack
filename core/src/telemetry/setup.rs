@@ -3,22 +3,18 @@ use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, AtomicU64};
-use std::thread;
 use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
+#[allow(unused_imports)]
 use log::*;
 use num_traits::Zero;
 use crate::{steady_tx_bundle, ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
-use crate::monitor::{find_my_index, ChannelMetaData, RxTel, ThreadInfo};
+use crate::monitor::{find_my_index, ChannelMetaData, RxTel};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
-
-#[allow(unused_imports)]
-
-
 use crate::core_exec;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::steady_actor_spotlight::SteadyActorSpotlight;
@@ -202,7 +198,7 @@ pub(crate) fn is_empty_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>
 }
 
 #[cfg(feature = "core_display")]
-fn get_current_cpu() -> i32 {
+pub(crate) fn get_current_cpu() -> i32 {
     #[cfg(unix)]
     unsafe {
         // This returns the CPU number the calling thread is running on
@@ -252,7 +248,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                             GraphLivelinessState::StoppedUncleanly,
                                         ]) {
                                             error!(
-                                                "{:?} hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector is not consuming messages !",
+                                                "Actor '{:?}' hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector is not consuming messages !",
                                                 this.ident, scale, vacant_units, capacity
                                             );
                                         }
@@ -263,20 +259,8 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                             }
                         }
 
-                        let thread_info = if this.show_thread_info {
-                            let current_thread = thread::current(); //WARN: we trust this thread is ours.
-                            Some(ThreadInfo{
-                                thread_id: current_thread.id(),
-                                team_id: this.team_id,
-                                #[cfg(feature = "core_display")]
-                                core: get_current_cpu(),
-                            })
-                        } else {
-                            error!("do not show thread info, strange we saw it once");
-                            None
-                        };
 
-                        let msg = actor_status.status_message(this.is_running_iteration_count, thread_info);
+                        let msg = actor_status.status_message(this.is_running_iteration_count);
                         // trace!("message to send {:?} for {:?}",msg, this.ident);
                         match tx.shared_try_send(msg) {
                             Ok(_) => {
@@ -472,8 +456,20 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
 ) {
     core_exec::block_on(async move {
         if let Some(actor_status) = telemetry_state {
-            
-            let mut status = actor_status.status_message(iteration_count, None);
+
+            // let thread_info = if this.show_thread_info {
+            //     let current_thread = thread::current(); //WARN: we trust this thread is ours.
+            //     Some(ThreadInfo{
+            //         thread_id: current_thread.id(),
+            //         #[cfg(feature = "core_display")]
+            //         core: get_current_cpu(),
+            //     })
+            // } else {
+            //     error!("do not show thread info, strange we saw it once");
+            //     None
+            // };
+
+            let mut status = actor_status.status_message(iteration_count);
             if let Some(mut tx) = actor_status.tx.try_lock() {
                 let needs_to_be_closed = tx.make_closed.is_some();
                 if needs_to_be_closed {

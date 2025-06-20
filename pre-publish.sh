@@ -48,7 +48,7 @@ fi
 # Run tests with cargo-nextest, optimizing threads automatically
 # RUST_TEST_THREADS is not needed as nextest manages parallelism itself
 # Use --test-threads to manually override if desired (e.g., --test-threads=4)
-RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --examples -tests | tee cargo_test.txt
+RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --examples --tests | tee cargo_test.txt
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
@@ -69,9 +69,9 @@ if [ $exit_code -ne 0 ]; then
     exit $exit_code
 fi
 
-# Build release version with specific features and parallel jobs
+# Build release version
 # Adjust -j flag to match your CPU's core count for faster compilation (e.g., -j 8 for 8 cores)
-RUST_BACKTRACE=1 cargo build --release --workspace --examples --tests --features "proactor_nuclei telemetry_server_cdn" -j 12 | tee cargo_build_release.txt
+RUST_BACKTRACE=1 cargo build --release --workspace --examples --tests -j 12 | tee cargo_build_release.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Release build failed with exit code $exit_code"
@@ -81,7 +81,7 @@ fi
 # Build documentation like on docs.rs server
 # Consider running this only when documentation changes to save time
 cd core
-RUSTDOCFLAGS="--cfg=docsrs" cargo rustdoc --features "proactor_nuclei" --no-default-features | tee cargo_rustdoc.txt
+RUSTDOCFLAGS="--cfg=docsrs" cargo rustdoc | tee cargo_rustdoc.txt
 exit_code=$?
 if [ $exit_code -ne 0 ]; then
     echo "Docs build failed with exit code $exit_code"
@@ -112,8 +112,7 @@ echo "--------------------------------------------------------------------------
 # Optional: Run coverage and statistics
 # These can be skipped or run separately to save time
 cargo llvm-cov --lcov --output-path cov_a.lcov --no-default-features -F exec_async_std,telemetry_server_builtin,core_affinity,core_display,prometheus_metrics
-cargo llvm-cov --lcov --output-path cov_b.lcov --no-default-features -F proactor_windows,telemetry_server_cdn
-# cargo llvm-cov --html --output-dir coverage/ --no-default-features -F exec_async_std,telemetry_server_builtin,core_affinity,core_display,prometheus_metrics
+cargo llvm-cov --lcov --output-path cov_b.lcov --no-default-features -F proactor_nuclei,telemetry_server_cdn
 lcov --add-tracefile cov_a.lcov --add-tracefile cov_b.lcov -o merged.lcov
 genhtml merged.lcov --output-directory coverage_html
 

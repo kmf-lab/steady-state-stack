@@ -36,9 +36,9 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
         let mut i = 0;
         let limit = BATCH_SIZE.min(actor.vacant_units(&mut numbers_tx));
         loop {
-            index = index + STEP_SIZE;
+            index += STEP_SIZE;
             buffer[i] = NumberMessage{value:index};
-            i = i + 1;
+            i += 1;
             if i >= limit || index == fizz_buzz_processor::STOP_VALUE {
                 if index >= fizz_buzz_processor::STOP_VALUE {
                     actor.request_shutdown().await;
@@ -76,7 +76,7 @@ pub(crate) mod tests {
             );
 
         graph.start(); //startup the graph
-        sleep(Duration::from_millis(2));
+        sleep(Duration::from_millis(20));
         graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1))?;
 

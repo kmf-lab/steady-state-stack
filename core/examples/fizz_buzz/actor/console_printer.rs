@@ -57,15 +57,12 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
             total_count += count;
         }
 
-        match actor.try_take(&mut print_signal_rx) {
-            Some(_t) => {
-                println!("Total:{} Fizz:{}({}%) Buzz:{}({}%) FizzBuzz:{}({}%) values:{}", total_count,
-                         total_fizz, ((total_fizzbuzz + total_fizz) as f64 * 100f64) / total_count as f64,
-                         total_buzz, ((total_fizzbuzz + total_buzz) as f64 * 100f64) / total_count as f64,
-                         total_fizzbuzz, (total_fizzbuzz as f64 * 100f64) / total_count as f64,
-                         total_values);
-            },
-            None => {}
+        if let Some(_t) = actor.try_take(&mut print_signal_rx) {
+            println!("Total:{} Fizz:{}({}%) Buzz:{}({}%) FizzBuzz:{}({}%) values:{}", total_count,
+                     total_fizz, ((total_fizzbuzz + total_fizz) as f64 * 100f64) / total_count as f64,
+                     total_buzz, ((total_fizzbuzz + total_buzz) as f64 * 100f64) / total_count as f64,
+                     total_fizzbuzz, (total_fizzbuzz as f64 * 100f64) / total_count as f64,
+                     total_values);
         };
 
     }

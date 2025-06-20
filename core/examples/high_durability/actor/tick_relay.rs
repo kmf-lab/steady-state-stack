@@ -54,7 +54,7 @@ pub(crate) mod hd_actor_tests {
     use crate::actor::tick_relay::{internal_behavior, BATCH};
 
     #[test]
-    fn test_tick_durable_relay() {
+    fn test_tick_durable_relay() -> Result<(), Box<dyn Error>> {
         //build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
@@ -77,8 +77,9 @@ pub(crate) mod hd_actor_tests {
         graph.request_shutdown(); //let all actors close when inputs are closed
 
         ticks_tx_in.testing_close();
-        graph.block_until_stopped(Duration::from_secs(240));
+        graph.block_until_stopped(Duration::from_secs(240))?;
 
         assert_steady_rx_eq_count!(&ticks_rx_out,BATCH);
+        Ok(())
     }
 }

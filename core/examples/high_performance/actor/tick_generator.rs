@@ -41,7 +41,7 @@ async fn internal_behavior<const TICKS_TX_GIRTH:usize,C: SteadyActor>(mut actor:
              
              let c = ticks_tx[i].vacant_units().min(BUFFER_SIZE);
              for n in 0..c {
-                 count = count + 1;
+                 count += 1;
                  buffers[n] = Tick { value: count };
              }
              actor.send_slice(&mut ticks_tx[i], &buffers[..c]);
@@ -60,7 +60,7 @@ pub(crate) mod actor_tests {
     use super::*;
 
     #[test]
-    fn test_tick_generator() {
+    fn test_tick_generator() -> Result<(),Box<dyn Error>>{
         let mut graph = GraphBuilder::for_testing().build(());
 
         let (ticks_tx_out,ticks_rx_out) = graph.channel_builder()
@@ -75,10 +75,11 @@ pub(crate) mod actor_tests {
         sleep(Duration::from_millis(40)); //if too long telemetry will back up
         
         graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
-        graph.block_until_stopped(Duration::from_secs(15));
+        graph.block_until_stopped(Duration::from_secs(15))?;
 
         assert_steady_rx_eq_count!(&ticks_rx_out[0],BUFFER_SIZE);
         assert_steady_rx_eq_count!(&ticks_rx_out[1],BUFFER_SIZE);
         assert_steady_rx_eq_count!(&ticks_rx_out[2],BUFFER_SIZE);
+        Ok(())
     }
 }

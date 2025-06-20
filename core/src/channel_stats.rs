@@ -19,8 +19,10 @@ pub(crate) const DOT_GREY: &str = "grey";
 
 /// Array representing the pen width values for the dot graph.
 static DOT_PEN_WIDTH: [&str; 16] = [
-    "1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"
+    "4", "6", "8", "10", "12", "14", "16", "18", "20", "22", "24", "26", "28", "30", "32", "34"
 ];
+
+
 
 /// Struct for computing statistics of a communication channel.
 #[derive(Default, Debug)]
@@ -1025,7 +1027,7 @@ pub(crate) fn compute_labels<T: Counter>(
                     buf: &'a mut [u8],
                     pos: usize,
                 }
-                impl<'a> core::fmt::Write for SliceWriter<'a> {
+                impl core::fmt::Write for SliceWriter<'_> {
                     fn write_str(&mut self, s: &str) -> core::fmt::Result {
                         let bytes = s.as_bytes();
                         if self.pos + bytes.len() > self.buf.len() {
@@ -1771,36 +1773,7 @@ pub(crate) mod channel_stats_tests {
         assert!(metric_text.is_empty());
     }
 
-    // /// Test compute method with zero capacity
-    // #[test]
-    // fn test_compute_zero_capacity_edge_case() {
-    //     let _ = util::steady_logger::initialize();
-    //
-    //     let mut computer = ChannelStatsComputer::default();
-    //     computer.capacity = 0;
-    //
-    //     let mut display_label = String::new();
-    //     let mut metric_text = String::new();
-    //     let (color, thickness) = computer.compute(&mut display_label, &mut metric_text, None, 100, 50);
-    //
-    //     assert_eq!(color, DOT_GREY);
-    //     assert_eq!(thickness, "1");
-    // }
-
-    /// Test debug assertions in compute method
-    // #[cfg(debug_assertions)]
-    // #[test]
-    // #[should_panic]
-    // fn test_compute_debug_assertion_take_greater_than_send() {
-    //     let _ = util::steady_logger::initialize();
-    //
-    //     let mut computer = setup_basic_computer();
-    //     let mut display_label = String::new();
-    //     let mut metric_text = String::new();
-    //
-    //     // This should trigger debug assertion and panic
-    //     computer.compute(&mut display_label, &mut metric_text, Some(ActorName::new("test", None)), 50, 100);
-    // }
+   
 
     /// Test line thickness calculation based on traffic
     #[test]
@@ -1949,7 +1922,7 @@ pub(crate) mod channel_stats_tests {
         computer.accumulate_data_frame(100, 0);
 
         // The latency calculation should handle zero rate gracefully
-        assert!(computer.history_latency.len() > 0);
+        assert!(!computer.history_latency.is_empty());
     }
 
     // Test bucket refresh with histogram creation errors during refresh

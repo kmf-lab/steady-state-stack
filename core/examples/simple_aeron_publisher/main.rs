@@ -2,7 +2,7 @@ use std::env;
 use std::time::Duration;
 use log::info;
 use steady_state::*;
-use steady_state::distributed::distributed_builder::AqueductBuilder;
+use steady_state::distributed::aqueduct_builder::AqueductBuilder;
 
 pub(crate) mod actor {
    pub(crate) mod publisher;

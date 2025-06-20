@@ -19,7 +19,7 @@ use crate::actor_stats::ActorStatsComputer;
 use crate::{ActorName};
 use crate::*;
 use crate::channel_stats::ChannelStatsComputer;
-use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
+use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, ThreadInfo};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::telemetry::metrics_server;
@@ -49,7 +49,10 @@ pub(crate) struct Node {
     pub(crate) stats_computer: ActorStatsComputer,
     pub(crate) display_label: String,
     pub(crate) metric_text: String,
+    pub(crate) thread_info_cache: Option<ThreadInfo>
 }
+
+pub(crate) const DEFAULT_PEN_WIDTH: &str = "4"; //need a way to configure this?
 
 impl Node {
     /// Computes and refreshes the metrics for the node based on the actor status and total work.
@@ -67,6 +70,16 @@ impl Node {
                           (100u64 * (actor_status.unit_total_ns - actor_status.await_total_ns))
                          / total_work_ns as u64
         };
+        //only set when we get a new one otherwise we just hold the old one.
+        if actor_status.thread_info.is_some() {
+            self.thread_info_cache = actor_status.thread_info;
+        }
+
+        let thread_id = if self.stats_computer.show_thread_id {
+            self.thread_info_cache
+        } else {
+            None
+        };
 
         // Old strings for this actor are passed back in so they get cleared and re-used rather than reallocate
         let (color, pen_width) = self.stats_computer.compute(
@@ -76,7 +89,7 @@ impl Node {
             load,
             actor_status.total_count_restarts,
             actor_status.bool_stop,
-            actor_status.thread_info
+            thread_id
         );
 
         self.color = color;
@@ -142,12 +155,7 @@ pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
         });
 }
 
-#[derive(Clone)]
-pub(crate) struct Config {
-    pub(crate) rankdir: String
-    //pub(crate) labels  // labels and boolen on each Y/N  T/F ?
 
-}
 
 /// Builds the DOT graph from the current state.
 ///
@@ -156,11 +164,11 @@ pub(crate) struct Config {
 /// * `state` - The current metric state.
 /// * `rankdir` - The rank direction for the DOT graph.
 /// * `dot_graph` - The buffer to store the DOT graph.
-pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut, config: &Config) {
+pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
     dot_graph.clear(); // Clear the buffer for reuse
 
     dot_graph.put_slice(b"digraph G {\nrankdir=");
-    dot_graph.put_slice(config.rankdir.as_bytes());
+    dot_graph.put_slice("LR".as_bytes());
     dot_graph.put_slice(b";\n");
     //write a digraph comment
     // dot_graph.put_slice(b"/*\n"); // from config, will break test_build_dot test
@@ -317,11 +325,12 @@ pub fn apply_node_def(
             Node {
                 id: None,
                 color: "grey",
-                pen_width: "2",
+                pen_width: DEFAULT_PEN_WIDTH,
                 stats_computer: ActorStatsComputer::default(),
                 display_label: String::new(), // Defined when the content arrives
                 metric_text: String::new(),
-                remote_details: None
+                remote_details: None,
+                thread_info_cache: None
             }
         });
     }
@@ -364,7 +373,7 @@ fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec:
                     stats_computer: ChannelStatsComputer::default(),
                     ctl_labels: Vec::new(), // For visibility control
                     color: "grey",
-                    pen_width: "3",
+                    pen_width: DEFAULT_PEN_WIDTH,
                     display_label: String::new(), // Defined when the content arrives
                     metric_text: String::new(),
                 }
@@ -682,15 +691,16 @@ mod dot_tests {
         let mut node = Node {
             id: Some(ActorName::new("1",None)),
             color: "grey",
-            pen_width: "1",
+            pen_width: DEFAULT_PEN_WIDTH,
             stats_computer: ActorStatsComputer::default(),
             display_label: String::new(),
             metric_text: String::new(),
-            remote_details: None
+            remote_details: None,
+            thread_info_cache: None,
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         assert_eq!(node.color, "grey");
-        assert_eq!(node.pen_width, "3");
+        assert_eq!(node.pen_width, DEFAULT_PEN_WIDTH);
     }
 
     #[test]
@@ -723,7 +733,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: String::new(),
                     metric_text: "node_metric".to_string(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![
@@ -765,7 +776,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "node1".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![
@@ -785,11 +797,9 @@ mod dot_tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "LR".to_string()
-        };
 
-        build_dot(&state, &mut dot_graph, &config);
+
+        build_dot(&state, &mut dot_graph);
         let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1 ];\n}\n";
 
         let vec = dot_graph.to_vec();
@@ -811,7 +821,7 @@ mod dot_tests {
         let frame_history = FrameHistory::new(1000);
         assert_eq!(frame_history.packed_sent_writer.delta_write_count(), 0);
         assert_eq!(frame_history.packed_take_writer.delta_write_count(), 0);
-        assert!(frame_history.history_buffer.len() > 0);
+        assert!(!frame_history.history_buffer.is_empty());
     }
 
     #[test]
@@ -820,7 +830,7 @@ mod dot_tests {
         let chin = vec![Arc::new(ChannelMetaData::default())];
         let chout = vec![Arc::new(ChannelMetaData::default())];
         frame_history.apply_node("node1", 1, &chin, &chout);
-        assert!(frame_history.history_buffer.len() > 0);
+        assert!(!frame_history.history_buffer.is_empty());
     }
 
     #[test]
@@ -828,7 +838,7 @@ mod dot_tests {
         let mut frame_history = FrameHistory::new(1000);
         let total_take_send = vec![(100, 50)];
         frame_history.apply_edge(&total_take_send, 1000);
-        assert!(frame_history.history_buffer.len() > 0);
+        assert!(!frame_history.history_buffer.is_empty());
     }
 
     #[test]
@@ -914,7 +924,8 @@ mod dot_tests {
             stats_computer: ActorStatsComputer::default(),
             display_label: String::new(),
             metric_text: String::new(),
-            remote_details: None
+            remote_details: None,
+            thread_info_cache: None,
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         // This should trigger the load calculation branch
@@ -932,7 +943,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: String::new(),
                     metric_text: "node_metric".to_string(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![
@@ -971,18 +983,17 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "node_with_suffix".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![],
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "TB".to_string()
-        };
 
-        build_dot(&state, &mut dot_graph, &config);
+
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("node42")); // Should include suffix
     }
@@ -1006,18 +1017,17 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "remote".to_string(),
                     metric_text: String::new(),
-                    remote_details: Some(remote_details)
+                    remote_details: Some(remote_details),
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![],
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "LR".to_string()
-        };
 
-        build_dot(&state, &mut dot_graph, &config);
+
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("192.168.1.1"));
         assert!(result.contains("port_8080"));
@@ -1037,7 +1047,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "from".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 },
                 Node {
                     id: Some(ActorName::new("to_node", Some(5))),
@@ -1046,7 +1057,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "to".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![
@@ -1066,11 +1078,9 @@ mod dot_tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "TB".to_string()
-        };
 
-        build_dot(&state, &mut dot_graph, &config);
+
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("from_node"));
         assert!(result.contains("to_node5"));
@@ -1096,6 +1106,7 @@ mod dot_tests {
             }),
             avg_mcpu: false,
             avg_work: false,
+            show_thread_info: false,
             percentiles_mcpu: vec![],
             percentiles_work: vec![],
             std_dev_mcpu: vec![],
@@ -1230,7 +1241,7 @@ mod dot_tests {
 
         // This should trigger the sync branches
         frame_history.apply_edge(&total_take_send, 1000);
-        assert!(frame_history.history_buffer.len() > 0);
+        assert!(!frame_history.history_buffer.is_empty());
     }
 
     #[test]
@@ -1272,19 +1283,17 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "unknown_node".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![],
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "LR".to_string()
-        };
 
         // This should not include the node since id is None (filtered out)
-        build_dot(&state, &mut dot_graph, &config);
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(!result.contains("unknown_node"));
     }
@@ -1311,12 +1320,10 @@ mod dot_tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "TB".to_string()
-        };
+
 
         // This should not process the edge since from and to are None
-        build_dot(&state, &mut dot_graph, &config);
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(!result.contains("test_edge"));
     }

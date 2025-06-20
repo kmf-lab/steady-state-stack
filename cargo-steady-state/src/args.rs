@@ -19,27 +19,30 @@ pub struct Args {
 
 }
 
-fn log_variants() -> &'static [&'static str] {
-    &["error", "warn", "info", "debug", "trace"]
-}
-
-fn validate_logging_level(level: String) -> Result<(), String> {
-    let level_lower = level.to_lowercase();
-    let valid_levels = log_variants();
-    if valid_levels.contains(&level_lower.as_str()) {
-        Ok(())
-    } else {
-        Err(String::from("Invalid logging level format."))
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+
+
+    fn log_variants() -> &'static [&'static str] {
+        &["error", "warn", "info", "debug", "trace"]
+    }
+
+    fn validate_logging_level(level: String) -> Result<(), String> {
+        let level_lower = level.to_lowercase();
+        let valid_levels = log_variants();
+        if valid_levels.contains(&level_lower.as_str()) {
+            Ok(())
+        } else {
+            Err(String::from("Invalid logging level format."))
+        }
+    }
+    
     #[test]
     fn test_default_values() {
-        let args = Args::parse_from(&[""]);
+        let args = Args::parse_from([""]);
         assert_eq!(args.loglevel, "Info");
         assert_eq!(args.dotfile, "graph.dot");
         assert_eq!(args.name, "unnamed");
@@ -47,7 +50,7 @@ mod tests {
 
     #[test]
     fn test_custom_values() {
-        let args = Args::parse_from(&[
+        let args = Args::parse_from([
             "",
             "-l", "debug",
             "-d", "custom.dot",

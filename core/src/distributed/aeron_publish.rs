@@ -6,234 +6,214 @@ use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
-use crate::distributed::distributed_stream::{SteadyStreamRx, StreamEgress};
-use crate::{SteadyActor, SteadyState};
-use crate::*;
+use crate::distributed::aqueduct_stream::{SteadyStreamRx, StreamEgress};
+use crate::{await_for_any, RxCore, SteadyActor, SteadyState};
 use crate::steady_actor_shadow::SteadyActorShadow;
-//  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
+use std::time::Duration;
+use log::{warn, error};
 
+// Reference to Aeron Best Practices Guide for performance optimization and configuration tips:
+// https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
+// **Constants for Testing and Configuration**
+/// Number of items to send in tests; increase for extended load testing.
+pub const TEST_ITEMS: usize = 200_000_000;
+/// Base stream ID for test publications.
+pub const STREAM_ID: i32 = 11;
+/// Term buffer size in MB; 64MB targets high message rates (e.g., 12M messages/sec).
+pub const _TERM_MB: i32 = 64;
+// A single stream at 64MB maps 400MB of shared memory. For optimal performance,
+// tune SO_RCVBUF/SO_SNDBUF and check loopback queue length (e.g., `ip link set lo txqueuelen 10000`).
+
+/// Manages Aeron-based message publishing for a single stream within the Steady State framework.
 #[derive(Default)]
 pub struct AeronPublishSteadyState {
+    /// Optional registration ID for the Aeron publication, persisted across actor restarts.
     pub(crate) pub_reg_id: Option<i64>,
+    /// Internal counter for items taken from the stream, used for tracking progress.
     pub(crate) _items_taken: usize,
 }
 
-pub async fn run(context: SteadyActorShadow
-             , rx: SteadyStreamRx<StreamEgress>
-             , aeron_connect: Channel
-             , stream_id: i32
-             , state: SteadyState<AeronPublishSteadyState>
-             ) -> Result<(), Box<dyn Error>> {
-
+/// Launches an Aeron publishing actor to transmit messages from a single stream.
+pub async fn run(
+    context: SteadyActorShadow,
+    rx: SteadyStreamRx<StreamEgress>,
+    aeron_connect: Channel,
+    stream_id: i32,
+    state: SteadyState<AeronPublishSteadyState>,
+) -> Result<(), Box<dyn Error>> {
     let mut actor = context.into_spotlight([&rx], []);
     if actor.use_internal_behavior {
         while actor.aeron_media_driver().is_none() {
-            warn!("unable to find Aeron media driver, will try again in 15 sec");
+            warn!("Unable to find Aeron media driver, will try again in 15 sec");
             let mut rx = rx.lock().await;
-            if actor.is_running( &mut || rx.is_closed_and_empty() ) {
+            if actor.is_running(&mut || rx.is_closed_and_empty()) {
                 let _ = actor.wait_periodic(Duration::from_secs(15)).await;
             } else {
                 return Ok(());
             }
         }
-        let aeron_media_driver = actor.aeron_media_driver().expect("media driver");
+        let aeron_media_driver = actor.aeron_media_driver().expect("Media driver should be available");
         internal_behavior(actor, rx, aeron_connect, stream_id, aeron_media_driver, state).await
     } else {
-        actor.simulated_behavior(vec!(&rx)).await
+        actor.simulated_behavior(vec![&rx]).await
     }
-
 }
 
-async fn internal_behavior<C: SteadyActor>(mut actor: C
-                                           , rx: SteadyStreamRx<StreamEgress>
-                                           , aeron_channel: Channel
-                                           , stream_id: i32
-                                           , aeron:Arc<futures_util::lock::Mutex<Aeron>>
-                                           , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
-    let is_shared_connection = false; //TODO: perhaps channel should define this??
-
+/// Core logic for publishing messages to a single Aeron stream.
+async fn internal_behavior<C: SteadyActor>(
+    mut actor: C,
+    rx: SteadyStreamRx<StreamEgress>,
+    aeron_channel: Channel,
+    stream_id: i32,
+    aeron: Arc<futures_util::lock::Mutex<Aeron>>,
+    state: SteadyState<AeronPublishSteadyState>,
+) -> Result<(), Box<dyn Error>> {
     let mut rx = rx.lock().await;
+    let mut state = state.lock(AeronPublishSteadyState::default).await;
 
-    let mut state = state.lock( || AeronPublishSteadyState::default()).await;
-        {
-            let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
-           //trace!("holding add_exclusive_publication lock");
-            if state.pub_reg_id.is_none() { //only add if we have not already done this
-                warn!("adding new pub {} {:?}",stream_id,aeron_channel.cstring() );
-                match aeron.add_exclusive_publication(aeron_channel.cstring(), stream_id) {
-                    Ok(reg_id) => state.pub_reg_id = Some(reg_id),
-                    Err(e) => {
-                        warn!("Unable to add publication: {:?}",e);
+    if state.pub_reg_id.is_none() {
+        let mut aeron = aeron.lock().await;
+        warn!("Adding new publication: stream_id={}, channel={:?}", stream_id, aeron_channel.cstring());
+        match aeron.add_exclusive_publication(aeron_channel.cstring(), stream_id) {
+            Ok(reg_id) => state.pub_reg_id = Some(reg_id),
+            Err(e) => warn!("Failed to add publication: {:?}", e),
+        };
+    }
+    Delay::new(Duration::from_millis(2)).await;
+
+    let mut my_pub: Result<ExclusivePublication, Box<dyn Error>> = Err("Publication not initialized".into());
+    if let Some(id) = state.pub_reg_id {
+        let mut found = false;
+        while actor.is_running(&mut || rx.is_closed_and_empty()) && !found {
+            let ex_pub = {
+                let mut aeron = aeron.lock().await;
+                aeron.find_exclusive_publication(id)
+            };
+            match ex_pub {
+                Err(e) => {
+                    if e.to_string().contains("Awaiting") || e.to_string().contains("not ready") {
+                        Delay::new(Duration::from_millis(4)).await;
+                        if actor.is_liveliness_stop_requested() {
+                            my_pub = Err(Box::new(std::io::Error::new(
+                                std::io::ErrorKind::Interrupted,
+                                "Shutdown requested while waiting for publication",
+                            )));
+                            found = true;
+                        }
+                    } else {
+                        warn!("Error finding publication: {:?}", e);
+                        my_pub = Err(Box::new(e));
+                        found = true;
                     }
-                };
+                }
+                Ok(publication) => {
+                    match Arc::try_unwrap(publication) {
+                        Ok(mutex) => match mutex.into_inner() {
+                            Ok(pub_instance) => {
+                                my_pub = Ok(pub_instance);
+                                found = true;
+                            }
+                            Err(_) => panic!("Failed to unwrap Mutex for publication"),
+                        },
+                        Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
+                    }
+                }
             }
         }
-        Delay::new(Duration::from_millis(2)).await; //back off so our request can get ready
+    } else {
+        return Err("No publication registered. Check if Media Driver is running.".into());
+    }
 
-        // now lookup when the publications are ready
-        let mut my_pub = Err("");
-                if let Some(id) = state.pub_reg_id {
-                    let mut found = false;
-                    while actor.is_running(&mut || rx.is_closed_and_empty() && (is_shared_connection || close_areon(&my_pub)) ) && !found {
-                           let ex_pub = {
-                                    let mut aeron = aeron.lock().await; //other actors need this so jit
-                                    aeron.find_exclusive_publication(id)
-                                };
-                        match ex_pub {
-                            Err(e) => {
-                                if e.to_string().contains("Awaiting")
-                                    || e.to_string().contains("not ready") {
-                                    //important that we do not poll fast while driver is setting up
-                                    Delay::new(Duration::from_millis(4)).await;
-                                    if actor.is_liveliness_stop_requested() {
-                                        //trace!("stop detected before finding publication");
-                                        //we are done, shutdown happened before we could start up.
-                                        my_pub = Err("Shutdown requested while waiting");
-                                        found = true;
+    warn!("Running publish for actor '{:?}' with publication in place", actor.identity());
+
+    let capacity: usize = rx.capacity();
+    let wait_for = (512 * 1024).min(capacity);
+
+    let mut last_position = 0;
+    let mut stream_flushed = false;
+    while actor.is_running(&mut || rx.is_closed_and_empty() && stream_flushed) {
+        let _clean = await_for_any!(
+            actor.wait_periodic(Duration::from_millis(10)),
+            actor.wait_avail(&mut rx, wait_for)
+        );
+
+        match &mut my_pub {
+            Ok(p) => {
+                if rx.is_closed_and_empty() && p.position().unwrap_or(0) >= last_position && !p.is_connected() {
+                    stream_flushed = true;
+                } else {
+                    let vacant_aeron_bytes = p.available_window().unwrap_or(0);
+                    if vacant_aeron_bytes > 0 {
+                        rx.consume_messages(&mut actor, vacant_aeron_bytes as usize, |slice1: &mut [u8], slice2: &mut [u8]| {
+                            let msg_len = slice1.len() + slice2.len();
+                            assert!(msg_len > 0, "Message length must be positive");
+                            let response = if slice2.is_empty() {
+                                p.offer_part(AtomicBuffer::wrap_slice(slice1), 0, msg_len as Index)
+                            } else {
+                                let aligned_buffer = AlignedBuffer::with_capacity(msg_len as Index);
+                                let buf = AtomicBuffer::from_aligned(&aligned_buffer);
+                                buf.put_bytes(0, slice1);
+                                buf.put_bytes(slice1.len() as Index, slice2);
+                                p.offer_part(buf, 0, msg_len as Index)
+                            };
+                            match response {
+                                Ok(value) => {
+                                    if value > 0 {
+                                        last_position = value;
+                                        true
+                                    } else {
+                                        false
                                     }
-                                } else {
-                                    warn!("Error finding publication: {:?}", e);
-                                    my_pub = Err("Unable to find requested publication");
-                                    found = true;
                                 }
-                            },
-                            Ok(publication) => {
-                                // Take ownership of the Arc and unwrap it
-                                match Arc::try_unwrap(publication) {
-                                    Ok(mutex) => {
-                                        // Take ownership of the inner Mutex
-                                        match mutex.into_inner() {
-                                            Ok(publication) => {
-                                              my_pub = Ok(publication);
-                                              found = true;
-                                            }
-                                            Err(_) => panic!("Failed to unwrap Mutex"),
-                                        }
-                                    }
-                                    Err(_) => panic!("Failed to unwrap Arc. Are there other references?"),
+                                Err(e) => {
+                                    warn!("Failed to offer message: {:?}", e);
+                                    false
                                 }
                             }
-                        }
-                    };
-                } else { //only add if we have not already done this
-                    return Err("Check if Media Driver is running.".into());
-                }
-
-        warn!("running publish '{:?}' all publications in place",actor.identity());
-        let capacity:usize = rx.capacity().into();
-        let wait_for = (512*1024).min(capacity);
-
-        while actor.is_running(&mut || rx.is_closed_and_empty() && (is_shared_connection || close_areon(&my_pub)) ) {
-    
-            let _clean = await_for_any!(actor.wait_periodic(Duration::from_millis(10))
-                                           ,actor.wait_avail(&mut rx, wait_for)
-                           );
-
-
-            let mut count_done = 0;
-            let mut count_bytes = 0;
-
-                    //buld a working batch solution first and then extract to functions later
-                    //peek a block ahead, 
-
-                       //provide every message and slice until false is returned at that point
-                        //we release everything consumed up to this point and return or if no data
-                        //upon return release
-                    match &mut my_pub {
-                        Ok(p) => {
-
-                            let vacant_aeron_bytes = p.available_window().unwrap_or(0);
-                            //TODO: if this is zero from the call then there are no subscribers so just hold back.
-
-                            //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
-                                rx.consume_messages(&mut actor, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
-                                    let msg_len = slice1.len() + slice2.len();
-                                    assert!(msg_len>0);
-                                    let response = if slice2.len() == 0 {
-                                        p.offer_part(AtomicBuffer::wrap_slice(&mut slice1), 0, msg_len as Index)
-                                    } else {  // TODO: p.try_claim() is probably a beter  way to move our datarather than AtomicBuffer usage..
-                                        let a_len = msg_len.min(slice1.len());
-                                        let remaining_read = msg_len - a_len;
-                                        let aligned_buffer = AlignedBuffer::with_capacity(msg_len as Index);
-                                        let buf = AtomicBuffer::from_aligned(&aligned_buffer);
-                                        buf.put_bytes(0, slice1);
-                                        let b_len = remaining_read.min(slice2.len());
-                                        let _extended_read = remaining_read - b_len;
-
-                                        buf.put_bytes(a_len as Index, slice2);
-                                        p.offer_part(buf, 0, msg_len as Index)
-                                    };
-                                    match response {
-                                        Ok(_value) => {
-                                            count_done += 1;
-                                            count_bytes+=msg_len;
-                                            true
-                                        }
-                                        Err(_aeron_error) => {
-                                            warn!("{:?}",_aeron_error);
-                                            false
-                                        }
-                                    }
-                                });
-                        }
-                        Err(e) => {
-                            warn!("panic details {}",e);
-                          //  panic!("{:?}", e); //we should have had the pup so try again
-                        }
+                        });
                     }
-         }        
+                }
+            }
+            Err(e) => {
+                error!("Publication unavailable: {}", e);
+                stream_flushed = true;
+            }
+        }
+    }
+
+    if let Ok(p) = my_pub {
+        p.close();
+    }
 
     Ok(())
 }
 
-fn close_areon(my_pub: &Result<ExclusivePublication, &str>) -> bool {
-    if let Ok(ep) = my_pub {
-        ep.close();
-    }
-    true
-}
-
+/// Test module for validating Aeron publishing functionality for a single channel.
 #[cfg(test)]
 pub(crate) mod aeron_tests {
-    use std::{env, fs};
+    use log::info;
     use super::*;
+    use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-    use crate::distributed::distributed_builder::AqueductBuilder;
-    use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamIngress, StreamTxBundleTrait};
+    use crate::distributed::aqueduct_builder::AqueductBuilder;
+    use crate::distributed::aqueduct_stream::{SteadyStreamTx, StreamIngress};
+    use crate::{await_for_all, AlertColor, Filled, GraphBuilder, Percentile, RxCore, ScheduleAs, Trigger};
 
-    //NOTE: bump this up for longer running load tests
-    //       20_000_000_000;
-    pub const TEST_ITEMS: usize = 200_000_000;
-
-    pub const STREAM_ID: i32 = 11;
-    //TODO: review the locking and init of terms in shared context??
-    // The max length of a term buffer is 1GB (ie 1024MB) Imposed by the media driver.
-    pub const _TERM_MB: i32 = 64; //at 1MB we are targeting 12M messages per second
-       //our goal is to clear 39M messages per second requiring 4MB
-       // a single stream at 64 maps 400MB of live shared memory
-    // https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
-    // Check SO_RCVBUF and SO_SNDBUF settings on the NICs and the OS
-    
-    // for loopback testing, we may need queue length to hold more units for 4MB of buffer data
-    // ip link show lo | grep qlen
-    // sudo ip link set lo txqueuelen 10000
-
-    // sudo ss -tulnpe | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
-    // sudo ss -m -p | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
-
-    pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyActorShadow
-                                                     , tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>> {
-
-        let mut actor = context.into_spotlight([], tx.control_meta_data());
+    /// Mock sender actor for testing message transmission to Aeron.
+    pub async fn mock_sender_run(
+        context: SteadyActorShadow,
+        tx: SteadyStreamTx<StreamEgress>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut actor = context.into_spotlight([], [&tx]);
         let mut tx = tx.lock().await;
 
         let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
         let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
 
-        const BATCH_SIZE:usize = 5000;
-        let items: [StreamEgress; BATCH_SIZE] = [StreamEgress::new(8);BATCH_SIZE];
-        let mut data: [[u8;8]; BATCH_SIZE] = [data1; BATCH_SIZE];
+        const BATCH_SIZE: usize = 5000;
+        let items: [StreamEgress; BATCH_SIZE] = [StreamEgress::new(8); BATCH_SIZE];
+        let mut data: [[u8; 8]; BATCH_SIZE] = [data1; BATCH_SIZE];
         for i in 0..BATCH_SIZE {
             if i % 2 == 0 {
                 data[i] = data1;
@@ -241,213 +221,148 @@ pub(crate) mod aeron_tests {
                 data[i] = data2;
             }
         }
-        let all_bytes: Vec<u8> = data.iter().flatten().map(|f| *f).collect();
+        let all_bytes: Vec<u8> = data.iter().flatten().copied().collect();
 
         let mut sent_count = 0;
         while actor.is_running(&mut || tx.mark_closed()) {
-
-            //waiting for at least 1 channel in the stream has room for 2 made of 6 bytes
             let vacant_items = 200000;
             let data_size = 8;
             let vacant_bytes = vacant_items * data_size;
 
-            let _clean = await_for_all!(actor.wait_vacant_bundle(&mut tx
-                                       , (vacant_items, vacant_bytes), 1));
+            let _clean = await_for_all!(actor.wait_vacant(&mut tx, (vacant_items, vacant_bytes)));
 
             let mut remaining = TEST_ITEMS;
-            let idx:usize = (11 - STREAM_ID) as usize;
-            while remaining > 0 && actor.vacant_units(&mut tx[idx].control_channel) >= BATCH_SIZE {
+            while remaining > 0 && actor.vacant_units(&mut tx.control_channel) >= BATCH_SIZE {
+                actor.send_slice(&mut tx.payload_channel, all_bytes.as_ref());
+                actor.send_slice(&mut tx.control_channel, items.as_ref());
 
-                //actor.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
-                actor.send_slice(&mut tx[idx].payload_channel, &all_bytes.as_ref());
-                actor.send_slice(&mut tx[idx].control_channel, &items.as_ref());
-
-                // this old solution worked but consumed more core
-                // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
-                //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data1);
-                //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data2);
-                // }
                 sent_count += BATCH_SIZE;
-                remaining -= BATCH_SIZE
+                remaining -= BATCH_SIZE;
             }
 
-            if sent_count>=TEST_ITEMS {
-                //if an actor exits without closing its streams we will get a dirty shutdown.
+            if sent_count >= TEST_ITEMS {
                 tx.mark_closed();
-                //error!("sender is done");
-                return Ok(()); //exit now because we sent all our data
+                error!("sender is done");
+                return Ok(());
             }
         }
-
         Ok(())
     }
 
-    async fn mock_receiver_run<const GIRTH:usize>(context: SteadyActorShadow
-                                                      , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
-
-        let mut actor = context.into_spotlight(rx.control_meta_data(), []);
+    /// Mock receiver actor for testing message consumption from Aeron.
+    pub async fn mock_receiver_run(
+        context: SteadyActorShadow,
+        rx: SteadyStreamRx<StreamIngress>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut actor = context.into_spotlight([&rx], []);
         let mut rx = rx.lock().await;
 
         let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let _data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
 
-        const LEN:usize = 100_000;
+        const LEN: usize = 100_000;
 
-        // let mut buffer: [StreamData<StreamSessionMessage>; LEN] = core::array::from_fn(|_| {
-        //     StreamData::new(
-        //         StreamSessionMessage::new(0, 0, Instant::now(), Instant::now()),
-        //         Vec::new().into()
-        //     )
-        // });
-        trace!("started mock receiver------");
         let mut received_count = 0;
         while actor.is_running(&mut || rx.is_closed_and_empty()) {
+            let _clean = await_for_all!(actor.wait_avail(&mut rx, LEN));
 
-            let _clean = await_for_all!(actor.wait_avail_bundle(&mut rx, LEN, 1));
-
-            //we waited above for 2 messages so we know there are 2 to consume
-            //reading from a single channel with a single stream id
-
-            //let taken = actor.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
-
-            let bytes = actor.avail_units(&mut rx[0].payload_channel);
-            actor.advance_take_index(&mut rx[0].payload_channel, bytes);
-            let taken = actor.avail_units(&mut rx[0].control_channel);
-            actor.advance_take_index(&mut rx[0].control_channel, taken);
-
-
-            //  let avail = actor.avail_units(&mut rx[0].item_channel);
-
-           // TODO: need a way to test this..
-
-
-            // for i in 0..(avail>>1) {
-            //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
-            //         //warn!("test data {:?}",d.payload);
-            //         debug_assert_eq!(&*data1, &*d.payload);
-            //     }
-            //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
-            //         //warn!("test data {:?}",d.payload);
-            //         debug_assert_eq!(&*data2, &*d.payload);
-            //     }
-            // }
-
+            let bytes = actor.avail_units(&mut rx.payload_channel);
+            actor.advance_take_index(&mut rx.payload_channel, bytes);
+            let taken = actor.avail_units(&mut rx.control_channel);
+            actor.advance_take_index(&mut rx.control_channel, taken);
 
             received_count += taken;
-            //actor.relay_stats_smartly(); //should not be needed.
-
-            //here we request shutdown but we only leave after our upstream actors are done
-            if received_count >= (TEST_ITEMS-taken) {
-                //error!("stop requested");
+            if received_count >= (TEST_ITEMS - taken) {
+                error!("stop requested");
                 actor.request_shutdown().await;
                 return Ok(());
             }
         }
-
         error!("receiver is done");
         Ok(())
     }
 
-    // fn is_wsl() -> bool {
-    //     if let Ok(version) = fs::read_to_string("/proc/version") {
-    //         version.contains("Microsoft") || version.contains("WSL")
-    //     } else {
-    //         false // If the file can't be read, assume not WSL
-    //     }
-    // }
+    /// Tests the end-to-end byte processing through Aeron for a single channel.
+    #[async_std::test]
+    async fn test_bytes_process() -> Result<(), Box<dyn Error>> {
+        if true {
+            return Ok(()); // Skip test by default.
+        }
+        if std::env::var("GITHUB_ACTIONS").is_ok() {
+            return Ok(());
+        }
 
-    //TODO: this test seems to take forever at at times. need more investigation.
-    // #[test]
-    // #[cfg(not(windows))]
-    // fn test_bytes_process() {
-    //     if std::env::var("GITHUB_ACTIONS").is_ok() {
-    //         return; //skip this test if we are github actions
-    //     }
-    //
-    //     unsafe {
-    //         env::set_var("TELEMETRY_SERVER_PORT", "9201");
-    //     }
-    //     let mut graph = GraphBuilder::for_testing()
-    //         .with_telemetry_metric_features(true)
-    //         .with_telemtry_production_rate_ms(400)
-    //         .build(());
-    //     let md = graph.aeron();
-    //
-    //     if let Some(temp_md) = &md {
-    //         if let Some(guard_md) = temp_md.try_lock() {
-    //             info!("Found MediaDriver cnc: {:?}",guard_md.context().cnc_file_name()  );
-    //         };
-    //     } else {
-    //         info!("aeron test skipped, no media driver present");
-    //         return;
-    //     }
-    //
-    //     let channel_builder = graph.channel_builder();
-    //
-    //     let (to_aeron_tx,to_aeron_rx) = channel_builder
-    //         .with_avg_rate()
-    //         .with_avg_filled()
-    //         .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
-    //         .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
-    //         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-    //         .with_capacity(4*1024*1024)
-    //         .build_stream_bundle::<StreamSimpleMessage,1>(8);
-    //     let (from_aeron_tx,from_aeron_rx) = channel_builder
-    //         .with_avg_rate()
-    //         .with_avg_filled()
-    //         .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
-    //         .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
-    //         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-    //         .with_capacity(4*1024*1024)
-    //         .build_stream_bundle::<StreamSessionMessage,1>(8);
-    //
-    //     //  https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
-    //     let aeron_config = AeronConfig::new()
-    //         //TODO: to hack Ipc we need point to point and no term length
-    //         //we will use this for unit tests.
-    //        .with_media_type(MediaType::Ipc) // 10MMps
-    //
-    //      //   .with_media_type(MediaType::Udp)// 4MMps- std 4K page
-    //        // .with_term_length((1024 * 1024 * 4) as usize)
-    //
-    //         .use_point_to_point(Endpoint {
-    //             ip: "127.0.0.1".parse().expect("Invalid IP address"),
-    //             port: 40456,
-    //         })
-    //         .build();
-    //
-    //
-    //     graph.actor_builder().with_name("MockSender")
-    //         .with_thread_info()
-    //         .with_mcpu_percentile(Percentile::p96())
-    //         .with_mcpu_percentile(Percentile::p25())
-    //
-    //         //  .with_explicit_core(6)
-    //         .build(move |context| mock_sender_run(context, to_aeron_tx.clone())
-    //                , &mut Threading::Spawn);
-    //
-    //     let stream_id = 789;
-    //
-    //     to_aeron_rx.build_aqueduct(AqueTech::Aeron(aeron_config.clone(), stream_id)
-    //                                    , & graph.actor_builder().with_name( "SenderTest").never_simulate(true)
-    //                                    , &mut Threading::Spawn);
-    //
-    //     //set this up first so sender has a place to send to
-    //     graph.actor_builder().with_name("MockReceiver")
-    //         .with_thread_info()
-    //         .with_mcpu_percentile(Percentile::p96())
-    //         .with_mcpu_percentile(Percentile::p25())
-    //
-    //         // .with_explicit_core(9)
-    //         .build(move |context| mock_receiver_run(context, from_aeron_rx.clone())
-    //                , &mut Threading::Spawn);
-    //
-    //     from_aeron_tx.build_aqueduct(AqueTech::Aeron(aeron_config.clone(), stream_id)
-    //                                         , &graph.actor_builder().with_name("ReceiverTest").never_simulate(true)
-    //                                         , &mut Threading::Spawn);
-    //
-    //     graph.start(); //startup the graph
-    //     graph.block_until_stopped(Duration::from_secs(21));
-    // }
+        let mut graph = GraphBuilder::for_testing()
+            .with_telemetry_metric_features(true)
+            .build(());
 
+        let aeron_md = graph.aeron_media_driver();
+        if aeron_md.is_none() {
+            info!("aeron test skipped, no media driver present");
+            return Ok(());
+        }
+
+        let channel_builder = graph.channel_builder();
+
+        let (to_aeron_tx, to_aeron_rx) = channel_builder
+            .with_avg_rate()
+            .with_avg_filled()
+            .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
+            .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
+            .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
+            .with_capacity(4 * 1024 * 1024)
+            .build_stream::<StreamEgress>(8);
+
+        let (from_aeron_tx, from_aeron_rx) = channel_builder
+            .with_avg_rate()
+            .with_avg_filled()
+            .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
+            .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
+            .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
+            .with_capacity(4 * 1024 * 1024)
+            .build_stream::<StreamIngress>(8);
+
+        let aeron_config = AeronConfig::new()
+            .with_media_type(MediaType::Ipc) // IPC for maximum throughput.
+            .use_point_to_point(Endpoint {
+                ip: "127.0.0.1".parse().expect("Invalid IP address"),
+                port: 40456,
+            })
+            .build();
+
+        graph.actor_builder().with_name("MockSender")
+            .with_thread_info()
+            .with_mcpu_percentile(Percentile::p96())
+            .with_mcpu_percentile(Percentile::p25())
+            .build(
+                move |context| mock_sender_run(context, to_aeron_tx.clone()),
+                ScheduleAs::SoloAct,
+            );
+
+        let stream_id = 12;
+
+        to_aeron_rx.build_aqueduct(
+            AqueTech::Aeron(aeron_config.clone(), stream_id),
+            &graph.actor_builder().with_name("SenderTest").never_simulate(true),
+            ScheduleAs::SoloAct,
+        );
+
+        graph.actor_builder().with_name("MockReceiver")
+            .with_thread_info()
+            .with_mcpu_percentile(Percentile::p96())
+            .with_mcpu_percentile(Percentile::p25())
+            .build(
+                move |context| mock_receiver_run(context, from_aeron_rx.clone()),
+                ScheduleAs::SoloAct,
+            );
+
+        from_aeron_tx.build_aqueduct(
+            AqueTech::Aeron(aeron_config.clone(), stream_id),
+            &graph.actor_builder().with_name("ReceiverTest").never_simulate(true),
+            ScheduleAs::SoloAct,
+        );
+
+        graph.start();
+        graph.block_until_stopped(Duration::from_secs(21))
+    }
 }

@@ -43,13 +43,13 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Packet>) -
 
 #[cfg(test)]
 mod user_tests {
+    use std::error::Error;
     use std::thread::sleep;
     use std::time::Duration;
-    use futures_timer::Delay;
     use steady_state::GraphBuilder;
 
     #[test]
-    fn test_user() {
+    fn test_user() -> Result<(), Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
  
     //
@@ -72,13 +72,14 @@ mod user_tests {
         graph.start();
         sleep(Duration::from_millis(60));
         graph.request_shutdown();
-        graph.block_until_stopped(Duration::from_secs(15));
+        graph.block_until_stopped(Duration::from_secs(15))?;
         
     //     //4. assert expected results
     //     // TODO: not sure how to make this work.
     //     //  println!("last approval: {:?}", &state.last_approval);
     //     //  assert_eq!(approved_widget_rx_out.testing_avail_units().await, BATCH_SIZE);
-     }
+        Ok(()) 
+    }
 
 
 }
