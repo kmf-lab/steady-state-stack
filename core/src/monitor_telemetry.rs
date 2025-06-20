@@ -138,7 +138,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
 
     fn is_empty(&self) -> bool {
         let s = if let Some(send) = &self.send {
-            if let Some(mut rx) = send.rx.try_lock() {
+            if let Some(rx) = send.rx.try_lock() {
                 rx.is_empty()
             } else {
                 false
@@ -148,7 +148,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         };
 
         let a = if let Some(actor) = &self.actor {
-            if let Some(mut rx) = actor.try_lock() {
+            if let Some(rx) = actor.try_lock() {
                 rx.is_empty()
             } else {
                 false
@@ -158,7 +158,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         };
 
         let t = if let Some(take) = &self.take {
-            if let Some(mut rx) = take.rx.try_lock() {
+            if let Some(rx) = take.rx.try_lock() {
                 rx.is_empty()
             } else {
                 false

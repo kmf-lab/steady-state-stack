@@ -263,7 +263,6 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                             }
                         }
 
-                        //TODO: we may need to only build this every N iterations to save time...
                         let thread_info = if this.show_thread_info {
                             let current_thread = thread::current(); //WARN: we trust this thread is ours.
                             Some(ThreadInfo{
@@ -273,6 +272,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                 core: get_current_cpu(),
                             })
                         } else {
+                            error!("do not show thread info, strange we saw it once");
                             None
                         };
 
@@ -281,9 +281,9 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         match tx.shared_try_send(msg) {
                             Ok(_) => {
                                 if let Some(ref mut send_tx) = this.telemetry.send_tx {
-                                    if tx.local_index.lt(&MONITOR_NOT) {
+                                    if tx.local_monitor_index.lt(&MONITOR_NOT) {
                                         //happy path
-                                        send_tx.count[tx.local_index] += 1;
+                                        send_tx.count[tx.local_monitor_index] += 1;
                                         if let Some(last_elapsed) = elapsed_micros {
                                             if last_elapsed >= this.frame_rate_ms {
                                                 let now = Instant::now();
@@ -295,17 +295,17 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                                 }
                                             }
                                         }
-                                    } else if tx.local_index.eq(&MONITOR_UNKNOWN) {
+                                    } else if tx.local_monitor_index.eq(&MONITOR_UNKNOWN) {
                                         //happy path
-                                        tx.local_index = find_my_index(send_tx, tx.channel_meta_data.meta_data.id);
-                                        if tx.local_index.lt(&MONITOR_NOT) {
-                                            send_tx.count[tx.local_index] += 1;
+                                        tx.local_monitor_index = find_my_index(send_tx, tx.channel_meta_data.meta_data.id);
+                                        if tx.local_monitor_index.lt(&MONITOR_NOT) {
+                                            send_tx.count[tx.local_monitor_index] += 1;
                                         } else {
                                             //we did not find our index, should not happen unless there is a code error in in shutdown
-                                            if tx.local_index.eq(&MONITOR_UNKNOWN) {
-                                                trace!("MONITOR_UNKNOWN try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
+                                            if tx.local_monitor_index.eq(&MONITOR_UNKNOWN) {
+                                                trace!("MONITOR_UNKNOWN try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_monitor_index);
                                             } else {
-                                                trace!("MONITOR_NOT try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
+                                                trace!("MONITOR_NOT try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_monitor_index);
                                             }
 
                                         }
@@ -356,20 +356,20 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         match tx.shared_try_send(send_tx.count) {
                             Ok(_) => {
                                 send_tx.count.fill(0);
-                                if tx.local_index.lt(&MONITOR_NOT) {
+                                if tx.local_monitor_index.lt(&MONITOR_NOT) {
                                     //happy path
-                                    send_tx.count[tx.local_index] = 1;
-                                } else if tx.local_index.eq(&MONITOR_UNKNOWN) {
-                                    tx.local_index = find_my_index(send_tx, tx.channel_meta_data.meta_data.id);
-                                    if tx.local_index.lt(&MONITOR_NOT) {
+                                    send_tx.count[tx.local_monitor_index] = 1;
+                                } else if tx.local_monitor_index.eq(&MONITOR_UNKNOWN) {
+                                    tx.local_monitor_index = find_my_index(send_tx, tx.channel_meta_data.meta_data.id);
+                                    if tx.local_monitor_index.lt(&MONITOR_NOT) {
                                         //happy path
-                                        send_tx.count[tx.local_index] = 1;
+                                        send_tx.count[tx.local_monitor_index] = 1;
                                     } else {
                                         //we did not find our index, should not happen often unless we have code error
-                                        if tx.local_index.eq(&MONITOR_UNKNOWN) {
-                                            trace!("MONITOR_UNKNOWN try send telemetry tx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
+                                        if tx.local_monitor_index.eq(&MONITOR_UNKNOWN) {
+                                            trace!("MONITOR_UNKNOWN try send telemetry tx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_monitor_index);
                                         } else {
-                                            trace!("MONITOR_NOT try send telemetry tx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
+                                            trace!("MONITOR_NOT try send telemetry tx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_monitor_index);
                                         }
 
                                     }
@@ -404,20 +404,20 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                             Ok(_) => {
                                 send_rx.count.fill(0);
                                 // above MONITOR_NOT is the MONITOR_UNKNOWN and below are actual index values
-                                if rx.local_index.lt(&MONITOR_NOT) {
+                                if rx.local_monitor_index.lt(&MONITOR_NOT) {
                                     //happy path
-                                    send_rx.count[rx.local_index] = 1;
-                                } else if rx.local_index.eq(&MONITOR_UNKNOWN) {
-                                    rx.local_index = find_my_index(send_rx, rx.channel_meta_data.meta_data.id);
-                                    if rx.local_index.lt(&MONITOR_NOT) {
+                                    send_rx.count[rx.local_monitor_index] = 1;
+                                } else if rx.local_monitor_index.eq(&MONITOR_UNKNOWN) {
+                                    rx.local_monitor_index = find_my_index(send_rx, rx.channel_meta_data.meta_data.id);
+                                    if rx.local_monitor_index.lt(&MONITOR_NOT) {
                                         //happy path
-                                        send_rx.count[rx.local_index] = 1;
+                                        send_rx.count[rx.local_monitor_index] = 1;
                                     } else {
                                         //we did not find our index, should not happen unless we have a code error.
-                                        if rx.local_index.eq(&MONITOR_UNKNOWN) {
-                                            trace!("MONITOR_UNKNOWN try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_rx.count, rx.local_index);
+                                        if rx.local_monitor_index.eq(&MONITOR_UNKNOWN) {
+                                            trace!("MONITOR_UNKNOWN try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_rx.count, rx.local_monitor_index);
                                         } else {
-                                            trace!("MONITOR_NOT try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_rx.count, rx.local_index);
+                                            trace!("MONITOR_NOT try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_rx.count, rx.local_monitor_index);
                                         }
                                     }
                                 }

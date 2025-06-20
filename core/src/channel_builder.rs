@@ -702,7 +702,7 @@ impl ChannelBuilder {
             Tx {
                 tx,
                 channel_meta_data: TxChannelMetaDataWrapper{ meta_data: Arc::clone(&channel_meta_data)},
-                local_index: MONITOR_UNKNOWN,
+                local_monitor_index: MONITOR_UNKNOWN,
                 make_closed: Some(sender_is_closed),
                 last_error_send: now,
                 oneshot_shutdown: receiver_tx,

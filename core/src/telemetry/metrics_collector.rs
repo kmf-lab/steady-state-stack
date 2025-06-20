@@ -230,7 +230,7 @@ async fn internal_behavior<const GIRTH: usize>(
 
         // Collect telemetry data and detect structural changes.
         let (nodes, to_pop) = {
-            let mut guard = dynamic_senders_vec.read();
+            let guard = dynamic_senders_vec.read();
             let dynamic_senders = guard.deref();
             let structure_unchanged = dynamic_senders.len() == state.actor_count;
             if structure_unchanged && !trying_to_shutdown {
@@ -383,7 +383,7 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: & [Collect
     state.fill = (state.fill + 1) & 0xF; // Increment fill, capped at 15 to avoid overflow.
     let working: Vec<(bool, &CollectorDetail)> = dynamic_senders
         .iter()
-        .map(|mut f| {
+        .map(| f| {
             let has_data = if let Some(x) = f.telemetry_take.iter().find(|f|!f.is_empty()) {
                 x.consume_send_into(&mut state.total_take_send, &mut state.future_send)
             } else {

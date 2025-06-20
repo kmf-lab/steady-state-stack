@@ -28,9 +28,9 @@ use crate::steady_tx::TxMetaDataProvider;
 use crate::core_exec;
 use futures::future::FutureExt; // For .fuse()
 use futures::pin_mut;
-use log::{error, trace};
+use log::*;
+use crate::RxDone;
 use num_traits::Zero;
-// For pin_mut!
 
 
 /// Type alias for ID used in Aeron. Aeron commonly uses `i32` for stream/session IDs.
@@ -105,9 +105,9 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRT
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
-    fn control_meta_data(& self) -> [& dyn RxMetaDataProvider; GIRTH] {
+    fn control_meta_data(&self) -> [& dyn RxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x as &dyn RxMetaDataProvider)
+            .map(|steady_stream| steady_stream as &dyn RxMetaDataProvider)
             .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
@@ -115,7 +115,10 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRT
 
     fn payload_meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x as &dyn RxMetaDataProvider)
+            .map(|steady_stream|  {
+                {steady_stream.try_lock().expect("Internal error").spotlight_control=false;}
+                steady_stream as &dyn RxMetaDataProvider
+            })
             .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
@@ -156,8 +159,10 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRT
 
     fn payload_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x as &dyn TxMetaDataProvider)
-            .collect::<Vec<_>>()
+            .map(|steady_stream|  {
+                {steady_stream.try_lock().expect("Internal error").spotlight_control=false;}
+                steady_stream as &dyn TxMetaDataProvider
+            })            .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
     }
@@ -414,8 +419,8 @@ pub struct StreamTx<T: StreamControlItem> {
     pub(crate) output_rate_index: usize,
     pub(crate) output_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
 
-    pub(crate) stored_vacant_values: (i32,i32)
-
+    pub(crate) stored_vacant_values: (i32,i32),
+    pub(crate) spotlight_control: bool,
 }
 impl<T: StreamControlItem> Debug for StreamTx<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -469,6 +474,7 @@ impl<T: StreamControlItem> StreamTx<T> {
             last_output_instant: Instant::now(),
             output_rate_index: RATE_COLLECTOR_MASK,
             output_rate_collector: Default::default(),
+            spotlight_control: true,
         }
     }
 
@@ -642,16 +648,22 @@ impl<T: StreamControlItem> StreamTx<T> {
 
         // Append the slice to the ringbuffer (first half of the split)
         let slice_len = slice.len();
-        debug_assert!(slice_len>0);
+        assert!(slice_len>0);
 
         let count = defrag_entry.ringbuffer_bytes.0.push_slice(slice);
         defrag_entry.running_length += count;
-        debug_assert_eq!(count, slice_len, "internal buffer should have had room");
-
+        if count != slice_len {
+            error!("Fragment buffer full: dropped {} bytes for session {}", slice_len - count, session_id);
+            // Optionally: block, retry, or return an error to the poll loop
+            // return or break here to avoid partial message
+        }
         // If this is the end of a fragment send
         if is_end {
             let result = defrag_entry.ringbuffer_items.0.try_push(T::from_defrag(defrag_entry));
-            debug_assert!(result.is_ok());
+            if result.is_err() {
+                error!("Item buffer full: dropped message for session {}", session_id);
+                // Optionally: block, retry, or return an error to the poll loop
+            }
             
             if!self.ready_msg_session.contains(&defrag_entry.session_id) {
                 self.ready_msg_session.push_back(defrag_entry.session_id);
@@ -670,7 +682,8 @@ impl<T: StreamControlItem> StreamTx<T> {
 #[derive(Debug)]
 pub struct StreamRx<T: StreamControlItem> {
     pub(crate) control_channel: Rx<T>,
-    pub(crate) payload_channel: Rx<u8>
+    pub(crate) payload_channel: Rx<u8>,
+    pub(crate) spotlight_control: bool
 }
 
 impl<T: StreamControlItem> StreamRx<T> {
@@ -678,7 +691,8 @@ impl<T: StreamControlItem> StreamRx<T> {
     pub(crate) fn new(control_channel: Rx<T>, payload_channel: Rx<u8>) -> Self {
         StreamRx {
             control_channel,
-            payload_channel
+            payload_channel,
+            spotlight_control: true
         }
     }
 
@@ -723,8 +737,8 @@ impl<T: StreamControlItem> StreamRx<T> {
         &mut self,
         actor: &mut C,
         byte_limit: usize,
-        mut fun: impl FnMut(&mut [u8], &mut [u8]) -> bool,
-    ) {
+        mut successfull_offer: impl FnMut(&mut [u8], &mut [u8]) -> bool,
+    ) -> RxDone {
         // Obtain mutable slices from the item and payload channels
         let (item1, item2) = self.control_channel.rx.as_mut_slices();
         let (payload1, payload2) = self.payload_channel.rx.as_mut_slices();
@@ -734,7 +748,7 @@ impl<T: StreamControlItem> StreamRx<T> {
         let mut active_index = 0; // Current index in the active payload slice
         let mut active_items = 0; // Number of items processed
         let mut active_data:usize = 0; // Total bytes processed
-
+        let mut is_done = false;
         // Process items from the first slice
         for i in item1 {
             // Extract payload slices based on the current state
@@ -747,13 +761,9 @@ impl<T: StreamControlItem> StreamRx<T> {
             );
 
             // Apply the provided function to the payload slices
-            if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
-                // If the limit is reached or the function returns false, advance the read indices and exit
-                let x = actor.advance_read_index(&mut self.payload_channel, active_data);
-                debug_assert_eq!(x.item_count(), active_data, "Payload channel advance mismatch");
-                let x = actor.advance_read_index(&mut self.control_channel, active_items);
-                debug_assert_eq!(x.item_count(), active_items, "Item channel advance mismatch");
-                return;
+            if active_data+(i.length() as usize) > byte_limit || !successfull_offer(a, b) {
+               is_done = true;
+               break;
             }
 
             // Update the counts of processed items and data
@@ -761,42 +771,34 @@ impl<T: StreamControlItem> StreamRx<T> {
             active_data += i.length() as usize;
         }
 
-        // Process items from the second slice
-        for i in item2 {
-            // Extract payload slices based on the current state
-            let (a, b) = Self::extract_stream_payload_slices(
-                payload1,
-                payload2,
-                &mut on_first,
-                &mut active_index,
-                i.length() as usize,
-            );
+        if !is_done {
+            // Process items from the second slice
+            for i in item2 {
+                // Extract payload slices based on the current state
+                let (a, b) = Self::extract_stream_payload_slices(
+                    payload1,
+                    payload2,
+                    &mut on_first,
+                    &mut active_index,
+                    i.length() as usize,
+                );
 
-            // Apply the provided function to the payload slices
-            if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
-                // If the limit is reached or the function returns false, advance the read indices and exit
-                let x = actor.advance_read_index(&mut self.payload_channel, active_data);
-                debug_assert_eq!(x.item_count(), active_data, "Payload channel advance mismatch");
-                let x = actor.advance_read_index(&mut self.control_channel, active_items);
-                debug_assert_eq!(x.item_count(), active_items, "Item channel advance mismatch");
-                return;
+                // Apply the provided function to the payload slices
+                if active_data + (i.length() as usize) > byte_limit || !successfull_offer(a, b) {
+                    break;
+                }
+
+                // Update the counts of processed items and data
+                active_items += 1;
+                active_data += i.length() as usize;
             }
-
-            // Update the counts of processed items and data
-            active_items += 1;
-            active_data += i.length() as usize;
         }
 
-        // !("we made it to the end with {}",active_items);
-        // If all items are processed successfully, advance the read indices
-        let x = actor.advance_read_index(&mut self.payload_channel, active_data);
-        debug_assert_eq!(x.item_count(), active_data, "Payload channel advance mismatch");
-        let x = actor.advance_read_index(&mut self.control_channel, active_items);
-        debug_assert_eq!(x.item_count(), active_items, "Item channel advance mismatch");
+        let done =  actor.advance_read_index(self,(active_items,active_data));
+        assert_eq!(done.payload_count().expect("items"), active_data, "Payload channel advance mismatch");
+        assert_eq!(done.item_count(), active_items, "Item channel advance mismatch");
 
-        //let avail = self.item_channel.shared_avail_units();
-       //warn!("published {:?} on {:?} avail {:?}",active_items, self.item_channel.channel_meta_data.meta_data.id, avail);
-
+        done
     }
 
     fn extract_stream_payload_slices<'a>(
@@ -1106,22 +1108,43 @@ impl<T: StreamControlItem> LazyStreamRx<T> {
 impl<T: StreamControlItem> RxMetaDataProvider for SteadyStreamRx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
-            Some(guard) => guard.control_channel.channel_meta_data.meta_data(),
+            Some(guard) => {
+                if guard.spotlight_control {
+                    guard.control_channel.channel_meta_data.meta_data()
+                } else {
+                    guard.payload_channel.channel_meta_data.meta_data()
+                }
+            },
             None => {
                 let guard = core_exec::block_on(self.lock());
-                guard.control_channel.channel_meta_data.meta_data()
+                if guard.spotlight_control {
+                    guard.control_channel.channel_meta_data.meta_data()
+                } else {
+                    guard.payload_channel.channel_meta_data.meta_data()
+                }
             }
         }
     }
 }
 
+
 impl<T: StreamControlItem> TxMetaDataProvider for SteadyStreamTx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
-            Some(guard) => guard.control_channel.channel_meta_data.meta_data(),
+            Some(guard) =>{
+                if guard.spotlight_control {
+                    guard.control_channel.channel_meta_data.meta_data()
+                } else {
+                    guard.payload_channel.channel_meta_data.meta_data()
+                }
+            }
             None => {
                 let guard = core_exec::block_on(self.lock());
-                guard.control_channel.channel_meta_data.meta_data()
+                if guard.spotlight_control {
+                    guard.control_channel.channel_meta_data.meta_data()
+                } else {
+                    guard.payload_channel.channel_meta_data.meta_data()
+                }
             }
         }
     }

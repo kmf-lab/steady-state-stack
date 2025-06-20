@@ -7,6 +7,7 @@ use std::error::Error;
 use std::sync::{Arc};
 use aeron::aeron::Aeron;
 use futures_util::lock::Mutex;
+use log::*;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
@@ -70,6 +71,8 @@ impl SteadyActorShadow {
             let mut rx_inverse_local_idx = [0; RX_LEN];
             rx_mons.iter().enumerate().for_each(|(c, md)| {
                 assert!(md.id < usize::MAX);
+                trace!("register rx {}",md.id);
+
                 rx_inverse_local_idx[c] = md.id;
                 rx_meta_data.push(md.clone());
             });
@@ -78,6 +81,7 @@ impl SteadyActorShadow {
             let mut tx_inverse_local_idx = [0; TX_LEN];
             tx_mons.iter().enumerate().for_each(|(c, md)| {
                 assert!(md.id < usize::MAX);
+                trace!("register tx {}",md.id);
                 tx_inverse_local_idx[c] = md.id;
                 tx_meta_data.push(md.clone());
             });
