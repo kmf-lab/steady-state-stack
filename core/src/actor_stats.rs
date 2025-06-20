@@ -956,7 +956,7 @@ mod extra_tests {
     }
 
     /// Test compute method with SHOW_ACTORS feature enabled
-    #[cfg(feature = "show_actors")]
+    #[cfg(feature = "core_display")]
     #[test]
     fn test_compute_with_show_actors() {
         let _ = util::steady_logger::initialize();

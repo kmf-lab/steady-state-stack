@@ -43,11 +43,11 @@ pub trait TxCore {
     #[allow(async_fn_in_trait)]
     async fn shared_wait_empty(&mut self) -> bool;
 
+    fn shared_advance_index(&mut self, request: Self::MsgSize) -> TxDone;
+
     fn shared_send_slice(& mut self, source: Self::SliceSource<'_> ) -> TxDone  where Self::MsgOut: Copy;
 
-    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
-                    where
-                        F: FnOnce(Self::SliceTarget<'a>) -> TxDone;
+    fn shared_poke_slice(& mut self) -> Self::SliceTarget<'_>;
 
 
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
@@ -75,6 +75,18 @@ impl<T> TxCore for Tx<T> {
     type MsgSize = usize;
     type SliceSource<'b> = &'b [T] where T: 'b;
     type SliceTarget<'a> = (&'a mut [std::mem::MaybeUninit<T>], &'a mut [std::mem::MaybeUninit<T>]) where T: 'a;
+
+
+    fn shared_advance_index(&mut self, request: Self::MsgSize) -> TxDone {
+        let avail = self.tx.occupied_len();
+        let idx = if request>avail {
+            avail
+        } else {
+            request
+        };
+        unsafe { self.tx.advance_write_index(idx); }
+        TxDone::Normal(idx)
+    }
 
     fn done_one(&self, _one: &Self::MsgIn<'_>) -> TxDone {
         TxDone::Normal(1)
@@ -216,15 +228,10 @@ impl<T> TxCore for Tx<T> {
     }
 
     #[inline]
-    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
-    where
-        F: FnOnce(Self::SliceTarget<'a>) -> TxDone,
-    {
-        // Get the vacant slices from the ring buffer.
-        let (a, b) = self.tx.vacant_slices_mut();
-        // Call the provided closure with the slices.
-        f((a, b))
+    fn shared_poke_slice(& mut self) -> Self::SliceTarget<'_> {
+        self.tx.vacant_slices_mut()
     }
+
 
     #[inline]
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
@@ -328,6 +335,25 @@ impl TxCore for StreamTx<StreamIngress> {
 
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
        TxDone::Stream(1, one.1.len())
+    }
+
+
+    fn shared_advance_index(&mut self, count: Self::MsgSize) -> TxDone {
+
+        let control_avail = self.control_channel.tx.occupied_len();
+        let payload_avail = self.payload_channel.tx.occupied_len();
+        //NOTE: we only have two counts so either we do all or none because we can
+        //      not compute a safe cut point. so it is all or nothing
+
+        if count.0 <= control_avail && count.1 <= payload_avail {
+            unsafe {
+                self.payload_channel.tx.advance_write_index(count.1);
+                self.control_channel.tx.advance_write_index(count.0);
+            }
+            TxDone::Stream(count.0,count.1)
+        } else {
+            TxDone::Stream(0,0)
+        }
     }
 
     fn shared_mark_closed(&mut self) -> bool {
@@ -504,14 +530,10 @@ impl TxCore for StreamTx<StreamIngress> {
     }
 
     #[inline]
-    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
-    where
-        Self::MsgOut: Copy,
-        F: FnOnce(Self::SliceTarget<'a>) -> TxDone,
-    {
+    fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_> {
         let (item_a, item_b) = self.control_channel.tx.vacant_slices_mut();
         let (payload_a, payload_b) = self.payload_channel.tx.vacant_slices_mut();
-        f((item_a, item_b, payload_a, payload_b))
+        (item_a, item_b, payload_a, payload_b)
     }
 
     #[inline]
@@ -665,6 +687,25 @@ impl TxCore for StreamTx<StreamEgress> {
         &'a mut [std::mem::MaybeUninit<u8>],
         &'a mut [std::mem::MaybeUninit<u8>]
     );
+
+
+    fn shared_advance_index(&mut self, count: Self::MsgSize) -> TxDone {
+
+        let control_avail = self.control_channel.tx.occupied_len();
+        let payload_avail = self.payload_channel.tx.occupied_len();
+        //NOTE: we only have two counts so either we do all or none because we can
+        //      not compute a safe cut point. so it is all or nothing
+
+        if count.0 <= control_avail && count.1 <= payload_avail {
+            unsafe {
+                self.payload_channel.tx.advance_write_index(count.1);
+                self.control_channel.tx.advance_write_index(count.0);
+            }
+            TxDone::Stream(count.0,count.1)
+        } else {
+            TxDone::Stream(0,0)
+        }
+    }
 
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
         TxDone::Stream(1, one.len())
@@ -852,15 +893,12 @@ impl TxCore for StreamTx<StreamEgress> {
     }
 
     #[inline]
-    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
-    where
-        Self::MsgOut: Copy,
-        F: FnOnce(Self::SliceTarget<'a>) -> TxDone,
-    {
-        let (item_a, item_b) = self.control_channel.tx.vacant_slices_mut();
-        let (payload_a, payload_b) = self.payload_channel.tx.vacant_slices_mut();
-        f((item_a, item_b, payload_a, payload_b))
+    fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_> {
+         let (item_a, item_b) = self.control_channel.tx.vacant_slices_mut();
+         let (payload_a, payload_b) = self.payload_channel.tx.vacant_slices_mut();
+         (item_a, item_b, payload_a, payload_b)
     }
+
 
     #[inline]
     fn shared_try_send(&mut self, payload: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
@@ -1005,7 +1043,14 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     type SliceTarget<'a> = <T as TxCore>::SliceTarget<'a> where Self: 'a;
 
 
-    fn shared_mark_closed(&mut self) -> bool {<T as TxCore>::shared_mark_closed(&mut **self)}
+
+    fn shared_advance_index(&mut self, count: Self::MsgSize) -> TxDone {
+        <T as TxCore>::shared_advance_index(&mut **self, count)
+    }
+
+    fn shared_mark_closed(&mut self) -> bool {
+        <T as TxCore>::shared_mark_closed(&mut **self)
+    }
 
     fn one(&self) -> Self::MsgSize {
         <T as TxCore>::one(& **self)
@@ -1070,12 +1115,8 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
         <T as TxCore>::shared_send_slice(self, slice)
     }
     #[inline]
-    fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
-    where
-        F: FnOnce(Self::SliceTarget<'a>) -> TxDone
-    {
-        <T as TxCore>::shared_send_direct(&mut **self, f)
-
+    fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_> {
+        <T as TxCore>::shared_poke_slice(&mut **self)
     }
 
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
@@ -1259,17 +1300,18 @@ mod extended_coverage {
             true
         }
 
+        fn shared_advance_index(&mut self, request: Self::MsgSize) -> TxDone {
+            TxDone::Normal(0)
+        }
 
         #[inline]
         fn shared_send_slice<'a,'b>(&'a mut self, slice: Self::SliceSource<'b> ) -> TxDone {
-            TxDone::Normal(1)
+            TxDone::Normal(0)
         }
         #[inline]
-        fn shared_send_direct<'a, F>(&'a mut self, f: F) -> TxDone
-        where
-            F: FnOnce(Self::SliceTarget<'a>) -> TxDone
-        {
-            TxDone::Normal(1)
+        fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_> {
+            let (item_a, item_b) = (&[],&[]);
+            (item_a, item_b)
         }
 
         fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {

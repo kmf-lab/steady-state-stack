@@ -749,9 +749,9 @@ impl<T: StreamControlItem> StreamRx<T> {
             // Apply the provided function to the payload slices
             if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
                 // If the limit is reached or the function returns false, advance the read indices and exit
-                let x = actor.advance_read_index(&mut self.payload_channel, active_data);
+                let x = actor.advance_take_index(&mut self.payload_channel, active_data);
                 debug_assert_eq!(x.item_count(), active_data, "Payload channel advance mismatch");
-                let x = actor.advance_read_index(&mut self.control_channel, active_items);
+                let x = actor.advance_take_index(&mut self.control_channel, active_items);
                 debug_assert_eq!(x.item_count(), active_items, "Item channel advance mismatch");
                 return;
             }
@@ -775,9 +775,9 @@ impl<T: StreamControlItem> StreamRx<T> {
             // Apply the provided function to the payload slices
             if active_data+(i.length() as usize) > byte_limit || !fun(a, b) {
                 // If the limit is reached or the function returns false, advance the read indices and exit
-                let x = actor.advance_read_index(&mut self.payload_channel, active_data);
+                let x = actor.advance_take_index(&mut self.payload_channel, active_data);
                 debug_assert_eq!(x.item_count(), active_data, "Payload channel advance mismatch");
-                let x = actor.advance_read_index(&mut self.control_channel, active_items);
+                let x = actor.advance_take_index(&mut self.control_channel, active_items);
                 debug_assert_eq!(x.item_count(), active_items, "Item channel advance mismatch");
                 return;
             }
@@ -789,9 +789,9 @@ impl<T: StreamControlItem> StreamRx<T> {
 
         // !("we made it to the end with {}",active_items);
         // If all items are processed successfully, advance the read indices
-        let x = actor.advance_read_index(&mut self.payload_channel, active_data);
+        let x = actor.advance_take_index(&mut self.payload_channel, active_data);
         debug_assert_eq!(x.item_count(), active_data, "Payload channel advance mismatch");
-        let x = actor.advance_read_index(&mut self.control_channel, active_items);
+        let x = actor.advance_take_index(&mut self.control_channel, active_items);
         debug_assert_eq!(x.item_count(), active_items, "Item channel advance mismatch");
 
         //let avail = self.item_channel.shared_avail_units();

@@ -25,7 +25,7 @@ async fn internal_behavior<const TICK_COUNTS_RX_GIRTH:usize,C: SteadyActor>(mut 
     let _cli_args = actor.args::<Args>();
 
     let mut tick_counts_rx = tick_counts_rx.lock().await;
-    let mut buffer = [TickCount::default(); BATCH];
+    let buffer = [TickCount::default(); BATCH];
 
     let mut my_max_count: u128 = 0;
 

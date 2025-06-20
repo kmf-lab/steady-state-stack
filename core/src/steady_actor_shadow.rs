@@ -257,10 +257,10 @@ impl SteadyActor for SteadyActorShadow {
         this.shared_send_slice(slice)
     }
 
-    fn send_slice_direct<'a, T: TxCore, F>(&mut self, this: &'a mut T, f: F) -> TxDone
-     where F: for<'b> FnOnce(T::SliceTarget<'b>) -> TxDone
-    {        
-        this.shared_send_direct(f)
+    fn poke_slice<'a,'b, T>(&'a self, this: &'b mut T) -> T::SliceTarget<'b>
+    where
+        T: TxCore{
+        this.shared_poke_slice()
     }
 
 
@@ -534,7 +534,11 @@ impl SteadyActor for SteadyActorShadow {
         this.shared_take_async_timeout(Some(timeout)).await
     }
 
-    fn advance_read_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone  {
+    fn advance_take_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone  {
+        this.shared_advance_index(count)
+    }
+
+    fn advance_send_index<T: TxCore>(&mut self, this: &mut T, count: T::MsgSize) -> TxDone  {
         this.shared_advance_index(count)
     }
 

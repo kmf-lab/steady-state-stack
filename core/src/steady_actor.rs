@@ -286,21 +286,22 @@ pub trait SteadyActor {
 
 
 
-//TOOD: remove copy
-    fn peek_slice<'a,'b,T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
+    fn peek_slice<'a,'b, T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
     where
-        T::MsgItem: Copy,
         T: RxCore;
+    fn advance_take_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone;
+
 
     fn take_slice<T: RxCore>(&mut self, this: &mut T, target: T::SliceTarget<'_>) -> RxDone  where T::MsgItem: Copy;
-
     fn send_slice<T: TxCore>(& mut self, this: & mut T, source: T::SliceSource<'_>) -> TxDone where T::MsgOut: Copy;
 
-    fn send_slice_direct<'a, T: TxCore, F>(& mut self, this: &'a mut T, f: F) -> TxDone
+
+    fn poke_slice<'a,'b, T>(&'a self, this: &'b mut T) -> T::SliceTarget<'b>
     where
-        F: for<'b> FnOnce(T::SliceTarget<'b>) -> TxDone;
+        T: TxCore;
+    fn advance_send_index<T: TxCore>(&mut self, this: &mut T, count: T::MsgSize) -> TxDone;
 
-
+    
 
     /// Attempts to peek at the next message in the channel without removing it.
     ///
@@ -430,10 +431,6 @@ pub trait SteadyActor {
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
     /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
     async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut>;
-
-
-    /// Move the read index forward count items, ie jump over these
-    fn advance_read_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone;
 
 
         /// Attempts to take a message from the channel when available.

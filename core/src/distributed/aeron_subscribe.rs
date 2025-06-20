@@ -211,9 +211,9 @@ pub(crate) mod aeron_media_driver_tests {
     use crate::{GraphBuilder, ScheduleAs, SoloAct};
 
     #[test]
-    fn test_bytes_process() {
+    fn test_bytes_process() -> Result<(), Box<dyn Error>>{
         if std::env::var("GITHUB_ACTIONS").is_ok() {
-            return;
+            return Ok(());
         }
 
         let mut graph = GraphBuilder::for_testing().build(());
@@ -223,7 +223,7 @@ pub(crate) mod aeron_media_driver_tests {
             };
         } else {
             info!("aeron test skipped, no media driver present");
-            return;
+            return Ok(());
         }
 
         let channel_builder = graph.channel_builder();
@@ -269,20 +269,9 @@ pub(crate) mod aeron_media_driver_tests {
         graph.start();
         //from_aeron_rx[0].testing_avail_wait(200, Duration::from_secs(20));
         graph.request_shutdown();
-        graph.block_until_stopped(Duration::from_secs(2));
+        let unclean = graph.block_until_stopped(Duration::from_secs(2));
 
-        //let mut data = [0u8; 5];
-        for i in 0..100 {
-            // let data1: Vec<u8> = vec![1, 2, 3, 4, 5];
-            // assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(
-            //     //TODO: instant is a big problme for equals.
-            //     (StreamSessionMessage::new(5,1,Instant::now(), Instant::now()),data1.into_boxed_slice())));
-            // let data2: Vec<u8> = vec![6, 7, 8, 9, 10];
-            // assert_steady_rx_eq_take!(from_aeron_rx[0], vec!(
-            //     (StreamSessionMessage::new(5,1,Instant::now(), Instant::now()),data2.into_boxed_slice())));
-
-
-        }
+        Ok(())
         
     }
 }

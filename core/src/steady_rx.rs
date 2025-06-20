@@ -71,7 +71,7 @@ impl <T> Rx<T> {
     pub(crate) fn shared_try_peek(&self) -> Option<&T> {
 
         let result = self.rx.try_peek();
-        if result.is_some() { ///TODO: this totally wrong !! we needed to check the positon!!!
+        if result.is_some() { 
             let take_count = self.take_count.load(Ordering::Relaxed);
             let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
             if !cached_take_count == take_count {

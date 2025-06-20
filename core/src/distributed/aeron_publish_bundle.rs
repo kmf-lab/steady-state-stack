@@ -405,9 +405,9 @@ pub(crate) mod aeron_publish_bundle_tests {
             //let taken = actor.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
 
             let bytes = actor.avail_units(&mut rx[0].payload_channel);
-            actor.advance_read_index(&mut rx[0].payload_channel, bytes);
+            actor.advance_take_index(&mut rx[0].payload_channel, bytes);
             let taken = actor.avail_units(&mut rx[0].control_channel);
-            actor.advance_read_index(&mut rx[0].control_channel, taken);
+            actor.advance_take_index(&mut rx[0].control_channel, taken);
 
 
             //  let avail = actor.avail_units(&mut rx[0].item_channel);

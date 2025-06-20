@@ -281,9 +281,22 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
-    fn advance_read_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone {
+    fn advance_take_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+        }
+        let done = this.shared_advance_index(count);
+        if let Some(ref mut tel) = self.telemetry.send_rx {
+            this.telemetry_inc(done, tel);
+        } else {
+            this.monitor_not();
+        }
+        done
+    }
+
+    fn advance_send_index<T: TxCore>(&mut self, this: &mut T, count: T::MsgSize) -> TxDone {
+        if let Some(ref st) = self.telemetry.state {
+            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
         let done = this.shared_advance_index(count);
         if let Some(ref mut tel) = self.telemetry.send_rx {
@@ -341,18 +354,10 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
-    fn send_slice_direct<'a, T: TxCore, F>(&mut self, this: &'a mut T, f: F) -> TxDone
-    where F: for<'b>  FnOnce(T::SliceTarget<'b>) -> TxDone {
-        if let Some(ref mut st) = self.telemetry.state {
-            let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
-        }
-        let done = this.shared_send_direct(f);
-        if let Some(ref mut tel) = self.telemetry.send_tx {
-            this.telemetry_inc(done, tel);
-        } else {
-            this.monitor_not();
-        }
-        done
+    fn poke_slice<'a,'b, T>(&'a self, this: &'b mut T) -> T::SliceTarget<'b>
+    where
+        T: TxCore {
+        this.shared_poke_slice()
     }
 
     fn send_iter_until_full<T, I: Iterator<Item = T>>(&mut self, this: &mut Tx<T>, iter: I) -> usize {

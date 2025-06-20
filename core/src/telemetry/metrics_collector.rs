@@ -230,7 +230,7 @@ async fn internal_behavior<const GIRTH: usize>(
 
         // Collect telemetry data and detect structural changes.
         let (nodes, to_pop) = {
-            let mut guard = dynamic_senders_vec.read();
+            let guard = dynamic_senders_vec.read();
             let dynamic_senders = guard.deref();
             let structure_unchanged = dynamic_senders.len() == state.actor_count;
             if structure_unchanged && !trying_to_shutdown {
@@ -813,7 +813,7 @@ mod metric_collector_tests {
 mod extra_tests {
     use super::*;
     use parking_lot::RwLock;
-    use std::collections::{VecDeque, HashMap};
+    use std::collections::{VecDeque};
     use std::sync::Arc;
     use futures::executor::block_on;
     use futures::future::BoxFuture;
