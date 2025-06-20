@@ -172,7 +172,9 @@ impl <const LEN: usize>TxMetaDataHolder<LEN> {
 pub type RxMetaData = Arc<ChannelMetaData>;
 /// supports the macro as an easy way to get the metadata
 impl RxMetaDataProvider for Arc<ChannelMetaData> {
-    fn meta_data(&self) -> Arc<ChannelMetaData> { self.clone() }
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
+        self.clone()
+    }
 }
 pub struct RxMetaDataHolder<const LEN: usize> {
     pub(crate) array:[RxMetaData;LEN]
@@ -634,14 +636,14 @@ pub(crate) mod monitor_tests {
         }
 
         if let Some(ref mut tx) = monitor.telemetry.send_tx {
-            assert_eq!(tx.count[txd.local_index], threshold);
+            assert_eq!(tx.count[txd.local_monitor_index], threshold);
         }
 
         Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
         monitor.relay_stats_smartly();
 
         if let Some(ref mut tx) = monitor.telemetry.send_tx {
-            assert_eq!(tx.count[txd.local_index], 0);
+            assert_eq!(tx.count[txd.local_monitor_index], 0);
         }
 
         while count > 0 {
@@ -689,14 +691,14 @@ pub(crate) mod monitor_tests {
             let _ = monitor.send_async(txd, "test".to_string(), SendSaturation::WarnThenAwait).await;
             count += 1;
             if let Some(ref mut tx) = monitor.telemetry.send_tx {
-                assert_eq!(tx.count[txd.local_index], count);
+                assert_eq!(tx.count[txd.local_monitor_index], count);
             }
         }
         Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
         monitor.relay_stats_smartly();
 
         if let Some(ref mut tx) = monitor.telemetry.send_tx {
-            assert_eq!(tx.count[txd.local_index], 0);
+            assert_eq!(tx.count[txd.local_monitor_index], 0);
         }
 
         while count > 0 {

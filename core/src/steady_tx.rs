@@ -24,7 +24,7 @@ use crate::monitor::{ChannelMetaData};
 pub struct Tx<T> {
     pub(crate) tx: InternalSender<T>,
     pub(crate) channel_meta_data: TxChannelMetaDataWrapper,
-    pub(crate) local_index: usize, //set on first usage
+    pub(crate) local_monitor_index: usize, //set on first usage
     pub(crate) last_error_send: Instant,
     pub(crate) make_closed: Option<oneshot::Sender<()>>,
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,

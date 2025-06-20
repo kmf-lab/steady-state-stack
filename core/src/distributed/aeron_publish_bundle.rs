@@ -150,7 +150,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
        //TODO: if we already got a shutdown before we found publication we should just exit.
        
     
-        trace!("running publish '{:?}' all publications in place",actor.identity());
+        error!("running publish '{:?}' all publications in place",actor.identity());
 
 // this does not help much TODO: revisit
         let wait_for = rx.capacity()/16;
@@ -158,7 +158,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
 
         let mut all_streams_flushed = false;
         while actor.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
-
+          // error!("top");
             let _clean = await_for_any!(
                            actor.wait_periodic(Duration::from_millis(500))
                           ,actor.wait_avail_bundle(&mut rx, wait_for, in_channels)
@@ -168,6 +168,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
             for index in 0..GIRTH {
                 match &mut pubs[index] {
                     Ok(p) => {
+                        //this remains zero if we have no subscriber and so nothing gets pushed
                         let mut vacant_aeron_bytes = p.available_window().unwrap_or(0);
                         let mut avail_messages = rx[index].avail_units();
                         //let orig_vacant = vacant_aeron_bytes;
@@ -178,47 +179,66 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                             let mut count_done = 0;
                             let mut count_bytes = 0;
 
+                            //TODO: ugenent why is the tread id toggleing !!
+                            //TODO: urgent!! because we are trying to do bytes its broken and still doing units and we have just a few giant units now so it look slike zero!!!
+                            //TODO: sill tracking droped messaes at high speed.
+
                             if vacant_aeron_bytes > 0 && avail_messages > 0 {
 
-                                rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
+                               let done =  rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len > 0);
                                     //TODO: we can get zero copy with try_claim?  much better desing?
 
                                     let response = if slice2.is_empty() {
-                                        p.offer_part(AtomicBuffer::wrap_slice(&mut slice1), 0, msg_len as Index)
+                                        //for most cases we are using this path.
+                                        p.offer_part(AtomicBuffer::wrap_slice(slice1), 0, msg_len as Index)
                                     } else {  // TODO: p.try_claim() is probably a beter  way to move our datarather than AtomicBuffer usage..
-                                        let a_len = msg_len.min(slice1.len());
-                                        let remaining_read = msg_len - a_len;
-                                        let aligned_buffer = AlignedBuffer::with_capacity(msg_len as Index);
-                                        let buf = AtomicBuffer::from_aligned(&aligned_buffer);
-                                        buf.put_bytes(0, slice1);
-                                        let b_len = remaining_read.min(slice2.len());
-                                        let _extended_read = remaining_read - b_len;
+                                        if slice1.is_empty() {
+                                            p.offer_part(AtomicBuffer::wrap_slice(slice2), 0, msg_len as Index)
+                                        } else {
+                                            // rare case
+                                            let a_len = msg_len.min(slice1.len());
+                                            let remaining_read = msg_len - a_len;
+                                            let aligned_buffer = AlignedBuffer::with_capacity(msg_len as Index);
+                                            let buf = AtomicBuffer::from_aligned(&aligned_buffer);
+                                            buf.put_bytes(0, slice1);
+                                            let b_len = remaining_read.min(slice2.len());
+                                            let _extended_read = remaining_read - b_len;
 
-                                        buf.put_bytes(a_len as Index, slice2);
-                                        p.offer_part(buf, 0, msg_len as Index)
+                                            buf.put_bytes(a_len as Index, slice2);
+                                            p.offer_part(buf, 0, msg_len as Index)
+                                        }
                                     };
                                     match response {
                                         Ok(value) => {
                                             if value>0 {
+                                                let dif:i64 = value as i64 - last_position[index];
                                                 last_position[index]= value;
                                                 count_done += 1;
+                                                if dif<(msg_len as u64).try_into().expect("bad cast") {
+                                                    error!("warning not packing the data sent {} to send {} ", dif, msg_len);
+                                                }
+
+                                                //assert_eq!(dif, (msg_len as u64).try_into().expect("bad cast"), "expected to match");
                                                 count_bytes += msg_len;
                                                 true
                                             } else {
-                                            //    warn!("error code {:?}",value);
+                                                //    trace!("error code {:?}",value);
+                                                //   was not published so stop here and ensure our pointer is moved back
                                                 false
                                             }
                                         }
                                         Err(aeron_error) => {
-                                           trace!("error {:?}",aeron_error);
-                                            //if backpressujred but we see more room keep going?
-
+                                           error!("error {:?}",aeron_error);
+                                            //   was not published so stop here and ensure our pointer is moved back
                                             false
                                         }
                                     }
                                 });
+
+                            //    error!("done publsh: {:?}", done);        actor.relay_stats_smartly();
+
                             }
 
                             //total_done += count_done;
@@ -236,7 +256,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                // }
                                 // break;
                             } // else {
-                               // warn!("channel {} publish batch of {} bytes and {} messages and {} window and  {} avail_msgs",index, count_bytes, count_done,vacant_aeron_bytes,avail_messages);
+                               warn!("channel {} publish batch of {} bytes and {} messages and {} window and  {} avail_msgs",index, count_bytes, count_done,vacant_aeron_bytes,avail_messages);
                             //}
                             //before we return to the top
                             vacant_aeron_bytes = p.available_window().unwrap_or(0);

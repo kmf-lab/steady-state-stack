@@ -383,7 +383,7 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: & [Collect
     state.fill = (state.fill + 1) & 0xF; // Increment fill, capped at 15 to avoid overflow.
     let working: Vec<(bool, &CollectorDetail)> = dynamic_senders
         .iter()
-        .map(|mut f| {
+        .map(| f| {
             let has_data = if let Some(x) = f.telemetry_take.iter().find(|f|!f.is_empty()) {
                 x.consume_send_into(&mut state.total_take_send, &mut state.future_send)
             } else {

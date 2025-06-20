@@ -129,17 +129,17 @@ impl<T> TxCore for Tx<T> {
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
             TxDone::Normal(d) =>
-              self.local_index = tel.process_event(self.local_index, self.channel_meta_data.meta_data.id, d as isize),
+              self.local_monitor_index = tel.process_event(self.local_monitor_index, self.channel_meta_data.meta_data.id, d as isize),
             TxDone::Stream(i,_p) => {
                 warn!("internal error should have gotten Normal");
-                self.local_index = tel.process_event(self.local_index, self.channel_meta_data.meta_data.id, i as isize)
+                self.local_monitor_index = tel.process_event(self.local_monitor_index, self.channel_meta_data.meta_data.id, i as isize)
             },
         }
     }
 
     #[inline]
     fn monitor_not(&mut self) {
-        self.local_index = MONITOR_NOT;
+        self.local_monitor_index = MONITOR_NOT;
     }
 
     #[inline]
@@ -177,7 +177,7 @@ impl<T> TxCore for Tx<T> {
 
     #[inline]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool {
-        if self.tx.vacant_len() >= count {
+        if self.tx.is_empty() || self.tx.vacant_len() >= count {
             true
         } else {
             let mut one_down = &mut self.oneshot_shutdown;
@@ -415,19 +415,19 @@ impl TxCore for StreamTx<StreamIngress> {
         match done_count {
             TxDone::Normal(i) => {
                 warn!("internal error should have gotten Stream");
-                self.control_channel.local_index = tel.process_event(self.control_channel.local_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
+                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
             },
             TxDone::Stream(i,p) => {
-                self.control_channel.local_index = tel.process_event(self.control_channel.local_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
-                self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
+                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
+                self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
             },
         }
     }
 
     #[inline]
     fn monitor_not(&mut self) {
-        self.control_channel.local_index = MONITOR_NOT;
-        self.payload_channel.local_index = MONITOR_NOT;
+        self.control_channel.local_monitor_index = MONITOR_NOT;
+        self.payload_channel.local_monitor_index = MONITOR_NOT;
     }
 
      #[inline]
@@ -452,8 +452,8 @@ impl TxCore for StreamTx<StreamIngress> {
 
     #[inline]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool {
-        if self.control_channel.tx.vacant_len() >= count.0 &&
-            self.payload_channel.tx.vacant_len() >= count.1 {
+        if (self.control_channel.tx.is_empty() ||  self.control_channel.tx.vacant_len() >= count.0) &&
+            (self.payload_channel.tx.is_empty() ||  self.payload_channel.tx.vacant_len() >= count.1) {
             true
         } else {
             let icap = self.control_channel.capacity();
@@ -768,20 +768,19 @@ impl TxCore for StreamTx<StreamEgress> {
     fn telemetry_inc<const LEN:usize>(&mut self, done_count:TxDone , tel:& mut SteadyTelemetrySend<LEN>) {
         match done_count {
             TxDone::Normal(i) => {
-                warn!("internal error should have gotten Stream");
-                self.control_channel.local_index = tel.process_event(self.control_channel.local_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
+                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
             },
             TxDone::Stream(i,p) => {
-                self.control_channel.local_index = tel.process_event(self.control_channel.local_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
-                self.payload_channel.local_index = tel.process_event(self.payload_channel.local_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
+                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
+                self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
             },
         }
     }
 
     #[inline]
     fn monitor_not(&mut self) {
-        self.control_channel.local_index = MONITOR_NOT;
-        self.payload_channel.local_index = MONITOR_NOT;
+        self.control_channel.local_monitor_index = MONITOR_NOT;
+        self.payload_channel.local_monitor_index = MONITOR_NOT;
     }
 
     #[inline]
@@ -806,8 +805,8 @@ impl TxCore for StreamTx<StreamEgress> {
 
     #[inline]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count:  Self::MsgSize) -> bool {
-        if self.control_channel.tx.vacant_len() >= count.0 &&
-            self.payload_channel.tx.vacant_len() >= count.1 {
+        if  (self.control_channel.tx.is_empty() || self.control_channel.tx.vacant_len() >= count.0) &&
+            (self.payload_channel.tx.is_empty() || self.payload_channel.tx.vacant_len() >= count.1) {
             true
         } else {
             let icap = self.control_channel.capacity();

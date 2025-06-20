@@ -365,8 +365,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
         let done = this.shared_send_iter_until_full(iter);
-        this.local_index = if let Some(ref mut tel) = self.telemetry.send_tx {
-            tel.process_event(this.local_index, this.channel_meta_data.meta_data.id, done as isize)
+        this.local_monitor_index = if let Some(ref mut tel) = self.telemetry.send_tx {
+            tel.process_event(this.local_monitor_index, this.channel_meta_data.meta_data.id, done as isize)
         } else {
             MONITOR_NOT
         };
@@ -456,19 +456,19 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
         if msg_count > 0 {
             if let Some(ref mut tel) = self.telemetry.send_tx {
-                out_item.local_index = tel.process_event(
-                    out_item.local_index,
+                out_item.local_monitor_index = tel.process_event(
+                    out_item.local_monitor_index,
                     out_item.channel_meta_data.meta_data.id,
                     msg_count as isize,
                 );
-                out_data.local_index = tel.process_event(
-                    out_data.local_index,
+                out_data.local_monitor_index = tel.process_event(
+                    out_data.local_monitor_index,
                     out_data.channel_meta_data.meta_data.id,
                     total_bytes as isize,
                 );
             } else {
-                out_item.local_index = MONITOR_NOT;
-                out_data.local_index = MONITOR_NOT;
+                out_item.local_monitor_index = MONITOR_NOT;
+                out_data.local_monitor_index = MONITOR_NOT;
             }
         }
 

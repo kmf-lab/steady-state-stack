@@ -1,4 +1,4 @@
-use log::warn;
+use log::{error, warn};
 use futures_util::{select, task};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -524,6 +524,13 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
             RxDone::Stream(i,p) => {
                 self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
                 self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
+
+
+                //TODO: confirming we are monitoring tnhe paylaods.
+                error!("rx monitor index for control {}  {}",self.control_channel.local_monitor_index,i);
+                error!("rx monitor index for PAYLOAD {}  {}",self.payload_channel.local_monitor_index,p);
+
+
             },
         }
     }
@@ -676,7 +683,7 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
         }
 
 
-        // if items_copied>0 { //TODO: mut be done on every possible take method
+        // if items_copied>0 { //TODO: mut be done on every possible take method confirm we have done it here.
         //     self.control_channel.fetch_add(1,Ordering::Relaxed); //for DLQ
         //     self.payload_channel.fetch_add(1,Ordering::Relaxed); //for DLQ
         //
