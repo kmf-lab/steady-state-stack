@@ -299,11 +299,12 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
         }
         let done = this.shared_advance_index(count);
-        if let Some(ref mut tel) = self.telemetry.send_rx {
+        if let Some(ref mut tel) = self.telemetry.send_tx {
             this.telemetry_inc(done, tel);
         } else {
             this.monitor_not();
         }
+
         done
     }
 
