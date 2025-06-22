@@ -521,7 +521,7 @@ impl GraphBuilder {
 
     /// for internal testing of the panic recovery
     #[cfg(test)]
-    pub(crate) fn with_block_fail_fast(&self) -> Self {
+    fn with_block_fail_fast(&self) -> Self {
         let mut result = self.clone();
         result._block_fail_fast = true;
         result

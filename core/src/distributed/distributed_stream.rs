@@ -107,7 +107,9 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRT
 
     fn control_meta_data(& self) -> [& dyn RxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x as &dyn RxMetaDataProvider)
+            .map(|steady_stream|  {
+                steady_stream as &dyn RxMetaDataProvider
+            })
             .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
@@ -115,7 +117,10 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRT
 
     fn payload_meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x as &dyn RxMetaDataProvider)
+            .map(|steady_stream|  {
+                {steady_stream.try_lock().expect("Internal error").spotlight_control=false;}
+                steady_stream as &dyn RxMetaDataProvider
+            })
             .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
@@ -148,7 +153,9 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRT
 
     fn control_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x as &dyn TxMetaDataProvider)
+            .map(|steady_stream|  {
+                steady_stream as &dyn TxMetaDataProvider
+            })
             .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
@@ -156,7 +163,10 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRT
 
     fn payload_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH] {
         self.iter()
-            .map(|x| x as &dyn TxMetaDataProvider)
+            .map(|steady_stream|  {
+                {steady_stream.try_lock().expect("Internal error").spotlight_control=false;}
+                steady_stream as &dyn TxMetaDataProvider
+            })
             .collect::<Vec<_>>()
             .try_into()
             .expect("Internal Error")
@@ -414,7 +424,8 @@ pub struct StreamTx<T: StreamControlItem> {
     pub(crate) output_rate_index: usize,
     pub(crate) output_rate_collector: [(Duration,u32,u32); RATE_COLLECTOR_LEN],
 
-    pub(crate) stored_vacant_values: (i32,i32)
+    pub(crate) stored_vacant_values: (i32,i32),
+    pub(crate) spotlight_control: bool
 
 }
 impl<T: StreamControlItem> Debug for StreamTx<T> {
@@ -469,14 +480,16 @@ impl<T: StreamControlItem> StreamTx<T> {
             last_output_instant: Instant::now(),
             output_rate_index: RATE_COLLECTOR_MASK,
             output_rate_collector: Default::default(),
+            spotlight_control: false
+
         }
     }
 
-    pub fn set_stored_vacant_values(&mut self, messages: i32, total_bytes_for_messages: i32) {
+    pub(crate) fn set_stored_vacant_values(&mut self, messages: i32, total_bytes_for_messages: i32) {
        self.stored_vacant_values  = (messages,total_bytes_for_messages);
     }
 
-    pub fn get_stored_vacant_values(&mut self) -> (i32, i32) {
+    pub(crate) fn get_stored_vacant_values(&mut self) -> (i32, i32) {
         self.stored_vacant_values
     }
 
@@ -568,8 +581,8 @@ impl<T: StreamControlItem> StreamTx<T> {
         true
     }
 
-    pub fn capacity(&self) -> usize {
-        self.control_channel.capacity()
+    pub fn capacity(&self) -> (usize, usize) {
+        (self.control_channel.capacity(), self.payload_channel.capacity())
     }
 
     //call this when we have no data in from poll to clear out anything waiting.
@@ -670,7 +683,8 @@ impl<T: StreamControlItem> StreamTx<T> {
 #[derive(Debug)]
 pub struct StreamRx<T: StreamControlItem> {
     pub(crate) control_channel: Rx<T>,
-    pub(crate) payload_channel: Rx<u8>
+    pub(crate) payload_channel: Rx<u8>,
+    pub(crate) spotlight_control: bool
 }
 
 impl<T: StreamControlItem> StreamRx<T> {
@@ -678,7 +692,8 @@ impl<T: StreamControlItem> StreamRx<T> {
     pub(crate) fn new(control_channel: Rx<T>, payload_channel: Rx<u8>) -> Self {
         StreamRx {
             control_channel,
-            payload_channel
+            payload_channel,
+            spotlight_control: false
         }
     }
 
@@ -1027,21 +1042,23 @@ impl<T: StreamControlItem> LazyStreamTx<T> {
 impl<T: StreamControlItem> LazyStreamRx<T> {
 
     /// For testing simulates taking data from the actor in a controlled manner.
-    pub async fn testing_avail_units(&self) -> usize {
-        let rx = self.lazy_channel.get_rx_clone().await;
-        let mut rx = rx.lock().await;
+    pub fn testing_avail_units(&self) -> usize {
+        let s = self.clone();
+        let mut rx = s.try_lock().expect("internal error: try_lock");
         rx.shared_avail_units()
     }
 
-
-    /// For testing simulates taking data from the actor in a controlled manner.
-    // pub async fn testing_take(&self) -> Vec<T> {
-    //     let rx = self.lazy_channel.get_rx_clone().await;
-    //     let mut rx = rx.lock().await;
-    //     let limit = rx.capacity();
-    //
-    //     rx.shared_take_into_iter().take(limit).collect()
-    // }
+    pub fn testing_take_all(&self) -> Vec<(T,Box<[u8]>)> {
+        let s = self.clone();
+        let mut rx = s.try_lock().expect("internal error: try_lock");
+        let mut count = rx.capacity().min(rx.avail_units());
+        let mut target = Vec::with_capacity(count);
+        while count>0 {
+            target.push(rx.try_take().expect("internal error: try_take"));
+            count -= 1;
+        }
+        target
+    }
 
 
     /// Creates a new `LazyStreamRx` from an existing `Arc<LazyStream<T>>`.
@@ -1106,10 +1123,19 @@ impl<T: StreamControlItem> LazyStreamRx<T> {
 impl<T: StreamControlItem> RxMetaDataProvider for SteadyStreamRx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
-            Some(guard) => guard.control_channel.channel_meta_data.meta_data(),
+            Some(guard) =>
+                if guard.spotlight_control {
+                    guard.control_channel.channel_meta_data.meta_data()
+                } else {
+                    guard.payload_channel.channel_meta_data.meta_data()
+                },
             None => {
                 let guard = core_exec::block_on(self.lock());
-                guard.control_channel.channel_meta_data.meta_data()
+                if guard.spotlight_control {
+                    guard.control_channel.channel_meta_data.meta_data()
+                } else {
+                    guard.payload_channel.channel_meta_data.meta_data()
+                }
             }
         }
     }
@@ -1118,10 +1144,18 @@ impl<T: StreamControlItem> RxMetaDataProvider for SteadyStreamRx<T> {
 impl<T: StreamControlItem> TxMetaDataProvider for SteadyStreamTx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
-            Some(guard) => guard.control_channel.channel_meta_data.meta_data(),
+            Some(guard) =>  if guard.spotlight_control {
+                guard.control_channel.channel_meta_data.meta_data()
+            } else {
+                guard.payload_channel.channel_meta_data.meta_data()
+            },
             None => {
                 let guard = core_exec::block_on(self.lock());
-                guard.control_channel.channel_meta_data.meta_data()
+                if guard.spotlight_control {
+                    guard.control_channel.channel_meta_data.meta_data()
+                } else {
+                    guard.payload_channel.channel_meta_data.meta_data()
+                }
             }
         }
     }

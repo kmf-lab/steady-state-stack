@@ -185,7 +185,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
 
                             if vacant_aeron_bytes > 0 && avail_messages > 0 {
 
-                               let done =  rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |slice1: &mut [u8], slice2: &mut [u8]| {
+                               let _done =  rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len > 0);
                                     //TODO: we can get zero copy with try_claim?  much better desing?
@@ -229,8 +229,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                                 false
                                             }
                                         }
-                                        Err(aeron_error) => {
-                                           error!("error {:?}",aeron_error);
+                                        Err(_aeron_error) => {
+                                            //  trace!("internal activities we will try again {:?}",_aeron_error);
                                             //   was not published so stop here and ensure our pointer is moved back
                                             false
                                         }
@@ -256,7 +256,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                // }
                                 // break;
                             } // else {
-                               warn!("channel {} publish batch of {} bytes and {} messages and {} window and  {} avail_msgs",index, count_bytes, count_done,vacant_aeron_bytes,avail_messages);
+                             //  warn!("channel {} publish batch of {} bytes and {} messages and {} window and  {} avail_msgs",index, count_bytes, count_done,vacant_aeron_bytes,avail_messages);
                             //}
                             //before we return to the top
                             vacant_aeron_bytes = p.available_window().unwrap_or(0);

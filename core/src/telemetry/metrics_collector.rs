@@ -17,7 +17,6 @@ use futures_util::{select, StreamExt};
 use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
 use num_traits::{One, Zero};
-use ringbuf::consumer::Consumer;
 use crate::graph_liveliness::ActorIdentity;
 use crate::{i, GraphLivelinessState, SteadyRx};
 use crate::steady_actor::SteadyActor;
@@ -613,7 +612,6 @@ mod metric_collector_tests {
     use std::sync::Arc;
     use parking_lot::RwLock;
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread::sleep;
     use futures::executor::block_on;
     use crate::{GraphBuilder, SoloAct};

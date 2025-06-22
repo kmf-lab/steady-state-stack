@@ -679,7 +679,7 @@ mod steady_rx_tests {
         tx_lazy.testing_send_all(vec![5,6,7], false);
 
         let rx = rx_lazy.clone();
-        let mut ste_rx = core_exec::block_on(rx.lock());
+        let ste_rx = core_exec::block_on(rx.lock());
         let mut buf = [0; 3];
         let n = ste_rx.shared_try_peek_slice(&mut buf);
         assert_eq!(n, 3);

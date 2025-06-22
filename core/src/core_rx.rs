@@ -1,4 +1,4 @@
-use log::{error, warn};
+use log::*;
 use futures_util::{select, task};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -520,17 +520,10 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
         match done_count {
             RxDone::Normal(i) => {
                 self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
-                warn!("internal error should have gotten Stream")},
+            }
             RxDone::Stream(i,p) => {
                 self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
                 self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
-
-
-                //TODO: confirming we are monitoring tnhe paylaods.
-                error!("rx monitor index for control {}  {}",self.control_channel.local_monitor_index,i);
-                error!("rx monitor index for PAYLOAD {}  {}",self.payload_channel.local_monitor_index,p);
-
-
             },
         }
     }
@@ -811,7 +804,7 @@ mod core_rx_async_tests {
 
     #[test]
     fn test_peek_async_timeout_empty() {
-        let (tx, rx, graph) = setup_channel::<i32>(1, None);
+        let (_tx, rx, graph) = setup_channel::<i32>(1, None);
         assert!(graph.runtime_state.read().is_in_state(&[GraphLivelinessState::Running]), "Graph should be Running");
         let mut rx_guard = core_exec::block_on(rx.lock());
         assert!(!rx_guard.oneshot_shutdown.is_terminated() );
@@ -826,7 +819,7 @@ mod core_rx_async_tests {
 
     #[test]
     fn test_peek_async_timeout_with_data() {
-        let (tx, rx, _) = setup_channel(1, Some(vec![42]));
+        let (_tx, rx, _) = setup_channel(1, Some(vec![42]));
         let mut rx_guard = core_exec::block_on(rx.lock());
         let peeked = core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
         assert_eq!(peeked, Some(&42), "Peek should return the available data");

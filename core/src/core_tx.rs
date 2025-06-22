@@ -220,8 +220,7 @@ impl<T> TxCore for Tx<T> {
         if !slice.is_empty() {
             // Try to push as many items as possible from the slice.
             // Returns the number of items actually pushed.
-            let pushed = self.tx.push_slice(slice);
-            TxDone::Normal(pushed)
+            TxDone::Normal(self.tx.push_slice(slice))
         } else {
             TxDone::Normal(0)
         }
@@ -1198,7 +1197,7 @@ mod core_tx_rx_tests {
 
         // repeated peeks should bump `peek_repeats`
         let rx = rx.clone();
-        let mut rxg = core_exec::block_on(rx.lock());
+        let rxg = core_exec::block_on(rx.lock());
         assert_eq!(rxg.shared_try_peek(), Some(&42));
         assert_eq!(rxg.shared_try_peek(), Some(&42));
         assert!(rxg.is_showstopper(2));
@@ -1299,12 +1298,12 @@ mod extended_coverage {
             true
         }
 
-        fn shared_advance_index(&mut self, request: Self::MsgSize) -> TxDone {
+        fn shared_advance_index(&mut self, _request: Self::MsgSize) -> TxDone {
             TxDone::Normal(0)
         }
 
         #[inline]
-        fn shared_send_slice<'a,'b>(&'a mut self, slice: Self::SliceSource<'b> ) -> TxDone {
+        fn shared_send_slice<'a,'b>(&'a mut self, _slice: Self::SliceSource<'b> ) -> TxDone {
             TxDone::Normal(0)
         }
         #[inline]

@@ -72,7 +72,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
             };
             if remaining_poll == 0 {
                 if tx_item.shared_vacant_units()>0 {
-                    error!("No space left in the buffer, tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
+                    trace!("Check downstream consumer, No space left in the buffer, tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
                 }
                 break;
             }

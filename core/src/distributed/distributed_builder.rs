@@ -184,7 +184,7 @@ mod distributed_builder_tests {
             let tech = AqueTech::None;
             // Create a minimal ActorBuilder and Threading
             let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-            let mut threading = ScheduleAs::SoloAct;
+            let threading = ScheduleAs::SoloAct;
             // Call build_aqueduct; test passes if it doesn't panic
             lazy_rx.build_aqueduct(tech, &actor_builder, threading);
         }
@@ -212,10 +212,10 @@ mod distributed_builder_tests {
         const GIRTH: usize = 1;
         let cb = graph.channel_builder();
 
-        let (lazy_tx, lazy_rx_bundle) = cb.build_stream_bundle::<StreamEgress, GIRTH>(100);
+        let (_lazy_tx, lazy_rx_bundle) = cb.build_stream_bundle::<StreamEgress, GIRTH>(100);
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-        let mut threading = ScheduleAs::SoloAct;
+        let threading = ScheduleAs::SoloAct;
         lazy_rx_bundle.build_aqueduct(tech, &actor_builder, threading);
     }
 
@@ -226,11 +226,11 @@ mod distributed_builder_tests {
         const GIRTH: usize = 1;
         let cb = graph.channel_builder();
 
-        let (lazy_tx_bundle, lazy_rx_bundle) = cb.build_stream_bundle::<StreamIngress, GIRTH>(100);
+        let (lazy_tx_bundle, _lazy_rx_bundle) = cb.build_stream_bundle::<StreamIngress, GIRTH>(100);
 
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-        let mut threading = ScheduleAs::SoloAct;
+        let threading = ScheduleAs::SoloAct;
         lazy_tx_bundle.build_aqueduct(tech, &actor_builder, threading);
     }
 }

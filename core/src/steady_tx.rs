@@ -308,7 +308,7 @@ mod steady_lazy_tests {
         drop(ste_tx);
 
         let rx = rx_lazy.clone();
-        let mut ste_rx = core_exec::block_on(rx.lock());
+        let ste_rx = core_exec::block_on(rx.lock());
         assert_eq!(ste_rx.try_peek(), Some(&1));
         drop(ste_rx);
 

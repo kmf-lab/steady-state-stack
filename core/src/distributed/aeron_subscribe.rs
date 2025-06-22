@@ -118,7 +118,7 @@ async fn internal_behavior<C: SteadyActor>(
         } else {
             let fastest_duration = tx.fastest_byte_processing_duration();
             next_poll_time = now + if let Some(f) = fastest_duration {
-                f * (tx.capacity() >> 1) as u32
+                f * (tx.capacity().0 >> 1) as u32
             } else {
                 tx.max_poll_latency
             };
@@ -269,7 +269,7 @@ pub(crate) mod aeron_media_driver_tests {
         graph.start();
         //from_aeron_rx[0].testing_avail_wait(200, Duration::from_secs(20));
         graph.request_shutdown();
-        let unclean = graph.block_until_stopped(Duration::from_secs(2));
+        let _unclean = graph.block_until_stopped(Duration::from_secs(2));
 
         Ok(())
         

@@ -204,7 +204,7 @@ pub(crate) mod aeron_tests {
 
     //NOTE: bump this up for longer running load tests
     //       20_000_000_000;
-    pub const TEST_ITEMS: usize = 200_000_000;
+    //pub const TEST_ITEMS: usize = 200_000_000;
 
     pub const STREAM_ID: i32 = 11;
     //TODO: review the locking and init of terms in shared context??
@@ -222,131 +222,131 @@ pub(crate) mod aeron_tests {
     // sudo ss -tulnpe | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
     // sudo ss -m -p | grep -E "$(docker inspect -f '{{.State.Pid}}' aeronmd)"
 
-    pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyActorShadow
-                                                     , tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>> {
+    // pub async fn mock_sender_run<const GIRTH: usize>(context: SteadyActorShadow
+    //                                                  , tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>> {
+    //
+    //     let mut actor = context.into_spotlight([], tx.control_meta_data());
+    //     let mut tx = tx.lock().await;
+    //
+    //     let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
+    //     let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
+    //
+    //     const BATCH_SIZE:usize = 5000;
+    //     let items: [StreamEgress; BATCH_SIZE] = [StreamEgress::new(8);BATCH_SIZE];
+    //     let mut data: [[u8;8]; BATCH_SIZE] = [data1; BATCH_SIZE];
+    //     for i in 0..BATCH_SIZE {
+    //         if i % 2 == 0 {
+    //             data[i] = data1;
+    //         } else {
+    //             data[i] = data2;
+    //         }
+    //     }
+    //     let all_bytes: Vec<u8> = data.iter().flatten().map(|f| *f).collect();
+    //
+    //     let mut sent_count = 0;
+    //     while actor.is_running(&mut || tx.mark_closed()) {
+    //
+    //         //waiting for at least 1 channel in the stream has room for 2 made of 6 bytes
+    //         let vacant_items = 200000;
+    //         let data_size = 8;
+    //         let vacant_bytes = vacant_items * data_size;
+    //
+    //         let _clean = await_for_all!(actor.wait_vacant_bundle(&mut tx
+    //                                    , (vacant_items, vacant_bytes), 1));
+    //
+    //         let mut remaining = TEST_ITEMS;
+    //         let idx:usize = (11 - STREAM_ID) as usize;
+    //         while remaining > 0 && actor.vacant_units(&mut tx[idx].control_channel) >= BATCH_SIZE {
+    //
+    //             //actor.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
+    //             actor.send_slice(&mut tx[idx].payload_channel, &all_bytes.as_ref());
+    //             actor.send_slice(&mut tx[idx].control_channel, &items.as_ref());
+    //
+    //             // this old solution worked but consumed more core
+    //             // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
+    //             //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data1);
+    //             //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data2);
+    //             // }
+    //             sent_count += BATCH_SIZE;
+    //             remaining -= BATCH_SIZE
+    //         }
+    //
+    //         if sent_count>=TEST_ITEMS {
+    //             //if an actor exits without closing its streams we will get a dirty shutdown.
+    //             tx.mark_closed();
+    //             //error!("sender is done");
+    //             return Ok(()); //exit now because we sent all our data
+    //         }
+    //     }
+    //
+    //     Ok(())
+    // }
 
-        let mut actor = context.into_spotlight([], tx.control_meta_data());
-        let mut tx = tx.lock().await;
-
-        let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
-        let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
-
-        const BATCH_SIZE:usize = 5000;
-        let items: [StreamEgress; BATCH_SIZE] = [StreamEgress::new(8);BATCH_SIZE];
-        let mut data: [[u8;8]; BATCH_SIZE] = [data1; BATCH_SIZE];
-        for i in 0..BATCH_SIZE {
-            if i % 2 == 0 {
-                data[i] = data1;
-            } else {
-                data[i] = data2;
-            }
-        }
-        let all_bytes: Vec<u8> = data.iter().flatten().map(|f| *f).collect();
-
-        let mut sent_count = 0;
-        while actor.is_running(&mut || tx.mark_closed()) {
-
-            //waiting for at least 1 channel in the stream has room for 2 made of 6 bytes
-            let vacant_items = 200000;
-            let data_size = 8;
-            let vacant_bytes = vacant_items * data_size;
-
-            let _clean = await_for_all!(actor.wait_vacant_bundle(&mut tx
-                                       , (vacant_items, vacant_bytes), 1));
-
-            let mut remaining = TEST_ITEMS;
-            let idx:usize = (11 - STREAM_ID) as usize;
-            while remaining > 0 && actor.vacant_units(&mut tx[idx].control_channel) >= BATCH_SIZE {
-
-                //actor.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
-                actor.send_slice(&mut tx[idx].payload_channel, &all_bytes.as_ref());
-                actor.send_slice(&mut tx[idx].control_channel, &items.as_ref());
-
-                // this old solution worked but consumed more core
-                // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important
-                //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data1);
-                //     let _result = actor.try_stream_send(&mut tx, STREAM_ID, &data2);
-                // }
-                sent_count += BATCH_SIZE;
-                remaining -= BATCH_SIZE
-            }
-
-            if sent_count>=TEST_ITEMS {
-                //if an actor exits without closing its streams we will get a dirty shutdown.
-                tx.mark_closed();
-                //error!("sender is done");
-                return Ok(()); //exit now because we sent all our data
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn mock_receiver_run<const GIRTH:usize>(context: SteadyActorShadow
-                                                      , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
-
-        let mut actor = context.into_spotlight(rx.control_meta_data(), []);
-        let mut rx = rx.lock().await;
-
-        let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let _data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
-
-        const LEN:usize = 100_000;
-
-        // let mut buffer: [StreamData<StreamSessionMessage>; LEN] = core::array::from_fn(|_| {
-        //     StreamData::new(
-        //         StreamSessionMessage::new(0, 0, Instant::now(), Instant::now()),
-        //         Vec::new().into()
-        //     )
-        // });
-        trace!("started mock receiver------");
-        let mut received_count = 0;
-        while actor.is_running(&mut || rx.is_closed_and_empty()) {
-
-            let _clean = await_for_all!(actor.wait_avail_bundle(&mut rx, LEN, 1));
-
-            //we waited above for 2 messages so we know there are 2 to consume
-            //reading from a single channel with a single stream id
-
-            //let taken = actor.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
-
-            let bytes = actor.avail_units(&mut rx[0].payload_channel);
-            actor.advance_take_index(&mut rx[0].payload_channel, bytes);
-            let taken = actor.avail_units(&mut rx[0].control_channel);
-            actor.advance_take_index(&mut rx[0].control_channel, taken);
-
-
-            //  let avail = actor.avail_units(&mut rx[0].item_channel);
-
-           // TODO: need a way to test this..
-
-
-            // for i in 0..(avail>>1) {
-            //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
-            //         //warn!("test data {:?}",d.payload);
-            //         debug_assert_eq!(&*data1, &*d.payload);
-            //     }
-            //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
-            //         //warn!("test data {:?}",d.payload);
-            //         debug_assert_eq!(&*data2, &*d.payload);
-            //     }
-            // }
-
-
-            received_count += taken;
-            //actor.relay_stats_smartly(); //should not be needed.
-
-            //here we request shutdown but we only leave after our upstream actors are done
-            if received_count >= (TEST_ITEMS-taken) {
-                //error!("stop requested");
-                actor.request_shutdown().await;
-                return Ok(());
-            }
-        }
-
-        error!("receiver is done");
-        Ok(())
-    }
+    // async fn mock_receiver_run<const GIRTH:usize>(context: SteadyActorShadow
+    //                                                   , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
+    //
+    //     let mut actor = context.into_spotlight(rx.control_meta_data(), []);
+    //     let mut rx = rx.lock().await;
+    //
+    //     let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
+    //     let _data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
+    //
+    //     const LEN:usize = 100_000;
+    //
+    //     // let mut buffer: [StreamData<StreamSessionMessage>; LEN] = core::array::from_fn(|_| {
+    //     //     StreamData::new(
+    //     //         StreamSessionMessage::new(0, 0, Instant::now(), Instant::now()),
+    //     //         Vec::new().into()
+    //     //     )
+    //     // });
+    //     trace!("started mock receiver------");
+    //     let mut received_count = 0;
+    //     while actor.is_running(&mut || rx.is_closed_and_empty()) {
+    //
+    //         let _clean = await_for_all!(actor.wait_avail_bundle(&mut rx, LEN, 1));
+    //
+    //         //we waited above for 2 messages so we know there are 2 to consume
+    //         //reading from a single channel with a single stream id
+    //
+    //         //let taken = actor.take_stream_slice::<LEN, StreamSessionMessage>(&mut rx[0], &mut buffer);
+    //
+    //         let bytes = actor.avail_units(&mut rx[0].payload_channel);
+    //         actor.advance_take_index(&mut rx[0].payload_channel, bytes);
+    //         let taken = actor.avail_units(&mut rx[0].control_channel);
+    //         actor.advance_take_index(&mut rx[0].control_channel, taken);
+    //
+    //
+    //         //  let avail = actor.avail_units(&mut rx[0].item_channel);
+    //
+    //        // TODO: need a way to test this..
+    //
+    //
+    //         // for i in 0..(avail>>1) {
+    //         //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
+    //         //         //warn!("test data {:?}",d.payload);
+    //         //         debug_assert_eq!(&*data1, &*d.payload);
+    //         //     }
+    //         //     if let Some(d) = actor.try_take_stream(&mut rx[0]) {
+    //         //         //warn!("test data {:?}",d.payload);
+    //         //         debug_assert_eq!(&*data2, &*d.payload);
+    //         //     }
+    //         // }
+    //
+    //
+    //         received_count += taken;
+    //         //actor.relay_stats_smartly(); //should not be needed.
+    //
+    //         //here we request shutdown but we only leave after our upstream actors are done
+    //         if received_count >= (TEST_ITEMS-taken) {
+    //             //error!("stop requested");
+    //             actor.request_shutdown().await;
+    //             return Ok(());
+    //         }
+    //     }
+    //
+    //     error!("receiver is done");
+    //     Ok(())
+    // }
 
     // fn is_wsl() -> bool {
     //     if let Ok(version) = fs::read_to_string("/proc/version") {
