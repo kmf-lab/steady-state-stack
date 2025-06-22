@@ -19,7 +19,7 @@ use crate::actor_stats::ActorStatsComputer;
 use crate::{ActorName};
 use crate::*;
 use crate::channel_stats::ChannelStatsComputer;
-use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
+use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, ThreadInfo};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::telemetry::metrics_server;
@@ -49,6 +49,7 @@ pub(crate) struct Node {
     pub(crate) stats_computer: ActorStatsComputer,
     pub(crate) display_label: String,
     pub(crate) metric_text: String,
+    pub(crate) thread_info_cache: Option<ThreadInfo>
 }
 
 impl Node {
@@ -67,7 +68,10 @@ impl Node {
                           (100u64 * (actor_status.unit_total_ns - actor_status.await_total_ns))
                          / total_work_ns as u64
         };
-
+        //only set when we get a new one otherwise we just hold the old one.
+        if actor_status.thread_info.is_some() {
+            self.thread_info_cache = actor_status.thread_info;
+        }
         // Old strings for this actor are passed back in so they get cleared and re-used rather than reallocate
         let (color, pen_width) = self.stats_computer.compute(
             &mut self.display_label,
@@ -76,7 +80,7 @@ impl Node {
             load,
             actor_status.total_count_restarts,
             actor_status.bool_stop,
-            actor_status.thread_info
+            self.thread_info_cache
         );
 
         self.color = color;
@@ -321,7 +325,8 @@ pub fn apply_node_def(
                 stats_computer: ActorStatsComputer::default(),
                 display_label: String::new(), // Defined when the content arrives
                 metric_text: String::new(),
-                remote_details: None
+                remote_details: None,
+                thread_info_cache: None
             }
         });
     }
@@ -686,7 +691,8 @@ mod dot_tests {
             stats_computer: ActorStatsComputer::default(),
             display_label: String::new(),
             metric_text: String::new(),
-            remote_details: None
+            remote_details: None,
+            thread_info_cache: None,
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         assert_eq!(node.color, "grey");
@@ -723,7 +729,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: String::new(),
                     metric_text: "node_metric".to_string(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![
@@ -765,7 +772,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "node1".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![
@@ -914,7 +922,8 @@ mod dot_tests {
             stats_computer: ActorStatsComputer::default(),
             display_label: String::new(),
             metric_text: String::new(),
-            remote_details: None
+            remote_details: None,
+            thread_info_cache: None,
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         // This should trigger the load calculation branch
@@ -932,7 +941,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: String::new(),
                     metric_text: "node_metric".to_string(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![
@@ -971,7 +981,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "node_with_suffix".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![],
@@ -1006,7 +1017,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "remote".to_string(),
                     metric_text: String::new(),
-                    remote_details: Some(remote_details)
+                    remote_details: Some(remote_details),
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![],
@@ -1037,7 +1049,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "from".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 },
                 Node {
                     id: Some(ActorName::new("to_node", Some(5))),
@@ -1046,7 +1059,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "to".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![
@@ -1272,7 +1286,8 @@ mod dot_tests {
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "unknown_node".to_string(),
                     metric_text: String::new(),
-                    remote_details: None
+                    remote_details: None,
+                    thread_info_cache: None,
                 }
             ],
             edges: vec![],

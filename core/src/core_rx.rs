@@ -197,7 +197,7 @@ pub trait RxCore {
 
     fn shared_is_empty(&self) -> bool;
 
-    fn shared_avail_units(&mut self) -> usize;
+    fn shared_avail_units(&mut self) -> Self::MsgSize;
 
     #[allow(async_fn_in_trait)]
     async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool;
@@ -542,8 +542,8 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
         self.control_channel.rx.is_empty()
     }
 
-    fn shared_avail_units(&mut self) -> usize {
-        self.control_channel.rx.occupied_len()
+    fn shared_avail_units(&mut self) -> Self::MsgSize {
+        (self.control_channel.rx.occupied_len(),self.payload_channel.rx.occupied_len() )
     }
 
 
@@ -615,10 +615,7 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
     ) -> RxDone where Self::MsgItem: Copy
     {
         let (item_target, payload_target) = target;
-
-        // Get available item slices
         let (item_a, item_b) = self.control_channel.rx.as_slices();
-
 
         let mut items_copied = 0;
         let mut payload_bytes_needed = 0;
@@ -663,8 +660,7 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
         if payload_copied < payload_bytes_needed {
             let m = payload_b.len().min(payload_bytes_needed - payload_copied);
             if m > 0 {
-                payload_target[payload_copied..payload_copied + m]
-                    .copy_from_slice(&payload_b[..m]);
+                payload_target[payload_copied..payload_copied + m].copy_from_slice(&payload_b[..m]);
                 payload_copied += m;
             }
         }
@@ -675,13 +671,8 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
             self.control_channel.rx.advance_read_index(items_copied);
         }
 
-
-        // if items_copied>0 { //TODO: mut be done on every possible take method confirm we have done it here.
-        //     self.control_channel.fetch_add(1,Ordering::Relaxed); //for DLQ
-        //     self.payload_channel.fetch_add(1,Ordering::Relaxed); //for DLQ
-        //
-        // }
-
+        self.control_channel.take_count.fetch_add(payload_copied as u32,Ordering::Relaxed); //for DLQ
+        self.payload_channel.take_count.fetch_add(items_copied as u32,Ordering::Relaxed); //for DLQ
 
         RxDone::Stream(items_copied, payload_copied)
     }
@@ -730,7 +721,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_is_empty(&**self)
     }
 
-    fn shared_avail_units(&mut self) -> usize {
+    fn shared_avail_units(&mut self) -> Self::MsgSize {
         <T as RxCore>::shared_avail_units(&mut **self)
     }
 

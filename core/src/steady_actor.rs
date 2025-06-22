@@ -340,7 +340,7 @@ pub trait SteadyActor {
     ///
     /// # Returns
     /// A `usize` indicating the number of available messages.
-    fn avail_units<T: RxCore>(&self, this: &mut T) -> usize;
+    fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize;
     /// Asynchronously peeks at the next available message in the channel without removing it.
     ///
     /// # Parameters

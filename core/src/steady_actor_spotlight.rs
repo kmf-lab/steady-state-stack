@@ -320,7 +320,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         this.shared_is_empty()
     }
 
-    fn avail_units<T: RxCore>(&self, this: &mut T) -> usize {
+    fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize {
         this.shared_avail_units()
     }
 
@@ -474,7 +474,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
 
         if msg_count == total_items {
-            debug_assert_eq!(0, defrag.ringbuffer_bytes.1.occupied_len());
             (msg_count as u32, total_bytes as u32, None)
         } else {
             (msg_count as u32, total_bytes as u32, Some(defrag.session_id))

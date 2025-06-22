@@ -235,7 +235,9 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 iteration_sum += status.iteration_sum;
                 await_total_ns += status.await_total_ns;
                 unit_total_ns += status.unit_total_ns;
-                thread_info = status.thread_info;
+                if status.thread_info.is_some() {
+                    thread_info = status.thread_info;
+                }
 
                 for (i, call) in status.calls.iter().enumerate() {
                     calls[i] = calls[i].saturating_add(*call);

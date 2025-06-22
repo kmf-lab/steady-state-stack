@@ -105,6 +105,7 @@ impl ActorStatsComputer {
 
         dot_label.push('\n');
 
+        //TODO: ThreadId  is dissaperaing!
         if let Some(thread) = thread_info {    //new line for thread info
 
             //this could be better looking but will require unstable features today Oct 2024.

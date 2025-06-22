@@ -183,7 +183,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                             //TODO: urgent!! because we are trying to do bytes its broken and still doing units and we have just a few giant units now so it look slike zero!!!
                             //TODO: sill tracking droped messaes at high speed.
 
-                            if vacant_aeron_bytes > 0 && avail_messages > 0 {
+                            if vacant_aeron_bytes > 0 && avail_messages.0 > 0 {
 
                                let _done =  rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();

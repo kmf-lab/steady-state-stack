@@ -19,7 +19,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyActorShadow
     while actor.is_running(&mut || rx.is_closed_and_empty()) {
         let _clean = await_for_all!(actor.wait_avail_bundle(&mut rx, LEN, 1));
 
-         let avail = actor.avail_units(&mut rx[0]);
+         let avail = actor.avail_units(&mut rx[0]).0;
 
         for _z in 0..(avail>>1) {
             if let Some((i,d)) = actor.try_take(&mut rx[0]) {

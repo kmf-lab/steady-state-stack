@@ -710,10 +710,11 @@ impl<T: StreamControlItem> StreamRx<T> {
     //     self.item_channel.shared_wait_closed_or_avail_units(full_messages).await
     // }
     pub fn capacity(&mut self) -> usize {
+
         self.control_channel.capacity()
     }
 
-    pub fn avail_units(&mut self) -> usize {
+    pub fn avail_units(&mut self) -> (usize,usize) {
         self.shared_avail_units()
     }
 
@@ -1045,13 +1046,13 @@ impl<T: StreamControlItem> LazyStreamRx<T> {
     pub fn testing_avail_units(&self) -> usize {
         let s = self.clone();
         let mut rx = s.try_lock().expect("internal error: try_lock");
-        rx.shared_avail_units()
+        rx.shared_avail_units().0
     }
 
     pub fn testing_take_all(&self) -> Vec<(T,Box<[u8]>)> {
         let s = self.clone();
         let mut rx = s.try_lock().expect("internal error: try_lock");
-        let mut count = rx.capacity().min(rx.avail_units());
+        let mut count = rx.capacity().min(rx.avail_units().0);
         let mut target = Vec::with_capacity(count);
         while count>0 {
             target.push(rx.try_take().expect("internal error: try_take"));
