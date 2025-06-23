@@ -32,7 +32,6 @@ pub struct ActorStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ThreadInfo {
     pub(crate) thread_id: ThreadId,
-    pub(crate) team_id:   usize,
     #[cfg(feature = "core_display")]
     pub(crate) core: i32,
 }
@@ -67,6 +66,9 @@ pub struct ActorMetaData {
     ///
     /// If `true`, the average work is tracked for this actor.
     pub(crate) avg_work: bool,
+
+
+    pub(crate) show_thread_info: bool,
 
     /// A list of percentiles for the MCPU usage.
     ///

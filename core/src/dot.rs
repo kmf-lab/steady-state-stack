@@ -52,6 +52,8 @@ pub(crate) struct Node {
     pub(crate) thread_info_cache: Option<ThreadInfo>
 }
 
+pub(crate) const DEFAULT_PEN_WIDTH: &str = "4"; //need a way to configure this?
+
 impl Node {
     /// Computes and refreshes the metrics for the node based on the actor status and total work.
     ///
@@ -72,6 +74,13 @@ impl Node {
         if actor_status.thread_info.is_some() {
             self.thread_info_cache = actor_status.thread_info;
         }
+
+        let thread_id = if self.stats_computer.show_thread_id {
+            self.thread_info_cache
+        } else {
+            None
+        };
+
         // Old strings for this actor are passed back in so they get cleared and re-used rather than reallocate
         let (color, pen_width) = self.stats_computer.compute(
             &mut self.display_label,
@@ -80,7 +89,7 @@ impl Node {
             load,
             actor_status.total_count_restarts,
             actor_status.bool_stop,
-            self.thread_info_cache
+            thread_id
         );
 
         self.color = color;
@@ -321,7 +330,7 @@ pub fn apply_node_def(
             Node {
                 id: None,
                 color: "grey",
-                pen_width: "2",
+                pen_width: DEFAULT_PEN_WIDTH,
                 stats_computer: ActorStatsComputer::default(),
                 display_label: String::new(), // Defined when the content arrives
                 metric_text: String::new(),
@@ -369,7 +378,7 @@ fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec:
                     stats_computer: ChannelStatsComputer::default(),
                     ctl_labels: Vec::new(), // For visibility control
                     color: "grey",
-                    pen_width: "3",
+                    pen_width: DEFAULT_PEN_WIDTH,
                     display_label: String::new(), // Defined when the content arrives
                     metric_text: String::new(),
                 }
@@ -687,7 +696,7 @@ mod dot_tests {
         let mut node = Node {
             id: Some(ActorName::new("1",None)),
             color: "grey",
-            pen_width: "1",
+            pen_width: DEFAULT_PEN_WIDTH,
             stats_computer: ActorStatsComputer::default(),
             display_label: String::new(),
             metric_text: String::new(),
@@ -696,7 +705,7 @@ mod dot_tests {
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         assert_eq!(node.color, "grey");
-        assert_eq!(node.pen_width, "3");
+        assert_eq!(node.pen_width, DEFAULT_PEN_WIDTH);
     }
 
     #[test]
@@ -1110,6 +1119,7 @@ mod dot_tests {
             }),
             avg_mcpu: false,
             avg_work: false,
+            show_thread_info: false,
             percentiles_mcpu: vec![],
             percentiles_work: vec![],
             std_dev_mcpu: vec![],

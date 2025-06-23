@@ -57,6 +57,8 @@ pub struct ActorStatsComputer {
     pub(crate) current_work: Option<ChannelBlock<u8>>,
 
     pub(crate) prometheus_labels: String,
+
+    pub(crate) show_thread_id: bool
 }
 
 impl ActorStatsComputer {
@@ -186,7 +188,7 @@ impl ActorStatsComputer {
                 line_color = DOT_RED;
             }
         }
-        let line_width = "3";
+        let line_width = crate::dot::DEFAULT_PEN_WIDTH;
 
         //println!("input mcpu {} work {} line_color {} ", mcpu, work, line_color);
 
@@ -231,6 +233,7 @@ impl ActorStatsComputer {
         self.std_dev_mcpu.clone_from(&meta.std_dev_mcpu);
         self.std_dev_work.clone_from(&meta.std_dev_work);
         self.usage_review = meta.usage_review;
+        self.show_thread_id = meta.show_thread_info;
 
         let trigger_uses_histogram = self.mcpu_trigger.iter().any(|t|
             matches!(t, (Trigger::PercentileAbove(_, _), _) | (Trigger::PercentileBelow(_, _), _))
@@ -636,6 +639,7 @@ mod test_actor_stats {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
             percentiles_work: vec![Percentile::p50(), Percentile::p90()],
             std_dev_mcpu: vec![StdDev::new(1.0).expect("")],
@@ -743,6 +747,7 @@ mod test_actor_stats_triggers {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
             percentiles_work: vec![Percentile::p50(), Percentile::p90()],
             std_dev_mcpu: vec![StdDev::new(1.0).expect("")],
@@ -921,6 +926,7 @@ mod extra_tests {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![],
             percentiles_work: vec![],
             std_dev_mcpu: vec![],
@@ -1146,6 +1152,7 @@ mod extra_tests {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![Percentile::p50()], // Force histogram creation
             percentiles_work: vec![Percentile::p50()], // Force histogram creation
             std_dev_mcpu: vec![],
@@ -1316,6 +1323,7 @@ mod extra_tests {
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
+            show_thread_info: false,
             percentiles_mcpu: vec![Percentile::p50()],
             percentiles_work: vec![Percentile::p50()],
             std_dev_mcpu: vec![StdDev::one()],
@@ -1339,6 +1347,7 @@ mod extra_tests {
             remote_details: None,
             avg_mcpu: false,
             avg_work: false,
+            show_thread_info: false,
             percentiles_mcpu: vec![],
             percentiles_work: vec![],
             std_dev_mcpu: vec![],

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use futures_util::lock::Mutex;
 use log::error;
 use std::ops::DerefMut;
+use std::thread;
 use num_traits::Zero;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
 use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
@@ -49,18 +50,24 @@ impl SteadyTelemetryActorSend {
     }
 
     /// Generates a status message for the actor.
-    pub(crate) fn status_message(&self, iteration_index: u64, thread_info: Option<ThreadInfo>) -> ActorStatus {
+    pub(crate) fn status_message(&self, iteration_index: u64) -> ActorStatus {
+
+        //this is a little expensive, and we should consider doing this every N calls
+        //the consumer node already holds the previous and uses it until we see a change.
+        let thread_info = Some(ThreadInfo{
+                            thread_id: thread::current().id(),
+                            #[cfg(feature = "core_display")]
+                            core: crate::telemetry::setup::get_current_cpu(),
+                        });
+
         let total_ns = self.instant_start.elapsed().as_nanos() as u64;
 
-        assert!(
+        debug_assert!(
             total_ns >= self.hot_profile_await_ns_unit.load(Ordering::Relaxed),
-            "should be: {} >= {}",
-            total_ns,
-            self.hot_profile_await_ns_unit.load(Ordering::Relaxed)
+            "should be: {} >= {}", total_ns, self.hot_profile_await_ns_unit.load(Ordering::Relaxed)
         );
 
-        let calls: Vec<u16> = self.calls.iter().map(|f| f.load(Ordering::Relaxed)).collect();
-        let calls: [u16; 6] = calls.try_into().unwrap_or([0u16; 6]);
+        let calls: [u16; 6] = std::array::from_fn(|i| self.calls[i].load(Ordering::Relaxed));
 
         ActorStatus {
             total_count_restarts: self.instance_id,

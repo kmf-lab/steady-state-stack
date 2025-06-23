@@ -16,6 +16,7 @@ use ringbuf::storage::Heap;
 use ringbuf::traits::{Observer, Split};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
+use std::num::NonZero;
 use std::ops::Mul;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -461,6 +462,61 @@ impl <T: StreamControlItem> Defrag<T> {
             ringbuffer_bytes: AsyncRb::<Heap<u8>>::new(bytes).split()
         }
     }
+
+    pub fn ensure_additional_capacity(&mut self, items: usize, bytes: usize) {
+        // Handle ringbuffer_bytes
+        let bytes_vacant = self.ringbuffer_bytes.0.vacant_len();
+        if bytes_vacant < bytes {
+            // Calculate new capacity: at least occupied + required, or double current capacity
+            let current_capacity = self.ringbuffer_bytes.0.capacity();
+            let occupied = self.ringbuffer_bytes.1.occupied_len();
+            let required_capacity = occupied + bytes;
+            let new_capacity = current_capacity.max(NonZero::try_from(required_capacity).unwrap());
+
+            // Create new ring buffer and split it
+            let mut new_rb = AsyncRb::<Heap<u8>>::new(usize::from(new_capacity));
+            let (mut new_producer, new_consumer) = new_rb.split();
+
+            // Transfer existing data from old consumer to new producer
+            let mut buf = vec![0u8; 1024]; // Temporary buffer for slicing
+            let count = self.ringbuffer_bytes.1.pop_slice(&mut buf);
+            loop{
+                if count == 0 {
+                    break;
+                }
+                let pushed = new_producer.push_slice(&buf[0..count]);
+                assert_eq!(pushed, count, "Pushed bytes should match popped count");
+                let count = self.ringbuffer_bytes.1.pop_slice(&mut buf);
+            }
+
+            // Replace the old ringbuffer_bytes with the new one
+            self.ringbuffer_bytes = (new_producer, new_consumer);
+        }
+
+        // Handle ringbuffer_items
+        let items_vacant = self.ringbuffer_items.0.vacant_len();
+        if items_vacant < items {
+            // Calculate new capacity: at least occupied + required, or double current capacity
+            let current_capacity = self.ringbuffer_items.0.capacity();
+            let occupied = self.ringbuffer_items.1.occupied_len();
+            let required_capacity = occupied + items;
+            let new_capacity = current_capacity.max(NonZero::try_from(required_capacity).unwrap());
+
+            // Create new ring buffer and split it
+            let mut new_rb = AsyncRb::<Heap<T>>::new(usize::from(new_capacity));
+            let (mut new_producer, new_consumer) = new_rb.split();
+
+            // Transfer existing data from old consumer to new producer
+            while let Some(item) = self.ringbuffer_items.1.try_pop() {
+                let ok = new_producer.try_push(item).is_ok();
+                assert!(ok, "Pushed bytes should match popped count");
+            }
+
+            // Replace the old ringbuffer_items with the new one
+            self.ringbuffer_items = (new_producer, new_consumer);
+        }
+    }
+
 }
 
 impl<T: StreamControlItem> StreamTx<T> {
@@ -622,11 +678,11 @@ impl<T: StreamControlItem> StreamTx<T> {
         (total_messages,total_bytes)
     }
 
-    pub(crate) fn smallest_space(&mut self) -> Option<usize> {
+    pub(crate) fn total_consumed_space(&mut self) -> (usize,usize) {
          self.defrag
              .values()
-             .map(|d| d.ringbuffer_items.0.vacant_len())
-             .min()
+             .map(|d| (d.ringbuffer_items.0.occupied_len(), d.ringbuffer_bytes.0.occupied_len() )   )
+             .fold((0,0), |(a,b),(c,d)| (a+c,b+d))
     }
 
     #[inline]
@@ -636,11 +692,14 @@ impl<T: StreamControlItem> StreamTx<T> {
                                    , is_begin: bool
                                    , is_end: bool
                                    , now: Instant) {
-
+        debug_assert!(slice.len() <=  self.payload_channel.capacity(), "Internal error, slice is too large");
         //Get or create the Defrag entry for the session ID
-        let defrag_entry = self.defrag.entry(session_id).or_insert_with(|| {
-            Defrag::new(session_id, self.control_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
+        let defrag_entry:&mut Defrag<T> = self.defrag.entry(session_id).or_insert_with(|| {
+            Defrag::new(session_id, self.control_channel.capacity(), self.payload_channel.capacity().max(slice.len())) // Adjust capacity as needed
         });
+        defrag_entry.ensure_additional_capacity(1, slice.len());
+
+        debug_assert!(slice.len() <= defrag_entry.ringbuffer_bytes.0.vacant_len());
 
         // // If this is the beginning of a fragment, assert the ringbuffer is empty
         let some_now = Some(now);
@@ -658,8 +717,9 @@ impl<T: StreamControlItem> StreamTx<T> {
         debug_assert!(slice_len>0);
 
         let count = defrag_entry.ringbuffer_bytes.0.push_slice(slice);
-        defrag_entry.running_length += count;
         debug_assert_eq!(count, slice_len, "internal buffer should have had room");
+
+        defrag_entry.running_length += count;
 
         // If this is the end of a fragment send
         if is_end {

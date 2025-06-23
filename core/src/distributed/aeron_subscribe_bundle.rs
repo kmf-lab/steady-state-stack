@@ -67,27 +67,35 @@ async fn poll_aeron_subscription<C: SteadyActor>(
 
         // Poll the subscription until no data or defrag is full
         loop {
-            let remaining_poll = if let Some(s) = tx_item.smallest_space() { s } else {
-                tx_item.control_channel.capacity()
-            };
+            let (items,bytes) = tx_item.total_consumed_space();
+
+            let max_bytes = 1<<27; // 128M
+           //we use the memory limit here becuase the defrag will auto grow as needed based on packed payloads.
+            let remaining_poll = if bytes<max_bytes { 100 } else { 0 };
+            //TODO: we need to rethinkg the above but this is a simple solution to move us forward
+
             if remaining_poll == 0 {
-                if tx_item.shared_vacant_units()>0 {
-                    trace!("Check downstream consumer, No space left in the buffer, tx room {:?} smallest {:?}", tx_item.shared_vacant_units(), tx_item.smallest_space());
-                }
                 break;
             }
+
             // warn!("sub.poll remaining_poll: {}", remaining_poll);
             let got_count = sub.poll(&mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
+                //new space check
+                debug_assert!(length <=  tx_item.payload_channel.capacity() as i32 , "Internal error, slice is too large");
+
                 let flags = header.flags();
                 let is_begin = 0 != (flags & frame_descriptor::BEGIN_FRAG);
                 let is_end = 0 != (flags & frame_descriptor::END_FRAG);
+
+                //since the bytes can be combined in almost any configuration we really do not know how many bytes will be needed !!!
+
                 tx_item.fragment_consume(
-                    header.session_id(),
-                    buffer.as_sub_slice(offset, length),
-                    is_begin,
-                    is_end,
-                    now,
-                );
+                            header.session_id(),
+                            buffer.as_sub_slice(offset, length),
+                            is_begin,
+                            is_end,
+                            now,
+                        );
                 input_bytes += length as u32;
                 input_frags += 1;
             }, remaining_poll as i32);

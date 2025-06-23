@@ -948,6 +948,7 @@ impl ActorBuilder {
             avg_work: self.avg_load,
             percentiles_mcpu: self.percentiles_mcpu.clone(),
             percentiles_work: self.percentiles_load.clone(),
+            show_thread_info: self.show_thread_info.clone(),
             std_dev_mcpu: self.std_dev_mcpu.clone(),
             std_dev_work: self.std_dev_load.clone(),
             trigger_mcpu: self.trigger_mcpu.clone(),

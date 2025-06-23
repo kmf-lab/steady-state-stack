@@ -141,8 +141,18 @@ async fn poll_aeron_subscription<C: SteadyActor>(
     let measured_vacant_bytes = tx.payload_channel.shared_vacant_units() as u32;
 
     loop {
+
+        let (items,bytes) = tx.total_consumed_space();
+
+        let max_bytes = 1<<27; // 128M
+        //we use the memory limit here becuase the defrag will auto grow as needed based on packed payloads.
+        let remaining_poll = if bytes<max_bytes { 1 } else { 0 };
+        //TODO: we need to rethinkg the above but this is a simple solution to move us forward
+
+        if remaining_poll == 0 {
+            break;
+        }
         // tx is already locked by the caller (internal_behavior), so we use it directly
-        let remaining_poll = tx.smallest_space().unwrap_or(tx.control_channel.capacity()) as i32;
         if 0 >= sub.poll(
             &mut |buffer: &AtomicBuffer, offset: i32, length: i32, header: &Header| {
                 let flags = header.flags();

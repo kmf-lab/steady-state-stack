@@ -19,8 +19,10 @@ pub(crate) const DOT_GREY: &str = "grey";
 
 /// Array representing the pen width values for the dot graph.
 static DOT_PEN_WIDTH: [&str; 16] = [
-    "1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "144", "233", "377", "610", "987", "1597"
+    "4", "6", "8", "10", "12", "14", "16", "18", "20", "22", "24", "26", "28", "30", "32", "34"
 ];
+
+
 
 /// Struct for computing statistics of a communication channel.
 #[derive(Default, Debug)]
