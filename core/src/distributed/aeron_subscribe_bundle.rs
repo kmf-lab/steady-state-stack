@@ -65,6 +65,8 @@ async fn poll_aeron_subscription<C: SteadyActor>(
         let mut input_bytes: u32 = 0;
         let mut input_frags: u32 = 0;
 
+        //TODO: also update the single code to match this
+
         // Poll the subscription until no data or defrag is full
         loop {
             let (items,bytes) = tx_item.total_consumed_space();

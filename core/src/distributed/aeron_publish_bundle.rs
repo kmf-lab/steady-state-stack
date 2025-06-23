@@ -52,7 +52,7 @@ pub async fn run<const GIRTH:usize,>(context: SteadyActorShadow
     actor.simulated_behavior(sims).await
 }
 
-const SHUTDOWN_ON_INIT_MESSAGE: &'static str = "Shutdown requested while waiting";
+const SHUTDOWN_ON_INIT_MESSAGE: & str = "Shutdown requested while waiting";
 
 async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                                              , rx: SteadyStreamRxBundle<StreamEgress,GIRTH>
@@ -216,11 +216,9 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                                 let dif:i64 = value as i64 - last_position[index];
                                                 last_position[index]= value;
                                                 count_done += 1;
-                                                if dif<(msg_len as u64).try_into().expect("bad cast") {
+                                                if dif<(msg_len as i64) {
                                                     error!("warning not packing the data sent {} to send {} ", dif, msg_len);
                                                 }
-
-                                                //assert_eq!(dif, (msg_len as u64).try_into().expect("bad cast"), "expected to match");
                                                 count_bytes += msg_len;
                                                 true
                                             } else {
@@ -281,8 +279,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                         }
                     }
                     Err(e) => {
-                        warn!("{}",e);
-                        //flushed_count +=1; //not sure...
+                        trace!("{}",e);
                         yield_now().await;
                     }
                 }

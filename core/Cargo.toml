@@ -40,9 +40,6 @@ proactor_tokio = ["nuclei/tokio", "nuclei/iouring"]
 
 exec_async_std = ["async-std"]  # works
 
-
-#proactor_windows = ["nuclei/async-exec"] # invalid TODO: can not have proactor on windows.
-
 # provide prometheus compatible pullable metrics
 prometheus_metrics = [] # (default)
 # default telemetry_server_bultin is used for telemetry
@@ -84,7 +81,7 @@ async-std        = { version = "1.13.1", optional = true, features = ["default"]
 ringbuf          = "0.4.8"  # foundational bounded message passing
 async-ringbuf    = "0.3.4"  # foundational bounded message passing
 log              = "0.4.27"  # common logging traits
-flexi_logger     = { version="0.29.8", features=["colors", "async"] }  # default flexable logging implementation
+flexi_logger     = { version="0.31.1", features=["colors", "async"] }  # default flexable logging implementation
 futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
 hdrhistogram     = "7.5.4"  # for latency histograms
 bytes            = { version = "1.9.0", features = [] }
@@ -94,8 +91,8 @@ num-traits       = "0.2.19" # for num::Zero and other generic math traits
 itoa             = "1.0.15"
 ctrlc            = "3.4.7"
 time             = { version = "0.3.41", features = ["macros", "formatting", "parsing"] } # used in dot regardles of what IDE reports
-dirs             = "5.0.1"
-clap              = { version = "4.5.35", features = ["derive"] }  # Use clap with derive feature
+dirs             = "6.0.0"
+clap             = { version = "4.5.35", features = ["derive"] }  # Use clap with derive feature
 futures          = "0.3.31"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3.31"
 parking_lot      = "0.12.3"
@@ -271,7 +268,7 @@ optional = true
 
 [build-dependencies]
 isahc            = "1.7.2"
-askama           = "0.12.1"
+askama           = "0.14.0"
 tempfile         = "3.13.0"  # for testing
 flate2           = "1.1.0"
 regex            = "1.11.1" # future testing
@@ -297,7 +294,7 @@ path = "examples/high_durability/main.rs"
 
 [dev-dependencies]
 async-std        = {  version = "1.13.0", features = ["attributes"] }  # for async unit testing only,
-rand_distr       = "0.4.3" # for random number generation
-rand             = "0.8.5" # for random number generation
+rand_distr       = "0.5.1" # for random number generation
+rand             = "0.9.1" # for random number generation
 isahc            = "1.7.2"
 #testcontainers   = "0.15.0" # for integration testing, DO NOT upgrade to 0.16.0 since Tokio is not supported here

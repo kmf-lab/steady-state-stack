@@ -97,8 +97,8 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
     /// Checks if telemetry data has not been sent for longer than the threshold and logs a warning.
     fn check_telemetry_delay(&self) {
         let elapsed_since_last_send = self.last_telemetry_send.elapsed();
-        let threshold_duration = Duration::from_millis(self.frame_rate_ms * TELEMETRY_DELAY_THRESHOLD_MULTIPLIER);
-        if elapsed_since_last_send > threshold_duration {
+        let threshold_duration_ms = self.frame_rate_ms * TELEMETRY_DELAY_THRESHOLD_MULTIPLIER;
+        if elapsed_since_last_send.as_millis() > threshold_duration_ms as u128 {
             // not an error but it might be
             trace!(
                 "Telemetry data not sent for actor {:?} in {} ms (threshold: {} ms). Possible causes: \
@@ -107,7 +107,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
                 - Actor blocked (review actor state and logs).",
                 self.ident,
                 elapsed_since_last_send.as_millis(),
-                threshold_duration.as_millis()
+                threshold_duration_ms
             );
         }
     }
@@ -764,7 +764,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                     }
                     if self.relay_stats_smartly() {
                         self.check_telemetry_delay();
-                        executor::block_on(yield_now::yield_now());
                     }
                 }
                 self.is_running_iteration_count += 1;

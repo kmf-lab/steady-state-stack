@@ -590,7 +590,7 @@ async fn send_data_details(
         } else if warn {
             #[cfg(not(test))]
             warn!(
-                "{:?} is accumulating frames since consumer is not keeping up, consider increasing capacity of {:?}.",
+                "{:?} is accumulating frames since DiagramData consumer is not keeping up, consider increasing capacity of {:?} or review downstream actor.",
                 ident, consumer.capacity()
             );
         }
@@ -686,7 +686,9 @@ mod metric_collector_tests {
     #[cfg(not(windows))]
     #[test]
     fn test_actor() -> Result<(), Box<dyn std::error::Error>> {
+        use std::sync::atomic::Ordering;
         use isahc::AsyncReadResponseExt;
+        use std::sync::atomic::AtomicUsize;
 
         //only run this locally where we can open the default port
         if !std::env::var("GITHUB_ACTIONS").is_ok() {
@@ -764,8 +766,8 @@ mod metric_collector_tests {
                     Ok(mut response) => {
                         assert_eq!(200, response.status().as_u16());
                         // warn!("ok metrics");
-                        let body = response.text().await;
-                        info!("metrics: {:?}", body); //TODO: add more checks
+                        // let body = response.text().await;
+                        // info!("metrics: {:?}", body); //TODO: add more checks
                     }
                     Err(e) => {
                         warn!("failed to get metrics: {:?}", e);

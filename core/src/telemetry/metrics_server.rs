@@ -611,7 +611,7 @@ mod meteric_server_tests {
     use crate::telemetry::metrics_server::internal_behavior;
 
     #[test]
-    fn test_simple() {
+    fn test_simple() -> Result<(), Box<dyn std::error::Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
          
         let (tx_in, rx_in) = graph.channel_builder()
@@ -636,7 +636,7 @@ mod meteric_server_tests {
 
         sleep(Duration::from_millis(60));
         graph.request_shutdown();
-        graph.block_until_stopped(Duration::from_secs(15));
+        graph.block_until_stopped(Duration::from_secs(15))
     
      }
 
@@ -654,7 +654,7 @@ mod http_telemetry_tests {
     use crate::monitor::ActorStatus;
 
     #[test]
-    fn test_metrics_server() {
+    fn test_metrics_server() -> Result<(), Box<dyn std::error::Error>> {
         if cfg!(not(windows)) && std::env::var("GITHUB_ACTIONS").is_err() {
             let (mut graph, server_ip, tx_in) =
                 stand_up_test_server("127.0.0.1:0");
@@ -712,7 +712,9 @@ mod http_telemetry_tests {
             // Step 6: Stop the graph
             tx_in.testing_close();
             graph.request_shutdown();
-            graph.block_until_stopped(Duration::from_secs(5));
+            graph.block_until_stopped(Duration::from_secs(5))
+        } else {
+            Ok(())
         }
     }
 

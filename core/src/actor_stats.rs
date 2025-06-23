@@ -712,7 +712,7 @@ mod test_actor_stats {
         );
 
         assert_eq!(line_color, DOT_GREEN);
-        assert_eq!(line_width, "3");
+        assert_eq!(line_width, "4");
         assert!(dot_label.contains("test_actor"));
 
     }

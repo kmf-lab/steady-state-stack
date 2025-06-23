@@ -10,7 +10,7 @@ use num_traits::Zero;
 use crate::{steady_tx_bundle, ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
-use crate::monitor::{find_my_index, ChannelMetaData, RxTel, ThreadInfo};
+use crate::monitor::{find_my_index, ChannelMetaData, RxTel};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;

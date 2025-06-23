@@ -519,6 +519,8 @@ fn do_cargo_cache_install(test_name: &str) {
 }
     #[cfg(not(windows))]
     fn do_cargo_build_of_generated_code(test_name: &str) {
+        use colored::*;
+
         // Construct the absolute path to the directory containing Cargo.toml
         let build_me = PathBuf::from(test_name);
         let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();

@@ -369,7 +369,7 @@ pub trait SteadyActor {
     /// - `msg`: The message to be sent.
     ///
     /// # Returns
-    /// A SendOutcome<T>
+    /// A SendOutcome<T::MsgOut>>
     fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut>;
 
     /// Attempts to take a message from the channel if available.
@@ -429,7 +429,7 @@ pub trait SteadyActor {
     /// - `msg`: The message to be sent.
     ///
     /// # Returns
-    /// A SendOutcome<T>
+    /// A SendOutcome<T::MsgOut>
     ///
     /// # Example Usage
     /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.

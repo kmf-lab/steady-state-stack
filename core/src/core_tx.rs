@@ -96,7 +96,7 @@ impl<T> TxCore for Tx<T> {
             let result = c.send(());
             if result.is_err() {
                 //not a serious issue, may happen with bundles
-                error!("close called but the receiver already dropped");
+                trace!("close called but the receiver already dropped");
             }
         } else {
             //NOTE: this may happen more than once, expecially for simulations
@@ -121,7 +121,7 @@ impl<T> TxCore for Tx<T> {
 
     fn shared_send_iter_until_full<'a,I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
         if self.make_closed.is_none() {
-            warn!("Send called after channel marked closed");
+            error!("Send called after channel marked closed");
         }
         self.tx.push_iter(iter)
     }

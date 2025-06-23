@@ -200,8 +200,8 @@ mod distributed_builder_tests {
         let (lazy_tx, _lazy_rx) = cb.build_stream(100);
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-        let mut threading = ScheduleAs::SoloAct;
-        lazy_tx.build_aqueduct(tech, &actor_builder, threading);
+
+        lazy_tx.build_aqueduct(tech, &actor_builder, SoloAct);
     }
 
     /// Test that `build_aqueduct` works for `LazySteadyStreamRxBundle<StreamSimpleMessage, GIRTH>` with `AqueTech::Aeron`.
@@ -215,8 +215,7 @@ mod distributed_builder_tests {
         let (_lazy_tx, lazy_rx_bundle) = cb.build_stream_bundle::<StreamEgress, GIRTH>(100);
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-        let threading = ScheduleAs::SoloAct;
-        lazy_rx_bundle.build_aqueduct(tech, &actor_builder, threading);
+        lazy_rx_bundle.build_aqueduct(tech, &actor_builder, SoloAct);
     }
 
     #[test]
@@ -230,7 +229,6 @@ mod distributed_builder_tests {
 
         let tech = AqueTech::None;
         let actor_builder = ActorBuilder::new(&mut graph).never_simulate(true);
-        let threading = ScheduleAs::SoloAct;
-        lazy_tx_bundle.build_aqueduct(tech, &actor_builder, threading);
+        lazy_tx_bundle.build_aqueduct(tech, &actor_builder, SoloAct);
     }
 }

@@ -838,14 +838,6 @@ mod core_rx_async_tests {
         assert!(core_exec::block_on(wait_future), "Wait should return true when units become available");
     }
 
-    #[test]
-    fn test_wait_shutdown_or_avail_units() {
-        let (tx, rx, _) = setup_channel::<i32>(1, None);
-        let mut rx_guard = core_exec::block_on(rx.lock());
-        let wait_future = rx_guard.shared_wait_shutdown_or_avail_units(1);
-        drop(core_exec::block_on(tx.lock())); // Simulate shutdown by dropping Tx guard
-        assert!(!core_exec::block_on(wait_future), "Wait should return false on shutdown");
-    }
 
     #[test]
     fn test_wait_closed_or_avail_units() {

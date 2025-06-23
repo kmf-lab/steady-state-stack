@@ -471,7 +471,7 @@ impl <T: StreamControlItem> Defrag<T> {
             let current_capacity = self.ringbuffer_bytes.0.capacity();
             let occupied = self.ringbuffer_bytes.1.occupied_len();
             let required_capacity = occupied + bytes;
-            let new_capacity = current_capacity.max(NonZero::try_from(required_capacity).unwrap());
+            let new_capacity = current_capacity.max(NonZero::try_from(required_capacity).expect("internal"));
 
             // Create new ring buffer and split it
             let mut new_rb = AsyncRb::<Heap<u8>>::new(usize::from(new_capacity));
@@ -485,8 +485,8 @@ impl <T: StreamControlItem> Defrag<T> {
                     break;
                 }
                 let pushed = new_producer.push_slice(&buf[0..count]);
-                assert_eq!(pushed, count, "Pushed bytes should match popped count");
-                let count = self.ringbuffer_bytes.1.pop_slice(&mut buf);
+                debug_assert_eq!(pushed, count, "Pushed bytes should match popped count");
+                let _ = self.ringbuffer_bytes.1.pop_slice(&mut buf);
             }
 
             // Replace the old ringbuffer_bytes with the new one
@@ -500,16 +500,16 @@ impl <T: StreamControlItem> Defrag<T> {
             let current_capacity = self.ringbuffer_items.0.capacity();
             let occupied = self.ringbuffer_items.1.occupied_len();
             let required_capacity = occupied + items;
-            let new_capacity = current_capacity.max(NonZero::try_from(required_capacity).unwrap());
+            let new_capacity = current_capacity.max(NonZero::try_from(required_capacity).expect("internal"));
 
             // Create new ring buffer and split it
-            let mut new_rb = AsyncRb::<Heap<T>>::new(usize::from(new_capacity));
+            let new_rb = AsyncRb::<Heap<T>>::new(usize::from(new_capacity));
             let (mut new_producer, new_consumer) = new_rb.split();
 
             // Transfer existing data from old consumer to new producer
             while let Some(item) = self.ringbuffer_items.1.try_pop() {
                 let ok = new_producer.try_push(item).is_ok();
-                assert!(ok, "Pushed bytes should match popped count");
+                debug_assert!(ok, "Pushed bytes should match popped count");
             }
 
             // Replace the old ringbuffer_items with the new one

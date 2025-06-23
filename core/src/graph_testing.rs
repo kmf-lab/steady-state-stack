@@ -24,7 +24,6 @@ use ringbuf::consumer::Consumer;
 use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyActor, TxBundle};
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
 use ringbuf::traits::Observer;
-use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
 use crate::steady_actor::SendOutcome;
 use crate::core_rx::RxCore;
@@ -173,6 +172,7 @@ impl StageManager {
     /// An `Option` containing the response message if the operation is successful.
     ///
     pub(crate) fn call_actor_internal(&self, msg: Box<dyn Any + Send + Sync>, id: ActorName) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
+        use crate::abstract_executor_async_std::core_exec;
 
         if let Some(sc) = self.backplane.get(&id) {            
             core_exec::block_on( async move {

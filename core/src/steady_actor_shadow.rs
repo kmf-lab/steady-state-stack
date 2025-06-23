@@ -448,7 +448,7 @@ impl SteadyActor for SteadyActorShadow {
             let run_duration = now_nanos - self.last_periodic_wait.load(Ordering::Relaxed);
             let remaining_duration = duration_rate.saturating_sub(Duration::from_nanos(run_duration));
 
-            let mut operation = &mut Delay::new(remaining_duration).fuse();
+            let mut operation = &mut Delay::new(remaining_duration).fuse(); //TODO: must remove heap usage here.
             let result = select! {
                 _= &mut one_down.deref_mut() => false,
                 _= operation => true
