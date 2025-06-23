@@ -155,12 +155,7 @@ pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
         });
 }
 
-#[derive(Clone)]
-pub(crate) struct Config {
-    pub(crate) rankdir: String
-    //pub(crate) labels  // labels and boolen on each Y/N  T/F ?
 
-}
 
 /// Builds the DOT graph from the current state.
 ///
@@ -169,11 +164,11 @@ pub(crate) struct Config {
 /// * `state` - The current metric state.
 /// * `rankdir` - The rank direction for the DOT graph.
 /// * `dot_graph` - The buffer to store the DOT graph.
-pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut, config: &Config) {
+pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
     dot_graph.clear(); // Clear the buffer for reuse
 
     dot_graph.put_slice(b"digraph G {\nrankdir=");
-    dot_graph.put_slice(config.rankdir.as_bytes());
+    dot_graph.put_slice("LR".as_bytes());
     dot_graph.put_slice(b";\n");
     //write a digraph comment
     // dot_graph.put_slice(b"/*\n"); // from config, will break test_build_dot test
@@ -802,11 +797,9 @@ mod dot_tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "LR".to_string()
-        };
 
-        build_dot(&state, &mut dot_graph, &config);
+
+        build_dot(&state, &mut dot_graph);
         let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1 ];\n}\n";
 
         let vec = dot_graph.to_vec();
@@ -828,7 +821,7 @@ mod dot_tests {
         let frame_history = FrameHistory::new(1000);
         assert_eq!(frame_history.packed_sent_writer.delta_write_count(), 0);
         assert_eq!(frame_history.packed_take_writer.delta_write_count(), 0);
-        assert!(frame_history.history_buffer.len() > 0);
+        assert!(!frame_history.history_buffer.is_empty());
     }
 
     #[test]
@@ -837,7 +830,7 @@ mod dot_tests {
         let chin = vec![Arc::new(ChannelMetaData::default())];
         let chout = vec![Arc::new(ChannelMetaData::default())];
         frame_history.apply_node("node1", 1, &chin, &chout);
-        assert!(frame_history.history_buffer.len() > 0);
+        assert!(!frame_history.history_buffer.is_empty());
     }
 
     #[test]
@@ -845,7 +838,7 @@ mod dot_tests {
         let mut frame_history = FrameHistory::new(1000);
         let total_take_send = vec![(100, 50)];
         frame_history.apply_edge(&total_take_send, 1000);
-        assert!(frame_history.history_buffer.len() > 0);
+        assert!(!frame_history.history_buffer.is_empty());
     }
 
     #[test]
@@ -998,11 +991,9 @@ mod dot_tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "TB".to_string()
-        };
 
-        build_dot(&state, &mut dot_graph, &config);
+
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("node42")); // Should include suffix
     }
@@ -1034,11 +1025,9 @@ mod dot_tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "LR".to_string()
-        };
 
-        build_dot(&state, &mut dot_graph, &config);
+
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("192.168.1.1"));
         assert!(result.contains("port_8080"));
@@ -1089,11 +1078,9 @@ mod dot_tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "TB".to_string()
-        };
 
-        build_dot(&state, &mut dot_graph, &config);
+
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("from_node"));
         assert!(result.contains("to_node5"));
@@ -1254,7 +1241,7 @@ mod dot_tests {
 
         // This should trigger the sync branches
         frame_history.apply_edge(&total_take_send, 1000);
-        assert!(frame_history.history_buffer.len() > 0);
+        assert!(!frame_history.history_buffer.is_empty());
     }
 
     #[test]
@@ -1304,12 +1291,9 @@ mod dot_tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "LR".to_string()
-        };
 
         // This should not include the node since id is None (filtered out)
-        build_dot(&state, &mut dot_graph, &config);
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(!result.contains("unknown_node"));
     }
@@ -1336,12 +1320,10 @@ mod dot_tests {
             seq: 0,
         };
         let mut dot_graph = BytesMut::new();
-        let config = Config {
-            rankdir: "TB".to_string()
-        };
+
 
         // This should not process the edge since from and to are None
-        build_dot(&state, &mut dot_graph, &config);
+        build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(!result.contains("test_edge"));
     }

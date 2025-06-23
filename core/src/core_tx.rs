@@ -904,7 +904,7 @@ impl TxCore for StreamTx<StreamEgress> {
         debug_assert!(self.control_channel.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(self.payload_channel.make_closed.is_some(),"Send called after channel marked closed");
 
-        if self.payload_channel.tx.vacant_len() >= payload.len() as usize &&
+        if self.payload_channel.tx.vacant_len() >= payload.len() &&
             self.control_channel.tx.vacant_len() >= 1 {
             let _ = self.payload_channel.tx.push_slice(payload);
             let _ = self.control_channel.tx.try_push(StreamEgress { length: payload.len() as i32 });
@@ -935,9 +935,9 @@ impl TxCore for StreamTx<StreamEgress> {
         let push_result = {
             let payload_tx = &mut self.payload_channel.tx;
             let item_tx = &mut self.control_channel.tx;
-            if payload_tx.vacant_len() >= payload.len() as usize && item_tx.vacant_len() >= 1 {
+            if payload_tx.vacant_len() >= payload.len() && item_tx.vacant_len() >= 1 {
                 let payload_size = payload_tx.push_slice(payload);
-                debug_assert_eq!(payload_size, payload.len() as usize);
+                debug_assert_eq!(payload_size, { payload.len() });
                 let _ = item_tx.try_push(StreamEgress { length: payload.len() as i32 });
                 Ok(())
             } else {
@@ -1139,7 +1139,7 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     }
 
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
-        <T as TxCore>::done_one(&self,one)
+        <T as TxCore>::done_one(self,one)
     }
 
 
@@ -1303,7 +1303,7 @@ mod extended_coverage {
         }
 
         #[inline]
-        fn shared_send_slice<'a,'b>(&'a mut self, _slice: Self::SliceSource<'b> ) -> TxDone {
+        fn shared_send_slice(&mut self, _slice: Self::SliceSource<'_> ) -> TxDone {
             TxDone::Normal(0)
         }
         #[inline]

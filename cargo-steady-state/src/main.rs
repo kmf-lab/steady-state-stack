@@ -407,7 +407,7 @@ mod code_generation_tests {
         if live_test { //this will require open ports and drive access so we do not always run it
 
             let level = "info";
-            if let Ok(s) = LevelFilter::from_str(&level) {
+            if let Ok(s) = LevelFilter::from_str(level) {
                 let mut builder = LogSpecBuilder::new();
                 builder.default(s); // Set the default level
                 let log_spec = builder.build();
@@ -619,7 +619,7 @@ digraph PRODUCT {
 }
         "#;
 
-       build_and_parse("fizz_buzz", g, false, false,!std::env::var("GITHUB_ACTIONS").is_ok());
+       build_and_parse("fizz_buzz", g, false, false,std::env::var("GITHUB_ACTIONS").is_err());
 
     }
 
@@ -651,7 +651,7 @@ digraph PRODUCT {
 }
         "#;
 
-     build_and_parse("unnamed1", g, false, false,!std::env::var("GITHUB_ACTIONS").is_ok());
+     build_and_parse("unnamed1", g, false, false,std::env::var("GITHUB_ACTIONS").is_err());
 
     }
 
@@ -691,7 +691,7 @@ digraph PBFTDemo {
 
         "#;
 
-       build_and_parse("pbft_demo", g, false, true, !std::env::var("GITHUB_ACTIONS").is_ok());
+       build_and_parse("pbft_demo", g, false, true, std::env::var("GITHUB_ACTIONS").is_err());
 
     }
 
@@ -716,7 +716,7 @@ digraph PBFTDemo {
             }
         "#;
 
-       build_and_parse("circle", g, false, true, !std::env::var("GITHUB_ACTIONS").is_ok());
+       build_and_parse("circle", g, false, true, std::env::var("GITHUB_ACTIONS").is_err());
 
     }
 }

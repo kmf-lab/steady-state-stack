@@ -25,7 +25,7 @@ async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_
     let mut rx = rx.lock().await;
     let mut tx = tx.lock().await;
 
-    let count = rx.capacity().clone()/4;
+    let count = rx.capacity()/4;
     let tx_girth = tx.len();
 
     while actor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
@@ -39,7 +39,7 @@ async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_
        // info!("router b");
 
         let mut iter = actor.take_into_iter(&mut rx);
-        while let Some(t) = iter.next() {
+        for t in iter {
             let index = (t.route as usize / one_of)  % tx.len();
 
          //   info!("name: {:?} one_of: {:?} block_size: {:?} route: {:?} index: {:?}", monitor.ident(), one_of, block_size, t.route, index);

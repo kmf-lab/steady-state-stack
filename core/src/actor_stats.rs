@@ -873,7 +873,7 @@ mod test_actor_stats_triggers {
 #[cfg(test)]
 mod extra_tests {
     use super::*;
-    use std::cmp::Ordering;
+    
 
     /// Verify `time_label` produces the correct text for various durations.
     #[test]
@@ -1280,8 +1280,8 @@ mod extra_tests {
         actor_stats.accumulate_data_frame(1024, 100); // Max valid mcpu
 
         // This should not panic and should handle errors gracefully
-        assert!(actor_stats.history_mcpu.len() > 0);
-        assert!(actor_stats.history_work.len() > 0);
+        assert!(!actor_stats.history_mcpu.is_empty());
+        assert!(!actor_stats.history_work.is_empty());
     }
 
     /// Test bucket refresh with histogram creation errors
@@ -1300,8 +1300,8 @@ mod extra_tests {
         }
 
         // Should have handled histogram creation during refresh
-        assert!(actor_stats.history_mcpu.len() > 0);
-        assert!(actor_stats.history_work.len() > 0);
+        assert!(!actor_stats.history_mcpu.is_empty());
+        assert!(!actor_stats.history_work.is_empty());
     }
 
     // Test mcpu assertion with out-of-range value

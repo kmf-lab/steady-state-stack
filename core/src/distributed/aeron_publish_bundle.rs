@@ -45,8 +45,7 @@ pub async fn run<const GIRTH:usize,>(context: SteadyActorShadow
         let aeron_media_driver = actor.aeron_media_driver().expect("media driver");
         return internal_behavior(actor, rx, aeron_connect, stream_id, aeron_media_driver, state).await;
     }
-    let te:Vec<_> = rx.iter()
-        .map(|f| f.clone() ).collect();
+    let te:Vec<_> = rx.iter().cloned().collect();
     let sims:Vec<_> = te.iter()
         .map(|f| f as &dyn IntoSimRunner<_>).collect();
     actor.simulated_behavior(sims).await
@@ -62,7 +61,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                                              , state: SteadyState<AeronPublishSteadyState>) -> Result<(), Box<dyn Error>> {
 
     let mut rx = rx.lock().await;
-    let mut state = state.lock(|| AeronPublishSteadyState::default()).await;
+    let mut state = state.lock(AeronPublishSteadyState::default).await;
         let mut pubs: [ Result<ExclusivePublication, Box<dyn Error> >;GIRTH] = std::array::from_fn(|_| Err("Not Found".into())  );
         let mut last_position: [i64;GIRTH] = [0;GIRTH];
 
@@ -185,7 +184,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
 
                             if vacant_aeron_bytes > 0 && avail_messages.0 > 0 {
 
-                               let _done =  rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |slice1: &mut [u8], slice2: &mut [u8]| {
+                               rx[index].consume_messages(&mut actor, vacant_aeron_bytes as usize, |slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len > 0);
                                     //TODO: we can get zero copy with try_claim?  much better desing?
@@ -213,7 +212,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                     match response {
                                         Ok(value) => {
                                             if value>0 {
-                                                let dif:i64 = value as i64 - last_position[index];
+                                                let dif:i64 = value - last_position[index];
                                                 last_position[index]= value;
                                                 count_done += 1;
                                                 if dif<(msg_len as i64) {
@@ -263,13 +262,8 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                         }
 
                         if let Ok(position) = p.position() {
-                            if rx[index].is_closed_and_empty() {
-                                    if position >= last_position[index] {
-
-                                        if !p.is_connected() { // Wait until subscribers disconnect
-                                            flushed_count += 1;
-                                        }
-                                    }
+                            if rx[index].is_closed_and_empty() && position >= last_position[index] && !p.is_connected() { // Wait until subscribers disconnect
+                                flushed_count += 1;
                             }
 
                         } else {
@@ -352,7 +346,7 @@ pub(crate) mod aeron_publish_bundle_tests {
                 data[i] = data2;
             }
         }
-        let all_bytes: Vec<u8> = data.iter().flatten().map(|f| *f).collect();
+        let all_bytes: Vec<u8> = data.iter().flatten().copied().collect();
 
         let mut sent_count = 0;
         while actor.is_running(&mut || tx.mark_closed()) {
@@ -370,8 +364,8 @@ pub(crate) mod aeron_publish_bundle_tests {
             while remaining > 0 && actor.vacant_units(&mut tx[idx].control_channel) >= BATCH_SIZE {
 
                 //actor.send_stream_slice_until_full(&mut tx, STREAM_ID, &items, &all_bytes );
-                actor.send_slice(&mut tx[idx].payload_channel, &&all_bytes.as_ref());
-                actor.send_slice(&mut tx[idx].control_channel, &&items.as_ref());
+                actor.send_slice(&mut tx[idx].payload_channel, all_bytes.as_ref());
+                actor.send_slice(&mut tx[idx].control_channel, items.as_ref());
 
                 // this old solution worked but consumed more core
                 // for _i in 0..(actual_vacant >> 1) { //old code, these functions are important

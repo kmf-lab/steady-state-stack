@@ -1027,7 +1027,7 @@ pub(crate) fn compute_labels<T: Counter>(
                     buf: &'a mut [u8],
                     pos: usize,
                 }
-                impl<'a> core::fmt::Write for SliceWriter<'a> {
+                impl core::fmt::Write for SliceWriter<'_> {
                     fn write_str(&mut self, s: &str) -> core::fmt::Result {
                         let bytes = s.as_bytes();
                         if self.pos + bytes.len() > self.buf.len() {
@@ -1951,7 +1951,7 @@ pub(crate) mod channel_stats_tests {
         computer.accumulate_data_frame(100, 0);
 
         // The latency calculation should handle zero rate gracefully
-        assert!(computer.history_latency.len() > 0);
+        assert!(!computer.history_latency.is_empty());
     }
 
     // Test bucket refresh with histogram creation errors during refresh

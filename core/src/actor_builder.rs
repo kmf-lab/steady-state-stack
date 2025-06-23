@@ -366,7 +366,7 @@ impl Troupe {
         count.load(Ordering::SeqCst)
     }
 
-    fn build_async_fun<'a>(fun: &'a ActorRuntime, ctx: SteadyActorShadow) -> Pin<Box<impl Future<Output=Result<(), Box<dyn Error>>> + Sized + 'a > > {
+    fn build_async_fun(fun: &ActorRuntime, ctx: SteadyActorShadow) -> Pin<Box<impl Future<Output=Result<(), Box<dyn Error>>> + Sized + '_ > > {
         Box::pin(async move {
             let guard_fun = fun.lock().await;
             guard_fun(ctx.clone()).await
@@ -948,7 +948,7 @@ impl ActorBuilder {
             avg_work: self.avg_load,
             percentiles_mcpu: self.percentiles_mcpu.clone(),
             percentiles_work: self.percentiles_load.clone(),
-            show_thread_info: self.show_thread_info.clone(),
+            show_thread_info: self.show_thread_info,
             std_dev_mcpu: self.std_dev_mcpu.clone(),
             std_dev_work: self.std_dev_load.clone(),
             trigger_mcpu: self.trigger_mcpu.clone(),
@@ -1392,7 +1392,7 @@ mod test_actor_builder {
         assert_eq!(builder.refresh_rate_in_bits, 0);
         assert_eq!(builder.window_bucket_in_bits, 0);
         builder.build(|c| async move {             
-            assert!(c.is_liveliness_in(&vec![ GraphLivelinessState::Building ]));            
+            assert!(c.is_liveliness_in(&[GraphLivelinessState::Building]));            
             Ok(()) }, ScheduleAs::SoloAct);
     }
 

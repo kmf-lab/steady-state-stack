@@ -77,8 +77,8 @@ fn build_graph(mut graph: Graph) -> steady_state::Graph {
     }
 
     tickgenerator_to_tick_consumer_ticks_rx.iter()
-         .zip(tick_consumern_to_finalconsumer_tick_counts_tx.iter()).enumerate()
-        .for_each(|(_i, (tick_consumer_ticks_rx, tick_consumer_tick_counts_tx))| {
+         .zip(tick_consumern_to_finalconsumer_tick_counts_tx.iter())
+        .for_each(|(tick_consumer_ticks_rx, tick_consumer_tick_counts_tx)| {
             {
                 let tick_consumer_ticks_rx = tick_consumer_ticks_rx.clone();
                 let tick_consumer_tick_counts_tx = tick_consumer_tick_counts_tx.clone();

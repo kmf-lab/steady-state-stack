@@ -6,10 +6,10 @@
 
 #[cfg(test)]
 mod simple_graph_test {
-    use crate::*;
-    use std::sync::{Arc, atomic::{AtomicUsize}};
-    use std::sync::atomic::Ordering;
-    use std::time::Duration;
+    
+    
+    
+    
 
     /// Tests the capture of panics within the graph.
     ///

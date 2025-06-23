@@ -173,7 +173,7 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
-    fn peek_slice<'a,'b,T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
+    fn peek_slice<'b,T>(&self, this: &'b mut T) -> T::SliceSource<'b>
     where
         T: RxCore
     {        
@@ -257,7 +257,7 @@ impl SteadyActor for SteadyActorShadow {
         this.shared_send_slice(slice)
     }
 
-    fn poke_slice<'a,'b, T>(&'a self, this: &'b mut T) -> T::SliceTarget<'b>
+    fn poke_slice<'b, T>(&self, this: &'b mut T) -> T::SliceTarget<'b>
     where
         T: TxCore{
         this.shared_poke_slice()

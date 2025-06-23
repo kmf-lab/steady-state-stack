@@ -55,7 +55,7 @@ async fn internal_behavior<C: SteadyActor>(
     state: SteadyState<AeronSubscribeSteadyState>,
 ) -> Result<(), Box<dyn Error>> {
     let mut tx = tx.lock().await; // Lock tx at the start, as in the original
-    let mut state = state.lock(|| AeronSubscribeSteadyState::default()).await;
+    let mut state = state.lock(AeronSubscribeSteadyState::default).await;
     let mut sub: Option<Subscription> = None;
 
     // Step 1: Add subscription if not already registered
@@ -210,7 +210,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
 
 #[cfg(test)]
 pub(crate) mod aeron_media_driver_tests {
-    use std::thread::sleep;
+    
     use log::info;
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
@@ -218,7 +218,7 @@ pub(crate) mod aeron_media_driver_tests {
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aeron_publish::aeron_tests::STREAM_ID;
     use crate::distributed::distributed_builder::AqueductBuilder;
-    use crate::{GraphBuilder, ScheduleAs, SoloAct};
+    use crate::{GraphBuilder, SoloAct};
 
     #[test]
     fn test_bytes_process() -> Result<(), Box<dyn Error>>{

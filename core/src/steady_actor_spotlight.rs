@@ -202,22 +202,20 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                 info!("Telemetry data sent for actor {:?} after {} micros", self.ident, last_elapsed.as_micros());
             }
             true
-        } else {
-            if self.is_running_iteration_count == 0 || setup::is_empty_local_telemetry(self) {
-                setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
-                self.last_telemetry_send = Instant::now();
-                if ENABLE_TELEMETRY_DEBUG {
-                    info!("Initial/empty telemetry data sent for actor {:?}", self.ident);
-                }
-                true
-            } else {
-                if ENABLE_TELEMETRY_DEBUG {
-                    error!("Telemetry data not sent for actor {:?} (elapsed: {} ms < threshold)",
-                          self.ident, last_elapsed.as_millis());
-                }
-                self.check_telemetry_delay();
-                false
+        } else if self.is_running_iteration_count == 0 || setup::is_empty_local_telemetry(self) {
+            setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
+            self.last_telemetry_send = Instant::now();
+            if ENABLE_TELEMETRY_DEBUG {
+                info!("Initial/empty telemetry data sent for actor {:?}", self.ident);
             }
+            true
+        } else {
+            if ENABLE_TELEMETRY_DEBUG {
+                error!("Telemetry data not sent for actor {:?} (elapsed: {} ms < threshold)",
+                      self.ident, last_elapsed.as_millis());
+            }
+            self.check_telemetry_delay();
+            false
         }
     }
 
@@ -262,7 +260,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         liveliness.shutdown_timeout
     }
 
-    fn peek_slice<'a, 'b, T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
+    fn peek_slice<'b, T>(&self, this: &'b mut T) -> T::SliceSource<'b>
     where T: RxCore {
         this.shared_peek_slice()
     }
@@ -355,7 +353,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
-    fn poke_slice<'a,'b, T>(&'a self, this: &'b mut T) -> T::SliceTarget<'b>
+    fn poke_slice<'b, T>(&self, this: &'b mut T) -> T::SliceTarget<'b>
     where
         T: TxCore {
         this.shared_poke_slice()

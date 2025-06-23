@@ -2,7 +2,7 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{steady_config, util, Troupe};
+use crate::{util, Troupe};
 use std::ops::{Deref};
 use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -28,6 +28,7 @@ use aeron::context::Context;
 use async_lock::Barrier;
 use crate::actor_builder::{ActorBuilder, TroupeGuard};
 use crate::telemetry;
+use crate::steady_config;
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::distributed::aeron_channel_structs::aeron_utils::*;
@@ -243,7 +244,7 @@ impl GraphLiveliness {
                 if let Some(vote) = my_ballot.try_lock() {
                     //we can only vote once as a dead actor
                     if !vote.in_favor {
-                        Some((i,ident.clone()))
+                        Some((i,*ident))
                     } else {
                         None
                     }
@@ -635,7 +636,7 @@ pub struct StageManagerGuard<'a> {
     guard: MutexGuard<'a, Option<StageManager>>, // Keeps the lock held
 }
 
-impl<'a> Deref for StageManagerGuard<'a> {
+impl Deref for StageManagerGuard<'_> {
     type Target = StageManager;
     fn deref(&self) -> &Self::Target {
         self.guard.as_ref().expect("SideChannelHub is not initialized")

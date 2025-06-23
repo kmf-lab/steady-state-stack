@@ -677,7 +677,7 @@ impl <T: StreamControlItem> RxCore for StreamRx<T> {
         RxDone::Stream(items_copied, payload_copied)
     }
 
-    fn shared_peek_slice<'a>(&'a mut self) -> Self::SliceSource<'a> {
+    fn shared_peek_slice(&mut self) -> Self::SliceSource<'_> {
         let (item_a, item_b) = self.control_channel.rx.as_slices();
         let (payload_a, payload_b) = self.payload_channel.rx.as_slices();
         (item_a, item_b, payload_a, payload_b)
@@ -749,7 +749,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_take_slice(&mut **self, target)
     }
 
-    fn shared_peek_slice<'a>(&'a mut self) -> Self::SliceSource<'a> {
+    fn shared_peek_slice(&mut self) -> Self::SliceSource<'_> {
         <T as RxCore>::shared_peek_slice(&mut **self)
     }
 }

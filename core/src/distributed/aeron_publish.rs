@@ -55,7 +55,7 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C
 
     let mut rx = rx.lock().await;
 
-    let mut state = state.lock( || AeronPublishSteadyState::default()).await;
+    let mut state = state.lock( AeronPublishSteadyState::default).await;
         {
             let mut aeron = aeron.lock().await;  //other actors need this so do our work quick
            //trace!("holding add_exclusive_publication lock");
@@ -121,7 +121,7 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C
                 }
 
         warn!("running publish '{:?}' all publications in place",actor.identity());
-        let capacity:usize = rx.capacity().into();
+        let capacity:usize = rx.capacity();
         let wait_for = (512*1024).min(capacity);
 
         while actor.is_running(&mut || rx.is_closed_and_empty() && (is_shared_connection || close_areon(&my_pub)) ) {
@@ -147,11 +147,11 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C
                             //TODO: if this is zero from the call then there are no subscribers so just hold back.
 
                             //                   let mut _aeron = aeron.lock().await;  //other actors need this so do our work quick
-                                rx.consume_messages(&mut actor, vacant_aeron_bytes as usize, |mut slice1: &mut [u8], slice2: &mut [u8]| {
+                                rx.consume_messages(&mut actor, vacant_aeron_bytes as usize, |slice1: &mut [u8], slice2: &mut [u8]| {
                                     let msg_len = slice1.len() + slice2.len();
                                     assert!(msg_len>0);
-                                    let response = if slice2.len() == 0 {
-                                        p.offer_part(AtomicBuffer::wrap_slice(&mut slice1), 0, msg_len as Index)
+                                    let response = if slice2.is_empty() {
+                                        p.offer_part(AtomicBuffer::wrap_slice(slice1), 0, msg_len as Index)
                                     } else {  // TODO: p.try_claim() is probably a beter  way to move our datarather than AtomicBuffer usage..
                                         let a_len = msg_len.min(slice1.len());
                                         let remaining_read = msg_len - a_len;
@@ -196,11 +196,11 @@ fn close_areon(my_pub: &Result<ExclusivePublication, &str>) -> bool {
 
 #[cfg(test)]
 pub(crate) mod aeron_tests {
-    use std::{env, fs};
-    use super::*;
-    use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-    use crate::distributed::distributed_builder::AqueductBuilder;
-    use crate::distributed::distributed_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamIngress, StreamTxBundleTrait};
+    
+    
+    
+    
+    
 
     //NOTE: bump this up for longer running load tests
     //       20_000_000_000;

@@ -195,12 +195,10 @@ impl StageManager {
 
                             if is_ok {
                                 Ok(response)
+                            } else if is_timeout {
+                                Err(TIMEOUT.into())
                             } else {
-                                if is_timeout {
-                                    Err(TIMEOUT.into())
-                                } else {
-                                    Err("Actor responded with unexpected message".into())
-                                }
+                                Err("Actor responded with unexpected message".into())
                             }
                         } else {
                             error!("Actor responded unexpected message");
@@ -227,8 +225,8 @@ pub struct SideChannelResponder {
     pub(crate) identity: ActorIdentity,
 }
 
-pub (crate) const OK_MESSAGE: &'static str = "ok";
-pub (crate) const TIMEOUT: &'static str = "timeout, no message";
+pub (crate) const OK_MESSAGE: &str = "ok";
+pub (crate) const TIMEOUT: &str = "timeout, no message";
 
 impl SideChannelResponder {
 
@@ -292,7 +290,7 @@ impl SideChannelResponder {
     where <X as RxCore>::MsgOut: std::fmt::Debug {
               let r =  self.respond_with(move |message,actor_guard| {
                   let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<X::MsgOut>>()
-                                                        .expect(format!("Unable to take message and downcast it to: {}", std::any::type_name::<T>()).as_str());
+                                                        .unwrap_or_else(|| panic!("Unable to take message and downcast it to: {}", std::any::type_name::<T>()));
 
                     let message = match wait_for {
                         StageWaitFor::Message(m,t) => Some((m,t)),

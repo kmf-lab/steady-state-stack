@@ -375,7 +375,7 @@ pub(crate) mod monitor_tests {
     #[test]
     fn test_try_peek_slice() {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
-        let mut slice = [0; 3];
+        let slice = [0; 3];
         let context = test_steady_context();
         let monitor = context.into_spotlight([&rx], []);
 
@@ -819,11 +819,8 @@ pub(crate) mod monitor_tests {
                     assert_eq!(1, send_guard.vacant_units());
                     for item in [13, 14, 15] {
                         
-                        match send_guard.shared_try_send(item) {
-                            Ok(d) => {
-                                assert_eq!(TxDone::Normal(1), d );
-                            },
-                            Err(_) => {}
+                        if let Ok(d) = send_guard.shared_try_send(item) {
+                            assert_eq!(TxDone::Normal(1), d );
                         }
                     }
                     assert_eq!(0, send_guard.vacant_units());
@@ -1217,7 +1214,7 @@ pub(crate) mod monitor_tests {
     #[test]
     fn test_try_peek_slice_empty_channel() {
         let (_tx,rx) = create_rx::<i32>(vec![]);
-        let mut slice = [0; 3];
+        let slice = [0; 3];
         let context = test_steady_context();
         let monitor = context.into_spotlight([&rx], []);
 

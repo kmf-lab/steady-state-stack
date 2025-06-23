@@ -1,3 +1,8 @@
+//! The `channel_builder` module provides builder utilities for creating channels between actors.
+//! Channels can be eagerly or lazily initialized, grouped into bundles, and used for testing.
+//!
+//! This module defines the `ChannelBuilder`, channel families (e.g., steady and stream channels),
+//! and macros for constructing and monitoring channels in an actor graph.
 use std::fmt::Debug;
 use std::ops::Sub;
 use ringbuf::storage::{Heap};
@@ -1450,7 +1455,7 @@ mod tests_inputs {
 #[cfg(test)]
 pub(crate) mod test_builder {
     use super::*;
-    use std::time::{Instant};
+    
     use crate::actor_builder::Percentile;
 
     #[test]

@@ -54,7 +54,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
             };
             let index = compute_index(&mut tx, &packet);
             buffers[index].push(packet);
-            if &mut buffers[index].len() >= &mut (limit * 2) {
+            if buffers[index].len() >= (limit * 2) {
                 //first one we fill to limit, the rest will not be as full
                 break;
             }

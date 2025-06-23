@@ -49,8 +49,11 @@ pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 64;
 /// Number of messages consumed by the collector (half of collector channel length).
 pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECTOR / 2;
 
-/// Length of the real channel for feature processing (to allow minimal latency).
-pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 128;
+
+//should be big enought to hold one message for every actor, on graph def we need this much space
+//for large graphs this will be fine as we consume and produce and await until it is done.
+//this must be large enought to hold all actors which may panic at the same moment.
+pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 256;
 
 // Default values for runtime configuration
 const DEFAULT_TELEMETRY_SERVER_PORT: u16 = 9900;
@@ -86,15 +89,15 @@ mod tests {
     #[test]
     fn test_default_constants() {
         // Under default compilation (no special features)
-        assert_eq!(TELEMETRY_SERVER, true);
-        assert_eq!(SHOW_ACTORS, false);
+        assert!(TELEMETRY_SERVER);
+        assert!(!SHOW_ACTORS);
         assert_eq!(BACKPLANE_CAPACITY, 16);
-        assert_eq!(TELEMETRY_HISTORY, false);
-        assert_eq!(DISABLE_DEBUG_FAIL_FAST, false);
+        assert!(!TELEMETRY_HISTORY);
+        assert!(!DISABLE_DEBUG_FAIL_FAST);
         assert_eq!(MAX_TELEMETRY_ERROR_RATE_SECONDS, 20);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 64);
         assert_eq!(CONSUMED_MESSAGES_BY_COLLECTOR, 32);
-        assert_eq!(REAL_CHANNEL_LENGTH_TO_FEATURE, 128);
+        assert_eq!(REAL_CHANNEL_LENGTH_TO_FEATURE, 32);
     }
 
     #[test]

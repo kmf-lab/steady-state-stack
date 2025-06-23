@@ -6,7 +6,17 @@ use crate::distributed::aeron_channel_builder::AqueTech;
 use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
 use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamIngress, StreamEgress};
 
+/// Trait defining a builder pattern for integrating distributed connectivity into an actor graph.
+///
+/// The `AqueductBuilder` trait provides a unified interface for adding publish/subscribe
+/// pipelines (e.g., Aeron streams) to actors using a fluent builder API.
 pub trait AqueductBuilder {
+    /// Build a distributed aqueduct for the specified technology, actor builder, and threading model.
+    ///
+    /// # Parameters
+    /// - `tech`: The distribution technology (e.g., Aeron) and its parameters.
+    /// - `actor_builder`: The base `ActorBuilder` used to configure and build the actor.
+    /// - `threading`: The scheduling strategy for actor execution.
     fn build_aqueduct(
         self,
         tech: AqueTech,

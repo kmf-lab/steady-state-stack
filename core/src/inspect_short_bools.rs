@@ -17,7 +17,7 @@ use std::cell::RefCell;
 
 thread_local! {
     /// Thread-local storage for the last expression identifier that evaluated to `false`.
-    pub static LAST_FALSE: RefCell<Option<&'static str>> = RefCell::new(None);
+    pub static LAST_FALSE: RefCell<Option<&'static str>> = const { RefCell::new(None) };
 }
 
 /// Wraps a boolean expression and logs its identifier if it evaluates to `false`.

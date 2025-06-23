@@ -42,7 +42,7 @@ async fn internal_behavior<const TICKS_TX_GIRTH:usize,C: SteadyActor>(mut actor:
          for i in 0..TICKS_TX_GIRTH {
              let c = ticks_tx[i].vacant_units().min(BUFFER_SIZE);
              for n in 0..c {
-                 count = count + 1;
+                 count += 1;
                  buffers[n] = Tick { value: count };
              }
              actor.send_slice(&mut ticks_tx[i], &buffers[..c]);

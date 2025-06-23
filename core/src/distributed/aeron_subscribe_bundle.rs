@@ -43,7 +43,7 @@ pub async fn run<const GIRTH: usize>(
         }
         internal_behavior(actor, tx, aeron_connect, stream_id, state).await
     } else {
-        let te: Vec<_> = tx.iter().map(|f| f.clone()).collect();
+        let te: Vec<_> = tx.iter().cloned().collect();
         let sims: Vec<_> = te.iter().map(|f| f as &dyn IntoSimRunner<_>).collect();
         actor.simulated_behavior(sims).await
     }
@@ -100,10 +100,10 @@ async fn poll_aeron_subscription<C: SteadyActor>(
                         );
                 input_bytes += length as u32;
                 input_frags += 1;
-            }, remaining_poll as i32);
+            }, remaining_poll);
             //  warn!("polling max of {} resulted in {} for sub {:?}", remaining_poll, got_count, sub.stream_id());
 
-            if got_count <= 0 || got_count == (remaining_poll as i32) {
+            if got_count <= 0 || got_count == remaining_poll {
                 break; // No data received, or we have data to pass on so exit loop
             }
             yield_now().await; // Allow more data in this pass
@@ -168,7 +168,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
     state: SteadyState<AeronSubscribeSteadyState>,
 ) -> Result<(), Box<dyn Error>> {
     let tx_bundle = tx;
-    let mut state = state.lock(|| AeronSubscribeSteadyState::default()).await;
+    let mut state = state.lock(AeronSubscribeSteadyState::default).await;
     let mut subs: [Result<Subscription, Box<dyn Error>>; GIRTH] = std::array::from_fn(|_| Err("Not Found".into()));
 
     while state.sub_reg_id.len() < GIRTH {

@@ -61,12 +61,9 @@ impl AqueTech {
     /// - A vector with `"127.0.0.1"` as a placeholder for `Aeron` (to be replaced with actual peer IPs).
     pub(crate) fn to_remotes(&self) -> Vec<String> {
         let mut result = Vec::new();
-        match self {
-            AqueTech::Aeron(_, _) => {
-                // TODO: Replace with logic to gather actual peer IPs (e.g., via MQTT).
-                result.push("127.0.0.1".to_string());
-            }
-            _ => {}
+        if let AqueTech::Aeron(_, _) = self {
+            // TODO: Replace with logic to gather actual peer IPs (e.g., via MQTT).
+            result.push("127.0.0.1".to_string());
         }
         result
     }
@@ -119,6 +116,12 @@ pub struct AeronConfig {
     control_endpoint: Option<Endpoint>,
     control_mode: Option<ControlMode>,
     ttl: Option<u8>,
+}
+
+impl Default for AeronConfig {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AeronConfig {

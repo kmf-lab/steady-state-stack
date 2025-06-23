@@ -474,7 +474,7 @@ impl <T: StreamControlItem> Defrag<T> {
             let new_capacity = current_capacity.max(NonZero::try_from(required_capacity).expect("internal"));
 
             // Create new ring buffer and split it
-            let mut new_rb = AsyncRb::<Heap<u8>>::new(usize::from(new_capacity));
+            let new_rb = AsyncRb::<Heap<u8>>::new(usize::from(new_capacity));
             let (mut new_producer, new_consumer) = new_rb.split();
 
             // Transfer existing data from old consumer to new producer
@@ -1074,7 +1074,7 @@ impl<T: StreamControlItem> LazyStreamTx<T> {
 
         //TODO: we might want to wait for room.
         for d in data.into_iter() {
-            let x = l.payload_channel.shared_send_slice_until_full(&d.1);
+            let x = l.payload_channel.shared_send_slice_until_full(d.1);
             match l.control_channel.shared_try_send(T::testing_new(x as i32)) {
                 Ok(_) => {}
                 Err(_) => {

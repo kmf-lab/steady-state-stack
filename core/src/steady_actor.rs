@@ -290,7 +290,7 @@ pub trait SteadyActor {
 
 
 
-    fn peek_slice<'a,'b, T>(&'a self, this: &'b mut T) -> T::SliceSource<'b>
+    fn peek_slice<'b, T>(&self, this: &'b mut T) -> T::SliceSource<'b>
     where
         T: RxCore;
     fn advance_take_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone;
@@ -300,7 +300,7 @@ pub trait SteadyActor {
     fn send_slice<T: TxCore>(& mut self, this: & mut T, source: T::SliceSource<'_>) -> TxDone where T::MsgOut: Copy;
 
 
-    fn poke_slice<'a,'b, T>(&'a self, this: &'b mut T) -> T::SliceTarget<'b>
+    fn poke_slice<'b, T>(&self, this: &'b mut T) -> T::SliceTarget<'b>
     where
         T: TxCore;
     fn advance_send_index<T: TxCore>(&mut self, this: &mut T, count: T::MsgSize) -> TxDone;

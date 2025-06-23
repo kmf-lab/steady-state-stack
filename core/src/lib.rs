@@ -4,6 +4,7 @@
 //!  Guarantee your SLA with telemetry, alerts and Prometheus.
 //!  Build low latency high volume solutions.
 //TODO: look for cargo all testing coverage.
+#![warn(missing_docs)]
 #[cfg(all(feature = "proactor_nuclei", feature = "exec_async_std"))]
 compile_error!("Cannot enable both features at the same time");
 #[cfg(all(feature = "proactor_nuclei", feature = "proactor_tokio"))]
@@ -61,12 +62,19 @@ mod test_panic_capture;
 mod monitor_telemetry;
 /////////////////////////////////////////////////
 
-    /// module for all monitor features
+/// Monitoring utilities for inspecting channel and actor metrics at runtime.
+///
+/// The `monitor` module provides types and traits for gathering and representing
+/// runtime metadata about channels and actors, enabling the integration with
+/// telemetry systems and health checks.
 pub mod monitor;
     /// module for all channel features
 #[macro_use]
 pub mod channel_builder;
-    /// module for all actor features
+    /// Actor construction, configuration, and scheduling utilities.
+    ///
+    /// The `actor_builder` module offers a builder-pattern API for defining
+    /// actors, setting up their execution contexts, core affinity, and telemetry.
 pub mod actor_builder;
 pub use actor_builder::CoreBalancer;
 
@@ -78,6 +86,7 @@ pub mod install {
     pub mod local_cli;
 }
 
+/// Distributed system components and builders (e.g., Aeron streams, pub/sub).
 pub mod distributed {
     /// enums for making new aeron connection strings
     pub mod aeron_channel_structs;
@@ -227,25 +236,33 @@ impl<S> Clone for SteadyState<S> {
     }
 }
 
+/// Guard type returned by locking a `SteadyState`, providing access to the inner state.
+///
+/// The `StateGuard` wraps a locked `SteadyState` value and implements `Deref` and `DerefMut`
+/// to allow transparent access to the underlying state until the guard is dropped.
 pub struct StateGuard<'a, S> {
     guard: MappedMutexGuard<'a, Option<S>, S>,
 }
 
-impl<'a, S> Deref for StateGuard<'a, S> {
+impl<S> Deref for StateGuard<'_, S> {
     type Target = S;
     fn deref(&self) -> &Self::Target {
-        &*self.guard
+        &self.guard
     }
 }
 
-impl<'a, S> DerefMut for StateGuard<'a, S> {
+impl<S> DerefMut for StateGuard<'_, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.guard
+        &mut self.guard
     }
 }
 
 impl<S> SteadyState<S> {
 
+    /// Asynchronously locks the steady state, initializing it if absent.
+    ///
+    /// If the inner state is not yet set, the provided `init` closure is called to create it.
+    /// Returns a `StateGuard` that allows mutable access to the state until it is released.
     pub async fn lock<F>(&self, init: F) -> StateGuard<'_, S>
     where
         F: FnOnce() -> S,
@@ -302,8 +319,16 @@ pub type TxBundle<'a, T> = Vec<MutexGuard<'a, Tx<T>>>;
 /// This type alias simplifies the usage of a collection of receiver guards for batch operations.
 pub type RxBundle<'a, T> = Vec<MutexGuard<'a, Rx<T>>>;
 
+/// Bundle of `TxCore` guards for batch locking of transmitters.
+///
+/// This type alias represents a collection of locked transmitter guards,
+/// enabling operations over multiple channels in a single batch.
 #[allow(type_alias_bounds)]
 pub type TxCoreBundle<'a, T: TxCore> = Vec<MutexGuard<'a, T>>;
+/// Bundle of `RxCore` guards for batch locking of receivers.
+///
+/// This type alias represents a collection of locked receiver guards,
+/// enabling operations over multiple channels in a single batch.
 #[allow(type_alias_bounds)]
 pub type RxCoreBundle<'a, T: RxCore> = Vec<MutexGuard<'a, T>>;
 
@@ -415,6 +440,10 @@ pub fn init_logging(loglevel: LogLevel) -> Result<(), Box<dyn std::error::Error>
 
 
 
+/// Logging levels for controlling verbosity of the crate's logging output.
+///
+/// The `LogLevel` enum maps to the standard `log::LevelFilter` values
+/// and can be used to configure the initial logging level for the application.
 #[derive(Copy, Clone, Debug, PartialEq, ValueEnum)]
 pub enum LogLevel {
     /// A level lower than all log levels.
@@ -431,6 +460,9 @@ pub enum LogLevel {
     Trace,
 }
 impl LogLevel {
+    /// Convert this `LogLevel` to the corresponding `log::LevelFilter`.
+    ///
+    /// Returns the `LevelFilter` value that matches this `LogLevel` variant.
     pub fn to_level_filter(&self) -> log::LevelFilter {
         match self {
             LogLevel::Off => log::LevelFilter::Off,

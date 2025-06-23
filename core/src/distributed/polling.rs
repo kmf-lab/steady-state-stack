@@ -13,6 +13,12 @@ pub struct PollScheduler {
     max_delay_ns: u64,
 }
 
+impl Default for PollScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PollScheduler {
     /// Creates a new `PollScheduler` with default values.
     pub fn new() -> Self {
@@ -130,7 +136,7 @@ mod tests {
 
         let current_time = expected_moment - 100_000_000; // 100 ms before
         let delay = scheduler.compute_next_delay_ns(current_time);
-        let expected_delay = 10_000_000 + (((100_000_000 as u128 * 100_000_000 as u128) * 1_990_000_000 as u128) / (9_000_000_000_000_000_000 as u128)) as u64;
+        let expected_delay = 10_000_000 + (((100_000_000_u128 * 100_000_000_u128) * 1_990_000_000_u128) / 9_000_000_000_000_000_000_u128) as u64;
         assert_eq!(delay, expected_delay);
     }
 
@@ -145,7 +151,7 @@ mod tests {
 
         let current_time = expected_moment + 100_000_000; // 100 ms after
         let delay = scheduler.compute_next_delay_ns(current_time);
-        let expected_delay = 10_000_000 + (((100_000_000 as u128 * 100_000_000 as u128) * 1_990_000_000 as u128) / (9_000_000_000_000_000_000 as u128)) as u64;
+        let expected_delay = 10_000_000 + (((100_000_000_u128 * 100_000_000_u128) * 1_990_000_000_u128) / 9_000_000_000_000_000_000_u128) as u64;
         assert_eq!(delay, expected_delay);
     }
 
@@ -160,7 +166,7 @@ mod tests {
 
         let current_time = expected_moment - 1_000_000_000; // 1s before
         let delay = scheduler.compute_next_delay_ns(current_time);
-        let expected_delay = 10_000_000 + (((1_000_000_000 as u128 * 1_000_000_000 as u128) * 1_990_000_000 as u128) / (9_000_000_000_000_000_000 as u128)) as u64;
+        let expected_delay = 10_000_000 + (((1_000_000_000_u128 * 1_000_000_000_u128) * 1_990_000_000_u128) / 9_000_000_000_000_000_000_u128) as u64;
         assert_eq!(delay, expected_delay);
     }
 
@@ -229,25 +235,21 @@ mod tests {
         scheduler.set_min_delay_ns(10_000_000);
         scheduler.set_max_delay_ns(2_000_000_000);
 
-        let current_times = vec![
-            expected_moment - 3_000_000_000,
+        let current_times = [expected_moment - 3_000_000_000,
             expected_moment - 1_000_000_000,
             expected_moment - 500_000_000,
             expected_moment,
             expected_moment + 500_000_000,
             expected_moment + 1_000_000_000,
-            expected_moment + 3_000_000_000,
-        ];
+            expected_moment + 3_000_000_000];
 
-        let expected_delays = vec![
-            2_000_000_000, // 3s before
+        let expected_delays = [2_000_000_000, // 3s before
             231_111_111,   // 1s before
             65_277_777,    // 0.5s before
             10_000_000,    // at moment
             65_277_777,    // 0.5s after
             231_111_111,   // 1s after
-            2_000_000_000, // 3s after
-        ];
+            2_000_000_000];
 
         for (i, &current_time) in current_times.iter().enumerate() {
             let computed_delay = scheduler.compute_next_delay_ns(current_time);
