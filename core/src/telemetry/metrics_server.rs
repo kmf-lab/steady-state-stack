@@ -465,20 +465,19 @@ where
             stream.write_all(&locked_state.doc).await?;
             return Ok(());
         } else if path.starts_with("/set?") { // example /set?rankdir=LR&show=label1,label2&hide=label3,label4
-            let mut rankdir = "LR";
             let mut parts = path.split("?");
             if let Some(_part) = parts.next() {
                 if let Some(part) = parts.next() {
                     let parts = part.split("&");
                     for part in parts {
-                        let mut parts = part.split("=");
-                        if let Some(key) = parts.next() {
-                            if let Some(value) = parts.next() {
-                                if "rankdir" == key {
-                                    rankdir = value;
-                                }
-                            }
-                        }
+                        let mut _parts = part.split("=");
+                        // if let Some(key) = parts.next() {
+                        //     if let Some(value) = parts.next() {
+                        //         if "rankdir" == key {
+                        //             rankdir = value;
+                        //         }
+                        //     }
+                        // }
                     }
                 }
             }

@@ -678,12 +678,25 @@ impl<T: StreamControlItem> StreamTx<T> {
         (total_messages,total_bytes)
     }
 
-    pub(crate) fn total_consumed_space(&mut self) -> (usize,usize) {
-         self.defrag
-             .values()
-             .map(|d| (d.ringbuffer_items.0.occupied_len(), d.ringbuffer_bytes.0.occupied_len() )   )
-             .fold((0,0), |(a,b),(c,d)| (a+c,b+d))
+    pub(crate) fn defrag_has_room_for(&mut self) -> usize {
+        let items:u128 = self.control_channel.capacity() as u128;
+        let bytes:u128 = self.payload_channel.capacity() as u128;
+
+        self.defrag
+            .values()
+            .map(|d| {
+                     //empty item count
+                     d.ringbuffer_items.0.vacant_len()
+                     //actual items expected to fit in the available bytes
+                    .min(((d.ringbuffer_bytes.0.vacant_len() as u128 *items)/bytes) as usize )
+            }
+            )
+            .min() //out of all sessions take the smallest in case that is what we get next.
+            .unwrap_or(self.control_channel.capacity())
+
     }
+
+
 
     #[inline]
     pub(crate) fn fragment_consume(&mut self
@@ -695,9 +708,8 @@ impl<T: StreamControlItem> StreamTx<T> {
         debug_assert!(slice.len() <=  self.payload_channel.capacity(), "Internal error, slice is too large");
         //Get or create the Defrag entry for the session ID
         let defrag_entry:&mut Defrag<T> = self.defrag.entry(session_id).or_insert_with(|| {
-            Defrag::new(session_id, self.control_channel.capacity(), self.payload_channel.capacity().max(slice.len())) // Adjust capacity as needed
+            Defrag::new(session_id, self.control_channel.capacity(), self.payload_channel.capacity()) // Adjust capacity as needed
         });
-        defrag_entry.ensure_additional_capacity(1, slice.len());
 
         debug_assert!(slice.len() <= defrag_entry.ringbuffer_bytes.0.vacant_len());
 
@@ -717,7 +729,7 @@ impl<T: StreamControlItem> StreamTx<T> {
         debug_assert!(slice_len>0);
 
         let count = defrag_entry.ringbuffer_bytes.0.push_slice(slice);
-        debug_assert_eq!(count, slice_len, "internal buffer should have had room");
+        debug_assert_eq!(count, slice_len, "internal buffer should have had room, check the channel definition to ensure it has enough bytes per item");
 
         defrag_entry.running_length += count;
 

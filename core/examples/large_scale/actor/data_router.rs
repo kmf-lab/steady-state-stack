@@ -38,7 +38,7 @@ async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_
         );
        // info!("router b");
 
-        let mut iter = actor.take_into_iter(&mut rx);
+        let iter = actor.take_into_iter(&mut rx);
         for t in iter {
             let index = (t.route as usize / one_of)  % tx.len();
 

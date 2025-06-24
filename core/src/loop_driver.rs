@@ -1,16 +1,22 @@
+//! Utilities for composing and awaiting multiple futures in SteadyState.
+//!
+//! This module provides macros and functions for waiting on multiple asynchronous
+//! operations, supporting both "wait for all" and "wait for any" semantics, as well as
+//! more advanced patterns such as "wait for all except if the first completes".
+//!
+//! These utilities are designed to simplify concurrent actor and channel orchestration
+//! in async Rust code, especially in graph-based or event-driven systems.
+
 use futures_util::FutureExt;
 pub use futures::future::Future;
 pub use futures::select;
 pub use futures::pin_mut;
 use futures_util::future::FusedFuture;
 
-/// This macro waits for all the provided futures to complete.
-/// It returns a boolean indicating if all futures returned true.
+/// Waits for all provided futures to complete, returning `true` only if all complete with `true`.
 ///
-/// # Arguments
-///
-/// * `$t:expr` - A list of futures to wait for.
-///
+/// This macro is useful for synchronizing multiple asynchronous operations where all must succeed.
+/// The result is a boolean indicating whether all futures returned `true`.
 #[macro_export]
 macro_rules! await_for_all {
     ($($t:expr),*) => {
@@ -24,6 +30,10 @@ macro_rules! await_for_all {
     };
 }
 
+/// Waits for all provided futures to complete, returning a future that resolves to `true` only if all complete with `true`.
+///
+/// This macro is similar to `await_for_all!` but returns a future instead of immediately awaiting it.
+/// Useful for composing with other async combinators.
 #[macro_export]
 macro_rules! wait_for_all {
     ($($t:expr),*) => {
@@ -37,8 +47,9 @@ macro_rules! wait_for_all {
     };
 }
 
-
-
+/// Converts a future into a fused future, which can be polled after completion without panicking.
+///
+/// This is useful for use with `select!` and other combinators that require fused futures.
 pub fn steady_fuse_future<F>(fut: F) -> futures_util::future::Fuse<F>
 where
     F: Future,
@@ -46,6 +57,11 @@ where
     fut.fuse()
 }
 
+/// Waits for either the first future to complete, or for all of the remaining futures to complete.
+///
+/// Returns the result of the first future if it completes first, otherwise returns the logical AND
+/// of the results of the remaining futures. This is useful for scenarios where an early exit is
+/// possible, but otherwise all other operations must complete.
 pub async fn steady_await_for_all_or_proceed_upon_two<F1, F2>(
     fut1: F1,
     fut2: F2,
@@ -67,6 +83,10 @@ where
     }
 }
 
+/// Waits for either the first future to complete, or for all of the remaining three futures to complete.
+///
+/// Returns the result of the first future if it completes first, otherwise returns the logical AND
+/// of the results of the remaining futures.
 pub async fn steady_await_for_all_or_proceed_upon_three<F1, F2, F3>(
     fut1: F1,
     fut2: F2,
@@ -92,6 +112,10 @@ where
     }
 }
 
+/// Waits for either the first future to complete, or for all of the remaining four futures to complete.
+///
+/// Returns the result of the first future if it completes first, otherwise returns the logical AND
+/// of the results of the remaining futures.
 pub async fn steady_await_for_all_or_proceed_upon_four<F1, F2, F3, F4>(
     fut1: F1,
     fut2: F2,
@@ -121,6 +145,10 @@ where
     }
 }
 
+/// Waits for either the first future to complete, or for all of the remaining five futures to complete.
+///
+/// Returns the result of the first future if it completes first, otherwise returns the logical AND
+/// of the results of the remaining futures.
 pub async fn steady_await_for_all_or_proceed_upon_five<F1, F2, F3, F4, F5>(
     fut1: F1,
     fut2: F2,
@@ -154,14 +182,10 @@ where
     }
 }
 
-/// This macro waits for either the first future to complete, or all of the rest to complete.
-/// It returns a boolean indicating if all futures (or the rest of the futures if the first completes) returned true.
+/// Macro for "wait for all or proceed upon first" pattern.
 ///
-/// # Arguments
-///
-/// * `$first_future:expr` - The first future to wait for.
-/// * `$($rest_futures:expr),*` - The rest of the futures to wait for.
-///
+/// Waits for either the first future to complete, or for all of the rest to complete.
+/// Returns a boolean indicating if all completed with `true`, or the result of the first future if it completes first.
 #[macro_export]
 macro_rules! await_for_all_or_proceed_upon {
     ($first:expr, $second:expr $(,)?) => {{
@@ -180,7 +204,6 @@ macro_rules! await_for_all_or_proceed_upon {
         let fut2 = $crate::steady_fuse_future($second);
         let fut3 = $crate::steady_fuse_future($third);
         let fut4 = $crate::steady_fuse_future($fourth);
-
         $crate::steady_await_for_all_or_proceed_upon_four(fut1,fut2,fut3,fut4).await
     }};
     ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
@@ -189,18 +212,107 @@ macro_rules! await_for_all_or_proceed_upon {
         let fut3 = $crate::steady_fuse_future($third);
         let fut4 = $crate::steady_fuse_future($fourth);
         let fut5 = $crate::steady_fuse_future($fifth);
-
         $crate::steady_await_for_all_or_proceed_upon_five(fut1,fut2,fut3,fut4,fut5).await
     }};
 }
 
+/// Waits for any of the provided futures to complete, returning the result of the first to finish.
+///
+/// This macro is useful for racing multiple asynchronous operations and acting on the first to complete.
+/// The result is the output of the first future that completes.
+#[macro_export]
+macro_rules! await_for_any {
+    ($first:expr $(,)?) => {{
+        async {
+            $first.await
+        }.await
+    }};
+    ($first:expr, $second:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            $crate::steady_select_two(fut1, fut2).await
+        }.await
+    }};
+    ($first:expr, $second:expr, $third:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            $crate::steady_select_three(fut1, fut2, fut3).await
+        }.await
+    }};
+    ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            let fut4 = $crate::steady_fuse_future($fourth);
+            $crate::steady_select_four(fut1, fut2, fut3, fut4).await
+        }.await
+    }};
+    ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            let fut4 = $crate::steady_fuse_future($fourth);
+            let fut5 = $crate::steady_fuse_future($fifth);
+            $crate::steady_select_five(fut1, fut2, fut3, fut4, fut5).await
+        }.await
+    }};
+}
 
+/// Like `await_for_any!`, but returns a future instead of immediately awaiting it.
+///
+/// This macro is useful for composing with other async combinators or for use in select! blocks.
+#[macro_export]
+macro_rules! wait_for_any {
+    ($first:expr $(,)?) => {{
+        async {
+            $first.await
+        }
+    }};
+    ($first:expr, $second:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            $crate::steady_select_two(fut1, fut2).await
+        }
+    }};
+    ($first:expr, $second:expr, $third:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            $crate::steady_select_three(fut1, fut2, fut3).await
+        }
+    }};
+    ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            let fut4 = $crate::steady_fuse_future($fourth);
+            $crate::steady_select_four(fut1, fut2, fut3, fut4).await
+        }
+    }};
+    ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
+        async {
+            let fut1 = $crate::steady_fuse_future($first);
+            let fut2 = $crate::steady_fuse_future($second);
+            let fut3 = $crate::steady_fuse_future($third);
+            let fut4 = $crate::steady_fuse_future($fourth);
+            let fut5 = $crate::steady_fuse_future($fifth);
+            $crate::steady_select_five(fut1, fut2, fut3, fut4, fut5).await
+        }
+    }};
+}
 
-
-
-
-// This function pins the futures and runs select! on them.
-// It takes fused futures that are not Unpin, pins them locally, and selects.
+/// Waits for the first of two futures to complete, returning its result.
+///
+/// This function pins the provided futures and uses `select!` to await the first to finish.
+/// It is useful for racing two asynchronous operations.
 pub async fn steady_select_two<F1, F2, O>(fut1: F1, fut2: F2) -> O
 where
     F1: Future<Output = O> + FusedFuture,
@@ -215,6 +327,9 @@ where
     }
 }
 
+/// Waits for the first of three futures to complete, returning its result.
+///
+/// This function pins the provided futures and uses `select!` to await the first to finish.
 pub async fn steady_select_three<F1, F2, F3, O>(fut1: F1, fut2: F2, fut3: F3) -> O
 where
     F1: Future<Output = O> + FusedFuture,
@@ -232,6 +347,9 @@ where
     }
 }
 
+/// Waits for the first of four futures to complete, returning its result.
+///
+/// This function pins the provided futures and uses `select!` to await the first to finish.
 pub async fn steady_select_four<F1, F2, F3, F4, O>(fut1: F1, fut2: F2, fut3: F3, fut4: F4) -> O
 where
     F1: Future<Output = O> + FusedFuture,
@@ -252,6 +370,9 @@ where
     }
 }
 
+/// Waits for the first of five futures to complete, returning its result.
+///
+/// This function pins the provided futures and uses `select!` to await the first to finish.
 pub async fn steady_select_five<F1, F2, F3, F4, F5, O>(
     fut1: F1,
     fut2: F2,
@@ -278,161 +399,5 @@ where
         res = fut3 => res,
         res = fut4 => res,
         res = fut5 => res,
-    }
-}
-
-/// This macro waits for any of the provided futures to complete.
-/// It returns a boolean indicating if any one of the futures returned true.
-///
-/// # Arguments
-///
-/// * `$($t:expr),*` - A list of futures to wait for.
-///
-#[macro_export]
-macro_rules! await_for_any {
-    // Case: Single future
-    ($first:expr $(,)?) => {{
-        async {
-            $first.await
-        }.await
-    }};
-    // Case: Two futures
-    ($first:expr, $second:expr $(,)?) => {{
-        async {
-            let fut1 = $crate::steady_fuse_future($first);
-            let fut2 = $crate::steady_fuse_future($second);
-            $crate::steady_select_two(fut1, fut2).await
-        }.await
-    }};
-    // Case: Three futures
-    ($first:expr, $second:expr, $third:expr $(,)?) => {{
-        async {
-            let fut1 = $crate::steady_fuse_future($first);
-            let fut2 = $crate::steady_fuse_future($second);
-            let fut3 = $crate::steady_fuse_future($third);
-            $crate::steady_select_three(fut1, fut2, fut3).await
-        }.await
-    }};
-    // Case: Four futures
-    ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
-        async {
-            let fut1 = $crate::steady_fuse_future($first);
-            let fut2 = $crate::steady_fuse_future($second);
-            let fut3 = $crate::steady_fuse_future($third);
-            let fut4 = $crate::steady_fuse_future($fourth);
-            $crate::steady_select_four(fut1, fut2, fut3, fut4).await
-        }.await
-    }};
-    // Case: Five futures
-    ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
-        async {
-            let fut1 = $crate::steady_fuse_future($first);
-            let fut2 = $crate::steady_fuse_future($second);
-            let fut3 = $crate::steady_fuse_future($third);
-            let fut4 = $crate::steady_fuse_future($fourth);
-            let fut5 = $crate::steady_fuse_future($fifth);
-            $crate::steady_select_five(fut1, fut2, fut3, fut4, fut5).await
-        }.await
-    }};
-    // Add more cases as needed
-}
-
-#[macro_export]
-macro_rules! wait_for_any {
-    // Case: Single future
-    ($first:expr $(,)?) => {{
-        async {
-            $first.await
-        }
-    }};
-    // Case: Two futures
-    ($first:expr, $second:expr $(,)?) => {{
-        async {
-            let fut1 = $crate::steady_fuse_future($first);
-            let fut2 = $crate::steady_fuse_future($second);
-            $crate::steady_select_two(fut1, fut2).await
-        }
-    }};
-    // Case: Three futures
-    ($first:expr, $second:expr, $third:expr $(,)?) => {{
-        async {
-            let fut1 = $crate::steady_fuse_future($first);
-            let fut2 = $crate::steady_fuse_future($second);
-            let fut3 = $crate::steady_fuse_future($third);
-            $crate::steady_select_three(fut1, fut2, fut3).await
-        }
-    }};
-    // Case: Four futures
-    ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
-        async {
-            let fut1 = $crate::steady_fuse_future($first);
-            let fut2 = $crate::steady_fuse_future($second);
-            let fut3 = $crate::steady_fuse_future($third);
-            let fut4 = $crate::steady_fuse_future($fourth);
-            $crate::steady_select_four(fut1, fut2, fut3, fut4).await
-        }
-    }};
-    // Case: Five futures
-    ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
-        async {
-            let fut1 = $crate::steady_fuse_future($first);
-            let fut2 = $crate::steady_fuse_future($second);
-            let fut3 = $crate::steady_fuse_future($third);
-            let fut4 = $crate::steady_fuse_future($fourth);
-            let fut5 = $crate::steady_fuse_future($fifth);
-            $crate::steady_select_five(fut1, fut2, fut3, fut4, fut5).await
-        }
-    }};
-    // Add more cases as needed
-}
-
-
-#[cfg(test)]
-mod await_for_tests {
-    use futures::future::ready;
-    use std::time::Duration;
-    use futures_timer::Delay;
-
-
-    #[async_std::test]
-    async fn test_wait_for_all_or_proceed_upon_first_complete() {
-        let future1 = ready(true);
-        let future2 = async {
-            Delay::new(Duration::from_millis(10)).await;
-            true
-        };
-        let future3 = async {
-            Delay::new(Duration::from_millis(10)).await;
-            true
-        };
-
-        let result = await_for_all_or_proceed_upon!(future1, future2, future3);
-        assert!(result);
-    }
-
-    #[async_std::test]
-    async fn test_wait_for_all_or_proceed_upon_rest_complete() {
-        let future1 = async {
-            Delay::new(Duration::from_millis(10)).await;
-            true
-        };
-        let future2 = ready(true);
-        let future3 = ready(true);
-
-        let result = await_for_all_or_proceed_upon!(future1, future2, future3);
-        assert!(result);
-    }
-
-    #[async_std::test]
-    async fn test_wait_for_all_or_proceed_upon_false() {
-        let future1 = async {
-            Delay::new(Duration::from_millis(10)).await;
-            true
-        };
-        let future2 = ready(false);
-        let future3 = ready(true);
-
-        let result = await_for_all_or_proceed_upon!(future1, future2, future3);
-        assert!(!result);
     }
 }

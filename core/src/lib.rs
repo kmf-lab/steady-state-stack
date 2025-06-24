@@ -129,13 +129,15 @@ pub mod yield_now;
     /// module for all commands for channels used by actors
 pub mod steady_actor;
 mod core_rx;
-use crate::core_rx::RxCore;
+pub use crate::core_rx::RxCore;
 pub use crate::core_rx::DoubleSlice;
 pub use crate::core_rx::DoubleSliceCopy;
 pub use crate::core_rx::QuadSlice;
 pub use crate::core_rx::StreamQuadSliceCopy;
 mod core_tx;
-use crate::core_tx::TxCore;
+pub use crate::core_tx::TxCore;
+
+pub use crate::distributed::distributed_stream::StreamControlItem;
 
 
 pub mod steady_actor_shadow;
