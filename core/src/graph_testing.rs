@@ -183,7 +183,7 @@ impl StageManager {
         msg: Box<dyn Any + Send + Sync>,
         id: ActorName,
     ) -> Result<Box<dyn Any + Send + Sync>, Box<dyn Error>> {
-        use crate::abstract_executor_async_std::core_exec;
+        use crate::core_exec;
 
         if let Some(sc) = self.backplane.get(&id) {
             core_exec::block_on(async move {

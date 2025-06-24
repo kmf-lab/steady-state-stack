@@ -52,8 +52,8 @@ pub(crate) async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx
         while !rx.is_empty() {
             let mut buf = state.buffer;
             let count = *actor.take_slice(&mut rx, &mut buf);
-            for x in 0..count {
-                state.last_approval = Some(buf[x].to_owned());
+            for item in buf[..count].iter() {
+                state.last_approval = Some(item.to_owned());
             }
             //based on the channel capacity this will send batched updates so most calls do nothing.
             actor.relay_stats_smartly();

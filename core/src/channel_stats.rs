@@ -1773,36 +1773,7 @@ pub(crate) mod channel_stats_tests {
         assert!(metric_text.is_empty());
     }
 
-    // /// Test compute method with zero capacity
-    // #[test]
-    // fn test_compute_zero_capacity_edge_case() {
-    //     let _ = util::steady_logger::initialize();
-    //
-    //     let mut computer = ChannelStatsComputer::default();
-    //     computer.capacity = 0;
-    //
-    //     let mut display_label = String::new();
-    //     let mut metric_text = String::new();
-    //     let (color, thickness) = computer.compute(&mut display_label, &mut metric_text, None, 100, 50);
-    //
-    //     assert_eq!(color, DOT_GREY);
-    //     assert_eq!(thickness, "1");
-    // }
-
-    /// Test debug assertions in compute method
-    // #[cfg(debug_assertions)]
-    // #[test]
-    // #[should_panic]
-    // fn test_compute_debug_assertion_take_greater_than_send() {
-    //     let _ = util::steady_logger::initialize();
-    //
-    //     let mut computer = setup_basic_computer();
-    //     let mut display_label = String::new();
-    //     let mut metric_text = String::new();
-    //
-    //     // This should trigger debug assertion and panic
-    //     computer.compute(&mut display_label, &mut metric_text, Some(ActorName::new("test", None)), 50, 100);
-    // }
+   
 
     /// Test line thickness calculation based on traffic
     #[test]

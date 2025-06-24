@@ -16,7 +16,8 @@ use futures_timer::Delay;
 use futures_util::{select, StreamExt};
 use futures_util::lock::MutexGuard;
 use futures_util::stream::FuturesUnordered;
-use num_traits::{One, Zero};
+#[allow(unused_imports)]
+use num_traits::{One,Zero};
 use crate::graph_liveliness::ActorIdentity;
 use crate::{i, GraphLivelinessState, SteadyRx};
 use crate::steady_actor::SteadyActor;
@@ -25,7 +26,6 @@ use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::SendOutcome::{Blocked, Success};
-use crate::steady_config::REAL_CHANNEL_LENGTH_TO_FEATURE;
 use crate::steady_rx::*;
 use crate::steady_tx::*;
 use crate::telemetry::metrics_collector;
@@ -87,6 +87,7 @@ async fn internal_behavior<const GIRTH: usize>(
 ) -> Result<(), Box<dyn Error>> {
     let ident = actor.identity(); // Unique identifier for this collector instance.
     let mut state = RawDiagramState::default(); // State for tracking telemetry and frames.
+    #[allow(clippy::type_complexity)]
     let mut all_actors_to_scan: Option<Vec<(usize, Box<SteadyRx<ActorStatus>>, ActorIdentity)>> = None; // List of actors to monitor.
     let mut timelords: Option<Vec<&Box<SteadyRx<ActorStatus>>>> = None; // Subset of actors used for timing optimization.
     let mut locked_servers = optional_servers.lock().await; // Access to output channels.
@@ -355,6 +356,7 @@ fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<'_, Vec<Collec
 }
 
 /// Builds a list of actors to scan for telemetry, filtering by instance ID and excluding self.
+#[allow(clippy::type_complexity)]
 fn gather_valid_actor_telemetry_to_scan(
     version: u32,
     dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>,
@@ -756,7 +758,7 @@ mod metric_collector_tests {
 
             //// now confirm we can see the telemetry collected into metrics_collector
             //wait for one page of telemetry
-            sleep(Duration::from_millis(graph.telemetry_production_rate_ms() * 40));
+            sleep(Duration::from_millis(graph.telemetry_production_rate_ms * 40));
 
             //hit the telemetry site and validate if it returns
             // this test will only work if the feature is on

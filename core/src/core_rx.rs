@@ -9,7 +9,7 @@ use futures_timer::Delay;
 use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{steady_config, Rx, MONITOR_NOT};
-use crate::distributed::distributed_stream::{StreamControlItem, StreamRx};
+use crate::distributed::aqueduct_stream::{StreamControlItem, StreamRx};
 use crate::steady_rx::{RxDone};
 use futures_util::{FutureExt};
 use crate::yield_now;

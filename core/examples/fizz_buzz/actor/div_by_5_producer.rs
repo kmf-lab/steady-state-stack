@@ -76,7 +76,7 @@ pub(crate) mod tests {
             );
 
         graph.start(); //startup the graph
-        sleep(Duration::from_millis(2));
+        sleep(Duration::from_millis(20));
         graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1))?;
 

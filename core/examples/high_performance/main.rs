@@ -127,7 +127,7 @@ mod graph_tests {
     use steady_state::GraphBuilder;
 
     #[async_std::test]
-     async fn test_graph_one() {
+     async fn test_graph_one() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -149,7 +149,7 @@ mod graph_tests {
     //     }
     //     drop(guard);
          graph.request_shutdown();
-         graph.block_until_stopped(Duration::from_secs(3));
+         graph.block_until_stopped(Duration::from_secs(3))
     
     }
 }

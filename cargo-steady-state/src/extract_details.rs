@@ -260,7 +260,7 @@ pub(crate) fn extract_project_model(name: &str, dot_graph: Graph<(String, String
         )
         .collect();
     // Iterate over nodes to populate actors
-
+    #[allow(clippy::type_complexity)]
     let edges:Vec<(&str,Option<usize>,&str,Option<usize>,&str)> = dot_graph.edges.set.iter()
         .filter(|edge| !edge.from.starts_with("__") && !edge.to.starts_with("__")) //removes comment edges
         .map(|edge| (&edge.from, &edge.to, edge.attr.elems
@@ -286,7 +286,7 @@ fn unified_name(name: &str, instance: Option<usize>) -> String {
         name.to_string()
     }
 }
-
+#[allow(clippy::type_complexity)]
 fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, mut edges: Vec<(&str, Option<usize>, &str, Option<usize>, &str)>) -> Result<ProjectModel, Box<dyn Error>> {
 
     nodes.sort(); //to ensure we get the same results on each run

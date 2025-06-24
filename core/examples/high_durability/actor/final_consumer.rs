@@ -57,7 +57,7 @@ pub(crate) mod actor_tests {
     use crate::actor::tick_consumer::TickCount;
 
     #[test]
-    fn test_final_consumer() {
+    fn test_final_consumer() -> Result<(), Box<dyn Error>> {
         //1. build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing().build(());
         let (ticks_tx_in, ticks_rx_in) = graph.channel_builder()
@@ -78,7 +78,7 @@ pub(crate) mod actor_tests {
         ticks_tx_in[2].testing_close();
             
         ticks_tx_in.clone();
-        graph.block_until_stopped(Duration::from_secs(240));
+        graph.block_until_stopped(Duration::from_secs(240))
 
     }
 }

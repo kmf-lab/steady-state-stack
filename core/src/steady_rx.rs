@@ -15,7 +15,7 @@ use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData};
 use crate::core_rx::RxCore;
 use crate::{RxBundle, SteadyRxBundle};
-use crate::distributed::distributed_stream::RxChannelMetaDataWrapper;
+use crate::distributed::aqueduct_stream::RxChannelMetaDataWrapper;
 
 /// Represents a receiver that consumes messages from a channel in a steady-state actor system.
 ///
@@ -784,7 +784,6 @@ mod rx_tests {
 
 #[cfg(test)]
 mod steady_rx_tests {
-    use super::*;
     use crate::channel_builder::ChannelBuilder;
     use crate::*;
 

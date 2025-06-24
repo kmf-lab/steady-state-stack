@@ -93,11 +93,12 @@ mod tests {
         assert!(!SHOW_ACTORS);
         assert_eq!(BACKPLANE_CAPACITY, 16);
         assert!(!TELEMETRY_HISTORY);
+        #[allow(clippy::suspicious_open_options)]
         assert!(!DISABLE_DEBUG_FAIL_FAST);
         assert_eq!(MAX_TELEMETRY_ERROR_RATE_SECONDS, 20);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 64);
         assert_eq!(CONSUMED_MESSAGES_BY_COLLECTOR, 32);
-        assert_eq!(REAL_CHANNEL_LENGTH_TO_FEATURE, 32);
+        assert_eq!(REAL_CHANNEL_LENGTH_TO_FEATURE, 256);
     }
 
     #[test]

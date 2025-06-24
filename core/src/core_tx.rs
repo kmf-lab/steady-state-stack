@@ -12,7 +12,7 @@ use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
 use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamIngress, StreamEgress, Tx, MONITOR_NOT};
-use crate::distributed::distributed_stream::{StreamControlItem, StreamTx};
+use crate::distributed::aqueduct_stream::{StreamControlItem, StreamTx};
 use crate::core_exec;
 use crate::yield_now;
 
@@ -1631,7 +1631,7 @@ mod extended_coverage {
         /// Always returns success for async send with timeout.
         async fn shared_send_async_timeout(
             &mut self,
-            msg: Self::MsgIn<'_>,
+            _msg: Self::MsgIn<'_>,
             _id: ActorIdentity,
             _s: SendSaturation,
             _timeout: Option<Duration>,
@@ -1642,7 +1642,7 @@ mod extended_coverage {
         /// Always returns success for async send without timeout.
         async fn shared_send_async(
             &mut self,
-            msg: Self::MsgIn<'_>,
+            _msg: Self::MsgIn<'_>,
             _id: ActorIdentity,
             _s: SendSaturation,
         ) -> SendOutcome<Self::MsgOut> {

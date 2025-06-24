@@ -173,7 +173,7 @@ pub(crate) mod tests {
     use super::*;
 
     #[test]
-    fn test_fizz_buzz_processor() {
+    fn test_fizz_buzz_processor() -> Result<(), Box<dyn Error>>{
        let mut graph = GraphBuilder::for_testing().with_telemetry_metric_features(false).build(());
 
        let (test_numbers_tx,numbers_rx) = graph.channel_builder().with_capacity(1000).build_channel_bundle::<_,2>();
@@ -202,7 +202,7 @@ pub(crate) mod tests {
                                         ,true);
 
         graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
-        graph.block_until_stopped(Duration::from_secs(15));
+        graph.block_until_stopped(Duration::from_secs(15))?;
         let expected = 14;
         assert_steady_rx_eq_count!(&test_fizzbuzz_messages_rx,expected);
         let expected1 = vec!(
@@ -213,6 +213,7 @@ pub(crate) mod tests {
             FizzBuzzMessage::Buzz,
         );
         assert_steady_rx_eq_take!(&test_fizzbuzz_messages_rx,expected1);
+        Ok(())
     }
 
 }

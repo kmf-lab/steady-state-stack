@@ -18,7 +18,7 @@ use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::steady_actor_spotlight::SteadyActorSpotlight;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{Defrag, StreamControlItem};
+use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::simulate_edge::IntoSimRunner;
 
 impl SteadyActorShadow {
@@ -113,12 +113,12 @@ impl SteadyActorShadow {
             node_tx_rx: self.node_tx_rx.clone(),
             frame_rate_ms: self.frame_rate_ms,
             args: self.args,
-            show_thread_info: self.show_thread_info,
-            team_id: self.team_id,
+            _team_id: self.team_id,
             is_running_iteration_count: 0,
             aeron_meda_driver: self.aeron_meda_driver.clone(),
             use_internal_behavior: self.use_internal_behavior,
             shutdown_barrier: self.shutdown_barrier.clone(),
+
         }
     }
 }
@@ -437,3 +437,4 @@ pub trait SteadyActor {
     /// Returns `true` if the message has been peeked at least `threshold` times.
     fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool;
 }
+

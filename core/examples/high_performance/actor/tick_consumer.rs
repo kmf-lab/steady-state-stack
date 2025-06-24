@@ -58,7 +58,7 @@ pub(crate) mod hp_actor_tests {
     use crate::actor::tick_generator::Tick;
 
     #[test]
-    fn test_tick_consumer() {
+    fn test_tick_consumer() -> Result<(), Box<dyn Error>> {
         // build test graph, the input and output channels and our actor
         let mut graph = GraphBuilder::for_testing()
                                       .build(());
@@ -80,8 +80,9 @@ pub(crate) mod hp_actor_tests {
         ticks_tx_in.testing_send_all(test_data,true);
         sleep(Duration::from_millis(50));
 
-        graph.block_until_stopped(Duration::from_secs(240));
+        graph.block_until_stopped(Duration::from_secs(240))?;
         let expected = 0;
         assert_steady_rx_gt_count!(&ticks_rx_out,expected);
+        Ok(())
     }
 }

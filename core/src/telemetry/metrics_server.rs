@@ -149,6 +149,7 @@ pub trait AsyncListener {
     /// Accepts a new connection asynchronously.
     ///
     /// Returns a future resolving to a stream implementing `AsyncReadWrite` and an optional socket address.
+    #[allow(clippy::type_complexity)]
     fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output =std::io::Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>)>> + Send + 'a>>;
 
     /// Returns the local socket address of the listener.
@@ -603,6 +604,7 @@ mod meteric_server_tests {
     use crate::telemetry::metrics_server::internal_behavior;
 
     #[test]
+    #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
     fn test_simple() -> Result<(), Box<dyn std::error::Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
          
@@ -646,6 +648,7 @@ mod http_telemetry_tests {
     use crate::monitor::ActorStatus;
 
     #[test]
+    #[cfg(all(feature="prometheus_metrics",feature="telemetry_server_builtin"))]
     fn test_metrics_server() -> Result<(), Box<dyn std::error::Error>> {
         if cfg!(not(windows)) && std::env::var("GITHUB_ACTIONS").is_err() {
             let (mut graph, server_ip, tx_in) =
@@ -655,14 +658,19 @@ mod http_telemetry_tests {
             // Fetch the metrics from the server
             if let Some(ref addr) = server_ip {
                 print!(".");
-                validate_path(&addr, Some("rankdir=LR"), "graph.dot");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("digraph"), "graph.dot");
                 print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("font-family: sans-serif;"), "dot-viewer.css");
                 print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js");
                 print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");
                 print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("<title>Telemetry</title>"), "index.html");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]

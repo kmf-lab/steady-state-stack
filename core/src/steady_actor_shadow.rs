@@ -23,10 +23,10 @@ use std::ops::DerefMut;
 use aeron::aeron::Aeron;
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
-use crate::steady_actor::SendOutcome;
+use crate::steady_actor::{SendOutcome};
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{Defrag, StreamControlItem};
+use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
 use crate::simulate_edge::{IntoSimRunner};
@@ -57,7 +57,7 @@ pub struct SteadyActorShadow {
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// Controls whether the internal simulation behavior is applied instead of actual commands.
     pub use_internal_behavior: bool,
-    pub(crate) shutdown_barrier: Option<Arc<Barrier>>,     
+    pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
 }
 
 impl Clone for SteadyActorShadow {
@@ -448,13 +448,16 @@ impl SteadyActor for SteadyActorShadow {
             let run_duration = now_nanos - self.last_periodic_wait.load(Ordering::Relaxed);
             let remaining_duration = duration_rate.saturating_sub(Duration::from_nanos(run_duration));
 
-            let mut operation = &mut Delay::new(remaining_duration).fuse(); //TODO: must remove heap usage here.
+            let delay = Delay::new(remaining_duration);
             let result = select! {
                 _= &mut one_down.deref_mut() => false,
-                _= operation => true
+                _= &mut delay.fuse() => true
              };
             self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
             result
+
+           
+
         } else {
             false
         }

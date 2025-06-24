@@ -3,6 +3,7 @@
 //!
 //! This module defines the `ChannelBuilder`, channel families (e.g., steady and stream channels),
 //! and macros for constructing and monitoring channels in an actor graph.
+
 use std::fmt::Debug;
 use std::ops::Sub;
 use ringbuf::storage::{Heap};
@@ -14,11 +15,14 @@ use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use std::thread::sleep;
 use crate::{core_exec};
 
+/** Type alias for the underlying storage backing of the channel, using a heap-based ring buffer. */
 pub(crate) type ChannelBacking<T> = Heap<T>;
+
+/** Type alias for the internal sender component of the channel, wrapping an asynchronous producer. */
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
+
+/** Type alias for the internal receiver component of the channel, wrapping an asynchronous consumer. */
 pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
-
-
 
 //TODO: 2026, we should use static for all telemetry work.
 //      this might lead to a general solution for static in other places
@@ -29,10 +33,7 @@ pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>
 //let rb = AsyncRb::<Heap<u8>>::new(1000).split();
 //let rb = AsyncRb::<Array<u8,1000>>::default().split();  //static
 
-
-
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
-
 use futures::channel::oneshot;
 #[allow(unused_imports)]
 use log::*;
@@ -40,188 +41,145 @@ use async_ringbuf::traits::Split;
 use ringbuf::producer::Producer;
 use crate::{AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyTx, Trigger};
 use crate::actor_builder::{ActorBuilder, Percentile};
-use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamControlItem, TxChannelMetaDataWrapper};
+use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamControlItem, TxChannelMetaDataWrapper};
 use crate::monitor::ChannelMetaData;
 use crate::steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
 
-/// All channels use this capacity unless set, do not change since many apps may assume
-/// this constant and for specific cases you should set your own capacity in a base builder.
+/**
+ * Default capacity for channels unless explicitly set in the builder.
+ *
+ * This constant defines the default number of messages a channel can hold. Many applications
+ * may rely on this value, so it should not be changed. For specific use cases requiring a
+ * different capacity, use a custom builder configuration.
+ */
 const DEFAULT_CAPACITY: usize = 64; // do not change
 
-
-/// Builder for configuring and creating channels within the Steady State framework.
-///
-/// The `ChannelBuilder` struct allows for the detailed configuration of channels, including
-/// performance metrics, thresholds, and other operational parameters. This provides flexibility
-/// in tailoring channels to specific requirements and monitoring needs.
+/**
+ * Builder for configuring and creating channels within the Steady State framework.
+ *
+ * The `ChannelBuilder` provides a flexible interface for configuring channel properties such as
+ * capacity, telemetry metrics, triggers, and labels. It supports both eager and lazy initialization
+ * of channels, making it suitable for a variety of actor-based communication scenarios.
+ */
 #[derive(Clone, Debug, Default)]
 pub struct ChannelBuilder {
-
-    /// The count of channels, stored as an `Arc<AtomicUsize>`.
-    ///
-    /// This field tracks the number of channels created.
+    /// Shared counter for the number of channels created.
     channel_count: Arc<AtomicUsize>,
 
-    /// The capacity of the channel.
-    ///
-    /// This field defines the maximum number of messages the channel can hold.
+    /// The maximum number of messages the channel can hold.
     capacity: usize,
 
-    /// Labels associated with the channel.
-    ///
-    /// This field holds a static reference to an array of static string slices, used for identifying the channel.
+    /// Labels associated with the channel for identification in telemetry outputs.
     labels: &'static [&'static str],
 
-    /// Indicates whether the labels should be displayed.
-    ///
-    /// If `true`, the labels will be shown in monitoring outputs.
+    /// Indicates whether the labels should be displayed in telemetry outputs.
     display_labels: bool,
 
-    /// The refresh rate for monitoring data, expressed in bits.
-    ///
-    /// This field defines how frequently the monitoring data should be refreshed.
+    /// Bit shift value determining the refresh rate for telemetry data updates.
     refresh_rate_in_bits: u8,
 
-    /// The size of the window bucket for metrics, expressed in bits.
-    ///
-    /// This field defines the size of the window bucket used for metrics aggregation, ensuring it is a power of 2.
+    /// Bit shift value determining the window bucket size for metrics aggregation.
     window_bucket_in_bits: u8,
 
     //TODO: add size to compute bps and make line expansion fixed.
-    /// if not NAN Indicates line expansion enabled rate
-    /// 
+    /// Scale factor for line expansion in telemetry visualization; NaN indicates disabled.
     line_expansion: f32,
 
-    /// Indicates whether the type of the channel should be displayed.
-    ///
-    /// If `true`, the type information will be included in monitoring outputs.
+    /// Indicates whether the type of data transmitted should be displayed in telemetry outputs.
     show_type: bool,
 
-    /// A list of percentiles for the filled capacity of the channel.
-    ///
-    /// Each element represents a row in the monitoring output.
+    /// Percentiles to track for the channel's filled state, each representing a telemetry row.
     percentiles_filled: Vec<Percentile>,
 
-    /// A list of percentiles for the rate of messages in the channel.
-    ///
-    /// Each element represents a row in the monitoring output.
+    /// Percentiles to track for the message rate, each representing a telemetry row.
     percentiles_rate: Vec<Percentile>,
 
-    /// A list of percentiles for the latency of messages in the channel.
-    ///
-    /// Each element represents a row in the monitoring output.
+    /// Percentiles to track for message latency, each representing a telemetry row.
     percentiles_latency: Vec<Percentile>,
 
-    /// A list of standard deviations for the filled capacity of the channel.
-    ///
-    /// Each element represents a row in the monitoring output.
+    /// Standard deviations to track for the filled state, each representing a telemetry row.
     std_dev_filled: Vec<StdDev>,
 
-    /// A list of standard deviations for the rate of messages in the channel.
-    ///
-    /// Each element represents a row in the monitoring output.
+    /// Standard deviations to track for the message rate, each representing a telemetry row.
     std_dev_rate: Vec<StdDev>,
 
-    /// A list of standard deviations for the latency of messages in the channel.
-    ///
-    /// Each element represents a row in the monitoring output.
+    /// Standard deviations to track for message latency, each representing a telemetry row.
     std_dev_latency: Vec<StdDev>,
 
-    /// A list of triggers for the rate of messages with associated alert colors.
-    ///
-    /// Each tuple contains a trigger condition and an alert color, with the base color being green if used.
+    /// Triggers for message rate with associated alert colors; base color is green if used.
     trigger_rate: Vec<(Trigger<Rate>, AlertColor)>,
 
-    /// A list of triggers for the filled capacity with associated alert colors.
-    ///
-    /// Each tuple contains a trigger condition and an alert color, with the base color being green if used.
+    /// Triggers for filled state with associated alert colors; base color is green if used.
     trigger_filled: Vec<(Trigger<Filled>, AlertColor)>,
 
-    /// A list of triggers for the latency of messages with associated alert colors.
-    ///
-    /// Each tuple contains a trigger condition and an alert color, with the base color being green if used.
+    /// Triggers for message latency with associated alert colors; base color is green if used.
     trigger_latency: Vec<(Trigger<Duration>, AlertColor)>,
 
-    /// Indicates whether the average rate of messages should be monitored.
-    ///
-    /// If `true`, the average rate is tracked for this channel.
-    avg_rate: bool,
-
-    /// Indicates whether the average filled capacity should be monitored.
-    ///
-    /// If `true`, the average filled capacity is tracked for this channel.
+    /// Indicates whether to monitor the average filled state of the channel.
     avg_filled: bool,
 
-    /// Indicates whether the average latency should be monitored.
-    ///
-    /// If `true`, the average latency is tracked for this channel.
+    /// Indicates whether to monitor the average message rate through the channel.
+    avg_rate: bool,
+
+    /// Indicates whether to monitor the average message latency in the channel.
     avg_latency: bool,
 
-    /// Indicates whether the channel connects to a sidecar.
-    ///
-    /// If `true`, the channel is connected to a sidecar for additional processing or monitoring.
+    /// Indicates whether the channel connects to a sidecar for additional processing.
     connects_sidecar: bool,
 
-    /// Indicates whether the channel displays total count
-    ///
-    ///
+    /// Indicates whether to display total counts in telemetry outputs.
     show_total: bool,
 
-
-    /// Indicates whether the maximum filled capacity should be monitored.
-    ///
-    /// If `true`, the maximum filled capacity is tracked for this channel.
+    /// Indicates whether to monitor the maximum filled state of the channel.
     max_filled: bool,
 
-    /// Indicates whether the minimum filled capacity should be monitored.
-    ///
-    /// If `true`, the minimum filled capacity is tracked for this channel.
+    /// Indicates whether to monitor the minimum filled state of the channel.
     min_filled: bool,
 
-    /// The frame rate for monitoring updates, expressed in milliseconds.
-    ///
-    /// This field defines the interval at which monitoring data is updated.
+    /// Interval in milliseconds at which telemetry data is updated.
     frame_rate_ms: u64,
 
-    /// A vector of one-shot shutdown senders.
-    ///
-    /// This field is used to manage shutdown signals for the channel, wrapped in an `Arc<Mutex<>>` for thread safety.
+    /// Shared vector of one-shot senders for shutdown notifications, wrapped for thread safety.
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
 }
 
-
-
 impl ChannelBuilder {
-    /// Creates a new `ChannelBuilder` instance with the specified parameters.
-    ///
-    /// # Parameters
-    /// - `channel_count`: Shared counter for the number of channels.
-    /// - `oneshot_shutdown_vec`: Shared vector of one-shot shutdown senders.
-    /// - `noise_threshold`: Instant used as a noise threshold.
-    /// - `frame_rate_ms`: Frame rate in milliseconds.
-    ///
-    /// # Returns
-    /// A new instance of `ChannelBuilder` with default values.
+    /**
+     * Creates a new `ChannelBuilder` instance with default settings.
+     *
+     * Initializes the builder with a shared channel counter, shutdown sender vector, and frame rate.
+     * Default telemetry settings are computed based on the frame rate, providing a 1-second refresh
+     * rate and a 10-second window size.
+     *
+     * # Arguments
+     *
+     * - `channel_count`: Shared atomic counter tracking the number of channels created.
+     * - `oneshot_shutdown_vec`: Shared vector of one-shot senders for shutdown signals.
+     * - `frame_rate_ms`: Frame rate in milliseconds for telemetry updates.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with default configurations applied.
+     */
     pub(crate) fn new(
         channel_count: Arc<AtomicUsize>,
         oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
         frame_rate_ms: u64,
     ) -> ChannelBuilder {
-
         //build default window
         let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(frame_rate_ms as u128
                                                                                               , Duration::from_secs(1)
-                                                                                              , Duration::from_secs(10));        
+                                                                                              , Duration::from_secs(10));
         ChannelBuilder {
             channel_count,
             capacity: DEFAULT_CAPACITY,
             labels: &[],
             display_labels: false,
             oneshot_shutdown_vec,
-            refresh_rate_in_bits: refresh_in_bits, 
-            window_bucket_in_bits: window_in_bits, 
+            refresh_rate_in_bits: refresh_in_bits,
+            window_bucket_in_bits: window_in_bits,
             line_expansion: f32::NAN, // use 1.0 as the default
             show_type: false,
             percentiles_filled: Vec::with_capacity(0),
@@ -244,24 +202,38 @@ impl ChannelBuilder {
         }
     }
 
-    /// Computes and sets the refresh rate and window size for the channel.
-    ///
-    /// # Parameters
-    /// - `refresh`: Duration of the refresh rate.
-    /// - `window`: Duration of the window size.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with computed refresh rate and window size.
+    /**
+     * Configures the refresh rate and window size for telemetry data collection.
+     *
+     * Adjusts how frequently telemetry data is refreshed and the size of the aggregation window,
+     * optimizing for performance and accuracy based on the provided durations.
+     *
+     * # Arguments
+     *
+     * - `refresh`: Desired minimum refresh rate as a `Duration`.
+     * - `window`: Desired aggregation window size as a `Duration`.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with updated telemetry settings.
+     */
     pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
-        let mut result = self.clone(); 
+        let mut result = self.clone();
         let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(self.frame_rate_ms as u128, refresh, window);
         result.refresh_rate_in_bits = refresh_in_bits;
-        result.window_bucket_in_bits = window_in_bits;        
+        result.window_bucket_in_bits = window_in_bits;
         result
     }
 
-    /// Disables any metric collection
-    ///
+    /**
+     * Disables telemetry metric collection for the channel.
+     *
+     * Sets the refresh rate and window size to zero, eliminating telemetry overhead for performance-critical scenarios.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with telemetry disabled.
+     */
     pub fn with_no_refresh_window(&self) -> Self {
         let mut result = self.clone();
         result.refresh_rate_in_bits = 0;
@@ -269,46 +241,40 @@ impl ChannelBuilder {
         result
     }
 
-    /// Disables totals display
-    ///
+    /**
+     * Disables the display of total counts in telemetry outputs.
+     *
+     * By default, totals are shown; this method hides them if not needed.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with total counts display disabled.
+     */
     pub fn with_no_totals(&self) -> Self {
         let mut result = self.clone();
         result.show_total = false;
         result
     }
 
-
-    /// Builds a bundle of channels with the specified girth.
-    ///
-    /// # Parameters
-    /// - `GIRTH`: The number of channels in the bundle.
-    ///
-    /// # Returns
-    /// A tuple containing bundles of transmitters and receivers.
-    // pub(crate) fn build_eager_bundle<T, const GIRTH: usize>(&self) -> (SteadyTxBundle<T, GIRTH>, SteadyRxBundle<T, GIRTH>) {
-    //     let mut tx_vec = Vec::with_capacity(GIRTH);
-    //     let mut rx_vec = Vec::with_capacity(GIRTH);
-    //
-    //     (0..GIRTH).for_each(|_| {
-    //         let (t, r) = self.eager_build();
-    //         tx_vec.push(t);
-    //         rx_vec.push(r);
-    //     });
-    //
-    //     (
-    //         Arc::new(tx_vec.try_into().expect("Incorrect length")),
-    //         Arc::new(rx_vec.try_into().expect("Incorrect length")),
-    //     )
-    // }
-
-    /// Build as a bundle fo channels. Consumes the builder. Makes use of Lazy version which will
-    /// postpone allocation until after the first clone() is called.
-    ///
-    /// # Parameters
-    /// - `GIRTH`: The number of channels in the bundle.
-    ///
-    /// # Returns
-    /// A tuple containing bundles of transmitters and receivers.
+    /**
+     * Creates a bundle of channels with the specified number of channels (girth).
+     *
+     * Consumes the builder to produce a bundle of lazily initialized transmitter and receiver pairs,
+     * configured according to the builder’s settings. Resources are allocated only upon first use.
+     *
+     * # Type Parameters
+     *
+     * - `T`: Type of data to transmit through the channels.
+     * - `GIRTH`: Number of channels in the bundle, specified as a constant.
+     *
+     * # Returns
+     *
+     * A tuple of `LazySteadyTxBundle<T, GIRTH>` and `LazySteadyRxBundle<T, GIRTH>` representing the transmitter and receiver bundles.
+     *
+     * # Panics
+     *
+     * Panics with an "Internal error, incorrect length" message if the bundle size does not match `GIRTH`.
+     */
     pub fn build_channel_bundle<T, const GIRTH: usize>(&self) -> (LazySteadyTxBundle<T, GIRTH>, LazySteadyRxBundle<T, GIRTH>) {
         let mut tx_vec = Vec::with_capacity(GIRTH);
         let mut rx_vec = Vec::with_capacity(GIRTH);
@@ -336,10 +302,32 @@ impl ChannelBuilder {
         )
     }
 
+    /**
+     * Creates a bundle of stream channels with the specified number of channels (girth).
+     *
+     * Similar to `build_channel_bundle`, but tailored for stream channels handling data in a streaming fashion.
+     * Channels are lazily initialized, with resources allocated only upon first use.
+     *
+     * # Type Parameters
+     *
+     * - `T`: Type of data to transmit, must implement `StreamControlItem`.
+     * - `GIRTH`: Number of stream channels in the bundle, specified as a constant.
+     *
+     * # Arguments
+     *
+     * - `bytes_per_item`: Number of bytes per item, used to calculate payload channel capacity.
+     *
+     * # Returns
+     *
+     * A tuple of `LazySteadyStreamTxBundle<T, GIRTH>` and `LazySteadyStreamRxBundle<T, GIRTH>` representing the transmitter and receiver bundles.
+     *
+     * # Panics
+     *
+     * Panics with an "Internal error, incorrect length" message if the bundle size does not match `GIRTH`.
+     */
     pub fn build_stream_bundle<T: StreamControlItem, const GIRTH: usize>(&self
                                                                          , bytes_per_item: usize
-                                               ) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
-
+    ) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
         let mut tx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
         let mut rx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
 
@@ -363,6 +351,24 @@ impl ChannelBuilder {
             ,
         )
     }
+
+    /**
+     * Creates a single stream channel with the specified configuration.
+     *
+     * Produces a lazily initialized stream channel for handling data streams, with capacity adjusted based on item size.
+     *
+     * # Type Parameters
+     *
+     * - `T`: Type of data to transmit, must implement `StreamControlItem`.
+     *
+     * # Arguments
+     *
+     * - `bytes_per_item`: Number of bytes per item, used to calculate payload channel capacity.
+     *
+     * # Returns
+     *
+     * A tuple of `LazyStreamTx<T>` and `LazyStreamRx<T>` representing the transmitter and receiver.
+     */
     pub fn build_stream<T: StreamControlItem>(&self, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
         let bytes_capacity = self.capacity*bytes_per_item;
         let lazy_stream = Arc::new(LazyStream::new(self
@@ -370,262 +376,396 @@ impl ChannelBuilder {
         (LazyStreamTx::<T>::new(lazy_stream.clone()), LazyStreamRx::<T>::new(lazy_stream.clone()))
     }
 
-    /// Builds and returns a pair of lazy wrappers of the transmitter and receiver with
-    /// the current configuration.
-    ///
-    /// # Returns
-    /// A tuple containing the transmitter (`LazySteadyTx<T>`) and receiver (`LazySteadyRx<T>`).
+    /**
+     * Creates a single channel with lazy initialization.
+     *
+     * Returns lazy wrappers for the transmitter and receiver, deferring resource allocation until first use.
+     * Preferred over `eager_build` for resource efficiency in actor systems.
+     *
+     * # Type Parameters
+     *
+     * - `T`: Type of data to transmit through the channel.
+     *
+     * # Returns
+     *
+     * A tuple of `LazySteadyTx<T>` and `LazySteadyRx<T>` representing the transmitter and receiver.
+     */
     pub fn build_channel<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
         let lazy_channel = Arc::new(LazyChannel::new(self));
         (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))
     }
 
-    /// same as build_channel
+    /**
+     * Alias for `build_channel`, providing a simpler method name.
+     *
+     * # Type Parameters
+     *
+     * - `T`: Type of data to transmit through the channel.
+     *
+     * # Returns
+     *
+     * A tuple of `LazySteadyTx<T>` and `LazySteadyRx<T>` representing the transmitter and receiver.
+     */
     pub fn build<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
         let lazy_channel = Arc::new(LazyChannel::new(self));
         (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))
     }
 
-
-    /// Sets the capacity for the channel being built.
-    ///
-    /// # Parameters
-    /// - `capacity`: The maximum number of messages the channel can hold.
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance with the specified capacity.
+    /**
+     * Sets the maximum capacity of the channel.
+     *
+     * Specifies how many messages the channel can hold before blocking or dropping, depending on configuration.
+     *
+     * # Arguments
+     *
+     * - `capacity`: Maximum number of messages the channel can hold.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the specified capacity.
+     */
     pub fn with_capacity(&self, capacity: usize) -> Self {
         let mut result = self.clone();
         result.capacity = capacity;
         result
     }
 
-    /// Enables type display in telemetry.
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance with type display enabled.
+    /**
+     * Enables display of the channel’s data type in telemetry outputs.
+     *
+     * Useful for debugging and understanding data flow in monitoring outputs.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with type display enabled.
+     */
     pub fn with_type(&self) -> Self {
         let mut result = self.clone();
         result.show_type = true;
         result
     }
 
-    /// Enables line expansion in telemetry visualization.
-    ///
-    /// # Parameters
-    /// - `scale`: use 1.0 as the default scale factor
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance with line expansion enabled.
+    /**
+     * Enables line expansion in telemetry visualization with a specified scale factor.
+     *
+     * Enhances visualization of data trends; scale determines expansion or contraction.
+     *
+     * # Arguments
+     *
+     * - `scale`: Scale factor (e.g., 1.0 for default, >1.0 for expansion, <1.0 for contraction).
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with line expansion configured.
+     */
     pub fn with_line_expansion(&self, scale: f32) -> Self {
         let mut result = self.clone();
         result.line_expansion = scale;
         result
     }
 
-    /// Enables average calculation for the filled state of channels.
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance with average filled calculation enabled.
+    /**
+     * Enables monitoring of the average filled state.
+     *
+     * Tracks the average number of messages in the channel over time for telemetry reporting.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with average filled state monitoring enabled.
+     */
     pub fn with_avg_filled(&self) -> Self {
         let mut result = self.clone();
         result.avg_filled = true;
         result
     }
 
-    /// Enables maximum filled state calculation for the channel.
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance with maximum filled calculation enabled.
+    /**
+     * Enables monitoring of the maximum filled state.
+     *
+     * Tracks the highest number of messages held, useful for peak usage analysis.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with maximum filled state monitoring enabled.
+     */
     pub fn with_filled_max(&self) -> Self {
         let mut result = self.clone();
         result.max_filled = true;
         result
     }
 
-    /// Enables minimum filled state calculation for the channel.
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance with minimum filled calculation enabled.
+    /**
+     * Enables monitoring of the minimum filled state.
+     *
+     * Tracks the lowest number of messages held, indicating low activity or bottlenecks.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with minimum filled state monitoring enabled.
+     */
     pub fn with_filled_min(&self) -> Self {
         let mut result = self.clone();
         result.min_filled = true;
         result
     }
 
-    /// Enables average rate calculation.
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance with average rate calculation enabled.
+    /**
+     * Enables monitoring of the average message rate.
+     *
+     * Provides insight into typical throughput over time via telemetry.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with average rate monitoring enabled.
+     */
     pub fn with_avg_rate(&self) -> Self {
         let mut result = self.clone();
         result.avg_rate = true;
         result
     }
 
-    /// Enables average latency calculation.
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance with average latency calculation enabled.
+    /**
+     * Enables monitoring of the average message latency.
+     *
+     * Tracks the average time messages spend in the channel for performance tuning.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with average latency monitoring enabled.
+     */
     pub fn with_avg_latency(&self) -> Self {
         let mut result = self.clone();
         result.avg_latency = true;
         result
     }
 
-    /// Marks this connection as going to a sidecar, for display purposes.
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance configured with this mark.
+    /**
+     * Marks the channel as connecting to a sidecar process.
+     *
+     * Indicates special handling or routing via a sidecar for display purposes.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the sidecar flag set.
+     */
     pub fn connects_sidecar(&self) -> Self {
         let mut result = self.clone();
         result.connects_sidecar = true;
         result
     }
 
-    /// Sets labels for the channel, optionally displaying them in telemetry.
-    ///
-    /// # Parameters
-    /// - `labels`: Static slice of label strings.
-    /// - `display`: Boolean indicating whether to display labels in telemetry.
-    ///
-    /// # Returns
-    /// A `ChannelBuilder` instance with specified labels.
+    /**
+     * Sets labels for the channel and controls their display in telemetry.
+     *
+     * Labels aid in identification and categorization; display can be toggled.
+     *
+     * # Arguments
+     *
+     * - `labels`: Static slice of string slices representing labels.
+     * - `display`: Boolean indicating whether to show labels in telemetry.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with configured labels.
+     */
     pub fn with_labels(&self, labels: &'static [&'static str], display: bool) -> Self {
         let mut result = self.clone();
         result.labels = if display { labels } else { &[] };
         result
     }
 
-    /// Configures the channel to calculate the standard deviation of the "filled" state.
-    ///
-    /// # Parameters
-    /// - `config`: Configuration for standard deviation calculation.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with filled state standard deviation calculation enabled.
+    /**
+     * Adds a standard deviation metric for the filled state.
+     *
+     * Tracks variability in the channel’s filled state over time.
+     *
+     * # Arguments
+     *
+     * - `config`: `StdDev` configuration for the filled state metric.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the metric added.
+     */
     pub fn with_filled_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
         result.std_dev_filled.push(config);
         result
     }
 
-    /// Configures the channel to calculate the standard deviation of message rate.
-    ///
-    /// # Parameters
-    /// - `config`: Configuration for standard deviation calculation of message rate.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with message rate standard deviation calculation enabled.
+    /**
+     * Adds a standard deviation metric for the message rate.
+     *
+     * Tracks variability in message throughput over time.
+     *
+     * # Arguments
+     *
+     * - `config`: `StdDev` configuration for the rate metric.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the metric added.
+     */
     pub fn with_rate_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
         result.std_dev_rate.push(config);
         result
     }
 
-    /// Configures the channel to calculate the standard deviation of message latency.
-    ///
-    /// # Parameters
-    /// - `config`: Configuration for standard deviation calculation of latency.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with latency standard deviation calculation enabled.
+    /**
+     * Adds a standard deviation metric for message latency.
+     *
+     * Tracks variability in message latency for performance consistency.
+     *
+     * # Arguments
+     *
+     * - `config`: `StdDev` configuration for the latency metric.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the metric added.
+     */
     pub fn with_latency_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
         result.std_dev_latency.push(config);
         result
     }
 
-    /// Configures the channel to calculate specific percentiles for the "filled" state.
-    ///
-    /// # Parameters
-    /// - `config`: Configuration for the percentile calculation of the filled state.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with filled state percentile calculation enabled.
+    /**
+     * Adds a percentile metric for the filled state.
+     *
+     * Provides distribution insights into the channel’s filled state.
+     *
+     * # Arguments
+     *
+     * - `config`: `Percentile` configuration for the filled state metric.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the metric added.
+     */
     pub fn with_filled_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_filled.push(config);
         result
     }
 
-    /// Configures the channel to calculate specific percentiles for message rate.
-    ///
-    /// # Parameters
-    /// - `config`: Configuration for the percentile calculation of message rate.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with rate percentile calculation enabled.
+    /**
+     * Adds a percentile metric for the message rate.
+     *
+     * Provides distribution insights into message throughput.
+     *
+     * # Arguments
+     *
+     * - `config`: `Percentile` configuration for the rate metric.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the metric added.
+     */
     pub fn with_rate_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_rate.push(config);
         result
     }
 
-    /// Configures the channel to calculate specific percentiles for message latency.
-    ///
-    /// # Parameters
-    /// - `config`: Configuration for the percentile calculation of latency.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with latency percentile calculation enabled.
+    /**
+     * Adds a percentile metric for message latency.
+     *
+     * Ensures most messages meet latency requirements via distribution tracking.
+     *
+     * # Arguments
+     *
+     * - `config`: `Percentile` configuration for the latency metric.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the metric added.
+     */
     pub fn with_latency_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_latency.push(config);
         result
     }
 
-    /// Configures triggers based on message rate with associated alert colors.
-    ///
-    /// # Parameters
-    /// - `bound`: The threshold for the trigger.
-    /// - `color`: The color to represent the alert when the threshold is crossed.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with a rate trigger configured.
+    /**
+     * Adds a trigger for the message rate with an alert color.
+     *
+     * Alerts when the rate crosses a threshold, aiding proactive monitoring.
+     *
+     * # Arguments
+     *
+     * - `bound`: `Trigger<Rate>` defining the alert condition.
+     * - `color`: `AlertColor` to display when triggered.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the trigger added.
+     */
     pub fn with_rate_trigger(&self, bound: Trigger<Rate>, color: AlertColor) -> Self {
         let mut result = self.clone();
         result.trigger_rate.push((bound, color));
         result
     }
 
-    /// Configures triggers based on the "filled" state of the channel with associated alert colors.
-    ///
-    /// # Parameters
-    /// - `bound`: The threshold for the trigger.
-    /// - `color`: The color to represent the alert when the threshold is crossed.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with a filled state trigger configured.
+    /**
+     * Adds a trigger for the filled state with an alert color.
+     *
+     * Alerts based on channel fullness, indicating backpressure or issues.
+     *
+     * # Arguments
+     *
+     * - `bound`: `Trigger<Filled>` defining the alert condition.
+     * - `color`: `AlertColor` to display when triggered.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the trigger added.
+     */
     pub fn with_filled_trigger(&self, bound: Trigger<Filled>, color: AlertColor) -> Self {
         let mut result = self.clone();
         result.trigger_filled.push((bound, color));
         result
     }
 
-    /// Configures triggers based on message latency with associated alert colors.
-    ///
-    /// # Parameters
-    /// - `bound`: The threshold for the trigger.
-    /// - `color`: The color to represent the alert when the threshold is crossed.
-    ///
-    /// # Returns
-    /// A modified instance of `ChannelBuilder` with a latency trigger configured.
+    /**
+     * Adds a trigger for message latency with an alert color.
+     *
+     * Alerts when latency exceeds a threshold, supporting performance SLAs.
+     *
+     * # Arguments
+     *
+     * - `bound`: `Trigger<Duration>` defining the alert condition.
+     * - `color`: `AlertColor` to display when triggered.
+     *
+     * # Returns
+     *
+     * A new `ChannelBuilder` instance with the trigger added.
+     */
     pub fn with_latency_trigger(&self, bound: Trigger<Duration>, color: AlertColor) -> Self {
         let mut result = self.clone();
         result.trigger_latency.push((bound, color));
         result
     }
 
-
-    /// Converts the `ChannelBuilder` configuration into `ChannelMetaData`.
-    ///
-    /// # Parameters
-    /// - `type_name`: The name of the type as a static string.
-    /// - `type_byte_count`: The byte count of the type.
-    ///
-    /// # Returns
-    /// A `ChannelMetaData` instance with the configured settings.
+    /**
+     * Converts the builder configuration into `ChannelMetaData` for telemetry.
+     *
+     * Finalizes metadata with type information if enabled, used for monitoring.
+     *
+     * # Arguments
+     *
+     * - `type_name`: Static string name of the transmitted type.
+     * - `type_byte_count`: Size in bytes of the transmitted type.
+     *
+     * # Returns
+     *
+     * A `ChannelMetaData` instance encapsulating the builder’s configuration.
+     *
+     * # Panics
+     *
+     * Panics if `capacity` is zero, as a valid channel requires a positive capacity.
+     */
     pub(crate) fn to_meta_data(&self, type_name: &'static str, type_byte_count: usize) -> ChannelMetaData {
         assert!(self.capacity > 0);
         let channel_id = self.channel_count.fetch_add(1, Ordering::SeqCst);
@@ -661,20 +801,28 @@ impl ChannelBuilder {
             avg_latency: self.avg_latency,
             connects_sidecar: self.connects_sidecar,
             show_total: self.show_total,
-
         }
     }
-
 
     /// Finalizes the channel configuration and creates the channel with the specified settings.
     /// This method ties together all the configured options, applying them to the newly created channel.
     pub const UNSET: u32 = u32::MAX;
 
-
-
+    /**
+     * Eagerly builds a channel for internal use, returning raw transmitter and receiver structs.
+     *
+     * Constructs a channel immediately, setting up telemetry and shutdown mechanisms.
+     *
+     * # Type Parameters
+     *
+     * - `T`: Type of data to transmit through the channel.
+     *
+     * # Returns
+     *
+     * A tuple of `Tx<T>` and `Rx<T>` representing the raw transmitter and receiver.
+     */
     pub(crate) fn eager_build_internal<T>(&self) -> (Tx<T>, Rx<T>) {
         let now = Instant::now().sub(Duration::from_secs(1 + MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
-
 
         let type_byte_count = size_of::<T>();
         let type_string_name = std::any::type_name::<T>();
@@ -729,13 +877,20 @@ impl ChannelBuilder {
             },
         )
     }
-    
-    /// Builds eager and returns a pair of transmitter and receiver with the current configuration.
-    /// For most cases the build() should be used as its lazy and build on the actor thread.
-    /// This method is here mostly for testing a normal eager build.
-    ///
-    /// # Returns
-    /// A tuple containing the transmitter (`SteadyTx<T>`) and receiver (`SteadyRx<T>`).
+
+    /**
+     * Eagerly builds a channel, returning wrapped transmitter and receiver.
+     *
+     * Constructs a channel immediately, primarily for testing; prefer `build` for lazy initialization.
+     *
+     * # Type Parameters
+     *
+     * - `T`: Type of data to transmit through the channel.
+     *
+     * # Returns
+     *
+     * A tuple of `SteadyTx<T>` and `SteadyRx<T>` representing the transmitter and receiver.
+     */
     pub fn eager_build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
         let (tx, rx) = self.eager_build_internal();
         (
@@ -745,81 +900,145 @@ impl ChannelBuilder {
     }
 }
 
-
-
-
-/// Postpones the allocation of SteadyTx until the first time clone() is called.
-/// This is helpful to ensure the channel is near the active thread
-/// 
+/**
+ * Lazy wrapper for `SteadyTx<T>`, deferring channel allocation until first use.
+ *
+ * Ensures resources are allocated near the point of use, improving efficiency in actor systems.
+ */
 #[derive(Debug)]
 pub struct LazySteadyTx<T> {
     lazy_channel: Arc<LazyChannel<T>>,
 }
 
 impl <T> LazySteadyTx<T> {
+    /**
+     * Creates a new `LazySteadyTx` instance.
+     *
+     * # Arguments
+     *
+     * - `lazy_channel`: Shared reference to the lazy channel configuration.
+     *
+     * # Returns
+     *
+     * A new `LazySteadyTx<T>` instance.
+     */
     pub(crate) fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
         LazySteadyTx {
             lazy_channel,
         }
     }
-    
-    /// Lazy creation of SteadyTx in this clone() call. The same instance is cached for future calls.
-    /// This allows for channels to be created more near to their actors.
+
+    /**
+     * Clones the transmitter, initializing the channel on first call.
+     *
+     * Returns a cached `SteadyTx<T>` instance for subsequent calls, ensuring allocation near the actor.
+     *
+     * # Returns
+     *
+     * A `SteadyTx<T>` instance for sending data.
+     */
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyTx<T> {
         core_exec::block_on(self.lazy_channel.get_tx_clone())
     }
 
-
-    /// Simple send of all the data in the vec for testing
+    /**
+     * Sends all items in a vector to the channel for testing purposes.
+     *
+     * Blocks until all items are sent, retrying if the channel is full; optionally closes the channel.
+     *
+     * # Arguments
+     *
+     * - `data`: Vector of items to send.
+     * - `close`: Whether to close the channel after sending.
+     *
+     * # Panics
+     *
+     * Panics with "internal error" if the transmitter lock cannot be acquired.
+     */
     pub fn testing_send_all(&self, data: Vec<T>, close: bool) {
         let tx = self.clone();
         let mut tx = tx.try_lock().expect("internal error");
 
         for d in data.into_iter() {
-                let mut temp = d;
-                while let Err(r) = tx.tx.try_push(temp) {
-                    temp = r;
-                    sleep(Duration::from_millis(2));
-                };
+            let mut temp = d;
+            while let Err(r) = tx.tx.try_push(temp) {
+                temp = r;
+                sleep(Duration::from_millis(2));
+            };
         }
         if close {
             tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
         }
-
-
     }
 
+    /**
+     * Closes the channel for testing clean shutdowns.
+     *
+     * Marks the channel as closed, indicating no further data will be sent.
+     *
+     * # Panics
+     *
+     * Panics with "internal error" if the transmitter lock cannot be acquired.
+     */
     pub fn testing_close(&self) {
         let tx = self.clone();
         let mut tx = tx.try_lock().expect("internal error");
         tx.mark_closed();
     }
-
-
 }
 
-
-/// Same as SteadyRx however provides clone() to lazy init the SteadyRx
-/// If already cloned it returns clone of the SteadyRx.
-///
+/**
+ * Lazy wrapper for `SteadyRx<T>`, deferring channel allocation until first use.
+ *
+ * Similar to `LazySteadyTx`, it ensures resource allocation occurs near the point of use.
+ */
 #[derive(Debug)]
 pub struct LazySteadyRx<T> {
     lazy_channel: Arc<LazyChannel<T>>,
 }
+
 impl <T> LazySteadyRx<T> {
+    /**
+     * Creates a new `LazySteadyRx` instance.
+     *
+     * # Arguments
+     *
+     * - `lazy_channel`: Shared reference to the lazy channel configuration.
+     *
+     * # Returns
+     *
+     * A new `LazySteadyRx<T>` instance.
+     */
     pub(crate) fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
         LazySteadyRx {
             lazy_channel,
         }
     }
 
-    /// Returns a clone of the SteadyRx which is the same one used going forward
+    /**
+     * Clones the receiver, initializing the channel on first call.
+     *
+     * Returns a cached `SteadyRx<T>` instance for subsequent calls.
+     *
+     * # Returns
+     *
+     * A `SteadyRx<T>` instance for receiving data.
+     */
     #[allow(clippy::should_implement_trait)]
     pub fn clone(&self) -> SteadyRx<T> {
         core_exec::block_on(self.lazy_channel.get_rx_clone())
     }
 
+    /**
+     * Takes all available items from the channel for testing.
+     *
+     * Blocks until all items are retrieved, returning them in a vector.
+     *
+     * # Returns
+     *
+     * A vector containing all available items from the channel.
+     */
     pub fn testing_take_all(&self) -> Vec<T> {
         core_exec::block_on(async {
             let rx = self.lazy_channel.get_rx_clone().await;
@@ -833,25 +1052,22 @@ impl <T> LazySteadyRx<T> {
             result
         })
     }
-
 }
 
-//////////////////////////////////////////////////
-/// Asserts that the number of available units in the receiver equals the expected value.
-///
-/// Logs an error and panics if the assertion fails, including the file and line number of the
-/// call site in both the log and panic message. This is useful for debugging in test scenarios.
-///
-/// # Arguments
-///
-/// * `self` - An expression evaluating to a reference to `LazySteadyRx<T>` (e.g., `&instance`).
-/// * `expected` - The expected number of available units (`usize`).
-///
-///
-/// # Panics
-///
-/// Panics with a message including the expected and measured values, file, and line if the
-/// available units do not equal the expected value.
+/**
+ * Asserts that the number of available units in the receiver equals the expected value.
+ *
+ * Logs an error and panics if the assertion fails, including file and line number for debugging.
+ *
+ * # Arguments
+ *
+ * - `$self`: Expression evaluating to a `LazySteadyRx<T>` reference (e.g., `&instance`).
+ * - `$expected`: Expected number of available units (`usize`).
+ *
+ * # Panics
+ *
+ * Panics if available units do not match the expected value, with detailed error information.
+ */
 #[macro_export]
 macro_rules! assert_steady_rx_eq_count {
     ($self:expr, $expected:expr) => {{
@@ -879,20 +1095,20 @@ macro_rules! assert_steady_rx_eq_count {
     }};
 }
 
-/// Asserts that the number of available units in the receiver is greater than the expected value.
-///
-/// Logs an error and panics if the assertion fails, including the file and line number of the
-/// call site in both the log and panic message. Useful for controlled testing of data availability.
-///
-/// # Arguments
-///
-/// * `self` - An expression evaluating to a reference to `LazySteadyRx<T>` (e.g., `&instance`).
-/// * `expected` - The value that the available units should exceed (`usize`).
-///
-/// # Panics
-///
-/// Panics with a message including the expected and measured values, file, and line if the
-/// available units are not greater than the expected value.
+/**
+ * Asserts that the number of available units in the receiver exceeds the expected value.
+ *
+ * Logs an error and panics if the assertion fails, including file and line number.
+ *
+ * # Arguments
+ *
+ * - `$self`: Expression evaluating to a `LazySteadyRx<T>` reference (e.g., `&instance`).
+ * - `$expected`: Value that available units should exceed (`usize`).
+ *
+ * # Panics
+ *
+ * Panics if available units are not greater than the expected value.
+ */
 #[macro_export]
 macro_rules! assert_steady_rx_gt_count {
     ($self:expr, $expected:expr) => {{
@@ -920,30 +1136,24 @@ macro_rules! assert_steady_rx_gt_count {
     }};
 }
 
-/// Asserts that values taken from the receiver match the expected sequence of values.
-///
-/// Panics if there are not enough values available or if any value does not match, including
-/// the file and line number of the call site in the panic message. Designed for testing data
-/// retrieval in a controlled manner.
-///
-/// # Arguments
-///
-/// * `self` - An expression evaluating to a reference to `LazySteadyRx<T>` (e.g., `&instance`).
-/// * `expected` - An expression yielding an iterable of expected values (e.g., `Vec<T>`).
-///
-/// # Type Constraints
-///
-/// * `T: PartialEq + Debug` - The type `T` must implement `PartialEq` for comparison and
-///   `Debug` for panic message formatting.
-///
-/// # Examples
-///
-///
-/// # Panics
-///
-/// Panics if no value is available when expected or if a taken value does not equal the
-/// corresponding expected value, with file and line included in the message.
-
+/**
+ * Asserts that values taken from the receiver match the expected sequence.
+ *
+ * Panics if there are insufficient values or mismatches, including file and line number.
+ *
+ * # Arguments
+ *
+ * - `$self`: Expression evaluating to a `LazySteadyRx<T>` reference (e.g., `&instance`).
+ * - `$expected`: Iterable of expected values (e.g., `Vec<T>`).
+ *
+ * # Type Constraints
+ *
+ * - `T: PartialEq + Debug`: Type must support equality comparison and debug formatting.
+ *
+ * # Panics
+ *
+ * Panics if values are unavailable or do not match expected values.
+ */
 #[macro_export]
 macro_rules! assert_steady_rx_eq_take {
     ($self:expr, $expected:expr) => {{
@@ -988,10 +1198,11 @@ macro_rules! assert_steady_rx_eq_take {
 //     (StreamEgress::new(bytes.len() as i32), bytes.to_vec().into_boxed_slice())
 // }
 
-
-
-//////////////////////////////////////////////////
-
+/**
+ * Structure managing lazy initialization of a channel.
+ *
+ * Holds the builder configuration and channel instance, initializing the channel on demand.
+ */
 #[derive(Debug)]
 pub(crate) struct LazyChannel<T> {
     builder: Mutex<Option<ChannelBuilder>>,
@@ -999,6 +1210,17 @@ pub(crate) struct LazyChannel<T> {
 }
 
 impl <T> LazyChannel<T> {
+    /**
+     * Creates a new `LazyChannel` instance.
+     *
+     * # Arguments
+     *
+     * - `builder`: Reference to the `ChannelBuilder` to configure the channel.
+     *
+     * # Returns
+     *
+     * A new `LazyChannel<T>` instance.
+     */
     pub(crate) fn new(builder: &ChannelBuilder) -> Self {
         LazyChannel {
             builder: Mutex::new(Some(builder.clone())),
@@ -1006,36 +1228,56 @@ impl <T> LazyChannel<T> {
         }
     }
 
+    /**
+     * Retrieves or initializes the transmitter, returning a clone.
+     *
+     * # Returns
+     *
+     * A `SteadyTx<T>` instance, initializing the channel if necessary.
+     *
+     * # Panics
+     *
+     * Panics with "internal error" if the builder is taken more than once or channel access fails.
+     */
     pub(crate) async fn get_tx_clone(&self) -> SteadyTx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
             let b = self.builder.lock().await.take()
-                            .expect("internal error, only done once");            
+                .expect("internal error, only done once");
             *channel = Some(b.eager_build());
         }
         channel.as_ref().expect("internal error").0.clone()
     }
 
+    /**
+     * Retrieves or initializes the receiver, returning a clone.
+     *
+     * # Returns
+     *
+     * A `SteadyRx<T>` instance, initializing the channel if necessary.
+     *
+     * # Panics
+     *
+     * Panics with "internal error" if the builder is taken more than once or channel access fails.
+     */
     pub(crate) async fn get_rx_clone(&self) -> SteadyRx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
             let b = self.builder.lock().await.take()
-                            .expect("internal error, only done once");
+                .expect("internal error, only done once");
             *channel = Some(b.eager_build());
         }
         channel.as_ref().expect("internal error").1.clone()
     }
 }
 
-
-
 impl Metric for Rate {}
 
-/// Represents a rate of occurrence over time.
-///
-/// The `Rate` struct is used to express a rate of events per unit of time.
-/// Internally, it is represented as a rational number with a numerator (units) and
-/// a denominator (time in milliseconds).
+/**
+ * Represents a rate of occurrence over time for telemetry triggers and metrics.
+ *
+ * Uses a rational number (numerator/denominator) for precision, avoiding floating-point arithmetic.
+ */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rate {
     // Internal representation as a rational number of the rate per ms
@@ -1045,162 +1287,54 @@ pub struct Rate {
 }
 
 impl Rate {
-    /// Creates a new `Rate` instance representing units per millisecond.
-    ///
-    /// # Arguments
-    ///
-    /// * `units` - The number of units occurring per millisecond.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Rate;
-    ///
-    /// let rate = Rate::per_millis(5);
-    /// assert_eq!(rate.rational_ms(), (5, 1));
-    /// ```
+    /** Creates a rate representing units per millisecond. */
     pub fn per_millis(units: u64) -> Self {
-        Self {
-            numerator: units,
-            denominator: 1,
-        }
+        Self { numerator: units, denominator: 1 }
     }
 
-    /// Creates a new `Rate` instance representing units per second.
-    ///
-    /// # Arguments
-    ///
-    /// * `units` - The number of units occurring per second.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Rate;
-    ///
-    /// let rate = Rate::per_seconds(5);
-    /// assert_eq!(rate.rational_ms(), (5000, 1));
-    /// ```
+    /** Creates a rate representing units per second. */
     pub fn per_seconds(units: u64) -> Self {
-        Self {
-            numerator: units * 1000,
-            denominator: 1,
-        }
+        Self { numerator: units * 1000, denominator: 1 }
     }
 
-    /// Creates a new `Rate` instance representing units per minute.
-    ///
-    /// # Arguments
-    ///
-    /// * `units` - The number of units occurring per minute.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Rate;
-    ///
-    /// let rate = Rate::per_minutes(5);
-    /// assert_eq!(rate.rational_ms(), (300000, 1));
-    /// ```
+    /** Creates a rate representing units per minute. */
     pub fn per_minutes(units: u64) -> Self {
-        Self {
-            numerator: units * 1000 * 60,
-            denominator:  1,
-        }
+        Self { numerator: units * 1000 * 60, denominator: 1 }
     }
 
-    /// Creates a new `Rate` instance representing units per hour.
-    ///
-    /// # Arguments
-    ///
-    /// * `units` - The number of units occurring per hour.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Rate;
-    ///
-    /// let rate = Rate::per_hours(5);
-    /// assert_eq!(rate.rational_ms(), (18000000, 1));
-    /// ```
+    /** Creates a rate representing units per hour. */
     pub fn per_hours(units: u64) -> Self {
-        Self {
-            numerator: units * 1000 * 60 * 60,
-            denominator:  1,
-        }
+        Self { numerator: units * 1000 * 60 * 60, denominator: 1 }
     }
 
-    /// Creates a new `Rate` instance representing units per day.
-    ///
-    /// # Arguments
-    ///
-    /// * `units` - The number of units occurring per day.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Rate;
-    ///
-    /// let rate = Rate::per_days(5);
-    /// assert_eq!(rate.rational_ms(), (432000000, 1));
-    /// ```
+    /** Creates a rate representing units per day. */
     pub fn per_days(units: u64) -> Self {
-        Self {
-            numerator: units * 1000 * 60 * 60 * 24,
-            denominator: 1,
-        }
+        Self { numerator: units * 1000 * 60 * 60 * 24, denominator: 1 }
     }
 
-    /// Returns the rate as a rational number (numerator, denominator) to represent the rate per ms.
-    /// This method ensures the rate can be used without performing division, preserving precision.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Rate;
-    ///
-    /// let rate = Rate::per_seconds(5);
-    /// assert_eq!(rate.rational_ms(), (5000, 1));
-    /// ```
+    /** Returns the rate as a rational number (numerator, denominator) per millisecond. */
     pub fn rational_ms(&self) -> (u64, u64) {
         (self.numerator, self.denominator)
     }
 }
 
-
 impl Metric for Filled {}
 
-/// Represents different types of fill levels for metrics alerts.
+/**
+ * Represents fill levels for channel capacity in telemetry triggers and metrics.
+ *
+ * Supports percentage-based or exact count representations for flexible monitoring.
+ */
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Filled {
-    /// Represents a percentage filled, as numerator and denominator.
+    /// Represents a fill level as a percentage, stored as a rational number (numerator, denominator).
     Percentage(u64, u64),
-    /// Represents an exact fill level.
+    /// Represents an exact fill level as a count of items.
     Exact(u64),
 }
 
 impl Filled {
-    /// Creates a new `Filled` instance representing a percentage filled.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A floating-point value representing the percentage.
-    ///
-    /// # Returns
-    ///
-    /// * `Some(Filled::Percentage)` if the percentage is within the valid range of 0.0 to 100.0.
-    /// * `None` if the percentage is outside the valid range.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::percentage(75.0);
-    /// assert_eq!(fill, Some(Filled::Percentage(75000, 100000)));
-    ///
-    /// let invalid_fill = Filled::percentage(150.0);
-    /// assert_eq!(invalid_fill, None);
-    /// ```
+    /** Creates a `Filled` instance from a percentage value (0.0 to 100.0), returning `None` if out of range. */
     pub fn percentage(value: f32) -> Option<Self> {
         if (0.0..=100.0).contains(&value) {
             Some(Self::Percentage((value * 1_000f32) as u64, 100_000u64))
@@ -1209,143 +1343,40 @@ impl Filled {
         }
     }
 
-    /// Creates a new `Filled` instance representing a 10% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p10();
-    /// assert_eq!(fill, Filled::Percentage(10, 100));
-    /// ```
-    pub fn p10() -> Self { Self::Percentage(10, 100) }
-
-    /// Creates a new `Filled` instance representing a 20% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p20();
-    /// assert_eq!(fill, Filled::Percentage(20, 100));
-    /// ```
-    pub fn p20() -> Self { Self::Percentage(20, 100) }
-
-    /// Creates a new `Filled` instance representing a 30% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p30();
-    /// assert_eq!(fill, Filled::Percentage(30, 100));
-    /// ```
-    pub fn p30() -> Self { Self::Percentage(30, 100) }
-
-    /// Creates a new `Filled` instance representing a 40% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p40();
-    /// assert_eq!(fill, Filled::Percentage(40, 100));
-    /// ```
-    pub fn p40() -> Self { Self::Percentage(40, 100) }
-
-    /// Creates a new `Filled` instance representing a 50% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p50();
-    /// assert_eq!(fill, Filled::Percentage(50, 100));
-    /// ```
-    pub fn p50() -> Self { Self::Percentage(50, 100) }
-
-    /// Creates a new `Filled` instance representing a 60% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p60();
-    /// assert_eq!(fill, Filled::Percentage(60, 100));
-    /// ```
-    pub fn p60() -> Self { Self::Percentage(60, 100) }
-
-    /// Creates a new `Filled` instance representing a 70% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p70();
-    /// assert_eq!(fill, Filled::Percentage(70, 100));
-    /// ```
-    pub fn p70() -> Self { Self::Percentage(70, 100) }
-
-    /// Creates a new `Filled` instance representing an 80% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p80();
-    /// assert_eq!(fill, Filled::Percentage(80, 100));
-    /// ```
-    pub fn p80() -> Self { Self::Percentage(80, 100) }
-
-    /// Creates a new `Filled` instance representing a 90% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p90();
-    /// assert_eq!(fill, Filled::Percentage(90, 100));
-    /// ```
-    pub fn p90() -> Self { Self::Percentage(90, 100) }
-
-    /// Creates a new `Filled` instance representing a 100% fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::p100();
-    /// assert_eq!(fill, Filled::Percentage(100, 100));
-    /// ```
-    pub fn p100() -> Self { Self::Percentage(100, 100) }
-
-    /// Creates a new `Filled` instance representing an exact fill level.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - An unsigned integer representing the exact fill level.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use steady_state::Filled;
-    ///
-    /// let fill = Filled::exact(42);
-    /// assert_eq!(fill, Filled::Exact(42));
-    /// ```
+    /** Creates a `Filled` instance representing an exact item count. */
     pub fn exact(value: u64) -> Self {
         Self::Exact(value)
     }
+
+    /** Returns a `Filled` instance for 10% capacity. */
+    pub fn p10() -> Self { Self::Percentage(10, 100) }
+
+    /** Returns a `Filled` instance for 20% capacity. */
+    pub fn p20() -> Self { Self::Percentage(20, 100) }
+
+    /** Returns a `Filled` instance for 30% capacity. */
+    pub fn p30() -> Self { Self::Percentage(30, 100) }
+
+    /** Returns a `Filled` instance for 40% capacity. */
+    pub fn p40() -> Self { Self::Percentage(40, 100) }
+
+    /** Returns a `Filled` instance for 50% capacity. */
+    pub fn p50() -> Self { Self::Percentage(50, 100) }
+
+    /** Returns a `Filled` instance for 60% capacity. */
+    pub fn p60() -> Self { Self::Percentage(60, 100) }
+
+    /** Returns a `Filled` instance for 70% capacity. */
+    pub fn p70() -> Self { Self::Percentage(70, 100) }
+
+    /** Returns a `Filled` instance for 80% capacity. */
+    pub fn p80() -> Self { Self::Percentage(80, 100) }
+
+    /** Returns a `Filled` instance for 90% capacity. */
+    pub fn p90() -> Self { Self::Percentage(90, 100) }
+
+    /** Returns a `Filled` instance for 100% capacity. */
+    pub fn p100() -> Self { Self::Percentage(100, 100) }
 }
 
 #[cfg(test)]
@@ -1451,11 +1482,10 @@ mod tests_inputs {
     }
 }
 
-
 #[cfg(test)]
 pub(crate) mod test_builder {
     use super::*;
-    
+
     use crate::actor_builder::Percentile;
 
     #[test]
@@ -1467,7 +1497,7 @@ pub(crate) mod test_builder {
         let builder = ChannelBuilder::new(channel_count.clone(), oneshot_shutdown_vec.clone(), frame_rate_ms);
 
         assert_eq!(builder.capacity, DEFAULT_CAPACITY);
-      //  assert_eq!(builder.labels, &[]);
+        //  assert_eq!(builder.labels, &[]);
         assert_eq!(builder.frame_rate_ms, frame_rate_ms);
     }
 

@@ -39,3 +39,5 @@ target/**/*
 tarpaulin-report.html
 
 /core/routing_service/aeron/aeron/
+/htmlReport/
+/coverage_html/

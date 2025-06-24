@@ -16,7 +16,7 @@ use std::thread::sleep;
 use crate::{steady_config, ActorIdentity, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{TxChannelMetaDataWrapper};
+use crate::distributed::aqueduct_stream::{TxChannelMetaDataWrapper};
 use crate::monitor::{ChannelMetaData};
 
 /// Represents a transmission channel for sending messages of type `T`.

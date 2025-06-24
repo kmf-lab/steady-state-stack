@@ -4,7 +4,7 @@ use crate::{new_state, LazyStreamRx, LazyStreamTx, ScheduleAs};
 use crate::actor_builder::ActorBuilder;
 use crate::distributed::aeron_channel_builder::AqueTech;
 use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
-use crate::distributed::distributed_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamIngress, StreamEgress};
+use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamIngress, StreamEgress};
 
 /// Trait defining a builder pattern for integrating distributed connectivity into an actor graph.
 ///

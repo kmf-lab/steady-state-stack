@@ -27,10 +27,10 @@ use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
-use crate::steady_actor::SendOutcome;
+use crate::steady_actor::{SendOutcome};
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
-use crate::distributed::distributed_stream::{Defrag, StreamControlItem};
+use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::simulate_edge::IntoSimRunner;
@@ -85,8 +85,7 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) frame_rate_ms: u64,
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     pub(crate) is_running_iteration_count: u64,
-    pub(crate) show_thread_info: bool,
-    pub(crate) team_id: usize,
+    pub(crate) _team_id: usize,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// If true, the monitor uses its internal simulation behavior for events.
     pub use_internal_behavior: bool,
@@ -537,19 +536,22 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
         let last = self.last_periodic_wait.load(Ordering::SeqCst);
         let remaining_duration = if last <= now_nanos {
-            duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
-        } else {
-            duration_rate
-        };
-        let waiter = Delay::new(remaining_duration);
+                    duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
+                } else {
+                    duration_rate
+                };
+
         let _guard = self.start_profile(CALL_WAIT);
         let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
-        let result = select! {
-            _ = &mut one_down.deref_mut() => false,
-            _ = waiter.fuse() => true,
-        };
-        self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::SeqCst);
-        result
+
+            let delay = Delay::new(remaining_duration);
+            let result = select! {
+                    _= &mut one_down.deref_mut() => false,
+                    _= &mut delay.fuse() => true
+                 };
+            self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
+            result
+       
     }
 
     async fn wait(&self, duration: Duration) {
