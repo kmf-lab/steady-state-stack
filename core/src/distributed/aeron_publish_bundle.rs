@@ -198,21 +198,19 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         }
     }
 
-    error!("running publish '{:?}' all publications in place", actor.identity());
+    info!("running: '{:?}' all publications in place", actor.identity().label);
 
     // Threshold for waiting on messages; set to 1/16th of capacity to balance latency and throughput.
     let wait_for = rx.capacity() / 16;
     let in_channels = 1;
 
-    let mut all_streams_flushed = false;
-    while actor.is_running(&mut || rx.is_closed_and_empty() && all_streams_flushed) {
+    while actor.is_running(&mut || i!(rx.is_closed_and_empty())  ) {
         // Wait for either a periodic tick or available messages, optimizing CPU usage.
         let _clean = await_for_any!(
             actor.wait_periodic(Duration::from_millis(500)),
             actor.wait_avail_bundle(&mut rx, wait_for, in_channels)
         );
 
-        let mut flushed_count = 0;
         for index in 0..GIRTH {
             match &mut pubs[index] {
                 Ok(p) => {
@@ -272,15 +270,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
                         avail_messages = rx[index].avail_units();
                     }
 
-                    // Check if the stream is fully flushed for shutdown.
-                    if let Ok(position) = p.position() {
-                        if rx[index].is_closed_and_empty() && position >= last_position[index] && !p.is_connected() {
-                            flushed_count += 1;
-                        }
-                    } else {
-                        error!("error getting position");
-                        flushed_count += 1;
-                    }
+
                 }
                 Err(e) => {
                     trace!("{}", e);
@@ -288,7 +278,6 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
                 }
             }
         }
-        all_streams_flushed = GIRTH == flushed_count;
     }
 
     // Ensure all messages are delivered before closing publications.

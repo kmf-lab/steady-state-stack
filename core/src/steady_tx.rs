@@ -324,6 +324,9 @@ pub trait TxBundleTrait {
     /// # Returns
     /// A `bool` returning `true` to indicate the request was processed successfully.
     fn mark_closed(&mut self) -> bool;
+    
+/// Returns true if all channels have been fully consumed
+    fn is_all_empty(&mut self) -> bool;
 }
 
 impl<T> TxBundleTrait for TxBundle<'_, T> {
@@ -334,6 +337,11 @@ impl<T> TxBundleTrait for TxBundle<'_, T> {
         // Ensures all channels are closed, never stopping early.
         self.iter_mut().for_each(|f| { let _ = f.mark_closed(); });
         true // Always returns true, as the close request is never rejected by this method.
+    }
+
+    fn is_all_empty(&mut self) -> bool {
+        // Ensures all channels are empty and fully consumed
+        self.iter().all(|f| f.is_empty())
     }
 }
 

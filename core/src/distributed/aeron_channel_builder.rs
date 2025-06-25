@@ -168,6 +168,10 @@ impl AeronConfig {
     pub fn with_media_type(&self, media_type: MediaType) -> Self {
         let mut clone = self.clone();
         clone.media_type = Some(media_type);
+        if media_type == MediaType::Ipc {
+            //auto set the mode since we have no othe choice when using Ipc
+            clone.mode = AeronMode::Ipc;
+        }
         clone
     }
 

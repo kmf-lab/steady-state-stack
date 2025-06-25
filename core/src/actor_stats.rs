@@ -181,7 +181,7 @@ impl ActorStatsComputer {
             let labels = ComputeLabelsLabels {
                 label: "load",
                 unit: "%",
-                prometheus_labels: &self.prometheus_labels,
+                _prometheus_labels: &self.prometheus_labels,
                 int_only: true,
                 fixed_digits: 0
             };
@@ -193,7 +193,7 @@ impl ActorStatsComputer {
             let labels = ComputeLabelsLabels {
                 label: "mCPU",
                 unit: "",
-                prometheus_labels: &self.prometheus_labels,
+                _prometheus_labels: &self.prometheus_labels,
                 int_only: true,
                 fixed_digits: 4
             };

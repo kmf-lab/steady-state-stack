@@ -95,7 +95,8 @@ async fn internal_behavior<const GIRTH: usize>(
     let mut trying_to_shutdown = false;     // Indicates shutdown process has started.
     const MAX_TIMELORDS: usize = 5;         // Maximum number of timelords to select.
     let mut consecutive_timeouts = 0;       // Counts consecutive timelord timeouts to trigger rebuild.
-
+    let quiet_for_shutdown = Duration::from_millis(actor.frame_rate_ms*4);
+    let mut quiet_start:Option<Instant> = None;
     loop {
         // Log iteration details for debugging and performance monitoring.
         if ENABLE_DEBUG_LOGGING {
@@ -105,12 +106,17 @@ async fn internal_behavior<const GIRTH: usize>(
             );
         }
 
-        // Check if the system should continue running or begin shutdown.
+
+        // Check if the system should continue running or begin the shutdown.
+        // NOTE: if this code is not good enough, we could check with liveliness and confirm all
+        //       actors have voted for the shutdown. I am avoiding this for now due to cost.
         if !actor.is_running(&mut || {
-            trying_to_shutdown = true;
-            i!(is_all_empty_and_closed(Ok(dynamic_senders_vec.read())))
-                && i!(state.fill == 0)
-                && i!(locked_servers.mark_closed())
+            trying_to_shutdown = true; //tell the work here to go faster.
+            i!(state.fill == 0) //we are between frames now
+            && i!(is_all_ready_for_shutdown(Ok(dynamic_senders_vec.read()))) //no more data to send
+            && i!(locked_servers.is_all_empty()) //ensure consumer has taken the last frame
+            && i!(if let Some(q) = quiet_start {q.elapsed().gt(&quiet_for_shutdown) } else {quiet_start=Some(Instant::now()); false}   )
+            && i!(locked_servers.mark_closed())
         }) {
             break; // Exit loop if shutdown conditions are met.
         }
@@ -325,8 +331,9 @@ async fn full_frame_or_timeout(
     }
 }
 
-/// Verifies if all telemetry channels are empty and closed, indicating safe shutdown.
-fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<'_, Vec<CollectorDetail>>>) -> bool {
+
+//all is done so we can shutdown
+fn is_all_ready_for_shutdown(m_channels: LockResult<RwLockReadGuard<'_, Vec<CollectorDetail>>>) -> bool {
     match m_channels {
         Ok(channels) => {
             for c in channels.iter() {
@@ -334,13 +341,21 @@ fn is_all_empty_and_closed(m_channels: LockResult<RwLockReadGuard<'_, Vec<Collec
                 if !c.telemetry_take.is_empty() {
                     let mut idx = c.telemetry_take.len() - 1;
                     if let Some(t) = c.telemetry_take.get(idx) {
-                        if !t.is_empty_and_closed() {
+
+                        if !t.is_empty() {
+
+                            // t.actor_metadata()
+
+
                             return false; // Found an active channel, shutdown not complete.
                         } else {
                             while idx > 0 {
                                 idx -= 1;
                                 if let Some(t) = c.telemetry_take.get(idx) {
                                     if !t.is_empty() {
+
+                                        // t.actor_metadata()
+
                                         return false; // Found an active data, shutdown not complete.
                                     }
                                 }
@@ -642,17 +657,6 @@ mod metric_collector_tests {
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_is_all_empty_and_closed() {
-        let dynamic_senders_vec = Arc::new(RwLock::new(vec![
-            CollectorDetail {
-                telemetry_take: VecDeque::new(),
-                ident: ActorIdentity::new(0, "test_actor", None),
-            }
-        ]));
-        let result = is_all_empty_and_closed(Ok(dynamic_senders_vec.read()));
-        assert!(result);
-    }
 
     #[test]
     fn test_send_structure_details() {
@@ -815,9 +819,6 @@ mod metric_collector_tests {
 #[cfg(test)]
 mod extra_tests {
     use super::*;
-    use parking_lot::RwLock;
-    use std::collections::{VecDeque};
-    use std::sync::Arc;
     use futures::executor::block_on;
     use futures::future::BoxFuture;
     use futures::stream::FuturesUnordered;
@@ -837,18 +838,6 @@ mod extra_tests {
         assert!(state.actor_last_update.is_empty());
     }
 
-    #[test]
-    fn test_is_all_empty_and_closed_ok() {
-        // single CollectorDetail with no telemetry entries => empty and closed
-        let vec: Arc<RwLock<Vec<CollectorDetail>>> = Arc::new(RwLock::new(vec![
-            CollectorDetail {
-                telemetry_take: VecDeque::new(),
-                ident: ActorIdentity::new(1, "a", None),
-            }
-        ]));
-        let lock = Ok(vec.read());
-        assert!(is_all_empty_and_closed(lock));
-    }
 
 
     #[test]

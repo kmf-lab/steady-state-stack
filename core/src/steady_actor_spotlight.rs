@@ -752,8 +752,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
 
         loop {
-         //TODO: pehaps.   self.runtime_state.try_read();
-
             let runnning = self.runtime_state.read().is_running(self.ident, &mut accept_fn);
             if let Some(result) = runnning {
                 if !result || self.is_running_iteration_count.is_zero() {

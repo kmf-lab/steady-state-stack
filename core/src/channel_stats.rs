@@ -667,7 +667,7 @@ impl ChannelStatsComputer {
         let labels = ComputeLabelsLabels {
             label: "rate",
             unit: "per/sec",
-            prometheus_labels: &self.prometheus_labels,
+            _prometheus_labels: &self.prometheus_labels,
             int_only: false,
             fixed_digits: 0
 
@@ -684,7 +684,7 @@ impl ChannelStatsComputer {
         let labels = ComputeLabelsLabels {
             label: "filled",
             unit: "%",
-            prometheus_labels: &self.prometheus_labels,
+            _prometheus_labels: &self.prometheus_labels,
             int_only: false,
             fixed_digits: 0
 
@@ -697,7 +697,7 @@ impl ChannelStatsComputer {
         let labels = ComputeLabelsLabels {
             label: "latency",
             unit: "ms",
-            prometheus_labels: &self.prometheus_labels,
+            _prometheus_labels: &self.prometheus_labels,
             int_only: false,
             fixed_digits: 0
 
@@ -933,7 +933,7 @@ pub(crate) struct ComputeLabelsLabels<'a> {
 
     pub(crate) label: &'a str,
     pub(crate) unit: &'a str,
-    pub(crate) prometheus_labels: &'a str,
+    pub(crate) _prometheus_labels: &'a str, //TODO: work in progress.
     pub(crate) int_only: bool,
     pub(crate) fixed_digits: usize
 }
@@ -955,7 +955,7 @@ pub(crate) fn compute_labels<T: Counter>(
     labels: ComputeLabelsLabels,
     std_dev: &[StdDev],
     percentile: &[Percentile],
-    metric_target: &mut String,
+    _metric_target: &mut String, //TODO: work in progress.
     label_target: &mut String,
 ) {
     if config.show_avg {
@@ -966,11 +966,11 @@ pub(crate) fn compute_labels<T: Counter>(
         // Prefix the metric for Prometheus
         #[cfg(feature = "prometheus_metrics")]
         {
-            metric_target.push_str("avg_");
-            metric_target.push_str(labels.label);
-            metric_target.push('{');
-            metric_target.push_str(labels.prometheus_labels);
-            metric_target.push('}');
+            _metric_target.push_str("avg_");
+            _metric_target.push_str(labels.label);
+            _metric_target.push('{');
+            _metric_target.push_str(labels._prometheus_labels);
+            _metric_target.push('}');
         }
 
         // Compute the average value components
@@ -994,9 +994,9 @@ pub(crate) fn compute_labels<T: Counter>(
             // Output raw integer value for metrics
             #[cfg(feature = "prometheus_metrics")]
             {
-                metric_target.push(' ');
-                metric_target.push_str(int_str);
-                metric_target.push('\n');
+                _metric_target.push(' ');
+                _metric_target.push_str(int_str);
+                _metric_target.push('\n');
             }
         } else {
             label_target.push_str(": ");
@@ -1016,9 +1016,9 @@ pub(crate) fn compute_labels<T: Counter>(
                 // Output raw integer value for metrics
                 #[cfg(feature = "prometheus_metrics")]
                 {
-                    metric_target.push(' ');
-                    metric_target.push_str(t);
-                    metric_target.push('\n');
+                    _metric_target.push(' ');
+                    _metric_target.push_str(t);
+                    _metric_target.push('\n');
                 }
             } else {
                 // Format float with 3 decimal places
@@ -1049,9 +1049,9 @@ pub(crate) fn compute_labels<T: Counter>(
                 // Output raw float value for metrics
                 #[cfg(feature = "prometheus_metrics")]
                 {
-                    metric_target.push(' ');
-                    metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
-                    metric_target.push('\n');
+                    _metric_target.push(' ');
+                    _metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
+                    _metric_target.push('\n');
                 }
             }
         }
@@ -1088,15 +1088,15 @@ pub(crate) fn compute_labels<T: Counter>(
 
         #[cfg(feature = "prometheus_metrics")]
         {
-            metric_target.push_str("std_");
-            metric_target.push_str(labels.label);
-            metric_target.push('{');
-            metric_target.push_str(labels.prometheus_labels);
-            metric_target.push_str(", n=");
-            metric_target.push_str(&n_units);
-            metric_target.push_str("} ");
-            metric_target.push_str(value);
-            metric_target.push('\n');
+            _metric_target.push_str("std_");
+            _metric_target.push_str(labels.label);
+            _metric_target.push('{');
+            _metric_target.push_str(labels._prometheus_labels);
+            _metric_target.push_str(", n=");
+            _metric_target.push_str(&n_units);
+            _metric_target.push_str("} ");
+            _metric_target.push_str(value);
+            _metric_target.push('\n');
         }
     });
 
@@ -1114,15 +1114,15 @@ pub(crate) fn compute_labels<T: Counter>(
 
             #[cfg(feature = "prometheus_metrics")]
             {
-                metric_target.push_str("percentile_");
-                metric_target.push_str(labels.label);
-                metric_target.push('{');
-                metric_target.push_str(labels.prometheus_labels);
-                metric_target.push_str(", p=");
-                metric_target.push_str(itoa::Buffer::new().format((100.0f64 * p.percentile()) as usize));
-                metric_target.push_str("} ");
-                metric_target.push_str(itoa::Buffer::new().format(value));
-                metric_target.push('\n');
+                _metric_target.push_str("percentile_");
+                _metric_target.push_str(labels.label);
+                _metric_target.push('{');
+                _metric_target.push_str(labels._prometheus_labels);
+                _metric_target.push_str(", p=");
+                _metric_target.push_str(itoa::Buffer::new().format((100.0f64 * p.percentile()) as usize));
+                _metric_target.push_str("} ");
+                _metric_target.push_str(itoa::Buffer::new().format(value));
+                _metric_target.push('\n');
             }
         } else {
             label_target.push_str("InternalError");

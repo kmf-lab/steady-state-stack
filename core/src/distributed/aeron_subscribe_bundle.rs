@@ -23,7 +23,7 @@ use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
 use aeron::subscription::Subscription;
-use log::{error, trace, warn};
+use log::*;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::aqueduct_stream::{SteadyStreamTxBundle, StreamIngress};
 use crate::{SteadyActor, SteadyState, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait};
@@ -47,7 +47,7 @@ pub struct AeronSubscribeSteadyState {
 ///
 /// Used as a fallback or fixed interval for scheduling polls. Currently set to 50 microseconds
 /// as a temporary testing value; may require tuning for production use.
-const ROUND_ROBIN: Option<Duration> = Some(Duration::from_micros(50));
+const ROUND_ROBIN: Option<Duration> = Some(Duration::from_micros(20)); //TODO: work in progress
 
 /// Entry point for running an Aeron subscriber actor.
 ///
@@ -120,7 +120,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
     actor: &mut C,
     now: Instant,
 ) -> Duration {
-    let mut count_down = 1; // Limits polling iterations to prevent infinite loops.
+    let mut count_down = 4; // Limits polling iterations to prevent infinite loops.
     loop {
         let mut input_bytes: u32 = 0;
         let mut input_frags: u32 = 0;
@@ -238,8 +238,11 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
     while state.sub_reg_id.len() < GIRTH {
         state.sub_reg_id.push(None);
     }
-
+    info!("waiting on media driver");
     let aeron = actor.aeron_media_driver().expect("media driver available");
+    info!("register subscriptions A");
+    let mut lock = aeron.lock().await;
+    info!("register subscriptions B");
 
     // Register subscriptions if not already present.
     for f in 0..GIRTH {
@@ -247,7 +250,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
             let connection_string = aeron_channel.cstring();
             let stream_id = f as i32 + stream_id;
 
-            match aeron.lock().await.add_subscription(connection_string, stream_id) {
+            match lock.add_subscription(connection_string, stream_id) {
                 Ok(reg_id) => {
                     trace!("got this id {} for channel idx {}", reg_id, f);
                     state.sub_reg_id[f] = Some(reg_id);
@@ -258,14 +261,17 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
             };
         }
     }
+    drop(lock);
 
     // Wait for all subscriptions to be found and connected.
+    actor.wait(Duration::from_millis(13)).await;
+    info!("confirm subscriptions");
     let mut tx_guards = tx_bundle.lock().await;
     for f in 0..GIRTH {
         if let Some(id) = state.sub_reg_id[f] {
             let mut found = false;
             while actor.is_running(&mut || tx_guards.mark_closed()) && !found {
-                error!("looking for subscription {}", id);
+                trace!("looking for subscription {}", id);
                 let sub = { aeron.lock().await.find_subscription(id) };
                 match sub {
                     Err(e) => {
@@ -274,12 +280,14 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
                             subs[f] = Err("Shutdown requested while waiting".into());
                             found = true;
                         }
-                        error!("error {:?} while looking for subscription {}", e, id);
+                        if !e.to_string().contains("NotReady") {
+                            error!("error {:?} while looking for subscription {}", e, id);
+                        }
                         actor.wait(Duration::from_millis(13)).await;
                         actor.relay_stats();
                     }
                     Ok(subscription) => {
-                        error!("found subscription {}", id);
+                        trace!("found subscription {}", id);
                         match Arc::try_unwrap(subscription) {
                             Ok(mutex) => match mutex.into_inner() {
                                 Ok(subscription) => {
@@ -298,7 +306,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         }
     }
 
-    error!("running subscriber '{:?}' all subscriptions in place", actor.identity());
+    info!("running: '{:?}' all subscriptions in place", actor.identity().label);
     let mut assume_connected = [false; GIRTH];
 
     // Log initial connection status for all subscriptions.
@@ -307,7 +315,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
             Ok(subscription) => {
                 let ref_images = subscription.images();
                 assume_connected[i] = subscription.is_connected();
-                warn!(
+                trace!(
                     "{:?} connected: {:?} status: {:?} images: {:?}",
                     i, assume_connected[i], subscription.channel_status(), ref_images.len()
                 );
@@ -351,13 +359,16 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         // Poll the subscription and schedule the next poll.
         {
             let tx_stream = &mut tx_guards[earliest_idx];
-            // Periodically recheck connection status (every 2^14 iterations, or 2^15 if not connected).
-            if iteration & ((1 << 14) - 1) == 0 {
+            // Periodically recheck connection status
+            if iteration & ((1 << 16) - 1) == 0 {
                 for i in 0..GIRTH {
                     match &mut subs[i] {
                         Ok(subscription) => {
-                            if !assume_connected[i] || iteration & ((1 << 15) - 1) == 0 {
-                                warn!("rechecking connection for subscription {}", i);
+                            let do_periodic_check = iteration & ((1 << 18) - 1) == 0;
+                            if !assume_connected[i] || do_periodic_check  {
+                                if !assume_connected[i] {
+                                    warn!("not connected, rechecking for subscription {}", i);
+                                }
                                 assume_connected[i] = subscription.is_connected();
                             }
                         }
@@ -388,5 +399,6 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         }
         iteration += 1;
     }
+    info!("Subscribe shutting down.");
     Ok(())
 }
