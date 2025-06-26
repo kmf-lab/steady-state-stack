@@ -267,7 +267,8 @@ impl<T> TxCore for Tx<T> {
     /// Returns the number of messages successfully sent.
     fn shared_send_iter_until_full<'a, I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
         if self.make_closed.is_none() {
-            error!("Send called after channel marked closed");
+            #[cfg(not(test))]
+            trace!("Send called after channel marked closed"); //does happen in unit tests
         }
         self.tx.push_iter(iter)
     }
@@ -1485,11 +1486,7 @@ mod core_tx_rx_tests {
         assert!(rxg.is_showstopper(2));
         assert!(!rxg.is_showstopper(5));
     }
-}
 
-#[cfg(test)]
-mod extended_coverage {
-    use super::*;
     use futures::executor::block_on;
     use futures_util::lock::Mutex;
     use crate::TxCore;

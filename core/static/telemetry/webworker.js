@@ -1,6 +1,6 @@
 /*global Viz: false */
 
-this.importScripts('https://unpkg.com/viz.js@1.8.2/viz-lite.js');
+this.importScripts('viz-lite.js');
 
 this.onmessage = async (message) => {
   const dotUrl = message.data;
