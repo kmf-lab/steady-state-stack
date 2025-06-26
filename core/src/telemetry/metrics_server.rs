@@ -641,12 +641,12 @@ mod meteric_server_tests {
 #[cfg(not(windows))]
 #[cfg(test)]
 mod http_telemetry_tests {
+    use std::io::Read;
     use std::thread::sleep;
     use super::*;
     use crate::GraphBuilder;
     use std::time::Duration;
     
-    use isahc::ReadResponseExt;
     use crate::monitor::ActorStatus;
 
     #[test]
@@ -807,18 +807,20 @@ mod http_telemetry_tests {
 
     fn validate_path(addr: &&String, expected_text: Option<&str>, path: &str) {
         match isahc::get(format!("http://{}/{}", &addr, &path)) {
-            Ok(mut response) => {
-                assert_eq!(response.status(), 200);//, "got status {} from {}", response.status(),format!("http://{}/{}", &addr, &path));
+            Ok(response) => {
+                assert_eq!(response.status(), 200);
+
+                let mut body = response.into_body();
 
                 // Read and validate the response body
-                let body = response.text().expect("Failed to read response body");
-                //println!("Content:\n{}", body);
+                let mut text = String::new();
+                let _ = body.read_to_string(&mut text);
 
                 if let Some(expected_text) = expected_text {
                     assert!(
-                        body.contains(expected_text),
+                        text.contains(expected_text),
                         "not found {} in {}", expected_text,
-                        body
+                        text
                     );
                 }
             },
