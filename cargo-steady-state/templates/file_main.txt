@@ -6,8 +6,8 @@ use std::time::Duration;
 use steady_state::*;
 
 mod actor {
-    {% for mod in actor_mods %}
-        pub mod {{mod}};{% endfor %}
+    {% for mody in actor_mods %}
+        pub mod {{mody}};{% endfor %}
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
