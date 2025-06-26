@@ -594,20 +594,22 @@ where
 #[cfg(not(windows))]
 #[cfg(test)]
 mod meteric_server_tests {
-    use std::sync::Arc;
-    use std::thread::{sleep};
-    use std::time::Duration;
-    
-    use crate::{ActorIdentity, GraphBuilder, SoloAct};
-    use crate::monitor::ActorMetaData;
-    use crate::telemetry::metrics_collector::DiagramData;
-    use crate::telemetry::metrics_server::internal_behavior;
+
+
 
     #[test]
     #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
     fn test_simple() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::{ActorIdentity, GraphBuilder, SoloAct};
+        use std::sync::Arc;
+        use std::thread::{sleep};
+        use std::time::Duration;
+        use crate::monitor::ActorMetaData;
+        use crate::telemetry::metrics_collector::DiagramData;
+        use crate::telemetry::metrics_server::internal_behavior;
+
         let mut graph = GraphBuilder::for_testing().build(());
-         
+
         let (tx_in, rx_in) = graph.channel_builder()
              .with_capacity(10).build_channel();
 

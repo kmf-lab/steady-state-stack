@@ -630,6 +630,7 @@ mod metric_collector_tests {
     use parking_lot::RwLock;
     use std::collections::VecDeque;
     use futures::executor::block_on;
+    use crate::SoloAct;
 
     #[test]
     fn test_raw_diagram_state_default() {
