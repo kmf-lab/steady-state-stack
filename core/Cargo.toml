@@ -177,58 +177,29 @@ winapi = { version = "0.3", optional = true, features = ["winbase", "processthre
 #          Added aeron power script for windows
 #          Added new Test Enums and Macros to simplify actors
 #
-# TODO: write out timeline here.
-#
+# 0.2.0 - 06/25/25
+#          Distributed actors via aqueducts
+#          Aeron for routing_service
+#          Streams - double buffered and zero copy
+#          Better method names
+#          Tutorial Lessons
+#          DLQ showstopper detection
+#          Testing framework for single actors
+#          Testing framework for entire application graph
 
-#   We are here doing more work on 0.1.4
-#            dot files remote ips?? full graph testing macros??
-#
-# 0.2.0 - distributed features ready for use (ETA 06/04/25)
-#         Aeron
-#         History Replay
-#         Label Filtering and await 'on what?' tracking
-#         90% function test coverage
-#         Perhaps - ZeroMQ, LibP2P
-# 1.0.0 - two year aniversary (ETA 12/04/25)
-#         Optimized thread scheduling (8,000K actors+)
-#         IOUring
-#         Web services
-
-#  Roadmap for distributed actors (core of the 2.0 release)
-# 1. Core: Aeron       https://crates.io/crates/aeron
-# 2. Bridge: MQTT (AWS IoT Core) for AWS Lambda integration
-# 3. Core: ZeroMQ      https://crates.io/crates/zmq
-# 4. ROS2
-# 5. Core: LibP2P      https://crates.io/crates/libp2p
-# 6. Bridge: Kafka
-# 7. WebRTC
+#  Future Roadmap
+#          Add MQTT for routing_service
+#          Add NATS for routing_service
+#          Add ROS2 for routing_service
+#          New module for http 1,2 and 3
+#          History/Log recording for relplay and review
+#          Optimizing Thread Scheduler
+#          IOUring
+#          bps on telemetry
 
 
 
 
-
-# TODO: a procedural macro will be used to compile our IDL
-# TODO: ROS2 (DDS) feature
-# datachannel      = { version="0.13.1", optional=true}
-# r2r              = { version="0.9.2", optional=true}   # cargo install rosidl_generator_rs
-# cyclonedds
-# ros2-client
-
-
-
-#   Specialized Builder for remote actors ZQM, WebRTC, ROS2 etc.
-# TODO: ZeroMQ feature
-#zmq = { version = "0.10", optional = true }
-#czmq =
- # flatbuffers  or  MessagePack serde (simple case)
-# for WebRTC
-#dachannel = { version = "0.2.1", optional = true }
-#webrtc = ""
-#webrtc-unreliable = ""
-# TODO: at some point Kafka and later MQTT would be great to add actors.
-# kafka= { version = "0.10.0", optional = true }
-# LibP2P ???
-# rust-libp2p
 
 [dependencies.libc]
 version = "0.2.161"

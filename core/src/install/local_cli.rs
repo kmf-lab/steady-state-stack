@@ -162,9 +162,13 @@ impl LocalCLIBuilder {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use super::*;
+    #[cfg(unix)]
     use std::fs;
+    #[cfg(unix)]
     use std::path::PathBuf;
+    #[cfg(unix)]
     use tempfile::tempdir;
 
     #[test]

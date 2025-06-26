@@ -629,9 +629,7 @@ mod metric_collector_tests {
     use std::sync::Arc;
     use parking_lot::RwLock;
     use std::collections::VecDeque;
-    use std::thread::sleep;
     use futures::executor::block_on;
-    use crate::{GraphBuilder, SoloAct};
 
     #[test]
     fn test_raw_diagram_state_default() {
@@ -693,8 +691,9 @@ mod metric_collector_tests {
     #[test]
     fn test_actor() -> Result<(), Box<dyn std::error::Error>> {
         use std::sync::atomic::Ordering;
-        
+        use crate::{GraphBuilder};
         use std::sync::atomic::AtomicUsize;
+        use std::thread::sleep;
 
         //only run this locally where we can open the default port
         if std::env::var("GITHUB_ACTIONS").is_err() {
