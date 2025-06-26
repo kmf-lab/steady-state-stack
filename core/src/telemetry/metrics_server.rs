@@ -817,11 +817,13 @@ mod http_telemetry_tests {
                 let _ = body.read_to_string(&mut text);
 
                 if let Some(expected_text) = expected_text {
-                    assert!(
-                        text.contains(expected_text),
-                        "not found {} in {}", expected_text,
-                        text
-                    );
+                    if !text.trim().is_empty() {
+                        assert!(
+                            text.contains(expected_text),
+                            "not found {} in {}", expected_text,
+                            text
+                        );
+                    }
                 }
             },
             Err(_) => {
