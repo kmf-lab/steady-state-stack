@@ -11,9 +11,9 @@ Steady State nails concurrency, state management, and uptime—so you can innova
 
 Steady State isn’t just a framework—it’s your edge. Here’s what it delivers:
 
-- **Ready to Roll**: Telemetry, prometheus, logging, distributed comms—built-in, no setup.
+- **Ready to Roll**: Telemetry, prometheus, logging, distributed comms built-in.
 - **Lightning Fast**: Zero-copy processing and big buffers for top speed.
-- **Unbreakable**: Auto-recovery, reliable actor state, safe concurrency—your app stays alive.
+- **Unbreakable**: Auto-recovery, reliable actor state, safe concurrency. Your app stays alive.
 - **Live Insights**: Real-time metrics to keep you in the loop.
 - **Pinpoint Timing**: Microsecond precision for workflows that can’t wait.
 
@@ -39,7 +39,7 @@ Time matters, and Steady State delivers:
 
 ## Why You’ll Love It
 
-- **Easy Concurrency**: Multi-core power with isolated actors—no headaches.
+- **Easy Concurrency**: Multi-core power with isolated actors, easy maintenance.
 - **Smooth Shutdowns**: Graceful exits, clean orderly shutdowns for data safe.
 - **Instant Monitoring**: Prometheus-ready metrics, no fuss.
 - **Pro Testing**: Testing tools to ensure it all works.
