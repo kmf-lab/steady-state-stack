@@ -81,20 +81,54 @@ fn main() {
         let index_content = IndexTemplate { script_source: source }
             .render()
             .expect("Failed to render index.html template");
-        fs::write(folder_base.join("index.html"), index_content)
-            .expect("Failed to write index.html");
-        // Always encode index.html since it’s freshly generated
-        gzip_encode(&base_target_path, "static/telemetry/index.html", false);
 
+
+        let index_path = folder_base.join("index.html");
+
+        // Check if we need to write the file
+        let should_write = if Path::new(&index_path).exists() {
+            match fs::read_to_string(&index_path) {
+                Ok(existing_content) => existing_content != index_content,
+                Err(_) => true, // If reading fails, assume it's different
+            }
+        } else {
+            true // File doesn't exist, so need to write
+        };
+
+        // Only write and gzip if necessary
+        if should_write {
+            fs::write(&index_path, &index_content)
+                .expect("Failed to write index.html");
+            // Encode webworker.js since it’s freshly generated or updated
+            gzip_encode(&base_target_path, "static/telemetry/index.html", false);
+        }       
+        
+        
         // Generate and write webworker.js from the template
         let webworker_content = WebWorkerTemplate { script_source: source }
             .render()
             .expect("Failed to render webworker.js template");
-        fs::write(folder_base.join("webworker.js"), webworker_content)
-            .expect("Failed to write webworker.js");
-        // Always encode webworker.js since it’s freshly generated
-        gzip_encode(&base_target_path, "static/telemetry/webworker.js", false);
+        let webworker_path = folder_base.join("webworker.js");
 
+        // Check if we need to write the file
+        let should_write = if Path::new(&webworker_path).exists() {
+            match fs::read_to_string(&webworker_path) {
+                Ok(existing_content) => existing_content != webworker_content,
+                Err(_) => true, // If reading fails, assume it's different
+            }
+        } else {
+            true // File doesn't exist, so need to write
+        };
+
+        // Only write and gzip if necessary
+        if should_write {
+            fs::write(&webworker_path, &webworker_content)
+                .expect("Failed to write webworker.js");
+            // Encode webworker.js since it’s freshly generated or updated
+            gzip_encode(&base_target_path, "static/telemetry/webworker.js", false);
+        }
+
+        
         // Encode static files, skipping if their gzipped versions already exist
         gzip_encode(&base_target_path, "static/telemetry/dot-viewer.js", true);
         gzip_encode(&base_target_path, "static/telemetry/dot-viewer.css", true);
