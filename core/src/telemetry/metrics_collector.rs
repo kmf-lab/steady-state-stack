@@ -120,10 +120,11 @@ async fn internal_behavior<const GIRTH: usize>(
         }) {
             break; // Exit loop if shutdown conditions are met.
         }
-        let instance_id = actor.instance_id; // Current instance ID for filtering telemetry.
 
         // Rebuild the actor scan list if it's empty or a rebuild is requested due to changes or timeouts.
         if all_actors_to_scan.is_none() || rebuild_scan_requested {
+            let instance_id = actor.instance_id; // Current instance ID for filtering telemetry.
+
             all_actors_to_scan = gather_valid_actor_telemetry_to_scan(instance_id, &dynamic_senders_vec);
             if ENABLE_DEBUG_LOGGING {
                 if let Some(ref scan) = all_actors_to_scan {
@@ -630,7 +631,6 @@ mod metric_collector_tests {
     use parking_lot::RwLock;
     use std::collections::VecDeque;
     use futures::executor::block_on;
-    use crate::SoloAct;
 
     #[test]
     fn test_raw_diagram_state_default() {
@@ -695,6 +695,7 @@ mod metric_collector_tests {
         use crate::{GraphBuilder};
         use std::sync::atomic::AtomicUsize;
         use std::thread::sleep;
+        use crate::SoloAct;
 
         //only run this locally where we can open the default port
         if std::env::var("GITHUB_ACTIONS").is_err() {

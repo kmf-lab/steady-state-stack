@@ -7,7 +7,7 @@ use std::error::Error;
 use std::future::Future;
 use std::sync::{Arc, OnceLock};
 use parking_lot::RwLock;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use core::default::Default;
 use std::collections::VecDeque;
@@ -480,10 +480,11 @@ impl Troupe {
     /// A pinned future representing the actor's execution.
     fn build_async_fun(
         fun: &ActorRuntime,
-        ctx: SteadyActorShadow,
+        mut ctx: SteadyActorShadow,
     ) -> Pin<Box<impl Future<Output = Result<(), Box<dyn Error>>> + Sized + '_>> {
         Box::pin(async move {
             let guard_fun = fun.lock().await;
+            ctx.instance_id +=1; //restart counts when in a troupe
             guard_fun(ctx.clone()).await
         })
     }
@@ -537,8 +538,6 @@ struct SteadyContextArchetype<DynCall: ?Sized> {
     oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
     /// Optional node transmitter and receiver for side-channel communications.
     node_tx_rx: Option<Arc<NodeTxRx>>,
-    /// Counter for actor instance restarts.
-    instance_id: Arc<AtomicU32>,
     /// Flag indicating whether to show thread information in telemetry.
     show_thread_info: bool,
     /// Lazily initialized Aeron media driver.
@@ -562,7 +561,6 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
             oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
             oneshot_shutdown: self.oneshot_shutdown.clone(),
             node_tx_rx: self.node_tx_rx.clone(),
-            instance_id: self.instance_id.clone(),
             show_thread_info: self.show_thread_info,
             aeron_media_driver: self.aeron_media_driver.clone(),
             never_simulate: self.never_simulate,
@@ -971,7 +969,7 @@ impl ActorBuilder {
                 }
             }
             let fun: NonSendWrapper<DynCall> = build_actor_registration(&context_archetype);
-            let master_ctx: SteadyActorShadow =
+            let mut master_ctx: SteadyActorShadow =
                 build_actor_context(&context_archetype, rate_ms, default_core, is_for_test);
 
             core_exec::spawn_detached(async move {
@@ -1011,6 +1009,7 @@ impl ActorBuilder {
                             break;
                         }
                         Err(e) => {
+
                             if let Some(specific_error) = e.downcast_ref::<std::io::Error>() {
                                 warn!(
                                     "IO Error encountered: {} in actor: {:?}",
@@ -1022,6 +1021,7 @@ impl ActorBuilder {
                                     specific_error, context_archetype.ident
                                 );
                             }
+                            master_ctx.instance_id +=1;
                             warn!("Restarting: {:?}", context_archetype.ident);
                         }
                     }
@@ -1156,7 +1156,6 @@ impl ActorBuilder {
             });
             Arc::new(Mutex::new(oneshot_shutdown))
         };
-        let restart_counter = Arc::new(AtomicU32::new(0));
         SteadyContextArchetype {
             runtime_state: runtime_state.clone(),
             channel_count: channel_count.clone(),
@@ -1168,7 +1167,6 @@ impl ActorBuilder {
             oneshot_shutdown: immutable_oneshot_shutdown.clone(),
             node_tx_rx: immutable_node_tx_rx.clone(),
             build_actor_exec: NonSendWrapper::new(dyn_call),
-            instance_id: restart_counter,
             show_thread_info: self.show_thread_info,
             aeron_media_driver: self.aeron_media_driver,
             never_simulate: self.never_simulate,
@@ -1323,7 +1321,7 @@ fn build_actor_context<I: ?Sized>(
         oneshot_shutdown_vec: builder_source.oneshot_shutdown_vec.clone(),
         oneshot_shutdown: builder_source.oneshot_shutdown.clone(),
         node_tx_rx: builder_source.node_tx_rx.clone(),
-        instance_id: builder_source.instance_id.fetch_add(1, Ordering::SeqCst),
+        instance_id: 0u32,
         last_periodic_wait: Default::default(),
         is_in_graph: true,
         actor_start_time: Instant::now(),

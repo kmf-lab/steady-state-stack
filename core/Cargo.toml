@@ -1,6 +1,6 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.2.0"
+version = "0.2.1"
 documentation = "https://docs.rs/steady_state/0.0.21/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2024"
@@ -58,9 +58,10 @@ core_affinity = ["libc", "winapi"]
 core_display = ["libc", "winapi"]
 
 
-# only set true if you want supervisors to restart actors while debug_assertions is on
-# no need to enable unless you want to see how supervisors work while testing
-restart_actors_when_debugging = []
+# when testing new projects, you may want to turn this on so you only get the first
+# failure and then a quick exit.
+disable_actor_restart_on_failure = []
+
 # no need to enable unless you want to see the performance of the telemetry server
 telemetry_on_telemetry = []
 

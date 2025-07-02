@@ -29,17 +29,6 @@ pub const TELEMETRY_HISTORY: bool = true;
 #[cfg(not(feature = "telemetry_history"))]
 pub const TELEMETRY_HISTORY: bool = false;
 
-/// Whether debug-mode failure fast is disabled (controlled by
-/// `restart_actors_when_debugging` feature).
-///
-/// - `true`: supervisors will restart actors on failure even in debug mode.
-/// - `false`: failure will halt for debugging.
-#[cfg(feature = "restart_actors_when_debugging")]
-pub const DISABLE_DEBUG_FAIL_FAST: bool = true;
-
-#[cfg(not(feature = "restart_actors_when_debugging"))]
-pub const DISABLE_DEBUG_FAIL_FAST: bool = false;
-
 /// Maximum seconds between repeated telemetry error reports.
 pub const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 20;
 
@@ -93,7 +82,6 @@ mod tests {
         assert!(!SHOW_ACTORS);
         assert_eq!(BACKPLANE_CAPACITY, 16);
         assert!(!TELEMETRY_HISTORY);
-        assert!(!DISABLE_DEBUG_FAIL_FAST);
         assert_eq!(MAX_TELEMETRY_ERROR_RATE_SECONDS, 20);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 64);
         assert_eq!(CONSUMED_MESSAGES_BY_COLLECTOR, 32);

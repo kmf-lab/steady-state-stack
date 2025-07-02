@@ -129,16 +129,12 @@ impl ActorStatsComputer {
             dot_label.push_str(itoa::Buffer::new().format(self.ident.id));
             dot_label.push(']');
         }
-
         dot_label.push('\n');
 
-        //TODO: ThreadId  is dissaperaing!
         if let Some(thread) = thread_info {    //new line for thread info
-
             //this could be better looking but will require unstable features today Oct 2024.
             let t = format!("{:?}",thread.thread_id);
             dot_label.push_str(&t);
-
             //rename this plus add switch.
             #[cfg(feature = "core_display")]
             {
@@ -146,7 +142,6 @@ impl ActorStatsComputer {
                 let t = format!("{:?}",thread.core);
                 dot_label.push_str(&t);
             }
-
             dot_label.push('\n');
         }
 

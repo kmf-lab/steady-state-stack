@@ -494,7 +494,7 @@ impl<T> RxCore for Rx<T> {
     #[inline]
     fn shared_try_take(&mut self) -> Option<(RxDone, Self::MsgOut)> {
         match self.rx.try_pop() {
-            Some(r) => {
+            Some(r) => {                
                 self.take_count.fetch_add(1, Ordering::Relaxed);
                 Some((RxDone::Normal(1), r))
             },

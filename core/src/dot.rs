@@ -49,7 +49,8 @@ pub(crate) struct Node {
     pub(crate) stats_computer: ActorStatsComputer,
     pub(crate) display_label: String,
     pub(crate) metric_text: String,
-    pub(crate) thread_info_cache: Option<ThreadInfo>
+    pub(crate) thread_info_cache: Option<ThreadInfo>,
+    pub(crate) total_count_restarts: u32
 }
 
 pub(crate) const DEFAULT_PEN_WIDTH: &str = "4"; //need a way to configure this?
@@ -81,13 +82,15 @@ impl Node {
             None
         };
 
+        self.total_count_restarts = self.total_count_restarts.max(actor_status.total_count_restarts);
+
         // Old strings for this actor are passed back in so they get cleared and re-used rather than reallocate
         let (color, pen_width) = self.stats_computer.compute(
             &mut self.display_label,
             &mut self.metric_text,
             mcpu,
             load,
-            actor_status.total_count_restarts,
+            self.total_count_restarts,
             actor_status.bool_stop,
             thread_id
         );
@@ -330,7 +333,8 @@ pub fn apply_node_def(
                 display_label: String::new(), // Defined when the content arrives
                 metric_text: String::new(),
                 remote_details: None,
-                thread_info_cache: None
+                thread_info_cache: None,
+                total_count_restarts: 0
             }
         });
     }
@@ -697,6 +701,7 @@ mod dot_tests {
             metric_text: String::new(),
             remote_details: None,
             thread_info_cache: None,
+            total_count_restarts: 0
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         assert_eq!(node.color, "grey");
@@ -735,6 +740,7 @@ mod dot_tests {
                     metric_text: "node_metric".to_string(),
                     remote_details: None,
                     thread_info_cache: None,
+                    total_count_restarts: 0
                 }
             ],
             edges: vec![
@@ -778,6 +784,7 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
+                    total_count_restarts: 0
                 }
             ],
             edges: vec![
@@ -926,6 +933,7 @@ mod dot_tests {
             metric_text: String::new(),
             remote_details: None,
             thread_info_cache: None,
+            total_count_restarts: 0
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         // This should trigger the load calculation branch
@@ -945,6 +953,7 @@ mod dot_tests {
                     metric_text: "node_metric".to_string(),
                     remote_details: None,
                     thread_info_cache: None,
+                    total_count_restarts: 0
                 }
             ],
             edges: vec![
@@ -985,6 +994,7 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
+                    total_count_restarts: 0
                 }
             ],
             edges: vec![],
@@ -1019,6 +1029,7 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: Some(remote_details),
                     thread_info_cache: None,
+                    total_count_restarts: 0
                 }
             ],
             edges: vec![],
@@ -1049,6 +1060,7 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
+                    total_count_restarts: 0
                 },
                 Node {
                     id: Some(ActorName::new("to_node", Some(5))),
@@ -1059,6 +1071,7 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
+                    total_count_restarts: 0
                 }
             ],
             edges: vec![
@@ -1285,6 +1298,7 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
+                    total_count_restarts: 0
                 }
             ],
             edges: vec![],

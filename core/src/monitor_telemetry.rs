@@ -250,7 +250,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                     calls[i] = calls[i].saturating_add(*call);
                 }
             }
-//TODO: IF NEVER SENT WE SHOULD SEND??
+
             if count_of_actor_status_events > 0 {
                 Some(ActorStatus {
                     iteration_start: buffer[0].iteration_start, //always the starting iterator count

@@ -507,8 +507,6 @@ pub enum ProactorConfig {
 pub struct GraphBuilder {
     /// Indicates whether the graph is intended for testing purposes.
     is_for_testing: bool,
-    /// Controls whether fail-fast behavior is blocked, primarily for testing.
-    _block_fail_fast: bool,
     /// Enables or disables telemetry metric features.
     telemetry_metric_features: bool,
     /// Enables or disables the I/O driver.
@@ -548,7 +546,6 @@ impl GraphBuilder {
         #[cfg(not(test))]
         GraphBuilder {
             is_for_testing: false,
-            _block_fail_fast: true,
             telemetry_metric_features: crate::steady_config::TELEMETRY_SERVER,
             enable_io_driver: true,
             backplane: None,
@@ -570,7 +567,6 @@ impl GraphBuilder {
         let _ = util::steady_logger::initialize();
         GraphBuilder {
             is_for_testing: true,
-            _block_fail_fast: false,
             telemetry_metric_features: false,
             enable_io_driver: false,
             backplane: Some(StageManager::default()),
@@ -673,13 +669,12 @@ impl GraphBuilder {
     /// A fully configured `Graph` instance.
     pub fn build<A: Any + Send + Sync>(self, args: A) -> Graph {
         let g = Graph::internal_new(args, self);
-        if !crate::steady_config::DISABLE_DEBUG_FAIL_FAST {
-            #[cfg(debug_assertions)]
-            {
-                g.apply_fail_fast();
-                trace!("fail fast enabled for testing !");
-            }
+        #[cfg(feature = "disable_actor_restart_on_failure")]
+        {
+            g.apply_fail_fast();
+            trace!("fail fast enabled for testing !");
         }
+
         let ctrlc_runtime_state = g.runtime_state.clone();
         let tel_prod_rate = Duration::from_millis(g.telemetry_production_rate_ms);
         let result = ctrlc::set_handler(move || {
@@ -729,8 +724,6 @@ pub struct Graph {
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     /// An optional backplane for testing side-channel communications.
     pub(crate) backplane: Arc<Mutex<Option<StageManager>>>,
-    /// Controls whether fail-fast behavior is blocked, used in testing.
-    pub(crate) _block_fail_fast: bool,
     /// The rate at which telemetry data is produced, in milliseconds.
     pub(crate) telemetry_production_rate_ms: u64,
     /// A lazily initialized reference to the Aeron media driver.
@@ -906,15 +899,13 @@ impl Graph {
     /// Applies fail-fast behavior by setting a panic hook that exits immediately on panic.
     ///
     /// This method is active only in debug builds and can be disabled via configuration.
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "disable_actor_restart_on_failure")]
     fn apply_fail_fast(&self) {
-        if !self._block_fail_fast {
             let default_hook = std::panic::take_hook();
             std::panic::set_hook(Box::new(move |panic_info| {
                 default_hook(panic_info);
                 std::process::exit(-1);
             }));
-        }
     }
 
     /// Starts the graph with a default timeout of 40 seconds for actor registration.
@@ -1136,7 +1127,6 @@ impl Graph {
             thread_lock: Arc::new(Mutex::new(())),
             oneshot_shutdown_vec,
             backplane: Arc::new(Mutex::new(builder.backplane)),
-            _block_fail_fast: builder._block_fail_fast,
             telemetry_production_rate_ms: if builder.telemetry_metric_features {
                 builder.telemtry_production_rate_ms
             } else {
