@@ -99,11 +99,11 @@ fn main() {
         if should_write {
             fs::write(&index_path, &index_content)
                 .expect("Failed to write index.html");
-            // Encode webworker.js since it’s freshly generated or updated
             gzip_encode(&base_target_path, "static/telemetry/index.html", false);
-        }       
-        
-        
+        }
+        gzip_encode(&base_target_path, "static/telemetry/index.html", true);
+
+
         // Generate and write webworker.js from the template
         let webworker_content = WebWorkerTemplate { script_source: source }
             .render()
@@ -124,10 +124,10 @@ fn main() {
         if should_write {
             fs::write(&webworker_path, &webworker_content)
                 .expect("Failed to write webworker.js");
-            // Encode webworker.js since it’s freshly generated or updated
             gzip_encode(&base_target_path, "static/telemetry/webworker.js", false);
-        }
 
+        }
+        gzip_encode(&base_target_path, "static/telemetry/webworker.js", true);
         
         // Encode static files, skipping if their gzipped versions already exist
         gzip_encode(&base_target_path, "static/telemetry/dot-viewer.js", true);
