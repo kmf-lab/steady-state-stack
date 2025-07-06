@@ -452,7 +452,8 @@ impl Troupe {
             }
         };
         core_exec::block_on(async move {
-            match core_exec::spawn_more_threads(1).await {
+            //two so we can support blocking calls.
+            match core_exec::spawn_more_threads(2).await {
                 Ok(c) => {
                     if c >= 12 {
                         info!("Threads: {}", c);
@@ -958,7 +959,8 @@ impl ActorBuilder {
 
         core_exec::block_on(async move {
             let _guard = thread_lock.lock().await;
-            match core_exec::spawn_more_threads(1).await {
+            //two so we can support blocking calls.
+            match core_exec::spawn_more_threads(2).await {
                 Ok(c) => {
                     if c >= 12 {
                         info!("Threads: {}", c);

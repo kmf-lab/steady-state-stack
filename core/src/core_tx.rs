@@ -1447,7 +1447,7 @@ mod core_tx_rx_tests {
         let builder = ChannelBuilder::default().with_capacity(2);
         let (tx, rx) = builder.build_channel::<i32>();
         let tx = tx.clone();
-        let mut txg = core_exec::block_on(tx.lock());
+        let mut txg = tx.try_lock().expect("");
         assert_eq!(txg.shared_capacity(), 2);
         assert!(txg.shared_is_empty());
         let sent = txg.shared_send_iter_until_full([7, 8].into_iter());
@@ -1455,13 +1455,13 @@ mod core_tx_rx_tests {
         assert!(txg.shared_is_full());
         drop(txg);
         let rx = rx.clone();
-        let mut rxg = core_exec::block_on(rx.lock());
+        let mut rxg = rx.try_lock().expect("");
         assert_eq!(rxg.shared_capacity(), 2);
         assert_eq!(rxg.shared_avail_units(), 2);
         assert_eq!(rxg.shared_try_peek(), Some(&7));
         drop(rxg);
         let rx = rx.clone();
-        let mut rxg = core_exec::block_on(rx.lock());
+        let mut rxg = rx.try_lock().expect("");
         assert_eq!(rxg.shared_try_take().map(|(_, v)| v), Some(7));
         assert_eq!(rxg.shared_try_take().map(|(_, v)| v), Some(8));
         assert!(rxg.shared_is_empty());
@@ -1476,11 +1476,11 @@ mod core_tx_rx_tests {
         let builder = ChannelBuilder::default().with_capacity(1);
         let (tx, rx) = builder.build_channel::<u8>();
         let tx = tx.clone();
-        let mut txg = core_exec::block_on(tx.lock());
+        let mut txg = tx.try_lock().expect("");
         assert_eq!(txg.shared_send_iter_until_full([42].into_iter()), 1);
         drop(txg);
         let rx = rx.clone();
-        let rxg = core_exec::block_on(rx.lock());
+        let rxg = rx.try_lock().expect("");
         assert_eq!(rxg.shared_try_peek(), Some(&42));
         assert_eq!(rxg.shared_try_peek(), Some(&42));
         assert!(rxg.is_showstopper(2));

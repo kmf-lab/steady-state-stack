@@ -897,7 +897,7 @@ mod core_rx_async_tests {
     fn test_peek_async_timeout_empty() {
         let (_tx, rx, graph) = setup_channel::<i32>(1, None);
         assert!(graph.runtime_state.read().is_in_state(&[GraphLivelinessState::Running]), "Graph should be Running");
-        let mut rx_guard = core_exec::block_on(rx.lock());
+        let mut rx_guard = rx.try_lock().expect("");
         assert!(!rx_guard.oneshot_shutdown.is_terminated());
 
         let start = Instant::now();
@@ -914,7 +914,7 @@ mod core_rx_async_tests {
     #[test]
     fn test_peek_async_timeout_with_data() {
         let (_tx, rx, _) = setup_channel(1, Some(vec![42]));
-        let mut rx_guard = core_exec::block_on(rx.lock());
+        let mut rx_guard = rx.try_lock().expect("");
         let peeked = core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
         assert_eq!(peeked, Some(&42), "Peek should return the available data");
     }
@@ -925,9 +925,9 @@ mod core_rx_async_tests {
     #[test]
     fn test_peek_async_timeout_shutdown() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
-        let mut rx_guard = core_exec::block_on(rx.lock());
+        let mut rx_guard = rx.try_lock().expect("");
         let peek_future = rx_guard.shared_peek_async_timeout(Some(Duration::from_secs(1)));
-        drop(core_exec::block_on(tx.lock()));
+        drop(tx.try_lock().expect(""));
         let peeked = core_exec::block_on(peek_future);
         assert!(peeked.is_none(), "Peek should return None after shutdown");
     }
@@ -938,7 +938,7 @@ mod core_rx_async_tests {
     #[test]
     fn test_wait_avail_units() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
-        let mut rx_guard = core_exec::block_on(rx.lock());
+        let mut rx_guard = rx.try_lock().expect("");
         let wait_future = rx_guard.shared_wait_avail_units(1);
         core_exec::block_on(async {
             let mut tx_guard = tx.lock().await;
@@ -954,12 +954,10 @@ mod core_rx_async_tests {
     #[test]
     fn test_wait_closed_or_avail_units() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
-        let mut rx_guard = core_exec::block_on(rx.lock());
+        let mut rx_guard = rx.try_lock().expect("");
         let wait_future = rx_guard.shared_wait_closed_or_avail_units(1);
-        core_exec::block_on(async {
-            let mut tx_guard = tx.lock().await;
-            tx_guard.mark_closed();
-        });
+        let mut tx_guard = tx.try_lock().expect("");
+        tx_guard.mark_closed();
         let result = core_exec::block_on(wait_future);
         assert!(!result, "Wait should return false when channel is closed with no units available");
     }
