@@ -15,9 +15,24 @@
 //!
 use std::cell::RefCell;
 
+#[derive(Clone,Eq, PartialEq, Debug)]
+pub struct Eye {
+    pub expression: &'static str,
+    pub file: &'static str,
+    pub line: u32
+}
+
+impl Eye {
+
+    pub(crate) fn veto_reason(&self) -> String {
+        format!("{}:{}  {}",self.file, self.line, self.expression).to_string()
+    }
+
+}
+
 thread_local! {
     /// Thread-local storage for the last expression identifier that evaluated to `false`.
-    pub static LAST_FALSE: RefCell<Option<&'static str>> = const { RefCell::new(None) };
+    pub static LAST_FALSE: RefCell<Option<Eye>> = const { RefCell::new(None) };
 }
 
 /// Wraps a boolean expression and logs its identifier if it evaluates to `false`.
@@ -32,7 +47,7 @@ macro_rules! i {
         let result = $e;
         if !result {
             $crate::LAST_FALSE.with(|cell| {
-                *cell.borrow_mut() = Some(stringify!($e));
+                *cell.borrow_mut() = Some(crate::expression_steady_eye::Eye{expression: stringify!($e), file: file!(), line: line!()  });
             });
         }
         result
@@ -50,7 +65,7 @@ macro_rules! i {
 /// - `Some(&'static str)`: The identifier of the last expression that evaluated to `false`.
 /// - `None`: If no `false` expression has been recorded since the last read.
 ///
-pub fn i_take_expression() -> Option<&'static str> {
+pub fn i_take_expression() -> Option<Eye> {
     LAST_FALSE.with(|cell| {
         let mut borrowed = cell.borrow_mut();
         borrowed.take()
@@ -79,8 +94,8 @@ mod tests {
         let result = i!(false);
         assert!(!result, "Expression should evaluate to false");
         assert_eq!(
-            i_take_expression(),
-            Some("false"),
+            i_take_expression().expect("").expression,
+            "false",
             "Identifier should be stored"
         );
         assert_eq!(
@@ -112,8 +127,8 @@ mod tests {
         let result = i!(condition1) && i!(condition2);
         assert!(!result, "Result should be false");
         assert_eq!(
-            i_take_expression(),
-            Some("condition1"),
+            i_take_expression().expect("").expression,
+            "condition1",
             "condition2 should be stored as the last false"
         );
         assert_eq!(

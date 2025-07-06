@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use std::thread::sleep;
-use crate::{core_exec};
+use crate::core_exec;
 
 /** Type alias for the underlying storage backing of the channel, using a heap-based ring buffer. */
 pub(crate) type ChannelBacking<T> = Heap<T>;
@@ -1072,10 +1072,13 @@ impl <T> LazySteadyRx<T> {
 macro_rules! assert_steady_rx_eq_count {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
-        let measured = block_on(async move {
-            let mut rx = rx.lock().await;
+        let measured = if let Some(mut rx) = rx.try_lock() {
             rx.avail_units()
-        });
+        } else {
+            error!("Unable to lock rx for testing");
+            panic!("Unable to lock rx for testing");
+        };
+
         if $expected != measured {
             error!(
                 "Assertion failed: {} == {} at {}:{}",
@@ -1113,10 +1116,12 @@ macro_rules! assert_steady_rx_eq_count {
 macro_rules! assert_steady_rx_gt_count {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
-        let measured = block_on(async move {
-            let mut rx = rx.lock().await;
+        let measured = if let Some(mut rx) = rx.try_lock() {
             rx.avail_units()
-        });
+        } else {
+            error!("Unable to lock rx for testing");
+            panic!("Unable to lock rx for testing");
+        };
         if !(measured > $expected) {
             error!(
                 "Assertion failed: {} > {} at {}:{}",
@@ -1158,8 +1163,9 @@ macro_rules! assert_steady_rx_gt_count {
 macro_rules! assert_steady_rx_eq_take {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
-        block_on(async move {
-            let mut rx = rx.lock().await;
+
+       if let Some(mut rx) = rx.try_lock() {
+
             for ex in $expected.into_iter() {
                 match rx.try_take() {
                     None => {
@@ -1189,7 +1195,14 @@ macro_rules! assert_steady_rx_eq_take {
                     }
                 }
             }
-        });
+
+
+        } else {
+            error!("Unable to lock rx for testing");
+            panic!("Unable to lock rx for testing");
+        }
+
+
     }};
 }
 

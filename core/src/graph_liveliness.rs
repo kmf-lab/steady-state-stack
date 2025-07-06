@@ -31,7 +31,7 @@ use crate::channel_builder::ChannelBuilder;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::distributed::aeron_channel_structs::aeron_utils::*;
 use crate::graph_testing::StageManager;
-use crate::inspect_short_bools::i_take_expression;
+use crate::expression_steady_eye::{i_take_expression, Eye};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::{metrics_collector, metrics_server};
@@ -86,7 +86,7 @@ pub struct ShutdownVote {
     /// An optional backtrace captured if the actor vetoes the shutdown, useful for debugging.
     pub(crate) veto_backtrace: Option<Backtrace>,
     /// An optional reason provided by the actor for vetoing the shutdown.
-    pub(crate) veto_reason: Option<&'static str>,
+    pub(crate) veto_reason: Option<Eye>,
 }
 
 /// Indicates the status of an actor in the voting process.
@@ -1029,7 +1029,9 @@ impl Graph {
                    , voter.as_ref().map_or(usize::MAX, |f| f.id)
                    , voter.as_ref().map_or(Default::default(), |f| f.voter_status.clone())
                    , voter.as_ref().is_some_and(|f| f.in_favor)
-                   , if voter.as_ref().is_some_and(|f| f.in_favor) {""} else {voter.as_ref().map_or(&None, |f| &f.veto_reason).map_or("", |f| f)}
+                   , if voter.as_ref().is_some_and(|f| f.in_favor)
+                                {"".to_string()} else
+                                {voter.as_ref().map_or(None, |f| f.veto_reason.clone()).map_or("".to_string(), |f| f.veto_reason())}
                    , voter.as_ref().map_or(Default::default(), |f| f.signature));
         });
         warn!("graph stopped uncleanly");
@@ -1046,7 +1048,7 @@ impl Graph {
                 if is_veto {
                     let reason = voter.as_ref().map_or(&None, |f| &f.veto_reason);
                     if let Some(r) = reason {
-                        debug!("veto expression: {:#?}", r);
+                        debug!("veto expression: {:#?}", r.veto_reason());
                     }
                     if let Some(bt) = backtrace {
                         let text = format!("{:#?}", bt);

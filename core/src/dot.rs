@@ -595,7 +595,7 @@ impl FrameHistory {
                 // Let the file write happen in the background so we can get back to data updates
                 // This is not a new thread so it is lightweight
                 //TODO: rewrite as a new actor!
-                spawn_detached(async move {
+                core_exec::spawn_detached(async move {
                     if let Err(e) = Self::append_to_file(path, to_be_written, flush_all).await {
                         error!("Error writing to file: {}", e);
                         error!("Due to the above error some history has been lost");

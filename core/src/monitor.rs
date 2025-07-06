@@ -486,10 +486,6 @@ pub(crate) mod monitor_tests {
 
         if let Some(mut tx) = tx.try_lock() {
             let empty = monitor.wait_empty(&mut tx).await;
-            println!("Empty: {}", empty);
-            println!("Vacant units: {}", monitor.vacant_units(&mut tx));
-            println!("Capacity: {}", tx.capacity());
-
             assert!(empty);
         };
     }

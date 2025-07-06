@@ -187,26 +187,6 @@ pub mod distributed {
     pub mod polling;
 }
 
-/// Blocks the current thread until the provided future completes, returning its result.
-///
-/// This function is useful for synchronously waiting on asynchronous operations.
-pub use core_exec::block_on;
-
-/// Spawns a blocking task on a separate thread for CPU-bound or blocking operations.
-///
-/// This function allows offloading synchronous, blocking tasks to avoid blocking the async runtime.
-pub use core_exec::spawn_blocking;
-
-/// Spawns a future that can be sent across threads and detaches it for independent execution.
-///
-/// This function is useful for launching tasks that do not need to be awaited.
-pub use core_exec::spawn_detached;
-
-/// Optionally spawns additional threads to handle tasks (runtime-dependent).
-///
-/// Note: This function may be deprecated in the future as its behavior depends on the runtime.
-pub use core_exec::spawn_more_threads;
-
 /// Tools for simulating edge cases in testing.
 ///
 /// This module provides utilities for testing the robustness of actors under various conditions.
@@ -347,8 +327,8 @@ pub mod util;
 /// Utilities for inspecting short boolean sequences.
 ///
 /// This module provides tools for analyzing short sequences of boolean values.
-pub mod inspect_short_bools;
-pub use crate::inspect_short_bools::LAST_FALSE;
+pub mod expression_steady_eye;
+pub use crate::expression_steady_eye::LAST_FALSE;
 
 pub use crate::util::*;
 use futures::AsyncRead;
@@ -356,6 +336,7 @@ use futures::AsyncWrite;
 pub use futures::future::Future;
 use futures::channel::oneshot;
 use futures_util::lock::{MappedMutexGuard, MutexGuard};
+use log::kv::Source;
 pub use steady_actor_spotlight::SteadyActorSpotlight;
 
 use crate::yield_now::yield_now;
@@ -367,7 +348,7 @@ use crate::yield_now::yield_now;
 ///
 /// # Type Parameters
 /// - `S`: The type of the state being stored.
-pub struct SteadyState<S>(Arc<Mutex<Option<S>>>);
+pub struct SteadyState<S>(pub Arc<Mutex<Option<S>>>); //MUST be public or Arc count ends up off by one
 
 impl<S> Clone for SteadyState<S> {
     /// Creates a new reference to the same underlying state.
@@ -428,6 +409,24 @@ impl<S> SteadyState<S> {
         let mapped = MutexGuard::map(guard, |opt| opt.as_mut().expect("existing state"));
         StateGuard { guard: mapped }
     }
+
+
+    pub fn try_lock_sync(&self) -> Option<StateGuard<'_, S>>
+    where
+        S: Send,
+    {
+        if let Some(mut guard) = self.0.try_lock() {
+            if let Some(ref s) = *guard {
+                let mapped = MutexGuard::map(guard, |opt| opt.as_mut().expect("existing state"));
+                Some(StateGuard { guard: mapped })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
 }
 
 /// Creates a new `SteadyState` for holding actor state across restarts.

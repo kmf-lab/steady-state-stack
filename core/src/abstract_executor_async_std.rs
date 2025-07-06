@@ -9,6 +9,7 @@ pub(crate) mod core_exec {
     //! local and global), handling blocking operations, and synchronously blocking on futures.
     //! The design ensures flexibility and compatibility with `async-std`’s OS-backed async mechanisms.
 
+    use std::error::Error;
     // ## Imports
     use std::future::Future; // Core trait for asynchronous operations.
     use std::io::Result; // Standard IO types for error handling.
@@ -20,6 +21,7 @@ pub(crate) mod core_exec {
     use crate::ProactorConfig; // Custom configuration enum, ignored in this impl.
     use std::panic::{catch_unwind, AssertUnwindSafe}; // Panic handling for driver robustness.
     use async_std::task; // Core async-std module for task spawning and execution.
+    use futures::channel::oneshot;
 
     /// Spawns a future that can be sent across threads and detaches it for independent execution.
     ///
@@ -29,14 +31,104 @@ pub(crate) mod core_exec {
         let _ = task::spawn(future);
     } // only 5x calls in metric_server and actor_builder
 
-    /// Spawns a blocking task on a separate thread for CPU-bound or blocking operations.
+
+
+    // Get the current core (platform-specific)
+    #[cfg(all(unix, feature = "libc"))]
+    fn get_current_core() -> Option<usize> {
+        let cpu = unsafe { libc::sched_getcpu() };
+        if cpu >= 0 {
+            Some(cpu as usize)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(all(windows, feature = "winapi"))]
+    fn get_current_core() -> Option<usize> {
+        let cpu = unsafe { winapi::um::processthreadsapi::GetCurrentProcessorNumber() };
+        if cpu != 0xFFFFFFFF {
+            Some(cpu as usize)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(not(any(all(unix, feature = "libc"), all(windows, feature = "winapi"))))]
+    fn get_current_core() -> Option<usize> {
+        None
+    }
+
+    // Set thread affinity (platform-specific)
+    #[cfg(all(unix, feature = "libc"))]
+    fn set_thread_affinity(core: usize) -> Result<(), dyn Box<Error>> {
+        use libc::{cpu_set_t, pthread_setaffinity_np, pthread_self};
+        let mut cpu_set: cpu_set_t = unsafe { std::mem::zeroed() };
+        unsafe {
+            libc::CPU_SET(core, &mut cpu_set);
+            let res = pthread_setaffinity_np(pthread_self(), std::mem::size_of::<cpu_set_t>(), &cpu_set);
+            if res == 0 {
+                Ok(())
+            } else {
+                Err(())
+            }
+        }
+    }
+
+    #[cfg(all(windows, feature = "winapi"))]
+    fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn Error>> {
+        use winapi::um::processthreadsapi::GetCurrentThread;
+        use winapi::shared::basetsd::DWORD_PTR;
+
+        let mask = 1u64 << core;
+        let res = unsafe { winapi::um::winbase::SetThreadAffinityMask(GetCurrentThread(), mask as DWORD_PTR) };
+        if res != 0 {
+            Ok(())
+        } else {
+            Err("unable to set affinity on windows due to mask failure".into())
+        }
+    }
+
+    #[cfg(not(any(all(unix, feature = "libc"), all(windows, feature = "winapi"))))]
+    fn set_thread_affinity(_core: usize) -> Result<(), ()> {
+        Ok(())
+    }
+
+    /// Spawns a blocking task on a new thread with optional core affinity.
     ///
-    /// This async function uses `async_std::task::spawn_blocking` to run the closure on a thread pool,
-    /// awaiting its result. Ideal for operations like file IO or heavy computation that shouldn’t block
-    /// the async executor.
-    pub async fn spawn_blocking<F: FnOnce() -> T + Send + 'static, T: Send + 'static>(f: F) -> T {
-         task::spawn_blocking(f).await
-    } //only once in metric_server
+    /// This function runs the closure `f` on a separate thread. If the platform-specific feature
+    /// (`libc` on Unix, `winapi` on Windows) is enabled, it sets the thread's core affinity to
+    /// match the calling thread's core. It returns a future that resolves to the result of `f`.
+    ///
+    /// # Arguments
+    /// * `f` - A closure that performs a blocking operation and returns a value of type `T`.
+    ///
+    /// # Returns
+    /// A future that can be awaited to obtain the result of `f`.
+    pub fn spawn_blocking<F, T>(f: F) -> impl Future<Output = T> + Send
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        let current_core = get_current_core();
+        let (sender, receiver) = oneshot::channel();
+
+        thread::spawn(move || {
+            if let Some(core) = current_core {
+                if let Err(e) = set_thread_affinity(core) {
+                    warn!("Affinity for blocking tasks was enabled but unable to set due to '{:?}', will run blocking task on another core.",e)
+                }
+            }
+            if let Err(e) = sender.send(f()) {
+                //may happen as expected in some shutdown cases
+                warn!("blocking job finished but the receiver is no longer attached");
+            }
+        });
+
+        async move {
+            receiver.await.expect("Sender dropped")
+        }
+    }
 
     /// Blocks the current thread until the provided future completes, returning its result.
     ///
@@ -91,9 +183,9 @@ pub(crate) mod core_exec {
 // Additional tests for async-std executor abstractions
 #[cfg(test)]
 mod async_std_exec_tests {
-    use crate::{spawn_detached, spawn_blocking, block_on, spawn_more_threads};
     use std::{thread, time::Duration};
     use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+    use crate::abstract_executor_async_std::core_exec::*;
 
     #[test]
     fn test_spawn_detached_async_std() {

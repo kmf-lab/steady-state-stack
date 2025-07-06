@@ -89,9 +89,9 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         } else {
             warn!("skipping telemetry due to binding issues")
         }
-        //NOTE: this is probably a mistake this loop could be its own actor.
+        //TODO: NOTE: this is probably a mistake this loop should be its own actor.
         let tcp_receiver_tx_oneshot_shutdown = Arc::new(Mutex::new(tcp_receiver_tx));
-        spawn_detached(async move {
+        core_exec::spawn_detached(async move {
             if let Some(ref listener_new) = *opt_tcp {
                 handle_new_requests(tcp_receiver_tx_oneshot_shutdown, state2, listener_new).await;
             }

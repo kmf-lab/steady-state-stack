@@ -157,12 +157,13 @@ fn build_graph<const LEVEL_1: usize,
                         }
 
                         let mut b_troupe = if spawn_b {None} else {Some(actor_linedance_tream)};
-
+                        let state = new_state();
                         let local_rx = brx[0].clone();
                             base_actor_builder
                                 .with_name_and_suffix("User",user_count)
                                 .build(move |context| actor::data_user::run(context
-                                                                                  , local_rx.clone()
+                                                                                 , local_rx.clone()
+                                                                                 , state.clone()
                                              )
                                             , ScheduleAs::dynamic_schedule(&mut b_troupe)
                                 );
@@ -224,11 +225,12 @@ fn build_graph<const LEVEL_1: usize,
                                                     )
                                                  , ScheduleAs::dynamic_schedule(&mut b_troupe)
                                     );
-
-                                base_actor_builder
+                            let state = new_state();
+                            base_actor_builder
                                     .with_name_and_suffix("User",user_count)
                                     .build(move |context| actor::data_user::run(context
-                                                                                     , decrypt_rx.clone()
+                                                                                , decrypt_rx.clone()
+                                                                                , state.clone()
                                                     )
                                                  , ScheduleAs::dynamic_schedule(&mut b_troupe)
                                     );

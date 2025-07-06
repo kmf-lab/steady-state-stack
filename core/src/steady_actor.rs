@@ -219,6 +219,11 @@ pub trait SteadyActor {
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
     async fn wait_periodic(&self, duration_rate: Duration) -> bool;
+    /// Waits for a consistent periodic interval between calls, accounting for work time.
+    ///
+    /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
+    async fn wait_timeout(&self, duration_rate: Duration) -> bool;
+
 
     /// Asynchronously waits for the specified duration.
     async fn wait(&self, duration: Duration);
@@ -383,6 +388,12 @@ pub trait SteadyActor {
     async fn call_async<F>(&self, operation: F) -> Option<F::Output>
     where
         F: Future;
+
+   ///
+    async fn call_blocking<F, T>(&self, f: F) -> Option<F::Output>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static;
 
     /// Sends a message to the transmitter asynchronously, waiting if necessary for space.
     ///

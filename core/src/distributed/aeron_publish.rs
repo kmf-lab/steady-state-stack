@@ -10,7 +10,7 @@ use crate::distributed::aqueduct_stream::{SteadyStreamRx, StreamEgress};
 use crate::{await_for_any, RxCore, SteadyActor, SteadyState};
 use crate::steady_actor_shadow::SteadyActorShadow;
 use std::time::Duration;
-use log::{warn, error};
+use log::*;
 
 // Reference to Aeron Best Practices Guide for performance optimization and configuration tips:
 // https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
@@ -125,7 +125,7 @@ async fn internal_behavior<C: SteadyActor>(
         return Err("No publication registered. Check if Media Driver is running.".into());
     }
 
-    warn!("Running publish for actor '{:?}' with publication in place", actor.identity());
+    info!("Running publish for actor '{:?}' with publication in place", actor.identity());
 
     let capacity: usize = rx.capacity();
     let wait_for = (512 * 1024).min(capacity);

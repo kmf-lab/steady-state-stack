@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use std::any::Any;
 use std::error::Error;
-use futures_util::lock::{Mutex};
+use futures_util::lock::{Mutex, MutexGuard};
 use futures::channel::oneshot;
 use futures_util::stream::FuturesUnordered;
 use std::future::Future;
@@ -20,22 +20,23 @@ use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use std::ops::DerefMut;
+use std::task::Poll;
 use aeron::aeron::Aeron;
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
+use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
 use crate::steady_actor::{SendOutcome};
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
-use crate::monitor::{ActorMetaData};
+use crate::monitor::{ActorMetaData, CALL_OTHER};
 use crate::simulate_edge::{IntoSimRunner};
 use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::util::steady_logger;
 use crate::yield_now::yield_now;
-
 /// Context for managing actor state and interactions within the Steady framework.
 pub struct SteadyActorShadow {
     pub(crate) ident: ActorIdentity,
@@ -414,15 +415,57 @@ impl SteadyActor for SteadyActorShadow {
     /// # Asynchronous
     async fn call_async<F>(&self, operation: F) -> Option<F::Output>
     where
-        F: Future,
+        F: Future
     {
+        let operation = operation.fuse();
+        futures::pin_mut!(operation); // Pin the future on the stack
+
         let one_down = &mut self.oneshot_shutdown.lock().await;
         if one_down.is_terminated() {
-            None // if alraady terminated we do not call the method
+             if let Poll::Ready(result) = futures::poll!(&mut operation) {
+                 return Some(result); // Return value if operation completed
+             } else {
+                 //TODO: timeout support? antother slect here on shutdown time and operation??
+                return None; // Operation still pending, return None
+             }
         } else {
-            select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), }
+            select! { _ = one_down.deref_mut() => None, r = operation => Some(r), }
         }
     }
+    async fn call_blocking<F, T>(&self, f: F) -> Option<T>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        // Lock the shutdown signal and take ownership of the guard
+        let one_down = &mut self.oneshot_shutdown.lock().await;
+        let operation = core_exec::spawn_blocking(f).fuse();
+        futures::pin_mut!(operation); // Pin the future on the stack
+
+        let is_shutting_down = self.is_liveliness_stop_requested();
+
+
+        let result = select! {
+                r = operation => Some(r), // Operation completes first
+                _ =  &mut one_down.deref_mut() => None,
+            };
+
+        if result.is_none() && is_shutting_down {
+            if let Some(duration) = self.is_liveliness_shutdown_timeout() {
+                //in this case we know that the shutdown signal happened but we have duration
+                //before it is a hard shutdown, so we will wait 4/1 of duration
+                select! {
+                        _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
+                        r = operation => Some(r)
+                    }
+            } else {
+                None
+            }
+        } else {
+            result
+        }
+    }
+
     /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
     ///
     /// This method helps maintain a consistent period between consecutive calls, even if the
@@ -442,6 +485,28 @@ impl SteadyActor for SteadyActorShadow {
     /// * `false` if a shutdown signal was detected during the waiting period.
     ///
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
+        self.wait_timeout(duration_rate).await
+    }
+
+    /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
+    ///
+    /// This method helps maintain a consistent period between consecutive calls, even if the
+    /// execution time of the work performed in between calls fluctuates. It calculates the
+    /// remaining time until the next desired periodic interval and waits for that duration.
+    ///
+    /// If a shutdown signal is detected during the waiting period, the method returns early
+    /// with a value of `false`. Otherwise, it waits for the full duration and returns `true`.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration_rate` - The desired duration between periodic calls.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the full waiting duration was completed without interruption.
+    /// * `false` if a shutdown signal was detected during the waiting period.
+    ///
+    async fn wait_timeout(&self, duration_rate: Duration) -> bool {
         let one_down = &mut self.oneshot_shutdown.lock().await;
         if !one_down.is_terminated() {
             let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
