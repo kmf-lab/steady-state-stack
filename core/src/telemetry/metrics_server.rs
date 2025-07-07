@@ -225,7 +225,8 @@ async fn handle_new_requests (
                            let _ = handle_request(stream,state.clone()).await;
                        }
                        Err(e) => {
-                           error!("Error accepting connection: {}",e);
+                           //this may happen on shutdown. TODO: should not report during shutdown.
+                           trace!("Error accepting connection: {}, check network configuration.",e);
                        }
                    }
            } }
