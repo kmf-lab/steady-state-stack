@@ -10,10 +10,11 @@ use aeron::subscription::Subscription;
 use log::{error, warn};
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::aqueduct_stream::{SteadyStreamTx, StreamIngress};
-use crate::{SteadyActor, SteadyState, StreamTx};
+use crate::{SteadyActor, StreamTx};
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::core_tx::TxCore;
 use crate::distributed::polling;
+use crate::state_management::SteadyState;
 use crate::yield_now;
 
 /// Steady state for the single-channel Aeron subscriber, tracking the subscription registration ID.

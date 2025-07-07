@@ -2,6 +2,7 @@ use std::error::Error;
 #[allow(unused_imports)]
 use log::*;
 use steady_state::*;
+use steady_state::state_management::SteadyState;
 use steady_state::SteadyRx;
 use crate::actor::data_generator::Packet;
 
@@ -35,7 +36,7 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Packet>, s
 mod tests {
     use super::*;
     use steady_state::GraphBuilder;
-    use steady_state::new_state;
+    use steady_state::state_management::new_state;
     use std::time::Duration;
     use bytes::Bytes;
     use crate::actor::data_generator::Packet;

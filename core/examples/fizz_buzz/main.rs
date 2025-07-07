@@ -5,6 +5,7 @@ use log::*;
 use crate::args::Args;
 use std::time::Duration;
 use steady_state::*;
+use steady_state::state_management::new_state;
 
 mod actor {
         pub mod console_printer;

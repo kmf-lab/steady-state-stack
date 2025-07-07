@@ -383,7 +383,7 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Returns
     /// The number of messages that can still be sent before the channel is full.
-    fn vacant_units<T: TxCore>(&self, this: &mut T) -> usize {
+    fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize {
         this.shared_vacant_units()
     }
     /// Asynchronously waits until the Tx channel is empty.
@@ -592,8 +592,8 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
-        this.shared_wait_closed_or_avail_units(count).await
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, size: T::MsgSize) -> bool {
+        this.shared_wait_closed_or_avail_units(size).await
     }
 
     /// Waits until the specified number of vacant units are in the transmitter.
@@ -603,8 +603,8 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_vacant<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
-        this.shared_wait_shutdown_or_vacant_units(count).await
+    async fn wait_vacant<T: TxCore>(&self, this: &mut T, size: T::MsgSize) -> bool {
+        this.shared_wait_shutdown_or_vacant_units(size).await
     }
 
     /// Waits until shutdown
@@ -703,7 +703,7 @@ impl SteadyActor for SteadyActorShadow {
             result.load(Ordering::Relaxed)
         }
 
-    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool {
+    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: T::MsgSize, ready_channels: usize) -> bool {
 
             let count_down = ready_channels.min(this.len());
             let result = Arc::new(AtomicBool::new(true));

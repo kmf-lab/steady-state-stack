@@ -144,7 +144,13 @@ pub mod channel_builder;
 pub mod actor_builder;
 pub use actor_builder::CoreBalancer;
 
-/// Installation utilities for various deployment methods.
+///
+/// Manage state for actors scros failures and restarts
+pub mod state_management;
+pub use state_management::SteadyState;
+pub use state_management::new_state;/// Installation utilities for various deployment methods.
+pub use state_management::new_persistent_state;
+
 ///
 /// This module contains submodules to support different installation strategies.
 pub mod install {
@@ -296,7 +302,7 @@ pub use crate::distributed::aqueduct_builder::AqueductBuilder;
 pub use steady_actor::SteadyActor;
 pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
 pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-pub use distributed::aqueduct_stream::{StreamIngress, StreamEgress};
+pub use distributed::aqueduct_stream::{StreamEgress, StreamIngress};
 pub use distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
 pub use distributed::aqueduct_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};
 pub use distributed::aqueduct_stream::{LazyStreamRx, LazyStreamTx};
@@ -328,6 +334,7 @@ pub mod util;
 ///
 /// This module provides tools for analyzing short sequences of boolean values.
 pub mod expression_steady_eye;
+
 pub use crate::expression_steady_eye::LAST_FALSE;
 
 pub use crate::util::*;
@@ -339,24 +346,6 @@ use futures_util::lock::{MappedMutexGuard, MutexGuard};
 pub use steady_actor_spotlight::SteadyActorSpotlight;
 
 use crate::yield_now::yield_now;
-
-/// A thread-safe wrapper for actor state, preserved across restarts.
-///
-/// The `SteadyState` struct encapsulates an actor's state within an `Arc<Mutex<Option<S>>>`, ensuring thread safety
-/// and persistence across restarts or panics.
-///
-/// # Type Parameters
-/// - `S`: The type of the state being stored.
-pub struct SteadyState<S>(pub Arc<Mutex<Option<S>>>); //MUST be public or Arc count ends up off by one
-
-impl<S> Clone for SteadyState<S> {
-    /// Creates a new reference to the same underlying state.
-    ///
-    /// This method clones the `Arc`, allowing multiple references to the same state.
-    fn clone(&self) -> Self {
-        SteadyState(self.0.clone())
-    }
-}
 
 /// Guard for accessing the inner state of a `SteadyState`.
 ///
@@ -382,68 +371,6 @@ impl<S> DerefMut for StateGuard<'_, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.guard
     }
-}
-
-impl<S> SteadyState<S> {
-    /// Asynchronously locks the state, initializing it if absent.
-    ///
-    /// If the state is `None`, the provided `init` closure is called to create the initial state.
-    ///
-    /// # Parameters
-    /// - `init`: A closure that produces the initial state if it doesn’t exist.
-    ///
-    /// # Returns
-    /// - `StateGuard<'_, S>`: A guard providing mutable access to the state.
-    ///
-    /// # Type Constraints
-    /// - `F: FnOnce() -> S`: The initialization function must produce a value of type `S`.
-    /// - `S: Send`: The state must be sendable across threads.
-    pub async fn lock<F>(&self, init: F) -> StateGuard<'_, S>
-    where
-        F: FnOnce() -> S,
-        S: Send,
-    {
-        let mut guard = self.0.lock().await;
-        guard.get_or_insert_with(init);
-        let mapped = MutexGuard::map(guard, |opt| opt.as_mut().expect("existing state"));
-        StateGuard { guard: mapped }
-    }
-
-    /// Lock state to review or modify its values ater it has been created or initialized.
-    /// This is most helpful in testing and in main after actors have shutdown to determine what
-    /// was the final state of the SteadyState.
-    pub fn try_lock_sync(&self) -> Option<StateGuard<'_, S>>
-    where
-        S: Send,
-    {
-        if let Some(guard) = self.0.try_lock() {
-            if let Some(ref _s) = *guard {
-                let mapped = MutexGuard::map(guard, |opt| opt.as_mut().expect("existing state"));
-                Some(StateGuard { guard: mapped })
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-}
-
-/// Creates a new `SteadyState` for holding actor state across restarts.
-///
-/// This function initializes a new `SteadyState` with no initial value, which can be set later via the `lock` method.
-///
-/// # Type Parameters
-/// - `S`: The type of the state to be stored.
-///
-/// # Returns
-/// - `SteadyState<S>`: A new, empty state wrapper.
-///
-/// # Remarks
-/// Should typically be called in `main` when setting up actors.
-pub fn new_state<S>() -> SteadyState<S> {
-    SteadyState(Arc::new(Mutex::new(None)))
 }
 
 /// Type alias for a thread-safe transmitter wrapped in an `Arc` and `Mutex`.

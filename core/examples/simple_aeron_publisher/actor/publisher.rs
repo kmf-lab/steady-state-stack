@@ -32,9 +32,9 @@ pub async fn run<const GIRTH: usize>(context: SteadyActorShadow
         let mut remaining = TEST_ITEMS;
          let idx:usize = (0 - STREAM_ID) as usize;
          // trace!("index of {} out of {}",idx, tx.len());
-         while remaining > 0 && actor.vacant_units(&mut tx[idx]) >= BATCH_SIZE {
+         while remaining > 0 && actor.vacant_units(&mut tx[idx]).0 >= BATCH_SIZE {
 
-             let actual_vacant = actor.vacant_units(&mut tx[idx]);
+             let actual_vacant = actor.vacant_units(&mut tx[idx]).0;
 
              // TODO: auto convert to item..
              for _i in 0..(actual_vacant >> 1) { 

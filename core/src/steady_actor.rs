@@ -231,10 +231,7 @@ pub trait SteadyActor {
     /// Waits until at least `count` units are available in the receiver.
     ///
     /// Returns `true` if available, `false` if interrupted.
-    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool;
-
-    // TODO: Waits for availability with a timeout.
-    // async fn wait_avail_with_timeout<T: RxCore>(&self, this: &mut T, count: usize, timeout: Duration) -> bool;
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, size: T::MsgSize) -> bool;
 
     /// Waits until at least `count` units are available in a bundle of receivers.
     ///
@@ -371,7 +368,7 @@ pub trait SteadyActor {
     fn is_full<T: TxCore>(&self, this: &mut T) -> bool;
 
     /// Returns the number of vacant units in the transmitter.
-    fn vacant_units<T: TxCore>(&self, this: &mut T) -> usize;
+    fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize;
 
     /// Asynchronously waits until the transmitter is empty.
     async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool;

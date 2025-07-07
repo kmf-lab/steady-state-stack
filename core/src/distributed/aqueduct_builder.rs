@@ -1,10 +1,11 @@
 #[allow(unused_imports)]
 use log::*;
-use crate::{new_state, LazyStreamRx, LazyStreamTx, ScheduleAs};
+use crate::{LazyStreamRx, LazyStreamTx, ScheduleAs};
 use crate::actor_builder::ActorBuilder;
 use crate::distributed::aeron_channel_builder::AqueTech;
 use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
-use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamIngress, StreamEgress};
+use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamEgress, StreamIngress};
+use crate::state_management::new_state;
 
 /// Trait defining a builder pattern for integrating distributed connectivity into an actor graph.
 ///

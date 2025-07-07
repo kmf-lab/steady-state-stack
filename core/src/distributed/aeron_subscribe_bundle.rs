@@ -26,11 +26,12 @@ use aeron::subscription::Subscription;
 use log::*;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::aqueduct_stream::{SteadyStreamTxBundle, StreamIngress};
-use crate::{SteadyActor, SteadyState, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait};
+use crate::{SteadyActor, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait};
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::core_tx::TxCore;
 use crate::distributed::polling;
 use crate::simulate_edge::IntoSimRunner;
+use crate::state_management::SteadyState;
 use crate::yield_now;
 
 /// State for managing Aeron subscriptions within a SteadyState actor.

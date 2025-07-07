@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::future::pending;
 use log::{error, trace, warn};
 use futures_util::{select, FutureExt};
@@ -32,7 +33,7 @@ pub trait TxCore {
 
     /// The type used to represent the size or count of messages, typically `usize` for standard
     /// channels or a tuple for streams.
-    type MsgSize: Copy;
+    type MsgSize: Copy + Debug;
 
     /// The type for a slice of messages to be sent, used in zero-copy operations.
     type SliceSource<'b> where Self::MsgOut: 'b;
@@ -78,7 +79,7 @@ pub trait TxCore {
     /// Returns the capacity of the channel.
     ///
     /// This method provides the total number of messages the channel can hold.
-    fn shared_capacity(&self) -> usize;
+    fn shared_capacity(&self) -> Self::MsgSize;
 
     /// Checks if the channel is full.
     ///
@@ -93,7 +94,12 @@ pub trait TxCore {
     /// Returns the number of vacant units in the channel.
     ///
     /// This method indicates how many more messages can be sent before the channel is full.
-    fn shared_vacant_units(&self) -> usize;
+    fn shared_vacant_units(&self) -> Self::MsgSize;
+
+    /// Return true if this message size will fit in the vacant space
+    fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool;
+
+
 
     /// Waits for either shutdown or for a specified number of units to become vacant.
     ///
@@ -318,7 +324,7 @@ impl<T> TxCore for Tx<T> {
     /// This method uses modulo arithmetic to determine the available space, accounting for
     /// wrap-around in the ring buffer.
     #[inline]
-    fn shared_vacant_units(&self) -> usize {
+    fn shared_vacant_units(&self) -> Self::MsgSize {
         let capacity = self.tx.capacity().get();
         let modulus = 2 * capacity;
         let read_idx = self.tx.read_index();
@@ -327,6 +333,12 @@ impl<T> TxCore for Tx<T> {
         assert!(result <= capacity);
         result
     }
+
+    fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
+        let vacant = self.shared_vacant_units();
+        vacant >= size
+    }
+
 
     /// Waits for either a shutdown signal or for the specified number of units to become vacant.
     ///
@@ -640,8 +652,8 @@ impl TxCore for StreamTx<StreamIngress> {
 
     /// Returns the capacity of the control channel.
     #[inline]
-    fn shared_capacity(&self) -> usize {
-        self.control_channel.tx.capacity().get()
+    fn shared_capacity(&self) -> Self::MsgSize {
+        (self.control_channel.tx.capacity().get(),self.payload_channel.tx.capacity().get())
     }
 
     /// Checks if the control channel is full.
@@ -658,8 +670,13 @@ impl TxCore for StreamTx<StreamIngress> {
 
     /// Returns the number of vacant units in the control channel.
     #[inline]
-    fn shared_vacant_units(&self) -> usize {
-        self.control_channel.tx.vacant_len()
+    fn shared_vacant_units(&self) -> Self::MsgSize {
+        (self.control_channel.tx.vacant_len(), self.payload_channel.tx.vacant_len())
+    }
+
+    fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
+        let vacant = self.shared_vacant_units();
+        vacant >= size
     }
 
     /// Waits for either shutdown or for the specified units to become vacant in both channels.
@@ -1031,8 +1048,8 @@ impl TxCore for StreamTx<StreamEgress> {
 
     /// Returns the capacity of the control channel.
     #[inline]
-    fn shared_capacity(&self) -> usize {
-        self.control_channel.tx.capacity().get()
+    fn shared_capacity(&self) -> Self::MsgSize {
+        (self.control_channel.tx.capacity().get(), self.payload_channel.tx.capacity().get())
     }
 
     /// Checks if the control channel is full.
@@ -1049,8 +1066,12 @@ impl TxCore for StreamTx<StreamEgress> {
 
     /// Returns the number of vacant units in the control channel.
     #[inline]
-    fn shared_vacant_units(&self) -> usize {
-        self.control_channel.tx.vacant_len()
+    fn shared_vacant_units(&self) -> Self::MsgSize {
+        (self.control_channel.tx.vacant_len(), self.payload_channel.tx.vacant_len())
+    }
+    fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
+        let vacant = self.shared_vacant_units();
+        vacant >= size
     }
 
     /// Waits for either shutdown or for the specified units to become vacant in both channels.
@@ -1335,7 +1356,7 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
 
     /// Forwards the capacity retrieval to the underlying `T`.
     #[inline]
-    fn shared_capacity(&self) -> usize {
+    fn shared_capacity(&self) -> Self::MsgSize {
         <T as TxCore>::shared_capacity(&**self)
     }
 
@@ -1353,8 +1374,11 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
 
     /// Forwards the vacant units retrieval to the underlying `T`.
     #[inline]
-    fn shared_vacant_units(&self) -> usize {
+    fn shared_vacant_units(&self) -> Self::MsgSize {
         <T as TxCore>::shared_vacant_units(&**self)
+    }
+    fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
+        <T as TxCore>::shared_vacant_units_for(&**self,size)
     }
 
     /// Forwards the shutdown or vacant wait to the underlying `T`.
@@ -1574,6 +1598,11 @@ mod core_tx_rx_tests {
         /// Returns a fixed vacant units value.
         fn shared_vacant_units(&self) -> usize {
             self.vacant
+        }
+
+        fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
+            let vacant = self.shared_vacant_units();
+            vacant >= size
         }
 
         /// Simulates immediate availability for shutdown or vacant wait.

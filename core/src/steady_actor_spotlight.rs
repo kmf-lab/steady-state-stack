@@ -135,25 +135,25 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
         }
     }
 
-    pub(crate) fn validate_capacity_rx<T: RxCore>(this: &mut T, count: usize) -> usize {
-        if count <= this.shared_capacity() {
-            count
+    pub(crate) fn validate_capacity_rx<T: RxCore>(this: &mut T, size: T::MsgSize) -> T::MsgSize {
+        if size <= this.shared_capacity() {
+            size
         } else {
             let capacity = this.shared_capacity();
             if this.log_periodic() {
-                warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+                warn!("wait_*: count {:?} exceeds capacity {:?}, reduced to capacity", size, capacity);
             }
             capacity
         }
     }
 
-    pub(crate) fn _validate_capacity_tx<T: TxCore>(this: &mut T, count: usize) -> usize {
-        if count <= this.shared_capacity() {
-            count
+    pub(crate) fn _validate_capacity_tx<T: TxCore>(this: &mut T, size: T::MsgSize) -> T::MsgSize {
+        if size <= this.shared_capacity() {
+            size
         } else {
             let capacity = this.shared_capacity();
             if this.log_perodic() {
-                warn!("wait_*: count {} exceeds capacity {}, reduced to capacity", count, capacity);
+                warn!("wait_*: count {:?} exceeds capacity {:?}, reduced to capacity", size, capacity);
             }
             capacity
         }
@@ -485,7 +485,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         this.shared_is_full()
     }
 
-    fn vacant_units<T: TxCore>(&self, this: &mut T) -> usize {
+    fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize {
         this.shared_vacant_units()
     }
 
@@ -494,7 +494,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         if self.telemetry.is_dirty() {
             let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
-                this.shared_vacant_units() == this.shared_capacity()
+                this.shared_is_empty()
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
                 let wat = this.shared_wait_empty();
@@ -750,42 +750,53 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
-    async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, size: T::MsgSize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
-        let count = Self::validate_capacity_rx(this, count);
-        if self.telemetry.is_dirty() {
-            let remaining_micros = self.telemetry_remaining_micros();
-            if remaining_micros <= 0 {
-                false
-            } else {
-                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let wat = this.shared_wait_closed_or_avail_units(count);
-                select! {
-                    _ = dur.fuse() => false,
-                    x = wat.fuse() => x
-                }
-            }
+        let size = Self::validate_capacity_rx(this, size);
+
+        if this.shared_avail_units_for(size) {
+            true
         } else {
-            this.shared_wait_closed_or_avail_units(count).await
+            if self.telemetry.is_dirty() {
+                let remaining_micros = self.telemetry_remaining_micros();
+                if remaining_micros <= 0 {
+                    false
+                } else {
+                    let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                    let wat = this.shared_wait_closed_or_avail_units(size);
+                    select! {
+                        _ = dur.fuse() => false,
+                        x = wat.fuse() => x
+                    }
+                }
+            } else {
+                this.shared_wait_closed_or_avail_units(size).await
+            }
         }
+
     }
 
-    async fn wait_vacant<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool {
+    async fn wait_vacant<T: TxCore>(&self, this: &mut T, size: T::MsgSize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
-        if self.telemetry.is_dirty() {
-            let remaining_micros = self.telemetry_remaining_micros();
-            if remaining_micros <= 0 {
-                false
-            } else {
-                let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let wat = this.shared_wait_shutdown_or_vacant_units(count);
-                select! {
-                    _ = dur.fuse() => false,
-                    x = wat.fuse() => x
-                }
-            }
+        if this.shared_vacant_units_for(size) {
+            true
         } else {
-            this.shared_wait_shutdown_or_vacant_units(count).await
+
+            if self.telemetry.is_dirty() {
+                let remaining_micros = self.telemetry_remaining_micros();
+                if remaining_micros <= 0 {
+                    false //immediate return to do telemetry will be back later
+                } else {
+                        let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
+                        let wat = this.shared_wait_shutdown_or_vacant_units(size);
+                        select! {
+                            _ = dur.fuse() => false,
+                            x = wat.fuse() => x
+                        }
+                }
+            } else {
+                this.shared_wait_shutdown_or_vacant_units(size).await
+            }
         }
     }
 
@@ -868,7 +879,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         let _guard = self.start_profile(CALL_OTHER);
         let count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));
-        let mut futures = FuturesUnordered::new();
+        let mut futures = FuturesUnordered::new();   //TODO: optimize this similar to wait_vacant if possible
         for tx in this.iter_mut().take(count_down) {
             let local_r = result.clone();
             futures.push(async move {
@@ -888,7 +899,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         result.load(Ordering::Relaxed)
     }
 
-    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool {
+    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: T::MsgSize, ready_channels: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count_down = ready_channels.min(this.len());
         let result = Arc::new(AtomicBool::new(true));

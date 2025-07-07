@@ -1120,7 +1120,7 @@ impl<T: StreamControlItem> LazyStreamRx<T> {
     }
 
     /// Waits for a specified number of units to become available or for a timeout, returning whether the condition was met.
-    pub fn testing_avail_wait(&self, count: usize, timeout_duration: Duration) -> bool {
+    pub fn testing_avail_wait(&self, count: usize,  timeout_duration: Duration) -> bool {
         core_exec::block_on(async {
             let s = self.clone();
             let mut l = s.lock().await;

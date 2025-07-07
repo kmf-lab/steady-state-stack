@@ -7,11 +7,11 @@ use aeron::exclusive_publication::ExclusivePublication;
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::aqueduct_stream::{SteadyStreamRx, StreamEgress};
-use crate::{await_for_any, RxCore, SteadyActor, SteadyState};
+use crate::{await_for_any, RxCore, SteadyActor};
 use crate::steady_actor_shadow::SteadyActorShadow;
 use std::time::Duration;
 use log::*;
-
+use crate::state_management::SteadyState;
 // Reference to Aeron Best Practices Guide for performance optimization and configuration tips:
 // https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
 
@@ -128,7 +128,7 @@ async fn internal_behavior<C: SteadyActor>(
     info!("Running publish for actor '{:?}' with publication in place", actor.identity());
 
     let capacity: usize = rx.capacity();
-    let wait_for = (512 * 1024).min(capacity);
+    let wait_for = ((512 * 1024).min(capacity),8);
 
     let mut last_position = 0;
     let mut stream_flushed = false;
@@ -264,7 +264,7 @@ pub(crate) mod aeron_tests {
 
         let mut received_count = 0;
         while actor.is_running(&mut || rx.is_closed_and_empty()) {
-            let _clean = await_for_all!(actor.wait_avail(&mut rx, LEN));
+            let _clean = await_for_all!(actor.wait_avail(&mut rx, (LEN,1)));
 
             let bytes = actor.avail_units(&mut rx.payload_channel);
             actor.advance_take_index(&mut rx.payload_channel, bytes);
