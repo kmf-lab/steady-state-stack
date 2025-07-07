@@ -22,6 +22,7 @@ use ringbuf::producer::Producer;
 use std::ops::DerefMut;
 use std::task::Poll;
 use aeron::aeron::Aeron;
+use log::warn;
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
 use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
@@ -30,7 +31,7 @@ use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
-use crate::monitor::{ActorMetaData, CALL_OTHER};
+use crate::monitor::{ActorMetaData};
 use crate::simulate_edge::{IntoSimRunner};
 use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
@@ -466,67 +467,40 @@ impl SteadyActor for SteadyActorShadow {
         }
     }
 
-    /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
-    ///
-    /// This method helps maintain a consistent period between consecutive calls, even if the
-    /// execution time of the work performed in between calls fluctuates. It calculates the
-    /// remaining time until the next desired periodic interval and waits for that duration.
-    ///
-    /// If a shutdown signal is detected during the waiting period, the method returns early
-    /// with a value of `false`. Otherwise, it waits for the full duration and returns `true`.
-    ///
-    /// # Arguments
-    ///
-    /// * `duration_rate` - The desired duration between periodic calls.
-    ///
-    /// # Returns
-    ///
-    /// * `true` if the full waiting duration was completed without interruption.
-    /// * `false` if a shutdown signal was detected during the waiting period.
-    ///
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
-        self.wait_timeout(duration_rate).await
-    }
-
-    /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
-    ///
-    /// This method helps maintain a consistent period between consecutive calls, even if the
-    /// execution time of the work performed in between calls fluctuates. It calculates the
-    /// remaining time until the next desired periodic interval and waits for that duration.
-    ///
-    /// If a shutdown signal is detected during the waiting period, the method returns early
-    /// with a value of `false`. Otherwise, it waits for the full duration and returns `true`.
-    ///
-    /// # Arguments
-    ///
-    /// * `duration_rate` - The desired duration between periodic calls.
-    ///
-    /// # Returns
-    ///
-    /// * `true` if the full waiting duration was completed without interruption.
-    /// * `false` if a shutdown signal was detected during the waiting period.
-    ///
-    async fn wait_timeout(&self, duration_rate: Duration) -> bool {
-        let one_down = &mut self.oneshot_shutdown.lock().await;
-        if !one_down.is_terminated() {
-            let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
-            let run_duration = now_nanos - self.last_periodic_wait.load(Ordering::Relaxed);
-            let remaining_duration = duration_rate.saturating_sub(Duration::from_nanos(run_duration));
-
-            let delay = Delay::new(remaining_duration);
-            let result = select! {
-                _= &mut one_down.deref_mut() => false,
-                _= &mut delay.fuse() => true
-             };
-            self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
-            result
-
-           
-
+        let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
+        let last = self.last_periodic_wait.load(Ordering::SeqCst);
+        let remaining_duration = if last <= now_nanos {
+            duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
         } else {
-            false
-        }
+            if Duration::from_nanos(last-now_nanos).gt(&duration_rate) {
+                warn!("the actor {:?} loop took {:?} which is longer than the required periodic time of: {:?}, consider doing less work OR increating the wait_periodic duration."
+                        ,self.ident, Duration::from_nanos(last-now_nanos), duration_rate);
+            }
+            Duration::ZERO //SHOULD NEVER HAPPEN BECAUSE last is in the future.
+        };
+        //must store now because this wait may be abandoned if data comes in
+        self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
+        let delay = Delay::new(remaining_duration);
+
+        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
+        let result = select! {
+                    _= &mut one_down.deref_mut() => false,
+                    _= &mut delay.fuse() => true
+                 };
+        result
     }
+    async fn wait_timeout(&self, timeout: Duration) -> bool {
+        let delay = Delay::new(timeout);
+        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
+        let result = select! {
+                    _= &mut one_down.deref_mut() => false,
+                    _= &mut delay.fuse() => true
+                 };
+        result
+    }
+
+
     /// Asynchronously waits for a specified duration.
     ///
     /// # Parameters

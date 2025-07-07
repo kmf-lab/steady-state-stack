@@ -277,7 +277,7 @@ async fn process_msg(msg: DiagramData
         },
         DiagramData::NodeProcessData(_seq, actor_status) => {
             let total_work_ns: u128 = actor_status.iter().map(|status| {
-                assert!(status.unit_total_ns >= status.await_total_ns, "unit_total_ns:{} await_total_ns:{}", status.unit_total_ns, status.await_total_ns);
+                assert!(status.unit_total_ns >= status.await_total_ns, "unit_total_ns:{:?} await_total_ns:{:?}", status.unit_total_ns, status.await_total_ns);
                 (status.unit_total_ns - status.await_total_ns) as u128
             }).sum();
 

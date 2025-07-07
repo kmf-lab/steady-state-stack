@@ -90,7 +90,7 @@ pub(crate) mod core_exec {
     }
 
     #[cfg(not(any(all(unix, feature = "libc"), all(windows, feature = "winapi"))))]
-    fn set_thread_affinity(_core: usize) -> Result<(), ()> {
+    fn set_thread_affinity(_core: usize) -> std::result::Result<(), Box<dyn Error>> {
         Ok(())
     }
 
@@ -119,7 +119,7 @@ pub(crate) mod core_exec {
                     warn!("Affinity for blocking tasks was enabled but unable to set due to '{:?}', will run blocking task on another core.",e)
                 }
             }
-            if let Err(e) = sender.send(f()) {
+            if let Err(_e) = sender.send(f()) {
                 //may happen as expected in some shutdown cases
                 warn!("blocking job finished but the receiver is no longer attached");
             }

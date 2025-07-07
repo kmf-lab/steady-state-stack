@@ -978,6 +978,7 @@ pub(crate) fn compute_labels<T: Counter>(
         let avg_per_sec_numer = (config.rational_adjust.0 as u128 * current.runner) >> config.window_in_bits;
         let int_value = avg_per_sec_numer / denominator as u128;
         let float_value = avg_per_sec_numer as f32 / denominator as f32;
+        // error!(" int value: {}  float value: {} runner: {} window bits: {}", int_value,float_value,current.runner,  config.window_in_bits);
 
         // Format the label based on int_only flag
         if labels.int_only {

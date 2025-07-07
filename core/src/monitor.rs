@@ -1,3 +1,4 @@
+use std::num::NonZeroU64;
 use std::ops::*;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
@@ -30,7 +31,7 @@ pub struct ActorStatus {
     /// Total time spent awaiting, measured in nanoseconds.
     pub(crate) await_total_ns: u64,
     /// Total time spent in unit operations, measured in nanoseconds.
-    pub(crate) unit_total_ns: u64,
+    pub(crate) unit_total_ns: u64,// should not be zero.
     /// Optional information about the thread running the actor.
     pub(crate) thread_info: Option<ThreadInfo>,
     /// Array tracking counts of different operation types.

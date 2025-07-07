@@ -15,10 +15,14 @@
 //!
 use std::cell::RefCell;
 
+/// Internal structure holding expression location information in case it is necessary to debug unclean shutdowns.
 #[derive(Clone,Eq, PartialEq, Debug)]
 pub struct Eye {
+    /// the str expression in question
     pub expression: &'static str,
+    /// the file where this expression is found
     pub file: &'static str,
+    /// the line number in the file where this expression is found
     pub line: u32
 }
 

@@ -219,10 +219,10 @@ pub trait SteadyActor {
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
     async fn wait_periodic(&self, duration_rate: Duration) -> bool;
-    /// Waits for a consistent periodic interval between calls, accounting for work time.
+    /// Waits for a fixed interval between calls, regardless of work time.
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
-    async fn wait_timeout(&self, duration_rate: Duration) -> bool;
+    async fn wait_timeout(&self, timeout: Duration) -> bool;
 
 
     /// Asynchronously waits for the specified duration.

@@ -50,7 +50,8 @@ pub(crate) struct Node {
     pub(crate) display_label: String,
     pub(crate) metric_text: String,
     pub(crate) thread_info_cache: Option<ThreadInfo>,
-    pub(crate) total_count_restarts: u32
+    pub(crate) total_count_restarts: u32,
+    pub(crate) work_info: Option<(u16,u16)>
 }
 
 pub(crate) const DEFAULT_PEN_WIDTH: &str = "4"; //need a way to configure this?
@@ -65,31 +66,41 @@ impl Node {
     pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus, total_work_ns: u128) {
         let num = actor_status.await_total_ns; //TODO: should not be zero..
         let den = actor_status.unit_total_ns;
-        assert!(den.ge(&num), "num: {} den: {}", num, den);
-        let mcpu = if den.is_zero() || num.is_zero() || 0==actor_status.iteration_start { 0 } else { 1024 - ((num * 1024) / den) };
-        let load = if 0==total_work_ns || 0==actor_status.iteration_start {0} else {
-                          (100u64 * (actor_status.unit_total_ns - actor_status.await_total_ns))
-                         / total_work_ns as u64
+
+        let mcpu_load = if den.is_zero() {
+            None
+        } else {
+            assert!(den.ge(&num), "num: {} den: {}", num, den);
+            let mcpu:u16 = if den.is_zero() || num.is_zero() || 0==actor_status.iteration_start { 0u16 } else { (1024 - ((num * 1024) / den)) as u16 };
+            let load:u16 = if 0==total_work_ns || 0==actor_status.iteration_start {0} else {
+                ((100u64 * (actor_status.unit_total_ns - actor_status.await_total_ns))
+                                                                   / total_work_ns as u64) as u16
+            };
+            Some((mcpu, load))
         };
+
+        //if we have no new work data then continue what we found last time
+        if mcpu_load.is_some() {
+            self.work_info = mcpu_load;
+        }
+        let mcpu_load = self.work_info;
+
         //only set when we get a new one otherwise we just hold the old one.
         if actor_status.thread_info.is_some() {
             self.thread_info_cache = actor_status.thread_info;
         }
-
         let thread_id = if self.stats_computer.show_thread_id {
             self.thread_info_cache
         } else {
             None
         };
-
         self.total_count_restarts = self.total_count_restarts.max(actor_status.total_count_restarts);
 
         // Old strings for this actor are passed back in so they get cleared and re-used rather than reallocate
         let (color, pen_width) = self.stats_computer.compute(
             &mut self.display_label,
             &mut self.metric_text,
-            mcpu,
-            load,
+            mcpu_load,
             self.total_count_restarts,
             actor_status.bool_stop,
             thread_id
@@ -130,6 +141,9 @@ impl Edge {
             send,
             take,
         );
+
+        //this is different from the actors in that sending and take are totaled up
+        // ie they get accumulated and eld by self.status_computer for rollovers.
 
         self.color = color;
         self.pen_width = pen;
@@ -334,7 +348,8 @@ pub fn apply_node_def(
                 metric_text: String::new(),
                 remote_details: None,
                 thread_info_cache: None,
-                total_count_restarts: 0
+                total_count_restarts: 0,
+                work_info: None
             }
         });
     }
@@ -701,7 +716,8 @@ mod dot_tests {
             metric_text: String::new(),
             remote_details: None,
             thread_info_cache: None,
-            total_count_restarts: 0
+            total_count_restarts: 0,
+            work_info: None
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         assert_eq!(node.color, "grey");
@@ -740,7 +756,9 @@ mod dot_tests {
                     metric_text: "node_metric".to_string(),
                     remote_details: None,
                     thread_info_cache: None,
-                    total_count_restarts: 0
+                    total_count_restarts: 0,
+                    work_info: None
+
                 }
             ],
             edges: vec![
@@ -784,7 +802,9 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
-                    total_count_restarts: 0
+                    total_count_restarts: 0,
+                    work_info: None
+
                 }
             ],
             edges: vec![
@@ -933,7 +953,9 @@ mod dot_tests {
             metric_text: String::new(),
             remote_details: None,
             thread_info_cache: None,
-            total_count_restarts: 0
+            total_count_restarts: 0,
+            work_info: None
+
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         // This should trigger the load calculation branch
@@ -953,7 +975,9 @@ mod dot_tests {
                     metric_text: "node_metric".to_string(),
                     remote_details: None,
                     thread_info_cache: None,
-                    total_count_restarts: 0
+                    total_count_restarts: 0,
+                    work_info: None
+
                 }
             ],
             edges: vec![
@@ -994,7 +1018,9 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
-                    total_count_restarts: 0
+                    total_count_restarts: 0,
+                    work_info: None
+
                 }
             ],
             edges: vec![],
@@ -1029,7 +1055,9 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: Some(remote_details),
                     thread_info_cache: None,
-                    total_count_restarts: 0
+                    total_count_restarts: 0,
+                    work_info: None
+
                 }
             ],
             edges: vec![],
@@ -1060,7 +1088,9 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
-                    total_count_restarts: 0
+                    total_count_restarts: 0,
+                    work_info: None
+
                 },
                 Node {
                     id: Some(ActorName::new("to_node", Some(5))),
@@ -1071,7 +1101,9 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
-                    total_count_restarts: 0
+                    total_count_restarts: 0,
+                    work_info: None
+
                 }
             ],
             edges: vec![
@@ -1298,7 +1330,9 @@ mod dot_tests {
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
-                    total_count_restarts: 0
+                    total_count_restarts: 0,
+                    work_info: None
+
                 }
             ],
             edges: vec![],

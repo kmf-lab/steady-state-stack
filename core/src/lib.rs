@@ -336,7 +336,6 @@ use futures::AsyncWrite;
 pub use futures::future::Future;
 use futures::channel::oneshot;
 use futures_util::lock::{MappedMutexGuard, MutexGuard};
-use log::kv::Source;
 pub use steady_actor_spotlight::SteadyActorSpotlight;
 
 use crate::yield_now::yield_now;
@@ -410,13 +409,15 @@ impl<S> SteadyState<S> {
         StateGuard { guard: mapped }
     }
 
-
+    /// Lock state to review or modify its values ater it has been created or initialized.
+    /// This is most helpful in testing and in main after actors have shutdown to determine what
+    /// was the final state of the SteadyState.
     pub fn try_lock_sync(&self) -> Option<StateGuard<'_, S>>
     where
         S: Send,
     {
-        if let Some(mut guard) = self.0.try_lock() {
-            if let Some(ref s) = *guard {
+        if let Some(guard) = self.0.try_lock() {
+            if let Some(ref _s) = *guard {
                 let mapped = MutexGuard::map(guard, |opt| opt.as_mut().expect("existing state"));
                 Some(StateGuard { guard: mapped })
             } else {

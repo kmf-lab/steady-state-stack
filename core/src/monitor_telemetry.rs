@@ -62,12 +62,15 @@ impl SteadyTelemetryActorSend {
 
         let total_ns = self.instant_start.elapsed().as_nanos() as u64;
 
+        let hot = self.hot_profile_await_ns_unit.load(Ordering::Relaxed);
         debug_assert!(
-            total_ns >= self.hot_profile_await_ns_unit.load(Ordering::Relaxed),
-            "should be: {} >= {}", total_ns, self.hot_profile_await_ns_unit.load(Ordering::Relaxed)
+            total_ns >= hot, "should be: {} >= {}", total_ns, hot
         );
+        // trace!("status ratio {} over {} mCPU {}", hot, total_ns, (1024*hot)/total_ns );
+
 
         let calls: [u16; 6] = std::array::from_fn(|i| self.calls[i].load(Ordering::Relaxed));
+        assert!(total_ns>0);
 
         ActorStatus {
             total_count_restarts: self.instance_id,
@@ -75,7 +78,7 @@ impl SteadyTelemetryActorSend {
             iteration_sum: (iteration_index-self.iteration_index_start),
             bool_stop: self.bool_stop,
             bool_blocking: self.bool_blocking,
-            await_total_ns: self.hot_profile_await_ns_unit.load(Ordering::Relaxed),
+            await_total_ns: hot,
             unit_total_ns: total_ns,
             thread_info,
             calls,
@@ -241,6 +244,8 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
 
                 iteration_sum += status.iteration_sum;
                 await_total_ns += status.await_total_ns;
+                assert!( status.unit_total_ns > 0);
+
                 unit_total_ns += status.unit_total_ns;
                 if status.thread_info.is_some() {
                     thread_info = status.thread_info;
@@ -251,32 +256,37 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 }
             }
 
-            if count_of_actor_status_events > 0 {
-                Some(ActorStatus {
-                    iteration_start: buffer[0].iteration_start, //always the starting iterator count
-                    iteration_sum,
-                    //we just use the last event for these two, no need to check the others.
-                    total_count_restarts: buffer[count_of_actor_status_events - 1].total_count_restarts,
-                    bool_stop: buffer[count_of_actor_status_events - 1].bool_stop,
-                    bool_blocking: buffer[count_of_actor_status_events - 1].bool_blocking,
-                    await_total_ns,
-                    unit_total_ns,
-                    thread_info,
-                    calls,
-                })
+            if unit_total_ns==0 {
+                None
             } else {
-                Some(ActorStatus {
-                    iteration_start: buffer[0].iteration_start, //always the starting iterator count
-                    iteration_sum,
-                    total_count_restarts: 0,
-                    bool_stop: false,
-                    bool_blocking: false,
-                    await_total_ns,
-                    unit_total_ns,
-                    thread_info,
-                    calls,
-                })
-              //HACK TESTFOR ZERO  None
+                assert!(unit_total_ns > 0);
+                if count_of_actor_status_events > 0 {
+                    Some(ActorStatus {
+                        iteration_start: buffer[0].iteration_start, //always the starting iterator count
+                        iteration_sum,
+                        //we just use the last event for these two, no need to check the others.
+                        total_count_restarts: buffer[count_of_actor_status_events - 1].total_count_restarts,
+                        bool_stop: buffer[count_of_actor_status_events - 1].bool_stop,
+                        bool_blocking: buffer[count_of_actor_status_events - 1].bool_blocking,
+                        await_total_ns,
+                        unit_total_ns,
+                        thread_info,
+                        calls,
+                    })
+                } else {
+                    Some(ActorStatus {
+                        iteration_start: buffer[0].iteration_start, //always the starting iterator count
+                        iteration_sum,
+                        total_count_restarts: 0,
+                        bool_stop: false,
+                        bool_blocking: false,
+                        await_total_ns,
+                        unit_total_ns,
+                        thread_info,
+                        calls,
+                    })
+                    //HACK TESTFOR ZERO  None
+                }
             }
         } else {
             None

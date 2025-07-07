@@ -525,7 +525,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         DriftCountIterator::new(units, this.shared_take_into_iter(), iterator_count_drift)
     }
 
-    async fn call_async<F>(&self, mut operation: F) -> Option<F::Output>
+    async fn call_async<F>(&self, operation: F) -> Option<F::Output>
     where F: Future {
 
         let operation = operation.fuse();
@@ -550,6 +550,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
+        // TODO: somehow we must set bool_blocking ??? not sure.
+
         let guard = self.start_profile(CALL_OTHER);
         //this is a blocking call so we drop to measure this as 100% used core
         drop(guard);
@@ -585,47 +587,39 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
 
 
-    /// Waits for a specified duration, ensuring a consistent periodic interval between calls.
-    ///
-    /// This method helps maintain a consistent period between consecutive calls, even if the
-    /// execution time of the work performed in between calls fluctuates. It calculates the
-    /// remaining time until the next desired periodic interval and waits for that duration.
-    ///
-    /// If a shutdown signal is detected during the waiting period, the method returns early
-    /// with a value of `false`. Otherwise, it waits for the full duration and returns `true`.
-    ///
-    /// # Arguments
-    ///
-    /// * `duration_rate` - The desired duration between periodic calls.
-    ///
-    /// # Returns
-    ///
-    /// * `true` if the full waiting duration was completed without interruption.
-    /// * `false` if a shutdown signal was detected during the waiting period.
-    ///
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
-        self.wait_timeout(duration_rate).await
-    }
-    async fn wait_timeout(&self, duration_rate: Duration) -> bool {
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
         let last = self.last_periodic_wait.load(Ordering::SeqCst);
         let remaining_duration = if last <= now_nanos {
-                    duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
-                } else {
-                    duration_rate
-                };
+                duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
+            } else {
+                if Duration::from_nanos(last-now_nanos).gt(&duration_rate) {
+                    warn!("the actor {:?} loop took {:?} which is longer than the required periodic time of: {:?}, consider doing less work OR increating the wait_periodic duration."
+                        ,self.ident, Duration::from_nanos(last-now_nanos), duration_rate);
+                }
+                Duration::ZERO //SHOULD NEVER HAPPEN BECAUSE last is in the future.
+            };
+        //must store now because this wait may be abandoned if data comes in
+        self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
+        let delay = Delay::new(remaining_duration);
 
         let _guard = self.start_profile(CALL_WAIT);
         let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
-
-            let delay = Delay::new(remaining_duration);
-            let result = select! {
+        let result = select! {
                     _= &mut one_down.deref_mut() => false,
                     _= &mut delay.fuse() => true
                  };
-            self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
-            result
-       
+        result
+    }
+    async fn wait_timeout(&self, timeout: Duration) -> bool {
+        let delay = Delay::new(timeout);
+        let _guard = self.start_profile(CALL_WAIT);
+        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
+        let result = select! {
+                    _= &mut one_down.deref_mut() => false,
+                    _= &mut delay.fuse() => true
+                 };
+        result
     }
 
     async fn wait(&self, duration: Duration) {

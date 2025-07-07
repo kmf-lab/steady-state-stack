@@ -107,13 +107,14 @@ impl ActorStatsComputer {
         &mut self,
         dot_label: &mut String,
         metric_text: &mut String,
-        mcpu: u64,
-        load: u64,
+        mcpu_load: Option<(u16,u16)>,
         total_count_restarts: u32,
         bool_stop: bool,
         thread_info: Option<ThreadInfo>
     ) -> (&'static str, &'static str) {
-        self.accumulate_data_frame(mcpu, load);
+        if let Some((mcpu,load)) = mcpu_load {
+            self.accumulate_data_frame(mcpu, load);
+        }
 
         #[cfg(feature = "prometheus_metrics")]
         metric_text.clear();
@@ -183,7 +184,7 @@ impl ActorStatsComputer {
             compute_labels(config, current_work, labels, &self.std_dev_work, &self.percentiles_work, metric_text, dot_label);
         }
 
-        if let Some(current_mcpu) = &self.current_mcpu {
+        if let Some(current_mcpu) = &self.current_mcpu { //TODO: urgent problem with mCPU compute.
             let config = ComputeLabelsConfig::actor_config(self, (1, 1), 1024, self.show_avg_mcpu);
             let labels = ComputeLabelsLabels {
                 label: "mCPU",
@@ -314,12 +315,13 @@ impl ActorStatsComputer {
     ///
     /// * `mcpu` - The CPU utilization value for the current frame.
     /// * `work` - The workload utilization value for the current frame.
-    pub(crate) fn accumulate_data_frame(&mut self, mcpu: u64, work: u64) {
+    pub(crate) fn accumulate_data_frame(&mut self, mcpu: u16, work: u16) {
         assert!(mcpu <= 1024, "mcpu out of range {}", mcpu);
+        // trace!("accumulating data frame on mCPU {}",mcpu);
 
         self.history_mcpu.iter_mut().for_each(|f| {
             if let Some(h) = &mut f.histogram {
-                if let Err(e) = h.record(mcpu) {
+                if let Err(e) = h.record(mcpu as u64) {
                     error!("unexpected, unable to record inflight {} err: {}", mcpu, e);
                 }
             }
@@ -329,7 +331,7 @@ impl ActorStatsComputer {
 
         self.history_work.iter_mut().for_each(|f| {
             if let Some(h) = &mut f.histogram {
-                if let Err(e) = h.record(work) {
+                if let Err(e) = h.record(work as u64) {
                     error!("unexpected, unable to record inflight {} err: {}", work, e);
                 }
             }
@@ -756,8 +758,7 @@ mod test_actor_stats {
         let (line_color, line_width) = actor_stats.compute(
             &mut dot_label,
             &mut metric_text,
-            512,
-            50,
+            Some((512, 50)),
             1,
             false,
             None
@@ -1001,7 +1002,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 0, false, None);
 
         // Should contain actor name with suffix
         assert!(dot_label.contains("test42"));
@@ -1020,7 +1021,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 0, false, None);
 
         // Should contain actor ID in brackets when SHOW_ACTORS is true
         // Note: This test might need adjustment based on how SHOW_ACTORS is implemented
@@ -1042,7 +1043,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 0, false, None);
 
         // Should contain window information
         assert!(dot_label.contains("Window 5.0 mins"));
@@ -1060,7 +1061,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 5, false, None);
+        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 5, false, None);
 
         // Should contain restart count
         assert!(dot_label.contains("restarts: 5"));
@@ -1084,7 +1085,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 50, 0, true, None);
+        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 0, true, None);
 
         // Should contain stopped indicator
         assert!(dot_label.contains("stopped"));
@@ -1107,7 +1108,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, 500, 60, 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 60)), 0, false, None);
 
         // Should contain work load information
         assert!(dot_label.contains("load"));
@@ -1130,7 +1131,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, 700, 50, 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut metric_text, Some((700, 50)), 0, false, None);
 
         // Should contain mcpu information
         assert!(dot_label.contains("mCPU"));
@@ -1155,7 +1156,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, 600, 50, 0, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, Some((600, 50)), 0, false, None);
 
         assert_eq!(color, DOT_YELLOW);
     }
@@ -1179,7 +1180,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, 300, 70, 0, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, Some((300, 70)), 0, false, None);
 
         assert_eq!(color, DOT_ORANGE);
     }
@@ -1365,7 +1366,7 @@ mod extra_tests {
         let mut dot_label = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, 600, 80, 0, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, Some((600, 80)), 0, false, None);
 
         // Should be Red (highest priority) even though other triggers also fire
         assert_eq!(color, DOT_RED);
