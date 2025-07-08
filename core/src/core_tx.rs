@@ -81,6 +81,13 @@ pub trait TxCore {
     /// This method provides the total number of messages the channel can hold.
     fn shared_capacity(&self) -> Self::MsgSize;
 
+    //TODO: capacity fits
+    //TODO: await both fields and auto deref to (x,0) for the single?
+
+    fn shared_capacity_for(&self, size: Self::MsgSize) -> bool;
+
+
+
     /// Checks if the channel is full.
     ///
     /// Returns `true` if the channel has reached its capacity and cannot accept more messages.
@@ -307,6 +314,11 @@ impl<T> TxCore for Tx<T> {
         self.tx.capacity().get()
     }
 
+    fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
+        let cap = self.shared_capacity();
+        size <= cap
+    }
+
     /// Checks if the channel is at full capacity.
     #[inline]
     fn shared_is_full(&self) -> bool {
@@ -509,6 +521,7 @@ impl<T> TxCore for Tx<T> {
     ) -> SendOutcome<Self::MsgOut> {
         self.shared_send_async_core(msg, ident, saturation, timeout).await
     }
+
 }
 
 /// Implementation of `TxCore` for stream-based channels with `StreamIngress`.
@@ -654,6 +667,10 @@ impl TxCore for StreamTx<StreamIngress> {
     #[inline]
     fn shared_capacity(&self) -> Self::MsgSize {
         (self.control_channel.tx.capacity().get(),self.payload_channel.tx.capacity().get())
+    }
+    fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
+        let cap = self.shared_capacity();
+        size <= cap
     }
 
     /// Checks if the control channel is full.
@@ -1051,6 +1068,10 @@ impl TxCore for StreamTx<StreamEgress> {
     fn shared_capacity(&self) -> Self::MsgSize {
         (self.control_channel.tx.capacity().get(), self.payload_channel.tx.capacity().get())
     }
+    fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
+        let cap = self.shared_capacity();
+        size <= cap
+    }
 
     /// Checks if the control channel is full.
     #[inline]
@@ -1360,6 +1381,10 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
         <T as TxCore>::shared_capacity(&**self)
     }
 
+    fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
+        <T as TxCore>::shared_capacity_for(&**self, size)
+    }
+
     /// Forwards the full check to the underlying `T`.
     #[inline]
     fn shared_is_full(&self) -> bool {
@@ -1585,6 +1610,10 @@ mod core_tx_rx_tests {
             self.capacity
         }
 
+        fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
+            let cap = self.shared_capacity();
+            size <= cap
+        }
         /// Returns a fixed full status.
         fn shared_is_full(&self) -> bool {
             self.is_full

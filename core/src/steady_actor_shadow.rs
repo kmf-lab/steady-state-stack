@@ -592,7 +592,7 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_avail<T: RxCore>(&self, this: &mut T, size: T::MsgSize) -> bool {
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, size: usize) -> bool {
         this.shared_wait_closed_or_avail_units(size).await
     }
 
@@ -703,7 +703,7 @@ impl SteadyActor for SteadyActorShadow {
             result.load(Ordering::Relaxed)
         }
 
-    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: T::MsgSize, ready_channels: usize) -> bool {
+    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool {
 
             let count_down = ready_channels.min(this.len());
             let result = Arc::new(AtomicBool::new(true));

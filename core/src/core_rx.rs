@@ -287,6 +287,8 @@ pub trait RxCore {
     /// This method provides the total number of messages the channel can hold.
     fn shared_capacity(&self) -> Self::MsgSize;
 
+    fn shared_capacity_for(&self, size: Self::MsgSize) -> bool;
+
     /// Determines whether it is time to perform periodic logging.
     ///
     /// This method checks if a sufficient amount of time has elapsed since the last log, based on
@@ -318,7 +320,10 @@ pub trait RxCore {
     /// This method returns `true` if the units became available, or `false` if the channel was closed
     /// before the units were available.
     #[allow(async_fn_in_trait)]
-    async fn shared_wait_closed_or_avail_units(&mut self, size: Self::MsgSize) -> bool;
+    async fn shared_wait_closed_or_avail_units(&mut self, size: usize) -> bool;
+
+    fn shared_validate_capacity_items(&self, items_count: usize) -> usize;
+    fn shared_avail_items_count(&mut self) -> usize;
 
     /// Waits until a specified number of units become available.
     ///
@@ -444,6 +449,11 @@ impl<T> RxCore for Rx<T> {
         self.rx.capacity().get()
     }
 
+    fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
+        let cap = self.shared_capacity();
+        size<=cap
+    }
+
     fn shared_is_empty(&self) -> bool {
         self.rx.is_empty()
     }
@@ -539,6 +549,13 @@ impl<T> RxCore for Rx<T> {
         self.rx.as_slices()
     }
 
+    fn shared_validate_capacity_items(&self, items_count: usize) -> usize {
+        self.shared_capacity().min(items_count)
+    }
+
+    fn shared_avail_items_count(&mut self) -> usize {
+        self.shared_avail_units()
+    }
 }
 
 /// Implementation of `RxCore` for stream-based channels (`StreamRx<T>`).
@@ -564,6 +581,14 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
 
     /// The type for the target slices where messages are copied, a pair of mutable slices for control and payload.
     type SliceTarget<'b> = (&'b mut [T], &'b mut [u8]) where T: 'b;
+
+    fn shared_validate_capacity_items(&self, items_count: usize) -> usize {
+        self.shared_capacity().0.min(items_count)
+    }
+
+    fn shared_avail_items_count(&mut self) -> usize {
+        self.shared_avail_units().0
+    }
 
     fn is_closed_and_empty(&mut self) -> bool {
         self.control_channel.is_closed_and_empty() && self.payload_channel.is_closed_and_empty()
@@ -646,6 +671,11 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         (self.control_channel.rx.capacity().get(), self.payload_channel.rx.capacity().get())
     }
 
+    fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
+        let cap = self.shared_capacity();
+        size<=cap
+    }
+
     fn shared_is_empty(&self) -> bool {
         self.control_channel.rx.is_empty()
     }
@@ -661,15 +691,15 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
     async fn shared_wait_shutdown_or_avail_units(&mut self, count: Self::MsgSize) -> bool {
         let mut one_down = &mut self.control_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
-            let mut operation = &mut self.control_channel.rx.wait_occupied(count);
+            let mut operation = &mut self.control_channel.rx.wait_occupied(count.0);
             select! { _ = one_down => false, _ = operation => true }
         } else {
-            self.control_channel.rx.occupied_len() >= count
+            self.shared_avail_units() >= count
         }
     }
 
-    async fn shared_wait_closed_or_avail_units(&mut self, count: Self::MsgSize) -> bool {
-        if self.control_channel.rx.occupied_len() >= count {
+    async fn shared_wait_closed_or_avail_units(&mut self, count:usize) -> bool {
+        if self.shared_avail_units_for((count,1)) {
             true
         } else {
             let mut one_closed = &mut self.control_channel.is_closed;
@@ -678,7 +708,7 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
                 select! { _ = one_closed => self.control_channel.rx.occupied_len() >= count, _ = operation => true }
             } else {
                 yield_now::yield_now().await;
-                self.control_channel.rx.occupied_len() >= count
+                self.shared_avail_units_for((count,1))
             }
         }
     }
@@ -776,7 +806,6 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         (item_a, item_b, payload_a, payload_b)
     }
 
-
 }
 
 /// Implementation of `RxCore` for `futures_util::lock::MutexGuard<'_, T>` where `T: RxCore`.
@@ -802,6 +831,14 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     /// Inherits the slice target type from the underlying `T`.
     type SliceTarget<'b> = <T as RxCore>::SliceTarget<'b> where Self::MsgOut: 'b;
 
+    fn shared_validate_capacity_items(&self, items_count: usize) -> usize {
+        <T as RxCore>::shared_validate_capacity_items(& **self, items_count)
+    }
+
+    fn shared_avail_items_count(&mut self) -> usize {
+        <T as RxCore>::shared_avail_items_count(&mut **self)
+    }
+
     fn is_closed_and_empty(&mut self) -> bool {
         <T as RxCore>::is_closed_and_empty(&mut **self)
     }
@@ -826,6 +863,10 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_capacity(&**self)
     }
 
+    fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
+        <T as RxCore>::shared_capacity_for(&**self, size)
+    }
+
     fn shared_is_empty(&self) -> bool {
         <T as RxCore>::shared_is_empty(&**self)
     }
@@ -838,11 +879,11 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_avail_units_for(&mut **self, size)
     }
 
-    async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
-        <T as RxCore>::shared_wait_shutdown_or_avail_units(&mut **self, count).await
+    async fn shared_wait_shutdown_or_avail_units(&mut self, size: T::MsgSize) -> bool {
+        <T as RxCore>::shared_wait_shutdown_or_avail_units(&mut **self, size).await
     }
 
-    async fn shared_wait_closed_or_avail_units(&mut self, size: Self::MsgSize) -> bool {
+    async fn shared_wait_closed_or_avail_units(&mut self, size:usize) -> bool {
         <T as RxCore>::shared_wait_closed_or_avail_units(&mut **self, size).await
     }
 

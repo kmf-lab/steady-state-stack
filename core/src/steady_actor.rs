@@ -231,7 +231,7 @@ pub trait SteadyActor {
     /// Waits until at least `count` units are available in the receiver.
     ///
     /// Returns `true` if available, `false` if interrupted.
-    async fn wait_avail<T: RxCore>(&self, this: &mut T, size: T::MsgSize) -> bool;
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, size: usize) -> bool;
 
     /// Waits until at least `count` units are available in a bundle of receivers.
     ///
@@ -239,7 +239,7 @@ pub trait SteadyActor {
     async fn wait_avail_bundle<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
-        count: usize,
+        size: usize,
         ready_channels: usize,
     ) -> bool;
 

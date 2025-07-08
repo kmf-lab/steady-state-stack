@@ -150,6 +150,7 @@ pub mod state_management;
 pub use state_management::SteadyState;
 pub use state_management::new_state;/// Installation utilities for various deployment methods.
 pub use state_management::new_persistent_state;
+pub use state_management::StateGuard;
 
 ///
 /// This module contains submodules to support different installation strategies.
@@ -347,31 +348,7 @@ pub use steady_actor_spotlight::SteadyActorSpotlight;
 
 use crate::yield_now::yield_now;
 
-/// Guard for accessing the inner state of a `SteadyState`.
-///
-/// The `StateGuard` provides safe, mutable access to the state held within a `SteadyState` while the guard is alive.
-///
-/// # Type Parameters
-/// - `S`: The type of the state being accessed.
-pub struct StateGuard<'a, S> {
-    guard: MappedMutexGuard<'a, Option<S>, S>,
-}
 
-impl<S> Deref for StateGuard<'_, S> {
-    type Target = S;
-
-    /// Provides immutable access to the underlying state.
-    fn deref(&self) -> &Self::Target {
-        &self.guard
-    }
-}
-
-impl<S> DerefMut for StateGuard<'_, S> {
-    /// Provides mutable access to the underlying state.
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.guard
-    }
-}
 
 /// Type alias for a thread-safe transmitter wrapped in an `Arc` and `Mutex`.
 ///

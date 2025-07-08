@@ -128,7 +128,7 @@ async fn internal_behavior<C: SteadyActor>(
     info!("Running publish for actor '{:?}' with publication in place", actor.identity());
 
     let capacity: usize = rx.capacity();
-    let wait_for = ((512 * 1024).min(capacity),8);
+    let wait_for = (512 * 1024).min(capacity);
 
     let mut last_position = 0;
     let mut stream_flushed = false;
@@ -264,7 +264,7 @@ pub(crate) mod aeron_tests {
 
         let mut received_count = 0;
         while actor.is_running(&mut || rx.is_closed_and_empty()) {
-            let _clean = await_for_all!(actor.wait_avail(&mut rx, (LEN,1)));
+            let _clean = await_for_all!(actor.wait_avail(&mut rx, LEN));
 
             let bytes = actor.avail_units(&mut rx.payload_channel);
             actor.advance_take_index(&mut rx.payload_channel, bytes);
