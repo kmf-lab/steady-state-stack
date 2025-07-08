@@ -1,5 +1,5 @@
 mod args;
-use steady_state::{Percentile, ScheduleAs, MCPU};
+use steady_state::ScheduleAs;
 use steady_state::StdDev;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -18,7 +18,7 @@ mod actor {
     pub mod data_feedback;
 }
 
-use steady_state::channel_builder::Filled;
+use steady_state::*;
 use crate::actor::data_consumer::InternalState;
 use clap::*;
 

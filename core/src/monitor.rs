@@ -1,15 +1,15 @@
 use std::ops::*;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
-use num_traits::{One};
+use num_traits::One;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::thread::ThreadId;
 
 use crate::*;
-use crate::actor_builder::{Percentile, Work, MCPU};
-use crate::channel_builder::{Filled, Rate};
+use crate::actor_builder_units::{Percentile, Work, MCPU};
+use crate::channel_builder_units::{Filled, Rate};
 use crate::dot::RemoteDetails;
-pub(crate) use crate::graph_liveliness::{ActorIdentity};
+pub(crate) use crate::graph_liveliness::ActorIdentity;
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::TxMetaDataProvider;
@@ -377,7 +377,7 @@ pub(crate) mod monitor_tests {
     use std::sync::atomic::AtomicUsize;
     use crate::channel_builder::ChannelBuilder;
     use crate::core_rx::DoubleSlice;
-    use crate::steady_actor::{SendOutcome};
+    use crate::steady_actor::SendOutcome;
     use crate::steady_actor_shadow::SteadyActorShadow;
     use crate::core_tx::TxCore;
     use crate::steady_tx::TxDone;
@@ -656,7 +656,7 @@ pub(crate) mod monitor_tests {
     /// Unit test for relay_stats_tx_custom.
     #[async_std::test]
     async fn test_relay_stats_tx_rx_custom() {
-        let _ = util::steady_logger::initialize();
+        let _ = logging_util::steady_logger::initialize();
 
         let mut graph = GraphBuilder::for_testing().build("");
         let (tx_string, rx_string) = graph.channel_builder().with_capacity(8).build_channel();
@@ -709,7 +709,7 @@ pub(crate) mod monitor_tests {
     /// Unit test for relay_stats_tx_rx_batch.
     #[async_std::test]
     async fn test_relay_stats_tx_rx_batch() {
-        let _ = util::steady_logger::initialize();
+        let _ = logging_util::steady_logger::initialize();
 
         let mut graph = GraphBuilder::for_testing().build("");
         let monitor = graph.new_testing_test_monitor("test");

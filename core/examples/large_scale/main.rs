@@ -6,7 +6,6 @@ use log::*;
 use args::Args;
 use std::time::Duration;
 use steady_state::*;
-use steady_state::actor_builder::ScheduleAs;
 
 
 // here are the actors that will be used in the graph.
@@ -20,9 +19,6 @@ mod actor {
 }
 
 
-//use steady_state::*;
-use steady_state::channel_builder::Filled;
-use steady_state::state_management::new_state;
 
 // This is a good template for your future main function. It should me minimal and just
 // get the command line args and start the graph. The graph is built in a separate function.

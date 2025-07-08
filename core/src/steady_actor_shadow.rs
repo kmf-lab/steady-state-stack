@@ -36,7 +36,7 @@ use crate::simulate_edge::{IntoSimRunner};
 use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
 use crate::telemetry::metrics_collector::CollectorDetail;
-use crate::util::steady_logger;
+use crate::logging_util::steady_logger;
 use crate::yield_now::yield_now;
 /// Context for managing actor state and interactions within the Steady framework.
 pub struct SteadyActorShadow {

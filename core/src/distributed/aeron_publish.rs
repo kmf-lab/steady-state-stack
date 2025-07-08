@@ -198,7 +198,9 @@ pub(crate) mod aeron_tests {
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aqueduct_builder::AqueductBuilder;
     use crate::distributed::aqueduct_stream::{SteadyStreamTx, StreamIngress};
-    use crate::{await_for_all, AlertColor, Filled, GraphBuilder, Percentile, RxCore, ScheduleAs, Trigger};
+    use crate::{await_for_all, AlertColor, GraphBuilder, RxCore, ScheduleAs, Trigger};
+    use crate::actor_builder_units::Percentile;
+    use crate::channel_builder_units::Filled;
 
     /// Mock sender actor for testing message transmission to Aeron.
     pub async fn mock_sender_run(

@@ -6,13 +6,12 @@
 
 use std::fmt::Debug;
 use std::ops::Sub;
-use ringbuf::storage::{Heap};
+use ringbuf::storage::Heap;
 use std::sync::Arc;
 use futures::lock::Mutex;
 use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
-use std::thread::sleep;
 use crate::core_exec;
 
 /** Type alias for the underlying storage backing of the channel, using a heap-based ring buffer. */
@@ -39,13 +38,16 @@ use futures::channel::oneshot;
 use log::*;
 use async_ringbuf::traits::Split;
 use ringbuf::producer::Producer;
-use crate::{AlertColor, LazySteadyRxBundle, LazySteadyTxBundle, Metric, MONITOR_UNKNOWN, StdDev, SteadyRx, SteadyTx, Trigger};
-use crate::actor_builder::{ActorBuilder, Percentile};
+use crate::{AlertColor, Metric, StdDev, SteadyRx, SteadyTx, Trigger, MONITOR_UNKNOWN};
+use crate::actor_builder::ActorBuilder;
+use crate::actor_builder_units::Percentile;
+use crate::channel_builder_lazy::{LazyChannel, LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle};
+use crate::channel_builder_units::{Filled, Rate};
 use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamControlItem, TxChannelMetaDataWrapper};
 use crate::monitor::ChannelMetaData;
 use crate::steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
-use crate::steady_rx::{Rx};
-use crate::steady_tx::{Tx};
+use crate::steady_rx::Rx;
+use crate::steady_tx::Tx;
 
 /**
  * Default capacity for channels unless explicitly set in the builder.
@@ -901,160 +903,6 @@ impl ChannelBuilder {
 }
 
 /**
- * Lazy wrapper for `SteadyTx<T>`, deferring channel allocation until first use.
- *
- * Ensures resources are allocated near the point of use, improving efficiency in actor systems.
- */
-#[derive(Debug)]
-pub struct LazySteadyTx<T> {
-    lazy_channel: Arc<LazyChannel<T>>,
-}
-
-impl <T> LazySteadyTx<T> {
-    /**
-     * Creates a new `LazySteadyTx` instance.
-     *
-     * # Arguments
-     *
-     * - `lazy_channel`: Shared reference to the lazy channel configuration.
-     *
-     * # Returns
-     *
-     * A new `LazySteadyTx<T>` instance.
-     */
-    pub(crate) fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
-        LazySteadyTx {
-            lazy_channel,
-        }
-    }
-
-    /**
-     * Clones the transmitter, initializing the channel on first call.
-     *
-     * Returns a cached `SteadyTx<T>` instance for subsequent calls, ensuring allocation near the actor.
-     *
-     * # Returns
-     *
-     * A `SteadyTx<T>` instance for sending data.
-     */
-    #[allow(clippy::should_implement_trait)]
-    pub fn clone(&self) -> SteadyTx<T> {
-        core_exec::block_on(self.lazy_channel.get_tx_clone())
-    }
-
-    /**
-     * Sends all items in a vector to the channel for testing purposes.
-     *
-     * Blocks until all items are sent, retrying if the channel is full; optionally closes the channel.
-     *
-     * # Arguments
-     *
-     * - `data`: Vector of items to send.
-     * - `close`: Whether to close the channel after sending.
-     *
-     * # Panics
-     *
-     * Panics with "internal error" if the transmitter lock cannot be acquired.
-     */
-    pub fn testing_send_all(&self, data: Vec<T>, close: bool) {
-        let tx = self.clone();
-        let mut tx = tx.try_lock().expect("internal error");
-
-        for d in data.into_iter() {
-            let mut temp = d;
-            while let Err(r) = tx.tx.try_push(temp) {
-                temp = r;
-                sleep(Duration::from_millis(2));
-            };
-        }
-        if close {
-            tx.mark_closed(); // for clean shutdown we tell the actor we have no more data
-        }
-    }
-
-    /**
-     * Closes the channel for testing clean shutdowns.
-     *
-     * Marks the channel as closed, indicating no further data will be sent.
-     *
-     * # Panics
-     *
-     * Panics with "internal error" if the transmitter lock cannot be acquired.
-     */
-    pub fn testing_close(&self) {
-        let tx = self.clone();
-        let mut tx = tx.try_lock().expect("internal error");
-        tx.mark_closed();
-    }
-}
-
-/**
- * Lazy wrapper for `SteadyRx<T>`, deferring channel allocation until first use.
- *
- * Similar to `LazySteadyTx`, it ensures resource allocation occurs near the point of use.
- */
-#[derive(Debug)]
-pub struct LazySteadyRx<T> {
-    lazy_channel: Arc<LazyChannel<T>>,
-}
-
-impl <T> LazySteadyRx<T> {
-    /**
-     * Creates a new `LazySteadyRx` instance.
-     *
-     * # Arguments
-     *
-     * - `lazy_channel`: Shared reference to the lazy channel configuration.
-     *
-     * # Returns
-     *
-     * A new `LazySteadyRx<T>` instance.
-     */
-    pub(crate) fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
-        LazySteadyRx {
-            lazy_channel,
-        }
-    }
-
-    /**
-     * Clones the receiver, initializing the channel on first call.
-     *
-     * Returns a cached `SteadyRx<T>` instance for subsequent calls.
-     *
-     * # Returns
-     *
-     * A `SteadyRx<T>` instance for receiving data.
-     */
-    #[allow(clippy::should_implement_trait)]
-    pub fn clone(&self) -> SteadyRx<T> {
-        core_exec::block_on(self.lazy_channel.get_rx_clone())
-    }
-
-    /**
-     * Takes all available items from the channel for testing.
-     *
-     * Blocks until all items are retrieved, returning them in a vector.
-     *
-     * # Returns
-     *
-     * A vector containing all available items from the channel.
-     */
-    pub fn testing_take_all(&self) -> Vec<T> {
-        core_exec::block_on(async {
-            let rx = self.lazy_channel.get_rx_clone().await;
-            let mut rx = rx.lock().await;
-            let mut result = Vec::new();
-
-            while let Some(item) = rx.try_take() {
-                result.push(item);
-            }
-
-            result
-        })
-    }
-}
-
-/**
  * Asserts that the number of available units in the receiver equals the expected value.
  *
  * Logs an error and panics if the assertion fails, including file and line number for debugging.
@@ -1211,187 +1059,6 @@ macro_rules! assert_steady_rx_eq_take {
 //     (StreamEgress::new(bytes.len() as i32), bytes.to_vec().into_boxed_slice())
 // }
 
-/**
- * Structure managing lazy initialization of a channel.
- *
- * Holds the builder configuration and channel instance, initializing the channel on demand.
- */
-#[derive(Debug)]
-pub(crate) struct LazyChannel<T> {
-    builder: Mutex<Option<ChannelBuilder>>,
-    channel: Mutex<Option<(SteadyTx<T>, SteadyRx<T>)>>,
-}
-
-impl <T> LazyChannel<T> {
-    /**
-     * Creates a new `LazyChannel` instance.
-     *
-     * # Arguments
-     *
-     * - `builder`: Reference to the `ChannelBuilder` to configure the channel.
-     *
-     * # Returns
-     *
-     * A new `LazyChannel<T>` instance.
-     */
-    pub(crate) fn new(builder: &ChannelBuilder) -> Self {
-        LazyChannel {
-            builder: Mutex::new(Some(builder.clone())),
-            channel: Mutex::new(None),
-        }
-    }
-
-    /**
-     * Retrieves or initializes the transmitter, returning a clone.
-     *
-     * # Returns
-     *
-     * A `SteadyTx<T>` instance, initializing the channel if necessary.
-     *
-     * # Panics
-     *
-     * Panics with "internal error" if the builder is taken more than once or channel access fails.
-     */
-    pub(crate) async fn get_tx_clone(&self) -> SteadyTx<T> {
-        let mut channel = self.channel.lock().await;
-        if channel.is_none() {
-            let b = self.builder.lock().await.take()
-                .expect("internal error, only done once");
-            *channel = Some(b.eager_build());
-        }
-        channel.as_ref().expect("internal error").0.clone()
-    }
-
-    /**
-     * Retrieves or initializes the receiver, returning a clone.
-     *
-     * # Returns
-     *
-     * A `SteadyRx<T>` instance, initializing the channel if necessary.
-     *
-     * # Panics
-     *
-     * Panics with "internal error" if the builder is taken more than once or channel access fails.
-     */
-    pub(crate) async fn get_rx_clone(&self) -> SteadyRx<T> {
-        let mut channel = self.channel.lock().await;
-        if channel.is_none() {
-            let b = self.builder.lock().await.take()
-                .expect("internal error, only done once");
-            *channel = Some(b.eager_build());
-        }
-        channel.as_ref().expect("internal error").1.clone()
-    }
-}
-
-impl Metric for Rate {}
-
-/**
- * Represents a rate of occurrence over time for telemetry triggers and metrics.
- *
- * Uses a rational number (numerator/denominator) for precision, avoiding floating-point arithmetic.
- */
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Rate {
-    // Internal representation as a rational number of the rate per ms
-    // Numerator: units, Denominator: time in ms
-    numerator: u64,
-    denominator: u64,
-}
-
-impl Rate {
-    /** Creates a rate representing units per millisecond. */
-    pub fn per_millis(units: u64) -> Self {
-        Self { numerator: units, denominator: 1 }
-    }
-
-    /** Creates a rate representing units per second. */
-    pub fn per_seconds(units: u64) -> Self {
-        Self { numerator: units * 1000, denominator: 1 }
-    }
-
-    /** Creates a rate representing units per minute. */
-    pub fn per_minutes(units: u64) -> Self {
-        Self { numerator: units * 1000 * 60, denominator: 1 }
-    }
-
-    /** Creates a rate representing units per hour. */
-    pub fn per_hours(units: u64) -> Self {
-        Self { numerator: units * 1000 * 60 * 60, denominator: 1 }
-    }
-
-    /** Creates a rate representing units per day. */
-    pub fn per_days(units: u64) -> Self {
-        Self { numerator: units * 1000 * 60 * 60 * 24, denominator: 1 }
-    }
-
-    /** Returns the rate as a rational number (numerator, denominator) per millisecond. */
-    pub fn rational_ms(&self) -> (u64, u64) {
-        (self.numerator, self.denominator)
-    }
-}
-
-impl Metric for Filled {}
-
-/**
- * Represents fill levels for channel capacity in telemetry triggers and metrics.
- *
- * Supports percentage-based or exact count representations for flexible monitoring.
- */
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Filled {
-    /// Represents a fill level as a percentage, stored as a rational number (numerator, denominator).
-    Percentage(u64, u64),
-    /// Represents an exact fill level as a count of items.
-    Exact(u64),
-}
-
-impl Filled {
-    /** Creates a `Filled` instance from a percentage value (0.0 to 100.0), returning `None` if out of range. */
-    pub fn percentage(value: f32) -> Option<Self> {
-        if (0.0..=100.0).contains(&value) {
-            Some(Self::Percentage((value * 1_000f32) as u64, 100_000u64))
-        } else {
-            None
-        }
-    }
-
-    /** Creates a `Filled` instance representing an exact item count. */
-    pub fn exact(value: u64) -> Self {
-        Self::Exact(value)
-    }
-
-    /** Returns a `Filled` instance for 10% capacity. */
-    pub fn p10() -> Self { Self::Percentage(10, 100) }
-
-    /** Returns a `Filled` instance for 20% capacity. */
-    pub fn p20() -> Self { Self::Percentage(20, 100) }
-
-    /** Returns a `Filled` instance for 30% capacity. */
-    pub fn p30() -> Self { Self::Percentage(30, 100) }
-
-    /** Returns a `Filled` instance for 40% capacity. */
-    pub fn p40() -> Self { Self::Percentage(40, 100) }
-
-    /** Returns a `Filled` instance for 50% capacity. */
-    pub fn p50() -> Self { Self::Percentage(50, 100) }
-
-    /** Returns a `Filled` instance for 60% capacity. */
-    pub fn p60() -> Self { Self::Percentage(60, 100) }
-
-    /** Returns a `Filled` instance for 70% capacity. */
-    pub fn p70() -> Self { Self::Percentage(70, 100) }
-
-    /** Returns a `Filled` instance for 80% capacity. */
-    pub fn p80() -> Self { Self::Percentage(80, 100) }
-
-    /** Returns a `Filled` instance for 90% capacity. */
-    pub fn p90() -> Self { Self::Percentage(90, 100) }
-
-    /** Returns a `Filled` instance for 100% capacity. */
-    pub fn p100() -> Self { Self::Percentage(100, 100) }
-}
-
 #[cfg(test)]
 mod tests_inputs {
     use super::*;
@@ -1499,7 +1166,7 @@ mod tests_inputs {
 pub(crate) mod test_builder {
     use super::*;
 
-    use crate::actor_builder::Percentile;
+    use crate::actor_builder_units::Percentile;
 
     #[test]
     pub(crate) fn test_channel_builder_new() {

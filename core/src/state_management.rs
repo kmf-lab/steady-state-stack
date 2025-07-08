@@ -2,9 +2,14 @@ use std::sync::Arc;
 use futures_util::lock::{Mutex, MutexGuard, MappedMutexGuard};
 use std::ops::{Deref, DerefMut};
 use std::fs::File;
+use std::io::BufReader;
+use std::path::{Path, PathBuf};
+use log::error;
 use serde::{Serialize};
 use serde::de::DeserializeOwned;
 use serde_json;
+
+
 
 /// A thread-safe wrapper for actor state, preserved across restarts.
 ///
@@ -113,23 +118,37 @@ pub fn new_state<S>() -> SteadyState<S> {
 ///
 /// # Returns
 /// - `SteadyState<S>`: A state wrapper with persistence enabled.
-pub fn new_persistent_state<S>(file_path: String) -> SteadyState<S>
+pub fn new_persistent_state<S, P>(file_path: P) -> SteadyState<S>
 where
+    P: AsRef<Path>,
     S: Serialize + DeserializeOwned + Send + 'static,
 {
+    let file_path: PathBuf = file_path.as_ref().to_path_buf();
+
+
     let state = File::open(&file_path)
         .ok()
-        .and_then(|file| serde_json::from_reader(file).ok());
+        .and_then(|file| {
+            let reader = BufReader::new(file);
+            serde_json::from_reader(reader).ok()
+        });
+
     let on_drop = move |s: &S| {
         if let Ok(file) = File::create(&file_path) {
-            let _ = serde_json::to_writer(file, s);
-        }
+            let result = serde_json::to_writer(file, s);
+            match result {
+                Ok(_) => (),
+                Err(e) => error!("Error writing state to file: {}", e),
+            }
+        };
     };
+
     SteadyState {
         inner: Arc::new(Mutex::new(state)),
         on_drop: Some(Arc::new(on_drop)),
     }
 }
+
 
 ///
 /// Protect state access while the actor needs to use it. State reverts to lock when dropped.
@@ -156,6 +175,112 @@ impl<'a, S> Drop for StateGuard<'a, S> {
     fn drop(&mut self) {
         if let Some(on_drop) = &self.on_drop {
             on_drop(&*self.guard);
+        }
+    }
+}
+
+#[cfg(test)]
+mod state_management_tests {
+    use super::*;
+    use async_std::test;
+    use serde::{Deserialize, Serialize};
+    use std::fs::File;
+    use std::io::BufReader;
+    use tempfile::tempdir;
+
+    // Define a simple state type for testing persistence
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct MyState {
+        value: i32,
+    }
+
+    #[async_std::test]
+    async fn test_basic_state() {
+        let state = new_state::<i32>();
+        // Test that try_lock_sync fails before initialization
+        assert!(state.try_lock_sync().is_none());
+        {
+            let guard = state.lock(|| 42).await;
+            assert_eq!(*guard, 42);
+        }
+        {
+            let guard = state.try_lock_sync().unwrap();
+            assert_eq!(*guard, 42);
+        }
+    }
+
+    #[async_std::test]
+    async fn test_cloning_shared_state() {
+        let state1 = new_state::<i32>();
+        {
+            let guard = state1.lock(|| 10).await;
+            assert_eq!(*guard, 10);
+        }
+        let state2 = state1.clone();
+        {
+            let mut guard = state2.lock(|| 0).await; // init closure shouldn't run
+            *guard = 20;
+        }
+        {
+            let guard = state1.lock(|| 0).await;
+            assert_eq!(*guard, 20);
+        }
+    }
+
+    #[async_std::test]
+    async fn test_persistent_state_load() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("state.json");
+        let initial_state = MyState { value: 100 };
+        let file = File::create(&file_path).unwrap();
+        serde_json::to_writer(file, &initial_state).unwrap();
+
+        let state = new_persistent_state::<MyState, _>(&file_path);
+        {
+            let guard = state.lock(|| MyState { value: 0 }).await;
+            assert_eq!(*guard, MyState { value: 100 });
+        }
+    }
+
+    #[async_std::test]
+    async fn test_persistent_state_save() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("state.json");
+
+        let state = new_persistent_state::<MyState, _>(&file_path);
+        {
+            let mut guard = state.lock(|| MyState { value: 0 }).await;
+            guard.value = 200;
+        } // Guard dropped here, should save to file
+
+        let file = File::open(&file_path).unwrap();
+        let reader = BufReader::new(file);
+        let saved_state: MyState = serde_json::from_reader(reader).unwrap();
+        assert_eq!(saved_state, MyState { value: 200 });
+    }
+
+    #[async_std::test]
+    async fn test_persistent_state_no_file() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("nonexistent.json");
+
+        let state = new_persistent_state::<MyState, _>(&file_path);
+        {
+            let guard = state.lock(|| MyState { value: 50 }).await;
+            assert_eq!(*guard, MyState { value: 50 });
+        }
+    }
+
+    #[async_std::test]
+    async fn test_persistent_state_invalid_file() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("invalid.json");
+        std::fs::write(&file_path, "invalid json").unwrap();
+
+        let state = new_persistent_state::<MyState, _>(&file_path);
+        {
+            let guard = state.lock(|| MyState { value: 75 }).await;
+            assert_eq!(*guard, MyState { value: 75 });
         }
     }
 }

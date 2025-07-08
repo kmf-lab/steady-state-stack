@@ -152,6 +152,10 @@ pub use state_management::new_state;/// Installation utilities for various deplo
 pub use state_management::new_persistent_state;
 pub use state_management::StateGuard;
 
+pub use channel_builder_lazy::*;
+
+
+
 ///
 /// This module contains submodules to support different installation strategies.
 pub mod install {
@@ -279,13 +283,11 @@ pub use steady_actor_shadow::*;
 pub use futures_timer::Delay; // for easy use
 pub use graph_testing::GraphTestResult;
 pub use monitor::{RxMetaDataHolder, TxMetaDataHolder};
-pub use channel_builder::Rate;
-pub use channel_builder::Filled;
-pub use channel_builder::LazySteadyRx;
-pub use channel_builder::LazySteadyTx;
-pub use actor_builder::MCPU;
-pub use actor_builder::Work;
-pub use actor_builder::Percentile;
+pub use channel_builder_units::Rate;
+pub use channel_builder_units::Filled;
+pub use actor_builder_units::MCPU;
+pub use actor_builder_units::Work;
+pub use actor_builder_units::Percentile;
 pub use actor_builder::Troupe;
 pub use actor_builder::ScheduleAs;
 pub use actor_builder::ScheduleAs::*;
@@ -321,7 +323,7 @@ use futures::select;
 use std::fmt::Debug;
 use std::sync::Arc;
 use futures::lock::Mutex;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 #[allow(unused_imports)]
 use log::*;
 use crate::monitor::{ActorMetaData, ChannelMetaData};
@@ -329,21 +331,33 @@ use crate::monitor::{ActorMetaData, ChannelMetaData};
 /// Miscellaneous utility functions.
 ///
 /// This module contains various helper functions used throughout the framework.
-pub mod util;
+pub mod logging_util;
 
 /// Utilities for inspecting short boolean sequences.
 ///
 /// This module provides tools for analyzing short sequences of boolean values.
 pub mod expression_steady_eye;
+mod core_tx_guard;
+mod core_rx_guard;
+mod core_rx_stream;
+mod core_tx_stream;
+mod channel_stats_tests;
+mod channel_stats_labels;
+mod actor_stats_tests;
+mod actor_builder_units;
+pub mod channel_builder_units;
+mod channel_builder_lazy;
+mod dot_edge;
+mod dot_node;
 
 pub use crate::expression_steady_eye::LAST_FALSE;
 
-pub use crate::util::*;
+pub use crate::logging_util::*;
 use futures::AsyncRead;
 use futures::AsyncWrite;
 pub use futures::future::Future;
 use futures::channel::oneshot;
-use futures_util::lock::{MappedMutexGuard, MutexGuard};
+use futures_util::lock::MutexGuard;
 pub use steady_actor_spotlight::SteadyActorSpotlight;
 
 use crate::yield_now::yield_now;
@@ -417,66 +431,6 @@ pub type TxCoreBundle<'a, T: TxCore> = Vec<MutexGuard<'a, T>>;
 /// - `T`: The type implementing `RxCore`.
 #[allow(type_alias_bounds)]
 pub type RxCoreBundle<'a, T: RxCore> = Vec<MutexGuard<'a, T>>;
-
-/// Type alias for an array of lazy-initialized transmitters with a fixed size.
-///
-/// Simplifies the usage of a bundle of transmitters that are initialized on first use.
-///
-/// # Type Parameters
-/// - `T`: The type of data being transmitted.
-/// - `GIRTH`: The fixed size of the transmitter array.
-pub type LazySteadyTxBundle<T, const GIRTH: usize> = [LazySteadyTx<T>; GIRTH];
-
-/// Trait for cloning lazy transmitter bundles with initialization.
-///
-/// Defines the behavior for cloning a bundle of lazy transmitters, triggering initialization.
-pub trait LazySteadyTxBundleClone<T, const GIRTH: usize> {
-    /// Clones the bundle of transmitters, lazily initializing the channels.
-    ///
-    /// # Returns
-    /// - `SteadyTxBundle<T, GIRTH>`: A fully initialized bundle of transmitters.
-    fn clone(&self) -> SteadyTxBundle<T, GIRTH>;
-}
-
-impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBundle<T, GIRTH> {
-    fn clone(&self) -> SteadyTxBundle<T, GIRTH> {
-        let tx_clones: Vec<SteadyTx<T>> = self.iter().map(|l| l.clone()).collect();
-        match tx_clones.try_into() {
-            Ok(array) => steady_tx_bundle(array),
-            Err(_) => panic!("Internal error, bad length"),
-        }
-    }
-}
-
-/// Type alias for an array of lazy-initialized receivers with a fixed size.
-///
-/// Simplifies the usage of a bundle of receivers that are initialized on first use.
-///
-/// # Type Parameters
-/// - `T`: The type of data being received.
-/// - `GIRTH`: The fixed size of the receiver array.
-pub type LazySteadyRxBundle<T, const GIRTH: usize> = [LazySteadyRx<T>; GIRTH];
-
-/// Trait for cloning lazy receiver bundles with initialization.
-///
-/// Defines the behavior for cloning a bundle of lazy receivers, triggering initialization.
-pub trait LazySteadyRxBundleClone<T, const GIRTH: usize> {
-    /// Clones the bundle of receivers, lazily initializing the channels.
-    ///
-    /// # Returns
-    /// - `SteadyRxBundle<T, GIRTH>`: A fully initialized bundle of receivers.
-    fn clone(&self) -> SteadyRxBundle<T, GIRTH>;
-}
-
-impl<T, const GIRTH: usize> LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBundle<T, GIRTH> {
-    fn clone(&self) -> SteadyRxBundle<T, GIRTH> {
-        let rx_clones: Vec<SteadyRx<T>> = self.iter().map(|l| l.clone()).collect();
-        match rx_clones.try_into() {
-            Ok(array) => steady_rx_bundle(array),
-            Err(_) => panic!("Internal error, bad length"),
-        }
-    }
-}
 
 /// Creates a bundle of thread-safe transmitters with a fixed size, wrapped in an `Arc`.
 ///
@@ -1300,7 +1254,9 @@ mod lib_tests {
 
 #[cfg(test)]
 mod enum_tests {
-    use crate::channel_builder::{ChannelBuilder, LazyChannel};
+    use channel_builder_lazy::{LazySteadyRxBundleClone, LazySteadyTxBundleClone};
+    use crate::channel_builder::ChannelBuilder;
+    use crate::channel_builder_lazy::{LazyChannel, LazySteadyRxBundle, LazySteadyTxBundle};
     use super::*;
 
     #[test]

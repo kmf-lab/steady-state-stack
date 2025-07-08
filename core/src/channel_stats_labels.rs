@@ -1,0 +1,276 @@
+use hdrhistogram::Counter;
+use log::error;
+use crate::actor_stats::{ActorStatsComputer, ChannelBlock};
+use crate::channel_stats::{ChannelStatsComputer, PLACES_TENS};
+use crate::{actor_stats, StdDev};
+use crate::actor_builder_units::Percentile;
+
+/// Struct for configuring the computation of labels.
+#[derive(Copy, Clone)]
+pub(crate) struct ComputeLabelsConfig {
+    pub(crate) frame_rate_ms: u64,
+    pub(crate) rational_adjust: (usize, usize),
+    pub(crate) max_value: u64,
+    window_in_bits: u8,
+    pub(crate) show_avg: bool,
+}
+
+impl ComputeLabelsConfig {
+    /// Creates a new `ComputeLabelsConfig` for a channel.
+    ///
+    /// # Arguments
+    ///
+    /// * `that` - A reference to a `ChannelStatsComputer`.
+    /// * `rational_adjust` - A tuple containing the rational adjustment values.
+    /// * `max_value` - The maximum value.
+    /// * `show_avg` - A boolean indicating whether to show the average.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of `ComputeLabelsConfig`.
+    #[inline]
+    pub(crate) fn channel_config(that: &ChannelStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool) -> Self {
+        Self {
+            frame_rate_ms: that.frame_rate_ms,
+            rational_adjust,
+            max_value,
+            window_in_bits: that.window_bucket_in_bits + that.refresh_rate_in_bits,
+            show_avg,
+        }
+    }
+
+    /// Creates a new `ComputeLabelsConfig` for an actor.
+    ///
+    /// # Arguments
+    ///
+    /// * `that` - A reference to an `ActorStatsComputer`.
+    /// * `rational_adjust` - A tuple containing the rational adjustment values.
+    /// * `max_value` - The maximum value.
+    /// * `show_avg` - A boolean indicating whether to show the average.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of `ComputeLabelsConfig`.
+    #[inline]
+    pub(crate) fn actor_config(that: &ActorStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool) -> Self {
+        Self {
+            frame_rate_ms: that.frame_rate_ms,
+            rational_adjust,
+            max_value,
+            window_in_bits: that.window_bucket_in_bits + that.refresh_rate_in_bits,
+            show_avg,
+        }
+    }
+}
+
+/// Struct for holding label information for computing labels.
+#[derive(Copy, Clone)]
+pub(crate) struct ComputeLabelsLabels<'a> {
+
+
+    pub(crate) label: &'a str,
+    pub(crate) unit: &'a str,
+    pub(crate) _prometheus_labels: &'a str, //TODO: work in progress.
+    pub(crate) int_only: bool,
+    pub(crate) fixed_digits: usize
+}
+
+/// Computes labels and updates the metric and label targets.
+///
+/// # Arguments
+///
+/// * `config` - A `ComputeLabelsConfig` instance.
+/// * `current` - A reference to a `ChannelBlock`.
+/// * `labels` - A `ComputeLabelsLabels` instance.
+/// * `std_dev` - A slice of `StdDev` values.
+/// * `percentile` - A slice of `Percentile` values.
+/// * `metric_target` - A mutable reference to a string for storing the metric target.
+/// * `label_target` - A mutable reference to a string for storing the label target.
+#[inline]
+pub(crate) fn compute_labels<T: Counter>(
+    config: ComputeLabelsConfig,
+    current: &ChannelBlock<T>,
+    labels: ComputeLabelsLabels,
+    std_dev: &[StdDev],
+    percentile: &[Percentile],
+    _metric_target: &mut String, //TODO: work in progress.
+    label_target: &mut String,
+) {
+    if config.show_avg {
+        // Prefix the label
+        label_target.push_str("Avg ");
+        label_target.push_str(labels.label);
+
+        // Prefix the metric for Prometheus
+        #[cfg(feature = "prometheus_metrics")]
+        {
+            _metric_target.push_str("avg_");
+            _metric_target.push_str(labels.label);
+            _metric_target.push('{');
+            _metric_target.push_str(labels._prometheus_labels);
+            _metric_target.push('}');
+        }
+
+        // Compute the average value components
+        let denominator = config.rational_adjust.1 as u64;
+        let avg_per_sec_numer = (config.rational_adjust.0 as u128 * current.runner) >> config.window_in_bits;
+        let int_value = avg_per_sec_numer / denominator as u128;
+        let float_value = avg_per_sec_numer as f32 / denominator as f32;
+        // error!(" int value: {}  float value: {} runner: {} window bits: {}", int_value,float_value,current.runner,  config.window_in_bits);
+
+        // Format the label based on int_only flag
+        if labels.int_only {
+            let mut itoa_buf = itoa::Buffer::new();
+            let int_str = itoa_buf.format(int_value);
+            let int_len = int_str.len();
+            let pad = labels.fixed_digits.saturating_sub(int_len);
+            label_target.push_str(": ");
+            for _ in 0..pad {
+                label_target.push('0');
+            }
+            label_target.push_str(int_str);
+
+            // Output raw integer value for metrics
+            #[cfg(feature = "prometheus_metrics")]
+            {
+                _metric_target.push(' ');
+                _metric_target.push_str(int_str);
+                _metric_target.push('\n');
+            }
+        } else {
+            label_target.push_str(": ");
+            if int_value >= 10 {
+                let mut b = itoa::Buffer::new();
+                let t = b.format(int_value);
+                if int_value >= 9_999_999 {
+                    label_target.push_str(&t[..t.len() - 6]);
+                    label_target.push('M');
+                } else if int_value >= 9_999 {
+                    label_target.push_str(&t[..t.len() - 3]);
+                    label_target.push('K');
+                } else {
+                    label_target.push_str(t);
+                }
+
+                // Output raw integer value for metrics
+                #[cfg(feature = "prometheus_metrics")]
+                {
+                    _metric_target.push(' ');
+                    _metric_target.push_str(t);
+                    _metric_target.push('\n');
+                }
+            } else {
+                // Format float with 3 decimal places
+                let mut value_buf = [0u8; 32];
+                struct SliceWriter<'a> {
+                    buf: &'a mut [u8],
+                    pos: usize,
+                }
+                impl core::fmt::Write for SliceWriter<'_> {
+                    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                        let bytes = s.as_bytes();
+                        if self.pos + bytes.len() > self.buf.len() {
+                            return Err(core::fmt::Error);
+                        }
+                        self.buf[self.pos..self.pos + bytes.len()].copy_from_slice(bytes);
+                        self.pos += bytes.len();
+                        Ok(())
+                    }
+                }
+                let mut writer = SliceWriter {
+                    buf: &mut value_buf,
+                    pos: 0,
+                };
+                use std::fmt::Write;
+
+                write!(&mut writer, " {:.3}", float_value).unwrap();
+                let offset = writer.pos;
+                label_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
+
+                // Output raw float value for metrics
+                #[cfg(feature = "prometheus_metrics")]
+                {
+                    _metric_target.push(' ');
+                    _metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
+                    _metric_target.push('\n');
+                }
+            }
+        }
+
+        // Append unit and newline
+        label_target.push(' ');
+        label_target.push_str(labels.unit);
+        label_target.push('\n');
+    }
+
+    // Compute standard deviation if required
+    let std = if !std_dev.is_empty() {
+        actor_stats::compute_std_dev(config.window_in_bits, 1 << config.window_in_bits, current.runner, current.sum_of_squares)
+    } else {
+        0f32
+    };
+
+    // Format standard deviation entries
+    std_dev.iter().for_each(|f| {
+        label_target.push_str(labels.label);
+        label_target.push(' ');
+
+        let n_units = format!("{:.1}", f.value());
+        if *f != StdDev::one() {
+            label_target.push_str(&n_units);
+        }
+        label_target.push_str("StdDev: ");
+        let value = &format!("{:.3}", (f.value() * std) / PLACES_TENS as f32);
+        label_target.push_str(value);
+
+        label_target.push_str(" per frame (");
+        label_target.push_str(itoa::Buffer::new().format(config.frame_rate_ms));
+        label_target.push_str("ms duration)\n");
+
+        #[cfg(feature = "prometheus_metrics")]
+        {
+            _metric_target.push_str("std_");
+            _metric_target.push_str(labels.label);
+            _metric_target.push('{');
+            _metric_target.push_str(labels._prometheus_labels);
+            _metric_target.push_str(", n=");
+            _metric_target.push_str(&n_units);
+            _metric_target.push_str("} ");
+            _metric_target.push_str(value);
+            _metric_target.push('\n');
+        }
+    });
+
+    // Format percentile entries
+    percentile.iter().for_each(|p| {
+        label_target.push_str(labels.label);
+        label_target.push(' ');
+
+        label_target.push_str(itoa::Buffer::new().format(p.percentile() as usize));
+        label_target.push_str("%ile ");
+
+        if let Some(h) = &current.histogram {
+            let value = (h.value_at_percentile(p.percentile()).min(config.max_value) as f32) as usize;
+            label_target.push_str(itoa::Buffer::new().format(value));
+
+            #[cfg(feature = "prometheus_metrics")]
+            {
+                _metric_target.push_str("percentile_");
+                _metric_target.push_str(labels.label);
+                _metric_target.push('{');
+                _metric_target.push_str(labels._prometheus_labels);
+                _metric_target.push_str(", p=");
+                _metric_target.push_str(itoa::Buffer::new().format((100.0f64 * p.percentile()) as usize));
+                _metric_target.push_str("} ");
+                _metric_target.push_str(itoa::Buffer::new().format(value));
+                _metric_target.push('\n');
+            }
+        } else {
+            label_target.push_str("InternalError");
+            error!("InternalError: no histogram for required percentile {:?}", p);
+        }
+        label_target.push(' ');
+        label_target.push_str(labels.unit);
+        label_target.push('\n');
+    });
+}

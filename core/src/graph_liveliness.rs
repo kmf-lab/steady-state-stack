@@ -2,7 +2,7 @@
 //! graph and graph liveliness components. The graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
-use crate::{util, Troupe};
+use crate::{logging_util, Troupe};
 use std::ops::{Deref};
 use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -35,7 +35,7 @@ use crate::expression_steady_eye::{i_take_expression, Eye};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::{metrics_collector, metrics_server};
-use crate::util::steady_logger;
+use crate::logging_util::steady_logger;
 
 /// Represents the possible states of the graph's liveliness within the SteadyState framework.
 ///
@@ -564,7 +564,7 @@ impl GraphBuilder {
     ///
     /// A new `GraphBuilder` instance tailored for testing.
     pub fn for_testing() -> Self {
-        let _ = util::steady_logger::initialize();
+        let _ = logging_util::steady_logger::initialize();
         GraphBuilder {
             is_for_testing: true,
             telemetry_metric_features: false,

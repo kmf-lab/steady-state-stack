@@ -41,7 +41,7 @@ use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
 use crate::telemetry::setup;
 use crate::telemetry::setup::send_all_local_telemetry_async;
-use crate::util::steady_logger;
+use crate::logging_util::steady_logger;
 
 // Debug constant to enable verbose telemetry debugging
 const ENABLE_TELEMETRY_DEBUG: bool = false;
@@ -134,19 +134,6 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
             None
         }
     }
-
-    pub(crate) fn validate_capacity_rx<T: RxCore>(this: &mut T, size: T::MsgSize) -> T::MsgSize {
-        if this.shared_capacity_for(size) {
-            size
-        } else {
-            let capacity = this.shared_capacity();
-            if this.log_periodic() {
-                warn!("wait_*: count {:?} exceeds capacity {:?}, reduced to capacity", size, capacity);
-            }
-            capacity
-        }
-    }
-
 
     pub(crate) async fn internal_wait_shutdown(&self) -> bool {
         let one_shot = &self.oneshot_shutdown;
@@ -816,33 +803,33 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     #[inline]
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
 
-        if ENABLE_IS_RUNNING_DEBUG {
-            info!("{:?} called is_running",self.ident);
-        }
+        // if ENABLE_IS_RUNNING_DEBUG {
+        //     info!("{:?} called is_running",self.ident);
+        // }
 
-        loop {
+        loop {//TODO: hold read for a few pases???
             let runnning = self.runtime_state.read().is_running(self.ident, &mut accept_fn);
             if let Some(result) = runnning {
-                if !result || self.is_running_iteration_count.is_zero() {
-                    self.relay_stats();
-                } else {
-                    if ENABLE_IS_RUNNING_DEBUG {
-                        info!("{:?} calling relay_stats_smartly {}",self.ident, result);
-                    }
+                if result && !self.is_running_iteration_count.is_zero() {
+                    // if ENABLE_IS_RUNNING_DEBUG {
+                    //     info!("{:?} calling relay_stats_smartly {}",self.ident, result);
+                    // }
                     if self.relay_stats_smartly() {
                         self.check_telemetry_delay();
                     }
+                } else {
+                    self.relay_stats();
                 }
                 self.is_running_iteration_count += 1;
 
-                if ENABLE_IS_RUNNING_DEBUG {
-                    info!("{:?} exited is_running with {}",self.ident, result);
-                }
+                // if ENABLE_IS_RUNNING_DEBUG {
+                //     info!("{:?} exited is_running with {}",self.ident, result);
+                // }
                 return result;
             } else {
-                if ENABLE_TELEMETRY_DEBUG {
-                    warn!("actor {:?} called running but telemetry skipped because we are still building! ", self.ident)
-                }
+                // if ENABLE_TELEMETRY_DEBUG {
+                //     warn!("actor {:?} called running but telemetry skipped because we are still building! ", self.ident)
+                // }
                 executor::block_on(Delay::new(Duration::from_millis(20)));
             }
         }

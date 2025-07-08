@@ -401,3 +401,331 @@ where
         res = fut5 => res,
     }
 }
+
+#[cfg(test)]
+mod loop_driver_tests {
+    use super::*;
+    use async_std::task::sleep;
+    use futures::future::ready;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    // Helper function to create a future that returns a boolean after a delay
+    async fn delayed_bool(value: bool, ms: u64) -> bool {
+        sleep(Duration::from_millis(ms)).await;
+        value
+    }
+
+    // Helper function to create a controlled future that completes when signaled
+    fn controlled_bool(value: bool, signal: Arc<AtomicBool>) -> impl Future<Output = bool> + FusedFuture {
+        let signal_clone = signal.clone();
+        async move {
+            while !signal_clone.load(Ordering::SeqCst) {
+                sleep(Duration::from_millis(10)).await;
+            }
+            value
+        }
+            .fuse()
+    }
+
+    // Tests for await_for_all! macro
+    #[async_std::test]
+    async fn await_for_all_all_true() {
+        let result = await_for_all!(
+            ready(true),
+            ready(true),
+            ready(true)
+        );
+        assert!(result);
+    }
+
+    #[async_std::test]
+    async fn await_for_all_one_false() {
+        let result = await_for_all!(
+            ready(true),
+            ready(false),
+            ready(true)
+        );
+        assert!(!result);
+    }
+
+    #[async_std::test]
+    async fn await_for_all_empty() {
+        let result = await_for_all!();
+        assert!(result); // Empty case returns true
+    }
+
+    // Tests for wait_for_all! macro
+    #[async_std::test]
+    async fn wait_for_all_all_true() {
+        let fut = wait_for_all!(
+            ready(true),
+            ready(true),
+            ready(true)
+        );
+        assert!(fut.await);
+    }
+
+    #[async_std::test]
+    async fn wait_for_all_one_false() {
+        let fut = wait_for_all!(
+            ready(true),
+            ready(false),
+            ready(true)
+        );
+        assert!(!fut.await);
+    }
+
+    #[async_std::test]
+    async fn wait_for_all_empty() {
+        let fut = wait_for_all!();
+        assert!(fut.await);
+    }
+
+    // Test for steady_fuse_future function
+    #[async_std::test]
+    async fn steady_fuse_future_works() {
+        let fut = ready(true);
+        let fused = steady_fuse_future(fut);
+        assert!(!fused.is_terminated());
+        assert!(fused.await);
+    }
+
+    // Tests for await_for_all_or_proceed_upon! macro with two futures
+    #[async_std::test]
+    async fn await_for_all_or_proceed_upon_two_first_completes() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let fut1 = delayed_bool(true, 10);
+        let fut2 = controlled_bool(true, signal.clone());
+        let result = await_for_all_or_proceed_upon!(fut1, fut2);
+        assert!(result);
+    }
+
+    #[async_std::test]
+    async fn await_for_all_or_proceed_upon_two_others_complete() {
+        let signal = Arc::new(AtomicBool::new(true));
+        let fut1 = controlled_bool(true, signal.clone());
+        let fut2 = delayed_bool(false, 10);
+        let result = await_for_all_or_proceed_upon!(fut1, fut2);
+        assert!(result);
+        signal.store(true, Ordering::SeqCst); // Ensure cleanup
+    }
+
+    // Tests for await_for_all_or_proceed_upon! macro with three futures
+    #[async_std::test]
+    async fn await_for_all_or_proceed_upon_three_first_completes() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let fut1 = delayed_bool(false, 10);
+        let fut2 = controlled_bool(true, signal.clone());
+        let fut3 = controlled_bool(true, signal.clone());
+        let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3);
+        assert!(!result);
+    }
+
+    #[async_std::test]
+    async fn await_for_all_or_proceed_upon_three_others_complete() {
+        let signal = Arc::new(AtomicBool::new(true));
+        let fut1 = controlled_bool(true, signal.clone());
+        let fut2 = delayed_bool(true, 10);
+        let fut3 = delayed_bool(false, 10);
+        let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3);
+        assert!(result);
+        signal.store(true, Ordering::SeqCst);
+    }
+
+    // Tests for await_for_all_or_proceed_upon! macro with four futures
+    #[async_std::test]
+    async fn await_for_all_or_proceed_upon_four_first_completes() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let fut1 = delayed_bool(true, 10);
+        let fut2 = controlled_bool(true, signal.clone());
+        let fut3 = controlled_bool(true, signal.clone());
+        let fut4 = controlled_bool(true, signal.clone());
+        let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3, fut4);
+        assert!(result);
+    }
+
+    #[async_std::test]
+    async fn await_for_all_or_proceed_upon_four_others_complete() {
+        let signal = Arc::new(AtomicBool::new(true));
+        let fut1 = controlled_bool(true, signal.clone());
+        let fut2 = delayed_bool(true, 10);
+        let fut3 = delayed_bool(true, 10);
+        let fut4 = delayed_bool(false, 10);
+        let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3, fut4);
+        assert!(result);
+        signal.store(true, Ordering::SeqCst);
+    }
+
+    // Tests for await_for_all_or_proceed_upon! macro with five futures
+    #[async_std::test]
+    async fn await_for_all_or_proceed_upon_five_first_completes() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let fut1 = delayed_bool(false, 10);
+        let fut2 = controlled_bool(true, signal.clone());
+        let fut3 = controlled_bool(true, signal.clone());
+        let fut4 = controlled_bool(true, signal.clone());
+        let fut5 = controlled_bool(true, signal.clone());
+        let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3, fut4, fut5);
+        assert!(!result);
+    }
+
+    #[async_std::test]
+    async fn await_for_all_or_proceed_upon_five_others_complete() {
+        let signal = Arc::new(AtomicBool::new(true));
+        let fut1 = controlled_bool(true, signal.clone());
+        let fut2 = delayed_bool(true, 10);
+        let fut3 = delayed_bool(true, 10);
+        let fut4 = delayed_bool(true, 10);
+        let fut5 = delayed_bool(false, 10);
+        let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3, fut4, fut5);
+        assert!(result);
+        signal.store(true, Ordering::SeqCst);
+    }
+
+    // Tests for await_for_any! macro
+    #[async_std::test]
+    async fn await_for_any_one() {
+        let result = await_for_any!(ready(42));
+        assert_eq!(result, 42);
+    }
+
+    #[async_std::test]
+    async fn await_for_any_two_first_completes() {
+        let fut1 = delayed_bool(true, 10);
+        let fut2 = delayed_bool(false, 20);
+        let result = await_for_any!(fut1, fut2);
+        assert!(result);
+    }
+
+    #[async_std::test]
+    async fn await_for_any_two_second_completes() {
+        let fut1 = delayed_bool(true, 20);
+        let fut2 = delayed_bool(false, 10);
+        let result = await_for_any!(fut1, fut2);
+        assert!(!result);
+    }
+
+    #[async_std::test]
+    async fn await_for_any_three_third_completes() {
+        let fut1 = delayed_bool(true, 20);
+        let fut2 = delayed_bool(true, 20);
+        let fut3 = delayed_bool(false, 10);
+        let result = await_for_any!(fut1, fut2, fut3);
+        assert!(!result);
+    }
+
+    #[async_std::test]
+    async fn await_for_any_four_fourth_completes() {
+        let fut1 = delayed_bool(true, 20);
+        let fut2 = delayed_bool(true, 20);
+        let fut3 = delayed_bool(true, 20);
+        let fut4 = delayed_bool(false, 10);
+        let result = await_for_any!(fut1, fut2, fut3, fut4);
+        assert!(!result);
+    }
+
+    #[async_std::test]
+    async fn await_for_any_five_fifth_completes() {
+        let fut1 = delayed_bool(true, 20);
+        let fut2 = delayed_bool(true, 20);
+        let fut3 = delayed_bool(true, 20);
+        let fut4 = delayed_bool(true, 20);
+        let fut5 = delayed_bool(false, 10);
+        let result = await_for_any!(fut1, fut2, fut3, fut4, fut5);
+        assert!(!result);
+    }
+
+    // Tests for wait_for_any! macro
+    #[async_std::test]
+    async fn wait_for_any_one() {
+        let fut = wait_for_any!(ready(42));
+        assert_eq!(fut.await, 42);
+    }
+
+    #[async_std::test]
+    async fn wait_for_any_two_first_completes() {
+        let fut1 = delayed_bool(true, 10);
+        let fut2 = delayed_bool(false, 20);
+        let fut = wait_for_any!(fut1, fut2);
+        assert!(fut.await);
+    }
+
+    #[async_std::test]
+    async fn wait_for_any_three_second_completes() {
+        let fut1 = delayed_bool(true, 20);
+        let fut2 = delayed_bool(false, 10);
+        let fut3 = delayed_bool(true, 20);
+        let fut = wait_for_any!(fut1, fut2, fut3);
+        assert!(!fut.await);
+    }
+
+    #[async_std::test]
+    async fn wait_for_any_four_third_completes() {
+        let fut1 = delayed_bool(true, 20);
+        let fut2 = delayed_bool(true, 20);
+        let fut3 = delayed_bool(false, 10);
+        let fut4 = delayed_bool(true, 20);
+        let fut = wait_for_any!(fut1, fut2, fut3, fut4);
+        assert!(!fut.await);
+    }
+
+    #[async_std::test]
+    async fn wait_for_any_five_fourth_completes() {
+        let fut1 = delayed_bool(true, 20);
+        let fut2 = delayed_bool(true, 20);
+        let fut3 = delayed_bool(true, 20);
+        let fut4 = delayed_bool(false, 10);
+        let fut5 = delayed_bool(true, 20);
+        let fut = wait_for_any!(fut1, fut2, fut3, fut4, fut5);
+        assert!(!fut.await);
+    }
+
+    // Tests for steady_select_* functions
+    #[async_std::test]
+    async fn steady_select_two_first_completes() {
+        let fut1 = steady_fuse_future(delayed_bool(true, 10));
+        let fut2 = steady_fuse_future(delayed_bool(false, 20));
+        let result = steady_select_two(fut1, fut2).await;
+        assert!(result);
+    }
+
+    #[async_std::test]
+    async fn steady_select_two_second_completes() {
+        let fut1 = steady_fuse_future(delayed_bool(true, 20));
+        let fut2 = steady_fuse_future(delayed_bool(false, 10));
+        let result = steady_select_two(fut1, fut2).await;
+        assert!(!result);
+    }
+
+    #[async_std::test]
+    async fn steady_select_three_third_completes() {
+        let fut1 = steady_fuse_future(delayed_bool(true, 20));
+        let fut2 = steady_fuse_future(delayed_bool(true, 20));
+        let fut3 = steady_fuse_future(delayed_bool(false, 10));
+        let result = steady_select_three(fut1, fut2, fut3).await;
+        assert!(!result);
+    }
+
+    #[async_std::test]
+    async fn steady_select_four_fourth_completes() {
+        let fut1 = steady_fuse_future(delayed_bool(true, 20));
+        let fut2 = steady_fuse_future(delayed_bool(true, 20));
+        let fut3 = steady_fuse_future(delayed_bool(true, 20));
+        let fut4 = steady_fuse_future(delayed_bool(false, 10));
+        let result = steady_select_four(fut1, fut2, fut3, fut4).await;
+        assert!(!result);
+    }
+
+    #[async_std::test]
+    async fn steady_select_five_fifth_completes() {
+        let fut1 = steady_fuse_future(delayed_bool(true, 20));
+        let fut2 = steady_fuse_future(delayed_bool(true, 20));
+        let fut3 = steady_fuse_future(delayed_bool(true, 20));
+        let fut4 = steady_fuse_future(delayed_bool(true, 20));
+        let fut5 = steady_fuse_future(delayed_bool(false, 10));
+        let result = steady_select_five(fut1, fut2, fut3, fut4, fut5).await;
+        assert!(!result);
+    }
+}

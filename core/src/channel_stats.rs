@@ -1,14 +1,15 @@
 use std::backtrace::Backtrace;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
-use std::fmt::Write;
 #[allow(unused_imports)]
 use log::*;
 use num_traits::Zero;
 use crate::*;
-use hdrhistogram::{Counter, Histogram};
+use hdrhistogram::{Histogram};
 
-use crate::actor_stats::{ActorStatsComputer, ChannelBlock};
+use crate::actor_stats::{ChannelBlock};
+use crate::channel_stats_labels;
+use crate::channel_stats_labels::{ComputeLabelsConfig, ComputeLabelsLabels};
 
 /// Constants representing the colors used in the dot graph.
 pub(crate) const DOT_GREEN: &str = "green";
@@ -324,7 +325,7 @@ impl ChannelStatsComputer {
     ///
     /// The computed standard deviation for rate.
     #[inline]
-    fn rate_std_dev(&self) -> f32 {
+    pub(crate) fn rate_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_rate {
             actor_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
                                          , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
@@ -342,7 +343,7 @@ impl ChannelStatsComputer {
     ///
     /// The computed standard deviation for filled.
     #[inline]
-    fn filled_std_dev(&self) -> f32 {
+    pub(crate) fn filled_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_filled {
             actor_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
                                          , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
@@ -359,7 +360,7 @@ impl ChannelStatsComputer {
     ///
     /// The computed standard deviation for latency.
     #[inline]
-    fn latency_std_dev(&self) -> f32 {
+    pub(crate) fn latency_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_latency {
             actor_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
                                          , 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits)
@@ -541,7 +542,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A boolean indicating if the latency trigger is met.
-    fn triggered_latency(&self, rule: &Trigger<Duration>) -> bool {
+    pub(crate) fn triggered_latency(&self, rule: &Trigger<Duration>) -> bool {
         match rule {
             Trigger::AvgAbove(duration) => self.avg_latency(duration).is_gt(),
             Trigger::AvgBelow(duration) => self.avg_latency(duration).is_lt(),
@@ -561,7 +562,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A boolean indicating if the rate trigger is met.
-    fn triggered_rate(&self, rule: &Trigger<Rate>) -> bool {
+    pub(crate) fn triggered_rate(&self, rule: &Trigger<Rate>) -> bool {
         match rule {
             Trigger::AvgBelow(rate) => {
                 let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
@@ -593,7 +594,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A boolean indicating if the filled trigger is met.
-    fn triggered_filled(&self, rule: &Trigger<Filled>) -> bool {
+    pub(crate) fn triggered_filled(&self, rule: &Trigger<Filled>) -> bool {
         match rule {
             Trigger::AvgAbove(Filled::Percentage(percent_full_num, percent_full_den)) => self.avg_filled_percentage(percent_full_num, percent_full_den).is_gt(),
             Trigger::AvgBelow(Filled::Percentage(percent_full_num, percent_full_den)) => self.avg_filled_percentage(percent_full_num, percent_full_den).is_lt(),
@@ -628,7 +629,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
-    fn avg_filled_percentage(&self, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
+    pub(crate) fn avg_filled_percentage(&self, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             (current_inflight.runner * *percent_full_den as u128)
                 .cmp(&((*percent_full_num as u128 * PLACES_TENS as u128 * self.capacity as u128)
@@ -649,7 +650,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
-    fn avg_filled_exact(&self, exact_full: &u64) -> Ordering {
+    pub(crate) fn avg_filled_exact(&self, exact_full: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             current_inflight.runner
                 .cmp(&((*exact_full as u128 * PLACES_TENS as u128)
@@ -672,10 +673,10 @@ impl ChannelStatsComputer {
             fixed_digits: 0
 
         };
-        compute_labels(config, current_rate
-                       , labels, &self.std_dev_rate
-                       , &self.percentiles_rate
-                       , target_metric, target_telemetry_label);
+        channel_stats_labels::compute_labels(config, current_rate
+                                             , labels, &self.std_dev_rate
+                                             , &self.percentiles_rate
+                                             , target_metric, target_telemetry_label);
 
     }
 
@@ -689,7 +690,7 @@ impl ChannelStatsComputer {
             fixed_digits: 0
 
         };
-        compute_labels(config, current_filled, labels, &self.std_dev_filled, &self.percentiles_filled, metric_target, display_label);
+        channel_stats_labels::compute_labels(config, current_filled, labels, &self.std_dev_filled, &self.percentiles_filled, metric_target, display_label);
     }
 
     pub(crate) fn compute_latency_labels(&self, display_label: &mut String, metric_target: &mut String, current_latency: &&ChannelBlock<u64>) {
@@ -703,7 +704,7 @@ impl ChannelStatsComputer {
 
         };
 
-        compute_labels(config, current_latency, labels, &self.std_dev_latency, &self.percentiles_latency, metric_target, display_label);
+        channel_stats_labels::compute_labels(config, current_latency, labels, &self.std_dev_latency, &self.percentiles_latency, metric_target, display_label);
     }
 
     /// Milliseconds per second constant.
@@ -718,7 +719,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
-    fn avg_latency(&self, duration: &Duration) -> Ordering {
+    pub(crate) fn avg_latency(&self, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
             assert_eq!(Self::MS_PER_SEC, PLACES_TENS); // We assume this with as_micros below
             current_latency.runner
@@ -739,7 +740,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
-    fn stddev_filled_exact(&self, std_devs: &StdDev, exact_full: &u64) -> Ordering {
+    pub(crate) fn stddev_filled_exact(&self, std_devs: &StdDev, exact_full: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             let std_deviation = (self.filled_std_dev() * std_devs.value()) as u128;
             let avg = current_inflight.runner >> (self.window_bucket_in_bits + self.refresh_rate_in_bits);
@@ -761,7 +762,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
-    fn stddev_filled_percentage(&self, std_devs: &StdDev, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
+    pub(crate) fn stddev_filled_percentage(&self, std_devs: &StdDev, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             let std_deviation = (self.filled_std_dev() * std_devs.value()) as u128;
             let avg = current_inflight.runner >> (self.window_bucket_in_bits + self.refresh_rate_in_bits);
@@ -782,7 +783,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
-    fn stddev_latency(&self, std_devs: &StdDev, duration: &Duration) -> Ordering {
+    pub(crate) fn stddev_latency(&self, std_devs: &StdDev, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
             assert_eq!(1000, PLACES_TENS); // We assume this with as_micros below
             let std_deviation = (self.latency_std_dev() * std_devs.value()) as u128;
@@ -804,7 +805,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
-    fn percentile_filled_exact(&self, percentile: &Percentile, exact_full: &u64) -> Ordering {
+    pub(crate) fn percentile_filled_exact(&self, percentile: &Percentile, exact_full: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             if let Some(h) = &current_inflight.histogram {
                 let in_flight = h.value_at_percentile(percentile.percentile()) as u128;
@@ -828,7 +829,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
-    fn percentile_filled_percentage(&self, percentile: &Percentile, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
+    pub(crate) fn percentile_filled_percentage(&self, percentile: &Percentile, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             if let Some(h) = &current_inflight.histogram {
                 let in_flight = h.value_at_percentile(percentile.percentile()) as u128;
@@ -851,7 +852,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
-    fn percentile_latency(&self, percentile: &Percentile, duration: &Duration) -> Ordering {
+    pub(crate) fn percentile_latency(&self, percentile: &Percentile, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
             if let Some(h) = &current_latency.histogram {
                 let in_flight = h.value_at_percentile(percentile.percentile()) as u128;
@@ -868,1091 +869,3 @@ impl ChannelStatsComputer {
 /// The number of decimal places used for tens.
 pub(crate) const PLACES_TENS: u64 = 1000u64;
 
-/// Struct for configuring the computation of labels.
-#[derive(Copy, Clone)]
-pub(crate) struct ComputeLabelsConfig {
-    frame_rate_ms: u64,
-    rational_adjust: (usize, usize),
-    max_value: u64,
-    window_in_bits: u8,
-    show_avg: bool,
-}
-
-impl ComputeLabelsConfig {
-    /// Creates a new `ComputeLabelsConfig` for a channel.
-    ///
-    /// # Arguments
-    ///
-    /// * `that` - A reference to a `ChannelStatsComputer`.
-    /// * `rational_adjust` - A tuple containing the rational adjustment values.
-    /// * `max_value` - The maximum value.
-    /// * `show_avg` - A boolean indicating whether to show the average.
-    ///
-    /// # Returns
-    ///
-    /// A new instance of `ComputeLabelsConfig`.
-    #[inline]
-    pub(crate) fn channel_config(that: &ChannelStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool) -> Self {
-        Self {
-            frame_rate_ms: that.frame_rate_ms,
-            rational_adjust,
-            max_value,
-            window_in_bits: that.window_bucket_in_bits + that.refresh_rate_in_bits,
-            show_avg,
-        }
-    }
-
-    /// Creates a new `ComputeLabelsConfig` for an actor.
-    ///
-    /// # Arguments
-    ///
-    /// * `that` - A reference to an `ActorStatsComputer`.
-    /// * `rational_adjust` - A tuple containing the rational adjustment values.
-    /// * `max_value` - The maximum value.
-    /// * `show_avg` - A boolean indicating whether to show the average.
-    ///
-    /// # Returns
-    ///
-    /// A new instance of `ComputeLabelsConfig`.
-    #[inline]
-    pub(crate) fn actor_config(that: &ActorStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool) -> Self {
-        Self {
-            frame_rate_ms: that.frame_rate_ms,
-            rational_adjust,
-            max_value,
-            window_in_bits: that.window_bucket_in_bits + that.refresh_rate_in_bits,
-            show_avg,
-        }
-    }
-}
-
-/// Struct for holding label information for computing labels.
-#[derive(Copy, Clone)]
-pub(crate) struct ComputeLabelsLabels<'a> {
-
-
-    pub(crate) label: &'a str,
-    pub(crate) unit: &'a str,
-    pub(crate) _prometheus_labels: &'a str, //TODO: work in progress.
-    pub(crate) int_only: bool,
-    pub(crate) fixed_digits: usize
-}
-/// Computes labels and updates the metric and label targets.
-///
-/// # Arguments
-///
-/// * `config` - A `ComputeLabelsConfig` instance.
-/// * `current` - A reference to a `ChannelBlock`.
-/// * `labels` - A `ComputeLabelsLabels` instance.
-/// * `std_dev` - A slice of `StdDev` values.
-/// * `percentile` - A slice of `Percentile` values.
-/// * `metric_target` - A mutable reference to a string for storing the metric target.
-/// * `label_target` - A mutable reference to a string for storing the label target.
-#[inline]
-pub(crate) fn compute_labels<T: Counter>(
-    config: ComputeLabelsConfig,
-    current: &ChannelBlock<T>,
-    labels: ComputeLabelsLabels,
-    std_dev: &[StdDev],
-    percentile: &[Percentile],
-    _metric_target: &mut String, //TODO: work in progress.
-    label_target: &mut String,
-) {
-    if config.show_avg {
-        // Prefix the label
-        label_target.push_str("Avg ");
-        label_target.push_str(labels.label);
-
-        // Prefix the metric for Prometheus
-        #[cfg(feature = "prometheus_metrics")]
-        {
-            _metric_target.push_str("avg_");
-            _metric_target.push_str(labels.label);
-            _metric_target.push('{');
-            _metric_target.push_str(labels._prometheus_labels);
-            _metric_target.push('}');
-        }
-
-        // Compute the average value components
-        let denominator = config.rational_adjust.1 as u64;
-        let avg_per_sec_numer = (config.rational_adjust.0 as u128 * current.runner) >> config.window_in_bits;
-        let int_value = avg_per_sec_numer / denominator as u128;
-        let float_value = avg_per_sec_numer as f32 / denominator as f32;
-        // error!(" int value: {}  float value: {} runner: {} window bits: {}", int_value,float_value,current.runner,  config.window_in_bits);
-
-        // Format the label based on int_only flag
-        if labels.int_only {
-            let mut itoa_buf = itoa::Buffer::new();
-            let int_str = itoa_buf.format(int_value);
-            let int_len = int_str.len();
-            let pad = labels.fixed_digits.saturating_sub(int_len);
-            label_target.push_str(": ");
-            for _ in 0..pad {
-                label_target.push('0');
-            }
-            label_target.push_str(int_str);
-
-            // Output raw integer value for metrics
-            #[cfg(feature = "prometheus_metrics")]
-            {
-                _metric_target.push(' ');
-                _metric_target.push_str(int_str);
-                _metric_target.push('\n');
-            }
-        } else {
-            label_target.push_str(": ");
-            if int_value >= 10 {
-                let mut b = itoa::Buffer::new();
-                let t = b.format(int_value);
-                if int_value >= 9_999_999 {
-                    label_target.push_str(&t[..t.len() - 6]);
-                    label_target.push('M');
-                } else if int_value >= 9_999 {
-                    label_target.push_str(&t[..t.len() - 3]);
-                    label_target.push('K');
-                } else {
-                    label_target.push_str(t);
-                }
-
-                // Output raw integer value for metrics
-                #[cfg(feature = "prometheus_metrics")]
-                {
-                    _metric_target.push(' ');
-                    _metric_target.push_str(t);
-                    _metric_target.push('\n');
-                }
-            } else {
-                // Format float with 3 decimal places
-                let mut value_buf = [0u8; 32];
-                struct SliceWriter<'a> {
-                    buf: &'a mut [u8],
-                    pos: usize,
-                }
-                impl core::fmt::Write for SliceWriter<'_> {
-                    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-                        let bytes = s.as_bytes();
-                        if self.pos + bytes.len() > self.buf.len() {
-                            return Err(core::fmt::Error);
-                        }
-                        self.buf[self.pos..self.pos + bytes.len()].copy_from_slice(bytes);
-                        self.pos += bytes.len();
-                        Ok(())
-                    }
-                }
-                let mut writer = SliceWriter {
-                    buf: &mut value_buf,
-                    pos: 0,
-                };
-                write!(&mut writer, " {:.3}", float_value).unwrap();
-                let offset = writer.pos;
-                label_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
-
-                // Output raw float value for metrics
-                #[cfg(feature = "prometheus_metrics")]
-                {
-                    _metric_target.push(' ');
-                    _metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
-                    _metric_target.push('\n');
-                }
-            }
-        }
-
-        // Append unit and newline
-        label_target.push(' ');
-        label_target.push_str(labels.unit);
-        label_target.push('\n');
-    }
-
-    // Compute standard deviation if required
-    let std = if !std_dev.is_empty() {
-        actor_stats::compute_std_dev(config.window_in_bits, 1 << config.window_in_bits, current.runner, current.sum_of_squares)
-    } else {
-        0f32
-    };
-
-    // Format standard deviation entries
-    std_dev.iter().for_each(|f| {
-        label_target.push_str(labels.label);
-        label_target.push(' ');
-
-        let n_units = format!("{:.1}", f.value());
-        if *f != StdDev::one() {
-            label_target.push_str(&n_units);
-        }
-        label_target.push_str("StdDev: ");
-        let value = &format!("{:.3}", (f.value() * std) / PLACES_TENS as f32);
-        label_target.push_str(value);
-
-        label_target.push_str(" per frame (");
-        label_target.push_str(itoa::Buffer::new().format(config.frame_rate_ms));
-        label_target.push_str("ms duration)\n");
-
-        #[cfg(feature = "prometheus_metrics")]
-        {
-            _metric_target.push_str("std_");
-            _metric_target.push_str(labels.label);
-            _metric_target.push('{');
-            _metric_target.push_str(labels._prometheus_labels);
-            _metric_target.push_str(", n=");
-            _metric_target.push_str(&n_units);
-            _metric_target.push_str("} ");
-            _metric_target.push_str(value);
-            _metric_target.push('\n');
-        }
-    });
-
-    // Format percentile entries
-    percentile.iter().for_each(|p| {
-        label_target.push_str(labels.label);
-        label_target.push(' ');
-
-        label_target.push_str(itoa::Buffer::new().format(p.percentile() as usize));
-        label_target.push_str("%ile ");
-
-        if let Some(h) = &current.histogram {
-            let value = (h.value_at_percentile(p.percentile()).min(config.max_value) as f32) as usize;
-            label_target.push_str(itoa::Buffer::new().format(value));
-
-            #[cfg(feature = "prometheus_metrics")]
-            {
-                _metric_target.push_str("percentile_");
-                _metric_target.push_str(labels.label);
-                _metric_target.push('{');
-                _metric_target.push_str(labels._prometheus_labels);
-                _metric_target.push_str(", p=");
-                _metric_target.push_str(itoa::Buffer::new().format((100.0f64 * p.percentile()) as usize));
-                _metric_target.push_str("} ");
-                _metric_target.push_str(itoa::Buffer::new().format(value));
-                _metric_target.push('\n');
-            }
-        } else {
-            label_target.push_str("InternalError");
-            error!("InternalError: no histogram for required percentile {:?}", p);
-        }
-        label_target.push(' ');
-        label_target.push_str(labels.unit);
-        label_target.push('\n');
-    });
-}
-
-#[cfg(test)]
-pub(crate) mod channel_stats_tests {
-    use super::*;
-    use rand_distr::{Distribution, Normal};
-    use rand::{rngs::StdRng, SeedableRng};
-    use std::sync::Arc;
-    #[allow(unused_imports)]
-    use log::*;
-    use crate::util;
-
-    ////////////////////////////////
-    // Each of these tests cover both sides of above and below triggers with the matching label display
-    ///////////////////////////////
-
-    #[test]
-    pub(crate) fn filled_avg_percent_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-        computer.frame_rate_ms = 3;
-        computer.show_avg_filled = true;
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c { // 256 * 0.81 = 207
-            computer.accumulate_data_frame((computer.capacity as f32 * 0.81f32) as u64, 100);
-        }
-
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "Avg filled: 80 %\n");
-        assert!(computer.triggered_filled(&Trigger::AvgAbove(Filled::p80())), "Trigger should fire when the average filled is above");
-        assert!(!computer.triggered_filled(&Trigger::AvgAbove(Filled::p90())), "Trigger should not fire when the average filled is above");
-        assert!(!computer.triggered_filled(&Trigger::AvgBelow(Filled::p80())), "Trigger should not fire when the average filled is below");
-        assert!(computer.triggered_filled(&Trigger::AvgBelow(Filled::p90())), "Trigger should fire when the average filled is below");
-    }
-
-    #[test]
-    pub(crate) fn filled_avg_fixed_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-        computer.frame_rate_ms = 3;
-        computer.show_avg_filled = true;
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c { // 256 * 0.81 = 207
-            let filled = (computer.capacity as
-
-                f32 * 0.81f32) as u64;
-            let consumed = 100;
-            computer.accumulate_data_frame(filled, consumed);
-   
-        }
-
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "Avg filled: 80 %\n");
-
-        assert!(computer.triggered_filled(&Trigger::AvgAbove(Filled::Exact(16))), "Trigger should fire when the average filled is above");
-        assert!(!computer.triggered_filled(&Trigger::AvgAbove(Filled::Exact((computer.capacity - 1) as u64))), "Trigger should not fire when the average filled is above");
-        assert!(computer.triggered_filled(&Trigger::AvgBelow(Filled::Exact(220))), "Trigger should fire when the average filled is below");
-        assert!(!computer.triggered_filled(&Trigger::AvgBelow(Filled::Exact(200))), "Trigger should not fire when the average filled is below");
-    }
-
-    #[test]
-    pub(crate) fn filled_std_dev_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-        computer.frame_rate_ms = 3;
-        computer.show_avg_filled = true;
-
-        let mean = computer.capacity as f64 * 0.81; // Mean value just above test
-        let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
-        let seed = [42; 32];
-        let mut rng = StdRng::from_seed(seed);
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
-            computer.accumulate_data_frame(value, 100);
-  
-        }
-
-        computer.std_dev_filled.push(StdDev::two_and_a_half());
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "Avg filled: 80 %\nfilled 2.5StdDev: 30.455 per frame (3ms duration)\n");
-
-        computer.std_dev_filled.clear();
-        computer.std_dev_filled.push(StdDev::one());
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "Avg filled: 80 %\nfilled StdDev: 12.182 per frame (3ms duration)\n");
-
-        // Define a trigger with a standard deviation condition
-        assert!(computer.triggered_filled(&Trigger::StdDevsAbove(StdDev::one(), Filled::p80())), "Trigger should fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered_filled(&Trigger::StdDevsAbove(StdDev::one(), Filled::p90())), "Trigger should not fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered_filled(&Trigger::StdDevsAbove(StdDev::one(), Filled::p100())), "Trigger should not fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered_filled(&Trigger::StdDevsBelow(StdDev::one(), Filled::p80())), "Trigger should not fire when standard deviation from the average filled is below the threshold");
-        assert!(computer.triggered_filled(&Trigger::StdDevsBelow(StdDev::one(), Filled::p90())), "Trigger should fire when standard deviation from the average filled is below the threshold");
-        assert!(computer.triggered_filled(&Trigger::StdDevsBelow(StdDev::one(), Filled::p100())), "Trigger should fire when standard deviation from the average filled is below the threshold");
-    }
-
-    #[test]
-    pub(crate) fn filled_percentile_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-
-        actor.percentiles_filled.push(Percentile::p25());
-        actor.percentiles_filled.push(Percentile::p50());
-        actor.percentiles_filled.push(Percentile::p75());
-        actor.percentiles_filled.push(Percentile::p90());
-
-        let mut computer = ChannelStatsComputer::default();
-        computer.frame_rate_ms = 3;
-        assert!(computer.percentiles_filled.is_empty());
-        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-        assert!(!computer.percentiles_filled.is_empty());
-
-        let mean = computer.capacity as f64 * 0.13;
-        let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
-        let seed = [42; 32];
-        let mut rng = StdRng::from_seed(seed);
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
-            computer.accumulate_data_frame(value, 100);
-        }
-
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "filled 25%ile 31 %\nfilled 50%ile 31 %\nfilled 75%ile 63 %\nfilled 90%ile 63 %\n");
-
-        // Define a trigger with a standard deviation condition
-        assert!(computer.triggered_filled(&Trigger::PercentileAbove(Percentile::p90(), Filled::Exact(47))), "Trigger should fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered_filled(&Trigger::PercentileAbove(Percentile::p50(), Filled::p90())), "Trigger should not fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered_filled(&Trigger::PercentileAbove(Percentile::p50(), Filled::p100())), "Trigger should not fire when standard deviation from the average filled is above the threshold");
-        assert!(computer.triggered_filled(&Trigger::PercentileBelow(Percentile::p90(), Filled::Exact(80))), "Trigger should fire when standard deviation from the average filled is below the threshold");
-        assert!(!computer.triggered_filled(&Trigger::PercentileBelow(Percentile::p50(), Filled::Exact(17))), "Trigger should not fire when standard deviation from the average filled is below the threshold");
-        assert!(computer.triggered_filled(&Trigger::PercentileBelow(Percentile::p50(), Filled::p100())), "Trigger should fire when standard deviation from the average filled is below the threshold");
-    }
-
-    ////////////////////////////////////////////////////////
-    #[test]
-    pub(crate) fn rate_avg_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 4;
-        actor.refresh_rate_in_bits = 8;
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1",None)
-                                    , ActorName::new("2",None)
-                                    , 30);
-        computer.show_avg_rate = true;
-        // We consume 100 messages every computer.frame_rate_ms which is 3 ms
-        // So per ms we are consuming about 33.3 messages
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            computer.accumulate_data_frame(0, 1000);
-
-        }
-
-        let display_label = compute_display_label(&mut computer);
-        assert_eq!(display_label, "Avg rate: 33K per/sec\n");
-
-        // NOTE: our triggers are in fixed units so they do not need to change if we modify
-        // the frame rate, refresh rate or window rate.
-        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(32))), "Trigger should fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34))), "Trigger should not fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32))), "Trigger should not fire when the average is below");
-        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34))), "Trigger should fire when the average is below");
-
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            computer.accumulate_data_frame(0, 1_000_000);
-
-        }
-
-        let display_label = compute_display_label(&mut computer);
-        assert_eq!(display_label, "Avg rate: 33M per/sec\n");
-
-        // NOTE: our triggers are in fixed units so they do not need to change if we modify
-        // the frame rate, refresh rate or window rate.
-        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(32000))), "Trigger should fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34000))), "Trigger should not fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32000))), "Trigger should not fire when the average is below");
-        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34000))), "Trigger should fire when the average is below");
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            computer.accumulate_data_frame(0, 1_000_000_000);
-
-        }
-
-        let display_label = compute_display_label(&mut computer);
-        assert_eq!(display_label, "Avg rate: 33333M per/sec\n");
-
-        // NOTE: our triggers are in fixed units so they do not need to change if we modify
-        // the frame rate, refresh rate or window rate.
-        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(32_000_000))), "Trigger should fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34_000_000))), "Trigger should not fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32_000_000))), "Trigger should not fire when the average is below");
-        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34_000_000))), "Trigger should fire when the average is below");
-
-    }
-
-    #[test]
-    pub(crate) fn rate_std_dev_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-        computer.frame_rate_ms = 3;
-        computer.show_avg_rate = true;
-
-        let mean = computer.capacity as f64 * 0.81; // Mean value just above test
-        let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
-        let seed = [42; 32];
-        let mut rng = StdRng::from_seed(seed);
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
-            computer.accumulate_data_frame(100, value);
-
-        }
-
-        computer.std_dev_rate.push(StdDev::two_and_a_half());
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "Avg rate: 68K per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
-
-        computer.std_dev_rate.clear();
-        computer.std_dev_rate.push(StdDev::one());
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "Avg rate: 68K per/sec\nrate StdDev: 12.182 per frame (3ms duration)\n");
-
-        // Define a trigger with a standard deviation condition
-        assert!(computer.triggered_rate(&Trigger::StdDevsAbove(StdDev::one(), Rate::per_millis(80))), "Trigger should fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered_rate(&Trigger::StdDevsAbove(StdDev::one(), Rate::per_millis(220))), "Trigger should not fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered_rate(&Trigger::StdDevsBelow(StdDev::one(), Rate::per_millis(80))), "Trigger should fire when standard deviation from the average filled is below the threshold");
-        assert!(computer.triggered_rate(&Trigger::StdDevsBelow(StdDev::one(), Rate::per_millis(220))), "Trigger should fire when standard deviation from the average filled is below the threshold");
-    }
-
-    ///////////////////
-    #[test]
-    pub(crate) fn rate_percentile_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-        actor.percentiles_rate.push(Percentile::p25());
-        actor.percentiles_rate.push(Percentile::p50());
-        actor.percentiles_rate.push(Percentile::p75());
-        actor.percentiles_rate.push(Percentile::p90());
-        let mut computer = ChannelStatsComputer::default();
-        computer.frame_rate_ms = 3;
-        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-
-        let mean = computer.capacity as f64 * 0.13;
-        let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
-        let seed = [42; 32];
-        let mut rng = StdRng::from_seed(seed);
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
-            computer.accumulate_data_frame(100, value);
-
-        }
-
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "rate 25%ile 25 per/sec\nrate 50%ile 28 per/sec\nrate 75%ile 38 per/sec\nrate 90%ile 49 per/sec\n");
-
-        // Define a trigger with a standard deviation condition
-        assert!(computer.triggered_rate(&Trigger::PercentileAbove(Percentile::p90(), Rate::per_millis(47))), "Trigger should fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered_rate(&Trigger::PercentileAbove(Percentile::p90(), Rate::per_millis(52))), "Trigger should not fire when standard deviation from the average filled is above the threshold");
-        assert!(!computer.triggered_rate(&Trigger::PercentileBelow(Percentile::p90(), Rate::per_millis(47))), "Trigger should fire when standard deviation from the average filled is above the threshold");
-        assert!(computer.triggered_rate(&Trigger::PercentileBelow(Percentile::p90(), Rate::per_millis(52))), "Trigger should not fire when standard deviation from the average filled is above the threshold");
-    }
-
-    fn compute_display_label(computer: &mut ChannelStatsComputer) -> String {
-        let mut display_label = String::new();
-        let mut metrics = String::new();
-        if let Some(ref current_rate) = computer.current_rate {
-            computer.compute_rate_labels( &mut display_label, &mut metrics, &current_rate);
-        }
-        if let Some(ref current_filled) = computer.current_filled {
-            computer.compute_filled_labels(&mut display_label, &mut metrics, &current_filled);
-        }
-        if let Some(ref current_latency) = computer.current_latency {
-            computer.compute_latency_labels(&mut display_label, &mut metrics, &current_latency);
-        }
-        display_label
-    }
-
-    /////////////////////////
-
-    #[test]
-    pub(crate) fn latency_avg_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-        computer.frame_rate_ms = 3;
-        computer.show_avg_latency = true;
-
-        let mean = computer.capacity as f64 * 0.81; // Mean value just above test
-        let expected_std_dev = 10.0; // Standard deviation
-        let normal = Normal::new(mean, expected_std_dev).expect("iternal error");
-        let seed = [42; 32];
-        let mut rng = StdRng::from_seed(seed);
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            // 205 in flight and we consume 33 per 3ms frame 11 per ms, so 205/11 = 18.6ms
-            let inflight_value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
-            computer.accumulate_data_frame(inflight_value, 33);
-
-        }
-
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "Avg latency: 18K ms\n");
-
-        assert!(computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(5))), "Trigger should fire when the average is above");
-        assert!(!computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(21))), "Trigger should fire when the average is above");
-
-        assert!(!computer.triggered_latency(&Trigger::AvgBelow(Duration::from_millis(5))), "Trigger should fire when the average is above");
-        assert!(computer.triggered_latency(&Trigger::AvgBelow(Duration::from_millis(21))), "Trigger should fire when the average is above");
-    }
-
-
-
-
-    #[test]
-    pub(crate) fn latency_std_dev_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-        computer
-
-            .frame_rate_ms = 3;
-        computer.show_avg_latency = true;
-        let mean = 5.0; // Mean rate
-        let std_dev = 1.0; // Standard deviation
-        let normal = Normal::new(mean, std_dev).expect("iternal error");
-        let seed = [42; 32];
-        let mut rng = StdRng::from_seed(seed);
-
-        // Simulate rate data with a distribution
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            let consumed_value = normal.sample(&mut rng) as u64;
-            computer.accumulate_data_frame(computer.capacity as u64 / 2, consumed_value);
-
-        }
-
-        computer.std_dev_latency.push(StdDev::two_and_a_half());
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "Avg latency: 95K ms\nlatency 2.5StdDev: 79.329 per frame (3ms duration)\n");
-
-        // Define a trigger for rate deviation above a threshold
-        assert!(computer.triggered_latency(&Trigger::StdDevsAbove(StdDev::two_and_a_half(), Duration::from_millis(96 + 70))), "Trigger should fire when rate deviates above the mean by a std dev, exceeding 6");
-        assert!(!computer.triggered_latency(&Trigger::StdDevsAbove(StdDev::two_and_a_half(), Duration::from_millis(96 + 90))), "Trigger should not fire when rate deviates above the mean by a std dev, exceeding 6");
-        assert!(!computer.triggered_latency(&Trigger::StdDevsBelow(StdDev::two_and_a_half(), Duration::from_millis(96 + 70))), "Trigger should not fire when rate deviates above the mean by a std dev, exceeding 6");
-        assert!(computer.triggered_latency(&Trigger::StdDevsBelow(StdDev::two_and_a_half(), Duration::from_millis(96 + 90))), "Trigger should fire when rate deviates above the mean by a std dev, exceeding 6");
-    }
-
-    #[test]
-    pub(crate) fn latency_percentile_trigger() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 256;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-        actor.percentiles_latency.push(Percentile::p25());
-        actor.percentiles_latency.push(Percentile::p50());
-        actor.percentiles_latency.push(Percentile::p75());
-        actor.percentiles_latency.push(Percentile::p90());
-        let mut computer = ChannelStatsComputer::default();
-        computer.frame_rate_ms = 3;
-        computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-
-        // Simulate rate data accumulation
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            computer.accumulate_data_frame((computer.capacity - 1) as u64, (5.0 * 1.2) as u64); // Simulating rate being consistently above a certain value
-
-        }
-
-        let display_label = compute_display_label(&mut computer);
-
-        assert_eq!(display_label, "latency 25%ile 1791 ms\nlatency 50%ile 1791 ms\nlatency 75%ile 1791 ms\nlatency 90%ile 1791 ms\n");
-
-        // Define a trigger for average rate above a threshold
-        assert!(computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(100))), "Trigger should fire when the average rate is above");
-        assert!(!computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(2000))), "Trigger should fire when the average rate is above");
-        assert!(!computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(100))), "Trigger should fire when the average rate is below");
-        assert!(computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(2000))), "Trigger should fire when the average rate is below");
-    }
-
-
-    /// Helper function to set up a `ChannelStatsComputer` with specified parameters.
-    fn setup_computer(capacity: usize, window_bits: u8, refresh_bits: u8) -> ChannelStatsComputer {
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = capacity;
-        actor.window_bucket_in_bits = window_bits;
-        actor.refresh_rate_in_bits = refresh_bits;
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 42);
-        computer.frame_rate_ms = 3;
-        computer
-    }
-
-
-    /// Test histogram creation failure by using an extreme capacity.
-    #[test]
-    pub(crate) fn histogram_failure() {
-        let _ = util::steady_logger::initialize();
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = usize::MAX; // Extremely large capacity to simulate failure
-        actor.percentiles_filled.push(Percentile::p50()); // Force histogram creation
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 42);
-        computer.accumulate_data_frame(0, 100);
-        // Expect error logging or graceful handling; no panic should occur
-    }
-
-
-    /// Test when the bucket is full and a new one is added.
-    #[test]
-    pub(crate) fn full_bucket() {
-        let _ = util::steady_logger::initialize();
-        let mut computer = setup_computer(256, 2, 2);
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            computer.accumulate_data_frame(100, 100);
-        }
-        assert!(computer.history_filled.len() > 1);
-    }
-
-
-
-
-    /// Test Prometheus metrics generation when enabled.
-    #[cfg(feature = "prometheus_metrics")]
-    #[test]
-    pub(crate) fn prometheus_metrics_enabled() {
-        let _ = util::steady_logger::initialize();
-        let mut computer = setup_computer(256, 2, 2);
-        computer.accumulate_data_frame(100, 100);
-        let mut display_label = String::new();
-        let mut metrics = String::new();
-        computer.compute(&mut display_label, &mut metrics, None, 100, 50);
-        assert!(metrics.contains("inflight"));
-        assert!(metrics.contains("send_total"));
-        assert!(metrics.contains("take_total"));
-    }
-
-    /// Test behavior when capacity is zero (should return grey line).
-    #[test]
-    pub(crate) fn zero_capacity() {
-        let _ = util::steady_logger::initialize();
-        let mut computer = ChannelStatsComputer::default();
-        computer.capacity = 0; // Manually set to bypass init assertion
-        let mut display_label = String::new();
-        let mut metrics = String::new();
-        let (color, thickness) = computer.compute(&mut display_label, &mut metrics, None, 100, 50);
-        assert_eq!(color, DOT_GREY);
-        assert_eq!(thickness, "1");
-    }
-
-
-    /// Test init method with labels and show_type
-    #[test]
-    fn test_init_with_labels_and_show_type() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 100;
-        actor.labels = vec!["test_label1", "test_label2"];
-        actor.show_type = Some("test_type");
-        actor.display_labels = true;
-
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(
-            &Arc::new(actor),
-            ActorName::new("from_actor", Some(42)),
-            ActorName::new("to_actor", Some(99)),
-            1000
-        );
-
-        // Should contain labels in prometheus_labels
-        assert!(computer.prometheus_labels.contains("test_label1"));
-        assert!(computer.prometheus_labels.contains("test_label2"));
-        assert!(computer.prometheus_labels.contains("type=\"test_type\""));
-        assert!(computer.prometheus_labels.contains("from=\"from_actor42\""));
-        assert!(computer.prometheus_labels.contains("to=\"to_actor99\""));
-
-        // display_labels should be Some
-        assert!(computer.display_labels.is_some());
-    }
-
-    /// Test histogram creation errors by mocking extreme conditions
-    #[test]
-    fn test_histogram_creation_errors() {
-        let _ = util::steady_logger::initialize();
-
-        // Test with capacity that might cause histogram errors
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = u64::MAX as usize; // Extreme capacity
-        actor.percentiles_filled.push(Percentile::p50());
-        actor.percentiles_rate.push(Percentile::p50());
-        actor.percentiles_latency.push(Percentile::p50());
-
-        let mut computer = ChannelStatsComputer::default();
-        // This should handle histogram creation gracefully and log errors
-        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
-    }
-
-
-
-    /// Test compute method with full prometheus metrics and all features
-    // #[cfg(feature = "prometheus_metrics")]
-    // #[test]
-    // fn test_compute_full_prometheus_metrics() {
-    //     let _ = util::steady_logger::initialize();
-    //
-    //     let mut actor = ChannelMetaData::default();
-    //     actor.capacity = 100;
-    //     actor.show_type = Some("test_type");
-    //     actor.display_labels = true;
-    //     actor.labels = vec!["label1", "label2"];
-    //     actor.window_bucket_in_bits = 2;
-    //     actor.refresh_rate_in_bits = 2;
-    //     actor.show_total = true;
-    //     actor.avg_filled = true;
-    //     actor.avg_rate = true;
-    //     actor.avg_latency = true;
-    //     actor.percentiles_filled.push(Percentile::p50());
-    //     actor.std_dev_inflight.push(StdDev::one());
-    //     actor.trigger_filled.push((Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow));
-    //     actor.trigger_rate.push((Trigger::AvgAbove(Rate::per_millis(100)), AlertColor::Orange));
-    //     actor.trigger_latency.push((Trigger::AvgAbove(Duration::from_millis(100)), AlertColor::Red));
-    //     actor.line_expansion = 1.5;
-    //
-    //     let mut computer = ChannelStatsComputer::default();
-    //     computer.init(&Arc::new(actor), ActorName::new("from", None), ActorName::new("to", None), 1000);
-    //
-    //     // Accumulate enough data to trigger bucket rotation
-    //     let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-    //     for _ in 0..c {
-    //         computer.accumulate_data_frame(50, 10);
-    //     }
-    //
-    //     let mut display_label = String::new();
-    //     let mut metric_text = String::new();
-    //     let (color, thickness) = computer.compute(&mut display_label, &mut metric_text, Some(ActorName::new("test", None)), 1000, 500);
-    //
-    //     // Should contain prometheus metrics
-    //     assert!(metric_text.contains("inflight{"));
-    //     assert!(metric_text.contains("send_total{"));
-    //     assert!(metric_text.contains("take_total{"));
-    //
-    //     // Should contain display elements
-    //     assert!(display_label.contains("test_type"));
-    //     assert!(display_label.contains("Window"));
-    //     assert!(display_label.contains("label1"));
-    //     assert!(display_label.contains("label2"));
-    //     assert!(display_label.contains("Capacity: 100"));
-    //     assert!(display_label.contains("Total:"));
-    //
-    //     // Should have alert colors based on triggers
-    //     assert!(color == DOT_YELLOW || color == DOT_ORANGE || color == DOT_RED);
-    // }
-
-    /// Test compute method without prometheus feature (lines 407-427 should be skipped)
-    #[cfg(not(feature = "prometheus_metrics"))]
-    #[test]
-    fn test_compute_without_prometheus() {
-        let _ = util::steady_logger::initialize();
-
-        let mut computer = setup_basic_computer();
-        let mut display_label = String::new();
-        let mut metric_text = String::new();
-        computer.compute(&mut display_label, &mut metric_text, None, 100, 50);
-
-        // metric_text should be empty without prometheus feature
-        assert!(metric_text.is_empty());
-    }
-
-   
-
-    /// Test line thickness calculation based on traffic
-    #[test]
-    fn test_line_thickness_calculation() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 100;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-        actor.percentiles_rate.push(Percentile::p80());
-        actor.line_expansion = 2.0; // Test non-NaN line expansion
-
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
-
-        // Accumulate data to get current_rate
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            computer.accumulate_data_frame(50, 1000); // High rate
-        }
-
-        let mut display_label = String::new();
-        let mut metric_text = String::new();
-        let (_, thickness) = computer.compute(&mut display_label, &mut metric_text, None, 1000, 500);
-
-        // Should calculate line thickness based on traffic
-        assert_ne!(thickness, "1"); // Should be thicker than default
-    }
-
-    /// Test std dev functions when current data is None
-    #[test]
-    fn test_std_dev_functions_with_none_current() {
-        let _ = util::steady_logger::initialize();
-
-        let computer = ChannelStatsComputer::default();
-
-        // These should return 0 or log info when current data is None
-        assert_eq!(computer.rate_std_dev(), 0f32);
-        assert_eq!(computer.filled_std_dev(), 0f32);
-        assert_eq!(computer.latency_std_dev(), 0f32);
-    }
-
-    /// Test trigger functions when current data is None
-    #[test]
-    fn test_trigger_functions_with_none_current() {
-        let _ = util::steady_logger::initialize();
-
-        let computer = ChannelStatsComputer::default();
-
-        // All trigger functions should return Equal (false) when no current data
-        assert_eq!(computer.avg_filled_percentage(&50, &100), std::cmp::Ordering::Equal);
-        assert_eq!(computer.avg_filled_exact(&50), std::cmp::Ordering::Equal);
-        assert_eq!(computer.avg_latency(&Duration::from_millis(100)), std::cmp::Ordering::Equal);
-        assert_eq!(computer.stddev_filled_exact(&StdDev::one(), &50), std::cmp::Ordering::Equal);
-        assert_eq!(computer.stddev_filled_percentage(&StdDev::one(), &50, &100), std::cmp::Ordering::Equal);
-        assert_eq!(computer.stddev_latency(&StdDev::one(), &Duration::from_millis(100)), std::cmp::Ordering::Equal);
-        assert_eq!(computer.percentile_filled_exact(&Percentile::p50(), &50), std::cmp::Ordering::Equal);
-        assert_eq!(computer.percentile_filled_percentage(&Percentile::p50(), &50, &100), std::cmp::Ordering::Equal);
-        assert_eq!(computer.percentile_latency(&Percentile::p50(), &Duration::from_millis(100)), std::cmp::Ordering::Equal);
-    }
-
-    /// Test percentile functions when histogram is None
-    #[test]
-    fn test_percentile_functions_with_none_histogram() {
-        let _ = util::steady_logger::initialize();
-
-        let mut computer = ChannelStatsComputer::default();
-        computer.current_filled = Some(ChannelBlock::default()); // No histogram
-        computer.current_rate = Some(ChannelBlock::default());
-        computer.current_latency = Some(ChannelBlock::default());
-
-        // Should return Equal when histogram is None
-        assert_eq!(computer.percentile_filled_exact(&Percentile::p50(), &50), std::cmp::Ordering::Equal);
-        assert_eq!(computer.percentile_filled_percentage(&Percentile::p50(), &50, &100), std::cmp::Ordering::Equal);
-        assert_eq!(computer.percentile_latency(&Percentile::p50(), &Duration::from_millis(100)), std::cmp::Ordering::Equal);
-    }
-
-    /// Test actor_config method
-    #[test]
-    fn test_actor_config_method() {
-        let _ = util::steady_logger::initialize();
-
-        let actor_stats = ActorStatsComputer::default();
-        let config = ComputeLabelsConfig::actor_config(&actor_stats, (1, 1000), 100, true);
-
-        assert_eq!(config.frame_rate_ms, actor_stats.frame_rate_ms);
-        assert_eq!(config.rational_adjust, (1, 1000));
-        assert_eq!(config.max_value, 100);
-        assert!(config.show_avg);
-    }
-
-
-
-
-
-    /// Test number formatting in show_total
-    #[test]
-    fn test_show_total_number_formatting() {
-        let _ = util::steady_logger::initialize();
-
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 100;
-        actor.show_total = true;
-
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
-
-        let mut display_label = String::new();
-        let mut metric_text = String::new();
-
-        // Test with large number to trigger comma formatting
-        computer.compute(&mut display_label, &mut metric_text, None, 1_234_567, 1_234_567);
-
-        // Should contain formatted number with commas
-        assert!(display_label.contains("1,234,567"));
-    }
-
-    /// Helper function to create a basic computer for testing
-    fn setup_basic_computer() -> ChannelStatsComputer {
-        let mut actor = ChannelMetaData::default();
-        actor.capacity = 100;
-        actor.window_bucket_in_bits = 2;
-        actor.refresh_rate_in_bits = 2;
-
-        let mut computer = ChannelStatsComputer::default();
-        computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
-
-        // Accumulate some data to get current values
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            computer.accumulate_data_frame(50, 100);
-        }
-
-        computer
-    }
-
-    /// Test comprehensive latency computation with zero rate edge cases
-    #[test]
-    fn test_latency_computation_zero_rate() {
-        let _ = util::steady_logger::initialize();
-
-        let mut computer = setup_basic_computer();
-
-        // Test with zero rate - should result in zero latency
-        computer.accumulate_data_frame(100, 0);
-
-        // The latency calculation should handle zero rate gracefully
-        assert!(!computer.history_latency.is_empty());
-    }
-
-    // Test bucket refresh with histogram creation errors during refresh
-    // #[test]
-    // fn test_bucket_refresh_histogram_errors() {
-    //     let _ = util::steady_logger::initialize();
-    //
-    //     let mut actor = ChannelMetaData::default();
-    //     actor.capacity = 100;
-    //     actor.window_bucket_in_bits = 1; // Small window to trigger refresh quickly
-    //     actor.refresh_rate_in_bits = 1;
-    //     actor.percentiles_filled.push(Percentile::p50());
-    //     actor.percentiles_rate.push(Percentile::p50());
-    //     actor.percentiles_latency.push(Percentile::p50());
-    //
-    //     let mut computer = ChannelStatsComputer::default();
-    //     computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
-    //
-    //     // Force bucket refresh multiple times
-    //     for _ in 0..10 {
-    //         let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-    //         for _ in 0..c {
-    //             computer.accumulate_data_frame(50, 100);
-    //         }
-    //     }
-    //
-    //     // Should have handled histogram creation during refresh
-    //     assert!(computer.history_filled.len() > 0);
-    //     assert!(computer.history_rate.len() > 0);
-    //     assert!(computer.history_latency.len() > 0);
-    // }
-}
