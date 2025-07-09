@@ -52,8 +52,20 @@ pub struct ActorStatsComputer {
     /// Flag to indicate whether to display average CPU utilization in telemetry.
     pub(crate) show_avg_mcpu: bool,
 
+    /// Min mCPU
+    pub(crate) show_min_mcpu: bool,
+
+    /// Max mCPU
+    pub(crate) show_max_mcpu: bool,
+
     /// Flag to indicate whether to display average workload in telemetry.
     pub(crate) show_avg_work: bool,
+
+    /// Max work value
+    pub(crate) show_min_work: bool,
+
+    /// Min work value
+    pub(crate) show_max_work: bool,
 
     /// Flag to enable usage review in telemetry for detailed analysis.
     pub(crate) usage_review: bool,
@@ -174,7 +186,8 @@ impl ActorStatsComputer {
         }
 
         if let Some(current_work) = &self.current_work {
-            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 100, self.show_avg_work);
+            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 100
+                                                           , self.show_avg_work, self.show_min_work, self.show_max_work);
             let labels = ComputeLabelsLabels {
                 label: "load",
                 unit: "%",
@@ -186,7 +199,8 @@ impl ActorStatsComputer {
         }
 
         if let Some(current_mcpu) = &self.current_mcpu { //TODO: urgent problem with mCPU compute.
-            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 1024, self.show_avg_mcpu);
+            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 1024
+                                                           , self.show_avg_mcpu, self.show_min_mcpu, self.show_max_mcpu);
             let labels = ComputeLabelsLabels {
                 label: "mCPU",
                 unit: "",

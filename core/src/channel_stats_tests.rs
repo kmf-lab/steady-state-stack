@@ -727,7 +727,7 @@ pub(crate) mod channel_stats_tests {
         let _ = logging_util::steady_logger::initialize();
 
         let actor_stats = ActorStatsComputer::default();
-        let config = ComputeLabelsConfig::actor_config(&actor_stats, (1, 1000), 100, true);
+        let config = ComputeLabelsConfig::actor_config(&actor_stats, (1, 1000), 100, true, false, false);
 
         assert_eq!(config.frame_rate_ms, actor_stats.frame_rate_ms);
         assert_eq!(config.rational_adjust, (1, 1000));

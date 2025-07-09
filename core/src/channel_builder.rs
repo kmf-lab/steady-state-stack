@@ -125,8 +125,20 @@ pub struct ChannelBuilder {
     /// Indicates whether to monitor the average message rate through the channel.
     avg_rate: bool,
 
+    /// show min rate
+    min_rate: bool,
+
+    /// show max rate
+    max_rate: bool,
+
     /// Indicates whether to monitor the average message latency in the channel.
     avg_latency: bool,
+
+    /// show min latency
+    min_latency: bool,
+
+    /// show max latency
+    max_latency: bool,
 
     /// Indicates whether the channel connects to a sidecar for additional processing.
     connects_sidecar: bool,
@@ -195,12 +207,16 @@ impl ChannelBuilder {
             trigger_latency: Vec::with_capacity(0),
             avg_filled: false,
             avg_rate: false,
+            min_rate: false,
+            max_rate: false,
             avg_latency: false,
+            min_latency: false,
             max_filled: false,
             min_filled: false,
             connects_sidecar: false,
             show_total: true, //default to show total
             frame_rate_ms,
+            max_latency: false,
         }
     }
 
@@ -496,6 +512,18 @@ impl ChannelBuilder {
         result
     }
 
+    pub fn with_latency_max(&self) -> Self {
+        let mut result = self.clone();
+        result.max_latency = true;
+        result
+    }
+
+    pub fn with_rate_max(&self) -> Self {
+        let mut result = self.clone();
+        result.max_rate = true;
+        result
+    }
+
     /**
      * Enables monitoring of the minimum filled state.
      *
@@ -510,6 +538,19 @@ impl ChannelBuilder {
         result.min_filled = true;
         result
     }
+
+    pub fn with_latency_min(&self) -> Self {
+        let mut result = self.clone();
+        result.min_latency = true;
+        result
+    }
+
+    pub fn with_rate_min(&self) -> Self {
+        let mut result = self.clone();
+        result.min_rate = true;
+        result
+    }
+
 
     /**
      * Enables monitoring of the average message rate.

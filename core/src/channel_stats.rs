@@ -41,8 +41,12 @@ pub struct ChannelStatsComputer {
     pub(crate) show_avg_filled: bool,
     pub(crate) show_avg_rate: bool,
     pub(crate) show_avg_latency: bool,
-    pub(crate) show_max_filled: bool, // TODO: show max filled
-    pub(crate) show_min_filled: bool, // TODO: show min filled
+    pub(crate) show_min_filled: bool,
+    pub(crate) show_max_filled: bool,
+    pub(crate) show_min_latency: bool,
+    pub(crate) show_max_latency: bool,
+    pub(crate) show_min_rate: bool,
+    pub(crate) show_max_rate: bool,
     pub(crate) rate_trigger: Vec<(Trigger<Rate>, AlertColor)>, // If used base is green
     pub(crate) filled_trigger: Vec<(Trigger<Filled>, AlertColor)>, // If used base is green
     pub(crate) latency_trigger: Vec<(Trigger<Duration>, AlertColor)>, // If used base is green
@@ -133,9 +137,10 @@ impl ChannelStatsComputer {
         self.latency_trigger.clone_from(&meta.trigger_latency);
 
         // Set the build * histograms last after we bring in all the triggers
-        let trigger_uses_histogram = self.filled_trigger.iter().any(|t|
+        let trigger_uses_histogram = self.show_max_filled  || self.show_min_filled || self.filled_trigger.iter().any(|t|
             matches!(t, (Trigger::PercentileAbove(_, _), _) | (Trigger::PercentileBelow(_, _), _))
         );
+
         self.build_filled_histogram = trigger_uses_histogram || !self.percentiles_filled.is_empty();
 
         if self.build_filled_histogram {
@@ -155,7 +160,7 @@ impl ChannelStatsComputer {
             self.history_filled.push_back(ChannelBlock::default());
         }
 
-        let trigger_uses_histogram = self.rate_trigger.iter().any(|t|
+        let trigger_uses_histogram = self.show_max_rate  || self.show_min_rate || self.rate_trigger.iter().any(|t|
             matches!(t, (Trigger::PercentileAbove(_, _), _) | (Trigger::PercentileBelow(_, _), _))
         );
         self.build_rate_histogram = trigger_uses_histogram || !self.percentiles_rate.is_empty();
@@ -177,7 +182,7 @@ impl ChannelStatsComputer {
             self.history_rate.push_back(ChannelBlock::default());
         }
 
-        let trigger_uses_histogram = self.latency_trigger.iter().any(|t|
+        let trigger_uses_histogram = self.show_max_latency || self.show_min_latency || self.latency_trigger.iter().any(|t|
             matches!(t, (Trigger::PercentileAbove(_, _), _) | (Trigger::PercentileBelow(_, _), _))
         );
         self.build_latency_histogram = trigger_uses_histogram || !self.percentiles_latency.is_empty();
@@ -660,11 +665,11 @@ impl ChannelStatsComputer {
         }
     }
 
-    pub(crate) fn compute_rate_labels(&self, target_telemetry_label: &mut String, target_metric: &mut String, current_rate: &&ChannelBlock<u64>) {
+    pub(crate) fn compute_rate_labels(&self, target_telemetry_label: &mut String, target_metric: &mut String, current_block: &&ChannelBlock<u64>) {
         let config = ComputeLabelsConfig::channel_config(self
                                                          , (1, self.frame_rate_ms as usize)
                                                          , u64::MAX
-                                                         , self.show_avg_rate);
+                                                         , self.show_avg_rate, self.show_min_rate, self.show_max_rate);
         let labels = ComputeLabelsLabels {
             label: "rate",
             unit: "per/sec",
@@ -673,38 +678,37 @@ impl ChannelStatsComputer {
             fixed_digits: 0
 
         };
-        channel_stats_labels::compute_labels(config, current_rate
+        channel_stats_labels::compute_labels(config, current_block
                                              , labels, &self.std_dev_rate
                                              , &self.percentiles_rate
                                              , target_metric, target_telemetry_label);
 
     }
 
-    pub(crate) fn compute_filled_labels(&self, display_label: &mut String, metric_target: &mut String, current_filled: &&ChannelBlock<u16>) {
-        let config = ComputeLabelsConfig::channel_config(self, (1, 10*self.capacity), 100, self.show_avg_filled);
+    pub(crate) fn compute_filled_labels(&self, display_label: &mut String, metric_target: &mut String, current_block: &&ChannelBlock<u16>) {
+        let config = ComputeLabelsConfig::channel_config(self, (1, 10*self.capacity), 100
+                                                         , self.show_avg_filled, self.show_min_filled, self.show_max_filled);
         let labels = ComputeLabelsLabels {
             label: "filled",
             unit: "%",
             _prometheus_labels: &self.prometheus_labels,
             int_only: false,
             fixed_digits: 0
-
         };
-        channel_stats_labels::compute_labels(config, current_filled, labels, &self.std_dev_filled, &self.percentiles_filled, metric_target, display_label);
+        channel_stats_labels::compute_labels(config, current_block, labels, &self.std_dev_filled, &self.percentiles_filled, metric_target, display_label);
     }
 
-    pub(crate) fn compute_latency_labels(&self, display_label: &mut String, metric_target: &mut String, current_latency: &&ChannelBlock<u64>) {
-        let config = ComputeLabelsConfig::channel_config(self, (1, 1), u64::MAX, self.show_avg_latency);
+    pub(crate) fn compute_latency_labels(&self, display_label: &mut String, metric_target: &mut String, current_block: &&ChannelBlock<u64>) {
+        let config = ComputeLabelsConfig::channel_config(self, (10, 1), u64::MAX
+                                                         , self.show_avg_latency, self.show_min_latency, self.show_max_latency);
         let labels = ComputeLabelsLabels {
             label: "latency",
-            unit: "ms",
+            unit: "µs",
             _prometheus_labels: &self.prometheus_labels,
             int_only: false,
             fixed_digits: 0
-
         };
-
-        channel_stats_labels::compute_labels(config, current_latency, labels, &self.std_dev_latency, &self.percentiles_latency, metric_target, display_label);
+        channel_stats_labels::compute_labels(config, current_block, labels, &self.std_dev_latency, &self.percentiles_latency, metric_target, display_label);
     }
 
     /// Milliseconds per second constant.

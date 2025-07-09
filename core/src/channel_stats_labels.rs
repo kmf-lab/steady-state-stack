@@ -13,6 +13,8 @@ pub(crate) struct ComputeLabelsConfig {
     pub(crate) max_value: u64,
     window_in_bits: u8,
     pub(crate) show_avg: bool,
+    pub(crate) show_min: bool,
+    pub(crate) show_max: bool,
 }
 
 impl ComputeLabelsConfig {
@@ -29,13 +31,16 @@ impl ComputeLabelsConfig {
     ///
     /// A new instance of `ComputeLabelsConfig`.
     #[inline]
-    pub(crate) fn channel_config(that: &ChannelStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool) -> Self {
+    pub(crate) fn channel_config(that: &ChannelStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
+
         Self {
             frame_rate_ms: that.frame_rate_ms,
             rational_adjust,
             max_value,
             window_in_bits: that.window_bucket_in_bits + that.refresh_rate_in_bits,
             show_avg,
+            show_min,
+            show_max
         }
     }
 
@@ -52,13 +57,15 @@ impl ComputeLabelsConfig {
     ///
     /// A new instance of `ComputeLabelsConfig`.
     #[inline]
-    pub(crate) fn actor_config(that: &ActorStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool) -> Self {
+    pub(crate) fn actor_config(that: &ActorStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
         Self {
             frame_rate_ms: that.frame_rate_ms,
             rational_adjust,
             max_value,
             window_in_bits: that.window_bucket_in_bits + that.refresh_rate_in_bits,
             show_avg,
+            show_min,
+            show_max
         }
     }
 }
@@ -93,115 +100,36 @@ pub(crate) fn compute_labels<T: Counter>(
     labels: ComputeLabelsLabels,
     std_dev: &[StdDev],
     percentile: &[Percentile],
-    _metric_target: &mut String, //TODO: work in progress.
+    metric_target: &mut String, //TODO: work in progress.
     label_target: &mut String,
 ) {
+
     if config.show_avg {
-        // Prefix the label
-        label_target.push_str("Avg ");
-        label_target.push_str(labels.label);
-
-        // Prefix the metric for Prometheus
-        #[cfg(feature = "prometheus_metrics")]
-        {
-            _metric_target.push_str("avg_");
-            _metric_target.push_str(labels.label);
-            _metric_target.push('{');
-            _metric_target.push_str(labels._prometheus_labels);
-            _metric_target.push('}');
-        }
-
+        format_label_prefix(labels, metric_target, label_target, "Avg ", "avg_");
         // Compute the average value components
         let denominator = config.rational_adjust.1 as u64;
         let avg_per_sec_numer = (config.rational_adjust.0 as u128 * current.runner) >> config.window_in_bits;
         let int_value = avg_per_sec_numer / denominator as u128;
         let float_value = avg_per_sec_numer as f32 / denominator as f32;
         // error!(" int value: {}  float value: {} runner: {} window bits: {}", int_value,float_value,current.runner,  config.window_in_bits);
+        format_value(labels, metric_target, label_target, int_value, Some(float_value));
+    }
 
-        // Format the label based on int_only flag
-        if labels.int_only {
-            let mut itoa_buf = itoa::Buffer::new();
-            let int_str = itoa_buf.format(int_value);
-            let int_len = int_str.len();
-            let pad = labels.fixed_digits.saturating_sub(int_len);
-            label_target.push_str(": ");
-            for _ in 0..pad {
-                label_target.push('0');
-            }
-            label_target.push_str(int_str);
-
-            // Output raw integer value for metrics
-            #[cfg(feature = "prometheus_metrics")]
-            {
-                _metric_target.push(' ');
-                _metric_target.push_str(int_str);
-                _metric_target.push('\n');
-            }
-        } else {
-            label_target.push_str(": ");
-            if int_value >= 10 {
-                let mut b = itoa::Buffer::new();
-                let t = b.format(int_value);
-                if int_value >= 9_999_999 {
-                    label_target.push_str(&t[..t.len() - 6]);
-                    label_target.push('M');
-                } else if int_value >= 9_999 {
-                    label_target.push_str(&t[..t.len() - 3]);
-                    label_target.push('K');
-                } else {
-                    label_target.push_str(t);
-                }
-
-                // Output raw integer value for metrics
-                #[cfg(feature = "prometheus_metrics")]
-                {
-                    _metric_target.push(' ');
-                    _metric_target.push_str(t);
-                    _metric_target.push('\n');
-                }
-            } else {
-                // Format float with 3 decimal places
-                let mut value_buf = [0u8; 32];
-                struct SliceWriter<'a> {
-                    buf: &'a mut [u8],
-                    pos: usize,
-                }
-                impl core::fmt::Write for SliceWriter<'_> {
-                    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-                        let bytes = s.as_bytes();
-                        if self.pos + bytes.len() > self.buf.len() {
-                            return Err(core::fmt::Error);
-                        }
-                        self.buf[self.pos..self.pos + bytes.len()].copy_from_slice(bytes);
-                        self.pos += bytes.len();
-                        Ok(())
-                    }
-                }
-                let mut writer = SliceWriter {
-                    buf: &mut value_buf,
-                    pos: 0,
-                };
-                use std::fmt::Write;
-
-                write!(&mut writer, " {:.3}", float_value).unwrap();
-                let offset = writer.pos;
-                label_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
-
-                // Output raw float value for metrics
-                #[cfg(feature = "prometheus_metrics")]
-                {
-                    _metric_target.push(' ');
-                    _metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
-                    _metric_target.push('\n');
-                }
-            }
+    if let Some(h) = &current.histogram {
+        if config.show_min {
+            let min = h.min().min(config.max_value);
+            format_label_prefix(labels, metric_target, label_target, "Min ", "min_");
+            format_value(labels, metric_target, label_target, min as u128, None);
+        }
+        if config.show_max {
+            let max = h.max().min(config.max_value); //histogram gets a little over excited
+            format_label_prefix(labels, metric_target, label_target, "Max ", "max_");
+            format_value(labels, metric_target, label_target, max as u128, None);
         }
 
-        // Append unit and newline
-        label_target.push(' ');
-        label_target.push_str(labels.unit);
-        label_target.push('\n');
     }
+
+
 
     // Compute standard deviation if required
     let std = if !std_dev.is_empty() {
@@ -229,17 +157,21 @@ pub(crate) fn compute_labels<T: Counter>(
 
         #[cfg(feature = "prometheus_metrics")]
         {
-            _metric_target.push_str("std_");
-            _metric_target.push_str(labels.label);
-            _metric_target.push('{');
-            _metric_target.push_str(labels._prometheus_labels);
-            _metric_target.push_str(", n=");
-            _metric_target.push_str(&n_units);
-            _metric_target.push_str("} ");
-            _metric_target.push_str(value);
-            _metric_target.push('\n');
+            metric_target.push_str("std_");
+            metric_target.push_str(labels.label);
+            metric_target.push('{');
+            metric_target.push_str(labels._prometheus_labels);
+            metric_target.push_str(", n=");
+            metric_target.push_str(&n_units);
+            metric_target.push_str("} ");
+            metric_target.push_str(value);
+            metric_target.push('\n');
         }
     });
+
+
+
+
 
     // Format percentile entries
     percentile.iter().for_each(|p| {
@@ -255,15 +187,15 @@ pub(crate) fn compute_labels<T: Counter>(
 
             #[cfg(feature = "prometheus_metrics")]
             {
-                _metric_target.push_str("percentile_");
-                _metric_target.push_str(labels.label);
-                _metric_target.push('{');
-                _metric_target.push_str(labels._prometheus_labels);
-                _metric_target.push_str(", p=");
-                _metric_target.push_str(itoa::Buffer::new().format((100.0f64 * p.percentile()) as usize));
-                _metric_target.push_str("} ");
-                _metric_target.push_str(itoa::Buffer::new().format(value));
-                _metric_target.push('\n');
+                metric_target.push_str("percentile_");
+                metric_target.push_str(labels.label);
+                metric_target.push('{');
+                metric_target.push_str(labels._prometheus_labels);
+                metric_target.push_str(", p=");
+                metric_target.push_str(itoa::Buffer::new().format((100.0f64 * p.percentile()) as usize));
+                metric_target.push_str("} ");
+                metric_target.push_str(itoa::Buffer::new().format(value));
+                metric_target.push('\n');
             }
         } else {
             label_target.push_str("InternalError");
@@ -273,4 +205,102 @@ pub(crate) fn compute_labels<T: Counter>(
         label_target.push_str(labels.unit);
         label_target.push('\n');
     });
+}
+
+fn format_label_prefix(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, telemetry_name: &str, prometheus_name: &str) {
+    // Prefix the label
+    label_target.push_str(telemetry_name);
+    label_target.push_str(labels.label);
+    // Prefix the metric for Prometheus
+    #[cfg(feature = "prometheus_metrics")]
+    {
+        _metric_target.push_str(prometheus_name);
+        _metric_target.push_str(labels.label);
+        _metric_target.push('{');
+        _metric_target.push_str(labels._prometheus_labels);
+        _metric_target.push('}');
+    }
+}
+
+fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, int_value: u128, float_value: Option<f32>) {
+    // Format the label based on int_only flag
+    if labels.int_only || float_value.is_none() {
+        let mut itoa_buf = itoa::Buffer::new();
+        let int_str = itoa_buf.format(int_value);
+        let int_len = int_str.len();
+        let pad = labels.fixed_digits.saturating_sub(int_len);
+        label_target.push_str(": ");
+        for _ in 0..pad {
+            label_target.push('0');
+        }
+        label_target.push_str(int_str);
+
+        // Output raw integer value for metrics
+        #[cfg(feature = "prometheus_metrics")]
+        {
+            _metric_target.push(' ');
+            _metric_target.push_str(int_str);
+            _metric_target.push('\n');
+        }
+    } else {
+        label_target.push_str(": ");
+        if int_value >= 10 {
+            let mut b = itoa::Buffer::new();
+            let t = b.format(int_value);
+            if int_value >= 9_999_999 {
+                label_target.push_str(&t[..t.len() - 6]);
+                label_target.push('M');
+            } else if int_value >= 9_999 {
+                label_target.push_str(&t[..t.len() - 3]);
+                label_target.push('K');
+            } else {
+                label_target.push_str(t);
+            }
+            // Output raw integer value for metrics
+            #[cfg(feature = "prometheus_metrics")]
+            {
+                _metric_target.push(' ');
+                _metric_target.push_str(t);
+                _metric_target.push('\n');
+            }
+        } else {
+            // Format float with 3 decimal places
+            let mut value_buf = [0u8; 32];
+            struct SliceWriter<'a> {
+                buf: &'a mut [u8],
+                pos: usize,
+            }
+            impl core::fmt::Write for SliceWriter<'_> {
+                fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                    let bytes = s.as_bytes();
+                    if self.pos + bytes.len() > self.buf.len() {
+                        return Err(core::fmt::Error);
+                    }
+                    self.buf[self.pos..self.pos + bytes.len()].copy_from_slice(bytes);
+                    self.pos += bytes.len();
+                    Ok(())
+                }
+            }
+            let mut writer = SliceWriter {
+                buf: &mut value_buf,
+                pos: 0,
+            };
+            use std::fmt::Write;
+            write!(&mut writer, " {:.3}", float_value.expect("No float provided!")).unwrap();
+            let offset = writer.pos;
+            label_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
+
+            // Output raw float value for metrics
+            #[cfg(feature = "prometheus_metrics")]
+            {
+                _metric_target.push(' ');
+                _metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
+                _metric_target.push('\n');
+            }
+        }
+    }
+    // Append unit and newline
+    label_target.push(' ');
+    label_target.push_str(labels.unit);
+    label_target.push('\n');
 }
