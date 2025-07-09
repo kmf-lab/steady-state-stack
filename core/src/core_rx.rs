@@ -10,7 +10,7 @@ use futures_timer::Delay;
 use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{steady_config, Rx, MONITOR_NOT};
-use crate::distributed::aqueduct_stream::{StreamControlItem, StreamRx};
+use crate::distributed::aqueduct_stream::{StreamControlItem};
 use crate::steady_rx::RxDone;
 use futures_util::FutureExt;
 use crate::yield_now;
@@ -287,6 +287,7 @@ pub trait RxCore {
     /// This method provides the total number of messages the channel can hold.
     fn shared_capacity(&self) -> Self::MsgSize;
 
+    /// returns true if size is less than or equal to the capacity
     fn shared_capacity_for(&self, size: Self::MsgSize) -> bool;
 
     /// Determines whether it is time to perform periodic logging.
@@ -305,7 +306,7 @@ pub trait RxCore {
     /// This method indicates how many messages are ready to be taken from the channel.
     fn shared_avail_units(&mut self) -> Self::MsgSize;
 
-
+    /// returns true if the message size is less than or equal to the available count
     fn shared_avail_units_for(&mut self, size: Self::MsgSize) -> bool;
 
     /// Waits for either shutdown or for a specified number of units to become available.
@@ -322,7 +323,10 @@ pub trait RxCore {
     #[allow(async_fn_in_trait)]
     async fn shared_wait_closed_or_avail_units(&mut self, size: usize) -> bool;
 
+    /// using the count of messages which we have capacity for, the items_count is adjusted to fit.
     fn shared_validate_capacity_items(&self, items_count: usize) -> usize;
+
+    /// avail items count only; this is just the count of messages, nothing else.
     fn shared_avail_items_count(&mut self) -> usize;
 
     /// Waits until a specified number of units become available.

@@ -337,6 +337,11 @@ pub mod logging_util;
 ///
 /// This module provides tools for analyzing short sequences of boolean values.
 pub mod expression_steady_eye;
+
+/// Telemetry details and unit structs for channels
+pub mod channel_builder_units;
+
+
 mod core_tx_guard;
 mod core_rx_guard;
 mod core_rx_stream;
@@ -345,7 +350,6 @@ mod channel_stats_tests;
 mod channel_stats_labels;
 mod actor_stats_tests;
 mod actor_builder_units;
-pub mod channel_builder_units;
 mod channel_builder_lazy;
 mod dot_edge;
 mod dot_node;

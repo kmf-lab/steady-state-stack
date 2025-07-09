@@ -9,7 +9,8 @@ use crate::actor_builder_units::Percentile;
 #[derive(Copy, Clone)]
 pub(crate) struct ComputeLabelsConfig {
     pub(crate) frame_rate_ms: u64,
-    pub(crate) rational_adjust: (usize, usize),
+    pub(crate) runner_adjust: (u64, u64),
+    pub(crate) block_adjust: (u64, u64),
     pub(crate) max_value: u64,
     window_in_bits: u8,
     pub(crate) show_avg: bool,
@@ -31,11 +32,12 @@ impl ComputeLabelsConfig {
     ///
     /// A new instance of `ComputeLabelsConfig`.
     #[inline]
-    pub(crate) fn channel_config(that: &ChannelStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
+    pub(crate) fn channel_config(that: &ChannelStatsComputer, runner_adjust: (u64, u64), block_adjust: (u64, u64), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
 
         Self {
             frame_rate_ms: that.frame_rate_ms,
-            rational_adjust,
+            runner_adjust,
+            block_adjust,
             max_value,
             window_in_bits: that.window_bucket_in_bits + that.refresh_rate_in_bits,
             show_avg,
@@ -57,10 +59,11 @@ impl ComputeLabelsConfig {
     ///
     /// A new instance of `ComputeLabelsConfig`.
     #[inline]
-    pub(crate) fn actor_config(that: &ActorStatsComputer, rational_adjust: (usize, usize), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
+    pub(crate) fn actor_config(that: &ActorStatsComputer, runner_adjust: (u64, u64), block_adjust: (u64, u64), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
         Self {
             frame_rate_ms: that.frame_rate_ms,
-            rational_adjust,
+            runner_adjust,
+            block_adjust,
             max_value,
             window_in_bits: that.window_bucket_in_bits + that.refresh_rate_in_bits,
             show_avg,
@@ -107,8 +110,8 @@ pub(crate) fn compute_labels<T: Counter>(
     if config.show_avg {
         format_label_prefix(labels, metric_target, label_target, "Avg ", "avg_");
         // Compute the average value components
-        let denominator = config.rational_adjust.1 as u64;
-        let avg_per_sec_numer = (config.rational_adjust.0 as u128 * current.runner) >> config.window_in_bits;
+        let denominator = config.runner_adjust.1;
+        let avg_per_sec_numer = (config.runner_adjust.0 as u128 * current.runner) >> config.window_in_bits;
         let int_value = avg_per_sec_numer / denominator as u128;
         let float_value = avg_per_sec_numer as f32 / denominator as f32;
         // error!(" int value: {}  float value: {} runner: {} window bits: {}", int_value,float_value,current.runner,  config.window_in_bits);
@@ -117,16 +120,17 @@ pub(crate) fn compute_labels<T: Counter>(
 
     if let Some(h) = &current.histogram {
         if config.show_min {
-            let min = h.min().min(config.max_value);
+            let min_per_frame = h.min().min(config.max_value) as u128;
+            let adjusted = (config.block_adjust.0 as u128 *min_per_frame) / config.block_adjust.1 as u128;
             format_label_prefix(labels, metric_target, label_target, "Min ", "min_");
-            format_value(labels, metric_target, label_target, min as u128, None);
+            format_value(labels, metric_target, label_target, adjusted, None);
         }
         if config.show_max {
-            let max = h.max().min(config.max_value); //histogram gets a little over excited
+            let max_per_frame = h.max().min(config.max_value) as u128; //histogram gets a little over excited
+            let adjusted = (config.block_adjust.0 as u128 *max_per_frame) / config.block_adjust.1 as u128;
             format_label_prefix(labels, metric_target, label_target, "Max ", "max_");
-            format_value(labels, metric_target, label_target, max as u128, None);
+            format_value(labels, metric_target, label_target, adjusted, None);
         }
-
     }
 
 
@@ -211,6 +215,9 @@ fn format_label_prefix(labels: ComputeLabelsLabels, _metric_target: &mut String,
     // Prefix the label
     label_target.push_str(telemetry_name);
     label_target.push_str(labels.label);
+    assert!(prometheus_name.len() < 96, "prometheus_name must be less than 96 characters long");
+    assert!(prometheus_name.len() >0, "prometheus_name must be at least 1 character long");
+
     // Prefix the metric for Prometheus
     #[cfg(feature = "prometheus_metrics")]
     {
@@ -224,7 +231,7 @@ fn format_label_prefix(labels: ComputeLabelsLabels, _metric_target: &mut String,
 
 fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, int_value: u128, float_value: Option<f32>) {
     // Format the label based on int_only flag
-    if labels.int_only || float_value.is_none() {
+    if labels.int_only {
         let mut itoa_buf = itoa::Buffer::new();
         let int_str = itoa_buf.format(int_value);
         let int_len = int_str.len();
@@ -244,13 +251,20 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
         }
     } else {
         label_target.push_str(": ");
-        if int_value >= 10 {
+        if int_value >= 10 || float_value.is_none() {
             let mut b = itoa::Buffer::new();
             let t = b.format(int_value);
-            if int_value >= 9_999_999 {
+
+            if int_value >= 7_999_999_999_999 {
+                label_target.push_str(&t[..t.len() - 9]);
+                label_target.push('T');
+            } else if int_value >= 7_999_999_999 {
+                label_target.push_str(&t[..t.len() - 9]);
+                label_target.push('B');
+            } else if int_value >= 7_999_999 {
                 label_target.push_str(&t[..t.len() - 6]);
                 label_target.push('M');
-            } else if int_value >= 9_999 {
+            } else if int_value >= 7_999 {
                 label_target.push_str(&t[..t.len() - 3]);
                 label_target.push('K');
             } else {

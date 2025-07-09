@@ -224,7 +224,7 @@ pub(crate) mod channel_stats_tests {
         }
 
         let display_label = compute_display_label(&mut computer);
-        assert_eq!(display_label, "Avg rate: 33333M per/sec\n");
+        assert_eq!(display_label, "Avg rate: 33B per/sec\n");
 
         // NOTE: our triggers are in fixed units so they do not need to change if we modify
         // the frame rate, refresh rate or window rate.
@@ -366,7 +366,7 @@ pub(crate) mod channel_stats_tests {
 
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg latency: 18K ms\n");
+        assert_eq!(display_label, "Avg latency: 18K µs\n");
 
         assert!(computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(5))), "Trigger should fire when the average is above");
         assert!(!computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(21))), "Trigger should fire when the average is above");
@@ -409,7 +409,7 @@ pub(crate) mod channel_stats_tests {
         computer.std_dev_latency.push(StdDev::two_and_a_half());
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg latency: 95K ms\nlatency 2.5StdDev: 79.329 per frame (3ms duration)\n");
+        assert_eq!(display_label, "Avg latency: 95K µs\nlatency 2.5StdDev: 79.329 per frame (3ms duration)\n");
 
         // Define a trigger for rate deviation above a threshold
         assert!(computer.triggered_latency(&Trigger::StdDevsAbove(StdDev::two_and_a_half(), Duration::from_millis(96 + 70))), "Trigger should fire when rate deviates above the mean by a std dev, exceeding 6");
@@ -443,13 +443,13 @@ pub(crate) mod channel_stats_tests {
 
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "latency 25%ile 1791 ms\nlatency 50%ile 1791 ms\nlatency 75%ile 1791 ms\nlatency 90%ile 1791 ms\n");
+        assert_eq!(display_label, "latency 25%ile 1785855 µs\nlatency 50%ile 1785855 µs\nlatency 75%ile 1785855 µs\nlatency 90%ile 1785855 µs\n");
 
         // Define a trigger for average rate above a threshold
         assert!(computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(100))), "Trigger should fire when the average rate is above");
-        assert!(!computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(2000))), "Trigger should fire when the average rate is above");
+        assert!(computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_millis(1500))), "Trigger should fire when the average rate is above");
         assert!(!computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(100))), "Trigger should fire when the average rate is below");
-        assert!(computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(2000))), "Trigger should fire when the average rate is below");
+        assert!(computer.triggered_latency(&Trigger::PercentileBelow(Percentile::p90(), Duration::from_millis(1900))), "Trigger should fire when the average rate is below");
     }
 
 
@@ -727,10 +727,10 @@ pub(crate) mod channel_stats_tests {
         let _ = logging_util::steady_logger::initialize();
 
         let actor_stats = ActorStatsComputer::default();
-        let config = ComputeLabelsConfig::actor_config(&actor_stats, (1, 1000), 100, true, false, false);
+        let config = ComputeLabelsConfig::actor_config(&actor_stats, (1, 1000), (1,1), 100, true, false, false);
 
         assert_eq!(config.frame_rate_ms, actor_stats.frame_rate_ms);
-        assert_eq!(config.rational_adjust, (1, 1000));
+        assert_eq!(config.runner_adjust, (1, 1000));
         assert_eq!(config.max_value, 100);
         assert!(config.show_avg);
     }

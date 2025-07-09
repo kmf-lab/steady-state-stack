@@ -50,7 +50,7 @@ pub struct ChannelStatsComputer {
     pub(crate) rate_trigger: Vec<(Trigger<Rate>, AlertColor)>, // If used base is green
     pub(crate) filled_trigger: Vec<(Trigger<Filled>, AlertColor)>, // If used base is green
     pub(crate) latency_trigger: Vec<(Trigger<Duration>, AlertColor)>, // If used base is green
-    pub(crate) history_filled: VecDeque<ChannelBlock<u16>>, // Biggest channel length is 64K?
+    pub(crate) history_filled: VecDeque<ChannelBlock<u64>>,
     pub(crate) history_rate: VecDeque<ChannelBlock<u64>>,
     pub(crate) history_latency: VecDeque<ChannelBlock<u64>>,
     pub(crate) bucket_frames_count: usize, // When this bucket is full we add a new one
@@ -63,7 +63,7 @@ pub struct ChannelStatsComputer {
     pub(crate) build_filled_histogram: bool,
     pub(crate) build_rate_histogram: bool,
     pub(crate) build_latency_histogram: bool,
-    pub(crate) current_filled: Option<ChannelBlock<u16>>,
+    pub(crate) current_filled: Option<ChannelBlock<u64>>,
     pub(crate) current_rate: Option<ChannelBlock<u64>>,
     pub(crate) current_latency: Option<ChannelBlock<u64>>,
     pub(crate) prometheus_labels: String,
@@ -126,6 +126,12 @@ impl ChannelStatsComputer {
         self.show_avg_latency = meta.avg_latency;
         self.show_max_filled = meta.max_filled;
         self.show_min_filled = meta.min_filled;
+        self.show_max_rate = meta.max_rate;
+        self.show_min_rate = meta.min_rate;
+        self.show_max_latency = meta.max_latency;
+        self.show_min_latency = meta.min_latency;
+
+
         self.percentiles_filled.clone_from(&meta.percentiles_filled);
         self.percentiles_rate.clone_from(&meta.percentiles_rate);
         self.percentiles_latency.clone_from(&meta.percentiles_latency);
@@ -144,7 +150,7 @@ impl ChannelStatsComputer {
         self.build_filled_histogram = trigger_uses_histogram || !self.percentiles_filled.is_empty();
 
         if self.build_filled_histogram {
-            match Histogram::<u16>::new_with_bounds(1, self.capacity as u64, 0) {
+            match Histogram::<u64>::new_with_bounds(1, self.capacity as u64, 0) {
                 Ok(h) => {
                     self.history_filled.push_back(ChannelBlock {
                         histogram: Some(h),
@@ -215,11 +221,9 @@ impl ChannelStatsComputer {
     pub(crate) fn accumulate_data_frame(&mut self, filled: u64, rate: u64) {
         self.history_filled.iter_mut().for_each(|f| {
             if let Some(h) = &mut f.histogram {
-                if let Err(e) = h.record(filled) {
-
-
-
-                    error!("unexpected, unable to record filled {} err: {} \n {:?} ", filled, e, Backtrace::capture());
+                //full is full so if filled is greater than high we use high which is the capacity for 100% full
+                if let Err(e) = h.record(filled.min(h.high())) {
+                    error!("unexpected, unable to record filled {} err: {} hist: {:?} \n filled value is larger than channel capacity? {:?} ", filled, e, f.histogram, Backtrace::force_capture());
                 }
             }
             let filled: u64 = PLACES_TENS * filled;
@@ -240,9 +244,11 @@ impl ChannelStatsComputer {
         });
 
         self.history_latency.iter_mut().for_each(|f| {
+            let frame_rate_macros = self.frame_rate_ms * 1000;
             let latency_micros: u64 = if rate == 0 { 0u64 }
             else {
-                (filled * self.frame_rate_ms) / rate
+                //we converted out ms to microseconds
+                (filled * frame_rate_macros) / rate
             };
 
             if let Some(h) = &mut f.histogram {
@@ -250,11 +256,6 @@ impl ChannelStatsComputer {
                     error!("unexpected, unable to record inflight {} err: {}", latency_micros, e);
                 }
             }
-
-            let latency_micros: u64 = if rate == 0 { 0u64 }
-            else {
-                (filled * PLACES_TENS * self.frame_rate_ms) / rate  
-            };
 
             f.runner = f.runner.saturating_add(latency_micros as u128);
             f.sum_of_squares = f.sum_of_squares.saturating_add((latency_micros as u128).pow(2));
@@ -276,7 +277,7 @@ impl ChannelStatsComputer {
 
             if self.build_filled_histogram {
                 // If we cannot create a histogram we act like the window is disabled and provide no data
-                match Histogram::<u16>::new_with_bounds(1, self.capacity as u64, 0) {
+                match Histogram::<u64>::new_with_bounds(1, self.capacity as u64, 0) {
                     Ok(h) => {
                         self.history_filled.push_back(ChannelBlock {
                             histogram: Some(h), runner: 0, sum_of_squares: 0,
@@ -667,8 +668,8 @@ impl ChannelStatsComputer {
 
     pub(crate) fn compute_rate_labels(&self, target_telemetry_label: &mut String, target_metric: &mut String, current_block: &&ChannelBlock<u64>) {
         let config = ComputeLabelsConfig::channel_config(self
-                                                         , (1, self.frame_rate_ms as usize)
-                                                         , u64::MAX
+                                                         , (1, self.frame_rate_ms)
+                                                         , (1000, self.frame_rate_ms), u64::MAX
                                                          , self.show_avg_rate, self.show_min_rate, self.show_max_rate);
         let labels = ComputeLabelsLabels {
             label: "rate",
@@ -685,8 +686,9 @@ impl ChannelStatsComputer {
 
     }
 
-    pub(crate) fn compute_filled_labels(&self, display_label: &mut String, metric_target: &mut String, current_block: &&ChannelBlock<u16>) {
-        let config = ComputeLabelsConfig::channel_config(self, (1, 10*self.capacity), 100
+    pub(crate) fn compute_filled_labels(&self, display_label: &mut String, metric_target: &mut String, current_block: &&ChannelBlock<u64>) {
+        //NOTE: the runner stores 1000*fill value so we need 100/1000*capacity to get a normal percentage
+        let config = ComputeLabelsConfig::channel_config(self, (1u64, 10u64 * self.capacity as u64), (1u64, 1u64), 100
                                                          , self.show_avg_filled, self.show_min_filled, self.show_max_filled);
         let labels = ComputeLabelsLabels {
             label: "filled",
@@ -699,7 +701,7 @@ impl ChannelStatsComputer {
     }
 
     pub(crate) fn compute_latency_labels(&self, display_label: &mut String, metric_target: &mut String, current_block: &&ChannelBlock<u64>) {
-        let config = ComputeLabelsConfig::channel_config(self, (10, 1), u64::MAX
+        let config = ComputeLabelsConfig::channel_config(self, (1, 1), (1, 1), u64::MAX
                                                          , self.show_avg_latency, self.show_min_latency, self.show_max_latency);
         let labels = ComputeLabelsLabels {
             label: "latency",
@@ -836,8 +838,8 @@ impl ChannelStatsComputer {
     pub(crate) fn percentile_filled_percentage(&self, percentile: &Percentile, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             if let Some(h) = &current_inflight.histogram {
-                let in_flight = h.value_at_percentile(percentile.percentile()) as u128;
-                (in_flight * *percent_full_den as u128).cmp(&(*percent_full_num as u128 * self.capacity as u128))
+                let filled = h.value_at_percentile(percentile.percentile()) as u128;
+                (filled * *percent_full_den as u128).cmp(&(*percent_full_num as u128 * self.capacity as u128))
             } else {
                 Ordering::Equal // Unknown
             }
@@ -859,8 +861,8 @@ impl ChannelStatsComputer {
     pub(crate) fn percentile_latency(&self, percentile: &Percentile, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
             if let Some(h) = &current_latency.histogram {
-                let in_flight = h.value_at_percentile(percentile.percentile()) as u128;
-                in_flight.cmp(&(duration.as_millis()))
+                let latency = h.value_at_percentile(percentile.percentile()) as u128;
+                latency.cmp(&(duration.as_micros()))
             } else {
                 Ordering::Equal // Unknown
             }

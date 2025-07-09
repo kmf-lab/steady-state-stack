@@ -186,7 +186,7 @@ impl ActorStatsComputer {
         }
 
         if let Some(current_work) = &self.current_work {
-            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 100
+            let config = ComputeLabelsConfig::actor_config(self, (1, 1), (1, 1), 100
                                                            , self.show_avg_work, self.show_min_work, self.show_max_work);
             let labels = ComputeLabelsLabels {
                 label: "load",
@@ -198,8 +198,8 @@ impl ActorStatsComputer {
             compute_labels(config, current_work, labels, &self.std_dev_work, &self.percentiles_work, metric_text, dot_label);
         }
 
-        if let Some(current_mcpu) = &self.current_mcpu { //TODO: urgent problem with mCPU compute.
-            let config = ComputeLabelsConfig::actor_config(self, (1, 1), 1024
+        if let Some(current_mcpu) = &self.current_mcpu { 
+            let config = ComputeLabelsConfig::actor_config(self, (1, 1), (1, 1), 1024
                                                            , self.show_avg_mcpu, self.show_min_mcpu, self.show_max_mcpu);
             let labels = ComputeLabelsLabels {
                 label: "mCPU",

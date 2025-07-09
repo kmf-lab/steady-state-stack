@@ -144,6 +144,17 @@ pub struct ChannelMetaData {
     pub(crate) min_filled: bool,
     /// Indicates whether to monitor the maximum filled state.
     pub(crate) max_filled: bool,
+    /// Indicates whether to monitor the minimum rate.
+    pub(crate) min_rate: bool,
+    /// Indicates whether to monitor the maximum rate.
+    pub(crate) max_rate: bool,
+    /// Indicates whether to monitor the minimum latency.
+    pub(crate) min_latency: bool,
+    /// Indicates whether to monitor the maximum latency.
+    pub(crate) max_latency: bool,
+
+
+
     /// Indicates whether the channel connects to a sidecar process.
     pub(crate) connects_sidecar: bool,
     /// Byte size of the data type transmitted through the channel.

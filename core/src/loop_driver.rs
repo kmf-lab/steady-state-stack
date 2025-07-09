@@ -21,11 +21,12 @@ use futures_util::future::FusedFuture;
 macro_rules! await_for_all {
     ($($t:expr),*) => {
         async {
-            let mut flag = true;
             $(
-                flag &= $t.await;
+                if !$t.await {
+                    return false;
+                }
             )*
-            flag
+            true
         }.await
     };
 }
@@ -38,11 +39,12 @@ macro_rules! await_for_all {
 macro_rules! wait_for_all {
     ($($t:expr),*) => {
         async {
-            let mut flag = true;
             $(
-                flag &= $t.await;
+                if !$t.await {
+                    return false;
+                }
             )*
-            flag
+            true
         }
     };
 }

@@ -37,8 +37,7 @@ use futures::channel::oneshot;
 #[allow(unused_imports)]
 use log::*;
 use async_ringbuf::traits::Split;
-use ringbuf::producer::Producer;
-use crate::{AlertColor, Metric, StdDev, SteadyRx, SteadyTx, Trigger, MONITOR_UNKNOWN};
+use crate::{AlertColor, StdDev, SteadyRx, SteadyTx, Trigger, MONITOR_UNKNOWN};
 use crate::actor_builder::ActorBuilder;
 use crate::actor_builder_units::Percentile;
 use crate::channel_builder_lazy::{LazyChannel, LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle};
@@ -512,12 +511,14 @@ impl ChannelBuilder {
         result
     }
 
+    /// show the max latency
     pub fn with_latency_max(&self) -> Self {
         let mut result = self.clone();
         result.max_latency = true;
         result
     }
 
+    /// show the max rate
     pub fn with_rate_max(&self) -> Self {
         let mut result = self.clone();
         result.max_rate = true;
@@ -539,12 +540,14 @@ impl ChannelBuilder {
         result
     }
 
+    /// show the min latency
     pub fn with_latency_min(&self) -> Self {
         let mut result = self.clone();
         result.min_latency = true;
         result
     }
 
+    /// show the min rate
     pub fn with_rate_min(&self) -> Self {
         let mut result = self.clone();
         result.min_rate = true;
@@ -838,6 +841,10 @@ impl ChannelBuilder {
             trigger_latency: self.trigger_latency.clone(),
             min_filled: self.min_filled,
             max_filled: self.max_filled,
+            min_rate: self.min_rate,
+            max_rate: self.max_rate,
+            min_latency: self.min_latency,
+            max_latency: self.max_latency,
             capacity: self.capacity,
             avg_filled: self.avg_filled,
             avg_rate: self.avg_rate,

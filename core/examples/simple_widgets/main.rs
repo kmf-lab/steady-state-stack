@@ -20,7 +20,6 @@ mod actor {
 
 use steady_state::*;
 use crate::actor::data_consumer::InternalState;
-use clap::*;
 
 // This is a good template for your future main function. It should me minimal and just
 // get the command line args and start the graph. The graph is built in a separate function.

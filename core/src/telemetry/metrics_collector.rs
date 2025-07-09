@@ -532,6 +532,7 @@ fn gather_node_details(
     state.future_send.resize(max_channels_len, 0);
     state.actor_last_update.resize(dynamic_senders.len(), 0); // Match actor count.
 
+
     let nodes: Vec<DiagramData> = dynamic_senders
         .iter()
         .skip(state.actor_count) // Only process new actors.

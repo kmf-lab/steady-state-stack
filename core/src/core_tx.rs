@@ -1,20 +1,16 @@
 use std::fmt::Debug;
-use std::future::pending;
 use log::{error, trace, warn};
 use futures_util::{select, FutureExt};
 use std::time::{Duration, Instant};
 use futures::pin_mut;
 use futures_timer::Delay;
-use futures_util::lock::MutexGuard;
 use ringbuf::traits::Observer;
-use futures_util::future::{Either, FusedFuture};
+use futures_util::future::{FusedFuture};
 use async_ringbuf::producer::AsyncProducer;
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
-use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamEgress, StreamIngress, Tx, MONITOR_NOT};
-use crate::distributed::aqueduct_stream::{StreamControlItem, StreamTx};
-use crate::core_exec;
+use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, Tx, MONITOR_NOT};
 use crate::yield_now;
 
 /// Trait defining the core functionality for transmitting data in a steady-state system.

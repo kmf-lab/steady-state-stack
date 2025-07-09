@@ -45,8 +45,6 @@ use crate::logging_util::steady_logger;
 
 // Debug constant to enable verbose telemetry debugging
 const ENABLE_TELEMETRY_DEBUG: bool = false;
-const ENABLE_IS_RUNNING_DEBUG: bool = false;
-
 
 // Threshold multiplier for detecting telemetry transmission issues
 const TELEMETRY_DELAY_THRESHOLD_MULTIPLIER: u64 = 2; // e.g., 2 times the frame rate
@@ -803,17 +801,10 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     #[inline]
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
 
-        // if ENABLE_IS_RUNNING_DEBUG {
-        //     info!("{:?} called is_running",self.ident);
-        // }
-
         loop {//TODO: hold read for a few pases???
             let runnning = self.runtime_state.read().is_running(self.ident, &mut accept_fn);
             if let Some(result) = runnning {
                 if result && !self.is_running_iteration_count.is_zero() {
-                    // if ENABLE_IS_RUNNING_DEBUG {
-                    //     info!("{:?} calling relay_stats_smartly {}",self.ident, result);
-                    // }
                     if self.relay_stats_smartly() {
                         self.check_telemetry_delay();
                     }
@@ -821,15 +812,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                     self.relay_stats();
                 }
                 self.is_running_iteration_count += 1;
-
-                // if ENABLE_IS_RUNNING_DEBUG {
-                //     info!("{:?} exited is_running with {}",self.ident, result);
-                // }
                 return result;
             } else {
-                // if ENABLE_TELEMETRY_DEBUG {
-                //     warn!("actor {:?} called running but telemetry skipped because we are still building! ", self.ident)
-                // }
                 executor::block_on(Delay::new(Duration::from_millis(20)));
             }
         }

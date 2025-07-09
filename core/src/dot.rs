@@ -21,7 +21,7 @@ use crate::*;
 use crate::channel_stats::ChannelStatsComputer;
 use crate::dot_edge::Edge;
 use crate::dot_node::Node;
-use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, ThreadInfo};
+use crate::monitor::{ActorMetaData, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::telemetry::metrics_server;
@@ -1080,6 +1080,10 @@ mod dot_tests {
             avg_latency: false,
             min_filled: false,
             max_filled: false,
+            min_rate: false,
+            max_rate: false,
+            min_latency: false,
+            max_latency: false,
             connects_sidecar: false,
             type_byte_count: 0,
             show_total: false,
@@ -1108,6 +1112,10 @@ mod dot_tests {
             avg_latency: false,
             min_filled: false,
             max_filled: false,
+            min_rate: false,
+            max_rate: false,
+            min_latency: false,
+            max_latency: false,
             connects_sidecar: true,
             type_byte_count: 0,
             show_total: false,
@@ -1154,6 +1162,10 @@ mod dot_tests {
             avg_latency: false,
             min_filled: false,
             max_filled: false,
+            min_rate: false,
+            max_rate: false,
+            min_latency: false,
+            max_latency: false,
             connects_sidecar: false,
             type_byte_count: 0,
             show_total: false,

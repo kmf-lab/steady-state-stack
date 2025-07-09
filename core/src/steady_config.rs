@@ -33,7 +33,7 @@ pub const TELEMETRY_HISTORY: bool = false;
 pub const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 20;
 
 /// Number of slots in the real channel for telemetry collection.
-pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 64;
+pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 256;
 
 /// Number of messages consumed by the collector (half of collector channel length).
 pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECTOR / 2;
@@ -83,8 +83,8 @@ mod tests {
         assert_eq!(BACKPLANE_CAPACITY, 16);
         assert!(!TELEMETRY_HISTORY);
         assert_eq!(MAX_TELEMETRY_ERROR_RATE_SECONDS, 20);
-        assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 64);
-        assert_eq!(CONSUMED_MESSAGES_BY_COLLECTOR, 32);
+        assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 256);
+        assert_eq!(CONSUMED_MESSAGES_BY_COLLECTOR, 128);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_FEATURE, 256);
     }
 

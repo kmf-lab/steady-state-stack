@@ -182,7 +182,6 @@ impl<'a, S> Drop for StateGuard<'a, S> {
 #[cfg(test)]
 mod state_management_tests {
     use super::*;
-    use async_std::test;
     use serde::{Deserialize, Serialize};
     use std::fs::File;
     use std::io::BufReader;

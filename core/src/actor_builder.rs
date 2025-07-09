@@ -18,7 +18,7 @@ use futures_util::lock::{Mutex, MutexGuard};
 use log::*;
 use futures_util::future::select_all;
 use crate::*;
-use crate::{steady_config, ActorName, AlertColor, Graph, Metric, StdDev, Trigger};
+use crate::{steady_config, ActorName, AlertColor, Graph, StdDev, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, StageManager};
 use crate::monitor::ActorMetaData;
@@ -717,9 +717,11 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the explicit core assignment.
-    pub fn with_explicit_core(&self, zero_offset_core: usize) -> Self {
+    pub fn with_explicit_core(&self, one_offset_core: u16) -> Self {
         let mut result = self.clone();
-        result.explicit_core = Some(zero_offset_core);
+        assert!(one_offset_core > 0, "Core index must be greater than zero and match your OS task manager.");
+        let zero_offset_core = one_offset_core - 1;
+        result.explicit_core = Some(zero_offset_core.into());
         result
     }
 
