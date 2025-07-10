@@ -101,4 +101,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
         <T as RxCore>::shared_peek_slice(&mut **self)
     }
 
+    fn one(&self) -> Self::MsgSize {
+        <T as RxCore>::one(& **self)
+    }
 }

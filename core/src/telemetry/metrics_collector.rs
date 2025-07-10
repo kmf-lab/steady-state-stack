@@ -123,9 +123,9 @@ async fn internal_behavior<const GIRTH: usize>(
 
         // Rebuild the actor scan list if it's empty or a rebuild is requested due to changes or timeouts.
         if all_actors_to_scan.is_none() || rebuild_scan_requested {
-            let instance_id = actor.instance_id; // Current instance ID for filtering telemetry.
+            let regeneration = actor.regeneration; // Current instance ID for filtering telemetry.
 
-            all_actors_to_scan = gather_valid_actor_telemetry_to_scan(instance_id, &dynamic_senders_vec);
+            all_actors_to_scan = gather_valid_actor_telemetry_to_scan(regeneration, &dynamic_senders_vec);
             if ENABLE_DEBUG_LOGGING {
                 if let Some(ref scan) = all_actors_to_scan {
                     info!("[{:?}] Gathered {} actors to scan", ident, scan.len());

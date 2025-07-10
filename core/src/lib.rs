@@ -942,7 +942,7 @@ mod lib_tests {
             oneshot_shutdown_vec: Arc::new(Mutex::new(Vec::new())),
             oneshot_shutdown: Arc::new(Mutex::new(rx)),
             node_tx_rx: None,
-            instance_id: 0,
+            regeneration: 0,
             last_periodic_wait: Default::default(),
             is_in_graph: true,
             actor_start_time: Instant::now(),

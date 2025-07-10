@@ -373,3 +373,277 @@ pub(crate) async fn simulated_behavior<C: SteadyActor + 'static>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod simulate_edge_tests {
+    use super::*;
+    use std::error::Error;
+    use std::time::Duration;
+    use crate::graph_testing::SideChannelResponder;
+    use crate::{GraphLivelinessState, SteadyActor, StreamControlItem, Tx};
+    use crate::SteadyRx;
+    use crate::SteadyTx;
+    use crate::SteadyStreamRx;
+    use crate::SteadyStreamTx;
+    use crate::StreamIngress;
+    use crate::StreamEgress;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::GraphBuilder;
+    use crate::ActorIdentity;
+    use futures::channel::oneshot;
+    use std::sync::Arc;
+    use futures::lock::Mutex;
+    use std::fmt::Debug;
+    use std::any::Any;
+    use aeron::aeron::Aeron;
+    use async_ringbuf::AsyncRb;
+    use async_ringbuf::traits::Split;
+    use futures_util::future::FusedFuture;
+    use crate::channel_builder::ChannelBacking;
+    use crate::*;
+    use crate::distributed::aqueduct_stream::Defrag;
+
+    // Dummy actor for testing
+    struct TestActor;
+
+    impl SteadyActor for TestActor {
+        fn frame_rate_ms(&self) -> u64 { 100 }
+        fn regeneration(&self) -> u32 { 0 }
+        fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> { None }
+        async fn simulated_behavior(self, _sims: Vec<&dyn IntoSimRunner<Self>>) -> Result<(), Box<dyn Error>> { Ok(()) }
+        fn loglevel(&self, _loglevel: crate::LogLevel) {}
+        fn relay_stats_smartly(&mut self) -> bool { false }
+        fn relay_stats(&mut self) {}
+        async fn relay_stats_periodic(&mut self, _duration_rate: Duration) -> bool { false }
+        fn is_liveliness_in(&self, _target: &[GraphLivelinessState]) -> bool { true }
+        fn is_liveliness_building(&self) -> bool { false }
+        fn is_liveliness_running(&self) -> bool { true }
+        fn is_liveliness_stop_requested(&self) -> bool { false }
+        fn is_liveliness_shutdown_timeout(&self) -> Option<Duration> { None }
+        fn flush_defrag_messages<S: StreamControlItem>(
+            &mut self,
+            _item: &mut Tx<S>,
+            _data: &mut Tx<u8>,
+            _defrag: &mut Defrag<S>,
+        ) -> (u32, u32, Option<i32>) { (0, 0, None) }
+        async fn wait_periodic(&self, _duration_rate: Duration) -> bool { true }
+        async fn wait_timeout(&self, _timeout: Duration) -> bool { true }
+        async fn wait(&self, _duration: Duration) {}
+        async fn wait_avail<T: RxCore>(&self, _this: &mut T, _size: usize) -> bool { true }
+        async fn wait_avail_bundle<T: RxCore>(
+            &self,
+            _this: &mut RxCoreBundle<'_, T>,
+            _size: usize,
+            _ready_channels: usize,
+        ) -> bool { true }
+        async fn wait_future_void<F>(&self, _fut: F) -> bool where F: FusedFuture<Output = ()> + 'static + Send + Sync { true }
+        async fn wait_vacant<T: TxCore>(&self, _this: &mut T, _count: T::MsgSize) -> bool { true }
+        async fn wait_vacant_bundle<T: TxCore>(
+            &self,
+            _this: &mut TxCoreBundle<'_, T>,
+            _count: T::MsgSize,
+            _ready_channels: usize,
+        ) -> bool { true }
+        async fn wait_shutdown(&self) -> bool { false }
+        fn peek_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceSource<'b> where T: RxCore { unimplemented!() }
+        fn advance_take_index<T: RxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> RxDone { unimplemented!() }
+        fn take_slice<T: RxCore>(
+            &mut self,
+            _this: &mut T,
+            _target: T::SliceTarget<'_>,
+        ) -> RxDone where T::MsgItem: Copy { unimplemented!() }
+        fn send_slice<T: TxCore>(
+            &mut self,
+            _this: &mut T,
+            _source: T::SliceSource<'_>,
+        ) -> TxDone where T::MsgOut: Copy { unimplemented!() }
+        fn poke_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceTarget<'b> where T: TxCore { unimplemented!() }
+        fn advance_send_index<T: TxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> TxDone { unimplemented!() }
+        fn try_peek<'a, T>(&'a self, _this: &'a mut Rx<T>) -> Option<&'a T> { None }
+        fn try_peek_iter<'a, T>(
+            &'a self,
+            _this: &'a mut Rx<T>,
+        ) -> impl Iterator<Item = &'a T> + 'a { std::iter::empty() }
+        fn is_empty<T: RxCore>(&self, _this: &mut T) -> bool { false }
+        fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize { this.one() }
+        async fn peek_async<'a, T: RxCore>(
+            &'a self,
+            _this: &'a mut T,
+        ) -> Option<T::MsgPeek<'a>> { None }
+        fn send_iter_until_full<T, I: Iterator<Item = T>>(
+            &mut self,
+            _this: &mut Tx<T>,
+            _iter: I,
+        ) -> usize { 0 }
+        fn try_send<T: TxCore>(
+            &mut self,
+            this: &mut T,
+            msg: T::MsgIn<'_>,
+        ) -> SendOutcome<T::MsgOut> { SendOutcome::Success }
+        fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> { None }
+        fn is_full<T: TxCore>(&self, _this: &mut T) -> bool { false }
+        fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize { this.one() }
+        async fn wait_empty<T: TxCore>(&self, _this: &mut T) -> bool { true }
+        fn take_into_iter<'a, T: Sync + Send>(
+            &mut self,
+            _this: &'a mut Rx<T>,
+        ) -> impl Iterator<Item = T> + 'a { std::iter::empty() }
+        async fn call_async<F>(&self, _operation: F) -> Option<F::Output> where F: Future { None }
+        async fn call_blocking<F, T>(&self, _f: F) -> Option<F::Output> where F: FnOnce() -> T + Send + 'static, T: Send + 'static { None }
+        async fn send_async<T: TxCore>(
+            &mut self,
+            _this: &mut T,
+            _a: T::MsgIn<'_>,
+            _saturation: SendSaturation,
+        ) -> SendOutcome<T::MsgOut> { SendOutcome::Success }
+        async fn take_async<T>(&mut self, _this: &mut Rx<T>) -> Option<T> { None }
+        async fn take_async_with_timeout<T>(
+            &mut self,
+            _this: &mut Rx<T>,
+            _timeout: Duration,
+        ) -> Option<T> { None }
+        async fn yield_now(&self) {}
+        fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
+            let (tx, rx) = oneshot::channel();
+            let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(10);
+            let (sender_tx, receiver_tx) = rb.split();
+            let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(10);
+            let (sender_rx, receiver_rx) = rb.split();
+            let arc = Arc::new(Mutex::new(((sender_tx, receiver_rx), rx)));
+            Some(SideChannelResponder::new(arc, ActorIdentity::default()))
+        }
+        fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool { accept_fn() }
+        async fn request_shutdown(&mut self) {}
+        fn args<A: Any>(&self) -> Option<&A> { None }
+        fn identity(&self) -> ActorIdentity { ActorIdentity::default() }
+        fn is_showstopper<T>(&self, _rx: &mut Rx<T>, _threshold: usize) -> bool { false }
+    }
+
+    // Helper to create a dummy responder
+    fn create_dummy_responder() -> SideChannelResponder {
+        let (tx, rx) = oneshot::channel();
+        let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(10);
+        let (sender_tx, receiver_tx) = rb.split();
+        let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(10);
+        let (sender_rx, receiver_rx) = rb.split();
+        let arc = Arc::new(Mutex::new(((sender_tx, receiver_rx), rx)));
+        SideChannelResponder::new(arc, ActorIdentity::default())
+    }
+
+    // Helper to create a SteadyRx with some data
+    fn create_steady_rx<T: Send + Sync + Debug + Eq + 'static>(data: Vec<T>) -> SteadyRx<T> {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(data.len() + 1).build_channel::<T>();
+        let tx = tx.clone();
+        let rx = rx.clone();
+        for item in data {
+            let mut tx_guard = tx.try_lock().expect("");
+            tx_guard.shared_try_send(item).expect("Failed to send");
+        }
+        rx
+    }
+
+    // Helper to create an empty SteadyRx
+    fn create_empty_steady_rx<T: Send + Sync + Debug + Eq + 'static>() -> SteadyRx<T> {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (_, rx) = graph.channel_builder().build_channel::<T>();
+        rx.clone()
+    }
+
+    // Helper to create a SteadyTx
+    fn create_steady_tx<T: Send + Sync + Debug + Clone + 'static>() -> SteadyTx<T> {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _) = graph.channel_builder().build_channel::<T>();
+        tx.clone()
+    }
+
+    // Helper to create SteadyStreamRx<StreamIngress>
+    fn create_steady_stream_rx_ingress() -> SteadyStreamRx<StreamIngress> {
+        // Mock or minimal setup for StreamIngress
+        unimplemented!("Implement mock for StreamIngress if needed");
+    }
+
+    // Similarly for other stream types...
+
+    #[test]
+    fn test_sim_step_result() {
+        assert_eq!(SimStepResult::DidWork, SimStepResult::DidWork);
+        assert_eq!(SimStepResult::NoWork, SimStepResult::NoWork);
+        assert_eq!(SimStepResult::Finished, SimStepResult::Finished);
+        assert_ne!(SimStepResult::DidWork, SimStepResult::NoWork);
+    }
+
+    #[test]
+    fn test_simulation_state_new() {
+        let state = SimulationState::new("test_sim".to_string());
+        assert_eq!(state.consecutive_no_work_cycles, 0);
+        assert_eq!(state.simulation_name, "test_sim");
+    }
+
+    #[test]
+    fn test_simulation_state_record_step_result() -> Result<(), Box<dyn Error>> {
+        let mut state = SimulationState::new("test".to_string());
+
+        // DidWork
+        assert_eq!(state.record_step_result(&SimStepResult::DidWork)?, true);
+        assert_eq!(state.consecutive_no_work_cycles, 0);
+
+        // NoWork
+        assert_eq!(state.record_step_result(&SimStepResult::NoWork)?, true);
+        assert_eq!(state.consecutive_no_work_cycles, 1);
+
+        // Finished
+        assert_eq!(state.record_step_result(&SimStepResult::Finished)?, false);
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn test_into_sim_runner_steady_rx() -> Result<(), Box<dyn Error>> {
+        let rx = create_steady_rx(vec![1i32, 2, 3]);
+        let responder = create_dummy_responder();
+        let mut actor = TestActor;
+        let result = rx.run(&responder, 0, &mut actor, Duration::from_secs(1))?;
+        assert_eq!(result, SimStepResult::DidWork); // Assuming simulate_wait_for does work
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn test_into_sim_runner_steady_rx_empty() -> Result<(), Box<dyn Error>> {
+        let rx = create_empty_steady_rx::<i32>();
+        let responder = create_dummy_responder();
+        let mut actor = TestActor;
+        let result = rx.run(&responder, 0, &mut actor, Duration::from_secs(1))?;
+        // Depending on implementation; adjust based on expected behavior
+        Ok(())
+    }
+
+    // Add similar tests for other IntoSimRunner implementations
+    // For SteadyStreamRx<StreamIngress>, SteadyStreamRx<StreamEgress>, etc.
+    // Mock StreamIngress/Egress as needed.
+
+    #[async_std::test]
+    async fn test_into_sim_runner_steady_tx() -> Result<(), Box<dyn Error>> {
+        let tx = create_steady_tx::<i32>();
+        let responder = create_dummy_responder();
+        let mut actor = TestActor;
+        let result = tx.run(&responder, 0, &mut actor, Duration::from_secs(1))?;
+        // Adjust assertion based on simulate_direction behavior
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn test_simulated_behavior() -> Result<(), Box<dyn Error>> {
+        let mut actor = TestActor;
+        let rx = create_steady_rx(vec![1i32]);
+        let tx = create_steady_tx::<i32>();
+        let sims: Vec<&dyn IntoSimRunner<TestActor>> = vec![&rx, &tx];
+        let result = simulated_behavior(&mut actor, sims).await;
+        assert!(result.is_ok());
+        Ok(())
+    }
+
+
+
+    // Add more tests for coverage, e.g., with multiple sims, error cases, timeouts in record_step_result if applicable.
+}

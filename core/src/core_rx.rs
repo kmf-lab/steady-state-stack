@@ -264,6 +264,12 @@ pub trait RxCore {
     /// to the underlying memory without copying.
     fn shared_peek_slice(&mut self) -> Self::SliceSource<'_>;
 
+    /// Returns a value representing a single unit for message counting.
+    ///
+    /// For standard channels, this typically returns `1`. For stream channels, it may return a tuple
+    /// representing one control item and an estimated payload size.
+    fn one(&self) -> Self::MsgSize;
+
     /// Asynchronously peeks at the next message with an optional timeout.
     ///
     /// This method waits for a message to become available or for a shutdown signal, returning
@@ -559,6 +565,10 @@ impl<T> RxCore for Rx<T> {
 
     fn shared_avail_items_count(&mut self) -> usize {
         self.shared_avail_units()
+    }
+
+    fn one(&self) -> Self::MsgSize {
+        1
     }
 }
 

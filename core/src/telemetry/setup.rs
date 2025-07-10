@@ -117,7 +117,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         hot_profile: AtomicU64::new(0),
         hot_profile_concurrent: Default::default(),
         calls,
-        instance_id: that.instance_id,
+        regeneration: that.regeneration,
         bool_stop: false,
         bool_blocking: false, //TODO: thread this in from with_blocking?
     });

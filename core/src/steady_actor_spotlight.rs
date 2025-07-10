@@ -89,6 +89,7 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// If true, the monitor uses its internal simulation behavior for events.
     pub use_internal_behavior: bool,
+    pub(crate) regeneration: u32,
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
 }
 
@@ -886,5 +887,9 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     fn frame_rate_ms(&self) -> u64 {
         self.frame_rate_ms
+    }
+
+    fn regeneration(&self) -> u32 {
+        self.regeneration
     }
 }

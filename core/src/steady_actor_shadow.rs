@@ -41,7 +41,7 @@ use crate::yield_now::yield_now;
 /// Context for managing actor state and interactions within the Steady framework.
 pub struct SteadyActorShadow {
     pub(crate) ident: ActorIdentity,
-    pub(crate) instance_id: u32,
+    pub(crate) regeneration: u32,
     pub(crate) is_in_graph: bool,
     pub(crate) channel_count: Arc<AtomicUsize>,
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
@@ -66,7 +66,7 @@ impl Clone for SteadyActorShadow {
     fn clone(&self) -> Self {
         SteadyActorShadow {
             ident: self.ident,
-            instance_id: self.instance_id,
+            regeneration: self.regeneration,
             is_in_graph: self.is_in_graph,
             channel_count: self.channel_count.clone(),
             all_telemetry_rx: self.all_telemetry_rx.clone(),
@@ -423,12 +423,20 @@ impl SteadyActor for SteadyActorShadow {
 
         let one_down = &mut self.oneshot_shutdown.lock().await;
         if one_down.is_terminated() {
-             if let Poll::Ready(result) = futures::poll!(&mut operation) {
-                 return Some(result); // Return value if operation completed
-             } else {
-                 //TODO: timeout support? antother slect here on shutdown time and operation??
-                return None; // Operation still pending, return None
-             }
+            if let Some(duration) = self.is_liveliness_shutdown_timeout() {
+                //in this case we know that the shutdown signal happened but we have duration
+                //before it is a hard shutdown, so we will wait 4/1 of duration
+                select! {
+                        _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
+                        r = operation => Some(r)
+                    }
+            } else {
+                if let Poll::Ready(result) = futures::poll!(&mut operation) {
+                    Some(result) // Return value if operation completed
+                } else {
+                    None
+                }
+            }
         } else {
             select! { _ = one_down.deref_mut() => None, r = operation => Some(r), }
         }
@@ -466,6 +474,10 @@ impl SteadyActor for SteadyActorShadow {
                 None
             }
         } else {
+            //TODO: how to cancel our job?
+            //    When this Future Option T is dropped we should have a code hook on drop
+            //    which wil cancel/stop the thread we launched with core_exec::spawn_blocking
+            //    to keep your thread running you must keep this future, that is the plan
             result
         }
     }
@@ -741,5 +753,7 @@ impl SteadyActor for SteadyActorShadow {
         self.frame_rate_ms
     }
 
-
+    fn regeneration(&self) -> u32 {
+        self.regeneration
+    }
 }

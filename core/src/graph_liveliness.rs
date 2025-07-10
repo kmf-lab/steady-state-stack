@@ -857,7 +857,7 @@ impl Graph {
             actor_metadata: Arc::new(ActorMetaData::default()),
             all_telemetry_rx,
             runtime_state: self.runtime_state.clone(),
-            instance_id: 0,
+            regeneration: 0,
             oneshot_shutdown_vec: self.oneshot_shutdown_vec.clone(),
             oneshot_shutdown,
             last_periodic_wait: Default::default(),

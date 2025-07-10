@@ -257,6 +257,9 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         (item_a, item_b, payload_a, payload_b)
     }
 
+    fn one(&self) -> Self::MsgSize {
+       (1,1)
+    }
 }
 
 

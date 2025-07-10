@@ -115,6 +115,7 @@ impl SteadyActorShadow {
             args: self.args,
             _team_id: self.team_id,
             is_running_iteration_count: 0,
+            regeneration: self.regeneration,
             aeron_meda_driver: self.aeron_meda_driver.clone(),
             use_internal_behavior: self.use_internal_behavior,
             shutdown_barrier: self.shutdown_barrier.clone(),
@@ -160,6 +161,8 @@ impl<X> SendOutcome<X> {
 pub trait SteadyActor {
     /// Returns the frame rate in milliseconds for this actor.
     fn frame_rate_ms(&self) -> u64;
+
+    fn regeneration(&self) -> u32;
 
     /// Returns an optional reference to the Aeron media driver.
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>>;

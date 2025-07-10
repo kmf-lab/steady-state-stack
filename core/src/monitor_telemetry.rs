@@ -30,7 +30,7 @@ pub struct SteadyTelemetryActorSend {
     pub(crate) last_telemetry_error: Instant,
     pub(crate) instant_start: Instant,
     pub(crate) iteration_index_start: u64,
-    pub(crate) instance_id: u32,
+    pub(crate) regeneration: u32,
     pub(crate) bool_stop: bool,
     pub(crate) bool_blocking: bool,
     pub(crate) hot_profile_await_ns_unit: AtomicU64,
@@ -72,7 +72,7 @@ impl SteadyTelemetryActorSend {
         assert!(total_ns>0);
 
         ActorStatus {
-            total_count_restarts: self.instance_id,
+            total_count_restarts: self.regeneration,
             iteration_start: iteration_index,
             iteration_sum: (iteration_index-self.iteration_index_start),
             bool_stop: self.bool_stop,

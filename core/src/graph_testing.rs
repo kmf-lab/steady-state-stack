@@ -609,3 +609,383 @@ impl SideChannelResponder {
     }
 }
 
+#[cfg(test)]
+mod graph_testing_tests {
+    use super::*;
+    use std::error::Error;
+    use std::time::Duration;
+    use aeron::aeron::Aeron;
+    use async_std::task;
+    use futures::channel::oneshot;
+    use crate::*;
+    use crate::ActorName;
+    use crate::ActorIdentity;
+    use crate::distributed::aqueduct_stream::Defrag;
+    use crate::GraphBuilder;
+    use crate::simulate_edge::IntoSimRunner;
+    use crate::RxCoreBundle;
+    use crate::TxCoreBundle;
+
+    struct DummyActor;
+
+    impl SteadyActor for DummyActor {
+        fn frame_rate_ms(&self) -> u64 { 0 }
+        fn regeneration(&self) -> u32 { 0 }
+        fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> { None }
+        async fn simulated_behavior(self, _sims: Vec<&dyn IntoSimRunner<Self>>) -> Result<(), Box<dyn Error>> { Ok(()) }
+        fn loglevel(&self, _loglevel: crate::LogLevel) {}
+        fn relay_stats_smartly(&mut self) -> bool { false }
+        fn relay_stats(&mut self) {}
+        async fn relay_stats_periodic(&mut self, _duration_rate: Duration) -> bool { false }
+        fn is_liveliness_in(&self, _target: &[GraphLivelinessState]) -> bool { false }
+        fn is_liveliness_building(&self) -> bool { false }
+        fn is_liveliness_running(&self) -> bool { false }
+        fn is_liveliness_stop_requested(&self) -> bool { false }
+        fn is_liveliness_shutdown_timeout(&self) -> Option<Duration> { None }
+        fn flush_defrag_messages<S: StreamControlItem>(
+            &mut self,
+            _item: &mut Tx<S>,
+            _data: &mut Tx<u8>,
+            _defrag: &mut Defrag<S>,
+        ) -> (u32, u32, Option<i32>) { (0, 0, None) }
+        async fn wait_periodic(&self, _duration_rate: Duration) -> bool { false }
+        async fn wait_timeout(&self, _timeout: Duration) -> bool { false }
+        async fn wait(&self, _duration: Duration) {}
+        async fn wait_avail<T: RxCore>(&self, _this: &mut T, _size: usize) -> bool { true }  // Return true to simulate availability
+        async fn wait_avail_bundle<T: RxCore>(
+            &self,
+            _this: &mut RxCoreBundle<'_, T>,
+            _size: usize,
+            _ready_channels: usize,
+        ) -> bool { true }
+        async fn wait_future_void<F>(&self, _fut: F) -> bool where F: FusedFuture<Output = ()> + 'static + Send + Sync { false }
+        async fn wait_vacant<T: TxCore>(&self, _this: &mut T, _count: T::MsgSize) -> bool { true }  // Simulate vacancy
+        async fn wait_vacant_bundle<T: TxCore>(
+            &self,
+            _this: &mut TxCoreBundle<'_, T>,
+            _count: T::MsgSize,
+            _ready_channels: usize,
+        ) -> bool { true }
+        async fn wait_shutdown(&self) -> bool { false }
+        fn peek_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceSource<'b> where T: RxCore { unimplemented!() }
+        fn advance_take_index<T: RxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> RxDone { unimplemented!() }
+        fn take_slice<T: RxCore>(
+            &mut self,
+            _this: &mut T,
+            _target: T::SliceTarget<'_>,
+        ) -> RxDone where T::MsgItem: Copy { unimplemented!() }
+        fn send_slice<T: TxCore>(
+            &mut self,
+            _this: &mut T,
+            _source: T::SliceSource<'_>,
+        ) -> TxDone where T::MsgOut: Copy { unimplemented!() }
+        fn poke_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceTarget<'b> where T: TxCore { unimplemented!() }
+        fn advance_send_index<T: TxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> TxDone { unimplemented!() }
+        fn try_peek<'a, T>(&'a self, _this: &'a mut Rx<T>) -> Option<&'a T> { None }
+        fn try_peek_iter<'a, T>(
+            &'a self,
+            _this: &'a mut Rx<T>,
+        ) -> impl Iterator<Item = &'a T> + 'a { std::iter::empty() }
+        fn is_empty<T: RxCore>(&self, _this: &mut T) -> bool { true }
+        fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize { this.one() }  // Simulate 1 unit available
+        async fn peek_async<'a, T: RxCore>(
+            &'a self,
+            _this: &'a mut T,
+        ) -> Option<T::MsgPeek<'a>> { None }
+        fn send_iter_until_full<T, I: Iterator<Item = T>>(
+            &mut self,
+            _this: &mut Tx<T>,
+            _iter: I,
+        ) -> usize { 0 }
+        fn try_send<T: TxCore>(
+            &mut self,
+            _this: &mut T,
+            msg: T::MsgIn<'_>,
+        ) -> SendOutcome<T::MsgOut> { SendOutcome::Success }  // Simulate success
+        fn try_take<T: RxCore>(&mut self, _this: &mut T) -> Option<T::MsgOut> { None }
+        fn is_full<T: TxCore>(&self, _this: &mut T) -> bool { false }  // Not full
+        fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize { this.one() }  // 1 vacant
+        async fn wait_empty<T: TxCore>(&self, _this: &mut T) -> bool { false }
+        fn take_into_iter<'a, T: Sync + Send>(
+            &mut self,
+            _this: &'a mut Rx<T>,
+        ) -> impl Iterator<Item = T> + 'a { std::iter::empty() }
+        async fn call_async<F>(&self, _operation: F) -> Option<F::Output> where F: Future { None }
+        async fn call_blocking<F, T>(&self, _f: F) -> Option<F::Output> where F: FnOnce() -> T + Send + 'static, T: Send + 'static { None }
+        async fn send_async<T: TxCore>(
+            &mut self,
+            _this: &mut T,
+            _a: T::MsgIn<'_>,
+            _saturation: SendSaturation,
+        ) -> SendOutcome<T::MsgOut> { SendOutcome::Success }
+        async fn take_async<T>(&mut self, _this: &mut Rx<T>) -> Option<T> { None }
+        async fn take_async_with_timeout<T>(
+            &mut self,
+            _this: &mut Rx<T>,
+            _timeout: Duration,
+        ) -> Option<T> { None }
+        async fn yield_now(&self) {}
+        fn sidechannel_responder(&self) -> Option<SideChannelResponder> { None }
+        fn is_running<F: FnMut() -> bool>(&mut self, _accept_fn: F) -> bool { true }
+        async fn request_shutdown(&mut self) {}
+        fn args<A: Any>(&self) -> Option<&A> { None }
+        fn identity(&self) -> ActorIdentity { ActorIdentity::default() }
+        fn is_showstopper<T>(&self, _rx: &mut Rx<T>, _threshold: usize) -> bool { false }
+    }
+
+    #[test]
+    fn test_graph_test_result() -> Result<(), Box<dyn Error>> {
+        let ok: GraphTestResult<i32, String> = GraphTestResult::Ok(42);
+        if let GraphTestResult::Ok(val) = ok {
+            assert_eq!(val, 42);
+        } else {
+            return Err("Expected Ok".into());
+        }
+
+        let err: GraphTestResult<i32, String> = GraphTestResult::Err("error".to_string());
+        if let GraphTestResult::Err(val) = err {
+            assert_eq!(val, "error");
+        } else {
+            return Err("Expected Err".into());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stage_manager_default() -> Result<(), Box<dyn Error>> {
+        let manager = StageManager::default();
+        assert!(manager.node.is_empty());
+        assert!(manager.backplane.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_stage_manager_clone() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+
+        let cloned = manager.clone();
+        assert_eq!(manager.node.len(), cloned.node.len());
+        assert_eq!(manager.backplane.len(), cloned.backplane.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_stage_manager_debug() -> Result<(), Box<dyn Error>> {
+        let manager = StageManager::default();
+        let debug_str = format!("{:?}", manager);
+        assert!(debug_str.contains("SideChannelHub"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_node_tx_rx() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+
+        let node = manager.node_tx_rx(ActorName::new("test", None));
+        assert!(node.is_some());
+
+        let missing = manager.node_tx_rx(ActorName::new("missing", None));
+        assert!(missing.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_register_node() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+        let success = manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+        assert!(success);
+        assert_eq!(manager.node.len(), 1);
+        assert_eq!(manager.backplane.len(), 1);
+
+        let (shutdown_tx2, shutdown_rx2) = oneshot::channel();
+        let duplicate = manager.register_node(ActorName::new("test", None), 10, shutdown_rx2);
+        assert!(!duplicate);
+        Ok(())
+    }
+
+    #[test]
+    fn test_actor_perform() -> Result<(), Box<dyn Error>> {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let stage_manager = graph.stage_manager();
+        // Minimal valid call (assumes StageDirection<u64> is valid for some actor; adjust based on actual graph)
+        let result = stage_manager.actor_perform("test_actor", StageDirection::Echo(42u64));
+        assert!(result.is_err());  // Expected if actor not found; adjust if graph is built
+        Ok(())
+    }
+
+    #[test]
+    fn test_actor_perform_with_suffix() -> Result<(), Box<dyn Error>> {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let stage_manager = graph.stage_manager();
+        let result = stage_manager.actor_perform_with_suffix("test_actor", 1, StageDirection::Echo(42u64));
+        assert!(result.is_err());  // Similar to above
+        Ok(())
+    }
+
+    #[test]
+    fn test_call_actor_internal() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+
+        let err = manager.call_actor_internal(Box::new(42), ActorName::new("missing", None));
+        assert!(err.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_side_channel_responder_new() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+        let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
+        let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
+        assert_eq!(responder.identity, ActorIdentity::default());
+        Ok(())
+    }
+
+
+    #[test]
+    fn test_avail() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+        let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
+        let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
+        let backplane = manager.backplane.get(&ActorName::new("test", None)).unwrap().clone();
+
+        assert_eq!(responder.avail(), 0);
+
+        task::block_on(async {
+            let mut guard = backplane.lock().await;
+            let (tx, _) = guard.deref_mut();
+            tx.push(Box::new(42)).await
+        }).expect("");
+
+        assert_eq!(responder.avail(), 1);
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn test_echo_responder_bundle() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+        let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
+        let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
+        let backplane = manager.backplane.get(&ActorName::new("test", None)).unwrap().clone();
+
+        let mut mock_bundle: TxBundle<i32> = TxBundle::new();
+        let mut mock_actor = DummyActor;
+
+        let result = responder.echo_responder_bundle(&mut mock_actor, &mut mock_bundle).await?;
+        assert!(!result);
+
+        let mut guard = backplane.lock().await;
+        let (tx, _) = guard.deref_mut();
+        tx.push(Box::new(42i32)).await.expect("");
+        drop(guard);
+
+        let result = responder.echo_responder_bundle(&mut mock_actor, &mut mock_bundle).await?;
+        assert!(result);
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn test_equals_responder_bundle() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+        let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
+        let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
+        let backplane = manager.backplane.get(&ActorName::new("test", None)).unwrap().clone();
+
+        let mut mock_bundle: RxBundle<i32> = RxBundle::new();
+        let mut mock_actor = DummyActor;
+
+        let result = responder.equals_responder_bundle(&mut mock_actor, &mut mock_bundle).await?;
+        assert!(!result);
+
+        let mut guard = backplane.lock().await;
+        let (tx, _) = guard.deref_mut();
+        tx.push(Box::new(42i32)).await.expect("");
+        drop(guard);
+
+        let result = responder.equals_responder_bundle(&mut mock_actor, &mut mock_bundle).await?;
+        assert!(result);
+        Ok(())
+    }
+
+
+    #[async_std::test]
+    async fn test_wait_avail() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+        let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
+        let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
+        let backplane = manager.backplane.get(&ActorName::new("test", None)).unwrap().clone();
+
+        let handle = async_std::task::spawn(async move {
+            responder.wait_avail().await;
+        });
+
+        let mut guard = backplane.lock().await;
+        let (tx, _) = guard.deref_mut();
+        tx.push(Box::new(42)).await.expect("");
+        drop(guard);
+
+        handle.await;
+        Ok(())
+    }
+
+    #[test]
+    fn test_respond_with() -> Result<(), Box<dyn Error>> {
+        let mut manager = StageManager::default();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
+
+        let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
+        let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
+
+        let backplane = manager.backplane.get(&ActorName::new("test", None)).unwrap().clone();
+        task::block_on(async {
+            let mut guard = backplane.lock().await;
+            let (tx, _) = guard.deref_mut();
+            tx.push(Box::new(42i32)).await
+        }).expect("");
+
+        let mut dummy_actor = DummyActor;
+        let result = responder.respond_with(|msg, _| {
+            if let Some(val) = msg.downcast_ref::<i32>() {
+                if *val == 42 {
+                    Some(Box::new("ok".to_string()))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }, &mut dummy_actor)?;
+
+        assert!(result);
+
+        let response = task::block_on(async {
+            let mut guard = backplane.lock().await;
+            let (_, rx) = guard.deref_mut();
+            rx.pop().await
+        });
+        assert!(response.is_some());
+        assert_eq!(*response.unwrap().downcast::<String>().unwrap(), "ok");
+
+        Ok(())
+    }
+}
