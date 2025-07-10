@@ -22,6 +22,8 @@ pub(crate) mod core_exec {
     use std::panic::{catch_unwind, AssertUnwindSafe}; // Panic handling for driver robustness.
     use async_std::task; // Core async-std module for task spawning and execution.
     use futures::channel::oneshot;
+    use std::any::Any;
+    use std::panic::resume_unwind;
 
     /// Spawns a future that can be sent across threads and detaches it for independent execution.
     ///
@@ -111,22 +113,32 @@ pub(crate) mod core_exec {
         T: Send + 'static,
     {
         let current_core = get_current_core();
-        let (sender, receiver) = oneshot::channel();
-
+        // Use the correct channel type to match catch_unwind's output
+        let (sender, receiver) = oneshot::channel::<std::result::Result<T, Box<dyn Any + Send + 'static>>>();
         thread::spawn(move || {
             if let Some(core) = current_core {
                 if let Err(e) = set_thread_affinity(core) {
-                    warn!("Affinity for blocking tasks was enabled but unable to set due to '{:?}', will run blocking task on another core.",e)
+                    warn!(
+                    "Affinity for blocking tasks was enabled but unable to set due to '{:?}', will run blocking task on another core.",
+                    e
+                );
                 }
             }
-            if let Err(_e) = sender.send(f()) {
-                //may happen as expected in some shutdown cases
+            // Run the function and capture any panic
+            let result = catch_unwind(AssertUnwindSafe(|| f()));
+            // Send the result directly, no conversion needed
+            if let Err(_e) = sender.send(result) {
                 warn!("blocking job finished but the receiver is no longer attached");
             }
         });
 
         async move {
-            receiver.await.expect("Sender dropped")
+            // Receive the result from the channel
+            let result = receiver.await.expect("Sender dropped");
+            match result {
+                Ok(t) => t,               // Return the successful result
+                Err(e) => resume_unwind(e), // Propagate the panic
+            }
         }
     }
 
@@ -135,8 +147,7 @@ pub(crate) mod core_exec {
     /// This function uses `async_std::task::block_on` to run the future to completion on the current
     /// thread, useful in synchronous contexts like `main` or tests where an async runtime isn’t running.
     pub fn block_on<F: Future<Output = T>, T>(future: F) -> T {
-       // futures::executor::block_on(future)
-
+       // futures::executor::block_on(future)??
         task::block_on(future)
     }  // 26 usages confirmed from sync code discovered everywhere
 

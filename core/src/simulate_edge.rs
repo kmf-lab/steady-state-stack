@@ -373,4 +373,3 @@ pub(crate) async fn simulated_behavior<C: SteadyActor + 'static>(
 
     Ok(())
 }
-

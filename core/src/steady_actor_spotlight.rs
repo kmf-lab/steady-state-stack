@@ -524,7 +524,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
-        // TODO: somehow we must set bool_blocking ??? not sure.
+        warn!("Blocking calls are not recommended but we do support them. You should however consider async options if possible.");
+        info!("For engineering help in updating your solution please reach out to support@kmf-lab.com ");
 
         let guard = self.start_profile(CALL_OTHER);
         //this is a blocking call so we drop to measure this as 100% used core
@@ -536,7 +537,6 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         futures::pin_mut!(operation); // Pin the future on the stack
 
         let is_shutting_down = self.is_liveliness_stop_requested();
-
 
         let result = select! {
                 r = operation => Some(r), // Operation completes first

@@ -22,7 +22,7 @@ use ringbuf::producer::Producer;
 use std::ops::DerefMut;
 use std::task::Poll;
 use aeron::aeron::Aeron;
-use log::warn;
+use log::{info, warn};
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
 use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
@@ -438,6 +438,9 @@ impl SteadyActor for SteadyActorShadow {
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
+        warn!("Blocking calls are not recommended but we do support them. You should however consider async options if possible.");
+        info!("For engineering help in updating your solution please reach out to support@kmf-lab.com ");
+
         // Lock the shutdown signal and take ownership of the guard
         let one_down = &mut self.oneshot_shutdown.lock().await;
         let operation = core_exec::spawn_blocking(f).fuse();

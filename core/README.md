@@ -1,85 +1,111 @@
-# Steady State: The Foundation of Resilient Rust Services
+## Steady State Framework: A Technical Overview
 
-Welcome to the **Steady State Core**, the backbone of the Steady State framework designed to empower developers to build resilient, high-performance services with ease.
+**Steady State** is a high-performance, actor-based concurrency framework in Rust designed to simplify building resilient, scalable, and observable systems. It’s ideal for developers ranging from beginners to technical leads, offering a balance of ease of use and cutting-edge performance. Whether you’re prototyping a startup idea, crafting a maker project, or architecting a large-scale business solution, Steady State provides the tools to handle massive workloads with confidence.
 
-## Overview
+### Why Choose Steady State?
 
-The Steady State Core focuses on delivering essential features that ensure safety, reliability, and performance:
+Steady State leverages Rust’s safety guarantees and the actor model to deliver a framework that’s both powerful and approachable. Here’s what sets it apart:
 
-- **Safety and Concurrency**: Leverage Rust's memory safety guarantees with actor-based supervised threading for secure and manageable concurrency.
-- **High Throughput**: Handle high message volumes efficiently with support for batch processing in actors.
-- **Rapid Prototyping**: Use Graphviz DOT files to model your actor graph, then generate Rust code to focus on your business logic.
-- **Visibility and Observability**: Built-in telemetry provides real-time insights, enabling you to identify and resolve bottlenecks swiftly.
-  
-  ![Telemetry Visualization Example](simple-example.gif)
-  *An animated GIF demonstrating real-time telemetry visualization in action.*
+- **Safe Concurrency**: Actors operate as isolated units with no shared memory, communicating via message passing to eliminate race conditions and deadlocks.
+- **High Throughput**: Capable of processing **hundreds of millions of 64-bit messages per second**, saturating network or SSD bandwidth on modern hardware.
+- **Rapid Development**: Intuitive APIs and comprehensive testing tools accelerate prototyping and iteration.
+- **Observability**: Built-in telemetry and Prometheus integration provide real-time insights into system health and performance.
 
-  ![Complex Graph Snapshot](overload.png)
-  *A snapshot of a more complex example.*
-## Key Features
+### Key Technical Features
 
-### Built-in Prometheus Integration
+#### Actor Model Foundations
+- **Isolated Actors**: Each actor manages its own state and communicates via channels, ensuring predictable, crash-free execution.
+- **Flexible Management**: Choose dedicated threads (`SoloAct`) for isolation or shared threads (`MemberOf`) for lightweight coordination.
 
-- **Metrics Collection**: Automatically gather performance metrics without additional setup.
-- **Customizable Metrics**: Extend and customize metrics to suit your application's needs.
+#### Performance Engineering
+- **Massive Throughput**: Benchmarks show **50–300 million messages per second** with optimized batching and large buffers (e.g., 1,048,576-message channels).
+- **Double-Buffer Batching**: Actors process half a channel’s capacity (e.g., 524,288 messages) while the other half fills, maximizing CPU cache efficiency.
+- **Zero-Copy Processing**: Advanced users can operate directly on channel memory with `peek_slice`/`poke_slice`, eliminating allocations for peak performance.
 
-### Comprehensive Testing Framework
+#### Resilience and Robustness
+- **Persistent State**: `SteadyState<T>` preserves actor state across restarts, ensuring no data loss after failures.
+- **Automatic Recovery**: Actors restart seamlessly on panic, with peek-before-commit ensuring message integrity.
+- **Showstopper Detection**: Identifies and handles problematic messages to prevent infinite crash loops.
 
-- **Actor Unit Testing**: Write tests for individual actors to ensure they function correctly in isolation.
-- **Graph Testing**: Validate the behavior of the entire actor graph under various conditions.
-- **Mocking Support**: Use mock actors to simulate components and external systems for thorough testing.
+#### Observability and Testing
+- **Telemetry Dashboard**: Access real-time metrics at `http://127.0.0.1:9900`—CPU usage, throughput, channel fill, and more.
+- **Prometheus Metrics**: Scrape detailed stats at `/metrics` for integration with monitoring tools like Grafana.
+- **Testing Framework**: Unit test individual actors or simulate entire graphs with tools like `GraphBuilder::for_testing()`.
 
-### Flexible Actor Management
+#### Distributed Capabilities
+- **Aeron Integration**: Use Aeron’s IPC or UDP for high-speed, reliable messaging across processes or machines.
+- **Scalable Design**: Split workloads into pods for pub-sub scalability.
 
-- **Async Made Easy**: Simplify asynchronous operations with built-in support.
-- **Thread Configuration**: Assign actors to single threads or have actors share threads for greater scale.
+### Learning Through Lessons
 
-### Clean Shutdown Logic
+Rather than relying on a soon-to-be-replaced code generator (currently under development), Steady State provides a series of hands-on lessons to help you build projects from scratch. These lessons, available at [https://github.com/kmf-lab](https://github.com/kmf-lab), showcase real-world patterns and are the recommended starting point:
 
-- **Signal Handling**: Respond to system signals to initiate a clean shutdown sequence.
-- **Ordered Teardown**: Ensure actors shut down in a controlled manner to maintain system integrity.
+- **Lesson 00: Minimal**  
+  A single-actor system with basic timing and shutdown coordination. Perfect for understanding the actor model basics.
 
-## Getting Started
+- **Lesson 01: Standard**  
+  A multi-actor pipeline with persistent state, batch processing, and telemetry. Ideal for production-grade systems.
 
-### 1. Define Your Actor Graph
+- **Lesson 02A: Robust**  
+  Fault-tolerant design with automatic restarts, state recovery, and peek-before-commit. Essential for resilient applications.
 
-- Write a Graphviz DOT file with annotations to model your actor system.
-- Use clear labels to specify actor properties and relationships.
+- **Lesson 02B: Performant**  
+  High-throughput optimizations with large channels, double-buffering, and zero-copy processing. Targets enterprise-scale performance.
 
-### 2. Generate Your Project
-- Utilize the [cargo-steady-state](https://crates.io/crates/cargo-steady-state) tool to generate your Rust service project from the DOT file.
-- Focus on implementing your business logic rather than boilerplate code.
+Each lesson builds on the previous, offering source code, detailed explanations, and telemetry examples. Start here to master Steady State’s capabilities and tailor solutions to your needs.
 
-### 3. Implement and Test
+### Getting Started
 
-- Implement your actors' behavior within the generated framework.
-- Write unit tests for actors and integration tests for the actor graph.
-- Leverage the built-in testing framework for robust validation.
+1. **Clone the Lessons**
+   ```bash
+   git clone https://github.com/kmf-lab/<lesson>.git
+   cd <lesson>
+   ```
 
-## Roadmap
+2. **Run a Lesson**  
+   Example for Lesson 02B (Performant):
+   ```bash
+   cd lessons/lesson-02B-performant
+   cargo run -- --rate 2 --beats 30000
+   ```
+   Observe throughput exceeding **100M messages/sec** via `http://127.0.0.1:9900`.
 
-- **Enhanced Test Coverage**: Increase code coverage to ensure robustness.
-- **Video Tutorials**: Produce educational content to help developers adopt Steady State easily.
-- **Distributed Actor Support**: Enable actors to communicate across network boundaries.
-- **Performance Optimizations**: Continuously improve processing efficiency.
-- **Expanded Actor Library**: Provide more pre-built actors for common patterns.
+3. **Explore Telemetry**
+  - Dashboard: `http://127.0.0.1:9900`
+  - Metrics: `http://127.0.0.1:9900/metrics`
+  - Graph: `http://127.0.0.1:9900/graph.dot`
 
-## Contributing
+4. **Build Your Project**  
+   Use the lessons as templates, leveraging Steady State’s APIs to define actor graphs, implement logic, and test comprehensively.
 
-We welcome contributions from the community. Whether it's bug reports, feature requests, or pull requests, your input is invaluable.
+### Technical Highlights from Lessons
 
-## License
+- **Lesson 02B Example**: Achieves **150–300M messages/sec** with zero-copy mode, using:
+  ```rust
+  let (peek_a, peek_b) = actor.peek_slice(&mut generator_rx);
+  let (poke_a, poke_b) = actor.poke_slice(&mut logger_tx);
+  // In-place transformation
+  for i in 0..peek_a.len() { poke_a[i].write(FizzBuzzMessage::new(peek_a[i])); }
+  ```
+- **Lesson 02A Example**: Ensures message integrity with peek-before-commit:
+  ```rust
+  if let Some(&value) = actor.try_peek(&mut generator) {
+      // Process, then commit
+      actor.try_take(&mut generator).expect("Processed successfully");
+  }
+  ```
 
-Steady State Core is open-source under the MIT License. You are free to use, modify, and distribute it under the terms of the license.
+### Future Directions
 
-[**Sponsor Steady State on GitHub Today**](https://github.com/sponsors/kmf-lab)
+- **Enhanced Distributed**: Scale up workers, Adding MQTT as well as more Aeron.
+- **Visualization Boosts**: Adding new 3D actor visualization across multiple machines on one screen.
+- **Project Code Generation**: Define your app in simple Toml and let the generator mock out the project.
+- **Community Contributions**: Add your own actors and features via [GitHub](https://github.com/kmf-lab).
 
----
+### Join the Community
 
-By sponsoring Steady State, you're not just supporting a project—you're investing in the future of resilient, high-performance service development in Rust. Together, we can build solutions that keep businesses moving forward.
-
----
-
-Feel free to reach out if you have any questions or need further assistance. Thank you for considering supporting Steady State!
-                             
-       
+Steady State is MIT-licensed and open for collaboration. Visit [https://github.com/kmf-lab](https://github.com/kmf-lab) to:
+- Explore the lessons
+- Report issues
+- Contribute code
+- Sponsor development
