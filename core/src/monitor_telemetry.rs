@@ -304,7 +304,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         &self,
         channel_state: &mut Vec<(i64, i64)>,
         pending_takes: &mut Vec<i64>,
-        pending_sends: &mut Vec<i64>,
+        _pending_sends: &mut Vec<i64>, //Not 100% sure we need to remove this yet.
     ) -> bool {
         if let Some(take) = &self.take {
             let mut buffer = [[0usize; RXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];

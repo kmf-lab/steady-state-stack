@@ -1,6 +1,6 @@
 use std::future::Future;
 use std::time::{Duration, Instant};
-use futures_util::future::FusedFuture;
+use futures_util::future::{Fuse, FusedFuture};
 use std::any::Any;
 use std::error::Error;
 use std::sync::Arc;
@@ -162,6 +162,7 @@ pub trait SteadyActor {
     /// Returns the frame rate in milliseconds for this actor.
     fn frame_rate_ms(&self) -> u64;
 
+    /// which regeneration is this actor. starts at zero and goes up each time the actor is restarted.
     fn regeneration(&self) -> u32;
 
     /// Returns an optional reference to the Aeron media driver.
@@ -390,7 +391,7 @@ pub trait SteadyActor {
         F: Future;
 
    ///
-    async fn call_blocking<F, T>(&self, f: F) -> Option<F::Output>
+   fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static;

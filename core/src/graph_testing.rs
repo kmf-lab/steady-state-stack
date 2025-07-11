@@ -617,6 +617,7 @@ mod graph_testing_tests {
     use aeron::aeron::Aeron;
     use async_std::task;
     use futures::channel::oneshot;
+    use futures_util::future::Fuse;
     use crate::*;
     use crate::ActorName;
     use crate::ActorIdentity;
@@ -700,7 +701,7 @@ mod graph_testing_tests {
         fn try_send<T: TxCore>(
             &mut self,
             _this: &mut T,
-            msg: T::MsgIn<'_>,
+            _msg: T::MsgIn<'_>,
         ) -> SendOutcome<T::MsgOut> { SendOutcome::Success }  // Simulate success
         fn try_take<T: RxCore>(&mut self, _this: &mut T) -> Option<T::MsgOut> { None }
         fn is_full<T: TxCore>(&self, _this: &mut T) -> bool { false }  // Not full
@@ -711,7 +712,8 @@ mod graph_testing_tests {
             _this: &'a mut Rx<T>,
         ) -> impl Iterator<Item = T> + 'a { std::iter::empty() }
         async fn call_async<F>(&self, _operation: F) -> Option<F::Output> where F: Future { None }
-        async fn call_blocking<F, T>(&self, _f: F) -> Option<F::Output> where F: FnOnce() -> T + Send + 'static, T: Send + 'static { None }
+        fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send>
+        { async {None}.fuse() }
         async fn send_async<T: TxCore>(
             &mut self,
             _this: &mut T,
@@ -763,7 +765,7 @@ mod graph_testing_tests {
     #[test]
     fn test_stage_manager_clone() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
         manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
 
         let cloned = manager.clone();
@@ -783,7 +785,7 @@ mod graph_testing_tests {
     #[test]
     fn test_node_tx_rx() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
         manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
 
         let node = manager.node_tx_rx(ActorName::new("test", None));
@@ -797,14 +799,14 @@ mod graph_testing_tests {
     #[test]
     fn test_register_node() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
 
         let success = manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
         assert!(success);
         assert_eq!(manager.node.len(), 1);
         assert_eq!(manager.backplane.len(), 1);
 
-        let (shutdown_tx2, shutdown_rx2) = oneshot::channel();
+        let (_shutdown_tx2, shutdown_rx2) = oneshot::channel();
         let duplicate = manager.register_node(ActorName::new("test", None), 10, shutdown_rx2);
         assert!(!duplicate);
         Ok(())
@@ -812,7 +814,7 @@ mod graph_testing_tests {
 
     #[test]
     fn test_actor_perform() -> Result<(), Box<dyn Error>> {
-        let mut graph = GraphBuilder::for_testing().build(());
+        let graph = GraphBuilder::for_testing().build(());
         let stage_manager = graph.stage_manager();
         // Minimal valid call (assumes StageDirection<u64> is valid for some actor; adjust based on actual graph)
         let result = stage_manager.actor_perform("test_actor", StageDirection::Echo(42u64));
@@ -822,7 +824,7 @@ mod graph_testing_tests {
 
     #[test]
     fn test_actor_perform_with_suffix() -> Result<(), Box<dyn Error>> {
-        let mut graph = GraphBuilder::for_testing().build(());
+        let graph = GraphBuilder::for_testing().build(());
         let stage_manager = graph.stage_manager();
         let result = stage_manager.actor_perform_with_suffix("test_actor", 1, StageDirection::Echo(42u64));
         assert!(result.is_err());  // Similar to above
@@ -832,7 +834,7 @@ mod graph_testing_tests {
     #[test]
     fn test_call_actor_internal() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
         manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
 
         let err = manager.call_actor_internal(Box::new(42), ActorName::new("missing", None));
@@ -844,7 +846,7 @@ mod graph_testing_tests {
     #[test]
     fn test_side_channel_responder_new() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
         manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
         let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
         let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
@@ -856,7 +858,7 @@ mod graph_testing_tests {
     #[test]
     fn test_avail() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
         manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
         let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
         let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
@@ -877,7 +879,7 @@ mod graph_testing_tests {
     #[async_std::test]
     async fn test_echo_responder_bundle() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
         manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
         let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
         let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
@@ -902,7 +904,7 @@ mod graph_testing_tests {
     #[async_std::test]
     async fn test_equals_responder_bundle() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
         manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
         let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
         let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
@@ -928,7 +930,7 @@ mod graph_testing_tests {
     #[async_std::test]
     async fn test_wait_avail() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
         manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
         let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();
         let responder = SideChannelResponder::new(node_arc, ActorIdentity::default());
@@ -950,7 +952,7 @@ mod graph_testing_tests {
     #[test]
     fn test_respond_with() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let (_shutdown_tx, shutdown_rx) = oneshot::channel();
         manager.register_node(ActorName::new("test", None), 10, shutdown_rx);
 
         let node_arc = manager.node_tx_rx(ActorName::new("test", None)).unwrap();

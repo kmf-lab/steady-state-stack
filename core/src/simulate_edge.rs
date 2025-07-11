@@ -383,12 +383,6 @@ mod simulate_edge_tests {
     use crate::{GraphLivelinessState, SteadyActor, StreamControlItem, Tx};
     use crate::SteadyRx;
     use crate::SteadyTx;
-    use crate::SteadyStreamRx;
-    use crate::SteadyStreamTx;
-    use crate::StreamIngress;
-    use crate::StreamEgress;
-    use crate::channel_builder::ChannelBuilder;
-    use crate::GraphBuilder;
     use crate::ActorIdentity;
     use futures::channel::oneshot;
     use std::sync::Arc;
@@ -398,7 +392,7 @@ mod simulate_edge_tests {
     use aeron::aeron::Aeron;
     use async_ringbuf::AsyncRb;
     use async_ringbuf::traits::Split;
-    use futures_util::future::FusedFuture;
+    use futures_util::future::{Fuse, FusedFuture};
     use crate::channel_builder::ChannelBacking;
     use crate::*;
     use crate::distributed::aqueduct_stream::Defrag;
@@ -477,10 +471,10 @@ mod simulate_edge_tests {
         ) -> usize { 0 }
         fn try_send<T: TxCore>(
             &mut self,
-            this: &mut T,
-            msg: T::MsgIn<'_>,
+            _this: &mut T,
+            _msg: T::MsgIn<'_>,
         ) -> SendOutcome<T::MsgOut> { SendOutcome::Success }
-        fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> { None }
+        fn try_take<T: RxCore>(&mut self, _this: &mut T) -> Option<T::MsgOut> { None }
         fn is_full<T: TxCore>(&self, _this: &mut T) -> bool { false }
         fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize { this.one() }
         async fn wait_empty<T: TxCore>(&self, _this: &mut T) -> bool { true }
@@ -489,7 +483,7 @@ mod simulate_edge_tests {
             _this: &'a mut Rx<T>,
         ) -> impl Iterator<Item = T> + 'a { std::iter::empty() }
         async fn call_async<F>(&self, _operation: F) -> Option<F::Output> where F: Future { None }
-        async fn call_blocking<F, T>(&self, _f: F) -> Option<F::Output> where F: FnOnce() -> T + Send + 'static, T: Send + 'static { None }
+        fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send> { async {None}.fuse() }
         async fn send_async<T: TxCore>(
             &mut self,
             _this: &mut T,
@@ -504,11 +498,11 @@ mod simulate_edge_tests {
         ) -> Option<T> { None }
         async fn yield_now(&self) {}
         fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
-            let (tx, rx) = oneshot::channel();
+            let (_tx, rx) = oneshot::channel();
             let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(10);
-            let (sender_tx, receiver_tx) = rb.split();
+            let (sender_tx, _receiver_tx) = rb.split();
             let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(10);
-            let (sender_rx, receiver_rx) = rb.split();
+            let (_sender_rx, receiver_rx) = rb.split();
             let arc = Arc::new(Mutex::new(((sender_tx, receiver_rx), rx)));
             Some(SideChannelResponder::new(arc, ActorIdentity::default()))
         }
@@ -521,11 +515,11 @@ mod simulate_edge_tests {
 
     // Helper to create a dummy responder
     fn create_dummy_responder() -> SideChannelResponder {
-        let (tx, rx) = oneshot::channel();
+        let (_tx, rx) = oneshot::channel();
         let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(10);
-        let (sender_tx, receiver_tx) = rb.split();
+        let (sender_tx, _receiver_tx) = rb.split();
         let rb = AsyncRb::<ChannelBacking<Box<dyn Any + Send + Sync>>>::new(10);
-        let (sender_rx, receiver_rx) = rb.split();
+        let (_sender_rx, receiver_rx) = rb.split();
         let arc = Arc::new(Mutex::new(((sender_tx, receiver_rx), rx)));
         SideChannelResponder::new(arc, ActorIdentity::default())
     }
@@ -556,14 +550,6 @@ mod simulate_edge_tests {
         let (tx, _) = graph.channel_builder().build_channel::<T>();
         tx.clone()
     }
-
-    // Helper to create SteadyStreamRx<StreamIngress>
-    fn create_steady_stream_rx_ingress() -> SteadyStreamRx<StreamIngress> {
-        // Mock or minimal setup for StreamIngress
-        unimplemented!("Implement mock for StreamIngress if needed");
-    }
-
-    // Similarly for other stream types...
 
     #[test]
     fn test_sim_step_result() {
@@ -613,7 +599,7 @@ mod simulate_edge_tests {
         let rx = create_empty_steady_rx::<i32>();
         let responder = create_dummy_responder();
         let mut actor = TestActor;
-        let result = rx.run(&responder, 0, &mut actor, Duration::from_secs(1))?;
+        let _result = rx.run(&responder, 0, &mut actor, Duration::from_secs(1))?;
         // Depending on implementation; adjust based on expected behavior
         Ok(())
     }
@@ -627,7 +613,7 @@ mod simulate_edge_tests {
         let tx = create_steady_tx::<i32>();
         let responder = create_dummy_responder();
         let mut actor = TestActor;
-        let result = tx.run(&responder, 0, &mut actor, Duration::from_secs(1))?;
+        let _result = tx.run(&responder, 0, &mut actor, Duration::from_secs(1))?;
         // Adjust assertion based on simulate_direction behavior
         Ok(())
     }

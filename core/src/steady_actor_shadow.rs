@@ -14,7 +14,7 @@ use futures_util::stream::FuturesUnordered;
 use std::future::Future;
 use futures_util::{select, FutureExt, StreamExt};
 use futures_timer::Delay;
-use futures_util::future::FusedFuture;
+use futures_util::future::{Fuse, FusedFuture};
 use std::thread;
 use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
@@ -89,7 +89,6 @@ impl Clone for SteadyActorShadow {
 }
 
 impl SteadyActor for SteadyActorShadow {
-
 
     /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
     /// If true you should consider pulling this message for a DLQ or log it or consider dropping it.
@@ -441,7 +440,7 @@ impl SteadyActor for SteadyActorShadow {
             select! { _ = one_down.deref_mut() => None, r = operation => Some(r), }
         }
     }
-    async fn call_blocking<F, T>(&self, f: F) -> Option<T>
+    fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
@@ -450,36 +449,31 @@ impl SteadyActor for SteadyActorShadow {
         info!("For engineering help in updating your solution please reach out to support@kmf-lab.com ");
 
         // Lock the shutdown signal and take ownership of the guard
-        let one_down = &mut self.oneshot_shutdown.lock().await;
         let operation = core_exec::spawn_blocking(f).fuse();
-        futures::pin_mut!(operation); // Pin the future on the stack
 
-        let is_shutting_down = self.is_liveliness_stop_requested();
+        async move {
+            futures::pin_mut!(operation); // Pin the future on the stack
 
-
-        let result = select! {
-                r = operation => Some(r), // Operation completes first
-                _ =  &mut one_down.deref_mut() => None,
-            };
-
-        if result.is_none() && is_shutting_down {
-            if let Some(duration) = self.is_liveliness_shutdown_timeout() {
-                //in this case we know that the shutdown signal happened but we have duration
-                //before it is a hard shutdown, so we will wait 4/1 of duration
-                select! {
-                        _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
-                        r = operation => Some(r)
-                    }
+            let one_down = &mut self.oneshot_shutdown.lock().await;
+            let result = select! {
+                                        r = operation => Some(r), // Operation completes first
+                                        _ =  &mut one_down.deref_mut() => None,
+                                    };
+            if result.is_none() && self.is_liveliness_stop_requested() {
+                if let Some(duration) = self.is_liveliness_shutdown_timeout() {
+                    //in this case we know that the shutdown signal happened but we have duration
+                    //before it is a hard shutdown, so we will wait 4/1 of duration
+                    select! {
+                            _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
+                            r = operation => Some(r)
+                        }
+                } else {
+                    None
+                }
             } else {
-                None
+                result
             }
-        } else {
-            //TODO: how to cancel our job?
-            //    When this Future Option T is dropped we should have a code hook on drop
-            //    which wil cancel/stop the thread we launched with core_exec::spawn_blocking
-            //    to keep your thread running you must keep this future, that is the plan
-            result
-        }
+        }.fuse()
     }
 
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
@@ -755,5 +749,83 @@ impl SteadyActor for SteadyActorShadow {
 
     fn regeneration(&self) -> u32 {
         self.regeneration
+    }
+}
+#[cfg(test)]
+mod steady_actor_shadow_tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread::sleep;
+    use std::time::Duration;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use futures::Future;
+    use futures::FutureExt;
+    use crate::*;
+    use super::*;
+
+
+    fn blocking_simulator(blocking_on: Arc<AtomicBool>) {
+        while blocking_on.load(Ordering::Relaxed) {
+            sleep(Duration::from_millis(2));
+        }
+    }
+
+    #[test]
+    fn call_blocking_test() -> Result<(), Box<dyn Error>> {
+        // NOTE: this pattern needs to be used for ALL tests where applicable.
+
+        let mut graph = GraphBuilder::for_testing().build(());
+
+        let actor_builder = graph.actor_builder();
+        let trigger = Arc::new(AtomicBool::new(true));
+        let blocking_future = Arc::new(AtomicBool::new(true));
+        let blocking_future = Rc::new(RefCell::new(None));
+
+        actor_builder
+            .with_name("call_blocking_example")
+            .build(
+                async |mut actor| {
+
+                    let mut iter_count = 0;
+                    while actor.is_running(|| {
+                        blocking_future.borrow().as_ref().map_or(true, |f: &Fuse<_>| {
+                            f.is_terminated()
+                        })
+                    }) {
+                        if blocking_future.borrow().is_none() {
+                            let future = actor.call_blocking(|| {
+                                blocking_simulator(trigger.clone())
+                            }).fuse();  // Assuming .fuse() is applied here to match your storage type and usage; adjust if call_blocking already returns Fuse
+                            *blocking_future.borrow_mut() = Some(future);
+                        }
+
+                        if iter_count > 1000 {
+                            trigger.store(false, Ordering::SeqCst);
+                        }
+
+                        if let Some(f) = blocking_future.borrow_mut().as_mut() {
+                            let waker = futures::task::noop_waker();
+                            let mut cx = Context::from_waker(&waker);
+                            let pinned = unsafe { Pin::new_unchecked(f) };
+                            if let Poll::Ready(_result) = pinned.poll(&mut cx) {
+                                // Handle the result
+                            }
+                        }
+
+                        // At some point we call
+                        if iter_count == 5000 {
+                            actor.request_shutdown().await;
+                        }
+                        iter_count += 1;
+                    }
+
+                    Ok(())
+                },ScheduleAs::SoloAct);
+
+        graph.start();
+        graph.block_until_stopped(Duration::from_secs(1))
     }
 }

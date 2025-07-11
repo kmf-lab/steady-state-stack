@@ -12,7 +12,7 @@ use futures_util::lock::{Mutex, MutexGuard};
 use futures::channel::oneshot;
 use std::any::Any;
 use std::error::Error;
-use futures_util::future::{FusedFuture};
+use futures_util::future::{Fuse, FusedFuture};
 use futures_timer::Delay;
 use futures_util::{select, FutureExt, StreamExt};
 use std::future::Future;
@@ -509,10 +509,19 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         let _guard = self.start_profile(CALL_OTHER);
         let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
         if one_down.is_terminated() {
-            if let Poll::Ready(result) = futures::poll!(operation) {
-                return Some(result); // Return value if operation completed
+            if let Some(duration) = self.is_liveliness_shutdown_timeout() {
+                //in this case we know that the shutdown signal happened but we have duration
+                //before it is a hard shutdown, so we will wait 4/1 of duration
+                select! {
+                        _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
+                        r = operation => Some(r)
+                    }
             } else {
-                return None; // Operation still pending, return None
+                if let Poll::Ready(result) = futures::poll!(&mut operation) {
+                    Some(result) // Return value if operation completed
+                } else {
+                    None
+                }
             }
         } else {
             select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), }
@@ -520,7 +529,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     }
 
 
-    async fn call_blocking<F, T>(&self, f: F) -> Option<T>
+    fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
@@ -533,31 +542,31 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         drop(guard);
 
         // Lock the shutdown signal and take ownership of the guard
-        let one_down = &mut self.oneshot_shutdown.lock().await;
         let operation = core_exec::spawn_blocking(f).fuse();
-        futures::pin_mut!(operation); // Pin the future on the stack
 
-        let is_shutting_down = self.is_liveliness_stop_requested();
+        async move {
+            futures::pin_mut!(operation); // Pin the future on the stack
 
-        let result = select! {
-                r = operation => Some(r), // Operation completes first
-                _ =  &mut one_down.deref_mut() => None,
-            };
-
-        if result.is_none() && is_shutting_down {
+            let one_down = &mut self.oneshot_shutdown.lock().await;
+            let result = select! {
+                                        r = operation => Some(r), // Operation completes first
+                                        _ =  &mut one_down.deref_mut() => None,
+                                    };
+            if result.is_none() && self.is_liveliness_stop_requested() {
                 if let Some(duration) = self.is_liveliness_shutdown_timeout() {
                     //in this case we know that the shutdown signal happened but we have duration
                     //before it is a hard shutdown, so we will wait 4/1 of duration
                     select! {
-                        _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
-                        r = operation => Some(r)
-                    }
+                            _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
+                            r = operation => Some(r)
+                        }
                 } else {
                     None
                 }
-        } else {
-            result
-        }
+            } else {
+                result
+            }
+        }.fuse()
     }
 
 
