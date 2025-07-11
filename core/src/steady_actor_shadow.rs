@@ -440,6 +440,9 @@ impl SteadyActor for SteadyActorShadow {
             select! { _ = one_down.deref_mut() => None, r = operation => Some(r), }
         }
     }
+
+
+
     fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send>
     where
         F: FnOnce() -> T + Send + 'static,
@@ -751,26 +754,25 @@ impl SteadyActor for SteadyActorShadow {
         self.regeneration
     }
 }
+
 #[cfg(test)]
 mod steady_actor_shadow_tests {
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::pin::Pin;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread::sleep;
     use std::time::Duration;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
 
-    use futures::Future;
+    use futures::future::FusedFuture;
     use futures::FutureExt;
+    use futures_util::pin_mut;
     use crate::*;
     use super::*;
 
-
-    fn blocking_simulator(blocking_on: Arc<AtomicBool>) {
+    fn blocking_simulator(blocking_on: Arc<AtomicBool>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         while blocking_on.load(Ordering::Relaxed) {
             sleep(Duration::from_millis(2));
         }
+        Ok(())
     }
 
     #[test]
@@ -781,38 +783,58 @@ mod steady_actor_shadow_tests {
 
         let actor_builder = graph.actor_builder();
         let trigger = Arc::new(AtomicBool::new(true));
-        let blocking_future = Arc::new(AtomicBool::new(true));
-        let blocking_future = Rc::new(RefCell::new(None));
 
         actor_builder
             .with_name("call_blocking_example")
-            .build(
-                async |mut actor| {
+            .build(move |mut actor| {
+                let trigger = trigger.clone();
 
+                Box::pin(async move {
                     let mut iter_count = 0;
+                    type TestFuture = Pin<Box<dyn FusedFuture<Output = Option<Result<(), Box<dyn std::error::Error + Send + Sync>>>> + Send>>;
+                    let mut blocking_future: Option<TestFuture> = None;
+
                     while actor.is_running(|| {
-                        blocking_future.borrow().as_ref().map_or(true, |f: &Fuse<_>| {
+                        if let Some(f) = blocking_future.as_ref() {
                             f.is_terminated()
-                        })
+                        } else {
+                            true
+                        }
                     }) {
-                        if blocking_future.borrow().is_none() {
-                            let future = actor.call_blocking(|| {
-                                blocking_simulator(trigger.clone())
-                            }).fuse();  // Assuming .fuse() is applied here to match your storage type and usage; adjust if call_blocking already returns Fuse
-                            *blocking_future.borrow_mut() = Some(future);
+                        let nothing_blocking = blocking_future.is_none();
+                        if nothing_blocking {
+                            let trigger = trigger.clone();
+
+                            let future: TestFuture = Box::pin(
+                                core_exec::spawn_blocking(move || {
+                                    blocking_simulator(trigger)
+                                })
+                                    .map(|res| Some(res))
+                                    .fuse(),
+                            );
+
+                            blocking_future = Some(future);
                         }
 
                         if iter_count > 1000 {
                             trigger.store(false, Ordering::SeqCst);
                         }
 
-                        if let Some(f) = blocking_future.borrow_mut().as_mut() {
-                            let waker = futures::task::noop_waker();
-                            let mut cx = Context::from_waker(&waker);
-                            let pinned = unsafe { Pin::new_unchecked(f) };
-                            if let Poll::Ready(_result) = pinned.poll(&mut cx) {
-                                // Handle the result
-                            }
+                        if let Some(ref mut f) = blocking_future {
+
+                            let timeout = Duration::from_millis(10);
+                            pin_mut!(f);
+                            select!(
+                                     _ = Delay::new(timeout).fuse() => {},
+                                    result = f => {
+
+                                        //process result
+                                         blocking_future = None;
+                                     }
+                                );
+
+
+
                         }
 
                         // At some point we call
@@ -823,9 +845,10 @@ mod steady_actor_shadow_tests {
                     }
 
                     Ok(())
-                },ScheduleAs::SoloAct);
+                })
+            }, ScheduleAs::SoloAct);
 
         graph.start();
-        graph.block_until_stopped(Duration::from_secs(1))
+        graph.block_until_stopped(Duration::from_secs(5))
     }
 }
