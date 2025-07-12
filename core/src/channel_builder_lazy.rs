@@ -3,9 +3,9 @@ use std::thread::sleep;
 use std::time::Duration;
 use futures_util::lock::Mutex;
 use ringbuf::producer::Producer;
-use crate::abstract_executor_async_std::core_exec;
 use crate::{SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle};
 use crate::channel_builder::ChannelBuilder;
+use crate::core_exec;
 
 /**
  * Lazy wrapper for `SteadyTx<T>`, deferring channel allocation until first use.

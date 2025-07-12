@@ -8,10 +8,10 @@ use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
 use async_ringbuf::producer::AsyncProducer;
 use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamControlItem, StreamEgress, StreamIngress, StreamTx, TxCore, TxDone, MONITOR_NOT};
-use crate::abstract_executor_async_std::core_exec;
 use crate::loop_driver::pin_mut;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::yield_now::yield_now;
+use crate::core_exec;
 
 /// Implementation of `TxCore` for stream-based channels with `StreamIngress`.
 ///

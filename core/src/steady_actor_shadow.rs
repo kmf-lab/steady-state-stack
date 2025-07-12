@@ -24,7 +24,6 @@ use std::task::Poll;
 use aeron::aeron::Aeron;
 use log::{info, warn};
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
-use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
 use crate::steady_actor::{BlockingCallFuture, SendOutcome};
 use crate::core_rx::RxCore;
@@ -38,6 +37,8 @@ use crate::steady_tx::TxDone;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::logging_util::steady_logger;
 use crate::yield_now::yield_now;
+use crate::core_exec;
+
 /// Context for managing actor state and interactions within the Steady framework.
 pub struct SteadyActorShadow {
     pub(crate) ident: ActorIdentity,

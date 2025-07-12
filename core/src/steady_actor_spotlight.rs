@@ -27,7 +27,6 @@ use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle, MONITOR_NOT};
-use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
 use crate::steady_actor::{BlockingCallFuture, SendOutcome};
 use crate::core_rx::RxCore;
@@ -42,6 +41,7 @@ use crate::steady_tx::TxDone;
 use crate::telemetry::setup;
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::logging_util::steady_logger;
+use crate::core_exec;
 
 // Debug constant to enable verbose telemetry debugging
 const ENABLE_TELEMETRY_DEBUG: bool = false;

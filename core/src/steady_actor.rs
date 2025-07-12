@@ -167,9 +167,11 @@ impl<T> BlockingCallFuture<T> {
         self.0.as_ref().is_terminated()
     }
     
+
     /// Races this future against a timeout, returning `Some(result)` if it completes first,
     /// or `None` if the timeout elapses.
     /// Keep calling this as needed to "wait" for the blocking call to complete.
+    /// Does NOT stop early on shutdown so use caution in large durations
     pub async fn fetch(&mut self, timeout: Duration) -> Option<T> {
         let fut = &mut self.0;
         pin_mut!(fut); // Pin the mutable reference for polling in select!.
@@ -185,6 +187,8 @@ impl<T> BlockingCallFuture<T> {
             }
         }
     }
+
+
 }
 
  

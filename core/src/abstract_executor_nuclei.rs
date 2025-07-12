@@ -1,5 +1,6 @@
 use std::error::Error;
 use futures::channel::oneshot;
+use futures::FutureExt;
 
 #[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
 pub(crate) mod core_exec {
@@ -31,6 +32,7 @@ pub(crate) mod core_exec {
     use futures_util::AsyncWriteExt; // Extensions for `AsyncWrite`, unused but potentially for future IO tasks.
     use std::panic::{catch_unwind, AssertUnwindSafe};
     use futures_util::future::FusedFuture;
+    use futures::FutureExt;
     // Panic handling for robustness in the driver loop.
 
     /// Spawns a future that can be sent across threads and detaches it for independent execution.
@@ -101,7 +103,7 @@ pub(crate) mod core_exec {
     }
 
     #[cfg(not(any(all(unix, feature = "libc"), all(windows, feature = "winapi"))))]
-    fn set_thread_affinity(_core: usize) -> std::io::Result<(), ()> {
+    fn set_thread_affinity(_core: usize) -> std::result::Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 
@@ -122,7 +124,7 @@ pub(crate) mod core_exec {
         T: Send + 'static,
     {
         let current_core = get_current_core();
-        let (sender, receiver) = oneshot::channel();
+        let (sender, receiver) = crate::oneshot::channel();
 
         thread::spawn(move || {
             if let Some(core) = current_core {
