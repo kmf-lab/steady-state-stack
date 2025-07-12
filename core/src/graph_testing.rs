@@ -617,7 +617,6 @@ mod graph_testing_tests {
     use aeron::aeron::Aeron;
     use async_std::task;
     use futures::channel::oneshot;
-    use futures_util::future::Fuse;
     use crate::*;
     use crate::ActorName;
     use crate::ActorIdentity;
@@ -625,6 +624,7 @@ mod graph_testing_tests {
     use crate::GraphBuilder;
     use crate::simulate_edge::IntoSimRunner;
     use crate::RxCoreBundle;
+    use crate::steady_actor::BlockingCallFuture;
     use crate::TxCoreBundle;
 
     struct DummyActor;
@@ -712,8 +712,12 @@ mod graph_testing_tests {
             _this: &'a mut Rx<T>,
         ) -> impl Iterator<Item = T> + 'a { std::iter::empty() }
         async fn call_async<F>(&self, _operation: F) -> Option<F::Output> where F: Future { None }
-        fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send>
-        { async {None}.fuse() }
+        fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
+        where
+            F: FnOnce() -> T + Send + 'static,
+            T: Send + 'static {
+            BlockingCallFuture(core_exec::spawn_blocking(f))
+        }
         async fn send_async<T: TxCore>(
             &mut self,
             _this: &mut T,

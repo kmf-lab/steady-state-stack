@@ -29,7 +29,9 @@ pub(crate) mod core_exec {
     use crate::ProactorConfig; // Custom configuration enum for selecting proactor modes.
     use futures::{AsyncRead, AsyncWrite}; // Traits for asynchronous IO, unused here but likely for compatibility.
     use futures_util::AsyncWriteExt; // Extensions for `AsyncWrite`, unused but potentially for future IO tasks.
-    use std::panic::{catch_unwind, AssertUnwindSafe}; // Panic handling for robustness in the driver loop.
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use futures_util::future::FusedFuture;
+    // Panic handling for robustness in the driver loop.
 
     /// Spawns a future that can be sent across threads and detaches it for independent execution.
     ///
@@ -114,7 +116,7 @@ pub(crate) mod core_exec {
     ///
     /// # Returns
     /// A future that can be awaited to obtain the result of `f`.
-    pub fn spawn_blocking<F, T>(f: F) -> impl Future<Output = T> + Send
+    pub fn spawn_blocking<F, T>(f: F) -> Pin<Box<dyn futures::future::FusedFuture<Output = T> + Send>>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
@@ -134,9 +136,9 @@ pub(crate) mod core_exec {
             }
         });
 
-        async move {
+        Box::pin(async move {
             receiver.await.expect("Sender dropped")
-        }
+        }.fuse()) as Pin<Box<dyn FusedFuture<Output = T> + Send>>
     }
 
 

@@ -14,7 +14,7 @@ use futures_util::stream::FuturesUnordered;
 use std::future::Future;
 use futures_util::{select, FutureExt, StreamExt};
 use futures_timer::Delay;
-use futures_util::future::{Fuse, FusedFuture};
+use futures_util::future::{FusedFuture};
 use std::thread;
 use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
@@ -26,7 +26,7 @@ use log::{info, warn};
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
 use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
-use crate::steady_actor::{SendOutcome};
+use crate::steady_actor::{BlockingCallFuture, SendOutcome};
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
@@ -441,42 +441,14 @@ impl SteadyActor for SteadyActorShadow {
         }
     }
 
-
-
-    fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send>
+    fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
         warn!("Blocking calls are not recommended but we do support them. You should however consider async options if possible.");
         info!("For engineering help in updating your solution please reach out to support@kmf-lab.com ");
-
-        // Lock the shutdown signal and take ownership of the guard
-        let operation = core_exec::spawn_blocking(f).fuse();
-
-        async move {
-            futures::pin_mut!(operation); // Pin the future on the stack
-
-            let one_down = &mut self.oneshot_shutdown.lock().await;
-            let result = select! {
-                                        r = operation => Some(r), // Operation completes first
-                                        _ =  &mut one_down.deref_mut() => None,
-                                    };
-            if result.is_none() && self.is_liveliness_stop_requested() {
-                if let Some(duration) = self.is_liveliness_shutdown_timeout() {
-                    //in this case we know that the shutdown signal happened but we have duration
-                    //before it is a hard shutdown, so we will wait 4/1 of duration
-                    select! {
-                            _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
-                            r = operation => Some(r)
-                        }
-                } else {
-                    None
-                }
-            } else {
-                result
-            }
-        }.fuse()
+        BlockingCallFuture(core_exec::spawn_blocking(f))
     }
 
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
@@ -755,20 +727,18 @@ impl SteadyActor for SteadyActorShadow {
     }
 }
 
+
 #[cfg(test)]
 mod steady_actor_shadow_tests {
-    use std::pin::Pin;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread::sleep;
     use std::time::Duration;
-
-    use futures::future::FusedFuture;
-    use futures::FutureExt;
-    use futures_util::pin_mut;
     use crate::*;
     use super::*;
 
-    fn blocking_simulator(blocking_on: Arc<AtomicBool>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    type BlockingResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+    fn blocking_simulator(blocking_on: Arc<AtomicBool>) -> BlockingResult {
         while blocking_on.load(Ordering::Relaxed) {
             sleep(Duration::from_millis(2));
         }
@@ -788,62 +758,45 @@ mod steady_actor_shadow_tests {
             .with_name("call_blocking_example")
             .build(move |mut actor| {
                 let trigger = trigger.clone();
-
                 Box::pin(async move {
                     let mut iter_count = 0;
-                    type TestFuture = Pin<Box<dyn FusedFuture<Output = Option<Result<(), Box<dyn std::error::Error + Send + Sync>>>> + Send>>;
-                    let mut blocking_future: Option<TestFuture> = None;
 
+                    let mut blocking_future: Option<BlockingCallFuture<BlockingResult>> = None;
+
+                    //##!##// Look at this part to copy
                     while actor.is_running(|| {
-                        if let Some(f) = blocking_future.as_ref() {
-                            f.is_terminated()
+                        if let Some(ref f) = blocking_future {
+                            f.is_terminated() // we accept the shutdown if our blocking is terminated
                         } else {
-                            true
+                            true // nothing blocking is waiting
                         }
                     }) {
                         let nothing_blocking = blocking_future.is_none();
                         if nothing_blocking {
                             let trigger = trigger.clone();
-
-                            let future: TestFuture = Box::pin(
-                                core_exec::spawn_blocking(move || {
-                                    blocking_simulator(trigger)
-                                })
-                                    .map(|res| Some(res))
-                                    .fuse(),
-                            );
-
-                            blocking_future = Some(future);
+                            let blocking_function = move || {
+                                blocking_simulator(trigger)
+                            };
+                            //##!##// start up background blocking call
+                            blocking_future = Some(actor.call_blocking(blocking_function));
                         }
-
                         if iter_count > 1000 {
                             trigger.store(false, Ordering::SeqCst);
                         }
-
                         if let Some(ref mut f) = blocking_future {
-
                             let timeout = Duration::from_millis(10);
-                            pin_mut!(f);
-                            select!(
-                                     _ = Delay::new(timeout).fuse() => {},
-                                    result = f => {
-
-                                        //process result
-                                         blocking_future = None;
-                                     }
-                                );
-
-
-
-                        }
-
+                            //##!##// call fetch for short stretches to see if the future is done
+                            let result = f.fetch(timeout).await;
+                            if let Some(_r) = result {
+                                //NOTE: process your result here.
+                            }
+                        };
                         // At some point we call
                         if iter_count == 5000 {
                             actor.request_shutdown().await;
                         }
                         iter_count += 1;
                     }
-
                     Ok(())
                 })
             }, ScheduleAs::SoloAct);

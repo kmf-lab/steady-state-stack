@@ -262,4 +262,49 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
     }
 }
 
+#[cfg(test)]
+mod core_rx_stream_tests {
+    use std::time::Duration;
+    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress};
+
+    #[test]
+    fn test_general() -> Result<(),Box<dyn std::error::Error>> {
+        let mut graph = GraphBuilder::for_testing().build(());
+
+        let bytes_per_item = 128;
+        let mut channel_builder = graph.channel_builder();
+        channel_builder = channel_builder.with_capacity(100);
+        channel_builder = channel_builder.with_type();
+        let (tx,rx) = channel_builder.build_stream::<StreamEgress>(bytes_per_item);
+               
+        
+        let actor_builder = graph.actor_builder();
+        
+        let tx = tx.clone();
+        let rx = rx.clone();
+        actor_builder
+            .with_name("unit_test")
+            .build(move |mut actor| {
+                let tx = tx.clone();
+                let rx = rx.clone();
+                Box::pin(async move {
+                    let tx = tx.lock();
+                    let rx = rx.lock();
+                    if actor.is_running(|| true) {
+                        
+                        
+                    }
+                    
+                    actor.request_shutdown().await;
+                    Ok(())
+                })
+            }, ScheduleAs::SoloAct);
+
+
+        graph.start();
+        graph.block_until_stopped(Duration::from_secs(5))
+    }
+
+}
+
 

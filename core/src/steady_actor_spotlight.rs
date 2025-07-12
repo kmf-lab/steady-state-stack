@@ -12,7 +12,7 @@ use futures_util::lock::{Mutex, MutexGuard};
 use futures::channel::oneshot;
 use std::any::Any;
 use std::error::Error;
-use futures_util::future::{Fuse, FusedFuture};
+use futures_util::future::{FusedFuture};
 use futures_timer::Delay;
 use futures_util::{select, FutureExt, StreamExt};
 use std::future::Future;
@@ -29,7 +29,7 @@ use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_R
 use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::abstract_executor_async_std::core_exec;
 use crate::actor_builder::NodeTxRx;
-use crate::steady_actor::{SendOutcome};
+use crate::steady_actor::{BlockingCallFuture, SendOutcome};
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
@@ -528,48 +528,18 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
-
-    fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send>
+    fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
         warn!("Blocking calls are not recommended but we do support them. You should however consider async options if possible.");
         info!("For engineering help in updating your solution please reach out to support@kmf-lab.com ");
-
         let guard = self.start_profile(CALL_OTHER);
         //this is a blocking call so we drop to measure this as 100% used core
         drop(guard);
-
-        // Lock the shutdown signal and take ownership of the guard
-        let operation = core_exec::spawn_blocking(f).fuse();
-
-        async move {
-            futures::pin_mut!(operation); // Pin the future on the stack
-
-            let one_down = &mut self.oneshot_shutdown.lock().await;
-            let result = select! {
-                                        r = operation => Some(r), // Operation completes first
-                                        _ =  &mut one_down.deref_mut() => None,
-                                    };
-            if result.is_none() && self.is_liveliness_stop_requested() {
-                if let Some(duration) = self.is_liveliness_shutdown_timeout() {
-                    //in this case we know that the shutdown signal happened but we have duration
-                    //before it is a hard shutdown, so we will wait 4/1 of duration
-                    select! {
-                            _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
-                            r = operation => Some(r)
-                        }
-                } else {
-                    None
-                }
-            } else {
-                result
-            }
-        }.fuse()
+        BlockingCallFuture(core_exec::spawn_blocking(f))
     }
-
-
 
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
@@ -900,5 +870,87 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     fn regeneration(&self) -> u32 {
         self.regeneration
+    }
+}
+
+
+#[cfg(test)]
+mod steady_actor_spotlight_tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread::sleep;
+    use std::time::Duration;
+    use crate::*;
+    use super::*;
+
+    type BlockingResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+    fn blocking_simulator(blocking_on: Arc<AtomicBool>) -> BlockingResult {
+        while blocking_on.load(Ordering::Relaxed) {
+            sleep(Duration::from_millis(2));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn call_blocking_test() -> Result<(), Box<dyn Error>> {
+        // NOTE: this pattern needs to be used for ALL tests where applicable.
+
+        let mut graph = GraphBuilder::for_testing().build(());
+
+        let actor_builder = graph.actor_builder();
+        let trigger = Arc::new(AtomicBool::new(true));
+
+        actor_builder
+            .with_name("call_blocking_example")
+            .build(move |mut actor| {
+                
+                let mut actor = actor.into_spotlight([],[]);
+                                
+                let trigger = trigger.clone();
+                Box::pin(async move {
+                    let mut iter_count = 0;
+
+                    let mut blocking_future: Option<BlockingCallFuture<BlockingResult>> = None;
+
+                    //##!##// Look at this part to copy
+                    while actor.is_running(|| {
+                        if let Some(ref f) = blocking_future {
+                            f.is_terminated() // we accept the shutdown if our blocking is terminated
+                        } else {
+                            true // nothing blocking is waiting
+                        }
+                    }) {
+                        let nothing_blocking = blocking_future.is_none();
+                        if nothing_blocking {
+                            let trigger = trigger.clone();
+                            let blocking_function = move || {
+                                blocking_simulator(trigger)
+                            };
+                            //##!##// start up background blocking call
+                            blocking_future = Some(actor.call_blocking(blocking_function));
+                        }
+                        if iter_count > 1000 {
+                            trigger.store(false, Ordering::SeqCst);
+                        }
+                        if let Some(ref mut f) = blocking_future {
+                            let timeout = Duration::from_millis(10);
+                            //##!##// call fetch for short stretches to see if the future is done
+                            let result = f.fetch(timeout).await;
+                            if let Some(_r) = result {
+                                //NOTE: process your result here.
+                            }
+                        };
+                        // At some point we call
+                        if iter_count == 5000 {
+                            actor.request_shutdown().await;
+                        }
+                        iter_count += 1;
+                    }
+                    Ok(())
+                })
+            }, ScheduleAs::SoloAct);
+
+        graph.start();
+        graph.block_until_stopped(Duration::from_secs(5))
     }
 }

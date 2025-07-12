@@ -1,11 +1,14 @@
+use futures::FutureExt;
 use std::future::Future;
 use std::time::{Duration, Instant};
-use futures_util::future::{Fuse, FusedFuture};
+use futures_util::future::{FusedFuture};
 use std::any::Any;
 use std::error::Error;
+use std::pin::Pin;
 use std::sync::Arc;
 use aeron::aeron::Aeron;
 use futures_util::lock::Mutex;
+use futures_util::select;
 use log::*;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
 use crate::graph_testing::SideChannelResponder;
@@ -19,6 +22,7 @@ use crate::steady_actor_spotlight::SteadyActorSpotlight;
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
+use crate::loop_driver::pin_mut;
 use crate::simulate_edge::IntoSimRunner;
 
 impl SteadyActorShadow {
@@ -153,6 +157,37 @@ impl<X> SendOutcome<X> {
     }
 }
 
+/// Struct returned for the monitoring and result fetching of the long running blocking call.
+pub struct BlockingCallFuture<T>(pub Pin<Box<dyn FusedFuture<Output = T> + Send>>);
+
+impl<T> BlockingCallFuture<T> {
+      
+    /// Check if this long running blocking thread is done
+    pub fn is_terminated(&self) -> bool {
+        self.0.as_ref().is_terminated()
+    }
+    
+    /// Races this future against a timeout, returning `Some(result)` if it completes first,
+    /// or `None` if the timeout elapses.
+    /// Keep calling this as needed to "wait" for the blocking call to complete.
+    pub async fn fetch(&mut self, timeout: Duration) -> Option<T> {
+        let fut = &mut self.0;
+        pin_mut!(fut); // Pin the mutable reference for polling in select!.
+
+        // Assuming you're using something like tokio::time::sleep for the delay.
+        // If using futures-timer or another crate, swap Delay::new with the equivalent.
+        select! {
+            _ = futures_timer::Delay::new(timeout).fuse() => None, // Timeout branch.
+            result = fut => {
+                // Your commented code had 'blocking_future = None;', but it's unclear what that refers to.
+                // If it's external state, handle it here (e.g., set some atomic or mutex-guarded flag).
+                Some(result)
+            }
+        }
+    }
+}
+
+ 
 /// Trait for all steady actors, providing core actor and channel operations.
 ///
 /// This trait is designed for single-threaded actor execution, and assumes
@@ -391,7 +426,7 @@ pub trait SteadyActor {
         F: Future;
 
    ///
-   fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send>
+   fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static;

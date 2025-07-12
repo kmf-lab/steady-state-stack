@@ -9,7 +9,8 @@ pub(crate) mod core_exec {
     //! local and global), handling blocking operations, and synchronously blocking on futures.
     //! The design ensures flexibility and compatibility with `async-std`’s OS-backed async mechanisms.
 
-    use std::error::Error;
+    use futures::FutureExt;
+use std::error::Error;
     // ## Imports
     use std::future::Future; // Core trait for asynchronous operations.
     use std::io::Result; // Standard IO types for error handling.
@@ -24,6 +25,8 @@ pub(crate) mod core_exec {
     use futures::channel::oneshot;
     use std::any::Any;
     use std::panic::resume_unwind;
+    use std::pin::Pin;
+    use futures_util::future::FusedFuture;
 
     /// Spawns a future that can be sent across threads and detaches it for independent execution.
     ///
@@ -107,13 +110,12 @@ pub(crate) mod core_exec {
     ///
     /// # Returns
     /// A future that can be awaited to obtain the result of `f`.
-    pub fn spawn_blocking<F, T>(f: F) -> impl Future<Output = T> + Send
+    pub fn spawn_blocking<F, T>(f: F) -> Pin<Box<dyn futures::future::FusedFuture<Output = T> + Send>>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
         let current_core = get_current_core();
-        // Use the correct channel type to match catch_unwind's output
         let (sender, receiver) = oneshot::channel::<std::result::Result<T, Box<dyn Any + Send + 'static>>>();
         thread::spawn(move || {
             if let Some(core) = current_core {
@@ -124,22 +126,19 @@ pub(crate) mod core_exec {
                 );
                 }
             }
-            // Run the function and capture any panic
             let result = catch_unwind(AssertUnwindSafe(|| f()));
-            // Send the result directly, no conversion needed
             if let Err(_e) = sender.send(result) {
                 warn!("blocking job finished but the receiver is no longer attached");
             }
         });
 
-        async move {
-            // Receive the result from the channel
+        Box::pin(async move {
             let result = receiver.await.expect("Sender dropped");
             match result {
-                Ok(t) => t,               // Return the successful result
-                Err(e) => resume_unwind(e), // Propagate the panic
+                Ok(t) => t,
+                Err(e) => resume_unwind(e),
             }
-        }
+        }.fuse()) as Pin<Box<dyn FusedFuture<Output = T> + Send>>
     }
 
     /// Blocks the current thread until the provided future completes, returning its result.

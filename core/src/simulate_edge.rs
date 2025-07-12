@@ -392,10 +392,11 @@ mod simulate_edge_tests {
     use aeron::aeron::Aeron;
     use async_ringbuf::AsyncRb;
     use async_ringbuf::traits::Split;
-    use futures_util::future::{Fuse, FusedFuture};
+    use futures_util::future::{FusedFuture};
     use crate::channel_builder::ChannelBacking;
     use crate::*;
     use crate::distributed::aqueduct_stream::Defrag;
+    use crate::steady_actor::BlockingCallFuture;
 
     // Dummy actor for testing
     struct TestActor;
@@ -483,7 +484,11 @@ mod simulate_edge_tests {
             _this: &'a mut Rx<T>,
         ) -> impl Iterator<Item = T> + 'a { std::iter::empty() }
         async fn call_async<F>(&self, _operation: F) -> Option<F::Output> where F: Future { None }
-        fn call_blocking<F, T>(&self, f: F) -> Fuse<impl Future<Output = Option<T>> + Send> { async {None}.fuse() }
+        fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T> where
+            F: FnOnce() -> T + Send + 'static,
+            T: Send + 'static {
+            BlockingCallFuture(core_exec::spawn_blocking(f))
+        }
         async fn send_async<T: TxCore>(
             &mut self,
             _this: &mut T,
