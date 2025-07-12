@@ -15,4 +15,4 @@ this.onmessage = async (message) => {
     console.log('dotUrl',dotUrl);
     console.error('Error:', e);
   }
-};
+};
