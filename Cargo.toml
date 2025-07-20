@@ -5,6 +5,4 @@ members = [
 ]
 resolver = "2"
 
-[workspace.dependencies]
-socket2 = { version = "0.5", default-features = false }
 

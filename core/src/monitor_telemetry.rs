@@ -5,6 +5,7 @@ use futures_util::lock::Mutex;
 use log::error;
 use std::ops::DerefMut;
 use std::thread;
+use num_traits::Zero;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
 use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx, RxCore};
 use crate::steady_rx::{Rx};
@@ -300,74 +301,54 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     /// * `channel_state` - Vector of (current_take, current_limit) pairs for each channel.
     /// * `pending_takes` - Vector of postponed take values for each channel.
     /// * `pending_sends` - Vector of postponed send values for each channel.
+    #[inline]
     fn consume_take_into(
         &self,
-        channel_state: &mut Vec<(i64, i64)>,
-        pending_takes: &mut Vec<i64>,
-        _pending_sends: &mut Vec<i64>, //Not 100% sure we need to remove this yet.
+        take_send_source: &mut Vec<(i64, i64)>,
+        future_take: &mut Vec<i64>,
+        future_send: &mut Vec<i64>,
     ) -> bool {
         if let Some(take) = &self.take {
             let mut buffer = [[0usize; RXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
-            let count = if let Some(mut rx_guard) = take.rx.try_lock() {
-                rx_guard.deref_mut().shared_take_slice(&mut buffer).item_count()
-            } else {
-                0
+
+            let count = {
+                if let Some(mut rx_guard) = take.rx.try_lock() {
+                    let rx = rx_guard.deref_mut();
+                    rx.deprecated_shared_take_slice(&mut buffer)
+                } else {
+                    0
+                }
             };
             let populated_slice = &buffer[0..count];
 
-            // Process pending takes
-            for meta in take.details.iter() {
-                let id = meta.id;
-                if id >= channel_state.len() { continue; }
-                let (current_take, current_limit) = &mut channel_state[id];
-                let max_takeable = *current_limit - *current_take;
-                assert!(max_takeable >= 0, "internal error: negative takeable capacity");
-                let take_amount = max_takeable.min(pending_takes[id]);
-                *current_take += take_amount;
-                pending_takes[id] -= take_amount;
-            }
+            take.details.iter().for_each(|meta| {
+                let max_takeable = take_send_source[meta.id].1 - take_send_source[meta.id].0;
+                assert!(max_takeable.ge(&0), "internal error");
+                let value_taken = max_takeable.min(future_take[meta.id]);
+                take_send_source[meta.id].0 += value_taken;
+                future_take[meta.id] -= value_taken;
+            });
 
-            // Process consumed messages
-            for msg in populated_slice.iter() {
-                for (meta, val) in take.details.iter().zip(msg.iter()) {
-                    let id = meta.id;
-                    if id >= channel_state.len() { continue; }
+            populated_slice.iter().for_each(|msg| {
+                take.details.iter().zip(msg.iter()).for_each(|(meta, val)| {
+                    let limit = take_send_source[meta.id].1;
                     let val = *val as i64;
-                    let (current_take, current_limit) = &mut channel_state[id];
-                    let capacity = meta.capacity as i64;
-                    // Check if adding val would exceed capacity
-                    let filled = *current_limit - *current_take; // Assuming filled is limit - take
-                    if filled + val <= capacity && pending_takes[id] == 0 {
-                        *current_take += val;
+                    if i64::is_zero(&future_take[meta.id]) && val + take_send_source[meta.id].0 <= limit {
+                        take_send_source[meta.id].0 += val;
                     } else {
-                        pending_takes[id] += val; // Postpone excess
+                        future_take[meta.id] += val;
                     }
-                }
-            }
+                });
+            });
 
-            //we can not adjust for capacity becauase we may be away and both ends did work for
-            //an unknown duration
-            //
-            // // Adjust for capacity
-            // for meta in take.details.iter() {
-            //     let id = meta.id;
-            //     if id >= channel_state.len() { continue; }
-            //     let (current_take, current_limit) = &mut channel_state[id];
-            //     let capacity = meta.capacity as i64;
-            //     let available = *current_limit - *current_take;
-            //     if available > capacity {
-            //         let excess = available - capacity;
-            //         pending_sends[id] += excess;
-            //         *current_limit -= excess;
-            //     }
-            //     // Additional constraint: ensure filled ≤ capacity
-            //     let filled = *current_limit - *current_take;
-            //     if filled > capacity {
-            //         let excess = filled - capacity;
-            //         *current_limit -= excess; // Reduce limit to cap filled at capacity
-            //         pending_sends[id] += excess;
-            //     }
-            // }
+            take.details.iter().for_each(|meta| {
+                let dif = take_send_source[meta.id].1 - take_send_source[meta.id].0;
+                if dif > (meta.capacity as i64) {
+                    let extra = dif - (meta.capacity as i64);
+                    future_send[meta.id] += extra;
+                    take_send_source[meta.id].1 -= extra;
+                }
+            });
 
             count > 0
         } else {

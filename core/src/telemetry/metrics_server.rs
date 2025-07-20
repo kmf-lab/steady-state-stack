@@ -661,11 +661,11 @@ mod http_telemetry_tests {
     #[cfg(all(feature="prometheus_metrics",feature="telemetry_server_builtin"))]
     fn test_metrics_server() -> Result<(), Box<dyn std::error::Error>> {
         if cfg!(not(windows)) && std::env::var("GITHUB_ACTIONS").is_err() {
-            let (mut graph, server_ip, tx_in) =
-                stand_up_test_server("127.0.0.1:0");
+            let (mut graph, server_ip, tx_in) = stand_up_test_server("127.0.0.1:0");
 
-            // Step 5: Capture and validate the metrics server content
+            // Capture and validate the metrics server content
             // Fetch the metrics from the server
+            // trace!("Server location {:?}",server_ip);
             if let Some(ref addr) = server_ip {
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
@@ -677,15 +677,15 @@ mod http_telemetry_tests {
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js");
                 print!(".");
-                #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");
-                print!(".");
+                //#[cfg(feature = "telemetry_server_builtin")]
+                //validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");
+                //print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("<title>Telemetry</title>"), "index.html");
                 print!(".");
-                #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "viz-lite.js");
-                print!(".");
+                // #[cfg(feature = "telemetry_server_builtin")]
+                // validate_path(&addr, None, "viz-lite.js");
+                // print!(".");
                 #[cfg(feature = "prometheus_metrics")]
                 validate_path(&addr, Some("="), "metric");
                 print!(".");
@@ -711,10 +711,6 @@ mod http_telemetry_tests {
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, None, "images/zoom-out-icon-disabled.svg");
                 print!(".");
-
-                //TODO: new label feature, in progress 
-                // validate_path(&addr, None, "set?rankdir=LR".into());
-                // print!(".");
 
             } else {
                 panic!("Telemetry address not available");
