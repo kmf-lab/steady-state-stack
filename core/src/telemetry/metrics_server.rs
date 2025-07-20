@@ -2,6 +2,7 @@ use async_io::Async;
 use std::error::Error;
 use std::net::{SocketAddr, TcpListener};
 use std::pin::Pin;
+use std::time::Duration;
 use bytes::BytesMut;
 #[allow(unused_imports)]
 use log::*;
