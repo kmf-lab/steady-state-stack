@@ -178,13 +178,19 @@ impl AsyncListener for Async<TcpListener> {
 /// Returns an `Arc` containing the listener if successful, or `None` if binding fails.
 pub fn bind_to_port(addr: &str) -> Arc<Option<Box<dyn AsyncListener + Send + Sync>>> {
     match TcpListener::bind(addr) {
-        Ok(listener) => match Async::new(listener) {
-            Ok(async_listener) => Arc::new(Some(Box::new(async_listener) as Box<dyn AsyncListener + Send + Sync>)),
-            Err(e) => {
-                warn!("Unable to create async listener: {}", e);
-                Arc::new(None)
+        Ok(listener) => {
+            // Release port immediately on close
+            use socket2::{SockRef, TcpKeepalive};
+            let sock = SockRef::from(&listener);
+            sock.set_linger(Some(Duration::from_secs(0))).ok();
+            match Async::new(listener) {
+                Ok(async_listener) => Arc::new(Some(Box::new(async_listener) as Box<dyn AsyncListener + Send + Sync>)),
+                Err(e) => {
+                    warn!("Unable to create async listener: {}", e);
+                    Arc::new(None)
+                }
             }
-        },
+        }
         Err(e) => {
             warn!("Unable to bind to http://{}: {}", addr, e);
             Arc::new(None)
