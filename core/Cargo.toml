@@ -1,6 +1,6 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.2.3"
+version = "0.2.4"
 documentation = "https://docs.rs/steady_state/0.0.21/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2024"
@@ -103,7 +103,6 @@ tempfile         = "3.19.1"
 ahash            = "0.8.11" # fastest hash map so far
 async-io         = "2.4.0"
 async-lock       = "3.4"  # Use the latest version
-socket2          = { version = "0.6.0", default-features = false }
 
 
 # HTTP Web solution is built on this stack of crates
