@@ -677,15 +677,15 @@ mod http_telemetry_tests {
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js");
                 print!(".");
-                //#[cfg(feature = "telemetry_server_builtin")]
-                //validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");
-                //print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");
+                print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("<title>Telemetry</title>"), "index.html");
                 print!(".");
-                // #[cfg(feature = "telemetry_server_builtin")]
-                // validate_path(&addr, None, "viz-lite.js");
-                // print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, None, "viz-lite.js");
+                print!(".");
                 #[cfg(feature = "prometheus_metrics")]
                 validate_path(&addr, Some("="), "metric");
                 print!(".");
