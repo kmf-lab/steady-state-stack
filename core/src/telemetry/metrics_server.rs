@@ -12,7 +12,6 @@ use crate::telemetry::metrics_collector::*;
 use futures::io;
 use futures::channel::oneshot::Receiver;
 use std::io::Write;
-use std::os::fd::AsRawFd;
 use futures_util::{AsyncReadExt, AsyncWriteExt};
 use crate::steady_actor_shadow::SteadyActorShadow;
 
@@ -180,29 +179,6 @@ impl AsyncListener for Async<TcpListener> {
 pub fn bind_to_port(addr: &str) -> Arc<Option<Box<dyn AsyncListener + Send + Sync>>> {
     match TcpListener::bind(addr) {
         Ok(listener) => {
-
-            // Disable SO_LINGER to prevent lingering
-            #[cfg(not(windows))]
-            {
-                let linger = libc::linger {
-                    l_onoff: 0, // Disable linger
-                    l_linger: 0, // Immediate close
-                };
-                let fd = listener.as_raw_fd();
-                unsafe {
-                    if libc::setsockopt(
-                        fd,
-                        libc::SOL_SOCKET,
-                        libc::SO_LINGER,
-                        &linger as *const _ as *const _,
-                        std::mem::size_of::<libc::linger>() as libc::socklen_t,
-                    ) != 0
-                    {
-                        warn!("Failed to set SO_LINGER: {}", io::Error::last_os_error());
-                    }
-                }
-            }
-
             match Async::new(listener) {
                 Ok(async_listener) => Arc::new(Some(Box::new(async_listener) as Box<dyn AsyncListener + Send + Sync>)),
                 Err(e) => {

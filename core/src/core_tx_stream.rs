@@ -813,7 +813,7 @@ impl TxCore for StreamTx<StreamEgress> {
 
 mod core_tx_stream_tests {
     use std::time::Duration;
-    use crate::{GraphBuilder, ScheduleAs, SendSaturation, SteadyActor, StreamEgress};
+    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress};
 
     #[test]
     fn test_general() -> Result<(),Box<dyn std::error::Error>> {
@@ -836,8 +836,8 @@ mod core_tx_stream_tests {
                 let tx = tx.clone();
                 let rx = rx.clone();
                 Box::pin(async move {
-                    let mut tx = tx.lock();
-                    let mut rx = rx.lock();
+                    let _tx = tx.lock();
+                    let _rx = rx.lock();
                     if actor.is_running(|| true) {
 
                        // let _ = actor.send_async(&mut tx,&[1,2,3,4],SendSaturation::AwaitForRoom).await;

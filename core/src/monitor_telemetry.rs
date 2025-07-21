@@ -7,7 +7,7 @@ use std::ops::DerefMut;
 use std::thread;
 use num_traits::Zero;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
-use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx, RxCore};
+use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
 
@@ -301,7 +301,6 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     /// * `channel_state` - Vector of (current_take, current_limit) pairs for each channel.
     /// * `pending_takes` - Vector of postponed take values for each channel.
     /// * `pending_sends` - Vector of postponed send values for each channel.
-    #[inline]
     fn consume_take_into(
         &self,
         take_send_source: &mut Vec<(i64, i64)>,

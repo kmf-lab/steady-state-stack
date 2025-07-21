@@ -902,7 +902,7 @@ mod steady_actor_spotlight_tests {
 
         actor_builder
             .with_name("call_blocking_example")
-            .build(move |mut actor| {
+            .build(move |actor| {
                 
                 let mut actor = actor.into_spotlight([],[]);
                                 

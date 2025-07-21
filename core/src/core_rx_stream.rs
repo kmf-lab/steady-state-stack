@@ -288,8 +288,8 @@ mod core_rx_stream_tests {
                 let tx = tx.clone();
                 let rx = rx.clone();
                 Box::pin(async move {
-                    let tx = tx.lock();
-                    let rx = rx.lock();
+                    let _tx = tx.lock();
+                    let _rx = rx.lock();
                     if actor.is_running(|| true) {
                         
                         
