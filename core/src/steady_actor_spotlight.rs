@@ -122,7 +122,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
     }
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
-    pub(crate) fn start_profile(&self, x: usize) -> Option<FinallyRollupProfileGuard> {
+    pub(crate) fn start_profile(&self, x: usize) -> Option<FinallyRollupProfileGuard<'_>> {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[x].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
             if st.hot_profile_concurrent.fetch_add(1, Ordering::SeqCst).is_zero() {

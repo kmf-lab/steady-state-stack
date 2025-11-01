@@ -424,7 +424,7 @@ mod loop_driver_tests {
         let signal_clone = signal.clone();
         async move {
             while !signal_clone.load(Ordering::SeqCst) {
-                sleep(Duration::from_millis(10)).await;
+                sleep(Duration::from_millis(100)).await;
             }
             value
         }
@@ -498,7 +498,7 @@ mod loop_driver_tests {
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_two_first_completes() {
         let signal = Arc::new(AtomicBool::new(false));
-        let fut1 = delayed_bool(true, 10);
+        let fut1 = delayed_bool(true, 100);
         let fut2 = controlled_bool(true, signal.clone());
         let result = await_for_all_or_proceed_upon!(fut1, fut2);
         assert!(result);
@@ -508,7 +508,7 @@ mod loop_driver_tests {
     async fn await_for_all_or_proceed_upon_two_others_complete() {
         let signal = Arc::new(AtomicBool::new(true));
         let fut1 = controlled_bool(true, signal.clone());
-        let fut2 = delayed_bool(false, 10);
+        let fut2 = delayed_bool(false, 100);
         let result = await_for_all_or_proceed_upon!(fut1, fut2);
         assert!(result);
         signal.store(true, Ordering::SeqCst); // Ensure cleanup
@@ -518,7 +518,7 @@ mod loop_driver_tests {
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_three_first_completes() {
         let signal = Arc::new(AtomicBool::new(false));
-        let fut1 = delayed_bool(false, 10);
+        let fut1 = delayed_bool(false, 100);
         let fut2 = controlled_bool(true, signal.clone());
         let fut3 = controlled_bool(true, signal.clone());
         let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3);
@@ -529,8 +529,8 @@ mod loop_driver_tests {
     async fn await_for_all_or_proceed_upon_three_others_complete() {
         let signal = Arc::new(AtomicBool::new(true));
         let fut1 = controlled_bool(true, signal.clone());
-        let fut2 = delayed_bool(true, 10);
-        let fut3 = delayed_bool(false, 10);
+        let fut2 = delayed_bool(true, 100);
+        let fut3 = delayed_bool(false, 100);
         let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3);
         assert!(result);
         signal.store(true, Ordering::SeqCst);
@@ -540,7 +540,7 @@ mod loop_driver_tests {
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_four_first_completes() {
         let signal = Arc::new(AtomicBool::new(false));
-        let fut1 = delayed_bool(true, 10);
+        let fut1 = delayed_bool(true, 100);
         let fut2 = controlled_bool(true, signal.clone());
         let fut3 = controlled_bool(true, signal.clone());
         let fut4 = controlled_bool(true, signal.clone());
@@ -552,9 +552,9 @@ mod loop_driver_tests {
     async fn await_for_all_or_proceed_upon_four_others_complete() {
         let signal = Arc::new(AtomicBool::new(true));
         let fut1 = controlled_bool(true, signal.clone());
-        let fut2 = delayed_bool(true, 10);
-        let fut3 = delayed_bool(true, 10);
-        let fut4 = delayed_bool(false, 10);
+        let fut2 = delayed_bool(true, 100);
+        let fut3 = delayed_bool(true, 100);
+        let fut4 = delayed_bool(false, 100);
         let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3, fut4);
         assert!(result);
         signal.store(true, Ordering::SeqCst);
@@ -564,7 +564,7 @@ mod loop_driver_tests {
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_five_first_completes() {
         let signal = Arc::new(AtomicBool::new(false));
-        let fut1 = delayed_bool(false, 10);
+        let fut1 = delayed_bool(false, 100);
         let fut2 = controlled_bool(true, signal.clone());
         let fut3 = controlled_bool(true, signal.clone());
         let fut4 = controlled_bool(true, signal.clone());
@@ -577,10 +577,10 @@ mod loop_driver_tests {
     async fn await_for_all_or_proceed_upon_five_others_complete() {
         let signal = Arc::new(AtomicBool::new(true));
         let fut1 = controlled_bool(true, signal.clone());
-        let fut2 = delayed_bool(true, 10);
-        let fut3 = delayed_bool(true, 10);
-        let fut4 = delayed_bool(true, 10);
-        let fut5 = delayed_bool(false, 10);
+        let fut2 = delayed_bool(true, 100);
+        let fut3 = delayed_bool(true, 100);
+        let fut4 = delayed_bool(true, 100);
+        let fut5 = delayed_bool(false, 100);
         let result = await_for_all_or_proceed_upon!(fut1, fut2, fut3, fut4, fut5);
         assert!(result);
         signal.store(true, Ordering::SeqCst);
@@ -595,46 +595,46 @@ mod loop_driver_tests {
 
     #[async_std::test]
     async fn await_for_any_two_first_completes() {
-        let fut1 = delayed_bool(true, 10);
-        let fut2 = delayed_bool(false, 20);
+        let fut1 = delayed_bool(true, 100);
+        let fut2 = delayed_bool(false, 200);
         let result = await_for_any!(fut1, fut2);
         assert!(result);
     }
 
     #[async_std::test]
     async fn await_for_any_two_second_completes() {
-        let fut1 = delayed_bool(true, 20);
-        let fut2 = delayed_bool(false, 10);
+        let fut1 = delayed_bool(true, 200);
+        let fut2 = delayed_bool(false, 100);
         let result = await_for_any!(fut1, fut2);
         assert!(!result);
     }
 
     #[async_std::test]
     async fn await_for_any_three_third_completes() {
-        let fut1 = delayed_bool(true, 20);
-        let fut2 = delayed_bool(true, 20);
-        let fut3 = delayed_bool(false, 10);
+        let fut1 = delayed_bool(true, 200);
+        let fut2 = delayed_bool(true, 200);
+        let fut3 = delayed_bool(false, 100);
         let result = await_for_any!(fut1, fut2, fut3);
         assert!(!result);
     }
 
     #[async_std::test]
     async fn await_for_any_four_fourth_completes() {
-        let fut1 = delayed_bool(true, 20);
-        let fut2 = delayed_bool(true, 20);
-        let fut3 = delayed_bool(true, 20);
-        let fut4 = delayed_bool(false, 10);
+        let fut1 = delayed_bool(true, 200);
+        let fut2 = delayed_bool(true, 200);
+        let fut3 = delayed_bool(true, 200);
+        let fut4 = delayed_bool(false, 100);
         let result = await_for_any!(fut1, fut2, fut3, fut4);
         assert!(!result);
     }
 
     #[async_std::test]
     async fn await_for_any_five_fifth_completes() {
-        let fut1 = delayed_bool(true, 20);
-        let fut2 = delayed_bool(true, 20);
-        let fut3 = delayed_bool(true, 20);
-        let fut4 = delayed_bool(true, 20);
-        let fut5 = delayed_bool(false, 10);
+        let fut1 = delayed_bool(true, 200);
+        let fut2 = delayed_bool(true, 200);
+        let fut3 = delayed_bool(true, 200);
+        let fut4 = delayed_bool(true, 200);
+        let fut5 = delayed_bool(false, 100);
         let result = await_for_any!(fut1, fut2, fut3, fut4, fut5);
         assert!(!result);
     }
@@ -648,38 +648,38 @@ mod loop_driver_tests {
 
     #[async_std::test]
     async fn wait_for_any_two_first_completes() {
-        let fut1 = delayed_bool(true, 10);
-        let fut2 = delayed_bool(false, 20);
+        let fut1 = delayed_bool(true, 100);
+        let fut2 = delayed_bool(false, 200);
         let fut = wait_for_any!(fut1, fut2);
         assert!(fut.await);
     }
 
     #[async_std::test]
     async fn wait_for_any_three_second_completes() {
-        let fut1 = delayed_bool(true, 20);
-        let fut2 = delayed_bool(false, 10);
-        let fut3 = delayed_bool(true, 20);
+        let fut1 = delayed_bool(true, 200);
+        let fut2 = delayed_bool(false, 100);
+        let fut3 = delayed_bool(true, 200);
         let fut = wait_for_any!(fut1, fut2, fut3);
         assert!(!fut.await);
     }
 
     #[async_std::test]
     async fn wait_for_any_four_third_completes() {
-        let fut1 = delayed_bool(true, 20);
-        let fut2 = delayed_bool(true, 20);
-        let fut3 = delayed_bool(false, 10);
-        let fut4 = delayed_bool(true, 20);
+        let fut1 = delayed_bool(true, 200);
+        let fut2 = delayed_bool(true, 200);
+        let fut3 = delayed_bool(false, 100);
+        let fut4 = delayed_bool(true, 200);
         let fut = wait_for_any!(fut1, fut2, fut3, fut4);
         assert!(!fut.await);
     }
 
     #[async_std::test]
     async fn wait_for_any_five_fourth_completes() {
-        let fut1 = delayed_bool(true, 20);
-        let fut2 = delayed_bool(true, 20);
-        let fut3 = delayed_bool(true, 20);
-        let fut4 = delayed_bool(false, 10);
-        let fut5 = delayed_bool(true, 20);
+        let fut1 = delayed_bool(true, 200);
+        let fut2 = delayed_bool(true, 200);
+        let fut3 = delayed_bool(true, 200);
+        let fut4 = delayed_bool(false, 100);
+        let fut5 = delayed_bool(true, 200);
         let fut = wait_for_any!(fut1, fut2, fut3, fut4, fut5);
         assert!(!fut.await);
     }
@@ -687,46 +687,46 @@ mod loop_driver_tests {
     // Tests for steady_select_* functions
     #[async_std::test]
     async fn steady_select_two_first_completes() {
-        let fut1 = steady_fuse_future(delayed_bool(true, 10));
-        let fut2 = steady_fuse_future(delayed_bool(false, 20));
+        let fut1 = steady_fuse_future(delayed_bool(true, 100));
+        let fut2 = steady_fuse_future(delayed_bool(false, 200));
         let result = steady_select_two(fut1, fut2).await;
         assert!(result);
     }
 
     #[async_std::test]
     async fn steady_select_two_second_completes() {
-        let fut1 = steady_fuse_future(delayed_bool(true, 20));
-        let fut2 = steady_fuse_future(delayed_bool(false, 10));
+        let fut1 = steady_fuse_future(delayed_bool(true, 200));
+        let fut2 = steady_fuse_future(delayed_bool(false, 100));
         let result = steady_select_two(fut1, fut2).await;
         assert!(!result);
     }
 
     #[async_std::test]
     async fn steady_select_three_third_completes() {
-        let fut1 = steady_fuse_future(delayed_bool(true, 20));
-        let fut2 = steady_fuse_future(delayed_bool(true, 20));
-        let fut3 = steady_fuse_future(delayed_bool(false, 10));
+        let fut1 = steady_fuse_future(delayed_bool(true, 200));
+        let fut2 = steady_fuse_future(delayed_bool(true, 200));
+        let fut3 = steady_fuse_future(delayed_bool(false, 100));
         let result = steady_select_three(fut1, fut2, fut3).await;
         assert!(!result);
     }
 
     #[async_std::test]
     async fn steady_select_four_fourth_completes() {
-        let fut1 = steady_fuse_future(delayed_bool(true, 20));
-        let fut2 = steady_fuse_future(delayed_bool(true, 20));
-        let fut3 = steady_fuse_future(delayed_bool(true, 20));
-        let fut4 = steady_fuse_future(delayed_bool(false, 10));
+        let fut1 = steady_fuse_future(delayed_bool(true, 200));
+        let fut2 = steady_fuse_future(delayed_bool(true, 200));
+        let fut3 = steady_fuse_future(delayed_bool(true, 200));
+        let fut4 = steady_fuse_future(delayed_bool(false, 100));
         let result = steady_select_four(fut1, fut2, fut3, fut4).await;
         assert!(!result);
     }
 
     #[async_std::test]
     async fn steady_select_five_fifth_completes() {
-        let fut1 = steady_fuse_future(delayed_bool(true, 20));
-        let fut2 = steady_fuse_future(delayed_bool(true, 20));
-        let fut3 = steady_fuse_future(delayed_bool(true, 20));
-        let fut4 = steady_fuse_future(delayed_bool(true, 20));
-        let fut5 = steady_fuse_future(delayed_bool(false, 10));
+        let fut1 = steady_fuse_future(delayed_bool(true, 200));
+        let fut2 = steady_fuse_future(delayed_bool(true, 200));
+        let fut3 = steady_fuse_future(delayed_bool(true, 200));
+        let fut4 = steady_fuse_future(delayed_bool(true, 200));
+        let fut5 = steady_fuse_future(delayed_bool(false, 100));
         let result = steady_select_five(fut1, fut2, fut3, fut4, fut5).await;
         assert!(!result);
     }
