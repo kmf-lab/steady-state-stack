@@ -959,7 +959,7 @@ impl ActorBuilder {
         let is_for_test = self.is_for_test;
         let actor_name = self.actor_name.clone();
 
-        let context_archetype = self.single_actor_exec_archetype(build_actor_exec);
+        let context_archetype = self.clone().single_actor_exec_archetype(build_actor_exec);
 
         core_exec::block_on(async move {
             let _guard = thread_lock.lock().await;
@@ -970,7 +970,7 @@ impl ActorBuilder {
 
             let actor_name_clone = actor_name.name.clone();
             let handle = std::thread::Builder::new()
-                .name(actor_name_clone.clone())
+                .name(actor_name_clone.to_string())
                 .spawn(move || {
                     let default = if let Some(exp) = explicit_core {
                         exp
