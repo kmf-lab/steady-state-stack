@@ -957,80 +957,80 @@ impl ActorBuilder {
         let thread_lock = self.thread_lock.clone();
         let rate_ms = self.frame_rate_ms;
         let is_for_test = self.is_for_test;
+        let actor_name = self.actor_name.clone();
+
         let context_archetype = self.single_actor_exec_archetype(build_actor_exec);
 
         core_exec::block_on(async move {
             let _guard = thread_lock.lock().await;
-            //two so we can support blocking calls.
-            match core_exec::spawn_more_threads(2).await {
-                Ok(c) => {
-                    if c >= 12 {
-                        info!("Threads: {}", c);
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to spawn one more thread: {:?}", e);
-                }
-            }
+
             let fun: NonSendWrapper<DynCall> = build_actor_registration(&context_archetype);
             let mut master_ctx: SteadyActorShadow =
                 build_actor_context(&context_archetype, rate_ms, default_core, is_for_test);
 
-            core_exec::spawn_detached(async move {
-                let default = if let Some(exp) = explicit_core {
-                    exp
-                } else {
-                    default_core
-                };
-                let _core = if let Some(mut balancer) = core_balancer {
-                    balancer.allocate_core(&excluded_cores)
-                } else if !excluded_cores.is_empty() {
-                    if !excluded_cores.contains(&default) {
-                        default
+            let actor_name_clone = actor_name.name.clone();
+            let handle = std::thread::Builder::new()
+                .name(actor_name_clone.clone())
+                .spawn(move || {
+                    let default = if let Some(exp) = explicit_core {
+                        exp
                     } else {
-                        (0..excluded_cores.len())
-                            .find(|&core| !excluded_cores.contains(&core))
-                            .unwrap_or(default)
-                    }
-                } else {
-                    default
-                };
-
-                #[cfg(feature = "core_affinity")]
-                {
-                    if let Err(e) = pin_thread_to_core(_core) {
-                        eprintln!("Failed to pin thread to core {}: {:?}", _core, e);
-                    }
-                }
-
-                loop {
-                    match catch_unwind(AssertUnwindSafe(|| match fun.clone().try_lock() {
-                        Some(actor_run) => launch_actor(actor_run(master_ctx.clone())),
-                        None => panic!("internal error, future (actor) already locked"),
-                    })) {
-                        Ok(_) => {
-                            exit_actor_registration(&context_archetype);
-                            break;
+                        default_core
+                    };
+                    let _core = if let Some(mut balancer) = core_balancer {
+                        balancer.allocate_core(&excluded_cores)
+                    } else if !excluded_cores.is_empty() {
+                        if !excluded_cores.contains(&default) {
+                            default
+                        } else {
+                            (0..excluded_cores.len())
+                                .find(|&core| !excluded_cores.contains(&core))
+                                .unwrap_or(default)
                         }
-                        Err(e) => {
+                    } else {
+                        default
+                    };
 
-                            if let Some(specific_error) = e.downcast_ref::<std::io::Error>() {
-                                warn!(
-                                    "IO Error encountered: {} in actor: {:?}",
-                                    specific_error, context_archetype.ident
-                                );
-                            } else if let Some(specific_error) = e.downcast_ref::<String>() {
-                                warn!(
-                                    "String Error encountered: {} in actor: {:?}",
-                                    specific_error, context_archetype.ident
-                                );
+                    #[cfg(feature = "core_affinity")]
+                    {
+                        if let Err(e) = pin_thread_to_core(_core) {
+                            eprintln!("Failed to pin thread to core {}: {:?}", _core, e);
+                        }
+                    }
+                    
+                    info!("Spawning SoloAct {:?} on new OS thread", &actor_name_clone);
+
+                    loop {
+                        match catch_unwind(AssertUnwindSafe(|| match fun.clone().try_lock() {
+                            Some(actor_run) => launch_actor(actor_run(master_ctx.clone())),
+                            None => panic!("internal error, future (actor) already locked"),
+                        })) {
+                            Ok(_) => {
+                                exit_actor_registration(&context_archetype);
+                                break;
                             }
-                            master_ctx.regeneration +=1;
-                            warn!("Restarting: {:?}", context_archetype.ident);
+                            Err(e) => {
+                                if let Some(specific_error) = e.downcast_ref::<std::io::Error>() {
+                                    warn!(
+                                        "IO Error encountered: {} in actor: {:?}",
+                                        specific_error, context_archetype.ident
+                                    );
+                                } else if let Some(specific_error) = e.downcast_ref::<String>() {
+                                    warn!(
+                                        "String Error encountered: {} in actor: {:?}",
+                                        specific_error, context_archetype.ident
+                                    );
+                                }
+                                master_ctx.regeneration += 1;
+                                warn!("Restarting: {:?}", context_archetype.ident);
+                            }
                         }
                     }
-                }
-            });
+                });
+
+            if let Err(e) = handle {
+                error!("Failed to spawn OS thread for actor: {:?}, error: {:?}", &self.actor_name.name, e);
+            }
         });
     }
 

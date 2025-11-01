@@ -42,3 +42,4 @@ tarpaulin-report.html
 /htmlReport/
 /coverage_html/
 .aider*
+.aider*
