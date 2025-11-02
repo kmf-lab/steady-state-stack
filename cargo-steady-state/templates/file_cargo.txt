@@ -5,9 +5,9 @@ edition = "2024"
 [workspace]
 [dependencies]
 ## only for internal dev
-#steady_state     = { path = "../../../core", features = ["exec_async_std", "prometheus_metrics"], default-features = false }
+steady_state     = { path = "../../../core", features = ["exec_async_std", "prometheus_metrics"], default-features = false }
 
-steady_state     = "0.2.4"
+#steady_state     = "0.2.5"
 clap             = { version = "4.5.31", features = ["derive"] }  # Use clap with derive feature
 flexi_logger     = "0.29.6"
 log              = "0.4.22"
