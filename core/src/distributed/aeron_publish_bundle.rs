@@ -317,6 +317,13 @@ pub(crate) mod aeron_publish_bundle_tests {
     // A single stream at 64MB maps 400MB of shared memory. For optimal performance,
     // tune SO_RCVBUF/SO_SNDBUF and check loopback queue length (e.g., `ip link set lo txqueuelen 10000`).
 
+    #[test]
+    fn test_publish_state_init() {
+        let state = AeronPublishSteadyState::default();
+        assert!(state.pub_reg_id.is_empty());
+        assert_eq!(state._items_taken, 0);
+    }
+
     /// Mock sender actor for testing message transmission to Aeron.
     ///
     /// Sends batches of test data to the stream, simulating a producer.
@@ -480,6 +487,7 @@ pub(crate) mod aeron_publish_bundle_tests {
                 ScheduleAs::SoloAct,
             );
 
+        let from_aeron_tx = from_aeron_tx;
         from_aeron_tx.build_aqueduct(
             AqueTech::Aeron(aeron_config.clone(), stream_id),
             &graph.actor_builder().with_name("ReceiverTest").never_simulate(true),

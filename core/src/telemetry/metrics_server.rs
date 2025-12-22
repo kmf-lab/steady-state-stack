@@ -847,3 +847,68 @@ pub(crate) async fn async_write_all(data: BytesMut, flush: bool, mut file: std::
         Ok(())
     }).await
 }
+
+#[cfg(test)]
+mod handle_request_logic_tests {
+    use super::*;
+    use futures::io::{AsyncRead, AsyncWrite};
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use std::io;
+
+    struct MockStream {
+        read_data: Vec<u8>,
+        read_pos: usize,
+        write_data: Vec<u8>,
+    }
+
+    impl MockStream {
+        fn new(data: &str) -> Self {
+            MockStream {
+                read_data: data.as_bytes().to_vec(),
+                read_pos: 0,
+                write_data: Vec::new(),
+            }
+        }
+    }
+
+    impl AsyncRead for MockStream {
+        fn poll_read(mut self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+            let remaining = self.read_data.len() - self.read_pos;
+            let n = remaining.min(buf.len());
+            buf[..n].copy_from_slice(&self.read_data[self.read_pos..self.read_pos + n]);
+            self.read_pos += n;
+            Poll::Ready(Ok(n))
+        }
+    }
+
+    impl AsyncWrite for MockStream {
+        fn poll_write(mut self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+            self.write_data.extend_from_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> { Poll::Ready(Ok(())) }
+        fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> { Poll::Ready(Ok(())) }
+    }
+
+    #[test]
+    fn test_handle_request_index() {
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![] }));
+        let stream = MockStream::new("GET / HTTP/1.1\r\n\r\n");
+        futures::executor::block_on(handle_request(stream, state)).unwrap();
+    }
+
+    #[test]
+    fn test_handle_request_options() {
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![] }));
+        let stream = MockStream::new("OPTIONS / HTTP/1.1\r\n\r\n");
+        futures::executor::block_on(handle_request(stream, state)).unwrap();
+    }
+
+    #[test]
+    fn test_handle_request_404() {
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![] }));
+        let stream = MockStream::new("GET /unknown HTTP/1.1\r\n\r\n");
+        futures::executor::block_on(handle_request(stream, state)).unwrap();
+    }
+}

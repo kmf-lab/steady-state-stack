@@ -403,3 +403,14 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
     info!("Subscribe shutting down.");
     Ok(())
 }
+
+#[cfg(test)]
+mod aeron_subscribe_bundle_tests {
+    use super::*;
+
+    #[test]
+    fn test_subscribe_state_init() {
+        let state = AeronSubscribeSteadyState::default();
+        assert!(state.sub_reg_id.is_empty());
+    }
+}

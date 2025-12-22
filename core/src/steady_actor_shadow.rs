@@ -747,6 +747,93 @@ mod steady_actor_shadow_tests {
     }
 
     #[test]
+    fn test_liveliness_checks() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        
+        assert!(shadow.is_liveliness_building());
+        assert!(!shadow.is_liveliness_running());
+        assert!(!shadow.is_liveliness_stop_requested());
+        
+        let mut graph = graph;
+        graph.start();
+        assert!(shadow.is_liveliness_running());
+        
+        graph.request_shutdown();
+        assert!(shadow.is_liveliness_stop_requested());
+    }
+
+    #[test]
+    fn test_wait_periodic_overrun() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        
+        // Set last wait to far in the future to trigger overrun logic
+        shadow.last_periodic_wait.store(u64::MAX / 2, Ordering::SeqCst);
+        
+        // This should hit the overrun warning branch
+        core_exec::block_on(shadow.wait_periodic(Duration::from_millis(10)));
+    }
+
+    #[test]
+    fn test_wait_timeout() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        
+        let start = Instant::now();
+        let result = core_exec::block_on(shadow.wait_timeout(Duration::from_millis(50)));
+        assert!(result);
+        assert!(start.elapsed() >= Duration::from_millis(50));
+    }
+
+    #[test]
+    fn test_peek_take_iter() {
+        let graph = GraphBuilder::for_testing().build(());
+        let (_tx, rx) = graph.channel_builder().with_capacity(10).build_channel();
+        let mut shadow = graph.new_testing_test_monitor("test");
+        
+        _tx.testing_send_all(vec![1, 2, 3], true);
+        
+        let rx_cloned = rx.clone();
+        let mut rx_guard = core_exec::block_on(rx_cloned.lock());
+        let peeked: Vec<_> = shadow.try_peek_iter(&mut rx_guard).cloned().collect();
+        assert_eq!(peeked, vec![1, 2, 3]);
+        
+        let taken: Vec<_> = shadow.take_into_iter(&mut rx_guard).collect();
+        assert_eq!(taken, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_shadow_units() {
+        let graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(10).build_channel();
+        let shadow = graph.new_testing_test_monitor("test");
+        
+        let tx_cloned = tx.clone();
+        let mut txg = core_exec::block_on(tx_cloned.lock());
+        let rx_cloned = rx.clone();
+        let mut rxg = core_exec::block_on(rx_cloned.lock());
+        
+        assert_eq!(shadow.vacant_units(&mut *txg), 10);
+        assert_eq!(shadow.avail_units(&mut *rxg), 0);
+        
+        tx.testing_send_all(vec![1, 2], false);
+        assert_eq!(shadow.avail_units(&mut *rxg), 2);
+        assert_eq!(shadow.vacant_units(&mut *txg), 8);
+    }
+
+    #[test]
+    fn test_shadow_liveliness_convenience() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        
+        assert!(shadow.is_liveliness_building());
+        assert!(!shadow.is_liveliness_running());
+        assert!(!shadow.is_liveliness_stop_requested());
+        assert!(shadow.is_liveliness_shutdown_timeout().is_none());
+    }
+
+    #[test]
     fn call_blocking_test() -> Result<(), Box<dyn Error>> {
         // NOTE: this pattern needs to be used for ALL tests where applicable.
 

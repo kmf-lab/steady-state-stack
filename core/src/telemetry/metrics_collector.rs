@@ -28,7 +28,6 @@ use crate::core_tx::TxCore;
 use crate::SendOutcome::{Blocked, Success};
 use crate::steady_rx::*;
 use crate::steady_tx::*;
-use crate::telemetry::metrics_collector;
 
 pub const NAME: &str = "metrics_collector";
 
@@ -381,7 +380,7 @@ fn gather_valid_actor_telemetry_to_scan(
     let dynamic_senders = guard.deref();
     let v: Vec<(usize, Box<SteadyRx<ActorStatus>>, ActorIdentity)> = dynamic_senders
         .iter()
-        .filter(|f| f.ident.label.name != metrics_collector::NAME) // Exclude metrics collector itself.
+        .filter(|f| f.ident.label.name != NAME) // Exclude metrics collector itself.
         .flat_map(|f| {
             let ident = f.ident;
             f.telemetry_take.iter().filter_map(move |g| {
@@ -871,5 +870,20 @@ mod extra_tests {
         assert!(nodes.expect("internal error").is_empty());
         // actor_count updated
         assert_eq!(state.actor_count, 0);
+    }
+
+    #[test]
+    fn test_is_all_ready_for_shutdown_logic() {
+        let details = vec![];
+        assert!(is_all_ready_for_shutdown(Ok(RwLockReadGuard::from(RwLock::new(details).read()))));
+    }
+
+    #[test]
+    fn test_gather_node_details_structural() {
+        let mut state = RawDiagramState::default();
+        let details = vec![];
+        let nodes = gather_node_details(&mut state, &details, false);
+        assert!(nodes.is_some());
+        assert_eq!(nodes.unwrap().len(), 0);
     }
 }

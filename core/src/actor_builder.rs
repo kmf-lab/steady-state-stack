@@ -98,6 +98,8 @@ pub struct ActorBuilder {
     pub shutdown_barrier: Option<Arc<Barrier>>,
     /// Flag indicating whether the actor is for testing purposes.
     is_for_test: bool,
+    /// Optional stack size for the actor.
+    stack_size: Option<usize>,
 }
 
 /// A helper struct for managing CPU core allocation to balance actor distribution across available cores.
@@ -214,6 +216,8 @@ struct FutureBuilderType {
     frame_rate_ms: u64,
     /// Flag indicating whether the actor is for testing purposes.
     is_for_test: bool,
+    /// Optional stack size for the actor.
+    stack_size: Option<usize>,
 }
 
 impl FutureBuilderType {
@@ -224,15 +228,17 @@ impl FutureBuilderType {
     /// * `fun` - The archetype containing the actor's execution logic and context.
     /// * `frame_rate_ms` - The frame rate in milliseconds for telemetry data collection.
     /// * `is_for_test` - Flag indicating whether the actor is for testing purposes.
+    /// * `stack_size` - Optional stack size for the actor.
     ///
     /// # Returns
     ///
     /// A new `FutureBuilderType` instance.
-    fn new(fun: SteadyContextArchetype<DynCall>, frame_rate_ms: u64, is_for_test: bool) -> Self {
+    fn new(fun: SteadyContextArchetype<DynCall>, frame_rate_ms: u64, is_for_test: bool, stack_size: Option<usize>) -> Self {
         FutureBuilderType {
             fun,
             frame_rate_ms,
             is_for_test,
+            stack_size,
         }
     }
 
@@ -320,16 +326,19 @@ impl Troupe {
     /// * `context_archetype` - The archetype containing the actor's execution logic and context.
     /// * `frame_rate_ms` - The frame rate in milliseconds for telemetry data collection.
     /// * `is_for_test` - Flag indicating whether the actor is for testing purposes.
+    /// * `stack_size` - Optional stack size for the actor.
     fn add_actor(
         &mut self,
         context_archetype: SteadyContextArchetype<DynCall>,
         frame_rate_ms: u64,
         is_for_test: bool,
+        stack_size: Option<usize>,
     ) {
         self.future_builder.push_back(FutureBuilderType::new(
             context_archetype.clone(),
             frame_rate_ms,
             is_for_test,
+            stack_size,
         ));
     }
 
@@ -383,6 +392,7 @@ impl Troupe {
         let (local_send, local_take) = oneshot::channel();
         let count_task = count.clone();
         let team_id = self.team_id;
+        let max_stack_size = self.future_builder.iter().filter_map(|f| f.stack_size).max();
 
         let super_task = async move {
             #[cfg(feature = "core_affinity")]
@@ -463,7 +473,17 @@ impl Troupe {
                     error!("Failed to spawn one more thread: {:?}", e);
                 }
             }
-            core_exec::spawn_detached(super_task);
+            
+            let mut thread_builder = std::thread::Builder::new().name(format!("Troupe-{}", team_id));
+            if let Some(size) = max_stack_size {
+                thread_builder = thread_builder.stack_size(size);
+            }
+            let handle = thread_builder.spawn(move || {
+                core_exec::block_on(super_task);
+            });
+            if let Err(e) = handle {
+                error!("Failed to spawn OS thread for troupe: {}, error: {:?}", team_id, e);
+            }
         });
         let _ = core_exec::block_on(local_take);
         count.load(Ordering::SeqCst)
@@ -478,7 +498,7 @@ impl Troupe {
     ///
     /// # Returns
     ///
-    /// A pinned future representing the actor's execution.
+    /// a pinned future representing the actor's execution.
     fn build_async_fun(
         fun: &ActorRuntime,
         mut ctx: SteadyActorShadow,
@@ -588,7 +608,7 @@ impl ScheduleAs<'_> {
     /// # Returns
     ///
     /// The appropriate `ScheduleAs` variant.
-    pub fn dynamic_schedule(some_troupe: &mut Option<TroupeGuard>) -> ScheduleAs {
+    pub fn dynamic_schedule(some_troupe: &mut Option<TroupeGuard>) -> ScheduleAs<'_> {
         if let Some(t) = some_troupe {
             ScheduleAs::MemberOf(t)
         } else {
@@ -649,6 +669,7 @@ impl ActorBuilder {
             aeron_media_driver: graph.aeron.clone(),
             shutdown_barrier: graph.shutdown_barrier.clone(),
             is_for_test: graph.is_for_testing,
+            stack_size: graph.default_stack_size,
         }
     }
 
@@ -935,6 +956,21 @@ impl ActorBuilder {
         result
     }
 
+    /// Sets the stack size for the actor.
+    ///
+    /// # Arguments
+    ///
+    /// * `mb` - The desired stack size in megabytes.
+    ///
+    /// # Returns
+    ///
+    /// A new `ActorBuilder` instance with the updated stack size.
+    pub fn with_stack_size(&self, mb: usize) -> Self {
+        let mut result = self.clone();
+        result.stack_size = Some(mb * 1024 * 1024);
+        result
+    }
+
     /// Completes the actor configuration and spawns it with the provided execution logic.
     ///
     /// # Type Parameters
@@ -958,6 +994,7 @@ impl ActorBuilder {
         let rate_ms = self.frame_rate_ms;
         let is_for_test = self.is_for_test;
         let actor_name = self.actor_name.clone();
+        let stack_size = self.stack_size;
 
         let context_archetype = self.clone().single_actor_exec_archetype(build_actor_exec);
 
@@ -968,10 +1005,14 @@ impl ActorBuilder {
             let mut master_ctx: SteadyActorShadow =
                 build_actor_context(&context_archetype, rate_ms, default_core, is_for_test);
 
-            let actor_name_clone = actor_name.name.clone();
-            let handle = std::thread::Builder::new()
-                .name(actor_name_clone.to_string())
-                .spawn(move || {
+            let actor_name_clone = actor_name.name;
+            
+            let mut thread_builder = std::thread::Builder::new().name(actor_name_clone.to_string());
+            if let Some(size) = stack_size {
+                thread_builder = thread_builder.stack_size(size);
+            }
+            
+            let handle = thread_builder.spawn(move || {
                     let default = if let Some(exp) = explicit_core {
                         exp
                     } else {
@@ -1052,8 +1093,9 @@ impl ActorBuilder {
     {
         let rate = self.frame_rate_ms;
         let is_for_test = self.is_for_test;
+        let stack_size = self.stack_size;
         let temp: SteadyContextArchetype<DynCall> = self.single_actor_exec_archetype(build_actor_exec);
-        target.add_actor(temp, rate, is_for_test);
+        target.add_actor(temp, rate, is_for_test, stack_size);
     }
 
     /// Builds and schedules an actor based on the desired scheduling type.
@@ -1343,6 +1385,86 @@ fn build_actor_context<I: ?Sized>(
 mod test_actor_builder {
     use crate::{GraphBuilder, GraphLivelinessState, SteadyActor};
     use super::*;
+
+    #[test]
+    fn test_core_balancer() {
+        let mut cb = CoreBalancer { core_usage: vec![0, 0, 0] };
+        assert_eq!(cb.allocate_core(&[]), 0);
+        assert_eq!(cb.allocate_core(&[]), 1);
+        assert_eq!(cb.allocate_core(&[0]), 2);
+        assert_eq!(cb.allocate_core(&[]), 0);
+        assert_eq!(cb.core_usage, vec![2, 1, 1]);
+    }
+
+    #[test]
+    fn test_actor_builder_core_configs() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let builder = ActorBuilder::new(&mut graph);
+        
+        let b2 = builder.with_explicit_core(5);
+        assert_eq!(b2.explicit_core, Some(4));
+
+        let b3 = builder.with_core_exclusion(vec![0, 1]);
+        assert_eq!(b3.excluded_cores, vec![0, 1]);
+
+        let cb = CoreBalancer { core_usage: vec![0] };
+        let b4 = builder.with_core_balancing(cb);
+        assert!(b4.core_balancer.is_some());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_explicit_core_zero_panic() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let builder = ActorBuilder::new(&mut graph);
+        builder.with_explicit_core(0);
+    }
+
+    #[test]
+    fn test_troupe_ops() {
+        let graph = GraphBuilder::for_testing().build(());
+        let mut troupe = Troupe::new(&graph);
+        let mut other = Troupe::new(&graph);
+        
+        // Mock an archetype
+        let (_tx, rx) = oneshot::channel();
+        let arch = SteadyContextArchetype {
+            build_actor_exec: NonSendWrapper::new(ActorBuilder::to_dyn_call(|_| async { Ok(()) })),
+            runtime_state: graph.runtime_state.clone(),
+            channel_count: graph.channel_count.clone(),
+            ident: ActorIdentity::default(),
+            args: graph.args.clone(),
+            all_telemetry_rx: graph.all_telemetry_rx.clone(),
+            actor_metadata: Arc::new(ActorMetaData::default()),
+            oneshot_shutdown_vec: graph.oneshot_shutdown_vec.clone(),
+            oneshot_shutdown: Arc::new(Mutex::new(rx)),
+            node_tx_rx: None,
+            show_thread_info: false,
+            aeron_media_driver: OnceLock::new(),
+            never_simulate: false,
+            shutdown_barrier: None,
+        };
+
+        troupe.add_actor(arch.clone(), 40, true, None);
+        assert_eq!(troupe.future_builder.len(), 1);
+        
+        assert!(troupe.transfer_front_to(&mut other));
+        assert_eq!(troupe.future_builder.len(), 0);
+        assert_eq!(other.future_builder.len(), 1);
+
+        assert!(other.transfer_back_to(&mut troupe));
+        assert_eq!(troupe.future_builder.len(), 1);
+    }
+
+    #[test]
+    fn test_schedule_as() {
+        let mut troupe_guard = None;
+        assert!(matches!(ScheduleAs::dynamic_schedule(&mut troupe_guard), ScheduleAs::SoloAct));
+        
+        let graph = GraphBuilder::for_testing().build(());
+        let mut troupe_guard = Some(graph.actor_troupe());
+        assert!(matches!(ScheduleAs::dynamic_schedule(&mut troupe_guard), ScheduleAs::MemberOf(_)));
+    }
 
     #[test]
     fn test_actor_builder_creation_spawn() {

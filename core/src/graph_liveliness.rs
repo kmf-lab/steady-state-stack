@@ -521,6 +521,10 @@ pub struct GraphBuilder {
     telemtry_production_rate_ms: u64,
     /// An optional barrier for synchronizing actor shutdown.
     shutdown_barrier: Option<Arc<Barrier>>,
+    /// Default stack size for all actors in the graph.
+    default_stack_size: Option<usize>,
+    /// Flag to block fail-fast behavior during tests.
+    block_fail_fast: bool,
 }
 
 impl Default for GraphBuilder {
@@ -553,6 +557,8 @@ impl GraphBuilder {
             iouring_queue_length: 1 << 5,
             telemtry_production_rate_ms: 40,
             shutdown_barrier: None,
+            default_stack_size: None,
+            block_fail_fast: false,
         }
     }
 
@@ -574,6 +580,8 @@ impl GraphBuilder {
             iouring_queue_length: 1 << 5,
             telemtry_production_rate_ms: 40,
             shutdown_barrier: None,
+            default_stack_size: None,
+            block_fail_fast: false,
         }
     }
 
@@ -632,6 +640,32 @@ impl GraphBuilder {
         result
     }
 
+    /// Sets the default stack size for all actors in the graph.
+    ///
+    /// # Arguments
+    ///
+    /// * `mb` - The desired stack size in megabytes.
+    ///
+    /// # Returns
+    ///
+    /// A new `GraphBuilder` instance with the updated stack size.
+    pub fn with_stack_size(&self, mb: usize) -> Self {
+        let mut result = self.clone();
+        result.default_stack_size = Some(mb * 1024 * 1024);
+        result
+    }
+
+    /// Disables the fail-fast behavior (process exit on panic) for the graph.
+    ///
+    /// # Returns
+    ///
+    /// A new `GraphBuilder` instance with fail-fast behavior blocked.
+    pub fn with_block_fail_fast(&self) -> Self {
+        let mut result = self.clone();
+        result.block_fail_fast = true;
+        result
+    }
+
     /// Enables or disables telemetry metric features.
     ///
     /// This method toggles telemetry support, enabling the I/O driver if telemetry is activated.
@@ -668,11 +702,13 @@ impl GraphBuilder {
     ///
     /// A fully configured `Graph` instance.
     pub fn build<A: Any + Send + Sync>(self, args: A) -> Graph {
-        let g = Graph::internal_new(args, self);
+        let g = Graph::internal_new(args, self.clone());
         #[cfg(feature = "disable_actor_restart_on_failure")]
         {
-            g.apply_fail_fast();
-            trace!("fail fast enabled for testing !");
+            if !self.block_fail_fast {
+                g.apply_fail_fast();
+                trace!("fail fast enabled for testing !");
+            }
         }
 
         let ctrlc_runtime_state = g.runtime_state.clone();
@@ -729,7 +765,9 @@ pub struct Graph {
     /// A lazily initialized reference to the Aeron media driver.
     pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// An optional barrier for synchronizing actor shutdown.
-    pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
+    pub shutdown_barrier: Option<Arc<Barrier>>,
+    /// Default stack size for all actors in the graph.
+    pub(crate) default_stack_size: Option<usize>,
 }
 
 /// A guard that provides access to the stage manager for testing purposes.
@@ -767,7 +805,7 @@ impl Graph {
     /// # Returns
     ///
     /// A `StageManagerGuard` that holds the lock until dropped.
-    pub fn stage_manager(&self) -> StageManagerGuard {
+    pub fn stage_manager(&self) -> StageManagerGuard<'_> {
         let guard = core_exec::block_on(self.backplane.lock());
         StageManagerGuard { guard }
     }
@@ -1138,6 +1176,7 @@ impl Graph {
             aeron: Default::default(),
             is_for_testing: builder.is_for_testing,
             shutdown_barrier: builder.shutdown_barrier,
+            default_stack_size: builder.default_stack_size,
         };
         if builder.telemetry_metric_features {
             telemetry::setup::build_telemetry_metric_features(&mut result);
