@@ -649,9 +649,9 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A new `GraphBuilder` instance with the updated stack size.
-    pub fn with_stack_size(&self, mb: usize) -> Self {
+    pub fn with_stack_size(&self, bytes_count: usize) -> Self {
         let mut result = self.clone();
-        result.default_stack_size = Some(mb * 1024 * 1024);
+        result.default_stack_size = Some(bytes_count);
         result
     }
 
