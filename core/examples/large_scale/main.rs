@@ -35,10 +35,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let loglevel = opt.loglevel;
     let duration = opt.duration;
 
-    SteadyRunner::build()
+    SteadyRunner::release_build()
         .with_stack_size(16 * 1024 * 1024)
         .with_logging(loglevel)
-        .launch_graph_for_production(opt, move |graph| {
+        .run(opt, move |graph| {
             let mut graph = build_graph::<3,2,2,2>(graph, false, false, 45);
 
             graph.start();

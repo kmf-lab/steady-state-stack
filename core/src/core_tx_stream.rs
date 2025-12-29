@@ -179,7 +179,6 @@ impl TxCore for StreamTx<StreamIngress> {
     fn shared_vacant_units(&self) -> Self::MsgSize {
         (self.control_channel.tx.vacant_len(), self.payload_channel.tx.vacant_len())
     }
-
     fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
         let vacant = self.shared_vacant_units();
         vacant >= size
@@ -823,10 +822,10 @@ mod core_tx_stream_tests {
         channel_builder = channel_builder.with_capacity(100);
         channel_builder = channel_builder.with_type();
         let (tx,rx) = channel_builder.build_stream::<StreamEgress>(bytes_per_item);
-
-
+               
+        
         let actor_builder = graph.actor_builder();
-
+        
         let tx = tx.clone();
         let rx = rx.clone();
         actor_builder
@@ -838,12 +837,10 @@ mod core_tx_stream_tests {
                     let _tx = tx.lock();
                     let _rx = rx.lock();
                     if actor.is_running(|| true) {
-
-                       // let _ = actor.send_async(&mut tx,&[1,2,3,4],SendSaturation::AwaitForRoom).await;
                         
-
+                        
                     }
-
+                    
                     actor.request_shutdown().await;
                     Ok::<(), Box<dyn std::error::Error>>(())
                 })
@@ -946,6 +943,46 @@ mod core_tx_stream_tests {
             let count = tx_guard.shared_send_iter_until_full(payloads.into_iter());
             assert_eq!(count, 2);
             
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
+    fn test_stream_ingress_tx_core_vacant_units() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamIngress>(100);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+
+            // Test shared_vacant_units returns correct tuple
+            let vacant = tx_guard.shared_vacant_units();
+            assert_eq!(vacant.0, 10); // Control capacity
+            assert_eq!(vacant.1, 1000); // Payload capacity (approx, based on ratio)
+
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
+    fn test_stream_egress_tx_core_vacant_units() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamEgress>(100);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+
+            // Test shared_vacant_units returns correct tuple
+            let vacant = tx_guard.shared_vacant_units();
+            assert_eq!(vacant.0, 10); // Control capacity
+            assert_eq!(vacant.1, 1000); // Payload capacity
+
             Ok::<(), Box<dyn std::error::Error>>(())
         })
     }

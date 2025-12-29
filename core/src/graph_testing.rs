@@ -760,9 +760,9 @@ mod graph_testing_tests {
 
     #[test]
     fn test_stack_guarded_graph() -> Result<(), Box<dyn Error>> {
-        SteadyRunner::build()
+        SteadyRunner::test_build()
             .with_stack_size(16 * 1024 * 1024)
-            .launch_graph_for_testing::<(), _>((), |mut graph| {
+            .run((), |mut graph| {
                 // In a real test, you would call your graph builder here
                 graph.start();
 

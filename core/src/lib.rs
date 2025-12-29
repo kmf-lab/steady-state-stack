@@ -325,6 +325,7 @@ pub use std::error::Error;
 use futures_util::FutureExt;
 use futures::select;
 use std::fmt::Debug;
+use std::io;
 use std::sync::Arc;
 use futures::lock::Mutex;
 use std::ops::DerefMut;
@@ -366,6 +367,7 @@ use futures::AsyncWrite;
 pub use futures::future::Future;
 use futures::channel::oneshot;
 use futures_util::lock::MutexGuard;
+use futures_util::task::SpawnExt;
 pub use steady_actor_spotlight::SteadyActorSpotlight;
 
 use crate::yield_now::yield_now;
@@ -775,84 +777,154 @@ where
 
 
 /// Builder for the orchestration environment, ensuring sufficient stack size.
+#[derive(Clone, Debug)]
 pub struct SteadyRunner {
     stack_size: usize,
     name: String,
     loglevel: Option<LogLevel>,
+    default_actor_stack_size: Option<usize>,
+    barrier_size: Option<usize>,
+    telemetry_rate_ms: Option<u64>,
+    for_test: bool,
 }
 
-impl Default for SteadyRunner {
-    fn default() -> Self {
-        Self {
-            stack_size: 16 * 1024 * 1024, // 16 MiB default
-            name: "steady-orchestrator".to_string(),
-            loglevel: None,
-        }
-    }
-}
 
 impl SteadyRunner {
     /// Creates a new SteadyRunner with default settings.
-    pub fn build() -> Self {
-        Self::default()
+    pub fn test_build() -> Self {
+        Self {
+            stack_size: 16 * 1024 * 1024, // 16 MiB default for main
+            name: "steady-orchestrator".to_string(),
+            loglevel: None,
+            default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
+            barrier_size: None,
+            telemetry_rate_ms: None,
+            for_test: true,
+        }
+    }
+    /// Creates a new SteadyRunner with default settings.
+    pub fn release_build() -> Self {
+        Self {
+            stack_size: 16 * 1024 * 1024, // 16 MiB default for main
+            name: "steady-orchestrator".to_string(),
+            loglevel: None,
+            default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
+            barrier_size: None,
+            telemetry_rate_ms: None,
+            for_test: false,
+        }
     }
 
+
     /// Sets the stack size for the orchestration thread.
-    pub fn with_stack_size(mut self, bytes: usize) -> Self {
-        self.stack_size = bytes;
-        self
+    pub fn with_stack_size(&self, bytes: usize) -> Self {
+        let mut result = self.clone();
+        result.stack_size = bytes;
+        result
     }
 
     /// Sets the logging level for the application.
-    pub fn with_logging(mut self, level: LogLevel) -> Self {
-        self.loglevel = Some(level);
-        self
+    pub fn with_logging(&self, level: LogLevel) -> Self {
+        let mut result = self.clone();
+        result.loglevel = Some(level);
+        result
+    }
+
+    /// Sets the default actor stack size for the graph.
+    pub fn with_default_actor_stack_size(&self, size: usize) -> Self {
+        let mut result = self.clone();
+        result.default_actor_stack_size = Some(size);
+        result
+    }
+
+    /// Sets the size of the shutdown barrier for the graph.
+    pub fn with_shutdown_barrier(&self, size: usize) -> Self {
+        let mut result = self.clone();
+        result.barrier_size = Some(size);
+        result
+    }
+
+    /// Sets the telemetry rate for the graph.
+    pub fn with_telemetry_rate_ms(&self, ms: u64) -> Self {
+        let mut result = self.clone();
+        result.telemetry_rate_ms = Some(ms);
+        result
     }
 
     /// Spawns a guarded thread, initializes a production graph, and executes the provided closure.
-    pub fn launch_graph_for_production<A, F>(self, args: A, f: F) -> Result<(), Box<dyn std::error::Error>>
+    /// The result (including errors) from the closure is propagated back to the caller as a boxed,
+    /// thread-safe error. Panics in the thread are unwound (propagated) to the calling thread.
+    pub fn run<A, F>(
+        self,
+        args: A,
+        f: F,
+    ) -> Result<(), Box<dyn std::error::Error>>
     where
-        A: Any + Send + Sync,
-        F: FnOnce(Graph) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
+        A: Any + Send + Sync + 'static,
+        F: FnOnce(Graph) -> Result<(), Box<dyn std::error::Error>> + std::marker::Send + 'static,
     {
-        std::thread::Builder::new()
-            .name(self.name)
-            .stack_size(self.stack_size)
-            .spawn(move || {
-                if let Some(level) = self.loglevel {
-                    let _ = init_logging(level);
+
+        let builder = std::thread::Builder::new()
+                .name(self.name)
+                .stack_size(self.stack_size);
+
+        // Spawn the thread and capture its join handle
+        let mut handle = builder.spawn(move || {
+            // Initialize logging if specified; ignore errors to avoid masking closure failures
+            if let Some(level) = self.loglevel {
+                let _ = init_logging(level);
+            }
+
+            let mut graph = if self.for_test {
+                               GraphBuilder::for_testing()
+                             } else {
+                               GraphBuilder::for_production()
+                            };
+
+
+            if let Some(size) = self.default_actor_stack_size {
+                graph = graph.with_default_actor_stack_size(size);
+            }
+            if let Some(size) = self.barrier_size {
+                graph = graph.with_shutdown_barrier(size);
+            }
+            if let Some(rate) = self.telemetry_rate_ms {
+                graph = graph.with_telemtry_production_rate_ms(rate);
+            }
+
+            let graph = graph.build(args);
+
+            // Execute the user closure and return its result directly
+            // (This propagates the Result from f, allowing errors to cross the thread boundary safely)
+            match f(graph) {
+                Ok(()) => Ok(()),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    Err(Box::new(io::Error::new(io::ErrorKind::Other, err_msg)) as Box<dyn std::error::Error + Send + Sync + 'static>)
                 }
-                let graph = GraphBuilder::for_production().build(args);
-                if let Err(e) = f(graph) {
-                    error!("Production graph exited with error: {:?}", e);
-                }
-            })
-            .expect("Failed to spawn orchestrator")
-            .join()
-            .unwrap_or_else(|e| std::panic::resume_unwind(e));
-        Ok(())
+            }
+        })
+            .expect("Failed to spawn production orchestrator thread");
+
+        // Block and retrieve the thread's result: Inner is the closure's Result, outer is panic info
+        // Unwrap the outer Result; if the thread panicked, resume unwinding to propagate it
+        // If successful, return the inner Result (Ok(()) or Err(Box<dyn Error + Send + Sync + 'static>))
+        match handle.join() {
+            Ok(inner_result) => match inner_result {
+                            Ok(()) => Ok(()),
+                            Err(e) => {
+                                let err_msg = e.to_string();
+                                Err(Box::new(io::Error::new(io::ErrorKind::Other, err_msg)) as Box<dyn std::error::Error + Send + Sync + 'static>)
+                            }
+                        },
+            Err(panic) => {
+                // Thread panicked: Resume unwinding to propagate the panic to the caller
+                std::panic::resume_unwind(panic);
+            }
+        }
     }
 
-    /// Spawns a guarded thread, initializes a test graph, and executes the provided closure.
-    pub fn launch_graph_for_testing<A, F>(self, args: A, f: F) -> Result<(), Box<dyn std::error::Error>>
-    where
-        A: Any + Send + Sync ,
-        F: FnOnce(Graph) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
-    {
-        std::thread::Builder::new()
-            .name("steady-test".to_string())
-            .stack_size(self.stack_size)
-            .spawn(move || {
-                let graph = GraphBuilder::for_testing().build(args);
-                if let Err(e) = f(graph) {
-                    error!("Test graph exited with error: {:?}", e);
-                }
-            })
-            .expect("Failed to spawn test orchestrator")
-            .join()
-            .unwrap_or_else(|e| std::panic::resume_unwind(e));
-        Ok(())
-    }
+
 }
 
 
