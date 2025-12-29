@@ -162,99 +162,73 @@ impl LocalCLIBuilder {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
     use super::*;
-    #[cfg(unix)]
     use std::fs;
-    #[cfg(unix)]
     use std::path::PathBuf;
-    #[cfg(unix)]
     use tempfile::tempdir;
 
     #[test]
-    #[cfg(unix)]
     fn test_new_local_cli_builder_system_wide() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true);
         assert_eq!(cli_builder.path, "/some/path");
         assert!(cli_builder.system_wide);
-        assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
+        if cfg!(unix) {
+            assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
+        } else if cfg!(windows) {
+            assert_eq!(cli_builder.install_dir, PathBuf::from(r"C:\Program Files\SteadyState"));
+        }
     }
 
     #[test]
-    #[cfg(unix)]
     fn test_new_local_cli_builder_user_local() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
         assert_eq!(cli_builder.path, "/some/path");
         assert!(!cli_builder.system_wide);
-        assert_eq!(cli_builder.install_dir, dirs::home_dir().expect("iternal error").join(".local/bin"));
+        let expected_dir = dirs::home_dir().expect("internal error").join(".local").join("bin");
+        if cfg!(unix) {
+             assert_eq!(cli_builder.install_dir, dirs::home_dir().expect("internal error").join(".local/bin"));
+        } else if cfg!(windows) {
+             assert_eq!(cli_builder.install_dir, expected_dir);
+        }
     }
 
-    // #[test] //awkward test messing with real folders.
-    // fn test_with_custom_location_not_in_path() {
-    //     let temp_dir = tempdir().expect("iternal error");
-    //     let custom_path = temp_dir.path().join("custom_bin_not_in_path");
-    //
-    //     let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true)
-    //         .with_custom_location(custom_path.clone());
-    //
-    //     assert_ne!(cli_builder.install_dir, custom_path);
-    //     assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
-    // }
-
     #[test]
-    #[cfg(unix)]
     fn test_build_creates_executable_in_install_dir() {
-        let temp_dir = tempdir().expect("iternal error");
+        let temp_dir = tempdir().expect("internal error");
         let custom_install_dir = temp_dir.path().join("bin");
-        fs::create_dir_all(&custom_install_dir).expect("iternal error");
+        fs::create_dir_all(&custom_install_dir).expect("internal error");
 
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false)
             .with_custom_location(custom_install_dir.clone());
 
-        let exe_path = custom_install_dir.join("test_exe");
-        fs::File::create(&exe_path).expect("iternal error");
+        let current_exe = env::current_exe().expect("internal error");
+        let exe_name = current_exe.file_name().expect("internal error");
 
         let result = cli_builder.build();
         assert!(result.is_ok());
 
-        let installed_exe = custom_install_dir.join("test_exe");
+        let installed_exe = custom_install_dir.join(exe_name);
         assert!(installed_exe.exists());
-
-        let _metadata = fs::metadata(&installed_exe).expect("iternal error");
-
     }
 
-    // #[test]
-    // fn test_build_invalid_path() {
-    //     let cli_builder = LocalCLIBuilder::new("/invalid/path".to_string(), false);
-    //
-    //     let result = cli_builder.build();
-    //     assert!(result.is_err());
-    // }
-
-    // #[test]
-    // fn test_build_install_dir_creation_failure() {
-    //     let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false)
-    //         .with_custom_location(PathBuf::from("/root/protected_dir"));
-    //
-    //     let result = cli_builder.build();
-    //     error!("{:?}", result);
-    //    // assert!(result.is_err());
-    // }
-
-    #[cfg(not(windows))]
     #[test]
     fn test_default_installation_directory_system_wide() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true);
-        assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
+        if cfg!(unix) {
+            assert_eq!(cli_builder.install_dir, PathBuf::from("/usr/local/bin"));
+        } else if cfg!(windows) {
+            assert_eq!(cli_builder.install_dir, PathBuf::from(r"C:\Program Files\SteadyState"));
+        }
     }
 
     #[test]
-    #[cfg(unix)]
     fn test_default_installation_directory_user_local() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
-        let expected_dir = dirs::home_dir().expect("iternal error").join(".local/bin");
+        let expected_dir = if cfg!(unix) {
+            dirs::home_dir().expect("internal error").join(".local/bin")
+        } else {
+            dirs::home_dir().expect("internal error").join(".local").join("bin")
+        };
         assert_eq!(cli_builder.install_dir, expected_dir);
     }
 }
-

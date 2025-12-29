@@ -31,26 +31,25 @@ mod actor {
 // Note that the main function is not async. This keeps it simple.
 // Further note the main function is not a test. It is not run by any test. Keep it small.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // a typical begging by fetching the command line args and starting logging
     let opt = Args::parse();
+    let loglevel = opt.loglevel;
+    let duration = opt.duration;
 
-    if let Err(e) = init_logging(opt.loglevel) {
-        eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
-    }
-    let large_scale = 45; //47-> 1056  40 ->888 // 13->400  // (24* (N+3)) TODO: run profiler and confirm threads needed !!
-    let mut graph = build_graph::<3,2,2,2>(GraphBuilder::for_production()
-        .with_telemtry_production_rate_ms(4000)
-        .build(opt.clone()),false,false,large_scale); // (24* (N+3)) -> 400
-    
-    graph.start();
+    SteadyRunner::build()
+        .with_stack_size(16 * 1024 * 1024)
+        .with_logging(loglevel)
+        .launch_graph_for_production(opt, move |graph| {
+            let mut graph = build_graph::<3,2,2,2>(graph, false, false, 45);
 
-    {   //remove this block to run forever.
-        sleep(Duration::from_secs(opt.duration));
-        graph.request_shutdown();
-    }
+            graph.start();
 
-    graph.block_until_stopped(Duration::from_secs(80))
+            {   // Run for the duration specified in args
+                sleep(Duration::from_secs(duration));
+                graph.request_shutdown();
+            }
 
+            graph.block_until_stopped(Duration::from_secs(80))
+        })
 }
 
 

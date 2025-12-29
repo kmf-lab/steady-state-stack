@@ -40,6 +40,9 @@ compile_error!("Cannot enable both 'proactor_nuclei' and 'proactor_tokio' featur
 #[cfg(all(feature = "exec_async_std", feature = "proactor_tokio"))]
 compile_error!("Cannot enable both 'exec_async_std' and 'proactor_tokio' features at the same time");
 
+#[cfg(all(windows, any(feature = "proactor_nuclei", feature = "proactor_tokio")))]
+compile_error!("The 'proactor_nuclei' and 'proactor_tokio' features are not supported on Windows due to upstream issues in the nuclei crate. Please use 'exec_async_std' instead.");
+
 /// Requires at least one executor feature to be enabled for the framework to function.
 ///
 /// This check ensures that an executor is selected for running actors and futures.
@@ -110,6 +113,7 @@ pub use abstract_executor_nuclei::*;
 #[cfg(feature = "exec_async_std")]
 mod abstract_executor_async_std;
 
+use std::any::Any;
 #[cfg(feature = "exec_async_std")]
 use abstract_executor_async_std::*;
 
@@ -768,6 +772,91 @@ where
     /// Triggers when below a percentile threshold.
     PercentileBelow(Percentile, T),
 }
+
+
+/// Builder for the orchestration environment, ensuring sufficient stack size.
+pub struct SteadyRunner {
+    stack_size: usize,
+    name: String,
+    loglevel: Option<LogLevel>,
+}
+
+impl Default for SteadyRunner {
+    fn default() -> Self {
+        Self {
+            stack_size: 16 * 1024 * 1024, // 16 MiB default
+            name: "steady-orchestrator".to_string(),
+            loglevel: None,
+        }
+    }
+}
+
+impl SteadyRunner {
+    /// Creates a new SteadyRunner with default settings.
+    pub fn build() -> Self {
+        Self::default()
+    }
+
+    /// Sets the stack size for the orchestration thread.
+    pub fn with_stack_size(mut self, bytes: usize) -> Self {
+        self.stack_size = bytes;
+        self
+    }
+
+    /// Sets the logging level for the application.
+    pub fn with_logging(mut self, level: LogLevel) -> Self {
+        self.loglevel = Some(level);
+        self
+    }
+
+    /// Spawns a guarded thread, initializes a production graph, and executes the provided closure.
+    pub fn launch_graph_for_production<A, F>(self, args: A, f: F) -> Result<(), Box<dyn std::error::Error>>
+    where
+        A: Any + Send + Sync,
+        F: FnOnce(Graph) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
+    {
+        std::thread::Builder::new()
+            .name(self.name)
+            .stack_size(self.stack_size)
+            .spawn(move || {
+                if let Some(level) = self.loglevel {
+                    let _ = init_logging(level);
+                }
+                let graph = GraphBuilder::for_production().build(args);
+                if let Err(e) = f(graph) {
+                    error!("Production graph exited with error: {:?}", e);
+                }
+            })
+            .expect("Failed to spawn orchestrator")
+            .join()
+            .unwrap_or_else(|e| std::panic::resume_unwind(e));
+        Ok(())
+    }
+
+    /// Spawns a guarded thread, initializes a test graph, and executes the provided closure.
+    pub fn launch_graph_for_testing<A, F>(self, args: A, f: F) -> Result<(), Box<dyn std::error::Error>>
+    where
+        A: Any + Send + Sync ,
+        F: FnOnce(Graph) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
+    {
+        std::thread::Builder::new()
+            .name("steady-test".to_string())
+            .stack_size(self.stack_size)
+            .spawn(move || {
+                let graph = GraphBuilder::for_testing().build(args);
+                if let Err(e) = f(graph) {
+                    error!("Test graph exited with error: {:?}", e);
+                }
+            })
+            .expect("Failed to spawn test orchestrator")
+            .join()
+            .unwrap_or_else(|e| std::panic::resume_unwind(e));
+        Ok(())
+    }
+}
+
+
+
 #[cfg(test)]
 mod lib_tests {
     use super::*;

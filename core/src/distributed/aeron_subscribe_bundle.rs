@@ -413,4 +413,14 @@ mod aeron_subscribe_bundle_tests {
         let state = AeronSubscribeSteadyState::default();
         assert!(state.sub_reg_id.is_empty());
     }
+
+    #[test]
+    fn test_subscribe_state_resize() {
+        let mut state = AeronSubscribeSteadyState::default();
+        let girth = 5;
+        while state.sub_reg_id.len() < girth {
+            state.sub_reg_id.push(None);
+        }
+        assert_eq!(state.sub_reg_id.len(), 5);
+    }
 }

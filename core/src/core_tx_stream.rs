@@ -810,10 +810,9 @@ impl TxCore for StreamTx<StreamEgress> {
 }
 
 #[cfg(test)]
-
 mod core_tx_stream_tests {
     use std::time::Duration;
-    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress};
+    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, SendSaturation, TxCore, TxDone, ActorIdentity, core_exec};
 
     #[test]
     fn test_general() -> Result<(),Box<dyn std::error::Error>> {
@@ -846,7 +845,7 @@ mod core_tx_stream_tests {
                     }
 
                     actor.request_shutdown().await;
-                    Ok(())
+                    Ok::<(), Box<dyn std::error::Error>>(())
                 })
             }, ScheduleAs::SoloAct);
 
@@ -855,4 +854,99 @@ mod core_tx_stream_tests {
         graph.block_until_stopped(Duration::from_secs(5))
     }
 
+    #[test]
+    fn test_stream_ingress_tx_core() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamIngress>(100);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            let ident = ActorIdentity::default();
+
+            // Test shared_capacity
+            let cap = tx_guard.shared_capacity();
+            assert!(cap.0 >= 10);
+            assert!(cap.1 >= 1000);
+
+            let now = std::time::Instant::now();
+            // Test shared_try_send
+            let msg = (StreamIngress::new(5, 0, now, now), &[1, 2, 3, 4, 5][..]);
+            let result = tx_guard.shared_try_send(msg);
+            assert!(matches!(result, Ok(TxDone::Stream(1, 5))));
+
+            // Test shared_send_slice
+            let items = [StreamIngress::new(3, 0, now, now), StreamIngress::new(2, 0, now, now)];
+            let payload = [1, 1, 1, 2, 2];
+            let done = tx_guard.shared_send_slice((&items, &payload));
+            assert!(matches!(done, TxDone::Stream(2, 5)));
+
+            // Test shared_send_async
+            let msg_async = (StreamIngress::new(4, 0, now, now), &[9, 9, 9, 9][..]);
+            let outcome = tx_guard.shared_send_async(msg_async, ident, SendSaturation::AwaitForRoom).await;
+            assert!(matches!(outcome, crate::SendOutcome::Success));
+
+            // Test shared_mark_closed
+            assert!(tx_guard.shared_mark_closed());
+            
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
+    fn test_stream_egress_tx_core() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamEgress>(100);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            let ident = ActorIdentity::default();
+
+            // Test shared_try_send
+            let payload = &[1, 2, 3, 4][..];
+            let result = tx_guard.shared_try_send(payload);
+            assert!(matches!(result, Ok(TxDone::Stream(1, 4))));
+
+            // Test shared_send_slice
+            let items = [StreamEgress { length: 2 }, StreamEgress { length: 3 }];
+            let payload_slice = [7, 7, 8, 8, 8];
+            let done = tx_guard.shared_send_slice((&items, &payload_slice));
+            assert!(matches!(done, TxDone::Stream(2, 5)));
+
+            // Test shared_send_async
+            let payload_async = &[5, 5, 5][..];
+            let outcome = tx_guard.shared_send_async(payload_async, ident, SendSaturation::AwaitForRoom).await;
+            assert!(matches!(outcome, crate::SendOutcome::Success));
+
+            // Test shared_advance_index
+            let done_adv = tx_guard.shared_advance_index((0, 0));
+            assert!(matches!(done_adv, TxDone::Stream(0, 0)));
+
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
+    fn test_stream_tx_iter_until_full() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamEgress>(100);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            
+            let payloads = vec![&[1, 2][..], &[3, 4, 5][..]];
+            let count = tx_guard.shared_send_iter_until_full(payloads.into_iter());
+            assert_eq!(count, 2);
+            
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
 }

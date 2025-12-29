@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use futures_timer::Delay;
 use futures_util::{select, FutureExt};
 use std::sync::atomic::Ordering;
@@ -6,7 +6,7 @@ use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use futures_util::future::FusedFuture;
 use async_ringbuf::consumer::AsyncConsumer;
-use crate::{steady_config, yield_now, RxCore, RxDone, StreamControlItem, StreamRx, MONITOR_NOT};
+use crate::{yield_now, RxCore, RxDone, StreamControlItem, StreamRx, warn};
 use crate::monitor_telemetry::SteadyTelemetrySend;
 
 /// Implementation of `RxCore` for stream-based channels (`StreamRx<T>`).
@@ -15,7 +15,7 @@ use crate::monitor_telemetry::SteadyTelemetrySend;
 /// and a payload channel for byte data, ensuring synchronized reception of control messages and
 /// their associated payloads.
 impl<T: StreamControlItem> RxCore for StreamRx<T> {
-    /// The type of message item stored in the control channel.
+    /// The type of message item stored in the channel.
     type MsgItem = T;
 
     /// The type of message that is taken out of the channel, a tuple of the control item and its payload.
@@ -32,6 +32,28 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
 
     /// The type for the target slices where messages are copied, a pair of mutable slices for control and payload.
     type SliceTarget<'b> = (&'b mut [T], &'b mut [u8]) where T: 'b;
+
+    fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
+        match done_count {
+            RxDone::Normal(i) => {
+                warn!("internal error should have gotten Stream");
+                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.id(), i as isize);
+            }
+            RxDone::Stream(c, p) => {
+                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.id(), c as isize);
+                self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.id(), p as isize);
+            }
+        }
+    }
+
+    fn monitor_not(&mut self) {
+        self.control_channel.monitor_not();
+        self.payload_channel.monitor_not();
+    }
+
+    fn log_periodic(&mut self) -> bool {
+        self.control_channel.log_periodic()
+    }
 
     fn shared_validate_capacity_items(&self, items_count: usize) -> usize {
         self.shared_capacity().0.min(items_count)
@@ -90,34 +112,6 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         }
     }
 
-    fn log_periodic(&mut self) -> bool {
-        if self.control_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
-            false
-        } else {
-            self.control_channel.last_error_send = Instant::now();
-            true
-        }
-    }
-
-    #[inline]
-    fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
-        match done_count {
-            RxDone::Normal(i) => {
-                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
-            }
-            RxDone::Stream(i, p) => {
-                self.control_channel.local_monitor_index = tel.process_event(self.control_channel.local_monitor_index, self.control_channel.channel_meta_data.meta_data.id, i as isize);
-                self.payload_channel.local_monitor_index = tel.process_event(self.payload_channel.local_monitor_index, self.payload_channel.channel_meta_data.meta_data.id, p as isize);
-            },
-        }
-    }
-
-    #[inline]
-    fn monitor_not(&mut self) {
-        self.control_channel.local_monitor_index = MONITOR_NOT;
-        self.payload_channel.local_monitor_index = MONITOR_NOT;
-    }
-
     fn shared_capacity(&self) -> Self::MsgSize {
         (self.control_channel.rx.capacity().get(), self.payload_channel.rx.capacity().get())
     }
@@ -153,10 +147,10 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         if self.shared_avail_units_for((count,1)) {
             true
         } else {
-            let mut one_closed = &mut self.control_channel.is_closed;
-            if !one_closed.is_terminated() {
+            let mut i_closed = &mut self.control_channel.is_closed;
+            if !i_closed.is_terminated() {
                 let mut operation = &mut self.control_channel.rx.wait_occupied(count);
-                select! { _ = one_closed => self.control_channel.rx.occupied_len() >= count, _ = operation => true }
+                select! { _ = i_closed => self.control_channel.rx.occupied_len() >= count, _ = operation => true }
             } else {
                 yield_now::yield_now().await;
                 self.shared_avail_units_for((count,1))
@@ -265,7 +259,7 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
 #[cfg(test)]
 mod core_rx_stream_tests {
     use std::time::Duration;
-    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress};
+    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, RxCore, core_exec};
 
     #[test]
     fn test_general() -> Result<(),Box<dyn std::error::Error>> {
@@ -296,7 +290,7 @@ mod core_rx_stream_tests {
                     }
                     
                     actor.request_shutdown().await;
-                    Ok(())
+                    Ok::<(), Box<dyn std::error::Error>>(())
                 })
             }, ScheduleAs::SoloAct);
 
@@ -305,6 +299,58 @@ mod core_rx_stream_tests {
         graph.block_until_stopped(Duration::from_secs(5))
     }
 
+    #[test]
+    fn test_stream_rx_core_basics() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (_tx, rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamIngress>(100);
+            
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            
+            // Test shared_capacity
+            let cap = rx_guard.shared_capacity();
+            assert!(cap.0 >= 10);
+            assert!(cap.1 >= 1000);
+
+            // Test shared_is_empty
+            assert!(rx_guard.shared_is_empty());
+
+            // Test shared_avail_units
+            assert_eq!(rx_guard.shared_avail_units(), (0, 0));
+
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    // #[test]
+    // fn test_stream_rx_take_slice() -> Result<(), Box<dyn std::error::Error>> {
+    //     core_exec::block_on(async {
+    //         let mut graph = GraphBuilder::for_testing().build(());
+    //         let (tx, rx) = graph.channel_builder()
+    //             .with_capacity(10)
+    //             .build_stream::<StreamEgress>(100);
+    //
+    //         let tx_clone = tx.clone();
+    //         let mut tx_guard = tx_clone.lock().await;
+    //         let payload = [1, 2, 3, 4, 5];
+    //         tx_guard.shared_try_send(&payload).unwrap();
+    //         tx_guard.shared_try_send(&payload).unwrap();
+    //         drop(tx_guard);
+    //
+    //         let rx_clone = rx.clone();
+    //         let mut rx_guard = rx_clone.lock().await;
+    //
+    //         let mut item_target = [StreamEgress::default(); 2];
+    //         let mut payload_target = [0u8; 10];
+    //         let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+    //
+    //         assert!(matches!(done, RxDone::Stream(2, 10)));
+    //         assert_eq!(payload_target, [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]);
+    //
+    //         Ok::<(), Box<dyn std::error::Error>>(())
+    //     })
+    // }
 }
-
-

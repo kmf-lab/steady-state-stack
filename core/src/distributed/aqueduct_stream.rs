@@ -29,7 +29,6 @@ use crate::core_exec;
 use futures::future::FutureExt; // For .fuse()
 use futures::pin_mut;
 use log::{error, trace};
-use num_traits::Zero;
 // For pin_mut!
 
 /// Type alias for the identifier used in Aeron, typically a 32-bit integer for stream or session IDs.
@@ -696,7 +695,7 @@ impl<T: StreamControlItem> StreamTx<T> {
             } else {
                 error!("internal error, session reported without any defrag");
             }
-            if to_consume.is_zero() {
+            if to_consume == 0 {
                 break;
             }
         }
@@ -1060,7 +1059,7 @@ impl<T: StreamControlItem> LazyStreamTx<T> {
             match l.control_channel.shared_try_send(T::testing_new(x as i32)) {
                 Ok(_) => {}
                 Err(_) => {
-                    panic!("error sending metadata");
+                    panic!("error sending metadata, actor must be running or the channel needs to be longer");
                 }
             };
             assert_eq!(x, d.1.len());
@@ -1326,5 +1325,13 @@ mod extra_stream_tests {
         assert_eq!(ctrl.len(), 0, "control_meta_data for GIRTH=0 must be length 0");
         let payload = bundle.payload_meta_data();
         assert_eq!(payload.len(), 0, "payload_meta_data for GIRTH=0 must be length 0");
+    }
+
+    #[test]
+    fn test_defrag_ensure_additional_capacity() {
+        let mut defrag = Defrag::<StreamEgress>::new(1, 2, 2);
+        defrag.ensure_additional_capacity(5, 10);
+        assert!(defrag.ringbuffer_items.0.vacant_len() >= 5);
+        assert!(defrag.ringbuffer_bytes.0.vacant_len() >= 10);
     }
 }

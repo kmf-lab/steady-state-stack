@@ -911,4 +911,33 @@ mod handle_request_logic_tests {
         let stream = MockStream::new("GET /unknown HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
+
+    #[test]
+    fn test_handle_request_assets() {
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![] }));
+        let paths = [
+            "/",
+            "/index.html",
+            "/graph.dot",
+            "/metrics",
+            "/images/zoom-in-icon.svg",
+            "/images/zoom-in-icon-disabled.svg",
+            "/images/zoom-out-icon.svg",
+            "/images/zoom-out-icon-disabled.svg",
+            "/images/refresh-time-icon.svg",
+            "/images/user-icon.svg",
+            "/images/preview-icon.svg",
+            "/images/spinner.gif",
+            "/webworker.js",
+            "/dot-viewer.css",
+            "/dot-viewer.js",
+            "/viz-lite.js",
+            "/unknown",
+        ];
+        for path in paths {
+            let request = format!("GET {} HTTP/1.1\r\n\r\n", path);
+            let stream = MockStream::new(&request);
+            let _ = futures::executor::block_on(handle_request(stream, state.clone()));
+        }
+    }
 }

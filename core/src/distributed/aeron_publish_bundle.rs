@@ -301,11 +301,8 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 #[cfg(test)]
 pub(crate) mod aeron_publish_bundle_tests {
     use super::*;
-    use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
-    use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-    use crate::distributed::aqueduct_builder::AqueductBuilder;
     use crate::distributed::aqueduct_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamIngress, StreamTxBundleTrait};
-    use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamEgress};
+    use crate::distributed::aqueduct_stream::StreamEgress;
 
     /// Number of items to send in tests; increase for extended load testing.
     pub const TEST_ITEMS: usize = 200_000_000;
@@ -338,7 +335,7 @@ pub(crate) mod aeron_publish_bundle_tests {
         let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
 
         const BATCH_SIZE: usize = 5000;
-        let items: [StreamEgress; BATCH_SIZE] = [StreamEgress::new(8); BATCH_SIZE];
+        let items: [StreamEgress; BATCH_SIZE] = [StreamEgress { length: 8 }; BATCH_SIZE];
         let mut data: [[u8; 8]; BATCH_SIZE] = [data1; BATCH_SIZE];
         for i in 0..BATCH_SIZE {
             if i % 2 == 0 {
@@ -411,90 +408,87 @@ pub(crate) mod aeron_publish_bundle_tests {
         Ok(())
     }
 
-    /// Tests the end-to-end byte processing through Aeron.
-    ///
-    /// Sets up a graph with sender and receiver actors, connected via Aeron, and verifies message flow.
-    #[async_std::test]
-    async fn test_bytes_process() -> Result<(), Box<dyn Error>> {
-        if true {
-            return Ok(()); // Skip test by default.
-        }
-        if std::env::var("GITHUB_ACTIONS").is_ok() {
-            return Ok(());
-        }
 
-        let mut graph = GraphBuilder::for_testing()
-            .with_telemetry_metric_features(true)
-            .build(());
-
-        let aeron_md = graph.aeron_media_driver();
-        if aeron_md.is_none() {
-            info!("aeron test skipped, no media driver present");
-            return Ok(());
-        }
-
-        let channel_builder = graph.channel_builder();
-
-        let (to_aeron_tx, to_aeron_rx) = channel_builder
-            .with_avg_rate()
-            .with_avg_filled()
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-            .with_capacity(4 * 1024 * 1024)
-            .build_stream_bundle::<StreamEgress, 1>(8);
-
-        let (from_aeron_tx, from_aeron_rx) = channel_builder
-            .with_avg_rate()
-            .with_avg_filled()
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-            .with_capacity(4 * 1024 * 1024)
-            .build_stream_bundle::<StreamIngress, 1>(8);
-
-        let aeron_config = AeronConfig::new()
-            .with_media_type(MediaType::Ipc) // IPC for maximum throughput.
-            .use_point_to_point(Endpoint {
-                ip: "127.0.0.1".parse().expect("Invalid IP address"),
-                port: 40456,
-            })
-            .build();
-
-        graph.actor_builder().with_name("MockSender")
-            .with_thread_info()
-            .with_mcpu_percentile(Percentile::p96())
-            .with_mcpu_percentile(Percentile::p25())
-            .build(
-                move |context| mock_sender_run(context, to_aeron_tx.clone()),
-                ScheduleAs::SoloAct,
-            );
-
-        let stream_id = 12;
-
-        to_aeron_rx.build_aqueduct(
-            AqueTech::Aeron(aeron_config.clone(), stream_id),
-            &graph.actor_builder().with_name("SenderTest").never_simulate(true),
-            ScheduleAs::SoloAct,
-        );
-
-        graph.actor_builder().with_name("MockReceiver")
-            .with_thread_info()
-            .with_mcpu_percentile(Percentile::p96())
-            .with_mcpu_percentile(Percentile::p25())
-            .build(
-                move |context| mock_receiver_run(context, from_aeron_rx.clone()),
-                ScheduleAs::SoloAct,
-            );
-
-        let from_aeron_tx = from_aeron_tx;
-        from_aeron_tx.build_aqueduct(
-            AqueTech::Aeron(aeron_config.clone(), stream_id),
-            &graph.actor_builder().with_name("ReceiverTest").never_simulate(true),
-            ScheduleAs::SoloAct,
-        );
-
-        graph.start();
-        graph.block_until_stopped(Duration::from_secs(21))
-    }
+    // #[test] //TODO: never returns
+    // fn test_bytes_process() -> Result<(), Box<dyn Error>> {
+    //     crate::core_exec::block_on(async {
+    //         if std::env::var("GITHUB_ACTIONS").is_ok() {
+    //             return Ok(());
+    //         }
+    //
+    //         let mut graph = GraphBuilder::for_testing()
+    //             .with_telemetry_metric_features(true)
+    //             .build(());
+    //
+    //         let aeron_md = graph.aeron_media_driver();
+    //         if aeron_md.is_none() {
+    //             info!("aeron test skipped, no media driver present");
+    //             return Ok(());
+    //         }
+    //
+    //         let channel_builder = graph.channel_builder();
+    //
+    //         let (to_aeron_tx, to_aeron_rx) = channel_builder
+    //             .with_avg_rate()
+    //             .with_avg_filled()
+    //             .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
+    //             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
+    //             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
+    //             .with_capacity(4 * 1024 * 1024)
+    //             .build_stream_bundle::<StreamEgress, 1>(8);
+    //
+    //         let (from_aeron_tx, from_aeron_rx) = channel_builder
+    //             .with_avg_rate()
+    //             .with_avg_filled()
+    //             .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
+    //             .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
+    //             .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
+    //             .with_capacity(4 * 1024 * 1024)
+    //             .build_stream_bundle::<StreamIngress, 1>(8);
+    //
+    //         let aeron_config = AeronConfig::new()
+    //             .with_media_type(MediaType::Ipc) // IPC for maximum throughput.
+    //             .use_point_to_point(Endpoint {
+    //                 ip: "127.0.0.1".parse().expect("Invalid IP address"),
+    //                 port: 40456,
+    //             })
+    //             .build();
+    //
+    //         graph.actor_builder().with_name("MockSender")
+    //             .with_thread_info()
+    //             .with_mcpu_percentile(Percentile::p96())
+    //             .with_mcpu_percentile(Percentile::p25())
+    //             .build(
+    //                 move |context| mock_sender_run(context, to_aeron_tx.clone()),
+    //                 ScheduleAs::SoloAct,
+    //             );
+    //
+    //         let stream_id = 12;
+    //
+    //         to_aeron_rx.build_aqueduct(
+    //             AqueTech::Aeron(aeron_config.clone(), stream_id),
+    //             &graph.actor_builder().with_name("SenderTest").never_simulate(true),
+    //             ScheduleAs::SoloAct,
+    //         );
+    //
+    //         graph.actor_builder().with_name("MockReceiver")
+    //             .with_thread_info()
+    //             .with_mcpu_percentile(Percentile::p96())
+    //             .with_mcpu_percentile(Percentile::p25())
+    //             .build(
+    //                 move |context| mock_receiver_run(context, from_aeron_rx.clone()),
+    //                 ScheduleAs::SoloAct,
+    //             );
+    //
+    //         let from_aeron_tx = from_aeron_tx;
+    //         from_aeron_tx.build_aqueduct(
+    //             AqueTech::Aeron(aeron_config.clone(), stream_id),
+    //             &graph.actor_builder().with_name("ReceiverTest").never_simulate(true),
+    //             ScheduleAs::SoloAct,
+    //         );
+    //
+    //         graph.start();
+    //         graph.block_until_stopped(Duration::from_secs(21))
+    //     })
+    // }
 }

@@ -759,6 +759,23 @@ mod graph_testing_tests {
     }
 
     #[test]
+    fn test_stack_guarded_graph() -> Result<(), Box<dyn Error>> {
+        SteadyRunner::build()
+            .with_stack_size(16 * 1024 * 1024)
+            .launch_graph_for_testing::<(), _>((), |mut graph| {
+                // In a real test, you would call your graph builder here
+                graph.start();
+
+                let sm = graph.stage_manager();
+                // Perform test actions...
+                sm.final_bow();
+
+                graph.request_shutdown();
+                graph.block_until_stopped(Duration::from_secs(5))
+            })
+    }
+
+    #[test]
     fn test_stage_manager_default() -> Result<(), Box<dyn Error>> {
         let manager = StageManager::default();
         assert!(manager.node.is_empty());

@@ -35,9 +35,9 @@ unwrap_used = "deny" # forbid use of unwrap
 [features]
 default = ["exec_async_std", "telemetry_server_builtin", "prometheus_metrics", "core_display", "core_affinity"]
     # Use the nuclei async runtime (proactor_? exclusive one or the other) (default)
-proactor_nuclei = ["nuclei/async-exec", "nuclei/iouring"]
+proactor_nuclei = ["dep:nuclei", "nuclei?/async-exec", "nuclei?/iouring"]
 # Use the tokio async runtime (proactor_? exclusive one or the other)
-proactor_tokio = ["nuclei/tokio", "nuclei/iouring"]
+proactor_tokio = ["dep:nuclei", "nuclei?/tokio", "nuclei?/iouring"]
 
 exec_async_std = ["async-std"]  # works
 
@@ -78,7 +78,6 @@ no-default-features = true
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
-nuclei           = { version = "0.4.4", optional = true } # foundational proactive runtime
 async-std        = { version = "1.13.1", optional = true, features = ["default"]}
 ringbuf          = "0.4.8"  # foundational bounded message passing
 async-ringbuf    = "0.3.4"  # foundational bounded message passing
@@ -145,6 +144,10 @@ libc = { version = "0.2", optional = true }
 # Dependencies for Windows
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", optional = true, features = ["winbase", "processthreadsapi"] }
+
+# Dependencies for non-Windows systems (Linux, macOS, etc.)
+[target.'cfg(not(windows))'.dependencies]
+nuclei = { version = "0.4.4", optional = true } # foundational proactive runtime
 
 
 # Release Notes::

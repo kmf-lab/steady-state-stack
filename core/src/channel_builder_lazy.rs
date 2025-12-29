@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 use futures_util::lock::Mutex;
+use log::warn;
 use ringbuf::producer::Producer;
 use crate::{SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle};
 use crate::channel_builder::ChannelBuilder;
@@ -64,8 +65,16 @@ impl <T> LazySteadyTx<T> {
      * Panics with "internal error" if the transmitter lock cannot be acquired.
      */
     pub fn testing_send_all(&self, data: Vec<T>, close: bool) {
+        use crate::core_tx::TxCore;
+
         let tx = self.clone();
         let mut tx = tx.try_lock().expect("internal error");
+
+        if data.len() >= tx.shared_vacant_units() {
+            let existing = tx.capacity() - tx.shared_vacant_units();
+            warn!("test data is larger than target chanel, this requires the actor/graph consumer to be started before we call testing_send_all OR you must lengthen the target channel to at least {}"
+                 , data.len()+existing);
+        }
 
         for d in data.into_iter() {
             let mut temp = d;
