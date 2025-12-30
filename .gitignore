@@ -24,6 +24,10 @@ core/cargo_outdated.txt
 core/cargo_tokei.txt
 aeron-driver-native/
 coverage/
+core/test_all_to_file.dat
+cargo_build.txt
+target/static/telemetry/index.html
+target/static/telemetry/webworker.js
 
 **/*.b64
 **/viz-lite.js
