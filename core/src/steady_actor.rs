@@ -6,6 +6,7 @@ use std::any::Any;
 use std::error::Error;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use aeron::aeron::Aeron;
 use futures_util::lock::Mutex;
 use futures_util::select;
@@ -159,6 +160,25 @@ impl<X> SendOutcome<X> {
 
 /// Struct returned for the monitoring and result fetching of the long running blocking call.
 pub struct BlockingCallFuture<T>(pub Pin<Box<dyn FusedFuture<Output = T> + Send>>);
+
+impl<T> std::future::Future for BlockingCallFuture<T> {
+    type Output = T;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output> {
+        // Delegate `poll` to the inner future
+        self.0.as_mut().poll(cx)
+    }
+}
+
+impl<T> FusedFuture for BlockingCallFuture<T> {
+    fn is_terminated(&self) -> bool {
+        self.0.is_terminated()
+    }
+}
+
 
 impl<T> BlockingCallFuture<T> {
       
@@ -489,3 +509,36 @@ pub trait SteadyActor {
     fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool;
 }
 
+#[cfg(test)]
+mod steady_actor_tests {
+    use super::*;
+    use crate::core_exec;
+
+    #[test]
+    fn test_blocking_call_future_terminated() {
+        let (tx, rx) = crate::oneshot::channel::<i32>();
+        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
+        assert!(!fut.is_terminated());
+        tx.send(42).unwrap();
+        let res = core_exec::block_on(&mut fut);
+        assert_eq!(res, 42);
+        assert!(fut.is_terminated());
+    }
+
+    #[test]
+    fn test_blocking_call_future_fetch_timeout() {
+        let (_tx, rx) = crate::oneshot::channel::<i32>();
+        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
+        let res = core_exec::block_on(fut.fetch(Duration::from_millis(10)));
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_blocking_call_future_fetch_ready() {
+        let (tx, rx) = crate::oneshot::channel::<i32>();
+        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
+        tx.send(42).unwrap();
+        let res = core_exec::block_on(fut.fetch(Duration::from_millis(100)));
+        assert_eq!(res, Some(42));
+    }
+}

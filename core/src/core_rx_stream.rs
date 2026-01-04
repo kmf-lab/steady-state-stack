@@ -259,7 +259,8 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
 #[cfg(test)]
 mod core_rx_stream_tests {
     use std::time::Duration;
-    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, RxCore, core_exec};
+    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, RxCore, core_exec, RxDone};
+    use crate::core_tx::TxCore;
 
     #[test]
     fn test_general() -> Result<(),Box<dyn std::error::Error>> {
@@ -325,32 +326,51 @@ mod core_rx_stream_tests {
         })
     }
 
-    // #[test]
-    // fn test_stream_rx_take_slice() -> Result<(), Box<dyn std::error::Error>> {
-    //     core_exec::block_on(async {
-    //         let mut graph = GraphBuilder::for_testing().build(());
-    //         let (tx, rx) = graph.channel_builder()
-    //             .with_capacity(10)
-    //             .build_stream::<StreamEgress>(100);
-    //
-    //         let tx_clone = tx.clone();
-    //         let mut tx_guard = tx_clone.lock().await;
-    //         let payload = [1, 2, 3, 4, 5];
-    //         tx_guard.shared_try_send(&payload).unwrap();
-    //         tx_guard.shared_try_send(&payload).unwrap();
-    //         drop(tx_guard);
-    //
-    //         let rx_clone = rx.clone();
-    //         let mut rx_guard = rx_clone.lock().await;
-    //
-    //         let mut item_target = [StreamEgress::default(); 2];
-    //         let mut payload_target = [0u8; 10];
-    //         let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
-    //
-    //         assert!(matches!(done, RxDone::Stream(2, 10)));
-    //         assert_eq!(payload_target, [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]);
-    //
-    //         Ok::<(), Box<dyn std::error::Error>>(())
-    //     })
-    // }
+    #[test]
+    fn test_stream_rx_peek_async_timeout() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (_tx, rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamIngress>(100);
+            
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            
+            let start = std::time::Instant::now();
+            let peeked = rx_guard.shared_peek_async_timeout(Some(Duration::from_millis(50))).await;
+            assert!(peeked.is_none());
+            assert!(start.elapsed() >= Duration::from_millis(50));
+            
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
+    fn test_stream_rx_take_slice_logic() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamEgress>(100);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            tx_guard.shared_try_send(&[1, 2, 3][..]).unwrap();
+            tx_guard.shared_try_send(&[4, 5][..]).unwrap();
+            drop(tx_guard);
+
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            
+            let mut item_target = [StreamEgress::default(); 2];
+            let mut payload_target = [0u8; 10];
+            let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+            
+            assert!(matches!(done, RxDone::Stream(2, 5)));
+            assert_eq!(&payload_target[0..5], &[1, 2, 3, 4, 5]);
+            
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
 }

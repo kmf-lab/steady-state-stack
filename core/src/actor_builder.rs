@@ -1356,7 +1356,7 @@ fn build_actor_context<I: ?Sized>(
     team_id: usize,
     is_test: bool,
 ) -> SteadyActorShadow {
-    let uib = builder_source.never_simulate || !is_test;
+    let uib = !builder_source.never_simulate && is_test;
     SteadyActorShadow {
         runtime_state: builder_source.runtime_state.clone(),
         channel_count: builder_source.channel_count.clone(),
@@ -1500,5 +1500,36 @@ mod test_actor_builder {
     fn test_percentile_new() {
         let percentile = Percentile::new(99.0).expect("internal error");
         assert_eq!(percentile.percentile(), 99.0);
+    }
+
+    #[test]
+    fn test_builder_gauntlet() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let builder = ActorBuilder::new(&mut graph)
+            .with_name("gauntlet")
+            .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10))
+            .with_core_exclusion(vec![0])
+            .with_explicit_core(2)
+            .with_mcpu_percentile(Percentile::p99())
+            .with_load_percentile(Percentile::p50())
+            .with_mcpu_avg()
+            .with_load_avg()
+            .with_mcpu_trigger(Trigger::AvgAbove(MCPU::new(500).unwrap()), AlertColor::Red)
+            .with_load_trigger(Trigger::AvgBelow(Work::new(10.0).unwrap()), AlertColor::Yellow)
+            .with_thread_info()
+            .with_stack_size(4 * 1024 * 1024)
+            .never_simulate(true);
+
+        let meta = builder.build_actor_metadata(ActorIdentity::new(1, "test", None));
+        
+        assert_eq!(meta.ident.id, 1);
+        assert_eq!(meta.refresh_rate_in_bits, builder.refresh_rate_in_bits);
+        assert!(meta.avg_mcpu);
+        assert!(meta.avg_work);
+        assert!(meta.show_thread_info);
+        assert_eq!(meta.percentiles_mcpu.len(), 1);
+        assert_eq!(meta.trigger_mcpu.len(), 1);
+        assert_eq!(builder.stack_size, Some(4 * 1024 * 1024));
+        assert!(builder.never_simulate);
     }
 }

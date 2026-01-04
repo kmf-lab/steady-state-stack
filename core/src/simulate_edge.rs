@@ -55,7 +55,7 @@ pub trait IntoSimRunner<C: SteadyActor + 'static> {
 struct SimulationState {
     /// Counts the number of consecutive simulation steps where no work was
     /// performed, used to detect potential stalls or timeouts.
-    consecutive_no_work_cycles: u64,
+    pub(crate) consecutive_no_work_cycles: u64,
     /// A unique identifier for the simulation, used in logging and error
     /// messages to distinguish between multiple runners.
     simulation_name: String,
@@ -397,6 +397,7 @@ mod simulate_edge_tests {
     use crate::*;
     use crate::distributed::aqueduct_stream::Defrag;
     use crate::steady_actor::BlockingCallFuture;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     // Dummy actor for testing
     struct TestActor;
@@ -518,6 +519,21 @@ mod simulate_edge_tests {
         fn is_showstopper<T>(&self, _rx: &mut Rx<T>, _threshold: usize) -> bool { false }
     }
 
+    struct FaultyRunner {
+        error_after: u64,
+        current: AtomicU64,
+    }
+    impl IntoSimRunner<TestActor> for FaultyRunner {
+        fn run(&self, _responder: &SideChannelResponder, _index: usize, _actor: &mut TestActor, _run_duration: Duration) -> Result<SimStepResult, Box<dyn Error>> {
+            let val = self.current.fetch_add(1, Ordering::SeqCst);
+            if val >= self.error_after {
+                Err("Simulated failure".into())
+            } else {
+                Ok(SimStepResult::DidWork)
+            }
+        }
+    }
+
     // Helper to create a dummy responder
     fn create_dummy_responder() -> SideChannelResponder {
         let (_tx, rx) = oneshot::channel();
@@ -636,5 +652,15 @@ mod simulate_edge_tests {
 
 
 
-    // Add more tests for coverage, e.g., with multiple sims, error cases, timeouts in record_step_result if applicable.
+    #[test]
+    fn test_simulation_stall_tracking() -> Result<(), Box<dyn Error>> {
+        let mut state = SimulationState::new("stall_test".to_string());
+        for i in 1..=5 {
+            state.record_step_result(&SimStepResult::NoWork)?;
+            assert_eq!(state.consecutive_no_work_cycles, i);
+        }
+        state.record_step_result(&SimStepResult::DidWork)?;
+        assert_eq!(state.consecutive_no_work_cycles, 0);
+        Ok(())
+    }
 }

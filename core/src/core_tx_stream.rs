@@ -811,7 +811,9 @@ impl TxCore for StreamTx<StreamEgress> {
 #[cfg(test)]
 mod core_tx_stream_tests {
     use std::time::Duration;
-    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, SendSaturation, TxCore, TxDone, ActorIdentity, core_exec};
+    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, SendSaturation, TxCore, TxDone, ActorIdentity, core_exec, SendOutcome, StreamTx};
+    use crate::distributed::aqueduct_stream::Defrag;
+    use async_ringbuf::traits::Producer;
 
     #[test]
     fn test_general() -> Result<(),Box<dyn std::error::Error>> {
@@ -956,7 +958,7 @@ mod core_tx_stream_tests {
                 .build_stream::<StreamIngress>(100);
             
             let tx_clone = tx.clone();
-            let mut tx_guard = tx_clone.lock().await;
+            let tx_guard = tx_clone.lock().await;
 
             // Test shared_vacant_units returns correct tuple
             let vacant = tx_guard.shared_vacant_units();
@@ -976,7 +978,7 @@ mod core_tx_stream_tests {
                 .build_stream::<StreamEgress>(100);
             
             let tx_clone = tx.clone();
-            let mut tx_guard = tx_clone.lock().await;
+            let tx_guard = tx_clone.lock().await;
 
             // Test shared_vacant_units returns correct tuple
             let vacant = tx_guard.shared_vacant_units();
@@ -985,5 +987,74 @@ mod core_tx_stream_tests {
 
             Ok::<(), Box<dyn std::error::Error>>(())
         })
+    }
+
+    #[test]
+    fn test_stream_defrag_partial_flush() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _rx) = graph.channel_builder()
+            .with_capacity(2) // Small capacity to force partial flush
+            .build_stream::<StreamEgress>(10);
+        
+        let tx_arc = tx.clone();
+        let mut tx_guard = core_exec::block_on(tx_arc.lock());
+        let mut defrag = Defrag::<StreamEgress>::new(1, 10, 100);
+        
+        // Fill defrag with more than the channel can take (3 items)
+        for _ in 0..3 {
+            defrag.ringbuffer_items.0.try_push(StreamEgress::new(5)).unwrap();
+            defrag.ringbuffer_bytes.0.push_slice(&[0u8; 5]);
+        }
+
+        let mut actor = graph.new_testing_test_monitor("test");
+        let StreamTx { ref mut control_channel, ref mut payload_channel, .. } = *tx_guard;
+        let (msgs, bytes, session) = actor.flush_defrag_messages(
+            control_channel,
+            payload_channel,
+            &mut defrag
+        );
+
+        // Should have flushed 2 messages (capacity limit)
+        assert_eq!(msgs, 2);
+        assert_eq!(bytes, 10);
+        // Should indicate session 1 still needs work
+        assert_eq!(session, Some(1));
+    }
+
+    #[test]
+    fn test_stream_send_async_timeout_saturation() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _rx) = graph.channel_builder()
+            .with_capacity(1)
+            .build_stream::<StreamEgress>(10);
+        
+        let tx_arc = tx.clone();
+        let mut tx_guard = core_exec::block_on(tx_arc.lock());
+        let ident = ActorIdentity::default();
+
+        // Fill the channel
+        tx_guard.shared_try_send(&[0u8; 5]).unwrap();
+
+        // Try to send again with a tiny timeout
+        let start = std::time::Instant::now();
+        let outcome = core_exec::block_on(tx_guard.shared_send_async_timeout(
+            &[0u8; 5],
+            ident,
+            SendSaturation::ReturnBlockedMsg,
+            Some(Duration::from_millis(10))
+        ));
+
+        // Should return Blocked immediately due to saturation policy
+        assert!(matches!(outcome, SendOutcome::Blocked(_)));
+        
+        // Try again with AwaitForRoom and a timeout
+        let outcome_timeout = core_exec::block_on(tx_guard.shared_send_async_timeout(
+            &[0u8; 5],
+            ident,
+            SendSaturation::AwaitForRoom,
+            Some(Duration::from_millis(10))
+        ));
+        assert!(matches!(outcome_timeout, SendOutcome::Blocked(_)));
+        assert!(start.elapsed() >= Duration::from_millis(10));
     }
 }

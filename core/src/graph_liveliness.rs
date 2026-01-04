@@ -1202,7 +1202,32 @@ impl Graph {
 
 #[cfg(test)]
 mod graph_liveliness_tests {
-    use crate::{GraphLivelinessState};
+    use crate::{GraphLivelinessState, GraphBuilder, ScheduleAs, SteadyActor};
+    use std::time::Duration;
+
+    #[test]
+    fn test_unclean_shutdown_veto() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        
+        graph.actor_builder()
+            .with_name("VetoActor")
+            .build(|mut actor| {
+                Box::pin(async move {
+                    // Veto shutdown by returning false in the accept_fn
+                    while actor.is_running(|| false) {
+                        actor.wait(Duration::from_millis(10)).await;
+                    }
+                    Ok(())
+                })
+            }, ScheduleAs::SoloAct);
+
+        graph.start();
+        graph.request_shutdown();
+        
+        // This should return an error because the actor vetoed
+        let result = graph.block_until_stopped(Duration::from_millis(100));
+        assert!(result.is_err());
+    }
 
     #[test]
     fn test_graph_liveliness_state_equality() {
