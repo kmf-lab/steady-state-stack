@@ -515,6 +515,23 @@ mod steady_actor_tests {
     use crate::core_exec;
 
     #[test]
+    fn test_send_outcome_methods() {
+        let success: SendOutcome<i32> = SendOutcome::Success;
+        assert!(success.is_sent());
+        assert!(success.expect("should not panic"));
+
+        let blocked = SendOutcome::Blocked(42);
+        assert!(!blocked.is_sent());
+    }
+
+    #[test]
+    #[should_panic(expected = "test panic")]
+    fn test_send_outcome_expect_panic() {
+        let blocked = SendOutcome::Blocked(42);
+        blocked.expect("test panic");
+    }
+
+    #[test]
     fn test_blocking_call_future_terminated() {
         let (tx, rx) = crate::oneshot::channel::<i32>();
         let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));

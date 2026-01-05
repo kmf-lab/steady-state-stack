@@ -114,7 +114,7 @@ pub(crate) use abstract_executor_nuclei::core_exec;
 mod abstract_executor_async_std;
 
 use std::any::Any;
-#[cfg(feature = "exec_async_std")]
+#[cfg(all(feature = "exec_async_std", not(any(feature = "proactor_nuclei", feature = "proactor_tokio"))))]
 pub(crate) use abstract_executor_async_std::core_exec;
 
 /// Utilities for capturing panics during testing.

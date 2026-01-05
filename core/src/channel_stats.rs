@@ -641,9 +641,7 @@ impl ChannelStatsComputer {
                 .cmp(&((*percent_full_num as u128 * PLACES_TENS as u128 * self.capacity as u128)
                     << (self.window_bucket_in_bits + self.refresh_rate_in_bits)))
         } else {
-            Ordering::
-
-            Equal // Unknown
+            Ordering::Equal // Unknown
         }
     }
 
@@ -874,4 +872,3 @@ impl ChannelStatsComputer {
 
 /// The number of decimal places used for tens.
 pub(crate) const PLACES_TENS: u64 = 1000u64;
-
