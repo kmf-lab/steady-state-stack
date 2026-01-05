@@ -105,7 +105,7 @@ mod loop_driver;
 mod abstract_executor_nuclei;
 
 #[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
-pub use abstract_executor_nuclei::core_exec;
+pub(crate) use abstract_executor_nuclei::core_exec;
 
 /// Executor abstraction for the `async-std` runtime.
 ///
@@ -115,7 +115,7 @@ mod abstract_executor_async_std;
 
 use std::any::Any;
 #[cfg(feature = "exec_async_std")]
-pub use abstract_executor_async_std::core_exec;
+pub(crate) use abstract_executor_async_std::core_exec;
 
 /// Utilities for capturing panics during testing.
 ///
