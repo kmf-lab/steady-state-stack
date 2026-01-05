@@ -855,7 +855,7 @@ impl ActorBuilder {
     ///
     /// # Returns
     ///
-    /// A new `ActorBuilder` instance with the specified workload percentile.
+    /// a new `ActorBuilder` instance with the specified workload percentile.
     pub fn with_load_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_load.push(config);
@@ -1531,5 +1531,46 @@ mod test_actor_builder {
         assert_eq!(meta.trigger_mcpu.len(), 1);
         assert_eq!(builder.stack_size, Some(4 * 1024 * 1024));
         assert!(builder.never_simulate);
+    }
+
+    #[test]
+    fn test_builder_state_modifications() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let builder = ActorBuilder::new(&mut graph);
+
+        // Test with_name and with_name_and_suffix
+        let b_name = builder.with_name("test_actor");
+        assert_eq!(b_name.actor_name.name, "test_actor");
+        assert!(b_name.actor_name.suffix.is_none());
+
+        let b_suffix = builder.with_name_and_suffix("test_actor", 42);
+        assert_eq!(b_suffix.actor_name.name, "test_actor");
+        assert_eq!(b_suffix.actor_name.suffix, Some(42));
+
+        // Test telemetry toggle
+        let b_no_refresh = builder.with_no_refresh_window();
+        assert_eq!(b_no_refresh.refresh_rate_in_bits, 0);
+        assert_eq!(b_no_refresh.window_bucket_in_bits, 0);
+
+        // Test thread info toggle
+        let b_thread = builder.with_thread_info();
+        assert!(b_thread.show_thread_info);
+
+        // Test stack size
+        let b_stack = builder.with_stack_size(1024 * 1024);
+        assert_eq!(b_stack.stack_size, Some(1024 * 1024));
+    }
+
+    #[test]
+    fn test_internal_compute_refresh_window_edge_cases() {
+        // Test zero frame rate (should return 0,0)
+        let (r, w) = ActorBuilder::internal_compute_refresh_window(0, Duration::from_secs(1), Duration::from_secs(10));
+        assert_eq!((r, w), (0, 0));
+
+        // Test very small durations
+        let (r, w) = ActorBuilder::internal_compute_refresh_window(100, Duration::from_millis(1), Duration::from_millis(1));
+        // Logic ensures it doesn't crash on small inputs.
+        assert!(r >= 0);
+        assert!(w >= 0);
     }
 }
