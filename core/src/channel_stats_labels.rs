@@ -318,3 +318,79 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
     label_target.push_str(labels.unit);
     label_target.push('\n');
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_value_int_padding() {
+        let labels = ComputeLabelsLabels {
+            label: "test",
+            unit: "units",
+            _prometheus_labels: "",
+            int_only: true,
+            fixed_digits: 5,
+        };
+        let mut metric = String::new();
+        let mut label = String::new();
+        
+        format_value(labels, &mut metric, &mut label, 42, None);
+        // Should pad with 3 zeros to reach 5 digits
+        assert!(label.contains(": 00042 units\n"));
+    }
+
+    #[test]
+    fn test_format_value_scaling() {
+        let labels = ComputeLabelsLabels {
+            label: "test",
+            unit: "units",
+            _prometheus_labels: "",
+            int_only: false,
+            fixed_digits: 0,
+        };
+        
+        let test_cases = [
+            (5, "0.005", "small float"),
+            (5000, "5K", "thousands"),
+            (5_000_000, "5M", "millions"),
+            (5_000_000_000, "5B", "billions"),
+            (5_000_000_000_000, "5T", "trillions"),
+        ];
+
+        for (val, expected, msg) in test_cases {
+            let mut metric = String::new();
+            let mut label = String::new();
+            let float_val = if val < 10 { Some(val as f32 / 1000.0) } else { None };
+            format_value(labels, &mut metric, &mut label, val, float_val);
+            assert!(label.contains(expected), "Failed {}: expected {} in {}", msg, expected, label);
+        }
+    }
+
+    #[test]
+    fn test_format_label_prefix_assertions() {
+        let labels = ComputeLabelsLabels {
+            label: "test",
+            unit: "u",
+            _prometheus_labels: "job=\"test\"",
+            int_only: true,
+            fixed_digits: 0,
+        };
+        let mut metric = String::new();
+        let mut label = String::new();
+        
+        format_label_prefix(labels, &mut metric, &mut label, "Prefix ", "prom_");
+        assert_eq!(label, "Prefix test");
+        #[cfg(feature = "prometheus_metrics")]
+        assert!(metric.starts_with("prom_test{job=\"test\"}"));
+    }
+
+    #[test]
+    #[should_panic(expected = "prometheus_name must be at least 1 character long")]
+    fn test_format_label_prefix_empty_panic() {
+        let labels = ComputeLabelsLabels {
+            label: "test", unit: "u", _prometheus_labels: "", int_only: true, fixed_digits: 0,
+        };
+        format_label_prefix(labels, &mut String::new(), &mut String::new(), "", "");
+    }
+}

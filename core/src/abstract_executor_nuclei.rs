@@ -74,7 +74,7 @@ pub(crate) mod core_exec {
 
     // Set thread affinity (platform-specific)
     #[cfg(all(unix, feature = "libc"))]
-    fn set_thread_affinity(core: usize) -> std::io::Result<(), dyn Box<Error>> {
+    fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use libc::{cpu_set_t, pthread_setaffinity_np, pthread_self};
         let mut cpu_set: cpu_set_t = unsafe { std::mem::zeroed() };
         unsafe {
@@ -83,13 +83,13 @@ pub(crate) mod core_exec {
             if res == 0 {
                 Ok(())
             } else {
-                Err(())
+                Err("Unable to set affinity".into())
             }
         }
     }
 
     #[cfg(all(windows, feature = "winapi"))]
-    fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn Error>> {
+    fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use winapi::um::processthreadsapi::GetCurrentThread;
         use winapi::shared::basetsd::DWORD_PTR;
 
@@ -132,7 +132,7 @@ pub(crate) mod core_exec {
                     warn!("Affinity for blocking tasks was enabled but unable to set due to '{:?}', will run blocking task on another core.",e)
                 }
             }
-            if let Err(e) = sender.send(f()) {
+            if let Err(_e) = sender.send(f()) {
                 //may happen as expected in some shutdown cases
                 warn!("blocking job finished but the receiver is no longer attached");
             }

@@ -105,7 +105,7 @@ mod loop_driver;
 mod abstract_executor_nuclei;
 
 #[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
-pub use abstract_executor_nuclei::*;
+pub use abstract_executor_nuclei::core_exec;
 
 /// Executor abstraction for the `async-std` runtime.
 ///
@@ -115,7 +115,7 @@ mod abstract_executor_async_std;
 
 use std::any::Any;
 #[cfg(feature = "exec_async_std")]
-use abstract_executor_async_std::*;
+pub use abstract_executor_async_std::core_exec;
 
 /// Utilities for capturing panics during testing.
 ///
@@ -367,7 +367,6 @@ use futures::AsyncWrite;
 pub use futures::future::Future;
 use futures::channel::oneshot;
 use futures_util::lock::MutexGuard;
-use futures_util::task::SpawnExt;
 pub use steady_actor_spotlight::SteadyActorSpotlight;
 
 use crate::yield_now::yield_now;
@@ -652,6 +651,7 @@ pub enum SendSaturation {
     AwaitForRoom,
 
     /// Returns an error immediately if the channel is full.
+    #[deprecated(note = "Use try_send instead")]
     ReturnBlockedMsg,
 
     /// Logs a warning and waits for space (default behavior).

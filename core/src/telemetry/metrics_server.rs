@@ -48,7 +48,7 @@ pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>) -
     let frame_rate_ms = context.frame_rate_ms;
     let ctrl = context;
     #[cfg(feature = "telemetry_on_telemetry")]
-    let ctrl = ctrl.into_monitor([&rx], []);
+    let ctrl = ctrl.into_spotlight([&rx], []);
 
     internal_behavior(ctrl, frame_rate_ms, rx, addr).await
 }
