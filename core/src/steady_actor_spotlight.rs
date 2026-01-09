@@ -178,7 +178,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                 info!("Telemetry data sent for actor {:?} after {} micros", self.ident, last_elapsed.as_micros());
             }
             true
-        } else if self.is_running_iteration_count == 0 || setup::is_empty_local_telemetry(self) {
+        } else if self.is_running_iteration_count == 0 || // critical we check elapsed so we do not flood with zeros
+            (setup::is_empty_local_telemetry(self) && last_elapsed.as_millis()> self.frame_rate_ms as u128) {
             setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
             self.last_telemetry_send = Instant::now();
             if ENABLE_TELEMETRY_DEBUG {

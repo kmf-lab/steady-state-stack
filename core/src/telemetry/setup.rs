@@ -8,6 +8,7 @@ use async_ringbuf::traits::Observer;
 #[allow(unused_imports)]
 use log::*;
 use num_traits::Zero;
+use parking_lot::RwLock;
 use crate::{steady_tx_bundle, ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
@@ -211,8 +212,6 @@ pub(crate) fn get_current_cpu() -> i32 {
 
 }
 
-
-
 /// Tries to send all local telemetry for the given monitor.
 ///
 /// # Parameters
@@ -247,10 +246,20 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                             GraphLivelinessState::Stopped,
                                             GraphLivelinessState::StoppedUncleanly,
                                         ]) {
-                                            error!(
-                                                "Actor '{:?}' hard delay on actor status: scale {} empty {} of {}\nassume metrics_collector is not consuming messages !",
-                                                this.ident, scale, vacant_units, capacity
-                                            );
+                                            // Simple progress check
+                                            if tx.tx.read_index() == 0 {
+                                                        error!(
+                                                            "Actor '{:?}' telemetry overload: scale {} empty {} of {}\n\
+                                                             DIAGNOSIS: metrics_collector is NOT consuming (read_index is 0). Telemetry feature likely not enabled or collector not started.",
+                                                            this.ident, scale, vacant_units, capacity
+                                                        );
+                                                    } else {
+                                                        error!(
+                                                            "Actor '{:?}' telemetry overload: scale {} empty {} of {}\n\
+                                                             DIAGNOSIS: Actor is producing updates too fast for the metrics_collector. Check for high-frequency iteration loops.",
+                                                            this.ident, scale, vacant_units, capacity
+                                                        );
+                                            }
                                         }
                                       
                                     }
