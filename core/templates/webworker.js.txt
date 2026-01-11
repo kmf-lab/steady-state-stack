@@ -11,6 +11,7 @@ this.onmessage = async (message) => {
     const dot = await response.text();
     const svg = Viz(dot, {format: 'svg', engine: 'dot'});
     this.postMessage(svg);
+
   } catch (e) {
     console.log('dotUrl',dotUrl);
     console.error('Error:', e);

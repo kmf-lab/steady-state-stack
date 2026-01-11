@@ -452,6 +452,7 @@ impl<T> TxCore for Tx<T> {
             Err(msg) => {
                 match saturation {
                     SendSaturation::AwaitForRoom => {}
+                    #[allow(deprecated)]
                     SendSaturation::ReturnBlockedMsg => return SendOutcome::Blocked(msg),
                     SendSaturation::WarnThenAwait => self.report_tx_full_warning(ident),
                     SendSaturation::DebugWarnThenAwait => {
@@ -779,6 +780,7 @@ mod core_tx_rx_tests {
         let ident = ActorIdentity::new(0, "test", None);
         let res = block_on(guard.shared_send_async(7, ident, SendSaturation::AwaitForRoom));
         assert!(matches!(res, SendOutcome::Success));
+        #[allow(deprecated)]
         let res_to = block_on(guard.shared_send_async_timeout(8, ident, SendSaturation::ReturnBlockedMsg, Some(Duration::from_millis(1))));
         assert!(matches!(res_to, SendOutcome::Success));
         assert_eq!(guard.done_one(&9), TxDone::Normal(9));
@@ -829,8 +831,10 @@ mod core_tx_rx_tests {
         assert_eq!(tx.shared_try_send(99u8), Ok(TxDone::Normal(1)));
         let outcome = block_on(tx.shared_send_async_core(5u8, ident, SendSaturation::AwaitForRoom, None));
         assert!(matches!(outcome, SendOutcome::Success));
+        #[allow(deprecated)]
         let outcome2 = block_on(tx.shared_send_async(6u8, ident, SendSaturation::ReturnBlockedMsg));
         assert!(matches!(outcome2, SendOutcome::Success));
+        #[allow(deprecated)]
         let outcome3 = block_on(tx.shared_send_async_timeout(7u8, ident, SendSaturation::ReturnBlockedMsg, Some(Duration::from_millis(1))));
         assert!(matches!(outcome3, SendOutcome::Success));
     }

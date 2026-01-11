@@ -267,7 +267,7 @@ impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBu
     fn clone(&self) -> SteadyTxBundle<T, GIRTH> {
         let tx_clones: Vec<SteadyTx<T>> = self.iter().map(|l| l.clone()).collect();
         match tx_clones.try_into() {
-            Ok(array) => crate::steady_tx_bundle(array),
+            Ok(array) => Arc::new(array),
             Err(_) => panic!("Internal error, bad length"),
         }
     }
@@ -297,7 +297,7 @@ impl<T, const GIRTH: usize> LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBu
     fn clone(&self) -> SteadyRxBundle<T, GIRTH> {
         let rx_clones: Vec<SteadyRx<T>> = self.iter().map(|l| l.clone()).collect();
         match rx_clones.try_into() {
-            Ok(array) => crate::steady_rx_bundle(array),
+            Ok(array) => Arc::new(array),
             Err(_) => panic!("Internal error, bad length"),
         }
     }

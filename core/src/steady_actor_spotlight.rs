@@ -148,17 +148,6 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
             * CONSUMED_MESSAGES_BY_COLLECTOR as i64)
     }
 
-    /// Returns the current time in nanoseconds since actor start.
-    /// If `use_internal_behavior` is true, it allows for virtual time injection.
-    fn internal_now_nanos(&self) -> u64 {
-        if self.use_internal_behavior {
-            let last = self.last_periodic_wait.load(Ordering::Relaxed);
-            if last > 0 {
-                return last;
-            }
-        }
-        self.actor_start_time.elapsed().as_nanos() as u64
-    }
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotlight<RX_LEN, TX_LEN> {
@@ -183,22 +172,18 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     fn relay_stats_smartly(&mut self) -> bool {
 
         let last_elapsed = self.last_telemetry_send.elapsed();
-        if last_elapsed.as_micros() as u64 * (REAL_CHANNEL_LENGTH_TO_COLLECTOR as u64) >= (1000u64 * self.frame_rate_ms) {
+        // if it is time to send do so now OR if this is the first run to signal ive start
+        if (last_elapsed.as_micros() as u64 * (REAL_CHANNEL_LENGTH_TO_COLLECTOR as u64) >= (1000u64 * self.frame_rate_ms))
+          || (self.is_running_iteration_count == 0)
+           {
             setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
             self.last_telemetry_send = Instant::now();
             if ENABLE_TELEMETRY_DEBUG {
-                info!("Telemetry data sent for actor {:?} after {} micros", self.ident, last_elapsed.as_micros());
+                info!("Telemetry data sent for actor {:?} after {}ms  iteration {} ", self.ident, last_elapsed.as_micros(), self.is_running_iteration_count);
             }
             true
-        } else if self.is_running_iteration_count == 0 || // critical we check elapsed so we do not flood with zeros
-            (setup::is_empty_local_telemetry(self) && last_elapsed.as_millis()> self.frame_rate_ms as u128) {
-            setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
-            self.last_telemetry_send = Instant::now();
-            if ENABLE_TELEMETRY_DEBUG {
-                info!("Initial/empty telemetry data sent for actor {:?}", self.ident);
-            }
-            true
-        } else {
+        }
+        else {
             if ENABLE_TELEMETRY_DEBUG {
                 error!("Telemetry data not sent for actor {:?} (elapsed: {} ms < threshold)",
                       self.ident, last_elapsed.as_millis());
@@ -555,7 +540,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     }
 
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
-        let now_nanos = self.internal_now_nanos();
+        let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
         let last = self.last_periodic_wait.load(Ordering::SeqCst);
         let remaining_duration = if last <= now_nanos {
                 duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))

@@ -8,8 +8,7 @@ use async_ringbuf::traits::Observer;
 #[allow(unused_imports)]
 use log::*;
 use num_traits::Zero;
-use parking_lot::RwLock;
-use crate::{steady_tx_bundle, ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
+use crate::{ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{find_my_index, ChannelMetaData, RxTel};
@@ -151,7 +150,7 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
             .build_channel();
 
         let outgoing = [tx.clone()]; 
-        let optional_servers = steady_tx_bundle(outgoing);
+        let optional_servers = Arc::new(outgoing);
 
         ////////////////////////////////////
         //create collector first to get the lower id for flow debug later.
@@ -176,8 +175,9 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
             .with_compute_refresh_window_floor(Duration::from_secs(1), Duration::from_secs(10))
             .with_mcpu_avg()
             .with_load_avg();
+        let tel_colors = graph.telemetry_colors.clone();
         bldr.with_name(metrics_server::NAME).build(move |context| {
-            metrics_server::run(context, rx.clone())
+            metrics_server::run(context, rx.clone(), tel_colors.clone())
         }, ScheduleAs::SoloAct);
 
         
@@ -185,18 +185,22 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
     }
 }
 
-pub(crate) fn is_empty_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
-    this: &mut SteadyActorSpotlight<RX_LEN, TX_LEN>) -> bool {
-    if let Some(ref mut actor_status) = this.telemetry.state {
-        if let Some(ref mut lock_guard) = actor_status.tx.try_lock() {
-            lock_guard.deref_mut().is_empty()
-        } else {
-            false
-        }
-    } else {
-        false
-    }
-}
+// No longer needed..
+// pub(crate) fn is_empty_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
+//     this: &mut SteadyActorSpotlight<RX_LEN, TX_LEN>) -> bool {
+//     if let Some(ref mut actor_status) = this.telemetry.state {
+//
+//
+//         //TODO: seems very wrong !!
+//         if let Some(ref mut lock_guard) = actor_status.tx.try_lock() {
+//             lock_guard.deref_mut().is_empty()
+//         } else {
+//             false //if no lock then assume not empty
+//         }
+//     } else {
+//         false //if no state then assume not empty
+//     }
+// }
 
 #[cfg(feature = "core_display")]
 pub(crate) fn get_current_cpu() -> i32 {
@@ -220,7 +224,6 @@ pub(crate) fn get_current_cpu() -> i32 {
 pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
     this: &mut SteadyActorSpotlight<RX_LEN, TX_LEN>, elapsed_micros: Option<u64>
 ) {
-
             // trace!("try_send_all_local_telemetry for {:?} !!!!TOP TOP TOP!!!!!!!!!!!!!!!!!!!!!!!", this.ident);
             if let Some(ref mut actor_status) = this.telemetry.state {
                 // trace!("!!! only sending actor since telemtry.state is supported !!!");
@@ -453,6 +456,7 @@ pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_unit
 ///
 /// # Parameters
 /// - `ident`: The actor identity.
+/// - `iteration_count`: The iteration count.
 /// - `telemetry_state`: The telemetry state.
 /// - `telemetry_send_tx`: The TX send telemetry.
 /// - `telemetry_send_rx`: The RX send telemetry.

@@ -89,19 +89,6 @@ impl Clone for SteadyActorShadow {
     }
 }
 
-impl SteadyActorShadow {
-    /// Returns the current time in nanoseconds since actor start.
-    /// If `use_internal_behavior` is true, it allows for virtual time injection.
-    fn internal_now_nanos(&self) -> u64 {
-        if self.use_internal_behavior {
-            let last = self.last_periodic_wait.load(Ordering::Relaxed);
-            if last > 0 {
-                return last;
-            }
-        }
-        self.actor_start_time.elapsed().as_nanos() as u64
-    }
-}
 
 impl SteadyActor for SteadyActorShadow {
 
@@ -467,7 +454,7 @@ impl SteadyActor for SteadyActorShadow {
     }
 
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
-        let now_nanos = self.internal_now_nanos();
+        let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
         let last = self.last_periodic_wait.load(Ordering::SeqCst);
         let remaining_duration = if last <= now_nanos {
             duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
@@ -791,7 +778,7 @@ mod steady_actor_shadow_tests {
         // This should hit the overrun warning branch if we can make last > now_nanos
         // Let's temporarily disable internal behavior to get a real now, then re-enable
         shadow.use_internal_behavior = false;
-        let real_now = shadow.internal_now_nanos();
+        let real_now = shadow.actor_start_time.elapsed().as_nanos() as u64;
         shadow.use_internal_behavior = true;
         
         // Force last to be ahead of now

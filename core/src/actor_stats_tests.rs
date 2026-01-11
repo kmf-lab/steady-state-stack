@@ -276,9 +276,9 @@ mod extra_tests {
         let val = compute_std_dev(1, 2, 1, 2);
         assert!(val >= 0.0, "std dev should be non-negative");
 
-        // runner >= SQUARE_LIMIT: computed expression is negative inside sqrt -> NaN
-        let nan = compute_std_dev(0, 1, SQUARE_LIMIT, 0);
-        assert!(nan.is_nan(), "expected NaN for overflow branch");
+        // runner >= SQUARE_LIMIT: safety guard .max(0.0) prevents NaN
+        let val = compute_std_dev(0, 1, SQUARE_LIMIT, 0);
+        assert_eq!(val, 0.0, "expected 0.0 due to safety guard");
     }
 
     use std::sync::Arc;

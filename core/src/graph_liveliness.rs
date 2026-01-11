@@ -519,6 +519,8 @@ pub struct GraphBuilder {
     iouring_queue_length: u32,
     /// The rate at which telemetry data is produced, in milliseconds.
     telemtry_production_rate_ms: u64,
+    /// An optional hex color for the telemetry top bar.
+    telemetry_colors: Option<(String, String)>,
     /// An optional barrier for synchronizing actor shutdown.
     shutdown_barrier: Option<Arc<Barrier>>,
     /// Default stack size for all actors in the graph.
@@ -556,6 +558,7 @@ impl GraphBuilder {
             proactor_config: Some(ProactorConfig::InterruptDriven),
             iouring_queue_length: 1 << 5,
             telemtry_production_rate_ms: 40,
+            telemetry_colors: None,
             shutdown_barrier: None,
             default_stack_size: None,
             block_fail_fast: false,
@@ -579,6 +582,7 @@ impl GraphBuilder {
             proactor_config: Some(ProactorConfig::InterruptDriven),
             iouring_queue_length: 1 << 5,
             telemtry_production_rate_ms: 40,
+            telemetry_colors: None,
             shutdown_barrier: None,
             default_stack_size: None,
             block_fail_fast: false,
@@ -620,6 +624,13 @@ impl GraphBuilder {
         } else {
             warn!("telemetry production rate must be at least 40ms, setting to 40ms");
         }
+        result
+    }
+
+    /// Sets the telemetry top bar colors (primary and secondary hex strings).
+    pub fn with_telemetry_colors(&self, primary: &str, secondary: &str) -> Self {
+        let mut result = self.clone();
+        result.telemetry_colors = Some((primary.to_string(), secondary.to_string()));
         result
     }
 
@@ -762,6 +773,8 @@ pub struct Graph {
     pub(crate) backplane: Arc<Mutex<Option<StageManager>>>,
     /// The rate at which telemetry data is produced, in milliseconds.
     pub(crate) telemetry_production_rate_ms: u64,
+    /// An optional hex color for the telemetry top bar.
+    pub(crate) telemetry_colors: Option<(String, String)>,
     /// A lazily initialized reference to the Aeron media driver.
     pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// An optional barrier for synchronizing actor shutdown.
@@ -1172,6 +1185,7 @@ impl Graph {
             } else {
                 0u64
             },
+            telemetry_colors: builder.telemetry_colors,
             team_count: Arc::new(AtomicUsize::new(1)),
             aeron: Default::default(),
             is_for_testing: builder.is_for_testing,

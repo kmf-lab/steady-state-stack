@@ -335,6 +335,7 @@ impl TxCore for StreamTx<StreamIngress> {
             Err((item, payload)) => {
                 match saturation {
                     SendSaturation::AwaitForRoom => {}
+                    #[allow(deprecated)]
                     SendSaturation::ReturnBlockedMsg => return SendOutcome::Blocked(item),
                     SendSaturation::WarnThenAwait => {
                         self.control_channel.report_tx_full_warning(ident);
@@ -730,6 +731,7 @@ impl TxCore for StreamTx<StreamEgress> {
             Err(item) => {
                 match saturation {
                     SendSaturation::AwaitForRoom => {}
+                    #[allow(deprecated)]
                     SendSaturation::ReturnBlockedMsg => return SendOutcome::Blocked(item),
                     SendSaturation::WarnThenAwait => {
                         self.control_channel.report_tx_full_warning(ident);
@@ -1037,6 +1039,7 @@ mod core_tx_stream_tests {
 
         // Try to send again with a tiny timeout
         let start = std::time::Instant::now();
+        #[allow(deprecated)]
         let outcome = core_exec::block_on(tx_guard.shared_send_async_timeout(
             &[0u8; 5],
             ident,

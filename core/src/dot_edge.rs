@@ -9,7 +9,8 @@ pub(crate) struct Edge {
     pub(crate) to: Option<ActorName>,
     pub(crate) color: &'static str, // Results from computer
     pub(crate) sidecar: bool, // Mark this edge as attaching to a sidecar
-    pub(crate) pen_width: &'static str, // Results from computer
+    pub(crate) pen_width: String, // Results from computer
+    pub(crate) saturation_score: f64, // Results from computer
     pub(crate) ctl_labels: Vec<&'static str>, // Visibility tags for render
     pub(crate) stats_computer: ChannelStatsComputer,
     pub(crate) display_label: String, // Results from computer
@@ -37,5 +38,6 @@ impl Edge {
 
         self.color = color;
         self.pen_width = pen;
+        self.saturation_score = self.stats_computer.saturation_score;
     }
 }

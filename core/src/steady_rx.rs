@@ -60,7 +60,21 @@ impl<T> Debug for Rx<T> {
     }
 }
 
+impl<T> RxMetaDataProvider for Rx<T> {
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
+        Arc::clone(&self.channel_meta_data.meta_data)
+    }
+}
 impl<T> Rx<T> {
+
+    /// Retrieves metadata for this receiver in a single-element array.
+    ///
+    /// This provides consistency with bundle interfaces, allowing a single
+    /// receiver to be treated as a collection of metadata providers.
+    pub fn meta_data(&self) -> [&dyn RxMetaDataProvider; 1] {
+        [self as &dyn RxMetaDataProvider]
+    }
+
     /// Attempts to peek at a slice of messages from the channel without removing them.
     ///
     /// This method fills the provided mutable slice with as many messages as possible from the channel,

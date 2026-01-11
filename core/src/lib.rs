@@ -359,6 +359,9 @@ mod channel_builder_lazy;
 mod dot_edge;
 mod dot_node;
 
+/// meta macros for building our the spotlight
+pub mod macros;
+
 pub use crate::expression_steady_eye::LAST_FALSE;
 
 pub use crate::logging_util::*;
@@ -368,6 +371,8 @@ pub use futures::future::Future;
 use futures::channel::oneshot;
 use futures_util::lock::MutexGuard;
 pub use steady_actor_spotlight::SteadyActorSpotlight;
+pub use crate::steady_tx::TxMetaDataProvider;
+pub use crate::steady_rx::RxMetaDataProvider;
 
 use crate::yield_now::yield_now;
 
@@ -441,31 +446,7 @@ pub type TxCoreBundle<'a, T: TxCore> = Vec<MutexGuard<'a, T>>;
 #[allow(type_alias_bounds)]
 pub type RxCoreBundle<'a, T: RxCore> = Vec<MutexGuard<'a, T>>;
 
-/// Creates a bundle of thread-safe transmitters with a fixed size, wrapped in an `Arc`.
-///
-/// Wraps an array of transmitters in an `Arc` for shared ownership across threads.
-///
-/// # Parameters
-/// - `internal_array`: An array of `SteadyTx<T>` with a fixed size `GIRTH`.
-///
-/// # Returns
-/// - `SteadyTxBundle<T, GIRTH>`: A bundle of transmitters wrapped in an `Arc`.
-pub fn steady_tx_bundle<T, const GIRTH: usize>(internal_array: [SteadyTx<T>; GIRTH]) -> SteadyTxBundle<T, GIRTH> {
-    Arc::new(internal_array)
-}
 
-/// Creates a bundle of thread-safe receivers with a fixed size, wrapped in an `Arc`.
-///
-/// Wraps an array of receivers in an `Arc` for shared ownership across threads.
-///
-/// # Parameters
-/// - `internal_array`: An array of `SteadyRx<T>` with a fixed size `GIRTH`.
-///
-/// # Returns
-/// - `SteadyRxBundle<T, GIRTH>`: A bundle of receivers wrapped in an `Arc`.
-pub fn steady_rx_bundle<T, const GIRTH: usize>(internal_array: [SteadyRx<T>; GIRTH]) -> SteadyRxBundle<T, GIRTH> {
-    Arc::new(internal_array)
-}
 
 /// Initializes logging for the Steady State crate.
 ///
@@ -785,6 +766,7 @@ pub struct SteadyRunner {
     default_actor_stack_size: Option<usize>,
     barrier_size: Option<usize>,
     telemetry_rate_ms: Option<u64>,
+    telemetry_colors: Option<(String, String)>,
     for_test: bool,
 }
 
@@ -799,6 +781,7 @@ impl SteadyRunner {
             default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
             barrier_size: None,
             telemetry_rate_ms: None,
+            telemetry_colors: None,
             for_test: true,
         }
     }
@@ -811,6 +794,7 @@ impl SteadyRunner {
             default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
             barrier_size: None,
             telemetry_rate_ms: None,
+            telemetry_colors: None,
             for_test: false,
         }
     }
@@ -851,6 +835,13 @@ impl SteadyRunner {
         result
     }
 
+    /// Sets the telemetry top bar colors (primary and secondary hex strings).
+    pub fn with_telemetry_colors(&self, primary_color: &str, secondary_color: &str) -> Self {
+        let mut result = self.clone();
+        result.telemetry_colors = Some((primary_color.to_string(), secondary_color.to_string()));
+        result
+    }
+
     /// Spawns a guarded thread, initializes a production graph, and executes the provided closure.
     /// The result (including errors) from the closure is propagated back to the caller as a boxed,
     /// thread-safe error. Panics in the thread are unwound (propagated) to the calling thread.
@@ -869,7 +860,7 @@ impl SteadyRunner {
                 .stack_size(self.stack_size);
 
         // Spawn the thread and capture its join handle
-        let mut handle = builder.spawn(move || {
+        let handle = builder.spawn(move || {
             // Initialize logging if specified; ignore errors to avoid masking closure failures
             if let Some(level) = self.loglevel {
                 let _ = init_logging(level);
@@ -890,6 +881,9 @@ impl SteadyRunner {
             }
             if let Some(rate) = self.telemetry_rate_ms {
                 graph = graph.with_telemtry_production_rate_ms(rate);
+            }
+            if let Some((ref c1, ref c2)) = self.telemetry_colors {
+                graph = graph.with_telemetry_colors(c1, c2);
             }
 
             let graph = graph.build(args);

@@ -46,7 +46,23 @@ impl<T> Debug for Tx<T> {
     }
 }
 
+// Satisfy the trait for the raw struct
+impl<T> TxMetaDataProvider for Tx<T> {
+    fn meta_data(&self) -> Arc<ChannelMetaData> {
+        Arc::clone(&self.channel_meta_data.meta_data)
+    }
+}
+
 impl<T> Tx<T> {
+
+    /// Retrieves metadata for this transmitter in a single-element array.
+    ///
+    /// This provides consistency with bundle interfaces, allowing a single
+    /// transmitter to be treated as a collection of metadata providers.
+    pub fn meta_data(&self) -> [&dyn TxMetaDataProvider; 1] {
+        [self as &dyn TxMetaDataProvider]
+    }
+
     /// Retrieves the unique identifier assigned to this transmission channel.
     ///
     /// Each channel is assigned a distinct ID, which is useful for tracking, debugging, or associating telemetry data with specific channels.

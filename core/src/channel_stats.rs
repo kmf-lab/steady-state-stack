@@ -68,6 +68,11 @@ pub struct ChannelStatsComputer {
     pub(crate) current_latency: Option<ChannelBlock<u64>>,
     pub(crate) prometheus_labels: String,
     pub(crate) show_total: bool,
+
+    pub(crate) saturation_score: f64,
+    pub(crate) last_send: i64,
+    pub(crate) last_take: i64,
+    pub(crate) last_total: i64,
 }
 
 impl ChannelStatsComputer {
@@ -210,6 +215,10 @@ impl ChannelStatsComputer {
             self.history_latency.push_back(ChannelBlock::default());
         }
         self.prev_take = 0i64;
+        self.saturation_score = 0.0;
+        self.last_send = 0;
+        self.last_take = 0;
+        self.last_total = 0;
     }
 
     /// Accumulates data frames for filled, rate, and latency.
@@ -390,11 +399,11 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A tuple containing the line color and line thickness.
-    pub(crate) fn compute(&mut self, display_label: &mut String, metric_text: &mut String, from_id: Option<ActorName>, send: i64, take: i64) -> (&'static str, &'static str) {
+    pub(crate) fn compute(&mut self, display_label: &mut String, metric_text: &mut String, from_id: Option<ActorName>, send: i64, take: i64) -> (&'static str, String) {
         display_label.clear();
 
         if self.capacity == 0 {
-            return (DOT_GREY, "1");
+            return (DOT_GREY, "1".to_string());
         }
         assert!(self.capacity > 0, "capacity must be greater than 0 from actor {:?}, this was probably not init", from_id);
 
@@ -410,6 +419,10 @@ impl ChannelStatsComputer {
         let consumed: u64 = (take - self.prev_take) as u64;
         self.accumulate_data_frame(inflight, consumed); 
         self.prev_take = take;
+        self.last_send = send;
+        self.last_take = take;
+        self.last_total = inflight as i64;
+        self.saturation_score = (inflight as f64 / self.capacity as f64).clamp(0.0, 1.0);
     
         ////////////////////////////////////////////////
         //  Build the labels
@@ -456,7 +469,8 @@ impl ChannelStatsComputer {
             display_label.push('\n');
         });
 
-        let mut line_thick = DOT_PEN_WIDTH[0];//default
+        let pen_width_f = 1.0 + (self.saturation_score * 14.0);
+        let mut line_thick = format!("{:.1}", pen_width_f);
 
         // Does nothing if the value is None
         if let Some(ref current_rate) = self.current_rate {
@@ -472,7 +486,7 @@ impl ChannelStatsComputer {
 
                     // Get the line thickness from the DOT_PEN_WIDTH array
                     // NOTE: [0] is 1 and they grow as a factorial after that.
-                    line_thick = DOT_PEN_WIDTH[traffic_index.min(DOT_PEN_WIDTH.len() - 1)];
+                    line_thick = DOT_PEN_WIDTH[traffic_index.min(DOT_PEN_WIDTH.len() - 1)].to_string();
 
                 }
             }
@@ -872,3 +886,24 @@ impl ChannelStatsComputer {
 
 /// The number of decimal places used for tens.
 pub(crate) const PLACES_TENS: u64 = 1000u64;
+
+#[cfg(test)]
+mod channel_stats_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_avg_filled_percentage_none() {
+        let computer = ChannelStatsComputer {
+            capacity: 100,
+            ..Default::default()
+        };
+        assert_eq!(computer.avg_filled_percentage(&50, &100), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_avg_latency_none() {
+        let computer = ChannelStatsComputer::default();
+        assert_eq!(computer.avg_latency(&Duration::from_millis(100)), Ordering::Equal);
+    }
+}

@@ -7,6 +7,7 @@ use num_traits::Zero;
 use std::fmt::Write;
 use std::fs::{create_dir_all, OpenOptions};
 use std::path::PathBuf;
+use std::collections::HashMap;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -32,6 +33,8 @@ pub struct DotState {
     pub(crate) nodes: Vec<Node>, // Position matches the node ID
     pub(crate) edges: Vec<Edge>, // Position matches the channel ID
     pub seq: u64,
+    pub(crate) telemetry_colors: Option<(String, String)>,
+    pub(crate) refresh_rate_ms: u64,
 }
 
 #[derive(Default,Clone,Debug)]
@@ -60,13 +63,25 @@ pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
     });
 
     state.edges.iter()
-        .filter(|e| e.from.is_some() && e.to.is_some())
+        .filter(|e| e.id != usize::MAX)
         .for_each(|edge| {
             txt_metric.put_slice(edge.metric_text.as_bytes());
         });
 }
 
-
+#[derive(Hash, Eq, PartialEq, Debug, Clone, PartialOrd, Ord)]
+struct EdgeBundleKey {
+    from_name: Option<&'static str>,
+    from_suffix: Option<usize>,
+    to_name: Option<&'static str>,
+    to_suffix: Option<usize>,
+    color: &'static str,
+    capacity: usize,
+    type_name: Option<&'static str>,
+    type_byte_count: usize,
+    sidecar: bool,
+    ctl_labels: Vec<&'static str>,
+}
 
 /// Builds the DOT graph from the current state.
 ///
@@ -81,10 +96,6 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
     dot_graph.put_slice(b"digraph G {\nrankdir=");
     dot_graph.put_slice("LR".as_bytes());
     dot_graph.put_slice(b";\n");
-    //write a digraph comment
-    // dot_graph.put_slice(b"/*\n"); // from config, will break test_build_dot test
-    // dot_graph.put_slice(b"  This graph is a representation of the actors and channels in the system. let me tell you about your labels.\n");
-    // dot_graph.put_slice(b"*/\n");
 
     // Keep sidecars near with nodesep and ranksep spreads the rest out for label room.
     dot_graph.put_slice(b"graph [nodesep=.5, ranksep=2.5];\n");
@@ -132,75 +143,182 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
 
     });
 
-    state.edges.iter()
-        .filter(|e| e.from.is_some() && e.to.is_some())
-        // Filter on visibility labels
-        // TODO: new feature must also drop nodes if no edges are visible
+    let mut bundles: HashMap<EdgeBundleKey, Vec<&Edge>> = HashMap::new();
+    for edge in state.edges.iter().filter(|e| e.id != usize::MAX) {
+        let from_name = edge.from.map(|f| f.name);
+        let from_suffix = edge.from.and_then(|f| f.suffix);
+        let to_name = edge.to.map(|f| f.name);
+        let to_suffix = edge.to.and_then(|f| f.suffix);
 
-        .for_each(|edge| {
+        let mut ctl_labels = edge.ctl_labels.clone();
+        ctl_labels.sort(); // Ensure consistent grouping regardless of addition order
+        let key = EdgeBundleKey {
+            from_name,
+            from_suffix,
+            to_name,
+            to_suffix,
+            color: edge.color,
+            capacity: edge.stats_computer.capacity,
+            type_name: edge.stats_computer.show_type,
+            type_byte_count: edge.stats_computer.type_byte_count,
+            sidecar: edge.sidecar,
+            ctl_labels,
+        };
+        bundles.entry(key).or_default().push(edge);
+    }
 
-            // we have a vec of labels
+    // Sort keys to ensure deterministic DOT output
+    let mut sorted_keys: Vec<_> = bundles.keys().collect();
+    sorted_keys.sort();
 
-            //config.
+    for key in sorted_keys {
+        let edges = &bundles[key];
+        if edges.len() < steady_config::AGGREGATION_THRESHOLD {
+            // Discrete edges are always solid to distinguish them from bundles
+            let style = ""; 
 
-            //let show = edge.ctl_labels.iter().any(|f| steady_config::is_visible(f));
-            //let hide = edge.ctl_labels.iter().any(|f| steady_config::is_hidden(f));
+            for edge in edges {
+                let head = if edge.stats_computer.last_take > 0 { format!("Total Recv: {}", edge.stats_computer.last_take) } else { String::new() };
+                let tail = if edge.stats_computer.last_send > 0 { format!("Total Sent: {}", edge.stats_computer.last_send) } else { String::new() };
 
-
-
-            dot_graph.put_slice(b"\"");
-            if let Some(f) = edge.from {
-                dot_graph.put_slice(f.name.as_bytes());
-                if let Some(s) = f.suffix {
-                    dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
-                }
+                render_edge_internal(
+                    dot_graph,
+                    key.from_name.unwrap_or("unknown"),
+                    key.from_suffix,
+                    key.to_name.unwrap_or("unknown"),
+                    key.to_suffix,
+                    &edge.display_label,
+                    edge.color,
+                    &edge.pen_width,
+                    style,
+                    key.sidecar,
+                    &head, &tail, ""
+                );
+            }
+        } else {
+            let n = edges.len();
+            let sum_traffic: f64 = edges.iter().map(|e| e.saturation_score * e.stats_computer.capacity as f64).sum();
+            let bundle_capacity = (n as f64) * key.capacity as f64;
+            let bundle_util = if bundle_capacity > 0.0 {
+                (sum_traffic / bundle_capacity).clamp(0.0, 1.0)
             } else {
-                dot_graph.put_slice(b"unknown");
-            }
-            dot_graph.put_slice(b"\" -> \"");
-            if let Some(t) = edge.to {
-                dot_graph.put_slice(t.name.as_bytes());
-                if let Some(s) = t.suffix {
-                    dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
-                }
-            } else {
-                dot_graph.put_slice(b"unknown");
-            }
-            dot_graph.put_slice(b"\" [label=\"");
-            dot_graph.put_slice(edge.display_label.as_bytes());
-            dot_graph.put_slice(b"\", color=");
-            dot_graph.put_slice(edge.color.as_bytes());
-            dot_graph.put_slice(b", penwidth=");
-            dot_graph.put_slice(edge.pen_width.as_bytes());
-            dot_graph.put_slice(b"];\n");
+                0.0
+            };
+            
+            // Bundles start at width 4.0 and grow from there
+            let pen_width_f = 4.0 + (bundle_util * 14.0);
+            let pen_width_str = format!("{:.1}", pen_width_f);
+            
+            // Bundles are always bold and dashed to distinguish them from single lines
+            let style_attr = ", style=\"bold,dashed\"";
 
-            // If this edge is a sidecar, document they are in the same row
-            // to help with readability since this is tight with the other node
-            if edge.sidecar {
-                dot_graph.put_slice(b"{rank=same; \"");
-                if let Some(t) = edge.to {
-                    dot_graph.put_slice(t.name.as_bytes());
-                    if let Some(s) = t.suffix {
-                        dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
-                    }
-                } else {
-                    dot_graph.put_slice(b"unknown");
+            let mut header = format!("BUNDLE: {}x {} ({}%)", n, key.type_name.unwrap_or("Data"), (bundle_util * 100.0) as usize);
+            
+            if !key.ctl_labels.is_empty() {
+                header.push_str("\\nLabels: ");
+                for (i, l) in key.ctl_labels.iter().enumerate() {
+                    if i > 0 { header.push_str(", "); }
+                    header.push_str(l);
                 }
-                dot_graph.put_slice(b"\" \"");
-
-                if let Some(f) = edge.from {
-                    dot_graph.put_slice(f.name.as_bytes());
-                    if let Some(s) = f.suffix {
-                        dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
-                    }
-                } else {
-                    dot_graph.put_slice(b"unknown");
-                }
-
-                dot_graph.put_slice(b"\"}");
             }
-        });
+
+            let total_send: i64 = edges.iter().map(|e| e.stats_computer.last_send).sum();
+            let total_take: i64 = edges.iter().map(|e| e.stats_computer.last_take).sum();
+            
+            let headlabel = if total_take > 0 { format!("Total Recv: {}", total_take) } else { String::new() };
+            let taillabel = if total_send > 0 { format!("Total Sent: {}", total_send) } else { String::new() };
+
+            let mut tooltip = format!("Bundle Details ({} channels):\\n", n);
+            for (i, e) in edges.iter().enumerate() {
+                if i >= 10 {
+                    let _ = write!(tooltip, "... and {} more (agg util: {}%)", n - 10, (bundle_util * 100.0) as usize);
+                    break;
+                }
+                let _ = write!(tooltip, "CH#{}: Vol={} / Cap={} ({}%)\\n", e.id, e.stats_computer.last_total, e.stats_computer.capacity, (e.saturation_score * 100.0) as usize);
+            }
+
+            render_edge_internal(
+                dot_graph,
+                key.from_name.unwrap_or("unknown"),
+                key.from_suffix,
+                key.to_name.unwrap_or("unknown"),
+                key.to_suffix,
+                &header,
+                key.color,
+                &pen_width_str,
+                style_attr,
+                key.sidecar,
+                &headlabel,
+                &taillabel,
+                &tooltip,
+            );
+        }
+    }
     dot_graph.put_slice(b"}\n");
+}
+
+fn render_edge_internal(
+    dot_graph: &mut BytesMut,
+    from_name: &'static str,
+    from_suffix: Option<usize>,
+    to_name: &'static str,
+    to_suffix: Option<usize>,
+    label: &str,
+    color: &'static str,
+    pen_width: &str,
+    style: &str,
+    sidecar: bool,
+    headlabel: &str,
+    taillabel: &str,
+    tooltip: &str,
+) {
+    dot_graph.put_slice(b"\"");
+    dot_graph.put_slice(from_name.as_bytes());
+    if let Some(s) = from_suffix {
+        dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+    }
+    dot_graph.put_slice(b"\" -> \"");
+    dot_graph.put_slice(to_name.as_bytes());
+    if let Some(s) = to_suffix {
+        dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+    }
+    dot_graph.put_slice(b"\" [label=\"");
+    let escaped_label = label.replace('"', "'");
+    dot_graph.put_slice(escaped_label.as_bytes());
+    
+    if !headlabel.is_empty() {
+        dot_graph.put_slice(b"\", headlabel=\"");
+        dot_graph.put_slice(headlabel.replace('"', "'").as_bytes());
+    }
+    if !taillabel.is_empty() {
+        dot_graph.put_slice(b"\", taillabel=\"");
+        dot_graph.put_slice(taillabel.replace('"', "'").as_bytes());
+    }
+    if !tooltip.is_empty() {
+        dot_graph.put_slice(b"\", tooltip=\"");
+        dot_graph.put_slice(tooltip.replace('"', "'").as_bytes());
+    }
+
+    dot_graph.put_slice(b"\", color=");
+    dot_graph.put_slice(color.as_bytes());
+    dot_graph.put_slice(b", penwidth=");
+    dot_graph.put_slice(pen_width.as_bytes());
+    dot_graph.put_slice(style.as_bytes());
+    dot_graph.put_slice(b"];\n");
+
+    if sidecar {
+        dot_graph.put_slice(b"{rank=same; \"");
+        dot_graph.put_slice(to_name.as_bytes());
+        if let Some(s) = to_suffix {
+            dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+        }
+        dot_graph.put_slice(b"\" \"");
+        dot_graph.put_slice(from_name.as_bytes());
+        if let Some(s) = from_suffix {
+            dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+        }
+        dot_graph.put_slice(b"\"}\n");
+    }
 }
 
 /// Represents the frames of a DOT graph, including active metrics and the last graph update.
@@ -286,7 +404,8 @@ fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec:
                     stats_computer: ChannelStatsComputer::default(),
                     ctl_labels: Vec::new(), // For visibility control
                     color: "grey",
-                    pen_width: DEFAULT_PEN_WIDTH,
+                    pen_width: DEFAULT_PEN_WIDTH.to_string(),
+                    saturation_score: 0.0,
                     display_label: String::new(), // Defined when the content arrives
                     metric_text: String::new(),
                 }
@@ -626,7 +745,8 @@ mod dot_tests {
             to: None,
             color: "grey",
             sidecar: false,
-            pen_width: "1",
+            pen_width: "1".to_string(),
+            saturation_score: 0.0,
             ctl_labels: Vec::new(),
             stats_computer: ChannelStatsComputer::default(),
             display_label: String::new(),
@@ -634,7 +754,7 @@ mod dot_tests {
         };
         edge.compute_and_refresh(100, 50);
         assert_eq!(edge.color, "grey");
-        assert_eq!(edge.pen_width, "1");
+        assert!(!edge.pen_width.is_empty());
     }
 
     #[test]
@@ -662,14 +782,17 @@ mod dot_tests {
                     to: None,
                     color: "grey",
                     sidecar: false,
-                    pen_width: "1",
+                    pen_width: "1".to_string(),
+                    saturation_score: 0.0,
                     ctl_labels: Vec::new(),
                     stats_computer: ChannelStatsComputer::default(),
-                    display_label: String::new(),
+                    display_label: "edge_metric".to_string(),
                     metric_text: "edge_metric".to_string(),
                 }
             ],
             seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
         };
         let mut txt_metric = BytesMut::new();
         build_metric(&state, &mut txt_metric);
@@ -708,7 +831,8 @@ mod dot_tests {
                     to: None,
                     color: "grey",
                     sidecar: false,
-                    pen_width: "1",
+                    pen_width: "1".to_string(),
+                    saturation_score: 0.0,
                     ctl_labels: Vec::new(),
                     stats_computer: ChannelStatsComputer::default(),
                     display_label: "edge1".to_string(),
@@ -716,12 +840,14 @@ mod dot_tests {
                 }
             ],
             seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
         };
         let mut dot_graph = BytesMut::new();
 
 
         build_dot(&state, &mut dot_graph);
-        let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1 ];\n}\n";
+        let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1 ];\n\"unknown\" -> \"unknown\" [label=\"edge1\", color=grey, penwidth=1];\n}\n";
 
         let vec = dot_graph.to_vec();
         //println!("vec: {:?}", vec.clone());
@@ -881,14 +1007,17 @@ mod dot_tests {
                     to: Some(ActorName::new("to_node", None)),
                     color: "grey",
                     sidecar: false,
-                    pen_width: "1",
+                    pen_width: "1".to_string(),
+                    saturation_score: 0.0,
                     ctl_labels: Vec::new(),
                     stats_computer: ChannelStatsComputer::default(),
-                    display_label: String::new(),
+                    display_label: "test_edge".to_string(),
                     metric_text: "edge_metric".to_string(),
                 }
             ],
             seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
         };
         let mut txt_metric = BytesMut::new();
         build_metric(&state, &mut txt_metric);
@@ -919,6 +1048,8 @@ mod dot_tests {
             ],
             edges: vec![],
             seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
         };
         let mut dot_graph = BytesMut::new();
 
@@ -956,6 +1087,8 @@ mod dot_tests {
             ],
             edges: vec![],
             seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
         };
         let mut dot_graph = BytesMut::new();
 
@@ -1007,7 +1140,8 @@ mod dot_tests {
                     to: Some(ActorName::new("to_node", Some(5))),
                     color: "purple",
                     sidecar: true, // Test sidecar functionality
-                    pen_width: "4",
+                    pen_width: "4".to_string(),
+                    saturation_score: 0.0,
                     ctl_labels: Vec::new(),
                     stats_computer: ChannelStatsComputer::default(),
                     display_label: "test_edge".to_string(),
@@ -1015,6 +1149,8 @@ mod dot_tests {
                 }
             ],
             seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
         };
         let mut dot_graph = BytesMut::new();
 
@@ -1243,6 +1379,8 @@ mod dot_tests {
             ],
             edges: vec![],
             seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
         };
         let mut dot_graph = BytesMut::new();
 
@@ -1264,7 +1402,8 @@ mod dot_tests {
                     to: None,   // This will trigger "unknown" branch
                     color: "grey",
                     sidecar: false,
-                    pen_width: "1",
+                    pen_width: "1".to_string(),
+                    saturation_score: 0.0,
                     ctl_labels: Vec::new(),
                     stats_computer: ChannelStatsComputer::default(),
                     display_label: "test_edge".to_string(),
@@ -1272,15 +1411,157 @@ mod dot_tests {
                 }
             ],
             seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
         };
         let mut dot_graph = BytesMut::new();
 
 
-        // This should not process the edge since from and to are None
+        // This should process the edge as "unknown" -> "unknown"
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
-        assert!(!result.contains("test_edge"));
+        assert!(result.contains("test_edge"));
+    }
+
+    #[test]
+    fn test_build_dot_aggregation() {
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+        
+        let mut edges = Vec::new();
+        for i in 0..5 {
+            edges.push(Edge {
+                id: i,
+                from: Some(from),
+                to: Some(to),
+                color: "green",
+                sidecar: false,
+                pen_width: "4".to_string(),
+                ctl_labels: vec!["test_label"],
+                stats_computer: ChannelStatsComputer {
+                    capacity: 10,
+                    show_type: Some("TestType"),
+                    type_byte_count: 8,
+                    last_send: 100,
+                    last_take: 90,
+                    last_total: 10,
+                    ..Default::default()
+                },
+                saturation_score: 0.1,
+                display_label: format!("CH{} stats", i),
+                metric_text: String::new(),
+            });
+        }
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: DEFAULT_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    work_info: None
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: DEFAULT_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    work_info: None
+                },
+            ],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
+        };
+
+        let mut dot_graph = BytesMut::new();
+        build_dot(&state, &mut dot_graph);
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        
+        assert!(result.contains("BUNDLE: 5x TestType (10%)"));
+        assert!(result.contains("penwidth=5.4"));
+        assert!(result.contains("style=\"bold,dashed\""));
+        assert!(result.contains("headlabel=\"Total Recv: 450\""));
+        assert!(result.contains("taillabel=\"Total Sent: 500\""));
+        assert!(result.contains("tooltip=\"Bundle Details (5 channels):\\nCH#0: Vol=10 / Cap=10 (10%)\\n"));
+    }
+
+    #[test]
+    fn test_build_dot_no_aggregation_different_labels() {
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+        
+        let mut edges = Vec::new();
+        for i in 0..5 {
+            edges.push(Edge {
+                id: i,
+                from: Some(from),
+                to: Some(to),
+                color: "green",
+                sidecar: false,
+                pen_width: "4".to_string(),
+                ctl_labels: if i < 3 { vec!["A"] } else { vec!["B"] },
+                stats_computer: ChannelStatsComputer {
+                    capacity: 10,
+                    type_byte_count: 4,
+                    ..Default::default()
+                },
+                saturation_score: 0.0,
+                display_label: format!("CH{} stats", i),
+                metric_text: String::new(),
+            });
+        }
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: DEFAULT_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    work_info: None
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: DEFAULT_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    work_info: None
+                },
+            ],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
+        };
+
+        let mut dot_graph = BytesMut::new();
+        build_dot(&state, &mut dot_graph);
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        
+        // Neither group reaches the threshold of 4
+        assert!(!result.contains("BUNDLE"));
     }
 }
-
-

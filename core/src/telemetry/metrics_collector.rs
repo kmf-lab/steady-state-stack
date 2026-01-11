@@ -380,7 +380,7 @@ fn gather_valid_actor_telemetry_to_scan(
     let dynamic_senders = guard.deref();
     let v: Vec<(usize, Box<SteadyRx<ActorStatus>>, ActorIdentity)> = dynamic_senders
         .iter()
-        .filter(|f| f.ident.label.name != NAME) // Exclude metrics collector itself.
+        .filter(|f| f.ident.label.name != NAME && f.ident.id != usize::MAX) // Exclude metrics collector itself and uninitialized actors.
         .flat_map(|f| {
             let ident = f.ident;
             f.telemetry_take.iter().filter_map(move |g| {
@@ -465,90 +465,118 @@ fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: & [Collect
 }
 
 /// Gathers structural details for new or changed actors, ensuring consistency.
+/// Gathers structural details for new or changed actors, ensuring consistency.
 fn gather_node_details(
     state: &mut RawDiagramState,
     dynamic_senders: &[CollectorDetail],
     is_building: bool,
 ) -> Option<Vec<DiagramData>> {
     let mut matches: Vec<u8> = Vec::new(); // Tracks channel pairing (1=RX, 2=TX, 3=both).
+
+    // Step 1: Build the bitmask of all reported endpoints
     dynamic_senders.iter().for_each(|x| {
         x.telemetry_take.iter().for_each(|f| {
             f.rx_channel_id_vec().iter().for_each(|meta| {
                 if meta.id >= matches.len() {
                     matches.resize(meta.id + 1, 0);
                 }
-                matches[meta.id] |= 1; // Mark RX channel.
+                matches[meta.id] |= 1;
             });
             f.tx_channel_id_vec().iter().for_each(|meta| {
                 if meta.id >= matches.len() {
                     matches.resize(meta.id + 1, 0);
                 }
-                matches[meta.id] |= 2; // Mark TX channel.
+                matches[meta.id] |= 2;
             });
         });
     });
 
-    // Check for unpaired channels only when not building, to avoid false positives.
-    if !is_building && !matches.iter().all(|x| *x == 3 || *x == 0) {
-        matches.iter()
-            .enumerate()
-            .filter(|(_, x)| **x != 3 && **x != 0)
-            .for_each(|(i, x)| {
-                dynamic_senders.iter().for_each(|sender| {
-                    sender.telemetry_take.iter().for_each(|f| {
-                        if x.is_one() {
-                            f.rx_channel_id_vec().iter().for_each(|meta| {
-                                if meta.id == i {
-                                    let msg = format!("Possible missing TX for actor {:?} RX {:?} Channel:{:?}", sender.ident, meta.show_type, i);
-                                    let count = state.error_map.entry(msg.clone()).and_modify(|c| *c += 1).or_insert(0);
-                                    if *count == 21 {
-                                        warn!("{}", msg); // Warn after repeated occurrences.
-                                    }
-                                }
-                            });
-                        } else {
-                            f.tx_channel_id_vec().iter().for_each(|meta| {
-                                if meta.id == i {
-                                    let msg = format!("Possible missing RX for actor {:?} TX {:?} Channel:{:?}", sender.ident, meta.show_type, i);
-                                    let count = state.error_map.entry(msg.clone()).and_modify(|c| *c += 1).or_insert(0);
-                                    if *count == 21 {
-                                        warn!("{}", msg);
-                                    }
-                                }
-                            });
-                        }
-                    });
-                });
-            });
-        return None; // Retry next iteration if errors are found.
+    // Step 2: Diagnostic Reporting for Orphaned Channels (only when not building)
+    if !is_building {
+        let mut mismatch_found = false;
+        for (chan_id, &mask) in matches.iter().enumerate() {
+            if mask != 0 && mask != 3 {
+                mismatch_found = true;
+
+                // Identify the missing side and the affected actors
+                let (missing_side, reported_side, actors_involved) = if mask == 1 {
+                    ("PRODUCER (TX)", "Consumers (RX)", find_actors_on_channel(dynamic_senders, chan_id, true))
+                } else {
+                    ("CONSUMER (RX)", "Producers (TX)", find_actors_on_channel(dynamic_senders, chan_id, false))
+                };
+
+                let msg = format!(
+                    "Graph Topology Alert: Channel {} is missing its {}. \
+                     The following {} are reported in telemetry: [{}]. \
+                     DIAGNOSIS: Check if the missing actor was spawned, if its telemetry is enabled, \
+                     or if there is a wiring mismatch in the GraphBuilder.",
+                    chan_id, missing_side, reported_side, actors_involved.join(", ")
+                );
+
+                // Debounce logging using the error_map
+                let count = state.error_map.entry(msg.clone()).and_modify(|c| *c += 1).or_insert(1);
+                if *count == 21 {
+                    warn!("{}", msg);
+                }
+            }
+        }
+
+        if mismatch_found {
+            return None; // Hold back updates until topology is sound
+        }
     }
 
-    state.error_map.clear(); // Clear errors once structure is valid.
-
+    // Step 3: Success Path - Clear errors and prepare NodeDef
+    state.error_map.clear();
     let max_channels_len = matches.len();
     state.total_take_send.resize(max_channels_len, (0, 0));
     state.future_take.resize(max_channels_len, 0);
     state.future_send.resize(max_channels_len, 0);
-    state.actor_last_update.resize(dynamic_senders.len(), 0); // Match actor count.
-
+    state.actor_last_update.resize(dynamic_senders.len(), 0);
 
     let nodes: Vec<DiagramData> = dynamic_senders
         .iter()
-        .skip(state.actor_count) // Only process new actors.
+        .skip(state.actor_count)
+        .filter(|details| !details.telemetry_take.is_empty())
         .map(|details| {
             let tt = &details.telemetry_take[0];
             let metadata = tt.actor_metadata();
             let rx_vec = tt.rx_channel_id_vec();
             let tx_vec = tt.tx_channel_id_vec();
-            DiagramData::NodeDef(state.sequence, Box::new((
-                metadata.clone(),
-                rx_vec.into_boxed_slice(),
-                tx_vec.into_boxed_slice(),
-            )))
+            DiagramData::NodeDef(
+                state.sequence,
+                Box::new((
+                    metadata.clone(),
+                    rx_vec.into_boxed_slice(),
+                    tx_vec.into_boxed_slice(),
+                )),
+            )
         })
         .collect();
-    state.actor_count = dynamic_senders.len(); // Update actor count.
-    Some(nodes) // Return new node definitions.
+
+    state.actor_count = dynamic_senders.len();
+    Some(nodes)
+}
+
+/// Helper function to find all actors associated with a specific orphaned channel.
+fn find_actors_on_channel(
+    dynamic_senders: &[CollectorDetail],
+    chan_id: usize,
+    is_rx: bool,
+) -> Vec<String> {
+    dynamic_senders
+        .iter()
+        .filter(|ds| {
+            ds.telemetry_take.iter().any(|tel| {
+                if is_rx {
+                    tel.rx_channel_id_vec().iter().any(|m| m.id == chan_id)
+                } else {
+                    tel.tx_channel_id_vec().iter().any(|m| m.id == chan_id)
+                }
+            })
+        })
+        .map(|ds| format!("{:?}", ds.ident))
+        .collect()
 }
 
 /// Sends updated structural data to downstream consumers.

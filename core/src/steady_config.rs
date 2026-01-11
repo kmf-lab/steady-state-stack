@@ -44,6 +44,9 @@ pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECT
 //this must be large enought to hold all actors which may panic at the same moment.
 pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 256;
 
+/// Threshold for aggregating parallel edges into a single logical bundle.
+pub const AGGREGATION_THRESHOLD: usize = 4;
+
 // Default values for runtime configuration
 const DEFAULT_TELEMETRY_SERVER_PORT: u16 = 9900;
 const DEFAULT_TELEMETRY_SERVER_IP: &str = "0.0.0.0";
@@ -86,6 +89,7 @@ mod tests {
         assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 256);
         assert_eq!(CONSUMED_MESSAGES_BY_COLLECTOR, 128);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_FEATURE, 256);
+        assert_eq!(AGGREGATION_THRESHOLD, 4);
     }
 
     #[test]

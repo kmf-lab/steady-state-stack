@@ -1356,7 +1356,9 @@ fn build_actor_context<I: ?Sized>(
     team_id: usize,
     is_test: bool,
 ) -> SteadyActorShadow {
-    let uib = !builder_source.never_simulate && is_test;
+    //DO NOT modify. the logic here is perfect as we use internal behavior for all non tests
+    //               for some tests we also override to ensure we still use internal behavior
+    let use_internal_behavior = builder_source.never_simulate || !is_test;
     SteadyActorShadow {
         runtime_state: builder_source.runtime_state.clone(),
         channel_count: builder_source.channel_count.clone(),
@@ -1375,7 +1377,7 @@ fn build_actor_context<I: ?Sized>(
         frame_rate_ms,
         show_thread_info: builder_source.show_thread_info,
         aeron_meda_driver: builder_source.aeron_media_driver.clone(),
-        use_internal_behavior: uib,
+        use_internal_behavior,
         shutdown_barrier: builder_source.shutdown_barrier.clone(),
 
     }
@@ -1568,9 +1570,7 @@ mod test_actor_builder {
         assert_eq!((r, w), (0, 0));
 
         // Test very small durations
-        let (r, w) = ActorBuilder::internal_compute_refresh_window(100, Duration::from_millis(1), Duration::from_millis(1));
+        let (_r, _w) = ActorBuilder::internal_compute_refresh_window(100, Duration::from_millis(1), Duration::from_millis(1));
         // Logic ensures it doesn't crash on small inputs.
-        assert!(r >= 0);
-        assert!(w >= 0);
     }
 }

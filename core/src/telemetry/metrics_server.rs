@@ -12,6 +12,7 @@ use crate::telemetry::metrics_collector::*;
 use futures::io;
 use futures::channel::oneshot::Receiver;
 use std::io::Write;
+use std::fmt::Write as FmtWrite;
 use futures_util::{AsyncReadExt, AsyncWriteExt};
 use crate::steady_actor_shadow::SteadyActorShadow;
 
@@ -22,6 +23,7 @@ pub const NAME: &str = "metrics_server";
 struct MetricState {
     doc: Vec<u8>,
     metric: Vec<u8>,
+    config: Vec<u8>,
 }
 
 
@@ -32,13 +34,14 @@ struct MetricState {
 /// # Parameters
 /// - `context`: The SteadyContext instance providing execution context.
 /// - `rx`: The SteadyRx instance to receive DiagramData messages.
+/// - `telemetry_colors`: Optional hex colors for the telemetry top bars (primary and secondary).
 ///
 /// # Returns
 /// A Result indicating success or failure.
 ///
 /// # Errors
 /// This function returns an error if the server fails to start or encounters a runtime error.
-pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>) -> Result<(), Box<dyn Error>> {
+pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>, telemetry_colors: Option<(String, String)>) -> Result<(), Box<dyn Error>> {
     
     //NOTE: we could use this to turn off the server if desired.
     let addr = Some(format!("{}:{}"
@@ -50,17 +53,23 @@ pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>) -
     #[cfg(feature = "telemetry_on_telemetry")]
     let ctrl = ctrl.into_spotlight([&rx], []);
 
-    internal_behavior(ctrl, frame_rate_ms, rx, addr).await
+    internal_behavior(ctrl, frame_rate_ms, rx, addr, telemetry_colors).await
 }
 
-async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx: SteadyRx<DiagramData>, addr: Option<String>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx: SteadyRx<DiagramData>, addr: Option<String>, telemetry_colors: Option<(String, String)>) -> Result<(), Box<dyn Error>> {
 
-
+    let mut initial_config = String::from("{");
+    if let Some((ref c1, ref c2)) = telemetry_colors {
+        let _ = write!(initial_config, "\"telemetry_colors\": [\"{}\", \"{}\"],", c1, c2);
+    }
+    let _ = write!(initial_config, "\"refresh_rate_ms\": {}", frame_rate_ms);
+    initial_config.push('}');
 
     // Define a new instance of the state.
     let state = Arc::new(Mutex::new(MetricState {
         doc: Vec::new(),
         metric: Vec::new(),
+        config: initial_config.into_bytes(),
     }));
 
 
@@ -99,6 +108,8 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         });
     }
     let mut metrics_state = DotState::default();
+    metrics_state.telemetry_colors = telemetry_colors;
+    metrics_state.refresh_rate_ms = frame_rate_ms;
     let mut history = FrameHistory::new(frame_rate_ms);
 
     let mut frames = DotGraphFrames {
@@ -323,11 +334,21 @@ async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHisto
         build_metric(metrics_state, &mut frames.active_metric);
         let metric_bytes = frames.active_metric.to_vec();
 
+        let mut config_json = String::from("{");
+        if let Some((ref c1, ref c2)) = metrics_state.telemetry_colors {
+            let _ = write!(config_json, "\"telemetry_colors\": [\"{}\", \"{}\"],", c1, c2);
+        }
+        let _ = write!(config_json, "\"refresh_rate_ms\": {}", metrics_state.refresh_rate_ms);
+        config_json.push('}');
+        let config_bytes = config_json.into_bytes();
+
         //only if we can get this update so if we have too many users they will get fewer updates
         // but our channel will not fall behind or be blocked by slow clients
-        if let Some(mut state) = state.try_lock() {
+        {
+            let mut state = state.lock().await;
             state.doc = graph_bytes;
             state.metric = metric_bytes;
+            state.config = config_bytes;
         }
         frames.last_generated_graph = Instant::now();
     }
@@ -469,6 +490,13 @@ where
             stream.write_all(itoa::Buffer::new().format(locked_state.doc.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
             stream.write_all(&locked_state.doc).await?;
+            return Ok(());
+        } else if path.starts_with("/co") { // for /config
+            stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: application/json\r\nContent-Length: ", cors_header).as_bytes()).await?;
+            let locked_state = state.lock().await;
+            stream.write_all(itoa::Buffer::new().format(locked_state.config.len()).as_bytes()).await?;
+            stream.write_all(b"\r\n\r\n").await?;
+            stream.write_all(&locked_state.config).await?;
             return Ok(());
         } else if path.starts_with("/set?") { // example /set?rankdir=LR&show=label1,label2&hide=label3,label4
             let mut parts = path.split("?");
@@ -622,7 +650,7 @@ mod meteric_server_tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build(move |context| internal_behavior(context, rate_ms, rx_in.clone(), None)
+            .build(move |context| internal_behavior(context, rate_ms, rx_in.clone(), None, None)
                    , SoloAct);
  
         let test_data:Vec<DiagramData> = (0..3).map(|i| DiagramData::NodeDef( i
@@ -673,6 +701,9 @@ mod http_telemetry_tests {
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("refresh_rate_ms"), "config");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");
@@ -759,7 +790,7 @@ mod http_telemetry_tests {
             .with_name("metrics_server")
             .build(move |context| {
                 let frame_rate_ms = context.frame_rate_ms;
-                internal_behavior(context, frame_rate_ms, rx_in.clone(), server_ip.clone())
+                internal_behavior(context, frame_rate_ms, rx_in.clone(), server_ip.clone(), None)
             },SoloAct);
 
         // Step 3: Start the graph
@@ -893,28 +924,28 @@ mod handle_request_logic_tests {
 
     #[test]
     fn test_handle_request_index() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![] }));
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![] }));
         let stream = MockStream::new("GET / HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_options() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![] }));
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![] }));
         let stream = MockStream::new("OPTIONS / HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_404() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![] }));
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![] }));
         let stream = MockStream::new("GET /unknown HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_assets() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![] }));
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![] }));
         let paths = [
             "/",
             "/index.html",

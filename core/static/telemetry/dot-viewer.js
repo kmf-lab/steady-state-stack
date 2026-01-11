@@ -28,7 +28,7 @@ const speedMap = {
 let aspectRatio, diagram, dragDx, dragDy, exportAnchor;
 let firstTime = true;
 let intervalToken, navHeight, originalWindowWidth;
-let preview, speedArea, speedDropdown, speedMs;
+let preview, speedArea, speedDropdown, speedMs, minRefreshRateMs = 0;
 let speedSpan, speedText, svg, svgRect, userDropdown, viewport, webworker;
 let zoomInBtn, zoomInBtnDisabled, zoomOutBtn, zoomOutBtnDisabled;
 let zoomCurrent = 100, zoomInitialScale = 1.0;
@@ -92,7 +92,13 @@ function onExport() {
 }
 
 function onMessage(message) {
-  const svgText = message.data;
+  let svgText;
+  if (typeof message.data === 'string') {
+    svgText = message.data;
+  } else {
+    ({ svg: svgText } = message.data);
+  }
+
   diagram.innerHTML = svgText;
   removeSvgSize(diagram);
 
@@ -203,8 +209,8 @@ function onSpeedDropdown(event) {
   hide(userDropdown);
   toggleVisibility(speedDropdown);
   if (isVisible(speedDropdown)) {
-    const rect = speedArea.getBoundingClientRect();
-    setStyle(speedDropdown, 'left', px(rect.x + rect.width - 110));
+    const record = speedArea.getBoundingClientRect();
+    setStyle(speedDropdown, 'left', px(record.x + record.width - 110));
   }
   event.stopPropagation();
 }
@@ -305,17 +311,33 @@ function restrictTop(top, previewRect, viewportRect) {
 const setDisplay = (element, canSee) =>
   setStyle(element, 'display', canSee ? 'block' : 'none');
 
+function enforceMinRefreshRate() {
+  Object.keys(speedMap).forEach(key => {
+    const ms = speedMap[key];
+    const element = document.querySelector('.speed' + ms);
+    if (element && ms > 0 && ms < minRefreshRateMs) {
+      setStyle(element, 'display', 'none');
+      if (speedMs === ms) setSpeed('No refresh');
+    } else if (element) {
+      setStyle(element, 'display', 'block');
+    }
+  });
+}
+
 function setSpeed(s) {
+  const ms = speedMap[s];
+  if (ms > 0 && ms < minRefreshRateMs) return;
+
   // Deselect the currently selected menu item.
   let menuItem = document.querySelector('.speed' + speedMs);
   if (menuItem) removeClass(menuItem, 'selected');
 
   // Select a new menu item.
   speedText = s;
-  speedMs = speedMap[speedText];
+  speedMs = ms;
 
   menuItem = document.querySelector('.speed' + speedMs);
-  addClass(menuItem, 'selected');
+  if (menuItem) addClass(menuItem, 'selected');
 
   speedSpan.textContent = speedText;
   hide(speedDropdown);
@@ -338,6 +360,45 @@ function togglePreview() {
 
 const toggleVisibility = element =>
   isVisible(element) ? hide(element) : show(element);
+
+function fetchConfig() {
+  return fetch('/config')
+    .then(response => response.json())
+    .then(config => {
+      console.log('Config received:', config);
+      if (config.telemetry_colors && config.telemetry_colors.length === 2) {
+        const primary = config.telemetry_colors[0];
+        const secondary = config.telemetry_colors[1];
+
+        const nav1 = getById('nav1');
+        const nav2 = getById('nav2');
+        if (nav1) nav1.style.backgroundColor = primary;
+        if (nav2) {
+            nav2.style.backgroundColor = secondary;
+            nav2.style.filter = 'none';
+        }
+
+        // Inject Dynamic Hover/Selection Styles to override dot-viewer.css
+        const styleId = 'steady-dynamic-theme';
+        let styleBlock = getById(styleId);
+        if (!styleBlock) {
+            styleBlock = document.createElement('style');
+            styleBlock.id = styleId;
+            document.head.appendChild(styleBlock);
+        }
+        styleBlock.innerHTML = `
+            .dropdown > div:hover { background-color: ${primary} !important; }
+            .dropdown > .selected { background-color: ${secondary} !important; }
+        `;
+      }
+      if (config.refresh_rate_ms && config.refresh_rate_ms !== minRefreshRateMs) {
+        minRefreshRateMs = config.refresh_rate_ms;
+        enforceMinRefreshRate();
+      }
+      return config;
+    })
+    .catch(err => console.error('Config fetch failed:', err));
+}
 
 window.onload = () => {
   if (!window.Worker) {
@@ -388,7 +449,9 @@ window.onload = () => {
   webworker.onmessage = onMessage;
   webworker.postMessage(DOT_URL);
 
-  setSpeed('200 ms');
+  fetchConfig().then(() => {
+    setSpeed('200 ms');
+  });
 
 };
 

@@ -49,6 +49,8 @@ impl SteadyTelemetryActorSend {
         self.iteration_index_start = iteration_index;
     }
 
+    //TODO: check the  calls for all zero?
+    
     /// Generates a status message for the actor.
     pub(crate) fn status_message(&self, iteration_index: u64) -> ActorStatus {
 
