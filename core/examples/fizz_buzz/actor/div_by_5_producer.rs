@@ -1,4 +1,3 @@
-
 #[allow(unused_imports)]
 use log::*;
 #[allow(unused_imports)]
@@ -10,10 +9,10 @@ use crate::actor::fizz_buzz_processor;
 
 pub async fn run(context: SteadyActorShadow, numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
     let actor = context.into_spotlight([], [&numbers_tx]);
-    if cfg!(not(test)) {
+    if actor.use_internal_behavior {
         internal_behavior(actor, numbers_tx).await
     } else {
-        actor.simulated_behavior(vec!(&numbers_tx)).await
+        actor.simulated_behavior(sim_runners!(numbers_tx)).await
     }
 }
 

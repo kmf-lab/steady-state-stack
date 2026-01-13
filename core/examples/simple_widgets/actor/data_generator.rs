@@ -6,7 +6,7 @@ use steady_state::*;
 
 use crate::actor::data_feedback::ChangeRequest;
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub struct WidgetInventory {
     pub(crate) count: u64,
     pub(crate) _payload: u64,
@@ -16,10 +16,10 @@ pub async fn run(context: SteadyActorShadow
                                , feedback: SteadyRx<ChangeRequest>
                                , tx: SteadyTx<WidgetInventory> ) -> Result<(),Box<dyn Error>> {
     let actor = context.into_spotlight([&feedback], [&tx]);
-    if cfg!(not(test)) {
+    if actor.use_internal_behavior {
         internal_behavior(actor, feedback, tx).await
     } else {
-        actor.simulated_behavior(vec!(&tx)).await
+        actor.simulated_behavior(sim_runners!(tx)).await
     }
 }
 
@@ -111,6 +111,3 @@ mod generator_tests {
 
 
 }
-
-
-

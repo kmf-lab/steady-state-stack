@@ -1,7 +1,63 @@
-use crate::{LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle};
+use crate::{LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle, SteadyRx, SteadyTx, SteadyActor};
+use crate::simulate_edge::IntoSimRunner;
+use crate::distributed::aqueduct_stream::{SteadyStreamRx, SteadyStreamTx, StreamControlItem};
 use async_ringbuf::Arc;
 use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::TxMetaDataProvider;
+
+/// Trait to allow uniform flattening of channels and bundles into simulation runners.
+pub trait SimIndexable<C: SteadyActor + 'static> {
+    /// Pushes references to simulation runners into the provided vector.
+    fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>);
+}
+
+impl<T, C> SimIndexable<C> for SteadyRx<T> 
+    where SteadyRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
+    fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
+}
+
+impl<T, C> SimIndexable<C> for SteadyTx<T> 
+    where SteadyTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
+    fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
+}
+
+impl<T, C> SimIndexable<C> for SteadyStreamRx<T> 
+    where SteadyStreamRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
+    fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
+}
+
+impl<T, C> SimIndexable<C> for SteadyStreamTx<T> 
+    where SteadyStreamTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
+    fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
+}
+
+impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyRx<T>; N]>
+    where SteadyRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
+    fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) {
+        for item in self.iter() { vec.push(item); }
+    }
+}
+
+impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyTx<T>; N]>
+    where SteadyTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
+    fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) {
+        for item in self.iter() { vec.push(item); }
+    }
+}
+
+impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyStreamRx<T>; N]>
+    where SteadyStreamRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
+    fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) {
+        for item in self.iter() { vec.push(item); }
+    }
+}
+
+impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyStreamTx<T>; N]>
+    where SteadyStreamTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
+    fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) {
+        for item in self.iter() { vec.push(item); }
+    }
+}
 
 /// Trait to allow uniform indexing into metadata collections (bundles or single channels).
 /// This is used by the `rx_meta_data!` and `tx_meta_data!` macros to handle mixed types.
@@ -98,6 +154,20 @@ macro_rules! tx_meta_data {
         std::array::from_fn(|i| {
             $crate::__concat_meta_impl!(i; dyn $crate::steady_tx::TxMetaDataProvider; $($item),+)
         })
+    }};
+}
+
+/// Concatenates multiple channels or bundles into a Vec of simulation runners.
+///
+/// Automatically flattens bundles and handles trait object casting for `simulated_behavior`.
+#[macro_export]
+macro_rules! sim_runners {
+    ($($item:expr),+ $(,)?) => {{
+        let mut runners = Vec::new();
+        $(
+            $crate::macros::SimIndexable::push_to(&$item, &mut runners);
+        )+
+        runners
     }};
 }
 

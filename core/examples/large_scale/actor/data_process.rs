@@ -13,8 +13,11 @@ pub async fn run(context: SteadyActorShadow
                  , rx: SteadyRx<Packet>
                  , tx: SteadyTx<Packet>) -> Result<(),Box<dyn Error>> {
     let actor = context.into_spotlight([&rx], [&tx]);
-
-    internal_behavior(actor, rx, tx).await
+    if actor.use_internal_behavior {
+        internal_behavior(actor, rx, tx).await
+    } else {
+        actor.simulated_behavior(sim_runners!(rx, tx)).await
+    }
 }
 
 async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Packet>, tx: SteadyTx<Packet>) -> Result<(), Box<dyn Error>> {
@@ -92,5 +95,3 @@ mod process_tests {
 
 
 }
-
-

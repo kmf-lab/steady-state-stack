@@ -1,4 +1,3 @@
-
 #[allow(unused_imports)]
 use log::*;
 #[allow(unused_imports)]
@@ -15,10 +14,10 @@ pub(crate) struct PrintSignal {
 pub async fn run(actor: SteadyActorShadow, print_signal_tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
     let actor = actor.into_spotlight([], [&print_signal_tx]);
 
-    if cfg!(not(test)) {
+    if actor.use_internal_behavior {
         internal_behavior(actor, print_signal_tx).await
     } else {
-       actor.simulated_behavior(vec!(&print_signal_tx)).await
+       actor.simulated_behavior(sim_runners!(print_signal_tx)).await
     }
 }
 

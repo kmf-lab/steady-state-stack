@@ -6,7 +6,15 @@ pub const TEST_ITEMS: usize = 20_000_000_000;
 pub async fn run<const GIRTH:usize>(context: SteadyActorShadow
                                     , rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
 
-    let mut actor = context.into_spotlight(rx.control_meta_data(), []);
+    let actor = context.into_spotlight(rx.control_meta_data(), []);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, rx).await
+    } else {
+        actor.simulated_behavior(sim_runners!(rx)).await
+    }
+}
+
+async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(mut actor: C, rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
     let mut rx = rx.lock().await;
 
     let data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);

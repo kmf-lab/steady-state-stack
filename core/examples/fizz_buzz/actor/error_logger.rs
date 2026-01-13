@@ -1,4 +1,3 @@
-
 #[allow(unused_imports)]
 use log::*;
 #[allow(unused_imports)]
@@ -12,10 +11,10 @@ pub async fn run(actor: SteadyActorShadow
                  , errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
 
     let actor = actor.into_spotlight([&errors_rx], []);
-    if cfg!(not(test)) {
+    if actor.use_internal_behavior {
         internal_behavior(actor, errors_rx).await
     } else {
-        actor.simulated_behavior(vec!(&errors_rx)).await
+        actor.simulated_behavior(sim_runners!(errors_rx)).await
     }
 }
 

@@ -1,4 +1,3 @@
-
 #[allow(unused_imports)]
 use log::*;
 #[allow(unused_imports)]
@@ -7,7 +6,7 @@ use steady_state::*;
 use std::error::Error;
 use crate::actor::fizz_buzz_processor;
 
-#[derive(Default, Clone, Copy, PartialOrd, PartialEq, Debug)]
+#[derive(Default, Clone, Copy, PartialOrd, PartialEq, Debug, Eq)]
 pub(crate) struct NumberMessage {
    pub(crate) value: u64
 }
@@ -15,10 +14,10 @@ pub(crate) struct NumberMessage {
 
 pub async fn run(actor: SteadyActorShadow, numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
     let actor = actor.into_spotlight([], [&numbers_tx]);
-    if cfg!(not(test)) {
+    if actor.use_internal_behavior {
         internal_behavior(actor, numbers_tx).await
     } else {
-        actor.simulated_behavior(vec!(&numbers_tx)).await
+        actor.simulated_behavior(sim_runners!(numbers_tx)).await
     }
   }
 

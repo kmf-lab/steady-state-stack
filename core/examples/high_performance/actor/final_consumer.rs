@@ -1,4 +1,3 @@
-
 #[allow(unused_imports)]
 use log::*;
 #[allow(unused_imports)]
@@ -14,10 +13,10 @@ const BATCH: usize = 1000;
 pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyActorShadow
         ,tick_counts_rx: SteadyRxBundle<TickCount, TICK_COUNTS_RX_GIRTH>) -> Result<(),Box<dyn Error>> {
     let actor = context.into_spotlight(tick_counts_rx.meta_data(), []);
-    if cfg!(not(test)) {
+    if actor.use_internal_behavior {
         internal_behavior(actor, tick_counts_rx).await
     } else {
-        actor.simulated_behavior(vec!(&tick_counts_rx[0])).await
+        actor.simulated_behavior(sim_runners!(tick_counts_rx)).await
     }
 }
 

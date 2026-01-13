@@ -13,7 +13,12 @@ const BATCH:usize = 2000;
 pub async fn run(context: SteadyActorShadow
                  , rx: SteadyRx<Tick>
                  , tx: SteadyTx<Tick>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context.into_spotlight([&rx], [&tx]), rx, tx).await
+    let actor = context.into_spotlight([&rx], [&tx]);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, rx, tx).await
+    } else {
+        actor.simulated_behavior(sim_runners!(rx, tx)).await
+    }
 }
 
 async fn internal_behavior<A: SteadyActor>(mut actor: A, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {

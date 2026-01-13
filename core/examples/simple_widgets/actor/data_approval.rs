@@ -25,7 +25,12 @@ pub async fn run(context: SteadyActorShadow
                  , tx: SteadyTx<ApprovedWidgets>
                  , feedback: SteadyTx<FailureFeedback>
                 ) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context.into_spotlight([&rx], [&tx,&feedback]), rx, tx, feedback).await
+    let actor = context.into_spotlight([&rx], [&tx,&feedback]);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, rx, tx, feedback).await
+    } else {
+        actor.simulated_behavior(sim_runners!(rx, tx, feedback)).await
+    }
 }
 
 async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<WidgetInventory>, tx: SteadyTx<ApprovedWidgets>, feedback: SteadyTx<FailureFeedback>) -> Result<(), Box<dyn Error>> {

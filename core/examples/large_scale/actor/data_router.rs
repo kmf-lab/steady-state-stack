@@ -16,7 +16,12 @@ pub async fn run<const GIRTH:usize>(context: SteadyActorShadow
                                     , tx: SteadyTxBundle<Packet,GIRTH>
                 ) -> Result<(),Box<dyn Error>> {
 
-    internal_behavior(context.into_spotlight([&rx], tx.meta_data()), one_of, rx, tx).await
+    let actor = context.into_spotlight([&rx], tx.meta_data());
+    if actor.use_internal_behavior {
+        internal_behavior(actor, one_of, rx, tx).await
+    } else {
+        actor.simulated_behavior(sim_runners!(rx, tx)).await
+    }
 }
 
 async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_of: usize, rx: SteadyRx<Packet>, tx: SteadyTxBundle<Packet, { GIRTH }>) -> Result<(), Box<dyn Error>> {
@@ -95,5 +100,3 @@ mod router_tests {
 
 
 }
-
-

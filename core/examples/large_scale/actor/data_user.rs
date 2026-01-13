@@ -15,7 +15,7 @@ pub async fn run(actor: SteadyActorShadow, rx: SteadyRx<Packet>, state: SteadySt
     if actor.use_internal_behavior {
         internal_behavior(actor, rx, state).await
     } else {
-        actor.simulated_behavior(vec![&rx]).await
+        actor.simulated_behavior(sim_runners!(rx)).await
     }
 }
 

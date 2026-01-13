@@ -29,7 +29,7 @@ pub async fn run(context: SteadyActorShadow, rx: SteadyRx<Msg>, tx: SteadyTx<Msg
         // INTEGRATION TEST MODE (Simulation)
         // The actor becomes a "Puppet" controlled by the StageManager.
         // It ignores its internal logic and waits for side-channel commands.
-        actor.simulated_behavior(vec![&rx, &tx]).await
+        actor.simulated_behavior(sim_runners!(rx, tx)).await
     }
 }
 ```

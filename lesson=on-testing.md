@@ -43,7 +43,7 @@ pub async fn run(context: SteadyActorShadow, rx: SteadyRx<Msg>, tx: SteadyTx<Msg
         internal_behavior(actor, rx, tx).await
     } else {
         // In test mode, the actor just waits for commands to send/receive
-        actor.simulated_behavior(vec![&rx, &tx]).await
+        actor.simulated_behavior(sim_runners!(rx, tx)).await
     }
 }
 
@@ -56,7 +56,7 @@ The StageManager is the "God-mode" controller for your graph. It is only availab
 
 The Side-Channel Architecture
 
-When a graph is in testing mode, every actor is automatically assigned a Side-Channel.
+平衡 When a graph is in testing mode, every actor is automatically assigned a Side-Channel.
 
  1 The Test Thread uses the StageManager to send commands (e.g., "Send this message into the graph").
  2 The Actor uses a SideChannelResponder to receive and execute those commands.
@@ -128,7 +128,7 @@ out, and the test will fail.
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Appendix: Common Testing Scenarios                                                                                                                       ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 
 1. Injecting Data into the Middle of a Graph
 

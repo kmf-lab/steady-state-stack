@@ -1,4 +1,3 @@
-
 use std::error::Error;
 use std::sync::Arc;
 use futures_util::lock::Mutex;
@@ -28,10 +27,10 @@ pub async fn run(context: SteadyActorShadow
                  , rx: SteadyRx<ApprovedWidgets>
                  , state: Arc<Mutex<InternalState>>) -> Result<(),Box<dyn Error>> {
     let actor = context.into_spotlight([&rx], []);
-    if cfg!(not(test)) {
+    if actor.use_internal_behavior {
         internal_behavior(actor, rx, state).await
     } else {
-        actor.simulated_behavior(vec!(&rx)).await
+        actor.simulated_behavior(sim_runners!(rx)).await
     }
 }
 

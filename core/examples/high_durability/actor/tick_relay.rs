@@ -14,33 +14,36 @@ const BATCH:usize = 1000;
 pub async fn run(context: SteadyActorShadow
         ,ticks_rx: SteadyRx<Tick>
         ,ticks_tx: SteadyTx<Tick>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, ticks_rx, ticks_tx).await
+    let actor = context.into_spotlight([&ticks_rx], [&ticks_tx]);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, ticks_rx, ticks_tx).await
+    } else {
+        actor.simulated_behavior(sim_runners!(ticks_rx, ticks_tx)).await
+    }
 }
 
-async fn internal_behavior(context: SteadyActorShadow, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {
-    let _cli_args = context.args::<Args>();
-
-    let mut monitor = context.into_spotlight([&ticks_rx], [&ticks_tx]);
+async fn internal_behavior<C: SteadyActor>(mut actor: C, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {
+    let _cli_args = actor.args::<Args>();
 
     let mut ticks_rx = ticks_rx.lock().await;
     let mut ticks_tx = ticks_tx.lock().await;
 
     let mut buffer = [Tick::default(); BATCH];
 
-    while monitor.is_running(&mut || ticks_rx.is_closed_and_empty() && ticks_tx.mark_closed()) {
+    while actor.is_running(&mut || ticks_rx.is_closed_and_empty() && ticks_tx.mark_closed()) {
         let _clean = await_for_all!(
-                                    monitor.wait_avail(&mut ticks_rx,BATCH),
-                                    monitor.wait_vacant(&mut ticks_tx,BATCH)
+                                    actor.wait_avail(&mut ticks_rx,BATCH),
+                                    actor.wait_vacant(&mut ticks_tx,BATCH)
                                    );
 
-        let slice = monitor.peek_slice(&mut ticks_rx);
+        let slice = actor.peek_slice(&mut ticks_rx);
         let count = slice.copy_into_slice(&mut buffer).item_count();
 
         //do something
-        monitor.send_slice(&mut ticks_tx, &buffer[0..count]);
-        let _ = monitor.take_slice(&mut ticks_rx, &mut buffer[0..count]);
+        actor.send_slice(&mut ticks_tx, &buffer[0..count]);
+        let _ = actor.take_slice(&mut ticks_rx, &mut buffer[0..count]);
 
-        monitor.relay_stats_smartly();
+        actor.relay_stats_smartly();
     }
     Ok(())
 }

@@ -7,7 +7,15 @@ pub const STREAM_ID: i32 = 1234;
 pub async fn run<const GIRTH: usize>(context: SteadyActorShadow
                                      , tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>>  {
 
-    let mut actor = context.into_spotlight([], tx.control_meta_data());
+    let actor = context.into_spotlight([], tx.control_meta_data());
+    if actor.use_internal_behavior {
+        internal_behavior(actor, tx).await
+    } else {
+        actor.simulated_behavior(sim_runners!(tx)).await
+    }
+}
+
+async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(mut actor: C, tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>> {
     let mut tx = tx.lock().await;
 
     warn!("called run");

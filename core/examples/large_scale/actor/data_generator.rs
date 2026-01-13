@@ -1,4 +1,3 @@
-use crate::simulate_edge::IntoSimRunner;
 use std::error::Error;
 use std::mem;
 use std::time::{Duration};
@@ -18,12 +17,10 @@ pub struct Packet {
 pub async fn run<const GIRTH:usize>(context: SteadyActorShadow
                                                   , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
     let actor = context.into_spotlight([], tx.meta_data());
-    if cfg!(not(test)) {
+    if actor.use_internal_behavior {
         internal_behavior(actor, tx).await
     } else {
-        let test_echos:Vec<_> = tx.iter().map(|f| (*f).clone()).collect();
-        let sims: Vec<&dyn IntoSimRunner<_>> = test_echos.iter().map(|te| te as &dyn IntoSimRunner<_>).collect();
-        actor.simulated_behavior(sims).await
+        actor.simulated_behavior(sim_runners!(tx)).await
     }
 }
 
@@ -108,5 +105,3 @@ mod generator_tests {
         Ok(())
     }
 }
-
-

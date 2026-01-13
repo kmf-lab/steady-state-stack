@@ -52,8 +52,12 @@ pub async fn run<const NUMBERS_RX_GIRTH:usize,>(actor: SteadyActorShadow
                                                 , fizzbuzz_messages_tx: SteadyTx<FizzBuzzMessage>
                                                 , errors_tx: SteadyTx<ErrorMessage>, state: SteadyState<RuntimeState>) -> Result<(),Box<dyn Error>> {
 
-  internal_behavior(actor.into_spotlight(numbers_rx.meta_data(), [&fizzbuzz_messages_tx, &errors_tx])
-                    , STOP_VALUE, numbers_rx, fizzbuzz_messages_tx, errors_tx, state).await
+    let actor = actor.into_spotlight(numbers_rx.meta_data(), [&fizzbuzz_messages_tx, &errors_tx]);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, STOP_VALUE, numbers_rx, fizzbuzz_messages_tx, errors_tx, state).await
+    } else {
+        actor.simulated_behavior(sim_runners!(numbers_rx, fizzbuzz_messages_tx, errors_tx)).await
+    }
 }
 
 

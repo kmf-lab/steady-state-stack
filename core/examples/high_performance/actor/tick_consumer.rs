@@ -17,32 +17,35 @@ pub struct TickCount {
 pub async fn run(context: SteadyActorShadow
         ,ticks_rx: SteadyRx<Tick>
         ,tick_counts_tx: SteadyTx<TickCount>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, ticks_rx, tick_counts_tx).await
+    let actor = context.into_spotlight([&ticks_rx], [&tick_counts_tx]);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, ticks_rx, tick_counts_tx).await
+    } else {
+        actor.simulated_behavior(sim_runners!(ticks_rx, tick_counts_tx)).await
+    }
 }
 
 const BATCH: usize = 2000;
 const WAIT_AVAIL: usize = 250;
 
-async fn internal_behavior(context: SteadyActorShadow, rx: SteadyRx<Tick>, tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
-    let _cli_args = context.args::<Args>();
-
-    let mut monitor = context.into_spotlight([&rx], [&tx]);
+async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Tick>, tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
+    let _cli_args = actor.args::<Args>();
 
     let mut ticks_rx = rx.lock().await;
     let mut tick_counts_tx = tx.lock().await;
     let mut buffer = [Tick::default(); BATCH];
 
-    while monitor.is_running(&mut || ticks_rx.is_closed_and_empty() && tick_counts_tx.mark_closed()) {
+    while actor.is_running(&mut || ticks_rx.is_closed_and_empty() && tick_counts_tx.mark_closed()) {
         let _clean = await_for_all!(
-                                   monitor.wait_avail(&mut ticks_rx,WAIT_AVAIL),
-                                   monitor.wait_vacant(&mut tick_counts_tx,1)
+                                   actor.wait_avail(&mut ticks_rx,WAIT_AVAIL),
+                                   actor.wait_vacant(&mut tick_counts_tx,1)
                                    );
 
-        let count = monitor.take_slice(&mut ticks_rx, &mut buffer).item_count();
+        let count = actor.take_slice(&mut ticks_rx, &mut buffer).item_count();
         if count > 0 {
             let max_count = TickCount { count: buffer[count - 1].value };
-            let _ = monitor.try_send(&mut tick_counts_tx, max_count);
-            monitor.relay_stats_smartly();
+            let _ = actor.try_send(&mut tick_counts_tx, max_count);
+            actor.relay_stats_smartly();
         }
     }
     Ok(())

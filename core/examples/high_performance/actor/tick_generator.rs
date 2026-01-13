@@ -1,4 +1,3 @@
-
 #[allow(unused_imports)]
 use log::*;
 #[allow(unused_imports)]
@@ -16,10 +15,10 @@ pub struct Tick {
 pub async fn run<const TICKS_TX_GIRTH:usize>(context: SteadyActorShadow
                                                             ,ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
     let actor = context.into_spotlight([], ticks_tx.meta_data());
-    if cfg!(not(test)) {
+    if actor.use_internal_behavior {
         internal_behavior(actor, ticks_tx).await
     } else {
-        actor.simulated_behavior(vec!(&ticks_tx[0].clone())).await
+        actor.simulated_behavior(sim_runners!(ticks_tx)).await
     }
 }
 

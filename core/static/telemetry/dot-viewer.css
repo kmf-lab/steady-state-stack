@@ -182,3 +182,22 @@ nav > div {
 #zoomOutBtn {
   display: none;
 }
+
+#diagram svg {
+  /* Forces the browser to use more precise geometry 
+     rather than optimization shortcuts */
+  shape-rendering: geometricPrecision;
+  
+  /* Improves text rendering at small scales */
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure paths and polygons remain visible when zoomed out */
+#diagram svg path,
+#diagram svg polygon,
+#diagram svg ellipse {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1.5px; /* Slightly thicker base for better contrast */
+}

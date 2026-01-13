@@ -18,14 +18,16 @@ pub struct TickCount {
 pub async fn run(context: SteadyActorShadow
         ,ticks_rx: SteadyRx<Tick>
         ,tick_counts_tx: SteadyTx<TickCount>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context, ticks_rx, tick_counts_tx).await
+    let actor = context.into_spotlight([&ticks_rx], [&tick_counts_tx]);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, ticks_rx, tick_counts_tx).await
+    } else {
+        actor.simulated_behavior(sim_runners!(ticks_rx, tick_counts_tx)).await
+    }
 }
 
-async fn internal_behavior(context: SteadyActorShadow, ticks_rx: SteadyRx<Tick>, tick_counts_tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
-    let _cli_args = context.args::<Args>();
-
-    // create the monitor for doing all channel work
-    let mut actor = context.into_spotlight([&ticks_rx], [&tick_counts_tx]);
+async fn internal_behavior<C: SteadyActor>(mut actor: C, ticks_rx: SteadyRx<Tick>, tick_counts_tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
+    let _cli_args = actor.args::<Args>();
 
     // lock the channels for use in this instance
     let mut ticks_rx = ticks_rx.lock().await;

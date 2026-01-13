@@ -187,7 +187,8 @@ Why this matters:
    of the batch.
  4 Telemetry: If a bundle member is consistently full while others are empty, your routing logic (the code choosing the index) is skewed. Use the graph.dot
    visualization to spot these "hot" streams.
- 5 Simulation: In unit tests, use actor.simulated_behavior. It will automatically handle the complexity of mocking all GIRTH streams in the bundle.
+ 5 Simulation: In unit tests, use actor.simulated_behavior(sim_runners!(bundle)). It will automatically handle the complexity of flattening and mocking all
+   GIRTH streams in the bundle.
 
 #################
 
@@ -425,10 +426,8 @@ fn test_bundle_actor() {
         let rx_bundle = rx.clone();
         async move {
             let mut actor = actor.into_spotlight(rx_bundle.control_meta_data(), []);
-            // Map the bundle into a Vec of trait objects for the simulator
-            let sims: Vec<_> = rx_bundle.iter().map(|s| s as &dyn IntoSimRunner<_>).collect();
-            actor.simulated_behavior(sims).await
+            // Use the sim_runners! macro to automatically flatten the bundle
+            actor.simulated_behavior(sim_runners!(rx_bundle)).await
         }
     }, SoloAct);
 }
-
