@@ -86,7 +86,6 @@ pub(crate) mod steady_config;
 /// Internal module for graph visualization and DOT language integration.
 pub(crate) mod dot;
 
-// TODO: check our errors returned and make them simp
 
 /// Manages the lifecycle states of actor graphs.
 ///
@@ -373,6 +372,10 @@ use futures_util::lock::MutexGuard;
 pub use steady_actor_spotlight::SteadyActorSpotlight;
 pub use crate::steady_tx::TxMetaDataProvider;
 pub use crate::steady_rx::RxMetaDataProvider;
+pub use crate::macros::steady_rx_bundle;
+pub use crate::macros::steady_tx_bundle;
+pub use crate::macros::steady_rx_bundle_active;
+pub use crate::macros::steady_tx_bundle_active;
 
 use crate::yield_now::yield_now;
 
