@@ -8,16 +8,15 @@ license = "MIT"
 repository = "https://github.com/kmf-lab/steady-state-stack"
 
 [dependencies]
-flexi_logger = "0.31.1"
-log = "0.4.22"
-dot-parser = "0.5.1"
-askama = "0.14.0"
-num-traits = "0.2.19"
-clap = { version = "4.5.40", features = ["derive"] }
-async-std = "1.13.1"  # Use clap with derive feature
+flexi_logger = "0.31"
+log = "0.4"
+dot-parser = "0.5"
+askama = "0.15"
+num-traits = "0.2"
+clap = { version = "4.5", features = ["derive"] }
 
 [dev-dependencies]
-colored = "3.0.0"
+colored = "3.0"
 
 
 

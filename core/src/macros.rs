@@ -1,4 +1,4 @@
-use crate::{LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle, SteadyRx, SteadyTx, SteadyActor};
+use crate::{LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle, SteadyRx, SteadyTx, SteadyActor, SteadyTxBundle, SteadyRxBundle};
 use crate::simulate_edge::IntoSimRunner;
 use crate::distributed::aqueduct_stream::{SteadyStreamRx, SteadyStreamTx, StreamControlItem};
 use async_ringbuf::Arc;
@@ -11,22 +11,22 @@ pub trait SimIndexable<C: SteadyActor + 'static> {
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>);
 }
 
-impl<T, C> SimIndexable<C> for SteadyRx<T> 
+impl<T, C> SimIndexable<C> for SteadyRx<T>
     where SteadyRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
 }
 
-impl<T, C> SimIndexable<C> for SteadyTx<T> 
+impl<T, C> SimIndexable<C> for SteadyTx<T>
     where SteadyTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
 }
 
-impl<T, C> SimIndexable<C> for SteadyStreamRx<T> 
+impl<T, C> SimIndexable<C> for SteadyStreamRx<T>
     where SteadyStreamRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
 }
 
-impl<T, C> SimIndexable<C> for SteadyStreamTx<T> 
+impl<T, C> SimIndexable<C> for SteadyStreamTx<T>
     where SteadyStreamTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
 }
@@ -231,4 +231,18 @@ pub fn steady_rx_bundle<T, const GIRTH: usize>(
     inner: [LazySteadyRx<T>; GIRTH]
 ) -> LazySteadyRxBundle<T, GIRTH> {
     inner
+}
+
+/// Helper to convert a raw array of active transmitters into a SteadyTxBundle.
+pub fn steady_tx_bundle_active<T, const GIRTH: usize>(
+    inner: [SteadyTx<T>; GIRTH]
+) -> SteadyTxBundle<T, GIRTH> {
+    Arc::new(inner)
+}
+
+/// Helper to convert a raw array of active receivers into a SteadyRxBundle.
+pub fn steady_rx_bundle_active<T, const GIRTH: usize>(
+    inner: [SteadyRx<T>; GIRTH]
+) -> SteadyRxBundle<T, GIRTH> {
+    Arc::new(inner)
 }

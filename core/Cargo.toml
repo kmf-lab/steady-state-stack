@@ -78,31 +78,31 @@ no-default-features = true
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
-async-std        = { version = "1.13.1", optional = true, features = ["default"]}
-ringbuf          = "0.4.8"  # foundational bounded message passing
-async-ringbuf    = "0.3.4"  # foundational bounded message passing
-log              = "0.4.27"  # common logging traits
-flexi_logger     = { version="0.31.1", features=["colors", "async"] }  # default flexable logging implementation
-futures-timer    = "3.0.3"   # for async Delay::new(check_rate).await used places where we poll
-hdrhistogram     = "7.5.4"  # for latency histograms
-bytes            = { version = "1.9.0", features = [] }
-lazy_static      = "1.5.0"
-uuid             = { version = "1.16.0", features = ["v4"] }
-num-traits       = "0.2.19" # for num::Zero and other generic math traits
-itoa             = "1.0.15"
-ctrlc            = "3.4.7"
-time             = { version = "0.3.41", features = ["macros", "formatting", "parsing"] } # used in dot regardles of what IDE reports
+async-std        = { version = "1.13", optional = true, features = ["default"]}
+ringbuf          = "0.4"  # foundational bounded message passing
+async-ringbuf    = "0.3"  # foundational bounded message passing
+log              = "0.4"  # common logging traits
+flexi_logger     = { version="0.31", features=["colors", "async"] }  # default flexable logging implementation
+futures-timer    = "3.0"   # for async Delay::new(check_rate).await used places where we poll
+hdrhistogram     = "7.5"  # for latency histograms
+bytes            = { version = "1.11", features = [] }
+lazy_static      = "1.5"
+uuid             = { version = "1.19", features = ["v4"] }
+num-traits       = "0.2" # for num::Zero and other generic math traits
+itoa             = "1.0"
+ctrlc            = "3.5"
+time             = { version = "0.3", features = ["macros", "formatting", "parsing"] } # used in dot regardles of what IDE reports
 dirs             = "6.0.0"
-clap             = { version = "4.5.35", features = ["derive"] }  # Use clap with derive feature
-futures          = "0.3.31"  # for Select! Barrier etc and lock::Mutex
-futures-util     = "0.3.31"
-parking_lot      = "0.12.3"
-tempfile         = "3.19.1"
+clap             = { version = "4.5", features = ["derive"] }  # Use clap with derive feature
+futures          = "0.3"  # for Select! Barrier etc and lock::Mutex
+futures-util     = "0.3"
+parking_lot      = "0.12"
+tempfile         = "3.24"
 
-ahash            = "0.8.11" # fastest hash map so far
-async-io         = "2.4.0"
+ahash            = "0.8" # fastest hash map so far
+async-io         = "2.6"
 async-lock       = "3.4"  # Use the latest version
-socket2 = { version = "0.6.0", default-features = false }
+#socket2 = { version = "0.6", default-features = false }
 
 # HTTP Web solution is built on this stack of crates
 #http           = "1.3.1"
@@ -127,12 +127,12 @@ socket2 = { version = "0.6.0", default-features = false }
 #steady_state_aeron     = { version="0.1.6-kmf1" }
 #once_cell = "1.20.2"
 # for local testing
-aeron = "0.2.0"
-winapi = "0.3.9"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
-bincode = "2.0.1"
-futures-lite = "2.6.0"
+aeron = "0.2"
+winapi = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = "2.0"
+futures-lite = "2.6"
 #futures-lite = "2.6.0"
 #backtrace = "0.3.74"
 #async-trait = "0.1.88"
@@ -210,7 +210,7 @@ nuclei = { version = "0.4.4", optional = true } # foundational proactive runtime
 
 
 [dependencies.libc]
-version = "0.2.161"
+version = "0.2"
 optional = true
 
 
@@ -247,13 +247,13 @@ optional = true
 # disruptor        = "0.2.0"
 
 [build-dependencies]
-isahc            = "1.7.2"
-askama           = "0.14.0"
-tempfile         = "3.13.0"  # for testing
-flate2           = "1.1.0"
-regex            = "1.11.1" # future testing
-daachorse        = "1.0.0" # future testing
-xz2              = "0.1.7" # future testing
+isahc            = "1.7"
+askama           = "0.14"
+tempfile         = "3.24"  # for testing
+flate2           = "1.1"
+#regex            = "1.11.1" # future testing
+#daachorse        = "1.0.0" # future testing
+#xz2              = "0.1.7" # future testing
 
 [[example]]
 name = "simple_widgets"
@@ -273,8 +273,8 @@ path = "examples/high_durability/main.rs"
 
 
 [dev-dependencies]
-async-std        = {  version = "1.13.0", features = ["attributes"] }  # for async unit testing only,
-rand_distr       = "0.5.1" # for random number generation
-rand             = "0.9.1" # for random number generation
-isahc            = "1.7.2"
+async-std        = {  version = "1.13", features = ["attributes"] }  # for async unit testing only,
+rand_distr       = "0.5" # for random number generation
+rand             = "0.9" # for random number generation
+isahc            = "1.7"
 #testcontainers   = "0.15.0" # for integration testing, DO NOT upgrade to 0.16.0 since Tokio is not supported here
