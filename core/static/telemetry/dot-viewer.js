@@ -102,24 +102,13 @@ function onMessage(message) {
   diagram.innerHTML = svgText;
   removeSvgSize(diagram);
 
-  // Enhancement: Post-process SVG for better downscaling
-  svg = diagram.querySelector('svg');
-  const elements = svg.querySelectorAll('path, polygon, ellipse, circle');
-  elements.forEach((el) => {
-    // This prevents lines from thinning out during zoom-out
-    el.setAttribute('vector-effect', 'non-scaling-stroke');
-    // Ensure stroke is solid enough to survive the rasterization
-    if (!el.getAttribute('stroke-width')) {
-      el.setAttribute('stroke-width', '1.2');
-    }
-  });
-
   // Display a scaled copy of the svg in the preview.
   preview.innerHTML = diagram.innerHTML;
   removeSvgSize(preview);
 
   // Make the preview have the same aspect ratio
   // as the svg that was loaded.
+  svg = diagram.querySelector('svg');
   svgRect = svg.getBoundingClientRect();
   aspectRatio = svgRect.width / svgRect.height;
   const previewRect = preview.getBoundingClientRect();
@@ -192,8 +181,7 @@ function onResize() {
     setStyle(viewport, 'y', px(pBottom - vHeight));
   }
 
-  // this somewhat fixes it
-  setStyle(viewport, 'height', px(vHeight + pHeight * zoomInitialScale));
+  setStyle(viewport, 'height', px(vHeight));
   setStyle(viewport, 'width', px(vWidth - BW2));
 }
 
@@ -371,7 +359,7 @@ function setSpeed(s) {
 const setStyle = (element, property, value) =>
   (element.style[property] = value);
 
-const show = element => setStyle(element, 'visibility', 'hidden');
+const show = element => setStyle(element, 'visibility', 'visible');
 
 function togglePreview() {
   toggleVisibility(preview);

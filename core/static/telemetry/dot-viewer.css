@@ -194,10 +194,9 @@ nav > div {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Ensure paths and polygons remain visible when zoomed out */
-#diagram svg path,
-#diagram svg polygon,
-#diagram svg ellipse {
+/* Ensure paths remain visible when zoomed out. 
+   Polygons (arrowheads) are excluded to prevent flickering and size distortion. */
+#diagram svg path {
   vector-effect: non-scaling-stroke;
-  stroke-width: 1.5px; /* Slightly thicker base for better contrast */
+  stroke-width: 1.2px;
 }
