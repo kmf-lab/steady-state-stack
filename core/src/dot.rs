@@ -45,7 +45,7 @@ pub struct RemoteDetails {
    pub(crate) direction: &'static str, //  in OR out
 }
 
-pub(crate) const DEFAULT_PEN_WIDTH: &str = "4"; //need a way to configure this?
+pub(crate) const DEFAULT_PEN_WIDTH: &str = "1"; 
 
 /// Builds the Prometheus metrics from the current state.
 ///
@@ -202,9 +202,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 0.0
             };
             
-            // Bundles start at width 4.0 and grow from there
-            let pen_width_f = 4.0 + (bundle_util * 14.0);
-            let pen_width_str = format!("{:.1}", pen_width_f);
+            let pen_width_str = "4".to_string();
             
             // Bundles are always bold and dashed to distinguish them from single lines
             let style_attr = ", style=\"bold,dashed\"";
@@ -1485,7 +1483,7 @@ mod dot_tests {
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
         assert!(result.contains("BUNDLE: 5x TestType (10%)"));
-        assert!(result.contains("penwidth=5.4"));
+        assert!(result.contains("penwidth=4"));
         assert!(result.contains("style=\"bold,dashed\""));
         assert!(result.contains("tooltip=\"Bundle Details (5 channels):\\nCH#0: Vol=10 / Cap=10 (10%)\\n"));
     }

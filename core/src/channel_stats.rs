@@ -422,8 +422,7 @@ impl ChannelStatsComputer {
         self.last_send = send;
         self.last_take = take;
         self.last_total = inflight as i64;
-        let rate_per_sec = (consumed as f64 * 1000.0) / self.frame_rate_ms as f64;
-        self.saturation_score = (rate_per_sec / 10000.0).clamp(0.0, 1.0);
+        self.saturation_score = (consumed as f64 / self.capacity as f64).clamp(0.0, 1.0);
     
         ////////////////////////////////////////////////
         //  Build the labels
@@ -470,27 +469,11 @@ impl ChannelStatsComputer {
             display_label.push('\n');
         });
 
-        let pen_width_f = 1.0 + (self.saturation_score * 14.0);
-        let mut line_thick = format!("{:.1}", pen_width_f);
+        let line_thick = "1".to_string();
 
         // Does nothing if the value is None
         if let Some(ref current_rate) = self.current_rate {
             self.compute_rate_labels(display_label, metric_text, &current_rate);
-
-            if let Some(h) = &current_rate.histogram {
-                if !self.line_expansion.is_nan() {
-                    let per_sec = h.value_at_percentile(80f64);
-
-                    let adjusted_rate = ((per_sec as f32)*self.line_expansion) as u64;
-                    //max of 16 step sizes.
-                    let traffic_index = 64usize - (adjusted_rate >> 10).leading_zeros() as usize;
-
-                    // Get the line thickness from the DOT_PEN_WIDTH array
-                    // NOTE: [0] is 1 and they grow as a factorial after that.
-                    line_thick = DOT_PEN_WIDTH[traffic_index.min(DOT_PEN_WIDTH.len() - 1)].to_string();
-
-                }
-            }
         }
 
         if let Some(ref current_filled) = self.current_filled {

@@ -25,7 +25,7 @@ impl Edge {
     /// * `send` - The send value.
     /// * `take` - The take value.
     pub(crate) fn compute_and_refresh(&mut self, send: i64, take: i64) {
-        let (color, pen) = self.stats_computer.compute(
+        let (color, _pen) = self.stats_computer.compute(
             &mut self.display_label,
             &mut self.metric_text,
             self.from,
@@ -37,7 +37,6 @@ impl Edge {
         // ie they get accumulated and eld by self.status_computer for rollovers.
 
         self.color = color;
-        self.pen_width = pen;
         self.saturation_score = self.stats_computer.saturation_score;
     }
 }
