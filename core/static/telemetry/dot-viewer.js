@@ -1,8 +1,7 @@
 const BW = 2; // border width
 const BW2 = BW * 2; // border width times 2
 
-const {host} = this.location;
-const DOT_URL = `http://${host}/graph.dot`;
+const DOT_URL = '/graph.dot';
 //const DOT_URL = 'graph.dot';
 
 const ZOOM_DELTA = 40;
