@@ -15,6 +15,8 @@ pub(crate) struct Edge {
     pub(crate) stats_computer: ChannelStatsComputer,
     pub(crate) display_label: String, // Results from computer
     pub(crate) metric_text: String, // Results from computer
+    pub(crate) partner: Option<&'static str>,
+    pub(crate) bundle_index: Option<usize>,
 }
 
 impl Edge {

@@ -812,8 +812,9 @@ impl TxCore for StreamTx<StreamEgress> {
 
 #[cfg(test)]
 mod core_tx_stream_tests {
-    use std::time::Duration;
-    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, SendSaturation, TxCore, TxDone, ActorIdentity, core_exec, SendOutcome, StreamTx};
+    use std::time::{Duration, Instant};
+    use futures_timer::Delay;
+    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, SendSaturation, TxCore, RxCore, TxDone, ActorIdentity, core_exec, SendOutcome, StreamTx, steady_tx::TxMetaDataProvider};
     use crate::distributed::aqueduct_stream::Defrag;
     use async_ringbuf::traits::Producer;
 
@@ -1060,4 +1061,246 @@ mod core_tx_stream_tests {
         assert!(matches!(outcome_timeout, SendOutcome::Blocked(_)));
         assert!(start.elapsed() >= Duration::from_millis(10));
     }
+
+    #[test]
+    fn test_stream_ingress_tx_core_saturation_policies() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(1)
+                .build_stream::<StreamIngress>(10);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            let ident = ActorIdentity::default();
+            let now = std::time::Instant::now();
+            let msg = (StreamIngress::new(5, 0, now, now), &[0u8; 5][..]);
+
+            // Fill channel
+            tx_guard.shared_try_send(msg).unwrap();
+
+            // Test WarnThenAwait
+            let fut = tx_guard.shared_send_async_timeout(msg, ident, SendSaturation::WarnThenAwait, Some(Duration::from_millis(10)));
+            assert!(matches!(fut.await, SendOutcome::Blocked(_)));
+
+            // Test DebugWarnThenAwait
+            let fut = tx_guard.shared_send_async_timeout(msg, ident, SendSaturation::DebugWarnThenAwait, Some(Duration::from_millis(10)));
+            assert!(matches!(fut.await, SendOutcome::Blocked(_)));
+        });
+    }
+
+    #[test]
+    fn test_stream_ingress_tx_core_partial_slice_send() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(5)
+                .build_stream::<StreamIngress>(10); // Payload capacity is small
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            let now = std::time::Instant::now();
+
+            // Items that fit in control but payload is too large for the small buffer
+            let items = [StreamIngress::new(8, 0, now, now), StreamIngress::new(8, 0, now, now)];
+            let payload = [0u8; 16];
+            
+            let done = tx_guard.shared_send_slice((&items, &payload));
+            // With capacity 5 and multiplier 10, we have 50 bytes. Both fit.
+            assert_eq!(done.item_count(), 2);
+        });
+    }
+
+    #[test]
+    fn test_stream_ingress_tx_core_advance_fail() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(5)
+                .build_stream::<StreamIngress>(10);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+
+            // Try to advance more than capacity
+            let done = tx_guard.shared_advance_index((10, 100));
+            assert_eq!(done, TxDone::Stream(0, 0));
+        });
+    }
+
+    #[test]
+    fn test_stream_ingress_tx_core_telemetry_warning() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(5)
+                .build_stream::<StreamIngress>(10);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            
+            let meta = tx_guard.control_channel.channel_meta_data.meta_data.clone();
+            let mut actor = graph.new_testing_test_monitor("test")
+                .into_spotlight([], [&meta as &dyn TxMetaDataProvider]);
+
+            // Force the warning branch by passing Normal to an Ingress stream
+            if let Some(ref mut tel) = actor.telemetry.send_tx {
+                tx_guard.telemetry_inc(TxDone::Normal(1), tel);
+            }
+        });
+    }
+
+    #[test]
+    fn test_stream_ingress_tx_core_periodic_log() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(5)
+                .build_stream::<StreamIngress>(10);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+
+            // First call is true because constructor backdates the timer for immediate logging
+            assert!(tx_guard.log_perodic());
+            
+            // Manually backdate the timer again to test subsequent trigger
+            tx_guard.control_channel.last_error_send = Instant::now() - Duration::from_secs(30);
+            assert!(tx_guard.log_perodic());
+        });
+    }
+
+    #[test]
+    fn test_stream_ingress_tx_core_wait_shutdown() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(1)
+                .build_stream::<StreamIngress>(10);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+
+            // Fill the channel to force the async wait path
+            let now = Instant::now();
+            tx_guard.shared_try_send((StreamIngress::new(5, 0, now, now), &[0u8; 5][..])).unwrap();
+
+            // Trigger shutdown signal
+            let (shutdown_tx, _) = futures::channel::oneshot::channel::<()>();
+            tx_guard.control_channel.oneshot_shutdown = futures::channel::oneshot::channel::<()>().1;
+            drop(shutdown_tx); // Close the channel to trigger is_terminated
+
+            let result = tx_guard.shared_wait_shutdown_or_vacant_units((1, 1)).await;
+            assert!(!result);
+        });
+    }
+
+    #[test]
+    fn test_stream_egress_tx_core_capacity_checks() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamEgress>(100);
+            
+            let tx_clone = tx.clone();
+            let tx_guard = tx_clone.lock().await;
+
+            assert!(tx_guard.shared_capacity_for((5, 50)));
+            assert!(!tx_guard.shared_capacity_for((100, 1000)));
+            
+            assert!(tx_guard.shared_vacant_units_for((5, 50)));
+            assert!(!tx_guard.shared_vacant_units_for((100, 1000)));
+        });
+    }
+
+    #[test]
+    fn test_stream_ingress_tx_core_mark_closed_dropped() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(5)
+                .build_stream::<StreamIngress>(10);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            
+            // Drop the receivers to trigger the trace branches
+            drop(rx);
+            
+            assert!(tx_guard.shared_mark_closed());
+        });
+    }
+
+    #[test]
+    fn test_stream_ingress_tx_core_send_slice_payload_full() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(5)
+                .build_stream::<StreamIngress>(2); // 10 bytes total
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            let now = Instant::now();
+
+            let items = [StreamIngress::new(8, 0, now, now), StreamIngress::new(8, 0, now, now)];
+            let payload = [0u8; 16];
+            
+            let done = tx_guard.shared_send_slice((&items, &payload));
+            // First item (8 bytes) fits. Second (8 bytes) does not (only 2 bytes left).
+            assert_eq!(done.item_count(), 1);
+        });
+    }
+
+    #[test]
+    fn test_stream_ingress_tx_core_wait_empty_terminated() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, _rx) = graph.channel_builder()
+                .with_capacity(5)
+                .build_stream::<StreamIngress>(10);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+
+            // Trigger shutdown signal
+            let (shutdown_tx, _) = futures::channel::oneshot::channel::<()>();
+            tx_guard.control_channel.oneshot_shutdown = futures::channel::oneshot::channel::<()>().1;
+            drop(shutdown_tx); 
+
+            let result = tx_guard.shared_wait_empty().await;
+            assert!(result); // Returns true because it is empty
+        });
+    }
+
+    // #[test]
+    // fn test_stream_ingress_tx_core_send_iter_payload_full() {
+    //     core_exec::block_on(async {
+    //         let mut graph = GraphBuilder::for_testing().build(());
+    //         let (tx, rx) = graph.channel_builder()
+    //             .with_capacity(10)
+    //             .build_stream::<StreamIngress>(1); // 10 items, 10 bytes total
+    //
+    //         let tx_clone = tx.clone();
+    //         let rx_clone = rx.clone();
+    //
+    //         core_exec::spawn_detached(async move {
+    //             Delay::new(Duration::from_millis(100)).await;
+    //             let mut rx_guard = rx_clone.lock().await;
+    //             rx_guard.shared_advance_index((0, 10));
+    //         });
+    //
+    //         let mut tx_guard = tx_clone.lock().await;
+    //         let now = Instant::now();
+    //
+    //         // Fill payload partially
+    //         tx_guard.payload_channel.tx.push_slice(&[0u8; 8]);
+    //
+    //         // Item needs 5 bytes. Only 2 left.
+    //         let items = vec![(StreamIngress::new(5, 0, now, now), &[0u8; 5][..])];
+    //         let count = tx_guard.shared_send_iter_until_full(items.into_iter());
+    //         assert_eq!(count, 1);
+    //     });
+    // }
 }

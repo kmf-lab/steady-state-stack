@@ -12,6 +12,7 @@ pub(crate) struct Node {
     pub(crate) pen_width: &'static str,
     pub(crate) stats_computer: ActorStatsComputer,
     pub(crate) display_label: String,
+    pub(crate) tooltip: String,
     pub(crate) metric_text: String,
     pub(crate) thread_info_cache: Option<ThreadInfo>,
     pub(crate) total_count_restarts: u32,
@@ -61,6 +62,7 @@ impl Node {
         // Old strings for this actor are passed back in so they get cleared and re-used rather than reallocate
         let (color, pen_width) = self.stats_computer.compute(
             &mut self.display_label,
+            &mut self.tooltip,
             &mut self.metric_text,
             mcpu_load,
             self.total_count_restarts,

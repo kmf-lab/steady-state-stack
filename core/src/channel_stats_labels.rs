@@ -229,6 +229,27 @@ fn format_label_prefix(labels: ComputeLabelsLabels, _metric_target: &mut String,
     }
 }
 
+/// Formats a large number into a compressed string with K, M, B, T suffixes.
+pub(crate) fn format_compressed_u128(val: u128, target: &mut String) {
+    let mut b = itoa::Buffer::new();
+    let t = b.format(val);
+    if val >= 7_999_999_999_999 {
+        target.push_str(&t[..t.len() - 12]);
+        target.push('T');
+    } else if val >= 7_999_999_999 {
+        target.push_str(&t[..t.len() - 9]);
+        target.push('B');
+    } else if val >= 7_999_999 {
+        target.push_str(&t[..t.len() - 6]);
+        target.push('M');
+    } else if val >= 7_999 {
+        target.push_str(&t[..t.len() - 3]);
+        target.push('K');
+    } else {
+        target.push_str(t);
+    }
+}
+
 fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, int_value: u128, float_value: Option<f32>) {
     // Format the label based on int_only flag
     if labels.int_only {
@@ -252,29 +273,14 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
     } else {
         label_target.push_str(": ");
         if int_value >= 10 || float_value.is_none() {
-            let mut b = itoa::Buffer::new();
-            let t = b.format(int_value);
-
-            if int_value >= 7_999_999_999_999 {
-                label_target.push_str(&t[..t.len() - 12]);
-                label_target.push('T');
-            } else if int_value >= 7_999_999_999 {
-                label_target.push_str(&t[..t.len() - 9]);
-                label_target.push('B');
-            } else if int_value >= 7_999_999 {
-                label_target.push_str(&t[..t.len() - 6]);
-                label_target.push('M');
-            } else if int_value >= 7_999 {
-                label_target.push_str(&t[..t.len() - 3]);
-                label_target.push('K');
-            } else {
-                label_target.push_str(t);
-            }
+            format_compressed_u128(int_value, label_target);
+            
             // Output raw integer value for metrics
             #[cfg(feature = "prometheus_metrics")]
             {
+                let mut b = itoa::Buffer::new();
                 _metric_target.push(' ');
-                _metric_target.push_str(t);
+                _metric_target.push_str(b.format(int_value));
                 _metric_target.push('\n');
             }
         } else {

@@ -45,7 +45,8 @@ pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECT
 pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 256;
 
 /// Threshold for aggregating parallel edges into a single logical bundle.
-pub const AGGREGATION_THRESHOLD: usize = 4;
+#[allow(dead_code)]
+pub(crate) const AGGREGATION_THRESHOLD: usize = 4;
 
 // Default values for runtime configuration
 const DEFAULT_TELEMETRY_SERVER_PORT: u16 = 9900;

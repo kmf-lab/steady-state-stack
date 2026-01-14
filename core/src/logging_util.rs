@@ -11,6 +11,7 @@ use std::error::Error;
 use std::io;
 #[allow(unused_imports)]
 use log::*;
+use crate::LogFileConfig;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashMap;
 use std::thread::{self, ThreadId};
@@ -93,18 +94,36 @@ impl LogWriter for MemoryWriter {
 /// This function sets up the logger with the specified log level, using a memory writer
 /// for capturing logs and duplicating output to stderr. It is used internally by the
 /// logger initialization routines.
-fn steady_logging_init(level: LogLevel) -> Result<LoggerHandle, Box<dyn Error>> {
+fn steady_logging_init(level: LogLevel, file_config: Option<LogFileConfig>) -> Result<LoggerHandle, Box<dyn Error>> {
     let log_spec = LogSpecBuilder::new()
         .default(level.to_level_filter())
         .build();
-    let format = colored_with_thread;
+    
     let mut logger = Logger::with(log_spec);
-    logger = logger
-        .log_to_writer(Box::new(MemoryWriter::new(format)))
-        .duplicate_to_stderr(flexi_logger::Duplicate::All);
+
+    if let Some(config) = file_config {
+        logger = logger.log_to_file_and_writer(
+            FileSpec::default().directory(config.directory).basename(config.base_name),
+            Box::new(MemoryWriter::new(plain_with_thread))
+        )
+        .rotate(
+            Criterion::Size(config.max_size_bytes),
+            Naming::Numbers,
+            Cleanup::KeepLogFiles(config.keep_count),
+        );
+        
+        if !config.delete_old_on_start {
+            logger = logger.append();
+        }
+    } else {
+        logger = logger.log_to_writer(Box::new(MemoryWriter::new(plain_with_thread)));
+    }
+
+    logger = logger.duplicate_to_stderr(flexi_logger::Duplicate::All);
 
     logger
-        .format(format)
+        .format(plain_with_thread)
+        .format_for_stderr(colored_with_thread)
         .write_mode(WriteMode::Direct)
         .start()
         .map_err(|e| Box::new(e) as Box<dyn Error>)
@@ -170,7 +189,7 @@ pub mod steady_logger {
         let mut logger_handle = LOGGER_HANDLE.lock().expect("log init");
         if logger_handle.is_none() {
             let level = LogLevel::Info; // Default level
-            let handle = steady_logging_init(level)?;
+            let handle = steady_logging_init(level, None)?;
             *logger_handle = Some(handle);
         }
         Ok(())
@@ -180,6 +199,11 @@ pub mod steady_logger {
     ///
     /// This function allows dynamic adjustment of the log level at runtime.
     pub fn initialize_with_level(level: LogLevel) -> Result<(), Box<dyn Error>> {
+        initialize_with_level_and_file(level, None)
+    }
+
+    /// Initializes the logger with a specific log level and optional file rotation.
+    pub fn initialize_with_level_and_file(level: LogLevel, file_config: Option<LogFileConfig>) -> Result<(), Box<dyn Error>> {
         let mut logger_handle = LOGGER_HANDLE.lock().expect("log init with level");
         if let Some(handle) = logger_handle.as_ref() {
             // Dynamically adjust the log level
@@ -190,7 +214,7 @@ pub mod steady_logger {
             );
             Ok(())
         } else {
-            let handle = steady_logging_init(level)?;
+            let handle = steady_logging_init(level, file_config)?;
             *logger_handle = Some(handle);
             Ok(())
         }
@@ -260,3 +284,44 @@ macro_rules! assert_in_logs {
         }
     }};
 }
+
+/// Formats log records without ANSI colors, suitable for file output.
+pub fn plain_with_thread(
+    w: &mut dyn std::io::Write,
+    now: &mut DeferredNow,
+    record: &Record,
+) -> Result<(), std::io::Error> {
+    write!(
+        w,
+        "[{}] T[{}] {} [{}:{}] {}",
+        now.format(TS_DASHES),
+        thread::current().name().unwrap_or("<unnamed>"),
+        record.level(),
+        record.file().unwrap_or("<unnamed>"),
+        record.line().unwrap_or(0),
+        &record.args()
+    )
+}
+
+/// Formats log records with ANSI colors, suitable for terminal output.
+pub fn colored_with_thread(
+    w: &mut dyn std::io::Write,
+    now: &mut DeferredNow,
+    record: &Record,
+) -> Result<(), std::io::Error> {
+    let level = record.level();
+    let style = style(level);
+    write!(
+        w,
+        "[{}] T[{}] {} [{}:{}] {}",
+        style.paint(now.format(TS_DASHES).to_string()),
+        style.paint(thread::current().name().unwrap_or("<unnamed>")),
+        style.paint(record.level().to_string()),
+        record.file().unwrap_or("<unnamed>"),
+        record.line().unwrap_or(0),
+        style.paint(&record.args().to_string())
+    )
+}
+
+/// Timestamp format used in logging.
+pub const TS_DASHES: &str = "%Y-%m-%d %H:%M:%S%.6f %:z";

@@ -72,10 +72,12 @@ mod test_actor_stats {
         actor_stats.accumulate_data_frame(512, 50);
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
         let (line_color, line_width) = actor_stats.compute(
             &mut dot_label,
+            &mut tooltip,
             &mut metric_text,
             Some((512, 50)),
             1,
@@ -84,7 +86,7 @@ mod test_actor_stats {
         );
 
         assert_eq!(line_color, DOT_GREEN);
-        assert_eq!(line_width, "4");
+        assert_eq!(line_width, "3");
         assert!(dot_label.contains("test_actor"));
 
     }
@@ -325,9 +327,10 @@ mod extra_tests {
         actor_stats.ident = ActorIdentity::new(1, "test", Some(42));
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, None);
 
         // Should contain actor name with suffix
         assert!(dot_label.contains("test42"));
@@ -344,9 +347,10 @@ mod extra_tests {
 
         // Mock the SHOW_ACTORS constant
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, None);
 
         // Should contain actor ID in brackets when SHOW_ACTORS is true
         // Note: This test might need adjustment based on how SHOW_ACTORS is implemented
@@ -366,12 +370,13 @@ mod extra_tests {
         actor_stats.time_label = "5.0 mins".to_string();
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, None);
 
-        // Should contain window information
-        assert!(dot_label.contains("Window 5.0 mins"));
+        // Should contain window information in tooltip
+        assert!(tooltip.contains("Window 5.0 mins"));
     }
 
     /// Test compute method with restart count
@@ -384,12 +389,13 @@ mod extra_tests {
         actor_stats.prometheus_labels = "test=\"true\"".to_string();
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 5, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 5, false, None);
 
-        // Should contain restart count
-        assert!(dot_label.contains("restarts: 5"));
+        // Should contain restart count in tooltip
+        assert!(tooltip.contains("restarts: 5"));
 
         #[cfg(feature = "prometheus_metrics")]
         {
@@ -408,12 +414,13 @@ mod extra_tests {
         actor_stats.ident = ActorIdentity::new(1, "test", None);
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 50)), 0, true, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, true, None);
 
-        // Should contain stopped indicator
-        assert!(dot_label.contains("stopped"));
+        // Should contain stopped indicator in tooltip
+        assert!(tooltip.contains("stopped"));
     }
 
     /// Test compute method with current work data
@@ -431,12 +438,14 @@ mod extra_tests {
         }
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, Some((500, 60)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 60)), 0, false, None);
 
-        // Should contain work load information
+        // Should contain work load information in both
         assert!(dot_label.contains("load"));
+        assert!(tooltip.contains("load"));
     }
 
     /// Test compute method with current mcpu data
@@ -454,12 +463,14 @@ mod extra_tests {
         }
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut metric_text, Some((700, 50)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((700, 50)), 0, false, None);
 
-        // Should contain mcpu information
+        // Should contain mcpu information in both
         assert!(dot_label.contains("mCPU"));
+        assert!(tooltip.contains("mCPU"));
     }
 
     /// Test alert level triggers - Yellow
@@ -479,9 +490,10 @@ mod extra_tests {
         }
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, Some((600, 50)), 0, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 50)), 0, false, None);
 
         assert_eq!(color, DOT_YELLOW);
     }
@@ -503,9 +515,10 @@ mod extra_tests {
         }
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, Some((300, 70)), 0, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((300, 70)), 0, false, None);
 
         assert_eq!(color, DOT_ORANGE);
     }
@@ -689,9 +702,10 @@ mod extra_tests {
         }
 
         let mut dot_label = String::new();
+        let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut metric_text, Some((600, 80)), 0, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 80)), 0, false, None);
 
         // Should be Red (highest priority) even though other triggers also fire
         assert_eq!(color, DOT_RED);

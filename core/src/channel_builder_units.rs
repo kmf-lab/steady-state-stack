@@ -23,22 +23,22 @@ impl Rate {
 
     /** Creates a rate representing units per second. */
     pub fn per_seconds(units: u64) -> Self {
-        Self { numerator: units * 1000, denominator: 1 }
+        Self { numerator: units, denominator: 1000 }
     }
 
     /** Creates a rate representing units per minute. */
     pub fn per_minutes(units: u64) -> Self {
-        Self { numerator: units * 1000 * 60, denominator: 1 }
+        Self { numerator: units, denominator: 60_000 }
     }
 
     /** Creates a rate representing units per hour. */
     pub fn per_hours(units: u64) -> Self {
-        Self { numerator: units * 1000 * 60 * 60, denominator: 1 }
+        Self { numerator: units, denominator: 3_600_000 }
     }
 
     /** Creates a rate representing units per day. */
     pub fn per_days(units: u64) -> Self {
-        Self { numerator: units * 1000 * 60 * 60 * 24, denominator: 1 }
+        Self { numerator: units, denominator: 86_400_000 }
     }
 
     /** Returns the rate as a rational number (numerator, denominator) per millisecond. */

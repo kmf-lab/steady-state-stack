@@ -20,7 +20,6 @@
             <span id="speedSpan"></span>
             <span>&#9660;</span>
           </div>
-          <img id="userBtn" src="images/user-icon.svg">
         </div>
       </div>
       <div id="nav2">
@@ -44,10 +43,7 @@
       <div class="speed1200000">20 min</div>
       <div class="speed3600000">1 hour</div>
     </div>
-    <div id="userDropdown" class="dropdown">
-      <div id="exportItem">Export Flowmap</div>
-      <div class="logoutItem">Log Out</div>
-    </div>
+
     <div id="diagram">
       <div id="spinner-container">
         <img id="spinner" src="images/spinner.gif" alt="spinner">

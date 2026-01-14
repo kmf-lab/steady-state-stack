@@ -157,10 +157,18 @@ pub struct ChannelMetaData {
 
     /// Indicates whether the channel connects to a sidecar process.
     pub(crate) connects_sidecar: bool,
+    /// Optional partner name used to pair channels for shared tasks.
+    pub(crate) partner: Option<&'static str>,
+    /// Optional index within a bundle, used for pairing partnered channels.
+    pub(crate) bundle_index: Option<usize>,
     /// Byte size of the data type transmitted through the channel.
     pub(crate) type_byte_count: usize,
     /// Indicates whether to display total metrics in telemetry.
     pub(crate) show_total: bool,
+    /// Number of channels in the bundle, used for rollup display.
+    pub(crate) girth: usize,
+    /// Indicates whether to display memory usage in telemetry.
+    pub(crate) show_memory: bool,
 }
 
 /// Type alias for transmitter channel metadata, shared via an atomic reference count.
@@ -749,8 +757,8 @@ pub(crate) mod monitor_tests {
         Delay::new(Duration::from_millis(graph.telemetry_production_rate_ms)).await;
         monitor.relay_stats_smartly();
 
-        if let Some(ref mut tx) = monitor.telemetry.send_tx {
-            assert_eq!(tx.count[txd.local_monitor_index], 0);
+        if let Some(ref mut_tx) = monitor.telemetry.send_tx {
+            assert_eq!(mut_tx.count[txd.local_monitor_index], 0);
         }
 
         while count > 0 {

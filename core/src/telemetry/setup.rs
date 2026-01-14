@@ -1,4 +1,3 @@
-
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
@@ -176,8 +175,9 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
             .with_mcpu_avg()
             .with_load_avg();
         let tel_colors = graph.telemetry_colors.clone();
+        let threshold = graph.bundle_floor_size;
         bldr.with_name(metrics_server::NAME).build(move |context| {
-            metrics_server::run(context, rx.clone(), tel_colors.clone())
+            metrics_server::run(context, rx.clone(), tel_colors.clone(), threshold)
         }, ScheduleAs::SoloAct);
 
         
@@ -348,7 +348,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
 
                     if send_tx.count.iter().any(|x| !x.is_zero()) {
                         let tx = lock_guard.deref_mut();
-                        //trace!("try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_index);
+                        //trace!("try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_tx.count, tx.local_monitor_index);
                         match tx.shared_try_send(send_tx.count) {
                             Ok(_) => {
                                 send_tx.count.fill(0);
@@ -445,7 +445,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
 /// - `vacant_units`: The number of vacant units in the channel.
 ///
 /// # Returns
-/// The calculated backoff value.
+/// THE calculated backoff value.
 pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_units: usize) -> u32 {
     let bits_count = (capacity as f64).log2().ceil() as u32;
     let bit_to_represent_vacant_count = 32 - (vacant_units as u32).leading_zeros();

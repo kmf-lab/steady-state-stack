@@ -156,6 +156,18 @@ pub struct ChannelBuilder {
 
     /// Shared vector of one-shot senders for shutdown notifications, wrapped for thread safety.
     oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
+
+    /// Optional partner name to be stored in metadata.
+    partner: Option<&'static str>,
+
+    /// Optional index within a bundle, used for pairing partnered channels.
+    bundle_index: Option<usize>,
+
+    /// Number of channels in the bundle, used for rollup display.
+    girth: usize,
+
+    /// Indicates whether to display memory usage in telemetry.
+    show_memory: bool,
 }
 
 impl ChannelBuilder {
@@ -174,7 +186,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with default configurations applied.
+     * a new `ChannelBuilder` instance with default configurations applied.
      */
     pub(crate) fn new(
         channel_count: Arc<AtomicUsize>,
@@ -216,6 +228,10 @@ impl ChannelBuilder {
             show_total: true, //default to show total
             frame_rate_ms,
             max_latency: false,
+            partner: None,
+            bundle_index: None,
+            girth: 1,
+            show_memory: false,
         }
     }
 
@@ -232,7 +248,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with updated telemetry settings.
+     * a new `ChannelBuilder` instance with updated telemetry settings.
      */
     pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
         let mut result = self.clone();
@@ -249,7 +265,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with telemetry disabled.
+     * a new `ChannelBuilder` instance with telemetry disabled.
      */
     pub fn with_no_refresh_window(&self) -> Self {
         let mut result = self.clone();
@@ -265,11 +281,24 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with total counts display disabled.
+     * a new `ChannelBuilder` instance with total counts display disabled.
      */
     pub fn with_no_totals(&self) -> Self {
         let mut result = self.clone();
         result.show_total = false;
+        result
+    }
+
+    /**
+     * Enables the display of memory usage in telemetry outputs.
+     *
+     * # Returns
+     *
+     * a new `ChannelBuilder` instance with memory usage display enabled.
+     */
+    pub fn with_memory_usage(&self) -> Self {
+        let mut result = self.clone();
+        result.show_memory = true;
         result
     }
 
@@ -286,7 +315,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A tuple of `LazySteadyTxBundle<T, GIRTH>` and `LazySteadyRxBundle<T, GIRTH>` representing the transmitter and receiver bundles.
+     * a tuple of `LazySteadyTxBundle<T, GIRTH>` and `LazySteadyRxBundle<T, GIRTH>` representing the transmitter and receiver bundles.
      *
      * # Panics
      *
@@ -296,8 +325,11 @@ impl ChannelBuilder {
         let mut tx_vec = Vec::with_capacity(GIRTH);
         let mut rx_vec = Vec::with_capacity(GIRTH);
 
-        (0..GIRTH).for_each(|_| {
-            let (t, r) = self.build_channel();
+        (0..GIRTH).for_each(|i| {
+            let mut indexed_builder = self.clone();
+            indexed_builder.bundle_index = Some(i);
+            indexed_builder.girth = GIRTH;
+            let (t, r) = indexed_builder.build_channel();
             tx_vec.push(t);
             rx_vec.push(r);
         });
@@ -336,7 +368,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A tuple of `LazySteadyStreamTxBundle<T, GIRTH>` and `LazySteadyStreamRxBundle<T, GIRTH>` representing the transmitter and receiver bundles.
+     * a tuple of `LazySteadyStreamTxBundle<T, GIRTH>` and `LazySteadyStreamRxBundle<T, GIRTH>` representing the transmitter and receiver bundles.
      *
      * # Panics
      *
@@ -349,8 +381,15 @@ impl ChannelBuilder {
         let mut rx_vec = Vec::with_capacity(GIRTH); //pre-allocate, we know the size now
 
         let payload_channel_builder = &self.with_capacity(self.capacity*bytes_per_item);
-        (0..GIRTH).for_each(|_| { //TODO: later add custom builders for items vs payload
-            let lazy = Arc::new(LazyStream::new(self, payload_channel_builder));
+        (0..GIRTH).for_each(|i| { //TODO: later add custom builders for items vs payload
+            let mut indexed_builder = self.clone();
+            indexed_builder.bundle_index = Some(i);
+            indexed_builder.girth = GIRTH;
+            let mut indexed_payload_builder = payload_channel_builder.clone();
+            indexed_payload_builder.bundle_index = Some(i);
+            indexed_payload_builder.girth = GIRTH;
+
+            let lazy = Arc::new(LazyStream::new(&indexed_builder, &indexed_payload_builder));
             tx_vec.push(LazyStreamTx::<T>::new(lazy.clone()));
             rx_vec.push(LazyStreamRx::<T>::new(lazy.clone()));
         });
@@ -384,7 +423,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A tuple of `LazyStreamTx<T>` and `LazyStreamRx<T>` representing the transmitter and receiver.
+     * a tuple of `LazyStreamTx<T>` and `LazyStreamRx<T>` representing the transmitter and receiver.
      */
     pub fn build_stream<T: StreamControlItem>(&self, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
         let bytes_capacity = self.capacity*bytes_per_item;
@@ -405,7 +444,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A tuple of `LazySteadyTx<T>` and `LazySteadyRx<T>` representing the transmitter and receiver.
+     * a tuple of `LazySteadyTx<T>` and `LazySteadyRx<T>` representing the transmitter and receiver.
      */
     pub fn build_channel<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
         let lazy_channel = Arc::new(LazyChannel::new(self));
@@ -421,7 +460,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A tuple of `LazySteadyTx<T>` and `LazySteadyRx<T>` representing the transmitter and receiver.
+     * a tuple of `LazySteadyTx<T>` and `LazySteadyRx<T>` representing the transmitter and receiver.
      */
     pub fn build<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
         let lazy_channel = Arc::new(LazyChannel::new(self));
@@ -439,7 +478,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the specified capacity.
+     * a new `ChannelBuilder` instance with the specified capacity.
      */
     pub fn with_capacity(&self, capacity: usize) -> Self {
         let mut result = self.clone();
@@ -454,7 +493,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with type display enabled.
+     * a new `ChannelBuilder` instance with type display enabled.
      */
     pub fn with_type(&self) -> Self {
         let mut result = self.clone();
@@ -473,11 +512,23 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with line expansion configured.
+     * a new `ChannelBuilder` instance with line expansion configured.
      */
     pub fn with_line_expansion(&self, scale: f32) -> Self {
         let mut result = self.clone();
         result.line_expansion = scale;
+        result
+    }
+
+    /**
+     * Sets a partner name for the channel to facilitate pairing based on shared tasks.
+     *
+     * # Arguments
+     * - `partner`: A static string literal identifying the partner or task.
+     */
+    pub fn with_partner(&self, partner: &'static str) -> Self {
+        let mut result = self.clone();
+        result.partner = Some(partner);
         result
     }
 
@@ -488,7 +539,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with average filled state monitoring enabled.
+     * a new `ChannelBuilder` instance with average filled state monitoring enabled.
      */
     pub fn with_avg_filled(&self) -> Self {
         let mut result = self.clone();
@@ -503,7 +554,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with maximum filled state monitoring enabled.
+     * a new `ChannelBuilder` instance with maximum filled state monitoring enabled.
      */
     pub fn with_filled_max(&self) -> Self {
         let mut result = self.clone();
@@ -532,7 +583,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with minimum filled state monitoring enabled.
+     * a new `ChannelBuilder` instance with minimum filled state monitoring enabled.
      */
     pub fn with_filled_min(&self) -> Self {
         let mut result = self.clone();
@@ -562,7 +613,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with average rate monitoring enabled.
+     * a new `ChannelBuilder` instance with average rate monitoring enabled.
      */
     pub fn with_avg_rate(&self) -> Self {
         let mut result = self.clone();
@@ -577,7 +628,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with average latency monitoring enabled.
+     * a new `ChannelBuilder` instance with average latency monitoring enabled.
      */
     pub fn with_avg_latency(&self) -> Self {
         let mut result = self.clone();
@@ -592,7 +643,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the sidecar flag set.
+     * a new `ChannelBuilder` instance with the sidecar flag set.
      */
     pub fn connects_sidecar(&self) -> Self {
         let mut result = self.clone();
@@ -612,7 +663,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with configured labels.
+     * a new `ChannelBuilder` instance with configured labels.
      */
     pub fn with_labels(&self, labels: &'static [&'static str], display: bool) -> Self {
         let mut result = self.clone();
@@ -631,7 +682,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the metric added.
+     * a new `ChannelBuilder` instance with the metric added.
      */
     pub fn with_filled_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
@@ -650,7 +701,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the metric added.
+     * a new `ChannelBuilder` instance with the metric added.
      */
     pub fn with_rate_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
@@ -669,7 +720,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the metric added.
+     * a new `ChannelBuilder` instance with the metric added.
      */
     pub fn with_latency_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
@@ -688,7 +739,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the metric added.
+     * a new `ChannelBuilder` instance with the metric added.
      */
     pub fn with_filled_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
@@ -707,7 +758,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the metric added.
+     * a new `ChannelBuilder` instance with the metric added.
      */
     pub fn with_rate_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
@@ -726,7 +777,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the metric added.
+     * a new `ChannelBuilder` instance with the metric added.
      */
     pub fn with_latency_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
@@ -746,7 +797,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the trigger added.
+     * a new `ChannelBuilder` instance with the trigger added.
      */
     pub fn with_rate_trigger(&self, bound: Trigger<Rate>, color: AlertColor) -> Self {
         let mut result = self.clone();
@@ -766,7 +817,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the trigger added.
+     * a new `ChannelBuilder` instance with the trigger added.
      */
     pub fn with_filled_trigger(&self, bound: Trigger<Filled>, color: AlertColor) -> Self {
         let mut result = self.clone();
@@ -786,7 +837,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A new `ChannelBuilder` instance with the trigger added.
+     * a new `ChannelBuilder` instance with the trigger added.
      */
     pub fn with_latency_trigger(&self, bound: Trigger<Duration>, color: AlertColor) -> Self {
         let mut result = self.clone();
@@ -806,7 +857,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A `ChannelMetaData` instance encapsulating the builder’s configuration.
+     * a `ChannelMetaData` instance encapsulating the builder’s configuration.
      *
      * # Panics
      *
@@ -850,7 +901,11 @@ impl ChannelBuilder {
             avg_rate: self.avg_rate,
             avg_latency: self.avg_latency,
             connects_sidecar: self.connects_sidecar,
+            partner: self.partner,
+            bundle_index: self.bundle_index,
             show_total: self.show_total,
+            girth: self.girth,
+            show_memory: self.show_memory,
         }
     }
 
@@ -869,7 +924,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A tuple of `Tx<T>` and `Rx<T>` representing the raw transmitter and receiver.
+     * a tuple of `Tx<T>` and `Rx<T>` representing the raw transmitter and receiver.
      */
     pub(crate) fn eager_build_internal<T>(&self) -> (Tx<T>, Rx<T>) {
         let now = Instant::now().sub(Duration::from_secs(1 + MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
@@ -939,7 +994,7 @@ impl ChannelBuilder {
      *
      * # Returns
      *
-     * A tuple of `SteadyTx<T>` and `SteadyRx<T>` representing the transmitter and receiver.
+     * a tuple of `SteadyTx<T>` and `SteadyRx<T>` representing the transmitter and receiver.
      */
     pub fn eager_build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
         let (tx, rx) = self.eager_build_internal();
@@ -1120,25 +1175,25 @@ mod tests_inputs {
     #[test]
     fn test_rate_per_seconds() {
         let rate = Rate::per_seconds(5);
-        assert_eq!(rate.rational_ms(), (5000, 1));
+        assert_eq!(rate.rational_ms(), (5, 1000));
     }
 
     #[test]
     fn test_rate_per_minutes() {
         let rate = Rate::per_minutes(5);
-        assert_eq!(rate.rational_ms(), (300000, 1));
+        assert_eq!(rate.rational_ms(), (5, 60000));
     }
 
     #[test]
     fn test_rate_per_hours() {
         let rate = Rate::per_hours(5);
-        assert_eq!(rate.rational_ms(), (18000000, 1));
+        assert_eq!(rate.rational_ms(), (5, 3600000));
     }
 
     #[test]
     fn test_rate_per_days() {
         let rate = Rate::per_days(5);
-        assert_eq!(rate.rational_ms(), (432000000, 1));
+        assert_eq!(rate.rational_ms(), (5, 86400000));
     }
 
     #[test]
@@ -1215,6 +1270,8 @@ pub(crate) mod test_builder {
     use super::*;
 
     use crate::actor_builder_units::Percentile;
+    use crate::steady_rx::RxMetaDataProvider;
+    use crate::distributed::aqueduct_stream::StreamIngress;
 
     #[test]
     pub(crate) fn test_channel_builder_new() {
@@ -1357,6 +1414,29 @@ pub(crate) mod test_builder {
 
         assert_eq!(meta_data.capacity, builder.capacity);
         assert_eq!(meta_data.labels, builder.labels);
+        assert_eq!(meta_data.bundle_index, builder.bundle_index);
+    }
+
+    #[test]
+    pub(crate) fn test_channel_builder_bundle_index() {
+        let builder = create_test_channel_builder();
+        let (_, rx_bundle) = builder.build_channel_bundle::<i32, 3>();
+        
+        for (i, rx) in rx_bundle.iter().enumerate() {
+            let meta = rx.clone().meta_data();
+            assert_eq!(meta.bundle_index, Some(i));
+        }
+    }
+
+    #[test]
+    pub(crate) fn test_stream_builder_bundle_index() {
+        let builder = create_test_channel_builder();
+        let (_, rx_bundle) = builder.build_stream_bundle::<StreamIngress, 3>(8);
+        
+        for (i, rx) in rx_bundle.iter().enumerate() {
+            let meta = rx.clone().meta_data();
+            assert_eq!(meta.bundle_index, Some(i));
+        }
     }
 
     fn create_test_channel_builder() -> ChannelBuilder {

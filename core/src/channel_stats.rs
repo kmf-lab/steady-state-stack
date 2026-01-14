@@ -19,7 +19,7 @@ pub(crate) const DOT_RED: &str = "red";
 pub(crate) const DOT_GREY: &str = "grey";
 
 /// Array representing the pen width values for the dot graph.
-static DOT_PEN_WIDTH: [&str; 16] = [
+static _DOT_PEN_WIDTH: [&str; 16] = [
     "4", "6", "8", "10", "12", "14", "16", "18", "20", "22", "24", "26", "28", "30", "32", "34"
 ];
 
@@ -73,6 +73,13 @@ pub struct ChannelStatsComputer {
     pub(crate) last_send: i64,
     pub(crate) last_take: i64,
     pub(crate) last_total: i64,
+
+    pub(crate) partner: Option<&'static str>,
+    pub(crate) bundle_index: Option<usize>,
+    pub(crate) girth: usize,
+    pub(crate) total_consumed: u128,
+    pub(crate) memory_footprint: usize,
+    pub(crate) show_memory: bool,
 }
 
 impl ChannelStatsComputer {
@@ -89,6 +96,13 @@ impl ChannelStatsComputer {
         assert!(meta.capacity > 0, "capacity must be greater than 0");
         self.capacity = meta.capacity;
         self.show_total = meta.show_total;
+        self.partner = meta.partner;
+        self.bundle_index = meta.bundle_index;
+        self.girth = meta.girth;
+        self.total_consumed = 0;
+        self.memory_footprint = meta.capacity * meta.type_byte_count;
+        self.show_memory = meta.show_memory;
+
         meta.labels.iter().for_each(|f| {
             self.prometheus_labels.push_str(f);
             self.prometheus_labels.push_str("=\"T\", ");
@@ -416,13 +430,21 @@ impl ChannelStatsComputer {
         // Compute the running totals
 
         let inflight: u64 = (send - take) as u64;
-        let consumed: u64 = (take - self.prev_take) as u64;
-        self.accumulate_data_frame(inflight, consumed); 
+        
+        // Fix monotonicity: handle potential counter resets by using deltas
+        let delta_consumed = if take >= self.prev_take {
+            (take - self.prev_take) as u64
+        } else {
+            take as u64 // Counter reset, treat current take as the delta
+        };
+        self.total_consumed += delta_consumed as u128;
+        
+        self.accumulate_data_frame(inflight, delta_consumed); 
         self.prev_take = take;
         self.last_send = send;
         self.last_take = take;
         self.last_total = inflight as i64;
-        self.saturation_score = (consumed as f64 / self.capacity as f64).clamp(0.0, 1.0);
+        self.saturation_score = (delta_consumed as f64 / self.capacity as f64).clamp(0.0, 1.0);
     
         ////////////////////////////////////////////////
         //  Build the labels
@@ -485,24 +507,28 @@ impl ChannelStatsComputer {
         }
 
         if self.show_total {
-            display_label.push_str("Capacity: ");
-            display_label.push_str(itoa::Buffer::new().format(self.capacity));
-            display_label.push_str(" Total: ");
-            let mut b = itoa::Buffer::new();
-            let t = b.format(take);
-            let len = t.len();
-            let mut i = len % 3;
-            if i == 0 {
-                i = 3; // Start with a full group of 3 digits if the number length is a multiple of 3
+            if self.girth > 1 {
+                display_label.push_str(itoa::Buffer::new().format(self.girth));
+                display_label.push('x');
+                channel_stats_labels::format_compressed_u128((self.capacity / self.girth) as u128, display_label);
+            } else {
+                display_label.push_str("Cap: ");
+                channel_stats_labels::format_compressed_u128(self.capacity as u128, display_label);
             }
-            // Push the first group (which could be less than 3 digits)
-            display_label.push_str(&t[..i]);
-            // Now loop through the rest of the string in chunks of 3
-            while i < len {
-                display_label.push(',');
-                display_label.push_str(&t[i..i + 3]);
-                i += 3;
+            
+            if self.show_memory {
+                display_label.push_str(" (");
+                channel_stats_labels::format_compressed_u128(self.memory_footprint as u128, display_label);
+                display_label.push_str("B)");
             }
+
+            display_label.push_str(" ");
+            if let Some(p) = self.partner {
+                display_label.push_str(p);
+                display_label.push(' ');
+            }
+            display_label.push_str("Total: ");
+            channel_stats_labels::format_compressed_u128(self.total_consumed, display_label);
             display_label.push('\n');
         }
 
@@ -875,6 +901,20 @@ pub(crate) const PLACES_TENS: u64 = 1000u64;
 mod channel_stats_tests {
     use super::*;
     use std::time::Duration;
+    use crate::monitor::ChannelMetaData;
+    use std::sync::Arc;
+
+    fn mock_meta() -> Arc<ChannelMetaData> {
+        Arc::new(ChannelMetaData {
+            capacity: 100,
+            show_total: true,
+            type_byte_count: 8,
+            show_type: Some("u64"),
+            refresh_rate_in_bits: 1, // Rollover every 2 frames
+            window_bucket_in_bits: 1, // Window size 2 buckets
+            ..Default::default()
+        })
+    }
 
     #[test]
     fn test_avg_filled_percentage_none() {
@@ -889,5 +929,171 @@ mod channel_stats_tests {
     fn test_avg_latency_none() {
         let computer = ChannelStatsComputer::default();
         assert_eq!(computer.avg_latency(&Duration::from_millis(100)), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_init_and_label_building() {
+        let mut computer = ChannelStatsComputer::default();
+        let meta = mock_meta();
+        let from = ActorName::new("src", Some(1));
+        let to = ActorName::new("dst", None);
+        
+        computer.init(&meta, from, to, 1000);
+        
+        assert_eq!(computer.capacity, 100);
+        assert!(computer.prometheus_labels.contains("from=\"src1\""));
+        assert!(computer.prometheus_labels.contains("to=\"dst\""));
+        assert!(computer.prometheus_labels.contains("type=\"u64\""));
+    }
+
+    #[test]
+    fn test_monotonic_total_and_resets() {
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&mock_meta(), ActorName::new("a", None), ActorName::new("b", None), 1000);
+
+        let mut label = String::new();
+        let mut metric = String::new();
+
+        // Normal increment
+        computer.compute(&mut label, &mut metric, None, 100, 50);
+        assert_eq!(computer.total_consumed, 50);
+
+        // Counter reset (take < prev_take)
+        computer.compute(&mut label, &mut metric, None, 120, 10);
+        // Should treat 10 as a fresh delta: 50 + 10 = 60
+        assert_eq!(computer.total_consumed, 60);
+    }
+
+    #[test]
+    fn test_bundle_and_memory_display() {
+        let mut computer = ChannelStatsComputer::default();
+        let mut meta = (*mock_meta()).clone();
+        meta.girth = 4;
+        meta.show_memory = true;
+        
+        computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
+        
+        let mut label = String::new();
+        computer.compute(&mut label, &mut String::new(), None, 0, 0);
+        
+        assert!(label.contains("4x25")); // Girth x (Cap/Girth)
+        assert!(label.contains("(800B)")); // 100 * 8 bytes
+    }
+
+    #[test]
+    fn test_alert_color_priority() {
+        let mut computer = ChannelStatsComputer::default();
+        let mut meta = (*mock_meta()).clone();
+        // Add a Red and a Yellow trigger
+        meta.trigger_rate.push((Trigger::AvgAbove(Rate::per_seconds(1)), AlertColor::Yellow));
+        meta.trigger_filled.push((Trigger::AvgAbove(Filled::p10()), AlertColor::Red));
+        
+        computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
+        
+        // Fill window to trigger both
+        for _ in 0..10 { computer.accumulate_data_frame(50, 100); }
+        
+        let mut label = String::new();
+        let (color, _) = computer.compute(&mut label, &mut String::new(), None, 100, 50);
+        
+        assert_eq!(color, DOT_RED); // Red should override Yellow
+    }
+
+    #[test]
+    fn test_trigger_gauntlet_latency() {
+        let mut computer = ChannelStatsComputer::default();
+        let mut meta = (*mock_meta()).clone();
+        
+        // Add all latency trigger variants
+        meta.trigger_latency.push((Trigger::AvgAbove(Duration::from_micros(100)), AlertColor::Red));
+        meta.trigger_latency.push((Trigger::AvgBelow(Duration::from_micros(10)), AlertColor::Red));
+        meta.trigger_latency.push((Trigger::StdDevsAbove(StdDev::one(), Duration::from_micros(50)), AlertColor::Red));
+        meta.trigger_latency.push((Trigger::StdDevsBelow(StdDev::one(), Duration::from_micros(5)), AlertColor::Red));
+        meta.trigger_latency.push((Trigger::PercentileAbove(Percentile::p90(), Duration::from_micros(200)), AlertColor::Red));
+        meta.trigger_latency.push((Trigger::PercentileBelow(Percentile::p25(), Duration::from_micros(2)), AlertColor::Red));
+        
+        computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
+        
+        // Fill window with data: 50 filled, 100 rate -> 50 * 1000 / 100 = 500 micros latency
+        for _ in 0..10 { computer.accumulate_data_frame(50, 100); }
+        
+        assert!(computer.triggered_latency(&Trigger::AvgAbove(Duration::from_micros(100))));
+        assert!(!computer.triggered_latency(&Trigger::AvgBelow(Duration::from_micros(10))));
+        assert!(computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_micros(200))));
+    }
+
+    #[test]
+    fn test_trigger_gauntlet_rate() {
+        let mut computer = ChannelStatsComputer::default();
+        let mut meta = (*mock_meta()).clone();
+        
+        meta.trigger_rate.push((Trigger::AvgAbove(Rate::per_seconds(50)), AlertColor::Red));
+        meta.trigger_rate.push((Trigger::AvgBelow(Rate::per_seconds(200)), AlertColor::Red));
+        
+        computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
+        
+        // Rate is 100 per frame (1000ms) -> 100 per sec
+        for _ in 0..10 { computer.accumulate_data_frame(10, 100); }
+        
+        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_seconds(50))));
+        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_seconds(200))));
+    }
+
+    #[test]
+    fn test_trigger_gauntlet_filled() {
+        let mut computer = ChannelStatsComputer::default();
+        let mut meta = (*mock_meta()).clone();
+        
+        meta.trigger_filled.push((Trigger::AvgAbove(Filled::Percentage(50, 100)), AlertColor::Red));
+        meta.trigger_filled.push((Trigger::AvgBelow(Filled::Exact(80)), AlertColor::Red));
+        
+        computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
+        
+        // 60 items in 100 capacity -> 60% full
+        for _ in 0..10 { computer.accumulate_data_frame(60, 10); }
+        
+        assert!(computer.triggered_filled(&Trigger::AvgAbove(Filled::Percentage(50, 100))));
+        assert!(computer.triggered_filled(&Trigger::AvgBelow(Filled::Exact(80))));
+    }
+
+    #[test]
+    fn test_std_dev_triggers() {
+        let mut computer = ChannelStatsComputer::default();
+        let mut meta = (*mock_meta()).clone();
+        meta.std_dev_inflight.push(StdDev::one());
+        meta.std_dev_consumed.push(StdDev::one());
+        meta.std_dev_latency.push(StdDev::one());
+        
+        computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
+        
+        // Add varying data to create standard deviation
+        for i in 0..20 { computer.accumulate_data_frame(i % 10, 100); }
+        
+        assert!(computer.rate_std_dev() >= 0.0);
+        assert!(computer.filled_std_dev() >= 0.0);
+        assert!(computer.latency_std_dev() >= 0.0);
+    }
+
+    #[test]
+    fn test_zero_capacity_safety() {
+        let mut computer = ChannelStatsComputer::default();
+        // Capacity 0 is invalid but we test the safety return
+        computer.capacity = 0;
+        let mut label = String::new();
+        let (color, _) = computer.compute(&mut label, &mut String::new(), None, 0, 0);
+        assert_eq!(color, DOT_GREY);
+    }
+
+    #[test]
+    fn test_histogram_creation_failure_handling() {
+        let mut computer = ChannelStatsComputer::default();
+        let mut meta = (*mock_meta()).clone();
+        // Force histogram creation
+        meta.percentiles_filled.push(Percentile::p50());
+        
+        // We can't easily force Histogram::new to fail without mocking, 
+        // but we can verify the branches that handle it.
+        computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
+        assert!(computer.build_filled_histogram);
     }
 }

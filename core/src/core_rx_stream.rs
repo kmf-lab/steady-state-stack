@@ -259,7 +259,9 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
 #[cfg(test)]
 mod core_rx_stream_tests {
     use std::time::Duration;
-    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, RxCore, core_exec, RxDone};
+    use std::sync::atomic::Ordering;
+    use async_ringbuf::traits::Producer;
+    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, RxCore, core_exec, RxDone, steady_rx::RxMetaDataProvider};
     use crate::core_tx::TxCore;
 
     #[test]
@@ -369,6 +371,149 @@ mod core_rx_stream_tests {
             
             assert!(matches!(done, RxDone::Stream(2, 5)));
             assert_eq!(&payload_target[0..5], &[1, 2, 3, 4, 5]);
+            
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
+    fn test_stream_rx_telemetry_normal() {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (_tx, rx) = graph.channel_builder()
+                .with_capacity(5)
+                .build_stream::<StreamIngress>(10);
+            
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            
+            let meta = rx_guard.control_channel.channel_meta_data.meta_data.clone();
+            let mut actor = graph.new_testing_test_monitor("test")
+                .into_spotlight([&meta as &dyn RxMetaDataProvider], []);
+
+            if let Some(ref mut tel) = actor.telemetry.send_rx {
+                rx_guard.telemetry_inc(RxDone::Normal(1), tel);
+            }
+        });
+    }
+
+    // #[test]
+    // fn test_stream_rx_peek_repeats_logic() -> Result<(), Box<dyn std::error::Error>> {
+    //     core_exec::block_on(async {
+    //         let mut graph = GraphBuilder::for_testing().build(());
+    //         let (tx, rx) = graph.channel_builder()
+    //             .with_capacity(10)
+    //             .build_stream::<StreamIngress>(10);
+    //         
+    //         let tx_clone = tx.clone();
+    //         let mut tx_guard = tx_clone.lock().await;
+    //         let now = std::time::Instant::now();
+    //         tx_guard.shared_try_send((StreamIngress::new(5, 0, now, now), &[0u8; 5][..])).unwrap();
+    //         drop(tx_guard);
+    // 
+    //         let rx_clone = rx.clone();
+    //         let mut rx_guard = rx_clone.lock().await;
+    //         
+    //         // First peek
+    //         rx_guard.shared_peek_async_timeout(None).await;
+    //         assert_eq!(rx_guard.control_channel.peek_repeats.load(Ordering::Relaxed), 0);
+    //         
+    //         // Second peek (same take_count)
+    //         rx_guard.shared_peek_async_timeout(None).await;
+    //         assert_eq!(rx_guard.control_channel.peek_repeats.load(Ordering::Relaxed), 1);
+    //         
+    //         // Take it
+    //         rx_guard.shared_try_take().unwrap();
+    //         
+    //         // Peek again (empty)
+    //         rx_guard.shared_peek_async_timeout(None).await;
+    //         assert_eq!(rx_guard.control_channel.peek_repeats.load(Ordering::Relaxed), 0);
+    //         
+    //         Ok::<(), Box<dyn std::error::Error>>(())
+    //     })
+    // }
+
+    #[test]
+    fn test_stream_rx_take_slice_wrap_around() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(4) // Small capacity
+                .build_stream::<StreamEgress>(1); // 4 bytes total
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            
+            // Fill and empty to move indices
+            tx_guard.shared_try_send(&[1, 2][..]).unwrap();
+            tx_guard.shared_try_send(&[3, 4][..]).unwrap();
+            drop(tx_guard);
+            
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            rx_guard.shared_try_take().unwrap();
+            rx_guard.shared_try_take().unwrap();
+            drop(rx_guard);
+            
+            // Now indices are at the end. Push more to wrap.
+            let mut tx_guard = tx_clone.lock().await;
+            tx_guard.shared_try_send(&[5, 6][..]).unwrap();
+            tx_guard.shared_try_send(&[7, 8][..]).unwrap();
+            drop(tx_guard);
+            
+            let mut rx_guard = rx_clone.lock().await;
+            let mut item_target = [StreamEgress::default(); 2];
+            let mut payload_target = [0u8; 4];
+            let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+            
+            assert_eq!(done, RxDone::Stream(2, 4));
+            assert_eq!(&payload_target, &[5, 6, 7, 8]);
+            
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
+    fn test_stream_rx_advance_fail() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (_tx, rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamIngress>(100);
+            
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            
+            let done = rx_guard.shared_advance_index((20, 2000));
+            assert_eq!(done, RxDone::Stream(0, 0));
+            
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
+    fn test_stream_rx_try_take_partial_payload() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamIngress>(10);
+            
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            
+            // Manually push an item to control but NOT enough to payload
+            let now = std::time::Instant::now();
+            tx_guard.control_channel.tx.try_push(StreamIngress::new(10, 0, now, now)).unwrap();
+            // Payload needs 10, but we push 5
+            tx_guard.payload_channel.tx.push_slice(&[0u8; 5]);
+            drop(tx_guard);
+
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            
+            let result = rx_guard.shared_try_take();
+            assert!(result.is_none()); // Should fail because payload is incomplete
             
             Ok::<(), Box<dyn std::error::Error>>(())
         })

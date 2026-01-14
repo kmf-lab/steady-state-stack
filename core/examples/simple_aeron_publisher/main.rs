@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let cli_args = MainArg::parse();
-    let _ = init_logging(LogLevel::Info);
+    let _ = init_logging(LogLevel::Info, None);
     let mut graph = GraphBuilder::default()
            .with_telemtry_production_rate_ms(200)
            .build(cli_args); //or pass () if no args

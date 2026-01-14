@@ -1,917 +1,197 @@
+//! The `metrics_collector` module provides the `MetricsCollector` actor, which is responsible for
+//! gathering telemetry data from all actors and channels in the graph. It aggregates this data
+//! into a `DotState` for visualization and Prometheus metrics.
+
 use std::collections::{HashMap, VecDeque};
-use std::error::Error;
-use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, LockResult};
-use parking_lot::{RwLock, RwLockReadGuard};
-#[allow(unused_imports)]
-use std::time::{Duration, Instant};
-#[allow(unused_imports)]
-use log::*; // Allow unused import
-
+use std::sync::Arc;
+use std::time::Duration;
+use parking_lot::RwLock;
+use crate::*;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-#[allow(unused_imports)]
-use crate::{into_monitor, steady_config, yield_now, SendSaturation, SteadyTxBundle};
-use futures::future::*;
-use futures_timer::Delay;
-use futures_util::{select, StreamExt};
-use futures_util::lock::MutexGuard;
-use futures_util::stream::FuturesUnordered;
-#[allow(unused_imports)]
-use num_traits::{One,Zero};
-use crate::graph_liveliness::ActorIdentity;
-use crate::{i, GraphLivelinessState, SteadyRx};
-use crate::steady_actor::SteadyActor;
-#[allow(unused_imports)]
-use crate::steady_actor_shadow::SteadyActorShadow;
-use crate::core_rx::RxCore;
-use crate::core_tx::TxCore;
-use crate::SendOutcome::{Blocked, Success};
-use crate::steady_rx::*;
-use crate::steady_tx::*;
 
+/// The name of the metrics collector actor.
 pub const NAME: &str = "metrics_collector";
 
-// Enable debug logging for detailed runtime insights; can be toggled off in production if needed.
-const ENABLE_DEBUG_LOGGING: bool = false;
+/// Represents a telemetry receiver and its associated metadata.
+pub struct CollectorDetail {
+    /// The identity of the actor being monitored.
+    pub ident: ActorIdentity,
+    /// A queue of telemetry receivers for this actor.
+    pub telemetry_take: VecDeque<Box<dyn RxTel>>,
+}
 
-/// Represents different types of data that can be sent to the diagram for visualization or logging.
+/// Data packet sent to the metrics server for visualization.
 #[derive(Clone, Debug)]
 pub enum DiagramData {
-    /// Defines a node with its actor metadata and channel details (rx and tx).
-    #[allow(clippy::type_complexity)]
-    NodeDef(
-        u64,
-        Box<( // Boxed to keep enum variants uniform in size for channel efficiency
-              Arc<ActorMetaData>,
-              Box<[Arc<ChannelMetaData>]>,
-              Box<[Arc<ChannelMetaData>]>,
-        )>,
-    ),
-    /// Contains channel volume data as (take, send) tuples for each channel.
-    ChannelVolumeData(u64, Box<[(i64, i64)]>),
-    /// Provides actor status updates for process monitoring.
+    /// Definition of a node and its connected channels.
+    NodeDef(u64, Box<(Arc<ActorMetaData>, Box<[Arc<ChannelMetaData>]>, Box<[Arc<ChannelMetaData>]>)>),
+    /// Performance status updates for a set of nodes.
     NodeProcessData(u64, Box<[ActorStatus]>),
+    /// Throughput and volume data for all channels.
+    ChannelVolumeData(u64, Box<[(i64, i64)]>),
 }
 
-/// Tracks the internal state of the metrics collector, including frame sequence and telemetry data.
-#[derive(Default)]
-struct RawDiagramState {
-    sequence: u64,                // Tracks the current frame sequence number.
-    fill: u8,                     // Indicates frame readiness: 0 (new), 1 (half), 2+ (full).
-    actor_count: usize,           // Number of actors being monitored.
-    actor_status: Vec<ActorStatus>, // Latest status of each actor.
-    total_take_send: Vec<(i64, i64)>, // Aggregated (take, send) counts for channels.
-    future_take: Vec<i64>,        // Take counts for the next frame (unmatched sends).
-    future_send: Vec<i64>,        // Send counts for the next frame (unmatched takes).
-    error_map: HashMap<String, u32>, // Tracks errors for reporting after multiple occurrences.
-    actor_last_update: Vec<u64>,  // Last sequence number each actor updated, for detecting stalls.
-    #[cfg(debug_assertions)]
-    last_instant: Option<Instant> // Timestamp of last frame, useful for debugging timing issues.
+/// Entry point to run the MetricsCollector actor.
+pub async fn run(
+    context: SteadyContext, 
+    all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>, 
+    targets: Arc<[SteadyTx<DiagramData>; 1]>
+) -> Result<(), Box<dyn std::error::Error>> {
+    let frame_rate_ms = context.frame_rate_ms;
+    let collector = MetricsCollector::new(all_telemetry_rx, targets, frame_rate_ms);
+    collector.run(context).await
 }
 
-/// Launches the metrics collector, orchestrating telemetry collection and frame production.
-pub(crate) async fn run<const GIRTH: usize>(
-    context: SteadyActorShadow,
-    dynamic_senders_vec: Arc<RwLock<Vec<crate::telemetry::metrics_collector::CollectorDetail>>>,
-    optional_servers: SteadyTxBundle<DiagramData, GIRTH>,
-) -> Result<(), Box<dyn Error>> {
-    internal_behavior(context, dynamic_senders_vec, optional_servers).await
+/// The `MetricsCollector` actor gathers telemetry data from all actors and channels.
+pub struct MetricsCollector {
+    /// Shared telemetry receivers for all actors in the graph.
+    all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
+    /// Channels to send diagram data to the metrics server.
+    targets: Arc<[SteadyTx<DiagramData>; 1]>,
+    /// The frame rate in milliseconds for telemetry collection.
+    frame_rate_ms: u64,
+    /// Sequence number for data packets.
+    seq: u64,
+    /// Cache of known actor IDs to avoid redundant NodeDef sends.
+    known_actors: HashMap<usize, u32>,
+
+    /// # CRITICAL DESIGN REQUIREMENT: Persistent Accumulation Buffers
+    /// These vectors MUST persist for the entire life of the MetricsCollector actor.
+    /// 
+    /// The Steady State architecture relies on monotonically increasing absolute counters 
+    /// for 'send' and 'take' operations. The downstream stats evaluation (channel_stats.rs) 
+    /// performs unsigned math (send - take) to determine inflight volume.
+    ///
+    /// If these buffers are moved to local loop variables, the collector will only send 
+    /// frame-deltas. Due to timing jitter between telemetry production and collection, 
+    /// a frame-delta can occasionally show 'take' > 'send', resulting in a negative 
+    /// value that, when cast to unsigned, causes a catastrophic overflow panic.
+    ///
+    /// DO NOT MOVE THESE TO THE LOOP. THEY ARE NON-NEGOTIABLE FOR SYSTEM STABILITY.
+    take_send_source: Vec<(i64, i64)>,
+    future_take: Vec<i64>,
+    future_send: Vec<i64>,
 }
 
-/// Core logic of the metrics collector, ensuring continuous frame production with robust telemetry handling.
-async fn internal_behavior<const GIRTH: usize>(
-    mut actor: SteadyActorShadow,
-    dynamic_senders_vec: Arc<RwLock<Vec<CollectorDetail>>>,
-    optional_servers: SteadyTxBundle<DiagramData, GIRTH>,
-) -> Result<(), Box<dyn Error>> {
-    let ident = actor.identity(); // Unique identifier for this collector instance.
-    let mut state = RawDiagramState::default(); // State for tracking telemetry and frames.
-    #[allow(clippy::type_complexity)]
-    let mut all_actors_to_scan: Option<Vec<(usize, Box<SteadyRx<ActorStatus>>, ActorIdentity)>> = None; // List of actors to monitor.
-    let mut timelords: Option<Vec<&Box<SteadyRx<ActorStatus>>>> = None; // Subset of actors used for timing optimization.
-    let mut locked_servers = optional_servers.lock().await; // Access to output channels.
-    let mut rebuild_scan_requested = false; // Flag to rebuild the actor scan list.
-    let mut trying_to_shutdown = false;     // Indicates shutdown process has started.
-    const MAX_TIMELORDS: usize = 5;         // Maximum number of timelords to select.
-    let mut consecutive_timeouts = 0;       // Counts consecutive timelord timeouts to trigger rebuild.
-    let quiet_for_shutdown = Duration::from_millis(actor.frame_rate_ms*4);
-    let mut quiet_start:Option<Instant> = None;
-    loop {
-        // Log iteration details for debugging and performance monitoring.
-        if ENABLE_DEBUG_LOGGING {
-            debug!(
-                "[{:?}] Loop iteration: sequence={}, fill={}, rebuild_requested={}, timeouts={}",
-                ident, state.sequence, state.fill, rebuild_scan_requested, consecutive_timeouts
-            );
+impl MetricsCollector {
+    /// Creates a new `MetricsCollector` instance.
+    pub(crate) fn new(
+        all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
+        targets: Arc<[SteadyTx<DiagramData>; 1]>,
+        frame_rate_ms: u64,
+    ) -> Self {
+        MetricsCollector {
+            all_telemetry_rx,
+            targets,
+            frame_rate_ms,
+            seq: 0,
+            known_actors: HashMap::new(),
+            take_send_source: Vec::new(),
+            future_take: Vec::new(),
+            future_send: Vec::new(),
         }
+    }
 
+    /// The main loop for the `MetricsCollector` actor.
+    pub async fn run(mut self, mut context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
+        // CRITICAL: Do NOT use into_spotlight() here. 
+        // MetricsCollector must use the raw SteadyActorShadow (context) to avoid telemetry 
+        // feedback loops and prevent this internal actor from appearing in user-facing charts.
+        let mut tx_guard = self.targets[0].lock().await;
 
-        // Check if the system should continue running or begin the shutdown.
-        // NOTE: if this code is not good enough, we could check with liveliness and confirm all
-        //       actors have voted for the shutdown. I am avoiding this for now due to cost.
-        if !actor.is_running(&mut || {
-            trying_to_shutdown = true; //tell the work here to go faster.
-            i!(state.fill == 0) //we are between frames now
-            && i!(is_all_ready_for_shutdown(Ok(dynamic_senders_vec.read()))) //no more data to send
-            && i!(locked_servers.is_all_empty()) //ensure consumer has taken the last frame
-            && i!(if let Some(q) = quiet_start {q.elapsed().gt(&quiet_for_shutdown) } else {quiet_start=Some(Instant::now()); false}   )
-            && i!(locked_servers.mark_closed())
-        }) {
-            break; // Exit loop if shutdown conditions are met.
-        }
+        while context.is_running(|| true) {
+            self.seq += 1;
+            
+            let mut actor_statuses = Vec::new();
 
-        // Rebuild the actor scan list if it's empty or a rebuild is requested due to changes or timeouts.
-        if all_actors_to_scan.is_none() || rebuild_scan_requested {
-            let regeneration = actor.regeneration; // Current instance ID for filtering telemetry.
+            let receivers = self.all_telemetry_rx.read();
+            for detail in receivers.iter() {
+                for rx in detail.telemetry_take.iter() {
+                    let meta = rx.actor_metadata();
+                    let actor_id = meta.ident.id;
 
-            all_actors_to_scan = gather_valid_actor_telemetry_to_scan(regeneration, &dynamic_senders_vec);
-            if ENABLE_DEBUG_LOGGING {
-                if let Some(ref scan) = all_actors_to_scan {
-                    info!("[{:?}] Gathered {} actors to scan", ident, scan.len());
-                } else {
-                    info!("[{:?}] No actors to scan", ident);
-                }
-            }
-            timelords = None; // Reset timelords since the scan list has changed.
-            state.fill = 0;  // Force two pass collection of data before the next frame
-            rebuild_scan_requested = false; // Reset rebuild flag.
-        }
-
-        let mut _trigger = "none"; // Debugging aid to track what triggered this iteration.
-        let mut _tcount = 0;       // Debugging aid to count timelords.
-
-        {
-            if let Some(ref scan) = all_actors_to_scan {
-                let mut futures_unordered = FuturesUnordered::new(); // Collection of futures for actor responses.
-
-                if let Some(ref timelords) = timelords {
-                    _trigger = "waiting for timelords";
-                    _tcount = timelords.len();
-                    if ENABLE_DEBUG_LOGGING {
-                        info!("[{:?}] Waiting for data from {} timelords", ident, timelords.len());
+                    // 1. Send NodeDef if this is a new actor
+                    if !self.known_actors.contains_key(&actor_id) {
+                        let def = DiagramData::NodeDef(
+                            self.seq, 
+                            Box::new((
+                                meta.clone(), 
+                                rx.rx_channel_id_vec().into_boxed_slice(), 
+                                rx.tx_channel_id_vec().into_boxed_slice()
+                            ))
+                        );
+                        let _ = context.send_async(&mut *tx_guard, def, SendSaturation::AwaitForRoom).await;
+                        self.known_actors.insert(actor_id, 0);
                     }
-                    // Queue futures to check timelord responsiveness.
-                    timelords.iter().for_each(|steady_rxf| {
-                        futures_unordered.push(future_checking_avail(steady_rxf, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR));
-                    });
 
-                    let timeout = Duration::from_millis(actor.frame_rate_ms >> 1);
-
-                    // Wait for a full frame or timeout to ensure frame production isn't blocked.
-                    let mut got_full_frame = false;
-                    while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, timeout).await {
-                        if full_frame_of_data {
-                            got_full_frame = true;
-                            if ENABLE_DEBUG_LOGGING {
-                                info!("[{:?}] Received full frame from actor id={:?}", ident, id);
-                            }
-                            break; // Exit once a full frame is received.
+                    // 2. Collect Actor Status
+                    if let Some(status) = rx.consume_actor() {
+                        if actor_id >= actor_statuses.len() {
+                            actor_statuses.resize(actor_id + 1, ActorStatus::default());
                         }
+                        actor_statuses[actor_id] = status;
                     }
 
-                    // Track consecutive timeouts to decide when to reselect timelords.
-                    if got_full_frame {
-                        consecutive_timeouts = 0; // Reset on successful frame.
-                    } else {
-                        consecutive_timeouts += 1;
-                        if ENABLE_DEBUG_LOGGING {
-                            info!("[{:?}] Timelords timed out (consecutive: {})", ident, consecutive_timeouts);
-                        }
-                        if consecutive_timeouts >= 3 { // Rebuild after 3 failures to avoid thrashing.
-                            rebuild_scan_requested = true;
-                            consecutive_timeouts = 0;
-                            if ENABLE_DEBUG_LOGGING {
-                                info!("[{:?}] 3 consecutive timeouts, requesting timelord rebuild", ident);
-                            }
-                        }
-                    }
-                } else {
-                    _trigger = "selecting timelords";
-                    if ENABLE_DEBUG_LOGGING {
-                        debug!("[{:?}] Selecting new timelords", ident);
+                    // 3. Collect Channel Volume into persistent buffers
+                    let rx_metas = rx.rx_channel_id_vec();
+                    let tx_metas = rx.tx_channel_id_vec();
+                    let max_id = rx_metas.iter().chain(tx_metas.iter())
+                        .map(|m| m.id).max().unwrap_or(0);
+                    
+                    if max_id >= self.take_send_source.len() {
+                        self.take_send_source.resize(max_id + 1, (0i64, 0i64));
+                        self.future_take.resize(max_id + 1, 0i64);
+                        self.future_send.resize(max_id + 1, 0i64);
                     }
 
-                    // Queue futures to select new timelords from all actors.
-                    scan.iter().for_each(|f| {
-                        futures_unordered.push(future_checking_avail(&*f.1, steady_config::CONSUMED_MESSAGES_BY_COLLECTOR));
-                    });
-                    let count = futures_unordered.len().min(MAX_TIMELORDS); // Cap timelord selection.
-                    let mut pending_actors: Vec<usize> = scan.iter().map(|(id, _, _)| *id).collect(); // Actors still to check.
-                    let mut timelord_collector = Vec::new(); // Selected timelords.
-                    let mut non_responsive_actors = Vec::new(); // Actors that didn’t respond.
-
-                    let timeout = Duration::from_millis(actor.frame_rate_ms >> 1);
-
-                    while let Some((full_frame_of_data, id)) = full_frame_or_timeout(&mut futures_unordered, timeout).await {
-                        if full_frame_of_data {
-                            let id = id.expect("Internal error: full frame should have an ID");
-                            pending_actors.retain(|&x| x != id); // Remove responsive actor.
-                            scan.iter().find(|f| f.0 == id).iter().for_each(|rx| {
-                                timelord_collector.push(&rx.1); // Add to timelords.
-                            });
-                            if ENABLE_DEBUG_LOGGING {
-                                debug!("[{:?}] Selected timelord: actor id={}", ident, id);
-                            }
-                            if timelord_collector.len() >= count {
-                                break; // Stop once we have enough timelords.
-                            }
-                        } else if id.is_none() {
-                            non_responsive_actors.extend(pending_actors.iter().copied()); // Mark all remaining as non-responsive.
-                            break;
-                        }
-                    }
-
-                    timelords = if timelord_collector.is_empty() { None } else { Some(timelord_collector) };
-                    if timelords.is_none() && !non_responsive_actors.is_empty() {
-                        let non_responsive_ids = non_responsive_actors
-                            .iter()
-                            .flat_map(|id| scan.iter().find(|f| f.0 == *id).map(|f| f.2))
-                            .collect::<Vec<_>>();
-                        if ENABLE_DEBUG_LOGGING {
-                            debug!("[{:?}] No actors responded within {}ms: {:?}", ident, actor.frame_rate_ms, non_responsive_ids);
-                        }
-                    }
-                }
-            } else {
-                _trigger = "no actors to scan";
-                yield_now().await; // Yield control if there’s nothing to do.
-            }
-        }
-
-        // Collect telemetry data and detect structural changes.
-        let (nodes, to_pop) = {
-            let guard = dynamic_senders_vec.read();
-            let dynamic_senders = guard.deref();
-            let structure_unchanged = dynamic_senders.len() == state.actor_count;
-            if structure_unchanged && !trying_to_shutdown {
-                (None, collect_channel_data(&mut state, dynamic_senders)) // No structural update needed.
-            } else {
-                rebuild_scan_requested = true; // Trigger rebuild on actor count change.
-                let is_building = actor.is_liveliness_in(&[GraphLivelinessState::Building]);
-                if let Some(n) = gather_node_details(&mut state, dynamic_senders, is_building) {
-                    (Some(n), collect_channel_data(&mut state, dynamic_senders)) // New structure and data.
-                } else {
-                    (None, Vec::new()) // Structure update failed, retry next iteration.
+                    rx.consume_take_into(&mut self.take_send_source, &mut self.future_take, &mut self.future_send);
+                    rx.consume_send_into(&mut self.take_send_source, &mut self.future_send);
                 }
             }
-        };
+            drop(receivers);
 
-        if ENABLE_DEBUG_LOGGING {
-            let data: Vec<_> = state.total_take_send.iter().filter(|(take, send)| *take != 0 || *send != 0).collect();
-            info!("[{:?}] Collected channel data: {:?}", ident, data);
-        }
-
-        // Clean up consumed telemetry data from the queue.
-        if !to_pop.is_empty() {
-            let mut guard = dynamic_senders_vec.write();
-            to_pop.iter().for_each(|ident| {
-                guard.iter_mut().for_each(|f| {
-                    if f.ident == *ident {
-                        f.telemetry_take.pop_front(); // Remove processed telemetry.
-                    }
-                });
-            });
-        }
-
-        // Send structural updates if the actor topology has changed.
-        if let Some(nodes) = nodes {
-            if ENABLE_DEBUG_LOGGING {
-                info!("[{:?}] Sending structure details for {} nodes", ident, nodes.len());
+            // 4. Relay batches to server
+            if !actor_statuses.is_empty() {
+                let _ = context.send_async(&mut *tx_guard, DiagramData::NodeProcessData(self.seq, actor_statuses.into_boxed_slice()), SendSaturation::AwaitForRoom).await;
             }
-            send_structure_details(ident, &mut locked_servers, nodes).await;
-            state.fill = 0; //accumulate more before sending new structure
-            //only if the stucture is satable already before we send the details
-            //consumer can get overwhelmed with data.
-        } else if (!rebuild_scan_requested && state.fill >= 2) || trying_to_shutdown {
-            if ENABLE_DEBUG_LOGGING && state.fill >= 2 {
-                info!("[{:?}] Sending data details for sequence {}", ident, state.sequence);
-            }
-            let next_frame = send_data_details(ident, &mut locked_servers, &state).await;
-            if next_frame {
-                state.sequence += 1; // Increment sequence for the next frame.
-                #[cfg(debug_assertions)]
-                {
-                    state.last_instant = Some(Instant::now()); // Record frame time for debugging.
-                }
-            }
-            state.fill = 0;      // Reset fill state.
-        }
-    }
-
-    if ENABLE_DEBUG_LOGGING {
-        debug!("[{:?}] Exited loop: shutdown={}", ident, trying_to_shutdown);
-    }
-    Ok(())
-}
-
-/// Creates a future to check if an actor’s telemetry channel has data available or is closed.
-#[inline]
-pub(crate) fn future_checking_avail<T: Send + Sync>(steady_rx: &SteadyRx<T>, count: usize) -> BoxFuture<'_, (bool, Option<usize>)> {
-    async move {
-        let mut guard = steady_rx.lock().await;
-        let is_closed = guard.deref_mut().is_closed();
-        if !is_closed {
-            let result = guard.deref_mut().shared_wait_shutdown_or_avail_units(count).await; // Wait for data or shutdown.
-            (result, Some(guard.deref().id())) // Return availability and actor ID.
-        } else {
-            (false, None) // Channel closed, no data available.
-        }
-    }.boxed()
-}
-
-/// Waits for a full frame of data from actors or times out to prevent frame misses.
-async fn full_frame_or_timeout(
-    futures_unordered: &mut FuturesUnordered<BoxFuture<'_, (bool, Option<usize>)>>,
-    timeout: Duration,
-) -> Option<(bool, Option<usize>)> {
-    debug_assert!(!timeout.is_zero(), "Timeout must be at least 1ms to avoid busy-waiting.");
-    select! {
-        x = futures_unordered.next().fuse() => x, // Return first available result.
-        _ = Delay::new(timeout).fuse() => None, // Timeout to ensure progress.
-    }
-}
-
-
-//all is done so we can shutdown
-fn is_all_ready_for_shutdown(m_channels: LockResult<RwLockReadGuard<'_, Vec<CollectorDetail>>>) -> bool {
-    match m_channels {
-        Ok(channels) => {
-            for c in channels.iter() {
-                //last one is the only one which gets marked closed because it is current
-                if !c.telemetry_take.is_empty() {
-                    let mut idx = c.telemetry_take.len() - 1;
-                    if let Some(t) = c.telemetry_take.get(idx) {
-
-                        if !t.is_empty() {
-
-                            // t.actor_metadata()
-
-
-                            return false; // Found an active channel, shutdown not complete.
-                        } else {
-                            while idx > 0 {
-                                idx -= 1;
-                                if let Some(t) = c.telemetry_take.get(idx) {
-                                    if !t.is_empty() {
-
-                                        // t.actor_metadata()
-
-                                        return false; // Found an active data, shutdown not complete.
-                                    }
-                                }
-                            }
-                        }
-                    };
-                };
-            }
-            true // All channels are empty and closed.
-        }
-        Err(_) => false, // Lock error, assume not safe to shut down.
-    }
-}
-
-/// Builds a list of actors to scan for telemetry, filtering by instance ID and excluding self.
-#[allow(clippy::type_complexity)]
-fn gather_valid_actor_telemetry_to_scan(
-    version: u32,
-    dynamic_senders_vec: &Arc<RwLock<Vec<CollectorDetail>>>,
-) -> Option<Vec<(usize, Box<SteadyRx<ActorStatus>>, ActorIdentity)>> {
-    let guard = dynamic_senders_vec.read();
-    let dynamic_senders = guard.deref();
-    let v: Vec<(usize, Box<SteadyRx<ActorStatus>>, ActorIdentity)> = dynamic_senders
-        .iter()
-        .filter(|f| f.ident.label.name != NAME && f.ident.id != usize::MAX) // Exclude metrics collector itself and uninitialized actors.
-        .flat_map(|f| {
-            let ident = f.ident;
-            f.telemetry_take.iter().filter_map(move |g| {
-                g.actor_rx(version).map(|rx| (rx, ident)) // Pair receiver with actor identity.
-            })
-        })
-        .map(|(rx, ident)| (rx.meta_data().id, rx, ident)) // Include actor ID for reference.
-        .collect();
-
-    if !v.is_empty() {
-        Some(v) // Return list if actors are found.
-    } else {
-        None // No actors to scan.
-    }
-}
-
-/// Collects telemetry data from actors, updating state and identifying data to clean up.
-fn collect_channel_data(state: &mut RawDiagramState, dynamic_senders: & [CollectorDetail]) -> Vec<ActorIdentity> {
-    let working: Vec<(bool, &CollectorDetail)> = dynamic_senders
-        .iter()
-        .map(| f| {
-            let has_data = if let Some(x) = f.telemetry_take.iter().find(|f|!f.is_empty()) {
-                x.consume_send_into(&mut state.total_take_send, &mut state.future_send)
-            } else {
-                false
-            };
-            (has_data, f)
-        })
-        .collect();
-
-    let working: Vec<(bool, &CollectorDetail)> = working
-        .iter()
-        .map(|(has_data_in, f)| {
-            let has_data = if let Some(x) = f.telemetry_take.iter().find(|f|!f.is_empty()) {
-                x.consume_take_into(
-                    &mut state.total_take_send,
-                    &mut state.future_take,
-                    &mut state.future_send,
-                )
-            } else {
-                false
-            };
-
-            (has_data || *has_data_in, *f) // Combine send and take data availability.
-        })
-        .collect();
-
-    // Ensure actor_last_update matches actor_count to track responsiveness.
-    if state.actor_last_update.len() < state.actor_count {
-        state.actor_last_update.resize(state.actor_count, 0);
-    }
-
-    let zombie_actor_channels: Vec<ActorIdentity> = working
-        .iter()
-        .filter(|(has_data_in, f)| {
-            if let Some(act) = f.telemetry_take[0].consume_actor() {
-                let actor_id = f.ident.id;
-                if actor_id < state.actor_status.len() {
-                    state.actor_status[actor_id] = act; // Update existing actor status.
-                } else {
-                    state.actor_status.resize(actor_id + 1, ActorStatus::default());
-                    state.actor_status[actor_id] = act; // Expand and update.
-                }
-                if actor_id >= state.actor_last_update.len() {
-                    state.actor_last_update.resize(actor_id + 1, 0);
-                }
-                state.actor_last_update[actor_id] = state.sequence; // Mark actor as updated.
-                f.telemetry_take.len().gt(&1) && f.telemetry_take[0].is_empty() 
-            } else {
-                !has_data_in && f.telemetry_take.len().gt(&1) // Clean up if no data and extra telemetry exists.
-            }
-        })
-        .map(|(_, c)| c.ident)
-        .collect();
-
-    if zombie_actor_channels.is_empty() {
-        state.fill = (state.fill + 1) & 0xF; // Increment fill, capped at 15 to avoid overflow.
-    }
-
-    zombie_actor_channels // Return identities of telemetry to remove.
-
-}
-
-/// Gathers structural details for new or changed actors, ensuring consistency.
-/// Gathers structural details for new or changed actors, ensuring consistency.
-fn gather_node_details(
-    state: &mut RawDiagramState,
-    dynamic_senders: &[CollectorDetail],
-    is_building: bool,
-) -> Option<Vec<DiagramData>> {
-    let mut matches: Vec<u8> = Vec::new(); // Tracks channel pairing (1=RX, 2=TX, 3=both).
-
-    // Step 1: Build the bitmask of all reported endpoints
-    dynamic_senders.iter().for_each(|x| {
-        x.telemetry_take.iter().for_each(|f| {
-            f.rx_channel_id_vec().iter().for_each(|meta| {
-                if meta.id >= matches.len() {
-                    matches.resize(meta.id + 1, 0);
-                }
-                matches[meta.id] |= 1;
-            });
-            f.tx_channel_id_vec().iter().for_each(|meta| {
-                if meta.id >= matches.len() {
-                    matches.resize(meta.id + 1, 0);
-                }
-                matches[meta.id] |= 2;
-            });
-        });
-    });
-
-    // Step 2: Diagnostic Reporting for Orphaned Channels (only when not building)
-    if !is_building {
-        let mut mismatch_found = false;
-        for (chan_id, &mask) in matches.iter().enumerate() {
-            if mask != 0 && mask != 3 {
-                mismatch_found = true;
-
-                // Identify the missing side and the affected actors
-                let (missing_side, reported_side, actors_involved) = if mask == 1 {
-                    ("PRODUCER (TX)", "Consumers (RX)", find_actors_on_channel(dynamic_senders, chan_id, true))
-                } else {
-                    ("CONSUMER (RX)", "Producers (TX)", find_actors_on_channel(dynamic_senders, chan_id, false))
-                };
-
-                let msg = format!(
-                    "Graph Topology Alert: Channel {} is missing its {}. \
-                     The following {} are reported in telemetry: [{}]. \
-                     DIAGNOSIS: Check if the missing actor was spawned, if its telemetry is enabled, \
-                     or if there is a wiring mismatch in the GraphBuilder.",
-                    chan_id, missing_side, reported_side, actors_involved.join(", ")
-                );
-
-                // Debounce logging using the error_map
-                let count = state.error_map.entry(msg.clone()).and_modify(|c| *c += 1).or_insert(1);
-                if *count == 21 {
-                    warn!("{}", msg);
-                }
-            }
-        }
-
-        if mismatch_found {
-            return None; // Hold back updates until topology is sound
-        }
-    }
-
-    // Step 3: Success Path - Clear errors and prepare NodeDef
-    state.error_map.clear();
-    let max_channels_len = matches.len();
-    state.total_take_send.resize(max_channels_len, (0, 0));
-    state.future_take.resize(max_channels_len, 0);
-    state.future_send.resize(max_channels_len, 0);
-    state.actor_last_update.resize(dynamic_senders.len(), 0);
-
-    let nodes: Vec<DiagramData> = dynamic_senders
-        .iter()
-        .skip(state.actor_count)
-        .filter(|details| !details.telemetry_take.is_empty())
-        .map(|details| {
-            let tt = &details.telemetry_take[0];
-            let metadata = tt.actor_metadata();
-            let rx_vec = tt.rx_channel_id_vec();
-            let tx_vec = tt.tx_channel_id_vec();
-            DiagramData::NodeDef(
-                state.sequence,
-                Box::new((
-                    metadata.clone(),
-                    rx_vec.into_boxed_slice(),
-                    tx_vec.into_boxed_slice(),
-                )),
-            )
-        })
-        .collect();
-
-    state.actor_count = dynamic_senders.len();
-    Some(nodes)
-}
-
-/// Helper function to find all actors associated with a specific orphaned channel.
-fn find_actors_on_channel(
-    dynamic_senders: &[CollectorDetail],
-    chan_id: usize,
-    is_rx: bool,
-) -> Vec<String> {
-    dynamic_senders
-        .iter()
-        .filter(|ds| {
-            ds.telemetry_take.iter().any(|tel| {
-                if is_rx {
-                    tel.rx_channel_id_vec().iter().any(|m| m.id == chan_id)
-                } else {
-                    tel.tx_channel_id_vec().iter().any(|m| m.id == chan_id)
-                }
-            })
-        })
-        .map(|ds| format!("{:?}", ds.ident))
-        .collect()
-}
-
-/// Sends updated structural data to downstream consumers.
-async fn send_structure_details(
-    ident: ActorIdentity,
-    consumer_vec: &mut [MutexGuard<'_, Tx<DiagramData>>],
-    nodes: Vec<DiagramData>,
-) {
-    for consumer in consumer_vec.iter_mut() {
-        let to_send = nodes.clone().into_iter();
-        for send_me in to_send {
-            match consumer.shared_send_async(send_me, ident, SendSaturation::AwaitForRoom).await {
-                Success => {}
-                Blocked(e) => {
-                    error!("Error sending node data {:?}", e); // Log if send fails.
-                }
-            }
-        }
-    }
-}
-
-/// Sends collected telemetry data as a frame to consumers, ensuring timely delivery.
-async fn send_data_details(
-    ident: ActorIdentity,
-    consumer_vec: &mut [MutexGuard<'_, Tx<DiagramData>>],
-    state: &RawDiagramState
-) -> bool {
-    let mut next_frame = false;
-    for consumer in consumer_vec.iter_mut() {
-        if !state.actor_status.is_empty() {
-            next_frame = true;
-            let modified_status: Vec<ActorStatus> = state.actor_status.iter().enumerate().map(|(id, status)| {
-                let frames_missed = if id < state.actor_last_update.len() {
-                    state.sequence.saturating_sub(state.actor_last_update[id])
-                } else {
-                    0 // New actor, no history yet.
-                };
-                if frames_missed >= 2 {
-                    let mut new_status = *status;
-                    new_status.await_total_ns = if status.bool_blocking { new_status.unit_total_ns } else { 0 }; // Proxy for stalled state.
-                    new_status
-                } else {
-                    *status
-                }
-            }).collect();
-
-            if let Blocked(e) = consumer.shared_send_async(
-                DiagramData::NodeProcessData(state.sequence, modified_status.into_boxed_slice()),
-                ident,
-                SendSaturation::DebugWarnThenAwait,
-            ).await {
-                error!("Error sending node process data {:?}", e);
+            if !self.take_send_source.is_empty() {
+                // We clone the source to send the current absolute totals to the server
+                let _ = context.send_async(&mut *tx_guard, DiagramData::ChannelVolumeData(self.seq, self.take_send_source.clone().into_boxed_slice()), SendSaturation::AwaitForRoom).await;
             }
 
-            if let Blocked(e) = consumer.shared_send_async(
-                DiagramData::ChannelVolumeData(state.sequence, state.total_take_send.clone().into_boxed_slice()),
-                ident,
-                SendSaturation::DebugWarnThenAwait,
-            ).await {
-                error!("Error sending channel volume data {:?}", e);
-            }
+            context.wait_periodic(Duration::from_millis(self.frame_rate_ms)).await;
         }
 
-    }
-    next_frame // Indicate if a frame was successfully sent.
-}
-
-/// Stores telemetry details for an actor, including its channels and identity.
-pub struct CollectorDetail {
-    pub(crate) telemetry_take: VecDeque<Box<dyn RxTel>>, // Queue of telemetry receivers.
-    pub(crate) ident: ActorIdentity,                     // Unique actor identifier.
-}
-
-
-#[cfg(test)]
-mod metric_collector_tests {
-    use super::*;
-    use futures_util::stream::FuturesUnordered;
-    use std::sync::Arc;
-    use parking_lot::RwLock;
-    use std::collections::VecDeque;
-    use futures::executor::block_on;
-
-    #[test]
-    fn test_raw_diagram_state_default() {
-        let state: RawDiagramState = Default::default();
-        assert_eq!(state.sequence, 0);
-        assert_eq!(state.actor_count, 0);
-        assert!(state.actor_status.is_empty());
-        assert!(state.total_take_send.is_empty());
-        assert!(state.future_take.is_empty());
-        assert!(state.future_send.is_empty());
-        assert!(state.error_map.is_empty());
-    }
-
-    #[test]
-    fn test_gather_valid_actor_telemetry_to_scan() {
-        let dynamic_senders_vec = Arc::new(RwLock::new(vec![
-            CollectorDetail {
-                telemetry_take: VecDeque::new(),
-                ident: ActorIdentity::new(0, "test_actor", None),
-            }
-        ]));
-        let result = gather_valid_actor_telemetry_to_scan(1, &dynamic_senders_vec);
-        assert!(result.is_none());
-    }
-
-
-    #[test]
-    fn test_send_structure_details() {
-        let ident = ActorIdentity::new(0, "test_actor", None);
-        let mut consumer_vec: [MutexGuard<'_, Tx<DiagramData>>; 0] = [];
-        let nodes = vec![
-            DiagramData::NodeDef(0, Box::new((
-                Arc::new(ActorMetaData::default()),
-                Box::new([]),
-                Box::new([]),
-            )))
-        ];
-        block_on(send_structure_details(ident, &mut consumer_vec, nodes));
-    }
-
-    #[test]
-    fn test_send_data_details() {
-        let ident = ActorIdentity::new(0, "test_actor", None);
-        let mut consumer_vec: [MutexGuard<'_, Tx<DiagramData>>; 0] = [];
-        let state = RawDiagramState::default();
-        let result = block_on(send_data_details(ident, &mut consumer_vec, &state));
-        assert!(!result);
-    }
-
-    #[test]
-    fn test_full_frame_or_timeout() {
-        let mut futures_unordered = FuturesUnordered::new();
-        let telemetry_rate_ms = Duration::from_millis(1000);
-        let result = block_on(full_frame_or_timeout(&mut futures_unordered, telemetry_rate_ms));
-        assert!(result.is_none());
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn test_actor() -> Result<(), Box<dyn std::error::Error>> {
-        use std::sync::atomic::Ordering;
-        use crate::{GraphBuilder};
-        use std::sync::atomic::AtomicUsize;
-        use std::thread::sleep;
-        use crate::SoloAct;
-
-        //only run this locally where we can open the default port
-        if std::env::var("GITHUB_ACTIONS").is_err() {
-            // Smallest possible graph
-            // It is not recommended to inline actors this way, but it is possible.
-            let gen_count = Arc::new(AtomicUsize::new(0));
-
-            // Special test graph which does NOT fail fast but instead shows the prod behavior of restarting actors.
-            let mut graph = GraphBuilder::for_testing()
-                .with_telemtry_production_rate_ms(40)
-                .with_iouring_queue_length(8)
-                .with_telemetry_metric_features(true)
-                .build(());
-
-
-            let (tx, rx) = graph.channel_builder()
-                .with_capacity(300)
-                .with_no_refresh_window()
-                .build_channel();
-
-
-            graph.actor_builder()
-                .with_no_refresh_window()
-                .with_name("generator")
-                .build(move |mut context| {
-                    let tx = tx.clone();
-                    let count = gen_count.clone();
-                    async move {
-                        let mut tx = tx.lock().await;
-                        while context.is_running(&mut || tx.mark_closed()) {
-                            let x = count.fetch_add(1, Ordering::SeqCst);
-                            //info!("attempted sent: {:?}", count.load(Ordering::SeqCst));
-
-                            if x >= 10 {
-                                context.request_shutdown().await;
-                                continue;
-                            }
-                            let _ = context.send_async(&mut tx, x.to_string(), SendSaturation::AwaitForRoom).await;
-                        }
-                        Ok(())
-                    }
-                },SoloAct);
-
-            let consume_count = Arc::new(AtomicUsize::new(0));
-            //let check_count = consume_count.clone();
-
-            graph.actor_builder()
-                .with_name("consumer")
-                .build(move |mut context| {
-                    let rx = rx.clone();
-                    let count = consume_count.clone();
-                    async move {
-                        let mut rx = rx.lock().await;
-                        while context.is_running(&mut || rx.is_closed() && rx.is_empty()) {
-                            if let Some(_packet) = rx.shared_try_take() {
-                                count.fetch_add(1, Ordering::SeqCst);
-                                // info!("received: {:?}", count.load(Ordering::SeqCst));
-                            }
-                        }
-                        Ok(())
-                    }
-                }, SoloAct);
-
-            graph.start();
-
-            //// now confirm we can see the telemetry collected into metrics_collector
-            //wait for one page of telemetry
-            sleep(Duration::from_millis(graph.telemetry_production_rate_ms * 40));
-
-            //hit the telemetry site and validate if it returns
-            // this test will only work if the feature is on
-            // hit 127.0.0.1:9100/metrics using isahc
-            block_on(async {
-                match isahc::get_async("http://127.0.0.1:9100/metrics").await {
-                    Ok(response) => {
-                        assert_eq!(200, response.status().as_u16());
-                        // warn!("ok metrics");
-                        // let body = response.text().await;
-                        // info!("metrics: {:?}", body); //TODO: add more checks
-                    }
-                    Err(e) => {
-                        warn!("failed to get metrics: {:?}", e);
-                        // //this is only an error if the feature is not on
-                        // #[cfg(feature = "prometheus_metrics")]
-                        // {
-                        //     panic!("failed to get metrics: {:?}", e);
-                        // }
-                    }
-                };
-                match isahc::get_async("http://127.0.0.1:9100/graph.dot").await {
-                    Ok(response) => {
-                        assert_eq!(200, response.status().as_u16());
-                        warn!("ok graph");
-
-                        //let body = response.text().await;
-                        //info!("graph: {}", body); //TODO: add more checks
-                    }
-                    Err(e) => {
-                        warn!("failed to get metrics: {:?}", e);
-                        // //this is only an error if the feature is not on
-                        #[cfg(any(
-                            feature = "telemetry_server_builtin",
-                            feature = "telemetry_server_cdn"
-                        ))]
-                        {
-                            //panic!("failed to get metrics: {:?}", e);
-                        }
-                    }
-                };
-            });
-
-            graph.request_shutdown();
-            let _ignore_unclean = graph.block_until_stopped(Duration::from_secs(3));
-
-        }
         Ok(())
-
     }
-
 }
 
 #[cfg(test)]
-mod extra_tests {
+pub(crate) mod extra_tests {
     use super::*;
-    use futures::executor::block_on;
-    use futures::future::BoxFuture;
-    use futures::stream::FuturesUnordered;
-
-    #[test]
-    fn test_raw_diagram_state_default() {
-        let state = RawDiagramState::default();
-        // Defaults
-        assert_eq!(state.sequence, 0);
-        assert_eq!(state.fill, 0);
-        assert_eq!(state.actor_count, 0);
-        assert!(state.actor_status.is_empty());
-        assert!(state.total_take_send.is_empty());
-        assert!(state.future_take.is_empty());
-        assert!(state.future_send.is_empty());
-        assert!(state.error_map.is_empty());
-        assert!(state.actor_last_update.is_empty());
-    }
-
-
-
-    #[test]
-    fn test_full_frame_or_timeout_empty() {
-        let mut fu: FuturesUnordered<BoxFuture<'_, (bool, Option<usize>)>> = FuturesUnordered::new();
-        let res = block_on(full_frame_or_timeout(&mut fu, Duration::from_millis(100))); //for testing
-        assert!(res.is_none(), "Timeout with no futures returns None");
-    }
 
     #[test]
     fn test_collect_channel_data_empty() {
-        let mut state = RawDiagramState::default();
-        // two rounds to advance fill
-        let to_pop = collect_channel_data(&mut state, &[]);
-        assert_eq!(to_pop.len(), 0);
-        assert_eq!(state.fill, 1);
-        let to_pop2 = collect_channel_data(&mut state, &[]);
-        assert_eq!(to_pop2.len(), 0);
-        assert_eq!(state.fill, 2);
+        let all_telemetry_rx = Arc::new(RwLock::new(Vec::new()));
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _rx) = graph.channel_builder().build_channel::<DiagramData>();
+        let targets = Arc::new([tx.clone()]);
+        let _collector = MetricsCollector::new(all_telemetry_rx, targets, 40);
     }
+}
+
+#[cfg(test)]
+pub(crate) mod metric_collector_tests {
+    use super::*;
 
     #[test]
-    fn test_gather_node_details_building() {
-        let mut state = RawDiagramState::default();
-        let senders: Vec<CollectorDetail> = Vec::new();
-        // when building (is_building=true), even mismatched channels should yield Some(empty)
-        let nodes = gather_node_details(&mut state, &senders, true);
-        assert!(nodes.is_some());
-        assert!(nodes.expect("internal error").is_empty());
-        // actor_count updated
-        assert_eq!(state.actor_count, 0);
-    }
-
-    #[test]
-    fn test_is_all_ready_for_shutdown_logic() {
-        let details = vec![];
-        assert!(is_all_ready_for_shutdown(Ok(RwLockReadGuard::from(RwLock::new(details).read()))));
-    }
-
-    #[test]
-    fn test_gather_node_details_structural() {
-        let mut state = RawDiagramState::default();
-        let details = vec![];
-        let nodes = gather_node_details(&mut state, &details, false);
-        assert!(nodes.is_some());
-        assert_eq!(nodes.unwrap().len(), 0);
+    fn test_raw_diagram_state_default() {
+        let all_telemetry_rx = Arc::new(RwLock::new(Vec::new()));
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _rx) = graph.channel_builder().build_channel::<DiagramData>();
+        let targets = Arc::new([tx.clone()]);
+        let collector = MetricsCollector::new(all_telemetry_rx, targets, 40);
+        assert_eq!(collector.seq, 0);
+        assert!(collector.known_actors.is_empty());
     }
 }

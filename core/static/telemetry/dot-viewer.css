@@ -53,7 +53,7 @@ nav > div {
 }
 
 #nav1 {
-  background-color: #006600;
+  background-color: #000;
   display: flex;
   justify-content: space-between;
 }
@@ -64,7 +64,7 @@ nav > div {
 }
 
 #nav2 {
-  background-color: #008000;
+  background-color: #000;
   top: 48px;
 }
 
@@ -147,20 +147,6 @@ nav > div {
   margin-left: 20px;
 }
 
-#userBtn {
-  margin-left: 0;
-  margin-right: 20px;
-}
-
-#userDropdown {
-  position: fixed;
-  right: 0;
-  width: 150px;
-}
-
-#userDropdown > div:first-child {
-  border-bottom: solid white 1px;
-}
 
 #viewport {
   background: transparent;

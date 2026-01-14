@@ -19,7 +19,7 @@ mod actor {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let opt = Args::parse();
-    if let Err(e) = init_logging(opt.loglevel) {
+    if let Err(e) = init_logging(opt.loglevel, None) {
         //do not use logger to report logger could not start
         eprint!("Warning: Logger initialization failed with {:?}. There will be no logging.", e);
     }

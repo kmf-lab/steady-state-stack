@@ -254,6 +254,9 @@ pub use crate::distributed::aqueduct_stream::StreamControlItem;
 /// This module provides additional functionality for managing actor shadows.
 pub mod steady_actor_shadow;
 
+/// Alias for the actor shadow context used throughout the framework.
+pub type SteadyContext = SteadyActorShadow;
+
 /// Spotlight utilities for steady actors.
 ///
 /// This module provides tools for highlighting or managing actor execution.
@@ -457,11 +460,27 @@ pub type RxCoreBundle<'a, T: RxCore> = Vec<MutexGuard<'a, T>>;
 ///
 /// # Parameters
 /// - `loglevel`: The desired logging level (e.g., `Info`, `Debug`).
+/// - `file_config`: Optional configuration for file-based logging with rotation.
 ///
 /// # Returns
 /// - `Result<(), Box<dyn std::error::Error>>`: Ok if successful, or an error if initialization fails.
-pub fn init_logging(loglevel: LogLevel) -> Result<(), Box<dyn std::error::Error>> {
-    steady_logger::initialize_with_level(loglevel)
+pub fn init_logging(loglevel: LogLevel, file_config: Option<LogFileConfig>) -> Result<(), Box<dyn std::error::Error>> {
+    steady_logger::initialize_with_level_and_file(loglevel, file_config)
+}
+
+/// Configuration for file-based logging with rotation.
+#[derive(Clone, Debug)]
+pub struct LogFileConfig {
+    /// Directory where log files will be stored.
+    pub directory: String,
+    /// Base name for the log files.
+    pub base_name: String,
+    /// Maximum size of a log file in bytes before rotation.
+    pub max_size_bytes: u64,
+    /// Number of historical log files to keep.
+    pub keep_count: usize,
+    /// Whether to delete old logs on startup.
+    pub delete_old_on_start: bool,
 }
 
 /// Logging levels for controlling verbosity of the crate's logging output.
@@ -766,11 +785,13 @@ pub struct SteadyRunner {
     stack_size: usize,
     name: String,
     loglevel: Option<LogLevel>,
+    log_file_config: Option<LogFileConfig>,
     default_actor_stack_size: Option<usize>,
     barrier_size: Option<usize>,
     telemetry_rate_ms: Option<u64>,
     telemetry_colors: Option<(String, String)>,
     for_test: bool,
+    bundle_floor_size: Option<usize>,
 }
 
 
@@ -781,11 +802,13 @@ impl SteadyRunner {
             stack_size: 16 * 1024 * 1024, // 16 MiB default for main
             name: "steady-orchestrator".to_string(),
             loglevel: None,
+            log_file_config: None,
             default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
             barrier_size: None,
             telemetry_rate_ms: None,
             telemetry_colors: None,
             for_test: true,
+            bundle_floor_size: None,
         }
     }
     /// Creates a new SteadyRunner with default settings.
@@ -794,11 +817,13 @@ impl SteadyRunner {
             stack_size: 16 * 1024 * 1024, // 16 MiB default for main
             name: "steady-orchestrator".to_string(),
             loglevel: None,
+            log_file_config: None,
             default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
             barrier_size: None,
             telemetry_rate_ms: None,
             telemetry_colors: None,
             for_test: false,
+            bundle_floor_size: None,
         }
     }
 
@@ -814,6 +839,19 @@ impl SteadyRunner {
     pub fn with_logging(&self, level: LogLevel) -> Self {
         let mut result = self.clone();
         result.loglevel = Some(level);
+        result
+    }
+
+    /// Sets the file logging configuration for the application.
+    pub fn with_file_logging(&self, directory: &str, base_name: &str, max_size_bytes: u64, keep_count: usize, delete_old_on_start: bool) -> Self {
+        let mut result = self.clone();
+        result.log_file_config = Some(LogFileConfig {
+            directory: directory.to_string(),
+            base_name: base_name.to_string(),
+            max_size_bytes,
+            keep_count,
+            delete_old_on_start,
+        });
         result
     }
 
@@ -845,6 +883,13 @@ impl SteadyRunner {
         result
     }
 
+    /// Sets the bundle floor size for the graph.
+    pub fn with_bundle_floor_size(&self, size: usize) -> Self {
+        let mut result = self.clone();
+        result.bundle_floor_size = Some(size);
+        result
+    }
+
     /// Spawns a guarded thread, initializes a production graph, and executes the provided closure.
     /// The result (including errors) from the closure is propagated back to the caller as a boxed,
     /// thread-safe error. Panics in the thread are unwound (propagated) to the calling thread.
@@ -866,7 +911,7 @@ impl SteadyRunner {
         let handle = builder.spawn(move || {
             // Initialize logging if specified; ignore errors to avoid masking closure failures
             if let Some(level) = self.loglevel {
-                let _ = init_logging(level);
+                let _ = init_logging(level, self.log_file_config);
             }
 
             let mut graph = if self.for_test {
@@ -887,6 +932,9 @@ impl SteadyRunner {
             }
             if let Some((ref c1, ref c2)) = self.telemetry_colors {
                 graph = graph.with_telemetry_colors(c1, c2);
+            }
+            if let Some(size) = self.bundle_floor_size {
+                graph = graph.with_bundle_floor_size(size);
             }
 
             let graph = graph.build(args);

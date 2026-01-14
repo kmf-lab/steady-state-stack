@@ -35,13 +35,14 @@ struct MetricState {
 /// - `context`: The SteadyContext instance providing execution context.
 /// - `rx`: The SteadyRx instance to receive DiagramData messages.
 /// - `telemetry_colors`: Optional hex colors for the telemetry top bars (primary and secondary).
+/// - `bundle_floor_size`: Threshold for bundling edges in DOT output.
 ///
 /// # Returns
 /// A Result indicating success or failure.
 ///
 /// # Errors
 /// This function returns an error if the server fails to start or encounters a runtime error.
-pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>, telemetry_colors: Option<(String, String)>) -> Result<(), Box<dyn Error>> {
+pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>, telemetry_colors: Option<(String, String)>, bundle_floor_size: usize) -> Result<(), Box<dyn Error>> {
     
     //NOTE: we could use this to turn off the server if desired.
     let addr = Some(format!("{}:{}"
@@ -53,10 +54,10 @@ pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>, t
     #[cfg(feature = "telemetry_on_telemetry")]
     let ctrl = ctrl.into_spotlight([&rx], []);
 
-    internal_behavior(ctrl, frame_rate_ms, rx, addr, telemetry_colors).await
+    internal_behavior(ctrl, frame_rate_ms, rx, addr, telemetry_colors, bundle_floor_size).await
 }
 
-async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx: SteadyRx<DiagramData>, addr: Option<String>, telemetry_colors: Option<(String, String)>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx: SteadyRx<DiagramData>, addr: Option<String>, telemetry_colors: Option<(String, String)>, bundle_floor_size: usize) -> Result<(), Box<dyn Error>> {
 
     let mut initial_config = String::from("{");
     if let Some((ref c1, ref c2)) = telemetry_colors {
@@ -108,6 +109,7 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         });
     }
     let mut metrics_state = DotState::default();
+    metrics_state.bundle_floor_size = bundle_floor_size;
     metrics_state.telemetry_colors = telemetry_colors;
     metrics_state.refresh_rate_ms = frame_rate_ms;
     let mut history = FrameHistory::new(frame_rate_ms);
@@ -337,6 +339,9 @@ async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHisto
         let mut config_json = String::from("{");
         if let Some((ref c1, ref c2)) = metrics_state.telemetry_colors {
             let _ = write!(config_json, "\"telemetry_colors\": [\"{}\", \"{}\"],", c1, c2);
+        } else {
+            //default green
+            let _ = write!(config_json, "\"telemetry_colors\": [\"#00a900\", \"#008000\"],");
         }
         let _ = write!(config_json, "\"refresh_rate_ms\": {}", metrics_state.refresh_rate_ms);
         config_json.push('}');
@@ -650,7 +655,7 @@ mod meteric_server_tests {
 
         graph.actor_builder()
             .with_name("UnitTest")
-            .build(move |context| internal_behavior(context, rate_ms, rx_in.clone(), None, None)
+            .build(move |context| internal_behavior(context, rate_ms, rx_in.clone(), None, None, 4)
                    , SoloAct);
  
         let test_data:Vec<DiagramData> = (0..3).map(|i| DiagramData::NodeDef( i
@@ -790,7 +795,7 @@ mod http_telemetry_tests {
             .with_name("metrics_server")
             .build(move |context| {
                 let frame_rate_ms = context.frame_rate_ms;
-                internal_behavior(context, frame_rate_ms, rx_in.clone(), server_ip.clone(), None)
+                internal_behavior(context, frame_rate_ms, rx_in.clone(), server_ip.clone(), None, 4)
             },SoloAct);
 
         // Step 3: Start the graph

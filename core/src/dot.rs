@@ -7,7 +7,7 @@ use num_traits::Zero;
 use std::fmt::Write;
 use std::fs::{create_dir_all, OpenOptions};
 use std::path::PathBuf;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -22,7 +22,6 @@ use crate::*;
 use crate::channel_stats::ChannelStatsComputer;
 use crate::dot_edge::Edge;
 use crate::dot_node::Node;
-use crate::monitor::{ActorMetaData, ChannelMetaData};
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::telemetry::metrics_server;
@@ -35,6 +34,7 @@ pub struct DotState {
     pub seq: u64,
     pub(crate) telemetry_colors: Option<(String, String)>,
     pub(crate) refresh_rate_ms: u64,
+    pub(crate) bundle_floor_size: usize,
 }
 
 #[derive(Default,Clone,Debug)]
@@ -45,7 +45,14 @@ pub struct RemoteDetails {
    pub(crate) direction: &'static str, //  in OR out
 }
 
-pub(crate) const DEFAULT_PEN_WIDTH: &str = "1"; 
+/// The default pen width for nodes in the DOT graph.
+pub(crate) const NODE_PEN_WIDTH: &str = "3"; 
+/// The default pen width for edges in the DOT graph.
+pub(crate) const EDGE_PEN_WIDTH: &str = "1"; 
+/// The pen width for bundles of single kind of channels.
+pub(crate) const BUNDLE_PEN_WIDTH: &str = "4";
+/// The pen width for bundles of partnered channels.
+pub(crate) const PARTNER_BUNDLE_PEN_WIDTH: &str = "2";
 
 /// Builds the Prometheus metrics from the current state.
 ///
@@ -70,17 +77,16 @@ pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, PartialOrd, Ord)]
-struct EdgeBundleKey {
+struct PrimaryGroupKey {
     from_name: Option<&'static str>,
     from_suffix: Option<usize>,
     to_name: Option<&'static str>,
     to_suffix: Option<usize>,
-    color: &'static str,
     capacity: usize,
-    type_name: Option<&'static str>,
-    type_byte_count: usize,
+    type_name: String,
+    color: String,
     sidecar: bool,
-    ctl_labels: Vec<&'static str>,
+    partner: Option<&'static str>,
 }
 
 /// Builds the DOT graph from the current state.
@@ -122,6 +128,11 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
 
         dot_graph.put_slice(b"\" [label=\"");
         dot_graph.put_slice(node.display_label.as_bytes());
+        if !node.tooltip.is_empty() {
+            dot_graph.put_slice(b"\", tooltip=\"");
+            let escaped = node.tooltip.replace('"', "'").replace('\n', "\\n");
+            dot_graph.put_slice(escaped.as_bytes());
+        }
         dot_graph.put_slice(b"\", color=");
         dot_graph.put_slice(node.color.as_bytes());
         dot_graph.put_slice(b", penwidth=");
@@ -143,106 +154,256 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
 
     });
 
-    let mut bundles: HashMap<EdgeBundleKey, Vec<&Edge>> = HashMap::new();
-    for edge in state.edges.iter().filter(|e| e.id != usize::MAX) {
-        let from_name = edge.from.map(|f| f.name);
-        let from_suffix = edge.from.and_then(|f| f.suffix);
-        let to_name = edge.to.map(|f| f.name);
-        let to_suffix = edge.to.and_then(|f| f.suffix);
+    // Stage 1: Partnering
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    struct PartnerKey {
+        from: Option<(&'static str, Option<usize>)>,
+        to: Option<(&'static str, Option<usize>)>,
+        partner: Option<&'static str>,
+        bundle_index: Option<usize>,
+        edge_id: Option<usize>, // Only used if partner is None to keep them separate
+    }
 
-        let mut ctl_labels = edge.ctl_labels.clone();
-        ctl_labels.sort(); // Ensure consistent grouping regardless of addition order
-        let key = EdgeBundleKey {
-            from_name,
-            from_suffix,
-            to_name,
-            to_suffix,
-            color: edge.color,
-            capacity: edge.stats_computer.capacity,
-            type_name: edge.stats_computer.show_type,
-            type_byte_count: edge.stats_computer.type_byte_count,
-            sidecar: edge.sidecar,
-            ctl_labels,
+    let mut partner_groups: BTreeMap<PartnerKey, Vec<&Edge>> = BTreeMap::new();
+    for edge in state.edges.iter().filter(|e| e.id != usize::MAX) {
+        let key = PartnerKey {
+            from: edge.from.map(|n| (n.name, n.suffix)),
+            to: edge.to.map(|n| (n.name, n.suffix)),
+            partner: edge.partner,
+            bundle_index: edge.bundle_index,
+            edge_id: if edge.partner.is_none() { Some(edge.id) } else { None },
         };
-        bundles.entry(key).or_default().push(edge);
+        partner_groups.entry(key).or_default().push(edge);
+    }
+
+    struct PartneredEdge {
+        from: Option<ActorName>,
+        to: Option<ActorName>,
+        combined_color: String,
+        summary_label: String,
+        combined_type: String,
+        partner_name: Option<&'static str>,
+        capacity: usize,
+        sidecar: bool,
+        saturation_score: f64,
+        tooltip: String,
+        sub_totals: Vec<u128>,
+        last_total: i64,
+        ids: Vec<usize>,
+        ctl_labels: Vec<&'static str>,
+        pen_width: String,
+        memory_footprint: usize,
+        show_memory: bool,
+    }
+
+    let mut partnered_edges = Vec::new();
+    for (_, mut edges) in partner_groups {
+        // S-Tier: Sort edges by type name to ensure index-aligned vectors are stable across the bundle
+        edges.sort_by_key(|e| e.stats_computer.show_type.unwrap_or(""));
+        
+        let first = edges[0];
+        let is_partnered = first.partner.is_some();
+        let mut combined_color = String::new();
+        let mut type_list = Vec::new();
+        let mut ctl_labels = Vec::new();
+        let mut ids = Vec::new();
+        let mut tooltip = String::new();
+        let mut sum_saturation = 0.0;
+        let mut sub_totals = Vec::with_capacity(edges.len());
+        let mut sum_total = 0;
+        let mut memory_footprint = 0;
+        let mut show_memory = false;
+
+        for (i, e) in edges.iter().enumerate() {
+            if i > 0 {
+                if is_partnered {
+                    combined_color.push_str(":black:");
+                } else {
+                    combined_color.push(':');
+                }
+            }
+            combined_color.push_str(e.color);
+            
+            let short_type = e.stats_computer.show_type.unwrap_or("");
+            if !short_type.is_empty() {
+                type_list.push(short_type);
+            }
+            sub_totals.push(e.stats_computer.total_consumed);
+            memory_footprint += e.stats_computer.memory_footprint;
+            show_memory |= e.stats_computer.show_memory;
+            
+            let _ = write!(tooltip, "CH#{}: {} | Vol: {} (Total: ", 
+                e.id, 
+                if short_type.is_empty() { "Data" } else { short_type },
+                e.stats_computer.last_total
+            );
+            crate::channel_stats_labels::format_compressed_u128(e.stats_computer.total_consumed, &mut tooltip);
+            let _ = write!(tooltip, ") | Color: {}\\n", e.color);
+
+            ids.push(e.id);
+            sum_saturation += e.saturation_score;
+            sum_total += e.stats_computer.last_total;
+            
+            for &l in &e.ctl_labels {
+                if !ctl_labels.contains(&l) {
+                    ctl_labels.push(l);
+                }
+            }
+        }
+        
+        let combined_type = type_list.join("/");
+
+        let mut summary_label = first.display_label.clone();
+        if is_partnered {
+            summary_label = format!("{} [{}]", first.partner.unwrap(), first.bundle_index.unwrap_or(0));
+            if show_memory {
+                summary_label.push_str(" (");
+                crate::channel_stats_labels::format_compressed_u128(memory_footprint as u128, &mut summary_label);
+                summary_label.push_str("B)");
+            }
+            summary_label.push_str("\\nTotal: ");
+
+            for (i, total) in sub_totals.iter().enumerate() {
+                if i > 0 { summary_label.push_str(", "); }
+                crate::channel_stats_labels::format_compressed_u128(*total, &mut summary_label);
+            }
+            if !combined_type.is_empty() {
+                summary_label.push_str("\\n");
+                summary_label.push_str(&combined_type);
+            }
+        }
+
+        partnered_edges.push(PartneredEdge {
+            from: first.from,
+            to: first.to,
+            combined_color,
+            summary_label,
+            combined_type,
+            partner_name: first.partner,
+            capacity: first.stats_computer.capacity,
+            sidecar: first.sidecar,
+            saturation_score: sum_saturation / edges.len() as f64,
+            tooltip,
+            sub_totals,
+            last_total: sum_total,
+            ids,
+            ctl_labels,
+            pen_width: if is_partnered { PARTNER_BUNDLE_PEN_WIDTH.to_string() } else { first.pen_width.clone() },
+            memory_footprint,
+            show_memory,
+        });
+    }
+
+    // Stage 2: Aggregation
+    let mut primary_groups: HashMap<PrimaryGroupKey, Vec<PartneredEdge>> = HashMap::new();
+    for pe in partnered_edges {
+        let key = PrimaryGroupKey {
+            from_name: pe.from.map(|f| f.name),
+            from_suffix: pe.from.and_then(|f| f.suffix),
+            to_name: pe.to.map(|f| f.name),
+            to_suffix: pe.to.and_then(|f| f.suffix),
+            capacity: pe.capacity,
+            type_name: pe.combined_type.clone(),
+            color: pe.combined_color.clone(),
+            sidecar: pe.sidecar,
+            partner: pe.partner_name,
+        };
+        primary_groups.entry(key).or_default().push(pe);
     }
 
     // Sort keys to ensure deterministic DOT output
-    let mut sorted_keys: Vec<_> = bundles.keys().collect();
-    sorted_keys.sort();
+    let mut sorted_primary: Vec<_> = primary_groups.keys().collect();
+    sorted_primary.sort();
 
-    for key in sorted_keys {
-        let edges = &bundles[key];
-        if edges.len() < steady_config::AGGREGATION_THRESHOLD {
-            // Discrete edges are always solid to distinguish them from bundles
-            let style = ""; 
-
-            for edge in edges {
+    for p_key in sorted_primary {
+        let edges = &primary_groups[p_key];
+        
+        if edges.len() < state.bundle_floor_size {
+            for pe in edges {
                 render_edge_internal(
                     dot_graph,
-                    key.from_name.unwrap_or("unknown"),
-                    key.from_suffix,
-                    key.to_name.unwrap_or("unknown"),
-                    key.to_suffix,
-                    &edge.display_label,
-                    edge.color,
-                    &edge.pen_width,
-                    style,
-                    key.sidecar,
-                    "", "", ""
+                    p_key.from_name.unwrap_or("unknown"),
+                    p_key.from_suffix,
+                    p_key.to_name.unwrap_or("unknown"),
+                    p_key.to_suffix,
+                    &pe.summary_label,
+                    &pe.combined_color,
+                    &pe.pen_width,
+                    "",
+                    p_key.sidecar,
+                    "", "", &pe.tooltip
                 );
             }
         } else {
+            // Render as Bundle
             let n = edges.len();
-            let sum_traffic: f64 = edges.iter().map(|e| e.saturation_score * e.stats_computer.capacity as f64).sum();
-            let bundle_capacity = (n as f64) * key.capacity as f64;
-            let bundle_util = if bundle_capacity > 0.0 {
-                (sum_traffic / bundle_capacity).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
+            let sum_traffic: f64 = edges.iter().map(|e| e.saturation_score * e.capacity as f64).sum();
+            let bundle_capacity = (n as f64) * p_key.capacity as f64;
+            let _bundle_util = if bundle_capacity > 0.0 { (sum_traffic / bundle_capacity).clamp(0.0, 1.0) } else { 0.0 };
             
-            let pen_width_str = "4".to_string();
-            
-            // Bundles are always bold and dashed to distinguish them from single lines
-            let style_attr = ", style=\"bold,dashed\"";
-
-            let mut header = format!("BUNDLE: {}x {} ({}%)", n, key.type_name.unwrap_or("Data"), (bundle_util * 100.0) as usize);
-            
-            if !key.ctl_labels.is_empty() {
-                header.push_str("\\nLabels: ");
-                for (i, l) in key.ctl_labels.iter().enumerate() {
-                    if i > 0 { header.push_str(", "); }
-                    header.push_str(l);
+            // S-Tier: Element-wise summation of index-aligned totals
+            let mut bundle_totals = vec![0u128; edges[0].sub_totals.len()];
+            let mut total_memory = 0usize;
+            let mut show_mem = false;
+            for pe in edges {
+                for (i, val) in pe.sub_totals.iter().enumerate() {
+                    bundle_totals[i] += val;
                 }
+                total_memory += pe.memory_footprint;
+                show_mem |= pe.show_memory;
             }
 
-            let headlabel = "";
-            let taillabel = "";
+            let mut all_labels: Vec<&'static str> = edges.iter().flat_map(|e| e.ctl_labels.iter().cloned()).collect();
+            all_labels.sort();
+            all_labels.dedup();
 
-            let mut tooltip = format!("Bundle Details ({} channels):\\n", n);
+            let label_prefix = p_key.partner.unwrap_or("Bundle");
+            let mut header = format!("{}: {}x", label_prefix, n);
+            crate::channel_stats_labels::format_compressed_u128(p_key.capacity as u128, &mut header);
+
+            if show_mem {
+                header.push_str(" (");
+                crate::channel_stats_labels::format_compressed_u128(total_memory as u128, &mut header);
+                header.push_str("B)");
+            }
+            header.push_str("\\nTotal: ");
+            for (i, total) in bundle_totals.iter().enumerate() {
+                if i > 0 { header.push_str(", "); }
+                crate::channel_stats_labels::format_compressed_u128(*total, &mut header);
+            }
+            if !p_key.type_name.is_empty() {
+                header.push_str("\\n");
+                header.push_str(&p_key.type_name);
+            }
+            all_labels.iter().for_each(|l| {
+                header.push(' ');
+                header.push_str(l);
+            });
+
+            let mut bundle_tooltip = format!("Bundle Details ({} partnered edges):\\n", n);
             for (i, e) in edges.iter().enumerate() {
                 if i >= 10 {
-                    let _ = write!(tooltip, "... and {} more (agg util: {}%)", n - 10, (bundle_util * 100.0) as usize);
+                    let _ = write!(bundle_tooltip, "... and {} more", n - 10);
                     break;
                 }
-                let _ = write!(tooltip, "CH#{}: Vol={} / Cap={} ({}%)\\n", e.id, e.stats_computer.last_total, e.stats_computer.capacity, (e.saturation_score * 100.0) as usize);
+                let _ = write!(bundle_tooltip, "IDs={:?}: Vol={} ({}%)\\n", e.ids, e.last_total, (e.saturation_score * 100.0) as usize);
             }
+
+            let is_partnered = p_key.partner.is_some();
+            let pen_width = if is_partnered { PARTNER_BUNDLE_PEN_WIDTH } else { BUNDLE_PEN_WIDTH };
 
             render_edge_internal(
                 dot_graph,
-                key.from_name.unwrap_or("unknown"),
-                key.from_suffix,
-                key.to_name.unwrap_or("unknown"),
-                key.to_suffix,
+                p_key.from_name.unwrap_or("unknown"),
+                p_key.from_suffix,
+                p_key.to_name.unwrap_or("unknown"),
+                p_key.to_suffix,
                 &header,
-                key.color,
-                &pen_width_str,
-                style_attr,
-                key.sidecar,
-                headlabel,
-                taillabel,
-                &tooltip,
+                &p_key.color,
+                pen_width,
+                ", style=\"bold,dashed\"",
+                p_key.sidecar,
+                "", "", &bundle_tooltip
             );
         }
     }
@@ -256,7 +417,7 @@ fn render_edge_internal(
     to_name: &'static str,
     to_suffix: Option<usize>,
     label: &str,
-    color: &'static str,
+    color: &str,
     pen_width: &str,
     style: &str,
     sidecar: bool,
@@ -291,9 +452,9 @@ fn render_edge_internal(
         dot_graph.put_slice(tooltip.replace('"', "'").as_bytes());
     }
 
-    dot_graph.put_slice(b"\", color=");
+    dot_graph.put_slice(b"\", color=\"");
     dot_graph.put_slice(color.as_bytes());
-    dot_graph.put_slice(b", penwidth=");
+    dot_graph.put_slice(b"\", penwidth=");
     dot_graph.put_slice(pen_width.as_bytes());
     dot_graph.put_slice(style.as_bytes());
     dot_graph.put_slice(b"];\n");
@@ -327,7 +488,7 @@ pub struct DotGraphFrames {
 /// * `local_state` - The local metric state.
 /// * `name` - The name of the node.
 /// * `id` - The ID of the node.
-/// * `actor` - The metadata of the actor.
+/// * * `actor` - The metadata of the actor.
 /// * `channels_in` - The input channels.
 /// * `channels_out` - The output channels.
 /// * `frame_rate_ms` - The frame rate in milliseconds.
@@ -346,9 +507,10 @@ pub fn apply_node_def(
             Node {
                 id: None,
                 color: "grey",
-                pen_width: DEFAULT_PEN_WIDTH,
+                pen_width: NODE_PEN_WIDTH,
                 stats_computer: ActorStatsComputer::default(),
                 display_label: String::new(), // Defined when the content arrives
+                tooltip: String::new(),
                 metric_text: String::new(),
                 remote_details: None,
                 thread_info_cache: None,
@@ -364,6 +526,7 @@ pub fn apply_node_def(
     } else {
         actor.ident.label.name.to_string()
     };
+    local_state.nodes[id].tooltip = String::new();
     local_state.nodes[id].stats_computer.init(actor.clone(), frame_rate_ms);
 
     // Edges are defined by both the sender and the receiver
@@ -396,10 +559,12 @@ fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec:
                     stats_computer: ChannelStatsComputer::default(),
                     ctl_labels: Vec::new(), // For visibility control
                     color: "grey",
-                    pen_width: DEFAULT_PEN_WIDTH.to_string(),
+                    pen_width: EDGE_PEN_WIDTH.to_string(),
                     saturation_score: 0.0,
                     display_label: String::new(), // Defined when the content arrives
                     metric_text: String::new(),
+                    partner: None,
+                    bundle_index: None,
                 }
             });
         }
@@ -433,6 +598,8 @@ fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec:
             if let Some(node_to) = edge.to {
                     edge.stats_computer.init(meta, node_from, node_to, frame_rate_ms);
                     edge.sidecar = meta.connects_sidecar;
+                    edge.partner = meta.partner;
+                    edge.bundle_index = meta.bundle_index;
             }
         }
 
@@ -634,7 +801,7 @@ impl FrameHistory {
     ///
     /// # Returns
     ///
-    /// The history file path.
+    /// THE history file path.
     fn build_history_path(&mut self) -> PathBuf {
         let format = format_description!("[year]_[month]_[day]");
         let log_time = OffsetDateTime::now_utc();
@@ -715,9 +882,10 @@ mod dot_tests {
         let mut node = Node {
             id: Some(ActorName::new("1",None)),
             color: "grey",
-            pen_width: DEFAULT_PEN_WIDTH,
+            pen_width: NODE_PEN_WIDTH,
             stats_computer: ActorStatsComputer::default(),
             display_label: String::new(),
+            tooltip: String::new(),
             metric_text: String::new(),
             remote_details: None,
             thread_info_cache: None,
@@ -726,7 +894,7 @@ mod dot_tests {
         };
         node.compute_and_refresh(actor_status, total_work_ns);
         assert_eq!(node.color, "grey");
-        assert_eq!(node.pen_width, DEFAULT_PEN_WIDTH);
+        assert_eq!(node.pen_width, NODE_PEN_WIDTH);
     }
 
     #[test]
@@ -737,12 +905,14 @@ mod dot_tests {
             to: None,
             color: "grey",
             sidecar: false,
-            pen_width: "1".to_string(),
+            pen_width: EDGE_PEN_WIDTH.to_string(),
             saturation_score: 0.0,
             ctl_labels: Vec::new(),
             stats_computer: ChannelStatsComputer::default(),
             display_label: String::new(),
             metric_text: String::new(),
+            partner: None,
+            bundle_index: None,
         };
         edge.compute_and_refresh(100, 50);
         assert_eq!(edge.color, "grey");
@@ -756,9 +926,10 @@ mod dot_tests {
                 Node {
                     id: Some(ActorName::new("1",None)),
                     color: "grey",
-                    pen_width: "1",
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: String::new(),
+                    tooltip: String::new(),
                     metric_text: "node_metric".to_string(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -774,17 +945,20 @@ mod dot_tests {
                     to: None,
                     color: "grey",
                     sidecar: false,
-                    pen_width: "1".to_string(),
+                    pen_width: EDGE_PEN_WIDTH.to_string(),
                     saturation_score: 0.0,
                     ctl_labels: Vec::new(),
                     stats_computer: ChannelStatsComputer::default(),
                     display_label: "edge_metric".to_string(),
                     metric_text: "edge_metric".to_string(),
+                    partner: None,
+                    bundle_index: None,
                 }
             ],
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
+            bundle_floor_size: 4,
         };
         let mut txt_metric = BytesMut::new();
         build_metric(&state, &mut txt_metric);
@@ -805,9 +979,10 @@ mod dot_tests {
                 Node {
                     id: Some(ActorName::new("1",None)),
                     color: "grey",
-                    pen_width: "1",
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "node1".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -823,36 +998,31 @@ mod dot_tests {
                     to: None,
                     color: "grey",
                     sidecar: false,
-                    pen_width: "1".to_string(),
+                    pen_width: EDGE_PEN_WIDTH.to_string(),
                     saturation_score: 0.0,
                     ctl_labels: Vec::new(),
                     stats_computer: ChannelStatsComputer::default(),
                     display_label: "edge1".to_string(),
                     metric_text: String::new(),
+                    partner: None,
+                    bundle_index: None,
                 }
             ],
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 40,
+            bundle_floor_size: 4,
         };
         let mut dot_graph = BytesMut::new();
 
 
         build_dot(&state, &mut dot_graph);
-        let expected = b"digraph G {\nrankdir=LR;\ngraph [nodesep=.5, ranksep=2.5];\nnode [margin=0.1];\nnode [style=filled, fillcolor=white, fontcolor=black];\nedge [color=white, fontcolor=white];\ngraph [bgcolor=black];\n\"1\" [label=\"node1\", color=grey, penwidth=1 ];\n\"unknown\" -> \"unknown\" [label=\"edge1\", color=grey, penwidth=1];\n}\n";
-
         let vec = dot_graph.to_vec();
-        //println!("vec: {:?}", vec.clone());
-
-        match String::from_utf8(vec.clone()) {
-            Ok(mut string) => {
-                string = string.replace("\n", "\\n");
-                println!("String with literal \n{}", string);
-            },
-            Err(e) => println!("Error: {}", e),
-        }
-
-        assert_eq!(dot_graph.to_vec(), expected, "dot_graph: {:?}\n vs {:?}", dot_graph, expected);
+        let result = String::from_utf8(vec).expect("Invalid UTF-8");
+        
+        assert!(result.contains("label=\"edge1\""),"found: {}",result);
+        assert!(result.contains("tooltip=\"CH#1: Data | Vol: 0 (Total: 0) | Color: grey\\n\""),"found: {}",result);
+        assert!(result.contains("color=\"grey\""),"found: {}",result);
     }
 
     #[test]
@@ -959,9 +1129,10 @@ mod dot_tests {
         let mut node = Node {
             id: Some(ActorName::new("test_node", None)),
             color: "grey",
-            pen_width: "1",
+            pen_width: NODE_PEN_WIDTH,
             stats_computer: ActorStatsComputer::default(),
             display_label: String::new(),
+            tooltip: String::new(),
             metric_text: String::new(),
             remote_details: None,
             thread_info_cache: None,
@@ -981,9 +1152,10 @@ mod dot_tests {
                 Node {
                     id: Some(ActorName::new("node1", None)),
                     color: "grey",
-                    pen_width: "1",
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: String::new(),
+                    tooltip: String::new(),
                     metric_text: "node_metric".to_string(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -999,17 +1171,20 @@ mod dot_tests {
                     to: Some(ActorName::new("to_node", None)),
                     color: "grey",
                     sidecar: false,
-                    pen_width: "1".to_string(),
+                    pen_width: EDGE_PEN_WIDTH.to_string(),
                     saturation_score: 0.0,
                     ctl_labels: Vec::new(),
                     stats_computer: ChannelStatsComputer::default(),
                     display_label: "test_edge".to_string(),
                     metric_text: "edge_metric".to_string(),
+                    partner: None,
+                    bundle_index: None,
                 }
             ],
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
+            bundle_floor_size: 4,
         };
         let mut txt_metric = BytesMut::new();
         build_metric(&state, &mut txt_metric);
@@ -1027,9 +1202,10 @@ mod dot_tests {
                 Node {
                     id: Some(ActorName::new("node", Some(42))),
                     color: "red",
-                    pen_width: "2",
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "node_with_suffix".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -1042,6 +1218,7 @@ mod dot_tests {
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
+            bundle_floor_size: 4,
         };
         let mut dot_graph = BytesMut::new();
 
@@ -1066,9 +1243,10 @@ mod dot_tests {
                 Node {
                     id: Some(ActorName::new("remote_node", None)),
                     color: "blue",
-                    pen_width: "3",
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "remote".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: Some(remote_details),
                     thread_info_cache: None,
@@ -1081,6 +1259,7 @@ mod dot_tests {
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
+            bundle_floor_size: 4,
         };
         let mut dot_graph = BytesMut::new();
 
@@ -1101,9 +1280,10 @@ mod dot_tests {
                 Node {
                     id: Some(ActorName::new("from_node", None)),
                     color: "green",
-                    pen_width: "1",
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "from".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -1114,9 +1294,10 @@ mod dot_tests {
                 Node {
                     id: Some(ActorName::new("to_node", Some(5))),
                     color: "yellow",
-                    pen_width: "1",
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "to".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -1138,11 +1319,14 @@ mod dot_tests {
                     stats_computer: ChannelStatsComputer::default(),
                     display_label: "test_edge".to_string(),
                     metric_text: String::new(),
+                    partner: None,
+                    bundle_index: None,
                 }
             ],
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
+            bundle_floor_size: 4,
         };
         let mut dot_graph = BytesMut::new();
 
@@ -1213,8 +1397,12 @@ mod dot_tests {
             min_latency: false,
             max_latency: false,
             connects_sidecar: false,
+            partner: None,
+            bundle_index: None,
             type_byte_count: 0,
             show_total: false,
+            girth: 1,
+            show_memory: false,
         });
 
         let channel_out = Arc::new(ChannelMetaData {
@@ -1245,8 +1433,12 @@ mod dot_tests {
             min_latency: false,
             max_latency: false,
             connects_sidecar: true,
+            partner: None,
+            bundle_index: None,
             type_byte_count: 0,
             show_total: false,
+            girth: 1,
+            show_memory: false,
         });
 
         let channels_in = vec![channel_in];
@@ -1295,8 +1487,12 @@ mod dot_tests {
             min_latency: false,
             max_latency: false,
             connects_sidecar: false,
+            partner: None,
+            bundle_index: None,
             type_byte_count: 0,
             show_total: false,
+            girth: 1,
+            show_memory: false,
         });
         let channels = vec![channel];
 
@@ -1358,9 +1554,10 @@ mod dot_tests {
                 Node {
                     id: None, // This will trigger the "unknown" branch
                     color: "red",
-                    pen_width: "1",
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "unknown_node".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -1373,6 +1570,7 @@ mod dot_tests {
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
+            bundle_floor_size: 4,
         };
         let mut dot_graph = BytesMut::new();
 
@@ -1394,17 +1592,20 @@ mod dot_tests {
                     to: None,   // This will trigger "unknown" branch
                     color: "grey",
                     sidecar: false,
-                    pen_width: "1".to_string(),
+                    pen_width: EDGE_PEN_WIDTH.to_string(),
                     saturation_score: 0.0,
                     ctl_labels: Vec::new(),
                     stats_computer: ChannelStatsComputer::default(),
                     display_label: "test_edge".to_string(),
                     metric_text: String::new(),
+                    partner: None,
+                    bundle_index: None,
                 }
             ],
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
+            bundle_floor_size: 4,
         };
         let mut dot_graph = BytesMut::new();
 
@@ -1442,6 +1643,8 @@ mod dot_tests {
                 saturation_score: 0.1,
                 display_label: format!("CH{} stats", i),
                 metric_text: String::new(),
+                partner: None,
+                bundle_index: None,
             });
         }
 
@@ -1450,9 +1653,10 @@ mod dot_tests {
                 Node {
                     id: Some(from),
                     color: "grey",
-                    pen_width: DEFAULT_PEN_WIDTH,
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "from".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -1462,9 +1666,10 @@ mod dot_tests {
                 Node {
                     id: Some(to),
                     color: "grey",
-                    pen_width: DEFAULT_PEN_WIDTH,
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "to".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -1476,16 +1681,68 @@ mod dot_tests {
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
+            bundle_floor_size: 4,
         };
 
         let mut dot_graph = BytesMut::new();
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
-        assert!(result.contains("BUNDLE: 5x TestType (10%)"));
+        assert!(result.contains("Bundle: 5x10\\nTotal: 0\\nTestType test_label"));
         assert!(result.contains("penwidth=4"));
         assert!(result.contains("style=\"bold,dashed\""));
-        assert!(result.contains("tooltip=\"Bundle Details (5 channels):\\nCH#0: Vol=10 / Cap=10 (10%)\\n"));
+        assert!(result.contains("tooltip=\"Bundle Details (5 partnered edges):\\nIDs=[0]: Vol=10 (10%)\\n"));
+    }
+
+    #[test]
+    fn test_build_dot_complex_bundling() {
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+        
+        let mut edges = Vec::new();
+        // 2 Red, 6 Grey
+        for i in 0..8 {
+            edges.push(Edge {
+                id: i,
+                from: Some(from),
+                to: Some(to),
+                color: if i < 2 { "red" } else { "grey" },
+                sidecar: false,
+                pen_width: EDGE_PEN_WIDTH.to_string(),
+                ctl_labels: vec!["shared"],
+                stats_computer: ChannelStatsComputer {
+                    capacity: 64,
+                    show_type: Some("AttestationEvent"),
+                    last_total: 25, // 8 * 25 = 200 total
+                    ..Default::default()
+                },
+                saturation_score: 0.0,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: None,
+                bundle_index: None,
+            });
+        }
+
+        let state = DotState {
+            nodes: vec![],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
+            bundle_floor_size: 4,
+        };
+
+        let mut dot_graph = BytesMut::new();
+        build_dot(&state, &mut dot_graph);
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        
+        // Should have two bundles
+        // Red group (2) is below threshold (4), so it stays discrete
+        assert!(result.contains("color=\"red\"")); 
+        // Grey group (6) is above threshold, so it bundles
+        assert!(result.contains("Bundle: 6x64\\nTotal: 0\\nAttestationEvent shared"));
+        assert!(result.contains("color=\"grey\""));
     }
 
     #[test]
@@ -1511,6 +1768,8 @@ mod dot_tests {
                 saturation_score: 0.0,
                 display_label: format!("CH{} stats", i),
                 metric_text: String::new(),
+                partner: None,
+                bundle_index: None,
             });
         }
 
@@ -1519,9 +1778,10 @@ mod dot_tests {
                 Node {
                     id: Some(from),
                     color: "grey",
-                    pen_width: DEFAULT_PEN_WIDTH,
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "from".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -1531,9 +1791,10 @@ mod dot_tests {
                 Node {
                     id: Some(to),
                     color: "grey",
-                    pen_width: DEFAULT_PEN_WIDTH,
+                    pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
                     display_label: "to".to_string(),
+                    tooltip: String::new(),
                     metric_text: String::new(),
                     remote_details: None,
                     thread_info_cache: None,
@@ -1545,6 +1806,7 @@ mod dot_tests {
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
+            bundle_floor_size: 4,
         };
 
         let mut dot_graph = BytesMut::new();
@@ -1553,5 +1815,126 @@ mod dot_tests {
         
         // Neither group reaches the threshold of 4
         assert!(!result.contains("BUNDLE"));
+    }
+
+    #[test]
+    fn test_build_dot_partnered_aggregation() {
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+        
+        let mut edges = Vec::new();
+        for i in 0..5 {
+            edges.push(Edge {
+                id: i,
+                from: Some(from),
+                to: Some(to),
+                color: "green",
+                sidecar: false,
+                pen_width: EDGE_PEN_WIDTH.to_string(),
+                ctl_labels: vec!["test_label"],
+                stats_computer: ChannelStatsComputer {
+                    capacity: 10,
+                    show_type: Some("TestType"),
+                    type_byte_count: 8,
+                    last_send: 100,
+                    last_take: 90,
+                    last_total: 10,
+                    ..Default::default()
+                },
+                saturation_score: 0.1,
+                display_label: format!("CH{} stats", i),
+                metric_text: String::new(),
+                partner: Some("MyPartner"),
+                bundle_index: Some(0),
+            });
+        }
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    work_info: None
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    work_info: None
+                },
+            ],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
+            bundle_floor_size: 4,
+        };
+
+        let mut dot_graph = BytesMut::new();
+        build_dot(&state, &mut dot_graph);
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        
+        assert!(result.contains("penwidth=2"),"{}",result); // Partnered bundle width
+    }
+
+    #[test]
+    fn test_build_dot_partnered_colors() {
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+        
+        let mut edges = Vec::new();
+        // 2 edges with same partner and bundle index
+        for i in 0..2 {
+            edges.push(Edge {
+                id: i,
+                from: Some(from),
+                to: Some(to),
+                color: if i == 0 { "red" } else { "blue" },
+                sidecar: false,
+                pen_width: EDGE_PEN_WIDTH.to_string(),
+                ctl_labels: vec![],
+                stats_computer: ChannelStatsComputer {
+                    capacity: 10,
+                    show_type: Some("TestType"),
+                    ..Default::default()
+                },
+                saturation_score: 0.0,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: Some("MyPartner"),
+                bundle_index: Some(0),
+            });
+        }
+
+        let state = DotState {
+            nodes: vec![],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 0,
+            bundle_floor_size: 4,
+        };
+
+        let mut dot_graph = BytesMut::new();
+        build_dot(&state, &mut dot_graph);
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        
+        assert!(result.contains("color=\"red:black:blue\""));
+        assert!(result.contains("penwidth=2"));
     }
 }

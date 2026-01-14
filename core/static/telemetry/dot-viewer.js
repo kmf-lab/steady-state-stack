@@ -24,28 +24,19 @@ const speedMap = {
   '1 hour': 3600000
 };
 
-let aspectRatio, diagram, dragDx, dragDy, exportAnchor;
+let aspectRatio, diagram, dragDx, dragDy;
 let firstTime = true;
 let intervalToken, navHeight, originalWindowWidth;
 let preview, speedArea, speedDropdown, speedMs, minRefreshRateMs = 0;
-let speedSpan, speedText, svg, svgRect, userDropdown, viewport, webworker;
+let speedSpan, speedText, svg, svgRect, viewport, webworker;
 let zoomInBtn, zoomInBtnDisabled, zoomOutBtn, zoomOutBtnDisabled;
 let zoomCurrent = 100, zoomInitialScale = 1.0;
+
+const scroll = (x, y) => window.scrollTo(x, y);
 
 const addClass = (element, name) => (element.className += ' ' + name);
 
 const getById = id => document.querySelector('#' + id);
-
-function getFileName() {
-  const date = new Date();
-  const year = date.getFullYear().toString();
-  const month = (date.getMonth() + 1).toString();
-  const day = date.getDate().toString();
-  const hour = date.getHours().toString();
-  const min = date.getMinutes().toString();
-  const sec = date.getSeconds().toString();
-  return `telemetry_${year}-${month}-${day}_${hour}-${min}-${sec}.svg`;
-}
 
 const hide = element => setStyle(element, 'visibility', 'hidden');
 
@@ -73,23 +64,6 @@ function onDrag(event) {
   scroll(-newX, -newY);
 }
 
-function onExport() {
-  var data = diagram.innerHTML;
-
-  // Invert the graph.
-  data = data.replace(/stroke="#ffffff"/g, 'stroke="#000000"')
-      .replace(/stroke="#b2b2b2"/g, 'stroke="#4d4d4d"')
-      .replace(/fill="#ffffff"/g, 'fill="#000000"')
-      .replace('polygon fill="#000000"', 'polygon fill="#ffffff"');
-
-  const blob = new Blob([data], {type: 'octet/stream'});
-  const url = window.URL.createObjectURL(blob);
-  exportAnchor.download = getFileName();
-  exportAnchor.href = url;
-  exportAnchor.click();
-  window.URL.revokeObjectURL(url);
-}
-
 function onMessage(message) {
   let svgText;
   if (typeof message.data === 'string') {
@@ -111,16 +85,18 @@ function onMessage(message) {
   
   // Apply current rendering mode to prevent flicker on refresh
   if (zoomCurrent < 40) {
-    svg.style.shapeRendering = 'crispEdges';
+    if (svg) svg.style.shapeRendering = 'crispEdges';
   } else {
-    svg.style.shapeRendering = 'geometricPrecision';
+    if (svg) svg.style.shapeRendering = 'geometricPrecision';
   }
 
-  svgRect = svg.getBoundingClientRect();
-  aspectRatio = svgRect.width / svgRect.height;
-  const previewRect = preview.getBoundingClientRect();
-  const newHeight = Math.ceil(previewRect.width / aspectRatio);
-  setStyle(preview, 'height', px(newHeight));
+  if (svg) {
+    svgRect = svg.getBoundingClientRect();
+    aspectRatio = svgRect.width / svgRect.height;
+    const previewRect = preview.getBoundingClientRect();
+    const newHeight = Math.ceil(previewRect.width / aspectRatio);
+    setStyle(preview, 'height', px(newHeight));
+  }
 
   if (firstTime) {
     firstTime = false;
@@ -197,18 +173,11 @@ function onScroll() {
 }
 
 function onSpeedDropdown(event) {
-  hide(userDropdown);
   toggleVisibility(speedDropdown);
   if (isVisible(speedDropdown)) {
     const record = speedArea.getBoundingClientRect();
     setStyle(speedDropdown, 'left', px(record.x + record.width - 110));
   }
-  event.stopPropagation();
-}
-
-function onUser(event) {
-  hide(speedDropdown);
-  toggleVisibility(userDropdown);
   event.stopPropagation();
 }
 
@@ -244,7 +213,7 @@ function onZoom(zoomIn) {
 
   if (ZOOM_FROM_CENTER) scroll(-newX, -newY);
 
-  svgRect = svg.getBoundingClientRect();
+  if (svg) svgRect = svg.getBoundingClientRect();
   onResize();
   onScroll();
 
@@ -271,8 +240,10 @@ function removeClass(element, name) {
  */
 function removeSvgSize(parent) {
   const svg = parent.querySelector('svg');
-  svg.removeAttribute('width');
-  svg.removeAttribute('height');
+  if (svg) {
+    svg.removeAttribute('width');
+    svg.removeAttribute('height');
+  }
 }
 
 function restrictLeft(left, previewRect, viewportRect) {
@@ -389,14 +360,11 @@ window.onload = () => {
 
   originalWindowWidth = window.innerWidth;
 
-  exportAnchor = document.createElement('a');
-
   diagram = getById('diagram');
   preview = getById('preview');
   speedArea = getById('speedArea');
   speedDropdown = getById('speedDropdown');
   speedSpan = getById('speedSpan');
-  userDropdown = getById('userDropdown');
   viewport = getById('viewport');
   zoomInBtn = getById('zoomInBtn');
   zoomInBtnDisabled = getById('zoomInBtnDisabled');
@@ -411,16 +379,12 @@ window.onload = () => {
   viewport.onmousedown = onMouseDown;
 
   getById('speedArea').onclick = onSpeedDropdown;
-  getById('userBtn').onclick = onUser;
-  getById('exportItem').onclick = onExport;
 
   speedDropdown.onclick = event => setSpeed(event.target.textContent);
-  userDropdown.onclick = () => hide(userDropdown);
 
   // Hide all dropdowns on a click outside them.
   window.onclick = () => {
     hide(speedDropdown);
-    hide(userDropdown);
   };
 
   zoomInBtn.onclick = () => onZoom(true);
@@ -430,9 +394,8 @@ window.onload = () => {
   webworker.onmessage = onMessage;
   webworker.postMessage(DOT_URL);
 
-  fetchConfig().then(() => {
-    setSpeed('200 ms');
-  });
+  fetchConfig();
+  setSpeed('200 ms');
 
 };
 

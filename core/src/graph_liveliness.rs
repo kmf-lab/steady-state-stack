@@ -312,7 +312,7 @@ impl GraphLiveliness {
     ///
     /// # Arguments
     ///
-    /// * `now` - The instant when the shutdown was initiated.
+    /// * `now` - THE instant when the shutdown was initiated.
     /// * `timeout` - The maximum duration allowed for a clean shutdown.
     ///
     /// # Returns
@@ -527,6 +527,8 @@ pub struct GraphBuilder {
     default_stack_size: Option<usize>,
     /// Flag to block fail-fast behavior during tests.
     block_fail_fast: bool,
+    /// Minimum size for bundles.
+    bundle_floor_size: usize,
 }
 
 impl Default for GraphBuilder {
@@ -562,6 +564,7 @@ impl GraphBuilder {
             shutdown_barrier: None,
             default_stack_size: None,
             block_fail_fast: false,
+            bundle_floor_size: 4,
         }
     }
 
@@ -586,6 +589,7 @@ impl GraphBuilder {
             shutdown_barrier: None,
             default_stack_size: None,
             block_fail_fast: false,
+            bundle_floor_size: 4,
         }
     }
 
@@ -674,6 +678,20 @@ impl GraphBuilder {
     pub fn with_block_fail_fast(&self) -> Self {
         let mut result = self.clone();
         result.block_fail_fast = true;
+        result
+    }
+
+    /// Sets the threshold for bundling edges in the telemetry visualization.
+    pub fn with_aggregation_threshold(&self, threshold: usize) -> Self {
+        let mut result = self.clone();
+        result.bundle_floor_size = threshold;
+        result
+    }
+
+    /// Sets the minimum size for bundles.
+    pub fn with_bundle_floor_size(&self, size: usize) -> Self {
+        let mut result = self.clone();
+        result.bundle_floor_size = size;
         result
     }
 
@@ -781,6 +799,8 @@ pub struct Graph {
     pub shutdown_barrier: Option<Arc<Barrier>>,
     /// Default stack size for all actors in the graph.
     pub(crate) default_stack_size: Option<usize>,
+    /// Minimum size for bundles.
+    pub(crate) bundle_floor_size: usize,
 }
 
 /// A guard that provides access to the stage manager for testing purposes.
@@ -1191,6 +1211,7 @@ impl Graph {
             is_for_testing: builder.is_for_testing,
             shutdown_barrier: builder.shutdown_barrier,
             default_stack_size: builder.default_stack_size,
+            bundle_floor_size: builder.bundle_floor_size,
         };
         if builder.telemetry_metric_features {
             telemetry::setup::build_telemetry_metric_features(&mut result);
