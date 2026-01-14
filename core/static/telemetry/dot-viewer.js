@@ -160,26 +160,11 @@ function onResize() {
   const widthPercent = window.innerWidth / svgRect.width;
 
   const previewRect = preview.getBoundingClientRect();
-  const {x: pX, y: pY, width: pWidth, height: pHeight} = previewRect;
-  const viewportRect = viewport.getBoundingClientRect();
-  const {x: vX, y: vY} = viewportRect;
+  const {width: pWidth, height: pHeight} = previewRect;
 
-  // Resize viewport to match.
-
-  let vHeight = Math.min(pY + pHeight - vY, pHeight * heightPercent);
-  let vWidth = Math.min(pX + pWidth - vX, pWidth * widthPercent);
-
-  const pRight = pX + pWidth;
-  if (vX + vWidth > pRight) {
-    vWidth = pRight - vX;
-    setStyle(viewport, 'x', px(pRight - vWidth));
-  }
-
-  const pBottom = pY + pHeight;
-  if (vY + vHeight > pBottom) {
-    vHeight = pBottom - vY;
-    setStyle(viewport, 'y', px(pBottom - vHeight));
-  }
+  // Viewport size should represent the ratio of the window to the full diagram
+  const vHeight = Math.min(pHeight, pHeight * heightPercent);
+  const vWidth = Math.min(pWidth, pWidth * widthPercent);
 
   setStyle(viewport, 'height', px(vHeight));
   setStyle(viewport, 'width', px(vWidth - BW2));
@@ -252,6 +237,10 @@ function onZoom(zoomIn) {
 
   if (ZOOM_FROM_CENTER) scroll(-newX, -newY);
 
+  svgRect = svg.getBoundingClientRect();
+  onResize();
+  onScroll();
+
   // Determine which zoom buttons should be displayed.
   const canZoomIn = zoomCurrent + ZOOM_DELTA <= ZOOM_MAX;
   const canZoomOut = newWidth > window.innerWidth * zoomInitialScale + 1;
@@ -259,29 +248,6 @@ function onZoom(zoomIn) {
   setDisplay(zoomInBtnDisabled, !canZoomIn);
   setDisplay(zoomOutBtn, canZoomOut);
   setDisplay(zoomOutBtnDisabled, !canZoomOut);
-
-  // If diagram is larger than browser window,
-  // change viewport size to represent visible area.
-  const {innerHeight, innerWidth} = window;
-  svgRect = svg.getBoundingClientRect();
-  const widthPercent = Math.min(1, innerWidth / svgRect.width);
-  const heightPercent = Math.min(1, (innerHeight - navHeight) / svgRect.height);
-  const previewRect = preview.getBoundingClientRect();
-  newWidth = (previewRect.width - BW2) * widthPercent;
-  newHeight = (previewRect.height - BW2) * heightPercent;
-
-  setStyle(viewport, 'height', px(newHeight));
-  setStyle(viewport, 'width', px(newWidth));
-
-  if (ZOOM_FROM_CENTER) {
-    // Move viewport.
-    const dx = (previewRect.width - newWidth) / 2;
-    const dy = (previewRect.height - newHeight) / 2;
-    newX = previewRect.left + dx - BW;
-    newY = previewRect.top + dy - BW;
-    setStyle(viewport, 'left', px(newX));
-    setStyle(viewport, 'top', px(newY));
-  }
 }
 
 const px = text => text + 'px';
