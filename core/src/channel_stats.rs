@@ -422,7 +422,7 @@ impl ChannelStatsComputer {
         self.last_send = send;
         self.last_take = take;
         self.last_total = inflight as i64;
-        self.saturation_score = (consumed as f64 / self.capacity as f64).clamp(0.0, 1.0);
+        self.saturation_score = (consumed as f64 / 1000.0).clamp(0.0, 1.0);
     
         ////////////////////////////////////////////////
         //  Build the labels

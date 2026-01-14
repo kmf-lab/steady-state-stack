@@ -178,9 +178,6 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             let style = ""; 
 
             for edge in edges {
-                let head = if edge.stats_computer.last_take > 0 { format!("Total Recv: {}", edge.stats_computer.last_take) } else { String::new() };
-                let tail = if edge.stats_computer.last_send > 0 { format!("Total Sent: {}", edge.stats_computer.last_send) } else { String::new() };
-
                 render_edge_internal(
                     dot_graph,
                     key.from_name.unwrap_or("unknown"),
@@ -192,7 +189,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                     &edge.pen_width,
                     style,
                     key.sidecar,
-                    &head, &tail, ""
+                    "", "", ""
                 );
             }
         } else {
@@ -222,11 +219,8 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 }
             }
 
-            let total_send: i64 = edges.iter().map(|e| e.stats_computer.last_send).sum();
-            let total_take: i64 = edges.iter().map(|e| e.stats_computer.last_take).sum();
-            
-            let headlabel = if total_take > 0 { format!("Total Recv: {}", total_take) } else { String::new() };
-            let taillabel = if total_send > 0 { format!("Total Sent: {}", total_send) } else { String::new() };
+            let headlabel = "";
+            let taillabel = "";
 
             let mut tooltip = format!("Bundle Details ({} channels):\\n", n);
             for (i, e) in edges.iter().enumerate() {
@@ -248,8 +242,8 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 &pen_width_str,
                 style_attr,
                 key.sidecar,
-                &headlabel,
-                &taillabel,
+                headlabel,
+                taillabel,
                 &tooltip,
             );
         }
@@ -1493,8 +1487,6 @@ mod dot_tests {
         assert!(result.contains("BUNDLE: 5x TestType (10%)"));
         assert!(result.contains("penwidth=5.4"));
         assert!(result.contains("style=\"bold,dashed\""));
-        assert!(result.contains("headlabel=\"Total Recv: 450\""));
-        assert!(result.contains("taillabel=\"Total Sent: 500\""));
         assert!(result.contains("tooltip=\"Bundle Details (5 channels):\\nCH#0: Vol=10 / Cap=10 (10%)\\n"));
     }
 
