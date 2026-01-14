@@ -109,6 +109,14 @@ function onMessage(message) {
   // Make the preview have the same aspect ratio
   // as the svg that was loaded.
   svg = diagram.querySelector('svg');
+  
+  // Apply current rendering mode to prevent flicker on refresh
+  if (zoomCurrent < 40) {
+    svg.style.shapeRendering = 'crispEdges';
+  } else {
+    svg.style.shapeRendering = 'geometricPrecision';
+  }
+
   svgRect = svg.getBoundingClientRect();
   aspectRatio = svgRect.width / svgRect.height;
   const previewRect = preview.getBoundingClientRect();

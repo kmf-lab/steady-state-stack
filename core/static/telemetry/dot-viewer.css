@@ -197,5 +197,4 @@ nav > div {
 /* Ensure paths remain visible when zoomed out. 
    Polygons (arrowheads) are excluded to prevent flickering and size distortion. */
 #diagram svg path {
-  vector-effect: non-scaling-stroke;
 }
