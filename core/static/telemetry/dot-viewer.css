@@ -198,5 +198,4 @@ nav > div {
    Polygons (arrowheads) are excluded to prevent flickering and size distortion. */
 #diagram svg path {
   vector-effect: non-scaling-stroke;
-  stroke-width: 1.2px;
 }
