@@ -14,6 +14,15 @@ use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::TxMetaDataProvider;
 
+use lazy_static::lazy_static;
+use parking_lot::RwLock;
+use std::collections::HashMap;
+
+lazy_static! {
+    pub(crate) static ref METADATA_REGISTRY: RwLock<HashMap<usize, Arc<ChannelMetaData>>> =
+        RwLock::new(HashMap::new());
+}
+
 /// Represents the current status of an actor, including performance metrics and state flags.
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct ActorStatus {

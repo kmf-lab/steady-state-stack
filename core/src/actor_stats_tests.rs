@@ -86,7 +86,7 @@ mod test_actor_stats {
         );
 
         assert_eq!(line_color, DOT_GREEN);
-        assert_eq!(line_width, "3");
+        assert_eq!(line_width, crate::dot::NODE_PEN_WIDTH);
         assert!(dot_label.contains("test_actor"));
 
     }
@@ -377,6 +377,7 @@ mod extra_tests {
 
         // Should contain window information in tooltip
         assert!(tooltip.contains("Window 5.0 mins"));
+        assert!(!dot_label.contains("Window"));
     }
 
     /// Test compute method with restart count
@@ -396,6 +397,7 @@ mod extra_tests {
 
         // Should contain restart count in tooltip
         assert!(tooltip.contains("restarts: 5"));
+        assert!(!dot_label.contains("restarts"));
 
         #[cfg(feature = "prometheus_metrics")]
         {
@@ -421,6 +423,7 @@ mod extra_tests {
 
         // Should contain stopped indicator in tooltip
         assert!(tooltip.contains("stopped"));
+        assert!(!dot_label.contains("stopped"));
     }
 
     /// Test compute method with current work data

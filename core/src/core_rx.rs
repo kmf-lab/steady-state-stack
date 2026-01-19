@@ -686,4 +686,78 @@ mod core_rx_async_tests {
         let result = core_exec::block_on(wait_future);
         assert!(!result, "Wait should return false when channel is closed with no units available");
     }
+
+    #[test]
+    fn test_rx_core_state_boundaries() {
+        let (tx, rx, _graph) = setup_channel::<i32>(4, None);
+        let mut rx_guard = rx.try_lock().expect("");
+        
+        // Test shared_advance_index overflow
+        let done = rx_guard.shared_advance_index(10);
+        assert_eq!(done, RxDone::Normal(0));
+
+        // Test shared_avail_units wrap-around
+        core_exec::block_on(async {
+            let mut tx_guard = tx.lock().await;
+            for i in 0..4 { tx_guard.shared_try_send(i).unwrap(); }
+        });
+        assert_eq!(rx_guard.shared_avail_units(), 4);
+        rx_guard.shared_advance_index(2);
+        assert_eq!(rx_guard.shared_avail_units(), 2);
+        
+        core_exec::block_on(async {
+            let mut tx_guard = tx.lock().await;
+            tx_guard.shared_try_send(4).unwrap();
+            tx_guard.shared_try_send(5).unwrap();
+        });
+        // Indices should have wrapped
+        assert_eq!(rx_guard.shared_avail_units(), 4);
+
+        // Test is_closed_and_empty branches
+        assert!(!rx_guard.is_closed_and_empty());
+        rx_guard.shared_advance_index(4);
+        assert!(!rx_guard.is_closed_and_empty()); // Empty but not closed
+        
+        let mut tx_guard = tx.try_lock().expect("");
+        tx_guard.mark_closed();
+        drop(tx_guard);
+        
+        // Now it should be closed and empty
+        assert!(rx_guard.is_closed_and_empty());
+    }
+
+    #[test]
+    fn test_rx_telemetry_warning() {
+        let (_tx, rx, graph) = setup_channel::<i32>(1, None);
+        let mut rx_guard = rx.try_lock().expect("");
+        let meta = rx_guard.channel_meta_data.meta_data.clone();
+        let mut actor = graph.new_testing_test_monitor("test")
+            .into_spotlight([&meta as &dyn RxMetaDataProvider], []);
+
+        if let Some(ref mut tel) = actor.telemetry.send_rx {
+            // This should trigger the warning branch in telemetry_inc
+            rx_guard.telemetry_inc(RxDone::Stream(1, 10), tel);
+        }
+    }
+
+    #[test]
+    fn test_rx_peek_repeats_logic() {
+        let (_tx, rx, _) = setup_channel::<i32>(1, Some(vec![42]));
+        let mut rx_guard = rx.try_lock().expect("");
+        
+        // First peek
+        core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
+        assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 1);
+        
+        // Second peek (same take_count)
+        core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
+        assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 2);
+        
+        // Take it
+        rx_guard.shared_try_take().unwrap();
+        
+        // Peek again (empty)
+        core_exec::block_on(rx_guard.shared_peek_async_timeout(Some(Duration::from_millis(10))));
+        assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 0);
+    }
 }

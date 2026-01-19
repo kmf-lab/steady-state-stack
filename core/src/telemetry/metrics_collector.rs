@@ -57,17 +57,6 @@ pub struct MetricsCollector {
 
     /// # CRITICAL DESIGN REQUIREMENT: Persistent Accumulation Buffers
     /// These vectors MUST persist for the entire life of the MetricsCollector actor.
-    /// 
-    /// The Steady State architecture relies on monotonically increasing absolute counters 
-    /// for 'send' and 'take' operations. The downstream stats evaluation (channel_stats.rs) 
-    /// performs unsigned math (send - take) to determine inflight volume.
-    ///
-    /// If these buffers are moved to local loop variables, the collector will only send 
-    /// frame-deltas. Due to timing jitter between telemetry production and collection, 
-    /// a frame-delta can occasionally show 'take' > 'send', resulting in a negative 
-    /// value that, when cast to unsigned, causes a catastrophic overflow panic.
-    ///
-    /// DO NOT MOVE THESE TO THE LOOP. THEY ARE NON-NEGOTIABLE FOR SYSTEM STABILITY.
     take_send_source: Vec<(i64, i64)>,
     future_take: Vec<i64>,
     future_send: Vec<i64>,
@@ -92,12 +81,14 @@ impl MetricsCollector {
         }
     }
 
-    /// The main loop for the `MetricsCollector` actor.
     pub async fn run(mut self, mut context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
-        // CRITICAL: Do NOT use into_spotlight() here. 
-        // MetricsCollector must use the raw SteadyActorShadow (context) to avoid telemetry 
+        // CRITICAL: MetricsCollector must use the raw SteadyActorShadow (context) to avoid telemetry
         // feedback loops and prevent this internal actor from appearing in user-facing charts.
-        let mut tx_guard = self.targets[0].lock().await;
+        // Also we move this to heap in case we have a giant graph
+        Box::pin(self.internal_behavior(context)).await
+    }
+    /// The main loop for the `MetricsCollector` actor.
+    pub async fn internal_behavior(mut self, mut context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
 
         while context.is_running(|| true) {
             self.seq += 1;
@@ -120,6 +111,8 @@ impl MetricsCollector {
                                 rx.tx_channel_id_vec().into_boxed_slice()
                             ))
                         );
+                        // SCOPE LOCK: Acquire, send, and drop immediately to avoid deadlocking other actors
+                        let mut tx_guard = self.targets[0].lock().await;
                         let _ = context.send_async(&mut *tx_guard, def, SendSaturation::AwaitForRoom).await;
                         self.known_actors.insert(actor_id, 0);
                     }
@@ -152,13 +145,15 @@ impl MetricsCollector {
 
             // 4. Relay batches to server
             if !actor_statuses.is_empty() {
+                let mut tx_guard = self.targets[0].lock().await;
                 let _ = context.send_async(&mut *tx_guard, DiagramData::NodeProcessData(self.seq, actor_statuses.into_boxed_slice()), SendSaturation::AwaitForRoom).await;
             }
             if !self.take_send_source.is_empty() {
-                // We clone the source to send the current absolute totals to the server
+                let mut tx_guard = self.targets[0].lock().await;
                 let _ = context.send_async(&mut *tx_guard, DiagramData::ChannelVolumeData(self.seq, self.take_send_source.clone().into_boxed_slice()), SendSaturation::AwaitForRoom).await;
             }
 
+            // CRITICAL: No locks held during periodic wait
             context.wait_periodic(Duration::from_millis(self.frame_rate_ms)).await;
         }
 

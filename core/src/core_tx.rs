@@ -838,4 +838,30 @@ mod core_tx_rx_tests {
         let outcome3 = block_on(tx.shared_send_async_timeout(7u8, ident, SendSaturation::ReturnBlockedMsg, Some(Duration::from_millis(1))));
         assert!(matches!(outcome3, SendOutcome::Success));
     }
+
+    #[test]
+    fn test_tx_core_state_boundaries() {
+        let mut tx = new_tx();
+        
+        // Test shared_advance_index overflow
+        let done = tx.shared_advance_index(100);
+        assert_eq!(done, TxDone::Normal(tx.shared_capacity()));
+
+        // Test shared_vacant_units wrap-around
+        let mut tx = new_tx();
+        let cap = tx.shared_capacity();
+        assert_eq!(tx.shared_vacant_units(), cap);
+        tx.shared_send_iter_until_full((0..cap as u8).into_iter());
+        assert_eq!(tx.shared_vacant_units(), 0);
+        
+        // Test redundant mark_closed
+        assert!(tx.shared_mark_closed());
+        assert!(tx.shared_mark_closed());
+
+        // Test shared_send_slice empty
+        let done_slice = tx.shared_send_slice(&[]);
+        assert_eq!(done_slice, TxDone::Normal(0));
+
+    }
+
 }

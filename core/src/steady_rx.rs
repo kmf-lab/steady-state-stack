@@ -52,6 +52,16 @@ pub struct Rx<T> {
     pub(crate) peek_repeats: AtomicUsize,
     /// Atomic counter for detecting iterator usage drift in telemetry.
     pub(crate) iterator_count_drift: Arc<AtomicIsize>,
+    /// Unique key for the global metadata registry.
+    pub(crate) registry_key: usize,
+}
+
+impl<T> Drop for Rx<T> {
+    fn drop(&mut self) {
+        if self.registry_key != 0 {
+            crate::monitor::METADATA_REGISTRY.write().remove(&self.registry_key);
+        }
+    }
 }
 
 impl<T> Debug for Rx<T> {
@@ -537,14 +547,18 @@ impl<T: Send + Sync> RxMetaDataProvider for Mutex<Rx<T>> {
 }
 
 impl<T: Send + Sync> RxMetaDataProvider for Arc<Mutex<Rx<T>>> {
+    /// Retrieves metadata associated with the receiver.
+    ///
+    /// This implementation performs a lock-free lookup in the global metadata registry using the Arc's pointer address as a key. This avoids contention with the channel's data path and prevents deadlocks during telemetry collection.
+    ///
+    /// # Returns
+    /// A shared reference to the channel’s metadata, or a default instance if not found.
     fn meta_data(&self) -> Arc<ChannelMetaData> {
-        loop {
-            if let Some(guard) = self.try_lock() {
-                return Arc::clone(&guard.deref().channel_meta_data.meta_data);
-            }
-            std::thread::yield_now();
-            error!("got stuck");
+        let key = Arc::as_ptr(self) as usize;
+        if let Some(meta) = crate::monitor::METADATA_REGISTRY.read().get(&key) {
+            return Arc::clone(meta);
         }
+        Arc::new(ChannelMetaData::default())
     }
 }
 

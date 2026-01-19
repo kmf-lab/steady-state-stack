@@ -964,6 +964,7 @@ impl ChannelBuilder {
                 make_closed: Some(sender_is_closed),
                 last_error_send: now,
                 oneshot_shutdown: receiver_tx,
+                registry_key: 0,
             },
             Rx {
                 rx,
@@ -979,6 +980,7 @@ impl ChannelBuilder {
                 cached_take_count: AtomicU32::new(0),
                 peek_repeats: AtomicUsize::new(0),
                 iterator_count_drift: Arc::new(AtomicIsize::new(0)),
+                registry_key: 0,
             },
         )
     }
@@ -998,10 +1000,27 @@ impl ChannelBuilder {
      */
     pub fn eager_build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
         let (tx, rx) = self.eager_build_internal();
-        (
-            Arc::new(Mutex::new(tx)),
-            Arc::new(Mutex::new(rx)),
-        )
+        let tx_meta = tx.channel_meta_data.meta_data.clone();
+        let rx_meta = rx.channel_meta_data.meta_data.clone();
+
+        let tx_arc = Arc::new(Mutex::new(tx));
+        let rx_arc = Arc::new(Mutex::new(rx));
+
+        let tx_key = Arc::as_ptr(&tx_arc) as usize;
+        let rx_key = Arc::as_ptr(&rx_arc) as usize;
+
+        if let Some(mut guard) = tx_arc.try_lock() {
+            guard.registry_key = tx_key;
+        }
+        if let Some(mut guard) = rx_arc.try_lock() {
+            guard.registry_key = rx_key;
+        }
+
+        let mut reg = crate::monitor::METADATA_REGISTRY.write();
+        reg.insert(tx_key, tx_meta);
+        reg.insert(rx_key, rx_meta);
+
+        (tx_arc, rx_arc)
     }
 }
 

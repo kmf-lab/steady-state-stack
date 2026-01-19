@@ -16,7 +16,6 @@ use futures::channel::oneshot::{Receiver, Sender};
 use futures_util::lock::{Mutex, MutexGuard};
 #[allow(unused_imports)]
 use log::*;
-use futures_util::future::select_all;
 use crate::*;
 use crate::{steady_config, ActorName, AlertColor, Graph, StdDev, Trigger};
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
@@ -29,6 +28,8 @@ use aeron::aeron::Aeron;
 use async_lock::Barrier;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::dot::RemoteDetails;
+use futures::stream::{FuturesUnordered, StreamExt};
+use futures::FutureExt;
 
 /// The `ActorBuilder` struct is responsible for constructing and configuring actors within the system.
 /// It provides a fluent interface to set various properties and behaviors of the actor, such as telemetry settings,
@@ -197,13 +198,15 @@ pub struct Troupe {
     future_builder: VecDeque<FutureBuilderType>,
     /// Unique identifier for the troupe.
     team_id: usize,
+    /// Optional human-readable name for the troupe.
+    name: Option<String>,
 }
 
 /// A type alias for a pinned future representing an actor's execution logic.
 pub type PinnedFuture = Pin<Box<dyn Future<Output = Result<(), Box<dyn Error>>> + 'static>>;
 
 /// A type alias for a dynamic function that takes a `SteadyActorShadow` and returns a `PinnedFuture`.
-pub type DynCall = Box<dyn Fn(SteadyActorShadow) -> PinnedFuture + 'static>;
+pub type DynCall = Box<dyn Fn(SteadyActorShadow) -> PinnedFuture + Send + Sync + 'static>;
 
 /// A type alias for the runtime representation of an actor's execution logic, wrapped to avoid `Send` requirements.
 type ActorRuntime = NonSendWrapper<DynCall>;
@@ -302,6 +305,24 @@ impl Drop for TroupeGuard {
     }
 }
 
+impl TroupeGuard {
+    /// Sets a custom name for the troupe, which will be used for the OS thread name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The custom name for the troupe.
+    ///
+    /// # Returns
+    ///
+    /// The `TroupeGuard` instance with the updated name.
+    pub fn with_name(mut self, name: &str) -> Self {
+        if let Some(ref mut t) = self.troupe {
+            t.with_name(name);
+        }
+        self
+    }
+}
+
 impl Troupe {
     /// Creates a new `Troupe` instance with a unique team identifier derived from the graph.
     ///
@@ -316,7 +337,22 @@ impl Troupe {
         Troupe {
             future_builder: VecDeque::new(),
             team_id: graph.team_count.fetch_add(1, Ordering::SeqCst),
+            name: None,
         }
+    }
+
+    /// Sets a custom name for the troupe.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The custom name for the troupe.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to the `Troupe` instance.
+    pub fn with_name(&mut self, name: &str) -> &mut Self {
+        self.name = Some(name.to_string());
+        self
     }
 
     /// Adds an actor to the troupe with the specified context and execution parameters.
@@ -394,91 +430,74 @@ impl Troupe {
         let team_id = self.team_id;
         let max_stack_size = self.future_builder.iter().filter_map(|f| f.stack_size).max();
 
-        let super_task = async move {
-            #[cfg(feature = "core_affinity")]
-            {
-                let core = team_id;
-                if let Err(e) = pin_thread_to_core(core) {
-                    eprintln!("Failed to pin thread to core {}: {:?}", core, e);
-                }
-            }
-            let double_vec: Vec<(ActorRuntime, bool)> = self
-                .future_builder
-                .iter_mut()
-                .map(|f| (f.register(), false))
-                .collect();
+        // 1. ATOMIC REGISTRATION: Register all actors on the main thread.
+        // This prevents deadlocks where the troupe thread waits for a lock the main thread holds.
+        // We must do this while we are still on the caller's thread to ensure the Graph is 
+        // fully aware of all "voters" before any thread starts polling for liveliness.
+        let mut tasks = Vec::with_capacity(self.future_builder.len());
+        for f_builder in self.future_builder.into_iter() {
+            let runtime = f_builder.register();
+            let context = f_builder.context(team_id);
+            let archetype = f_builder.fun.clone();
+            tasks.push((runtime, context, archetype));
+        }
+        count_task.store(tasks.len(), Ordering::SeqCst);
 
-            count_task.store(double_vec.len(), Ordering::SeqCst);
-            let _ = local_send.send(());
-
-            let triplet_vec: Vec<(ActorRuntime, SteadyActorShadow, bool)> = self
-                .future_builder
-                .iter()
-                .zip(double_vec)
-                .map(|(f, (e, b))| (e, f.context(team_id), b))
-                .collect();
-
-            let actor_future_vec: Vec<_> = triplet_vec
-                .iter()
-                .map(|(fun, ctx, _drive_io)| {
-                    let ctx = ctx.clone();
-                    Self::build_async_fun(fun, ctx)
-                })
-                .collect();
-
-            let mut future_all = select_all(actor_future_vec);
-            loop {
-                let result = catch_unwind(AssertUnwindSafe(|| launch_actor(&mut future_all)));
-                match result {
-                    Ok((actor_result, index, mut leftover_futures)) => {
-                        let (fun, ctx, _drive_io) = &triplet_vec[index];
-                        if let Err(e) = actor_result {
-                            error!("Actor at index {index} got error: {e:?}");
-                            let ctx = ctx.clone();
-                            leftover_futures.insert(index, Self::build_async_fun(fun, ctx));
-                            continue;
-                        }
-                        if leftover_futures.get(index).is_some() {
-                            drop(core_exec::block_on(leftover_futures.remove(index)));
-                        }
-                        exit_actor_registration(&self.future_builder[index].fun);
-                        if leftover_futures.is_empty() {
-                            break;
-                        }
-                        future_all = select_all(leftover_futures);
-                    }
-                    Err(e) => {
-                        error!("Actor panic: {e:?}");
-                        let actor_future_vec: Vec<_> = triplet_vec
-                            .iter()
-                            .map(|(fun, ctx, _drive_io)| {
-                                let ctx = ctx.clone();
-                                Self::build_async_fun(fun, ctx)
-                            })
-                            .collect();
-                        future_all = select_all(actor_future_vec);
-                    }
-                }
-            }
-        };
         core_exec::block_on(async move {
             //two so we can support blocking calls.
-            match core_exec::spawn_more_threads(2).await {
-                Ok(c) => {
-                    if c >= 12 {
-                        info!("Threads: {}", c);
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to spawn one more thread: {:?}", e);
-                }
-            }
+            let _ = core_exec::spawn_more_threads(2).await;
             
-            let mut thread_builder = std::thread::Builder::new().name(format!("Troupe-{}", team_id));
+            let thread_name = self.name.clone()
+                .unwrap_or_else(|| format!("Troupe-{}", team_id));
+
+            let mut thread_builder = std::thread::Builder::new().name(thread_name);
             if let Some(size) = max_stack_size {
                 thread_builder = thread_builder.stack_size(size);
             }
             let handle = thread_builder.spawn(move || {
+                // 2. SIGNAL-FIRST: Tell the main thread we are alive before doing anything else.
+                // This ensures the main thread is never blocked by actor initialization logic.
+                let _ = local_send.send(());
+
+                let super_task = async move {
+                    #[cfg(feature = "core_affinity")]
+                    if let Err(e) = pin_thread_to_core(team_id) {
+                        eprintln!("Failed to pin thread to core {}: {:?}", team_id, e);
+                    }
+
+                    let mut futures = FuturesUnordered::new();
+                    for (runtime, mut ctx, arch) in tasks {
+                        futures.push(Box::pin(async move {
+                            loop {
+                                // 3. LOCK-AWAIT SEPARATION: Extract future and drop lock immediately.
+                                // We must never hold a MutexGuard across an .await point in the supervisor.
+                                let fut = {
+                                    let guard = runtime.lock().await;
+                                    guard(ctx.clone())
+                                };
+                                // 4. ISOLATED SUPERVISION: catch_unwind only affects this specific actor.
+                                // If one actor panics, its loop catches it, increments regeneration, and restarts.
+                                // The FuturesUnordered stream remains intact, and other actors continue to be polled.
+                                match AssertUnwindSafe(fut).catch_unwind().await {
+                                    Ok(Ok(_)) => {
+                                        exit_actor_registration(&arch);
+                                        break;
+                                    }
+                                    Ok(Err(e)) => {
+                                        error!("Actor {:?} error: {:?}", ctx.ident, e);
+                                        ctx.regeneration += 1;
+                                    }
+                                    Err(e) => {
+                                        error!("Actor {:?} panic: {:?}", ctx.ident, e);
+                                        ctx.regeneration += 1;
+                                    }
+                                }
+                            }
+                        }));
+                    }
+
+                    while futures.next().await.is_some() { }
+                };
                 core_exec::block_on(super_task);
             });
             if let Err(e) = handle {
@@ -487,27 +506,6 @@ impl Troupe {
         });
         let _ = core_exec::block_on(local_take);
         count.load(Ordering::SeqCst)
-    }
-
-    /// Builds an asynchronous function for an actor's execution logic.
-    ///
-    /// # Arguments
-    ///
-    /// * `fun` - The runtime representation of the actor's execution logic.
-    /// * `ctx` - The `SteadyActorShadow` context for the actor.
-    ///
-    /// # Returns
-    ///
-    /// a pinned future representing the actor's execution.
-    fn build_async_fun(
-        fun: &ActorRuntime,
-        mut ctx: SteadyActorShadow,
-    ) -> Pin<Box<impl Future<Output = Result<(), Box<dyn Error>>> + Sized + '_>> {
-        Box::pin(async move {
-            let guard_fun = fun.lock().await;
-            ctx.regeneration +=1; //restart counts when in a troupe
-            guard_fun(ctx.clone()).await
-        })
     }
 }
 
@@ -983,7 +981,7 @@ impl ActorBuilder {
     /// * `build_actor_exec` - The execution logic for the actor.
     fn build_spawn<F, I>(self, build_actor_exec: I)
     where
-        I: Fn(SteadyActorShadow) -> F + 'static,
+        I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         let excluded_cores = self.excluded_cores.clone();
@@ -1039,7 +1037,7 @@ impl ActorBuilder {
                         }
                     }
                     
-                    info!("Spawning SoloAct {:?} on new OS thread", &actor_name_clone);
+                    trace!("Spawning SoloAct {:?} on new OS thread", &actor_name_clone);
 
                     loop {
                         match catch_unwind(AssertUnwindSafe(|| match fun.clone().try_lock() {
@@ -1088,7 +1086,7 @@ impl ActorBuilder {
     /// * `target` - The `Troupe` to add the actor to.
     fn build_join<F, I>(self, build_actor_exec: I, target: &mut Troupe)
     where
-        I: Fn(SteadyActorShadow) -> F + 'static,
+        I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         let rate = self.frame_rate_ms;
@@ -1111,7 +1109,7 @@ impl ActorBuilder {
     /// * `desired_scheduling` - The scheduling type (`SoloAct` or `MemberOf`).
     pub fn build<F, I>(self, build_actor_exec: I, desired_scheduling: ScheduleAs)
     where
-        I: Fn(SteadyActorShadow) -> F + 'static,
+        I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         match desired_scheduling {
@@ -1138,12 +1136,12 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A boxed dynamic function compatible with `DynCall`.
-    fn to_dyn_call<I, F>(f: I) -> Box<dyn Fn(SteadyActorShadow) -> PinnedFuture>
+    fn to_dyn_call<I, F>(f: I) -> DynCall
     where
-        I: Fn(SteadyActorShadow) -> F + 'static,
+        I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
-        Box::new(move |ctx| Pin::from(Box::new(f(ctx))))
+        Box::new(move |ctx| Box::pin(f(ctx)))
     }
 
     /// Creates a `SteadyContextArchetype` for actor execution with the specified logic.
@@ -1162,7 +1160,7 @@ impl ActorBuilder {
     /// A `SteadyContextArchetype` configured with the actor's execution logic.
     fn single_actor_exec_archetype<F, I>(self, build_actor_exec: I) -> SteadyContextArchetype<DynCall>
     where
-        I: Fn(SteadyActorShadow) -> F + 'static,
+        I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         let telemetry_tx = self.telemetry_tx.clone();
@@ -1317,7 +1315,7 @@ impl<T: ?Sized> NonSendWrapper<T> {
 ///
 /// # Returns
 ///
-/// The `NonSendWrapper` containing the actor's execution logic.
+/// THE `NonSendWrapper` containing the actor's execution logic.
 fn build_actor_registration(builder_source: &SteadyContextArchetype<DynCall>) -> NonSendWrapper<DynCall> {
     builder_source
         .runtime_state
@@ -1426,6 +1424,9 @@ mod test_actor_builder {
     fn test_troupe_ops() {
         let graph = GraphBuilder::for_testing().build(());
         let mut troupe = Troupe::new(&graph);
+        troupe.with_name("TestTroupe");
+        assert_eq!(troupe.name, Some("TestTroupe".to_string()));
+
         let mut other = Troupe::new(&graph);
         
         // Mock an archetype

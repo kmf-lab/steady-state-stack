@@ -598,12 +598,16 @@ fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec:
             if edge.to.is_none() {
                 edge.to = Some(node_name);
             } else {
-                warn!("internal error");
+                if !Some(node_name).eq(&edge.to) {
+                    warn!("internal error: edge.to was {:?} but now {:?}",edge.to.expect("to"), node_name);
+                }
             }
         } else if edge.from.is_none() {
             edge.from = Some(node_name);
         } else {
-            warn!("internal error");
+            if !Some(node_name).eq(&edge.from) {
+                warn!("internal error: edge.from was {:?} but now {:?}",edge.from.expect("from"), node_name);
+            }
         }
 
         // Collect the labels that need to be added

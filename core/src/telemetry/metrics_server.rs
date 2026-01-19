@@ -2,7 +2,7 @@ use async_io::Async;
 use std::error::Error;
 use std::net::{SocketAddr, TcpListener};
 use std::pin::Pin;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use bytes::BytesMut;
 #[allow(unused_imports)]
 use log::*;
@@ -24,6 +24,7 @@ struct MetricState {
     doc: Vec<u8>,
     metric: Vec<u8>,
     config: Vec<u8>,
+    last_disk_write: Instant,
 }
 
 
@@ -71,6 +72,8 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         doc: Vec::new(),
         metric: Vec::new(),
         config: initial_config.into_bytes(),
+        // Initialize to the past so the first request triggers a write
+        last_disk_write: Instant::now().checked_sub(Duration::from_secs(6)).unwrap_or_else(Instant::now),
     }));
 
 
@@ -166,7 +169,7 @@ pub trait AsyncListener {
     #[allow(clippy::type_complexity)]
     fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output =std::io::Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>)>> + Send + 'a>>;
 
-    /// Returns the local socket address of the listener.
+    /// Returns the local address of the listener.
     fn local_addr(&self) -> std::io::Result<SocketAddr>;
 }
 
@@ -479,29 +482,60 @@ where
 
     #[cfg(feature = "prometheus_metrics")]
     if path.starts_with("/me") { // for prometheus /metrics
+        let metric = {
+            let locked_state = state.lock().await;
+            locked_state.metric.clone()
+        };
         stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: text/plain\r\nContent-Length: ", cors_header).as_bytes()).await?;
-        let locked_state = state.lock().await;
-        stream.write_all(itoa::Buffer::new().format(locked_state.metric.len()).as_bytes()).await?;
+        stream.write_all(itoa::Buffer::new().format(metric.len()).as_bytes()).await?;
         stream.write_all(b"\r\n\r\n").await?;
-        stream.write_all(&locked_state.metric).await?;
+        stream.write_all(&metric).await?;
         return Ok(());
     }
 
     #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
     {
         if path.starts_with("/gr") { // for local telemetry /graph.dot
+
+            let mut locked_state = state.lock().await;
+            let now = Instant::now();
+            let can_write = locked_state.last_disk_write.elapsed() >= Duration::from_secs(20); //write file every 20 sec
+            if can_write {
+                locked_state.last_disk_write = now;
+            }
+
             stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: text/vnd.graphviz\r\nContent-Length: ", cors_header).as_bytes()).await?;
-            let locked_state = state.lock().await;
             stream.write_all(itoa::Buffer::new().format(locked_state.doc.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
             stream.write_all(&locked_state.doc).await?;
+            stream.flush().await?;
+
+            if can_write {
+                let data = locked_state.doc.clone();
+                drop(locked_state);
+
+                let _ = std::fs::create_dir_all("logs");
+                if let Ok(file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open("logs/graph.dot")
+                {
+                    let data = BytesMut::from(&data[..]);
+                    let _ = async_write_all(data, true, file).await;
+                }
+            }
+
             return Ok(());
         } else if path.starts_with("/co") { // for /config
+            let config = {
+                let locked_state = state.lock().await;
+                locked_state.config.clone()
+            };
             stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: application/json\r\nContent-Length: ", cors_header).as_bytes()).await?;
-            let locked_state = state.lock().await;
-            stream.write_all(itoa::Buffer::new().format(locked_state.config.len()).as_bytes()).await?;
+            stream.write_all(itoa::Buffer::new().format(config.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
-            stream.write_all(&locked_state.config).await?;
+            stream.write_all(&config).await?;
             return Ok(());
         } else if path.starts_with("/set?") { // example /set?rankdir=LR&show=label1,label2&hide=label3,label4
             let mut parts = path.split("?");
@@ -929,28 +963,28 @@ mod handle_request_logic_tests {
 
     #[test]
     fn test_handle_request_index() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![] }));
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![], last_disk_write: Instant::now() }));
         let stream = MockStream::new("GET / HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_options() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![] }));
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![], last_disk_write: Instant::now() }));
         let stream = MockStream::new("OPTIONS / HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_404() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![] }));
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![], last_disk_write: Instant::now() }));
         let stream = MockStream::new("GET /unknown HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_assets() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![] }));
+        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![], last_disk_write: Instant::now() }));
         let paths = [
             "/",
             "/index.html",

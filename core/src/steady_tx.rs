@@ -35,6 +35,16 @@ pub struct Tx<T> {
     pub(crate) make_closed: Option<oneshot::Sender<()>>,
     /// A receiver for detecting shutdown signals, enabling graceful termination of the channel.
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
+    /// Unique key for the global metadata registry.
+    pub(crate) registry_key: usize,
+}
+
+impl<T> Drop for Tx<T> {
+    fn drop(&mut self) {
+        if self.registry_key != 0 {
+            crate::monitor::METADATA_REGISTRY.write().remove(&self.registry_key);
+        }
+    }
 }
 
 impl<T> Debug for Tx<T> {
@@ -227,26 +237,16 @@ impl<T: Send + Sync> TxMetaDataProvider for Mutex<Tx<T>> {
 impl<T: Send + Sync> TxMetaDataProvider for Arc<Mutex<Tx<T>>> {
     /// Retrieves the metadata for a transmission channel wrapped in an `Arc<Mutex>`.
     ///
-    /// This implementation repeatedly attempts to acquire the mutex lock, pausing briefly between attempts. It logs a warning and error if the lock remains unavailable after an extended period, helping to identify prolonged contention.
+    /// This implementation performs a lock-free lookup in the global metadata registry using the Arc's pointer address as a key. This avoids contention with the channel's data path and prevents deadlocks during telemetry collection.
     ///
     /// # Returns
-    /// An `Arc` pointing to the channel’s metadata.
+    /// An `Arc` pointing to the channel’s metadata, or a default instance if not found.
     fn meta_data(&self) -> Arc<ChannelMetaData> {
-        let mut count = 0;
-        loop {
-            if let Some(guard) = self.try_lock() {
-                return Arc::clone(&guard.deref().channel_meta_data.meta_data);
-            }
-            sleep(Duration::from_millis(5));
-            count += 1;
-
-            // Logs a warning and error if the lock cannot be acquired after many attempts, indicating potential issues.
-            if 100_000 == count {
-                let backtrace = Backtrace::capture();
-                warn!("{:?}", backtrace);
-                error!("got stuck on meta_data, unable to get lock on ChannelMetaData");
-            }
+        let key = Arc::as_ptr(self) as usize;
+        if let Some(meta) = crate::monitor::METADATA_REGISTRY.read().get(&key) {
+            return Arc::clone(meta);
         }
+        Arc::new(ChannelMetaData::default())
     }
 }
 
