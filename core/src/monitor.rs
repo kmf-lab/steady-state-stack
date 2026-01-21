@@ -26,6 +26,8 @@ lazy_static! {
 /// Represents the current status of an actor, including performance metrics and state flags.
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct ActorStatus {
+    /// Unique identifier for the actor.
+    pub(crate) ident: ActorIdentity,
     /// Total number of times the actor has been restarted.
     pub(crate) total_count_restarts: u32,
     /// Start time of the current iteration, typically measured in nanoseconds.
@@ -34,6 +36,8 @@ pub struct ActorStatus {
     pub(crate) iteration_sum: u64,
     /// Indicates whether the actor has stopped.
     pub(crate) bool_stop: bool,
+    /// Indicates whether the actor is stalled (not yielding).
+    pub(crate) bool_stalled: bool,
     /// Indicates whether the actor is currently blocking.
     pub(crate) bool_blocking: bool,
     /// Total time spent awaiting, measured in nanoseconds.
@@ -131,11 +135,11 @@ pub struct ChannelMetaData {
     pub(crate) percentiles_rate: Vec<Percentile>,
     /// Percentiles to track for latency within the channel.
     pub(crate) percentiles_latency: Vec<Percentile>,
-    /// Standard deviations to track for inflight data.
+    /// Standard deviations to track for the channel's filled state.
     pub(crate) std_dev_inflight: Vec<StdDev>,
-    /// Standard deviations to track for consumed data.
+    /// Standard deviations to track for the channel's data rate.
     pub(crate) std_dev_consumed: Vec<StdDev>,
-    /// Standard deviations to track for latency.
+    /// Standard deviations to track for the channel's latency.
     pub(crate) std_dev_latency: Vec<StdDev>,
     /// Triggers for data rate that raise alerts with associated colors.
     pub(crate) trigger_rate: Vec<(Trigger<Rate>, AlertColor)>,

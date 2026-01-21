@@ -621,16 +621,8 @@ impl SteadyActor for SteadyActorShadow {
     /// `true` if the actor is running, `false` otherwise.
     #[inline]
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
-        loop {
-            let liveliness = self.runtime_state.read();
-            let result = liveliness.is_running(self.ident, &mut accept_fn);
-            if let Some(result) = result {
-                return result;
-            } else {
-                //wait until we are finished building the actor (ie still in startup)
-                thread::yield_now();
-            }
-        }
+        let liveliness = self.runtime_state.read();
+        liveliness.is_running(self.ident, &mut accept_fn).unwrap_or(true)
     }
     /// Requests a graph stop for the actor.
     ///

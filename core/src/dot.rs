@@ -132,9 +132,11 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             let escaped = node.tooltip.replace('"', "'").replace('\n', "\\n");
             dot_graph.put_slice(escaped.as_bytes());
         }
-        dot_graph.put_slice(b"\", color=");
-        dot_graph.put_slice(node.color.as_bytes());
-        dot_graph.put_slice(b", penwidth=");
+        if !node.color.is_empty() {
+            dot_graph.put_slice(b"\", color=\"");
+            dot_graph.put_slice(node.color.as_bytes());
+        }
+        dot_graph.put_slice(b"\", penwidth=");
         dot_graph.put_slice(node.pen_width.as_bytes());
         dot_graph.put_slice(b" ");
 
@@ -240,7 +242,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             crate::channel_stats_labels::format_compressed_u128(e.stats_computer.capacity as u128, &mut tooltip);
             let _ = write!(tooltip, " | Vol: {} (Total: ", e.stats_computer.last_total);
             crate::channel_stats_labels::format_compressed_u128(e.stats_computer.total_consumed, &mut tooltip);
-            let _ = write!(tooltip, ") | Color: {}\\n", e.color);
+            let _ = write!(tooltip, ") | Sat: {}% | Color: {}\\n", (e.saturation_score * 100.0) as usize, e.color);
 
             ids.push(e.id);
             sum_saturation += e.saturation_score;
@@ -347,16 +349,18 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             let n = edges.len();
             let sum_traffic: f64 = edges.iter().map(|e| e.saturation_score * e.sub_capacities.iter().sum::<usize>() as f64).sum();
             let bundle_capacity = (n as f64) * p_key.sub_capacities.iter().sum::<usize>() as f64;
-            let _bundle_util = if bundle_capacity > 0.0 { (sum_traffic / bundle_capacity).clamp(0.0, 1.0) } else { 0.0 };
+            let bundle_util = if bundle_capacity > 0.0 { (sum_traffic / bundle_capacity).clamp(0.0, 1.0) } else { 0.0 };
             
             // S-Tier: Element-wise summation of index-aligned totals
             let mut bundle_totals = vec![0u128; edges[0].sub_totals.len()];
+            let mut bundle_volume = 0i64;
             let mut total_memory = 0usize;
             let mut show_mem = false;
             for pe in edges {
                 for (i, val) in pe.sub_totals.iter().enumerate() {
                     bundle_totals[i] += val;
                 }
+                bundle_volume += pe.last_total;
                 total_memory += pe.memory_footprint;
                 show_mem |= pe.show_memory;
             }
@@ -366,7 +370,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             all_labels.dedup();
 
             let label_prefix = p_key.partner.unwrap_or("Bundle");
-            let mut header = format!("{}: {}x", label_prefix, n);
+            let mut header = format!("{}: {}x ({}%)", label_prefix, n, (bundle_util * 100.0) as usize);
             if p_key.sub_capacities.len() > 1 {
                 header.push('(');
                 for (i, cap) in p_key.sub_capacities.iter().enumerate() {
@@ -383,7 +387,9 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 crate::channel_stats_labels::format_compressed_u128(total_memory as u128, &mut header);
                 header.push_str("B)");
             }
-            header.push_str("\\nTotal: ");
+            header.push_str("\\nVol: ");
+            crate::channel_stats_labels::format_compressed_u128(bundle_volume as u128, &mut header);
+            header.push_str(" Total: ");
             for (i, total) in bundle_totals.iter().enumerate() {
                 if i > 0 { header.push_str(", "); }
                 crate::channel_stats_labels::format_compressed_u128(*total, &mut header);
@@ -411,7 +417,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                     let _ = write!(bundle_tooltip, "... and {} more", n - 10);
                     break;
                 }
-                let _ = write!(bundle_tooltip, "IDs={:?}: Vol={} ({}%)\\n", e.ids, e.last_total, (e.saturation_score * 100.0) as usize);
+                bundle_tooltip.push_str(&e.tooltip);
             }
 
             let is_partnered = p_key.partner.is_some();
@@ -538,6 +544,7 @@ pub fn apply_node_def(
                 remote_details: None,
                 thread_info_cache: None,
                 total_count_restarts: 0,
+                bool_stalled: false,
                 work_info: None
             }
         });
@@ -894,12 +901,14 @@ mod dot_tests {
     #[test]
     fn test_node_compute_and_refresh() {
         let actor_status = ActorStatus {
+            ident: Default::default(),
             await_total_ns: 100,
             unit_total_ns: 200,
             total_count_restarts: 1,
             iteration_start: 0,
             iteration_sum: 0,
             bool_stop: false,
+            bool_stalled: false,
             calls: [0;6],
             thread_info: None,
             bool_blocking: false,
@@ -916,6 +925,7 @@ mod dot_tests {
             remote_details: None,
             thread_info_cache: None,
             total_count_restarts: 0,
+            bool_stalled: false,
             work_info: None
         };
         node.compute_and_refresh(actor_status, total_work_ns);
@@ -960,6 +970,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
 
                 }
@@ -1013,6 +1024,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
 
                 }
@@ -1046,9 +1058,9 @@ mod dot_tests {
         let vec = dot_graph.to_vec();
         let result = String::from_utf8(vec).expect("Invalid UTF-8");
         
-        assert!(result.contains("label=\"edge1\""),"found: {}",result);
-        assert!(result.contains("tooltip=\"CH#1: Data | Cap: 0 | Vol: 0 (Total: 0) | Color: grey\\n\""),"found: {}",result);
-        assert!(result.contains("color=\"grey\""),"found: {}",result);
+        assert!(result.contains("label=\"edge1\""), "found: {}", result);
+        assert!(result.contains("tooltip=\"CH#1: Data | Cap: 0 | Vol: 0 (Total: 0) | Sat: 0% | Color: grey\\n\""), "found: {}", result);
+        assert!(result.contains("color=\"grey\""), "found: {}", result);
     }
 
     #[test]
@@ -1084,7 +1096,7 @@ mod dot_tests {
     }
 
     // #[test]
-    // fn test_frame_history_will_span_into_next_block() {
+    // fn test_will_span_into_next_block() {
     //     let mut frame_history = FrameHistory::new(1000);
     //     frame_history.buffer_bytes_count = HISTORY_WRITE_BLOCK_SIZE;
     //     assert!(frame_history.will_span_into_next_block());
@@ -1141,12 +1153,14 @@ mod dot_tests {
     fn test_node_compute_refresh_with_load_calculation() {
         // Test the load calculation branch (lines 66-69)
         let actor_status = ActorStatus {
+            ident: Default::default(),
             await_total_ns: 100,
             unit_total_ns: 500,
             total_count_restarts: 1,
             iteration_start: 10, // Non-zero to trigger load calculation
             iteration_sum: 0,
             bool_stop: false,
+            bool_stalled: false,
             calls: [0;6],
             thread_info: None,
             bool_blocking: false,
@@ -1163,6 +1177,7 @@ mod dot_tests {
             remote_details: None,
             thread_info_cache: None,
             total_count_restarts: 0,
+            bool_stalled: false,
             work_info: None
 
         };
@@ -1186,6 +1201,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
 
                 }
@@ -1236,6 +1252,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
 
                 }
@@ -1277,6 +1294,7 @@ mod dot_tests {
                     remote_details: Some(remote_details),
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
 
                 }
@@ -1314,6 +1332,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
 
                 },
@@ -1328,6 +1347,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
 
                 }
@@ -1588,6 +1608,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
 
                 }
@@ -1687,6 +1708,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
                 },
                 Node {
@@ -1700,6 +1722,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
                 },
             ],
@@ -1714,10 +1737,10 @@ mod dot_tests {
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
-        assert!(result.contains("Bundle: 5x10\\nTotal: 0\\nTestType test_label"));
+        assert!(result.contains("Bundle: 5x (10%)10\\nVol: 50 Total: 0\\nTestType test_label"));
         assert!(result.contains("penwidth=4"));
         assert!(result.contains("style=\"bold,dashed\""));
-        assert!(result.contains("tooltip=\"Bundle Details (5 partnered edges):\\nIDs=[0]: Vol=10 (10%)\\n"));
+        assert!(result.contains("tooltip=\"Bundle Details (5 partnered edges):\\nCH#0: TestType | Cap: 10 | Vol: 10 (Total: 0) | Sat: 10% | Color: green\\n"));
     }
 
     #[test]
@@ -1767,7 +1790,7 @@ mod dot_tests {
         // Red group (2) is below threshold (4), so it stays discrete
         assert!(result.contains("color=\"red\"")); 
         // Grey group (6) is above threshold, so it bundles
-        assert!(result.contains("Bundle: 6x64\\nTotal: 0\\nAttestationEvent shared"));
+        assert!(result.contains("Bundle: 6x (0%)64\\nVol: 150 Total: 0\\nAttestationEvent shared"));
         assert!(result.contains("color=\"grey\""));
     }
 
@@ -1799,6 +1822,7 @@ mod dot_tests {
             });
         }
 
+        let state = Duration::from_secs(0); // Dummy for state
         let state = DotState {
             nodes: vec![
                 Node {
@@ -1812,6 +1836,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
                 },
                 Node {
@@ -1825,6 +1850,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
                 },
             ],
@@ -1888,6 +1914,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
                 },
                 Node {
@@ -1901,6 +1928,7 @@ mod dot_tests {
                     remote_details: None,
                     thread_info_cache: None,
                     total_count_restarts: 0,
+                    bool_stalled: false,
                     work_info: None
                 },
             ],
@@ -2027,7 +2055,7 @@ mod dot_tests {
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
-        assert!(result.contains("MyStream: 5x(10, 100)"), "{}", result);
+        assert!(result.contains("MyStream: 5x (0%)(10, 100)\\nVol: 0 Total: 0, 0"), "{}", result);
         assert!(result.contains("Capacities: (10, 100)"), "{}", result);
     }
 }

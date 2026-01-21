@@ -8,7 +8,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use aeron::aeron::Aeron;
-use futures_util::lock::Mutex;
 use futures_util::select;
 use log::*;
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
@@ -25,6 +24,7 @@ use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::loop_driver::pin_mut;
 use crate::simulate_edge::IntoSimRunner;
+use futures_util::lock::Mutex;
 
 impl SteadyActorShadow {
     /// Converts this actor shadow into a local monitor (spotlight) instance.
@@ -121,7 +121,7 @@ impl SteadyActorShadow {
             _team_id: self.team_id,
             is_running_iteration_count: 0,
             regeneration: self.regeneration,
-            aeron_meda_driver: self.aeron_meda_driver.clone(),
+            aeron_media_driver: self.aeron_meda_driver.clone(),
             use_internal_behavior: self.use_internal_behavior,
             shutdown_barrier: self.shutdown_barrier.clone(),
 
@@ -400,7 +400,7 @@ pub trait SteadyActor {
     async fn peek_async<'a, T: RxCore>(
         &'a self,
         this: &'a mut T,
-    ) -> Option<T::MsgPeek<'a>>;
+        ) -> Option<T::MsgPeek<'a>>;
 
     /// Sends messages from an iterator to the transmitter until it is full.
     ///

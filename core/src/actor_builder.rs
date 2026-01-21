@@ -223,6 +223,19 @@ struct FutureBuilderType {
     stack_size: Option<usize>,
 }
 
+/// Represents a stable slot for an actor's execution state within a troupe.
+struct ActorSlot {
+    fun: ActorRuntime,
+    ctx: SteadyActorShadow,
+    arch: SteadyContextArchetype<DynCall>,
+}
+
+/// Represents the outcome of an actor's execution, returning the slot for potential restart.
+struct ActorSlotOutcome {
+    slot: ActorSlot,
+    result: Result<Result<(), Box<dyn Error>>, Box<dyn Any + Send>>,
+}
+
 impl FutureBuilderType {
     /// Creates a new `FutureBuilderType` instance.
     ///
@@ -314,7 +327,7 @@ impl TroupeGuard {
     ///
     /// # Returns
     ///
-    /// The `TroupeGuard` instance with the updated name.
+    /// THE `TroupeGuard` instance with the updated name.
     pub fn with_name(mut self, name: &str) -> Self {
         if let Some(ref mut t) = self.troupe {
             t.with_name(name);
@@ -419,7 +432,7 @@ impl Troupe {
     /// # Returns
     ///
     /// The number of actors spawned.
-    fn spawn(mut self) -> usize {
+    fn spawn(self) -> usize {
         let count = Arc::new(AtomicUsize::new(0));
         if self.future_builder.is_empty() {
             return 0;
@@ -431,81 +444,92 @@ impl Troupe {
         let max_stack_size = self.future_builder.iter().filter_map(|f| f.stack_size).max();
 
         // 1. ATOMIC REGISTRATION: Register all actors on the main thread.
-        // This prevents deadlocks where the troupe thread waits for a lock the main thread holds.
-        // We must do this while we are still on the caller's thread to ensure the Graph is 
-        // fully aware of all "voters" before any thread starts polling for liveliness.
-        let mut tasks = Vec::with_capacity(self.future_builder.len());
-        for f_builder in self.future_builder.into_iter() {
-            let runtime = f_builder.register();
-            let context = f_builder.context(team_id);
-            let archetype = f_builder.fun.clone();
-            tasks.push((runtime, context, archetype));
+        // This ensures the Graph is fully aware of all "voters" before any thread starts polling.
+        let slots: Vec<ActorSlot> = self
+            .future_builder
+            .into_iter()
+            .map(|f| ActorSlot {
+                fun: f.register(),
+                ctx: f.context(team_id),
+                arch: f.fun.clone(),
+            })
+            .collect();
+
+        count_task.store(slots.len(), Ordering::SeqCst);
+
+        let thread_name = self.name.clone()
+            .unwrap_or_else(|| format!("Troupe-{}", team_id));
+
+        let mut thread_builder = std::thread::Builder::new().name(thread_name);
+        if let Some(size) = max_stack_size {
+            thread_builder = thread_builder.stack_size(size);
         }
-        count_task.store(tasks.len(), Ordering::SeqCst);
 
-        core_exec::block_on(async move {
-            //two so we can support blocking calls.
-            let _ = core_exec::spawn_more_threads(2).await;
-            
-            let thread_name = self.name.clone()
-                .unwrap_or_else(|| format!("Troupe-{}", team_id));
+        let handle = thread_builder.spawn(move || {
+            let super_task = async move {
+                #[cfg(feature = "core_affinity")]
+                if let Err(e) = pin_thread_to_core(team_id) {
+                    eprintln!("Failed to pin thread to core {}: {:?}", team_id, e);
+                }
 
-            let mut thread_builder = std::thread::Builder::new().name(thread_name);
-            if let Some(size) = max_stack_size {
-                thread_builder = thread_builder.stack_size(size);
-            }
-            let handle = thread_builder.spawn(move || {
-                // 2. SIGNAL-FIRST: Tell the main thread we are alive before doing anything else.
-                // This ensures the main thread is never blocked by actor initialization logic.
+                // 2. SIGNAL-FIRST: Tell the main thread we are alive.
                 let _ = local_send.send(());
 
-                let super_task = async move {
-                    #[cfg(feature = "core_affinity")]
-                    if let Err(e) = pin_thread_to_core(team_id) {
-                        eprintln!("Failed to pin thread to core {}: {:?}", team_id, e);
-                    }
+                let mut futures = FuturesUnordered::new();
+                for slot in slots {
+                    futures.push(Self::build_async_fun(slot));
+                }
 
-                    let mut futures = FuturesUnordered::new();
-                    for (runtime, mut ctx, arch) in tasks {
-                        futures.push(Box::pin(async move {
-                            loop {
-                                // 3. LOCK-AWAIT SEPARATION: Extract future and drop lock immediately.
-                                // We must never hold a MutexGuard across an .await point in the supervisor.
-                                let fut = {
-                                    let guard = runtime.lock().await;
-                                    guard(ctx.clone())
-                                };
-                                // 4. ISOLATED SUPERVISION: catch_unwind only affects this specific actor.
-                                // If one actor panics, its loop catches it, increments regeneration, and restarts.
-                                // The FuturesUnordered stream remains intact, and other actors continue to be polled.
-                                match AssertUnwindSafe(fut).catch_unwind().await {
-                                    Ok(Ok(_)) => {
-                                        exit_actor_registration(&arch);
-                                        break;
-                                    }
-                                    Ok(Err(e)) => {
-                                        error!("Actor {:?} error: {:?}", ctx.ident, e);
-                                        ctx.regeneration += 1;
-                                    }
-                                    Err(e) => {
-                                        error!("Actor {:?} panic: {:?}", ctx.ident, e);
-                                        ctx.regeneration += 1;
-                                    }
-                                }
-                            }
-                        }));
+                while let Some(outcome) = futures.next().await {
+                    let mut slot = outcome.slot;
+                    match outcome.result {
+                        Ok(Ok(_)) => {
+                            // Actor finished cleanly
+                            exit_actor_registration(&slot.arch);
+                        }
+                        Ok(Err(e)) => {
+                            // Actor returned an Error, restart it
+                            error!("Actor {:?} error: {:?}", slot.ctx.ident, e);
+                            slot.ctx.regeneration += 1;
+                            futures.push(Self::build_async_fun(slot));
+                        }
+                        Err(_) => {
+                            // Actor panicked, restart it
+                            error!("Actor {:?} panicked", slot.ctx.ident);
+                            slot.ctx.regeneration += 1;
+                            futures.push(Self::build_async_fun(slot));
+                        }
                     }
-
-                    while futures.next().await.is_some() { }
-                };
-                core_exec::block_on(super_task);
-            });
-            if let Err(e) = handle {
-                error!("Failed to spawn OS thread for troupe: {}, error: {:?}", team_id, e);
-            }
+                }
+            };
+            core_exec::block_on(super_task);
         });
-        let _ = core_exec::block_on(local_take);
+
+        if let Err(e) = handle {
+            error!("Failed to spawn OS thread for troupe: {}, error: {:?}", team_id, e);
+        } else {
+            // Wait for the troupe thread to signal it has started before returning.
+            let _ = core_exec::block_on(local_take);
+        }
         count.load(Ordering::SeqCst)
+    }
+
+    fn build_async_fun(
+        slot: ActorSlot,
+    ) -> Pin<Box<dyn Future<Output = ActorSlotOutcome>>> {
+        let fun = slot.fun.clone();
+        Box::pin(async move {
+            let result = AssertUnwindSafe(async {
+                let f = {
+                    let guard = fun.lock().await;
+                    guard(slot.ctx.clone())
+                };
+                f.await
+            })
+            .catch_unwind()
+            .await;
+            ActorSlotOutcome { slot, result }
+        })
     }
 }
 
@@ -524,7 +548,7 @@ impl Troupe {
 ///
 /// # Returns
 ///
-/// The result of the future execution.
+/// THE result of the future execution.
 pub fn launch_actor<F: Future<Output = T>, T>(future: F) -> T {
     core_exec::block_on(future)
 }
@@ -1017,7 +1041,7 @@ impl ActorBuilder {
                         default_core
                     };
                     let _core = if let Some(mut balancer) = core_balancer {
-                        balancer.allocate_core(&excluded_cores)
+                        balancer.allocate_core(excluded_cores.as_slice())
                     } else if !excluded_cores.is_empty() {
                         if !excluded_cores.contains(&default) {
                             default
@@ -1176,13 +1200,23 @@ impl ActorBuilder {
             info!(" Actor {:?} defined ", immutable_identity);
         }
         let immutable_actor_metadata = self.build_actor_metadata(immutable_identity).clone();
+
+        // Pre-register with telemetry to avoid "unknown" labels if the actor hangs at startup
+        {
+            let mut tx = self.telemetry_tx.write();
+            tx.push(CollectorDetail {
+                ident: immutable_identity,
+                telemetry_take: VecDeque::new(),
+            });
+        }
+
         let oneshot_shutdown_vec_for_node = oneshot_shutdown_vec.clone();
         let immutable_node_tx_rx = core_exec::block_on(async move {
             let mut backplane = backplane.lock().await;
             if let Some(pb) = &mut *backplane {
                 let (shutdown_tx, shutdown_rx) = oneshot::channel();
                 core_exec::block_on(async move {
-                    let mut v = oneshot_shutdown_vec_for_node.lock().await;
+                    let mut v: MutexGuard<'_, Vec<Sender<()>>> = oneshot_shutdown_vec_for_node.lock().await;
                     v.push(shutdown_tx);
                 });
                 pb.register_node(immutable_identity.label, steady_config::BACKPLANE_CAPACITY, shutdown_rx);
@@ -1195,7 +1229,7 @@ impl ActorBuilder {
             let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
             let oneshot_shutdown_vec = oneshot_shutdown_vec.clone();
             core_exec::block_on(async move {
-                let mut v = oneshot_shutdown_vec.lock().await;
+                let mut v: MutexGuard<'_, Vec<Sender<()>>> = oneshot_shutdown_vec.lock().await;
                 v.push(send_shutdown_notice_to_periodic_wait);
             });
             Arc::new(Mutex::new(oneshot_shutdown))

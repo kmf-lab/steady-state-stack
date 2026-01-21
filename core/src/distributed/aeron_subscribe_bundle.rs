@@ -23,6 +23,8 @@ use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
 use aeron::subscription::Subscription;
+use aeron::aeron::Aeron;
+use futures_util::lock::MutexGuard;
 use log::*;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::aqueduct_stream::{SteadyStreamTxBundle, StreamIngress};
@@ -242,7 +244,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
     info!("waiting on media driver");
     let aeron = actor.aeron_media_driver().expect("media driver available");
     info!("register subscriptions A");
-    let mut lock = aeron.lock().await;
+    let mut lock: MutexGuard<'_, Aeron> = aeron.lock().await;
     info!("register subscriptions B");
 
     // Register subscriptions if not already present.
@@ -273,7 +275,10 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
             let mut found = false;
             while actor.is_running(&mut || tx_guards.mark_closed()) && !found {
                 trace!("looking for subscription {}", id);
-                let sub = { aeron.lock().await.find_subscription(id) };
+                let sub = { 
+                    let mut lock: MutexGuard<'_, Aeron> = aeron.lock().await;
+                    lock.find_subscription(id) 
+                };
                 match sub {
                     Err(e) => {
                         if actor.is_liveliness_stop_requested() {
@@ -289,7 +294,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
                     }
                     Ok(subscription) => {
                         trace!("found subscription {}", id);
-                        match Arc::try_unwrap(subscription) {
+                        match Arc::<std::sync::Mutex<Subscription>>::try_unwrap(subscription) {
                             Ok(mutex) => match mutex.into_inner() {
                                 Ok(subscription) => {
                                     subs[f] = Ok(subscription);

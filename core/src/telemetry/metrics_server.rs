@@ -129,23 +129,35 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
 
 
     while ctrl.is_running(&mut || i!(rxg.is_empty()) && i!(rxg.is_closed())) {
-        //TODO: merge the above connection loop into this wait so we only have 1 thread and 1 loop.
-        let _clean = await_for_all!( ctrl.wait_avail(&mut rxg,1) );
+        // 1. Wait for at least one message to arrive in the telemetry channel.
+        let _clean = await_for_all!( ctrl.wait_avail(&mut rxg, 1) );
 
         let flush_all = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped]);
+        let mut burst_processed = false;
 
-        //we have many bursts so we must consume all since each actor shows up as a single
-        //full stats show up as 2 mesages. only on volume data however do we update the frame
+        // 2. Consume the entire burst of messages. 
+        // We process all pending updates (NodeDef, ProcessData, VolumeData) to ensure 
+        // our internal `metrics_state` is fully up-to-date before we attempt to 
+        // generate any expensive string-based reports.
         while let Some(msg) = ctrl.try_take(&mut rxg) {
-            process_msg(msg
-                        , &mut metrics_state
-                        , &mut history
-                        , &mut frames
-                        , frame_rate_ms
-                        , flush_all
-                        , &rxg
-                        , state.clone()).await;
+            burst_processed = true;
+            process_msg(msg, &mut metrics_state, &mut history, frame_rate_ms).await;
+        }
 
+        // 3. After the burst is processed, generate reports exactly once.
+        if burst_processed {
+            // We only rebuild the DOT graph and Prometheus text if we are shutting down 
+            // OR if enough time has passed to satisfy our target frame rate.
+            let flush_frame = flush_all || frames.last_generated_graph.elapsed().as_millis() >= frame_rate_ms as u128;
+            
+            generate_reports(
+                &mut metrics_state, 
+                &mut history, 
+                &mut frames, 
+                flush_all, 
+                state.clone(), 
+                flush_frame
+            ).await;
         }
     }
     //force all the data we may be holding to be written to history and telemetry before we exit
@@ -274,16 +286,13 @@ async fn handle_new_requests (
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn process_msg(msg: DiagramData
-                     , metrics_state: &mut DotState
-                     , history: &mut FrameHistory
-                     , frames: &mut DotGraphFrames
-                     , frame_rate_ms: u64
-                     , flush_all: bool
-                     , rxg: &MutexGuard<'_, Rx<DiagramData>>
-                     , state: Arc<Mutex<MetricState>>
-
+/// Processes a single telemetry message to update the internal `DotState`.
+/// This function is designed to be called rapidly in a loop to consume bursts.
+async fn process_msg(
+    msg: DiagramData,
+    metrics_state: &mut DotState,
+    history: &mut FrameHistory,
+    frame_rate_ms: u64,
 ) {
     match msg {
         DiagramData::NodeDef(seq, defs) => {
@@ -302,8 +311,7 @@ async fn process_msg(msg: DiagramData
             }).sum();
 
             actor_status.iter().enumerate().for_each(|(i, status)| {
-                if metrics_state.nodes.len()>i && metrics_state.nodes[i].id.is_some()   {
-                    //trace!("metric_sserver call: {} {:?}",i, metrics_state.nodes[i].id);
+                if metrics_state.nodes.len() > i && metrics_state.nodes[i].id.is_some() {
                     metrics_state.nodes[i].compute_and_refresh(*status, total_work_ns);
                 }
             });
@@ -319,9 +327,6 @@ async fn process_msg(msg: DiagramData
             if steady_config::TELEMETRY_HISTORY {
                 history.apply_edge(&total_take_send, frame_rate_ms);
             }
-            let flush_frame = flush_all || rxg.is_empty() || frames.last_generated_graph.elapsed().as_millis() >= 2 * frame_rate_ms as u128;
-
-            generate_reports(metrics_state, history, frames, flush_all, state, flush_frame).await;
         },
     }
 }
@@ -861,9 +866,11 @@ mod http_telemetry_tests {
                 iteration_start: 0,
                 iteration_sum: 0,
                 bool_stop: false,
+                bool_stalled: false,
                 calls: [0; 6],
                 thread_info: None,
                 bool_blocking: false,
+                ident: ActorIdentity::new(0, "test_actor", None),
             }
         ).collect();
 

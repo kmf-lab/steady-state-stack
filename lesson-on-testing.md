@@ -56,7 +56,7 @@ The StageManager is the "God-mode" controller for your graph. It is only availab
 
 The Side-Channel Architecture
 
-平衡 When a graph is in testing mode, every actor is automatically assigned a Side-Channel.
+When a graph is in testing mode, every actor is automatically assigned a Side-Channel.
 
  1 The Test Thread uses the StageManager to send commands (e.g., "Send this message into the graph").
  2 The Actor uses a SideChannelResponder to receive and execute those commands.
@@ -84,7 +84,7 @@ fn test_full_system_flow() -> Result<(), Box<dyn Error>> {
 
         // 4. Shutdown
         drop(stage); // Must drop guard before shutdown
-        graph.request_shutdown();
+        graph.request_shutdown(); // Required for test to exit !
         graph.block_until_stopped(Duration::from_secs(2))
     })
 }

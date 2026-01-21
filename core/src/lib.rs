@@ -28,24 +28,10 @@
 
 #![warn(missing_docs)]
 
-/// Ensures mutual exclusivity of executor features to prevent incompatible configurations.
-///
-/// The following feature gate checks enforce that only one executor feature is enabled at a time.
-#[cfg(all(feature = "proactor_nuclei", feature = "exec_async_std"))]
-compile_error!("Cannot enable both 'proactor_nuclei' and 'exec_async_std' features at the same time");
-
-#[cfg(all(feature = "proactor_nuclei", feature = "proactor_tokio"))]
-compile_error!("Cannot enable both 'proactor_nuclei' and 'proactor_tokio' features at the same time");
-
-#[cfg(all(feature = "exec_async_std", feature = "proactor_tokio"))]
-compile_error!("Cannot enable both 'exec_async_std' and 'proactor_tokio' features at the same time");
-
 #[cfg(all(windows, any(feature = "proactor_nuclei", feature = "proactor_tokio")))]
 compile_error!("The 'proactor_nuclei' and 'proactor_tokio' features are not supported on Windows due to upstream issues in the nuclei crate. Please use 'exec_async_std' instead.");
 
 /// Requires at least one executor feature to be enabled for the framework to function.
-///
-/// This check ensures that an executor is selected for running actors and futures.
 #[cfg(not(any(feature = "proactor_nuclei", feature = "proactor_tokio", feature = "exec_async_std")))]
 compile_error!("Must enable one executor feature: 'proactor_nuclei', 'proactor_tokio', or 'exec_async_std'");
 
@@ -109,7 +95,7 @@ pub(crate) use abstract_executor_nuclei::core_exec;
 /// Executor abstraction for the `async-std` runtime.
 ///
 /// Available when the `exec_async_std` feature is enabled.
-#[cfg(feature = "exec_async_std")]
+#[cfg(all(feature = "exec_async_std", not(any(feature = "proactor_nuclei", feature = "proactor_tokio"))))]
 mod abstract_executor_async_std;
 
 use std::any::Any;
@@ -519,6 +505,333 @@ impl LogLevel {
     }
 }
 
+/// Constant representing an unknown monitor state.
+///
+/// Used in monitoring logic to indicate an undefined or uninitialized state.
+pub const MONITOR_UNKNOWN: usize = usize::MAX;
+
+/// Constant representing a "not monitored" state.
+///
+/// Used in monitoring logic to differentiate from `MONITOR_UNKNOWN`.
+pub const MONITOR_NOT: usize = MONITOR_UNKNOWN - 1;
+
+/// Represents the behavior of the system when a channel is saturated (i.e., full).
+///
+/// Defines how the system responds when attempting to send to a full channel, managing backpressure.
+#[derive(Default, PartialEq, Eq, Debug, Copy, Clone)]
+pub enum SendSaturation {
+    /// Blocks the sender until space is available in the channel.
+    AwaitForRoom,
+
+    /// Returns an error immediately if the channel is full.
+    #[deprecated(note = "Use try_send instead")]
+    ReturnBlockedMsg,
+
+    /// Logs a warning and waits for space (default behavior).
+    #[default]
+    WarnThenAwait,
+
+    /// Logs a debug warning and waits, optimized for release builds.
+    DebugWarnThenAwait,
+}
+
+/// Represents a standard deviation value for metrics and alerts.
+///
+/// Encapsulates a standard deviation within a valid range (0.0, 10.0).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StdDev(f32);
+
+impl StdDev {
+    /// Creates a new `StdDev` if the value is within (0.0, 10.0).
+    pub fn new(value: f32) -> Option<Self> {
+        if value > 0.0 && value < 10.0 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Creates a `StdDev` of 1.0.
+    pub fn one() -> Self {
+        Self(1.0)
+    }
+
+    /// Creates a `StdDev` of 1.5.
+    pub fn one_and_a_half() -> Self {
+        Self(1.5)
+    }
+
+    /// Creates a `StdDev` of 2.0.
+    pub fn two() -> Self {
+        Self(2.0)
+    }
+
+    /// Creates a `StdDev` of 2.5.
+    pub fn two_and_a_half() -> Self {
+        Self(2.5)
+    }
+
+    /// Creates a `StdDev` of 3.0.
+    pub fn three() -> Self {
+        Self(3.0)
+    }
+
+    /// Creates a `StdDev` of 4.0.
+    pub fn four() -> Self {
+        Self(4.0)
+    }
+
+    /// Creates a custom `StdDev` if within (0.0, 10.0).
+    pub fn custom(value: f32) -> Option<Self> {
+        Self::new(value)
+    }
+
+    /// Retrieves the standard deviation value.
+    pub fn value(&self) -> f32 {
+        self.0
+    }
+}
+
+/// Base trait for all metrics used in telemetry and Prometheus.
+pub trait Metric: PartialEq {}
+
+/// Trait for metrics suitable for data channels.
+pub trait DataMetric: Metric {}
+
+/// Trait for metrics suitable for computational actors.
+pub trait ComputeMetric: Metric {}
+
+impl Metric for Duration {}
+
+/// Represents the color of an alert.
+///
+/// Indicates the severity of an alert in the Steady State framework.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AlertColor {
+    /// Warning level alert (non-critical).
+    Yellow,
+
+    /// Elevated alert level (serious).
+    Orange,
+
+    /// Critical alert level (immediate action required).
+    Red,
+}
+
+/// Represents a trigger condition for a metric.
+///
+/// Defines conditions that trigger alerts based on metric values.
+///
+/// # Type Parameters
+/// - `T`: The metric type implementing `Metric`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Trigger<T>
+where
+    T: Metric,
+{
+    /// Triggers when the average exceeds the threshold.
+    AvgAbove(T),
+
+    /// Triggers when the average falls below the threshold.
+    AvgBelow(T),
+
+    /// Triggers when above mean plus standard deviations.
+    StdDevsAbove(StdDev, T),
+
+    /// Triggers when below mean minus standard deviations.
+    StdDevsBelow(StdDev, T),
+
+    /// Triggers when above a percentile threshold.
+    PercentileAbove(Percentile, T),
+
+    /// Triggers when below a percentile threshold.
+    PercentileBelow(Percentile, T),
+}
+
+/// Builder for the orchestration environment, ensuring sufficient stack size.
+#[derive(Clone, Debug)]
+pub struct SteadyRunner {
+    stack_size: usize,
+    name: String,
+    loglevel: Option<LogLevel>,
+    log_file_config: Option<LogFileConfig>,
+    default_actor_stack_size: Option<usize>,
+    barrier_size: Option<usize>,
+    telemetry_rate_ms: Option<u64>,
+    telemetry_colors: Option<(String, String)>,
+    for_test: bool,
+    bundle_floor_size: Option<usize>,
+}
+
+impl SteadyRunner {
+    /// Creates a new SteadyRunner with default settings.
+    pub fn test_build() -> Self {
+        Self {
+            stack_size: 16 * 1024 * 1024, // 16 MiB default for main
+            name: "steady-orchestrator".to_string(),
+            loglevel: None,
+            log_file_config: None,
+            default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
+            barrier_size: None,
+            telemetry_rate_ms: None,
+            telemetry_colors: None,
+            for_test: true,
+            bundle_floor_size: None,
+        }
+    }
+    /// Creates a new SteadyRunner with default settings.
+    pub fn release_build() -> Self {
+        Self {
+            stack_size: 16 * 1024 * 1024, // 16 MiB default for main
+            name: "steady-orchestrator".to_string(),
+            loglevel: None,
+            log_file_config: None,
+            default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
+            barrier_size: None,
+            telemetry_rate_ms: None,
+            telemetry_colors: None,
+            for_test: false,
+            bundle_floor_size: None,
+        }
+    }
+
+
+    /// Sets the stack size for the orchestration thread.
+    pub fn with_stack_size(mut self, bytes: usize) -> Self {
+        self.stack_size = bytes;
+        self
+    }
+
+    /// Sets the logging level for the application.
+    pub fn with_logging(mut self, level: LogLevel) -> Self {
+        self.loglevel = Some(level);
+        self
+    }
+
+    /// Sets the file logging configuration for the application.
+    pub fn with_file_logging(mut self, directory: &str, base_name: &str, max_size_bytes: u64, keep_count: usize, delete_old_on_start: bool) -> Self {
+        self.log_file_config = Some(LogFileConfig {
+            directory: directory.to_string(),
+            base_name: base_name.to_string(),
+            max_size_bytes,
+            keep_count,
+            delete_old_on_start,
+        });
+        self
+    }
+
+    /// Sets the default actor stack size for the graph.
+    pub fn with_default_actor_stack_size(mut self, size: usize) -> Self {
+        self.default_actor_stack_size = Some(size);
+        self
+    }
+
+    /// Sets the size of the shutdown barrier for the graph.
+    pub fn with_shutdown_barrier(mut self, size: usize) -> Self {
+        self.barrier_size = Some(size);
+        self
+    }
+
+    /// Sets the telemetry rate for the graph.
+    pub fn with_telemetry_rate_ms(mut self, ms: u64) -> Self {
+        self.telemetry_rate_ms = Some(ms);
+        self
+    }
+
+    /// Sets the telemetry top bar colors (primary and secondary hex strings).
+    pub fn with_telemetry_colors(mut self, primary_color: &str, secondary_color: &str) -> Self {
+        self.telemetry_colors = Some((primary_color.to_string(), secondary_color.to_string()));
+        self
+    }
+
+    /// Sets the bundle floor size for the graph.
+    pub fn with_bundle_floor_size(mut self, size: usize) -> Self {
+        self.bundle_floor_size = Some(size);
+        self
+    }
+
+    /// Spawns a guarded thread, initializes a production graph, and executes the provided closure.
+    /// The result (including errors) from the closure is propagated back to the caller as a boxed,
+    /// thread-safe error. Panics in the thread are unwound (propagated) to the calling thread.
+    pub fn run<A, F>(
+        self,
+        args: A,
+        f: F,
+    ) -> Result<(), Box<dyn std::error::Error>>
+    where
+        A: Any + Send + Sync + 'static,
+        F: FnOnce(Graph) -> Result<(), Box<dyn std::error::Error>> + std::marker::Send + 'static,
+    {
+
+        let builder = std::thread::Builder::new()
+                .name(self.name)
+                .stack_size(self.stack_size);
+
+        // Spawn the thread and capture its join handle
+        let handle = builder.spawn(move || {
+            // Initialize logging if specified; ignore errors to avoid masking closure failures
+            if let Some(level) = self.loglevel {
+                let _ = init_logging(level, self.log_file_config);
+            }
+
+            let mut graph = if self.for_test {
+                               GraphBuilder::for_testing()
+                             } else {
+                               GraphBuilder::for_production()
+                            };
+
+
+            if let Some(size) = self.default_actor_stack_size {
+                graph = graph.with_default_actor_stack_size(size);
+            }
+            if let Some(size) = self.barrier_size {
+                graph = graph.with_shutdown_barrier(size);
+            }
+            if let Some(rate) = self.telemetry_rate_ms {
+                graph = graph.with_telemtry_production_rate_ms(rate);
+            }
+            if let Some((ref c1, ref c2)) = self.telemetry_colors {
+                graph = graph.with_telemetry_colors(c1, c2);
+            }
+            if let Some(size) = self.bundle_floor_size {
+                graph = graph.with_bundle_floor_size(size);
+            }
+
+            let graph = graph.build(args);
+
+            // Execute the user closure and return its result directly
+            // (This propagates the Result from f, allowing errors to cross the thread boundary safely)
+            match f(graph) {
+                Ok(()) => Ok(()),
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    Err(Box::new(io::Error::new(io::ErrorKind::Other, err_msg)) as Box<dyn std::error::Error + Send + Sync + 'static>)
+                }
+            }
+        })
+            .expect("Failed to spawn production orchestrator thread");
+
+        // Block and retrieve the thread's result: Inner is the closure's Result, outer is panic info
+        // Unwrap the outer Result; if the thread panicked, resume unwinding to propagate it
+        // If successful, return the inner Result (Ok(()) or Err(Box<dyn Error + Send + Sync + 'static>))
+        match handle.join() {
+            Ok(inner_result) => match inner_result {
+                            Ok(()) => Ok(()),
+                            Err(e) => {
+                                let err_msg = e.to_string();
+                                Err(Box::new(io::Error::new(io::ErrorKind::Other, err_msg)) as Box<dyn std::error::Error + Send + Sync + 'static>)
+                            }
+                        },
+            Err(panic) => {
+                // Thread panicked: Resume unwinding to propagate the panic to the caller
+                std::panic::resume_unwind(panic);
+            }
+        }
+    }
+
+
+}
+
 /// Macro for creating a LocalMonitor from channels.
 ///
 /// Takes a `SteadyContext` and lists of Rx and Tx channels, returning a `LocalMonitor` for telemetry and Prometheus metrics.
@@ -633,1101 +946,4 @@ macro_rules! into_monitor {
 
         $self.into_monitor_internal(rx_mon, tx_mon)
     }};
-}
-
-/// Constant representing an unknown monitor state.
-///
-/// Used in monitoring logic to indicate an undefined or uninitialized state.
-const MONITOR_UNKNOWN: usize = usize::MAX;
-
-/// Constant representing a "not monitored" state.
-///
-/// Used in monitoring logic to differentiate from `MONITOR_UNKNOWN`.
-const MONITOR_NOT: usize = MONITOR_UNKNOWN - 1;
-
-/// Represents the behavior of the system when a channel is saturated (i.e., full).
-///
-/// Defines how the system responds when attempting to send to a full channel, managing backpressure.
-#[derive(Default, PartialEq, Eq, Debug)]
-pub enum SendSaturation {
-    /// Blocks the sender until space is available in the channel.
-    AwaitForRoom,
-
-    /// Returns an error immediately if the channel is full.
-    #[deprecated(note = "Use try_send instead")]
-    ReturnBlockedMsg,
-
-    /// Logs a warning and waits for space (default behavior).
-    #[default]
-    WarnThenAwait,
-
-    /// Logs a debug warning and waits, optimized for release builds.
-    DebugWarnThenAwait,
-}
-
-/// Represents a standard deviation value for metrics and alerts.
-///
-/// Encapsulates a standard deviation within a valid range (0.0, 10.0).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct StdDev(f32);
-
-impl StdDev {
-    /// Creates a new `StdDev` if the value is within (0.0, 10.0).
-    fn new(value: f32) -> Option<Self> {
-        if value > 0.0 && value < 10.0 {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-
-    /// Creates a `StdDev` of 1.0.
-    pub fn one() -> Self {
-        Self(1.0)
-    }
-
-    /// Creates a `StdDev` of 1.5.
-    pub fn one_and_a_half() -> Self {
-        Self(1.5)
-    }
-
-    /// Creates a `StdDev` of 2.0.
-    pub fn two() -> Self {
-        Self(2.0)
-    }
-
-    /// Creates a `StdDev` of 2.5.
-    pub fn two_and_a_half() -> Self {
-        Self(2.5)
-    }
-
-    /// Creates a `StdDev` of 3.0.
-    pub fn three() -> Self {
-        Self(3.0)
-    }
-
-    /// Creates a `StdDev` of 4.0.
-    pub fn four() -> Self {
-        Self(4.0)
-    }
-
-    /// Creates a custom `StdDev` if within (0.0, 10.0).
-    pub fn custom(value: f32) -> Option<Self> {
-        Self::new(value)
-    }
-
-    /// Retrieves the standard deviation value.
-    pub fn value(&self) -> f32 {
-        self.0
-    }
-}
-
-/// Base trait for all metrics used in telemetry and Prometheus.
-pub trait Metric: PartialEq {}
-
-/// Trait for metrics suitable for data channels.
-pub trait DataMetric: Metric {}
-
-/// Trait for metrics suitable for computational actors.
-pub trait ComputeMetric: Metric {}
-
-impl Metric for Duration {}
-
-/// Represents the color of an alert.
-///
-/// Indicates the severity of an alert in the Steady State framework.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AlertColor {
-    /// Warning level alert (non-critical).
-    Yellow,
-
-    /// Elevated alert level (serious).
-    Orange,
-
-    /// Critical alert level (immediate action required).
-    Red,
-}
-
-/// Represents a trigger condition for a metric.
-///
-/// Defines conditions that trigger alerts based on metric values.
-///
-/// # Type Parameters
-/// - `T`: The metric type implementing `Metric`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Trigger<T>
-where
-    T: Metric,
-{
-    /// Triggers when the average exceeds the threshold.
-    AvgAbove(T),
-
-    /// Triggers when the average falls below the threshold.
-    AvgBelow(T),
-
-    /// Triggers when above mean plus standard deviations.
-    StdDevsAbove(StdDev, T),
-
-    /// Triggers when below mean minus standard deviations.
-    StdDevsBelow(StdDev, T),
-
-    /// Triggers when above a percentile threshold.
-    PercentileAbove(Percentile, T),
-
-    /// Triggers when below a percentile threshold.
-    PercentileBelow(Percentile, T),
-}
-
-
-/// Builder for the orchestration environment, ensuring sufficient stack size.
-#[derive(Clone, Debug)]
-pub struct SteadyRunner {
-    stack_size: usize,
-    name: String,
-    loglevel: Option<LogLevel>,
-    log_file_config: Option<LogFileConfig>,
-    default_actor_stack_size: Option<usize>,
-    barrier_size: Option<usize>,
-    telemetry_rate_ms: Option<u64>,
-    telemetry_colors: Option<(String, String)>,
-    for_test: bool,
-    bundle_floor_size: Option<usize>,
-}
-
-
-impl SteadyRunner {
-    /// Creates a new SteadyRunner with default settings.
-    pub fn test_build() -> Self {
-        Self {
-            stack_size: 16 * 1024 * 1024, // 16 MiB default for main
-            name: "steady-orchestrator".to_string(),
-            loglevel: None,
-            log_file_config: None,
-            default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
-            barrier_size: None,
-            telemetry_rate_ms: None,
-            telemetry_colors: None,
-            for_test: true,
-            bundle_floor_size: None,
-        }
-    }
-    /// Creates a new SteadyRunner with default settings.
-    pub fn release_build() -> Self {
-        Self {
-            stack_size: 16 * 1024 * 1024, // 16 MiB default for main
-            name: "steady-orchestrator".to_string(),
-            loglevel: None,
-            log_file_config: None,
-            default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
-            barrier_size: None,
-            telemetry_rate_ms: None,
-            telemetry_colors: None,
-            for_test: false,
-            bundle_floor_size: None,
-        }
-    }
-
-
-    /// Sets the stack size for the orchestration thread.
-    pub fn with_stack_size(&self, bytes: usize) -> Self {
-        let mut result = self.clone();
-        result.stack_size = bytes;
-        result
-    }
-
-    /// Sets the logging level for the application.
-    pub fn with_logging(&self, level: LogLevel) -> Self {
-        let mut result = self.clone();
-        result.loglevel = Some(level);
-        result
-    }
-
-    /// Sets the file logging configuration for the application.
-    pub fn with_file_logging(&self, directory: &str, base_name: &str, max_size_bytes: u64, keep_count: usize, delete_old_on_start: bool) -> Self {
-        let mut result = self.clone();
-        result.log_file_config = Some(LogFileConfig {
-            directory: directory.to_string(),
-            base_name: base_name.to_string(),
-            max_size_bytes,
-            keep_count,
-            delete_old_on_start,
-        });
-        result
-    }
-
-    /// Sets the default actor stack size for the graph.
-    pub fn with_default_actor_stack_size(&self, size: usize) -> Self {
-        let mut result = self.clone();
-        result.default_actor_stack_size = Some(size);
-        result
-    }
-
-    /// Sets the size of the shutdown barrier for the graph.
-    pub fn with_shutdown_barrier(&self, size: usize) -> Self {
-        let mut result = self.clone();
-        result.barrier_size = Some(size);
-        result
-    }
-
-    /// Sets the telemetry rate for the graph.
-    pub fn with_telemetry_rate_ms(&self, ms: u64) -> Self {
-        let mut result = self.clone();
-        result.telemetry_rate_ms = Some(ms);
-        result
-    }
-
-    /// Sets the telemetry top bar colors (primary and secondary hex strings).
-    pub fn with_telemetry_colors(&self, primary_color: &str, secondary_color: &str) -> Self {
-        let mut result = self.clone();
-        result.telemetry_colors = Some((primary_color.to_string(), secondary_color.to_string()));
-        result
-    }
-
-    /// Sets the bundle floor size for the graph.
-    pub fn with_bundle_floor_size(&self, size: usize) -> Self {
-        let mut result = self.clone();
-        result.bundle_floor_size = Some(size);
-        result
-    }
-
-    /// Spawns a guarded thread, initializes a production graph, and executes the provided closure.
-    /// The result (including errors) from the closure is propagated back to the caller as a boxed,
-    /// thread-safe error. Panics in the thread are unwound (propagated) to the calling thread.
-    pub fn run<A, F>(
-        self,
-        args: A,
-        f: F,
-    ) -> Result<(), Box<dyn std::error::Error>>
-    where
-        A: Any + Send + Sync + 'static,
-        F: FnOnce(Graph) -> Result<(), Box<dyn std::error::Error>> + std::marker::Send + 'static,
-    {
-
-        let builder = std::thread::Builder::new()
-                .name(self.name)
-                .stack_size(self.stack_size);
-
-        // Spawn the thread and capture its join handle
-        let handle = builder.spawn(move || {
-            // Initialize logging if specified; ignore errors to avoid masking closure failures
-            if let Some(level) = self.loglevel {
-                let _ = init_logging(level, self.log_file_config);
-            }
-
-            let mut graph = if self.for_test {
-                               GraphBuilder::for_testing()
-                             } else {
-                               GraphBuilder::for_production()
-                            };
-
-
-            if let Some(size) = self.default_actor_stack_size {
-                graph = graph.with_default_actor_stack_size(size);
-            }
-            if let Some(size) = self.barrier_size {
-                graph = graph.with_shutdown_barrier(size);
-            }
-            if let Some(rate) = self.telemetry_rate_ms {
-                graph = graph.with_telemtry_production_rate_ms(rate);
-            }
-            if let Some((ref c1, ref c2)) = self.telemetry_colors {
-                graph = graph.with_telemetry_colors(c1, c2);
-            }
-            if let Some(size) = self.bundle_floor_size {
-                graph = graph.with_bundle_floor_size(size);
-            }
-
-            let graph = graph.build(args);
-
-            // Execute the user closure and return its result directly
-            // (This propagates the Result from f, allowing errors to cross the thread boundary safely)
-            match f(graph) {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    let err_msg = e.to_string();
-                    Err(Box::new(io::Error::new(io::ErrorKind::Other, err_msg)) as Box<dyn std::error::Error + Send + Sync + 'static>)
-                }
-            }
-        })
-            .expect("Failed to spawn production orchestrator thread");
-
-        // Block and retrieve the thread's result: Inner is the closure's Result, outer is panic info
-        // Unwrap the outer Result; if the thread panicked, resume unwinding to propagate it
-        // If successful, return the inner Result (Ok(()) or Err(Box<dyn Error + Send + Sync + 'static>))
-        match handle.join() {
-            Ok(inner_result) => match inner_result {
-                            Ok(()) => Ok(()),
-                            Err(e) => {
-                                let err_msg = e.to_string();
-                                Err(Box::new(io::Error::new(io::ErrorKind::Other, err_msg)) as Box<dyn std::error::Error + Send + Sync + 'static>)
-                            }
-                        },
-            Err(panic) => {
-                // Thread panicked: Resume unwinding to propagate the panic to the caller
-                std::panic::resume_unwind(panic);
-            }
-        }
-    }
-
-
-}
-
-
-
-#[cfg(test)]
-mod lib_tests {
-    use super::*;
-    use std::sync::{Arc, OnceLock};
-    use futures::channel::oneshot;
-    use std::time::Instant;
-    use std::sync::atomic::AtomicUsize;
-    use crate::channel_builder::ChannelBuilder;
-    use parking_lot::RwLock;
-    use futures::lock::Mutex;
-    use steady_actor::SteadyActor;
-    use crate::core_rx::DoubleSlice;
-    use crate::steady_actor_shadow::SteadyActorShadow;
-    use crate::core_tx::TxCore;
-
-    #[test]
-    fn test_std_dev_valid_values() {
-        // Valid range: (0.0, 10.0)
-        assert_eq!(StdDev::new(0.1), Some(StdDev(0.1)));
-        assert_eq!(StdDev::new(1.0), Some(StdDev::one()));
-        assert_eq!(StdDev::new(1.5), Some(StdDev::one_and_a_half()));
-        assert_eq!(StdDev::new(2.0), Some(StdDev::two()));
-        assert_eq!(StdDev::new(2.5), Some(StdDev::two_and_a_half()));
-        assert_eq!(StdDev::new(3.0), Some(StdDev::three()));
-        assert_eq!(StdDev::new(4.0), Some(StdDev::four()));
-        assert_eq!(StdDev::new(5.0), Some(StdDev(5.0)));
-        assert_eq!(StdDev::new(9.9), Some(StdDev(9.9)));
-
-
-    }
-
-    #[test]
-    fn test_std_dev_invalid_values() {
-        // Invalid range: <= 0.0 or >= 10.0
-        assert_eq!(StdDev::new(0.0), None);
-        assert_eq!(StdDev::new(10.0), None);
-        assert_eq!(StdDev::new(10.1), None);
-        assert_eq!(StdDev::new(-1.0), None);
-    }
-
-    #[test]
-    fn test_std_dev_predefined_values() {
-        // Test predefined StdDev values
-        assert_eq!(StdDev::one(), StdDev(1.0));
-        assert_eq!(StdDev::one_and_a_half(), StdDev(1.5));
-        assert_eq!(StdDev::two(), StdDev(2.0));
-        assert_eq!(StdDev::two_and_a_half(), StdDev(2.5));
-        assert_eq!(StdDev::three(), StdDev(3.0));
-        assert_eq!(StdDev::four(), StdDev(4.0));
-    }
-
-    #[test]
-    fn test_std_dev_custom() {
-        // Valid custom value
-        assert_eq!(StdDev::custom(3.3), Some(StdDev(3.3)));
-        // Invalid custom value
-        assert_eq!(StdDev::custom(10.5), None);
-    }
-
-    #[test]
-    fn test_std_dev_value() {
-        // Test value retrieval
-        let std_dev = StdDev(2.5);
-        assert_eq!(std_dev.value(), 2.5);
-    }
-
-
-    #[test]
-    fn test_args_method() {
-        let context = test_steady_context();
-        let args = context.args::<()>();
-        assert!(args.is_some());
-    }
-
-    #[test]
-    fn test_identity_method() {
-        let context = test_steady_context();
-        let identity = context.identity();
-        assert_eq!(identity.id, 0);
-        assert_eq!(identity.label.name, "test_actor");
-    }
-
-    // #[test]
-    // fn test_request_shutdown() {
-    //     let context = test_steady_context();
-    //     let result = context.request_shutdown().await;
-    //     assert!(result);
-    //     let liveliness = context.runtime_state.read();
-    //     assert!(liveliness.is_in_state(&[GraphLivelinessState::StopRequested]));
-    // }
-
-    // #[test]
-    // fn test_is_liveliness_in() {
-    //     let context = test_steady_context();
-    //     let result = context.is_liveliness_in(&[GraphLivelinessState::Running]);
-    //     assert!(result);
-    // }
-
-    #[async_std::test]
-    async fn test_wait_shutdown() {
-        let context = test_steady_context();
-        // To ensure the test completes, we manually trigger the shutdown signal.
-        let mut shutdown_vec = context.oneshot_shutdown_vec.lock().await;
-        if let Some(sender) = shutdown_vec.pop() {
-            let _ = sender.send(());
-        }
-        let result = context.wait_shutdown().await;
-        assert!(result);
-    }
-
-    #[test]
-    fn test_sidechannel_responder() {
-        let context = test_steady_context();
-        let responder = context.sidechannel_responder();
-        assert!(responder.is_none());
-    }
-
-    #[async_std::test]
-    async fn test_send_async() {
-        let (tx, _rx) = create_test_channel::<i32>();
-        let mut context = test_steady_context();
-        let tx = tx.clone();
-        let guard = tx.try_lock();
-        if let Some(mut tx_guard) = guard {
-            let result = context
-                .send_async(&mut tx_guard, 42, SendSaturation::WarnThenAwait)
-                .await;
-            assert!(result.is_sent());
-        }
-    }
-
-    // #[async_std::test]
-    // async fn test_wait_periodic() {
-    //     let context = test_steady_context();
-    //     // Ensure that the method returns by limiting the wait duration
-    //     let result = context.wait_periodic(Duration::from_millis(10)).await;
-    //     assert!(result);
-    // }
-
-    #[test]
-    fn test_into_monitor_macro() {
-        // Prepare context and channels
-        let context = test_steady_context();
-        let (tx, rx) = create_test_channel::<i32>();
-        let tx = tx.clone();
-        let rx = rx.clone();
-        // Use the macro
-        let _monitor = context.into_spotlight([&rx], [&tx]);
-        // Since we cannot directly test the internal state of the monitor,
-        // we ensure that the macro compiles and runs without errors
-        assert!(true);
-    }
-
-    // Helper method to build tx and rx arguments
-    fn build_tx_rx() -> (oneshot::Sender<()>, oneshot::Receiver<()>) {
-        oneshot::channel()
-    }
-
-    // Common function to create a test SteadyContext
-    fn test_steady_context() -> SteadyActorShadow {
-        let (_tx, rx) = build_tx_rx();
-        SteadyActorShadow {
-            runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
-                Default::default(),
-                Default::default()
-            ))),
-            channel_count: Arc::new(AtomicUsize::new(0)),
-            ident: ActorIdentity::new(0, "test_actor", None),
-            args: Arc::new(Box::new(())),
-            all_telemetry_rx: Arc::new(RwLock::new(Vec::new())),
-            actor_metadata: Arc::new(ActorMetaData::default()),
-            oneshot_shutdown_vec: Arc::new(Mutex::new(Vec::new())),
-            oneshot_shutdown: Arc::new(Mutex::new(rx)),
-            node_tx_rx: None,
-            regeneration: 0,
-            last_periodic_wait: Default::default(),
-            is_in_graph: true,
-            actor_start_time: Instant::now(),
-            frame_rate_ms: 1000,
-            show_thread_info: false,
-            team_id: 0,
-            aeron_meda_driver: OnceLock::new(),
-            use_internal_behavior: true,
-            shutdown_barrier: None,
-
-        }
-    }
-
-    fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> Arc<Mutex<Rx<T>>> {
-        let (tx, rx) = create_test_channel();
-
-        let send = tx.clone();
-        if let Some(ref mut send_guard) = send.try_lock() {
-            for item in data {
-                let _ = send_guard.shared_try_send(item);
-            }
-        }
-        rx.clone()
-    }
-
-    fn create_tx<T: std::fmt::Debug>(data: Vec<T>) -> Arc<Mutex<Tx<T>>> {
-        let (tx, _rx) = create_test_channel();
-
-        let send = tx.clone();
-        if let Some(ref mut send_guard) = send.try_lock() {
-            for item in data {
-                let _ = send_guard.shared_try_send(item);
-            }
-        }
-        tx.clone()
-    }
-
-    fn create_test_channel<T: std::fmt::Debug>() -> (LazySteadyTx<T>, LazySteadyRx<T>) {
-        let builder = ChannelBuilder::new(
-            Arc::new(Default::default()),
-            Arc::new(Default::default()),
-            40);
-
-        builder.build_channel::<T>()
-    }
-
-    // Test for try_peek
-    #[test]
-    fn test_try_peek() {
-        let rx = create_rx(vec![1, 2, 3]);
-        let context = test_steady_context();
-        if let Some(mut rx) = rx.try_lock() {
-            let result = context.try_peek(&mut rx);
-            assert_eq!(result, Some(&1));
-        };
-    }
-
-    // Test for take_slice
-    #[test]
-    fn test_take_slice() {
-        let rx = create_rx(vec![1, 2, 3, 4, 5]);
-        let mut slice = [0; 3];
-        let mut context = test_steady_context();
-        if let Some(mut rx) = rx.try_lock() {
-            let count = context.take_slice(&mut rx, &mut slice);
-            assert_eq!(count.item_count(), 3);
-            assert_eq!(slice, [1, 2, 3]);
-        };
-    }
-
-    // Test for try_peek_slice
-    #[test]
-    fn test_try_peek_slice() {
-        let rx = create_rx(vec![1, 2, 3, 4, 5]);
-        let context = test_steady_context();
-        if let Some(mut rx) = rx.try_lock() {
-            let slice = context.peek_slice(&mut rx);
-            assert_eq!(slice.total_len(), 5);
-            assert_eq!(slice.to_vec(), [1, 2, 3, 4, 5]);
-            let mut buf = [0;3];
-            slice.copy_into_slice(&mut buf);
-            assert_eq!(buf, [1, 2, 3]);
-        };
-    }
-
-
-    // Test wait_avail_units_bundle method
-    #[async_std::test]
-    async fn test_wait_avail_units_bundle() {
-        let context = test_steady_context();
-        let mut rx_bundle = RxBundle::<i32>::new();
-        let fut = context.wait_avail_bundle(&mut rx_bundle, 1, 1);
-        assert!(fut.await);
-    }
-
-    // Test wait_avail_units_bundle method
-    #[async_std::test]
-    async fn test_wait_closed_or_avail_units_bundle() {
-        let context = test_steady_context();
-        let mut rx_bundle = RxBundle::<i32>::new();
-        let fut = context.wait_avail_bundle(&mut rx_bundle, 1, 1);
-        assert!(fut.await);
-    }
-
-    // Test wait_vacant_units_bundle method
-    #[async_std::test]
-    async fn test_wait_vacant_units_bundle() {
-        let context = test_steady_context();
-        let mut tx_bundle = TxBundle::<i32>::new();
-        let fut = context.wait_vacant_bundle(&mut tx_bundle, 1, 1);
-        assert!(fut.await);
-
-    }
-
-    #[async_std::test]
-    async fn test_wait_shutdown_or_avail_units() {
-        let context = test_steady_context();
-        let rx = create_rx::<i32>(vec![1, 2, 3]);
-        let guard = rx.try_lock();
-        if let Some(mut rx) = guard {
-            let result = context.wait_avail(&mut rx, 2).await;
-            assert!(result); // Ensure it waits for units or shutdown
-        }
-    }
-
-    #[async_std::test]
-    async fn test_wait_closed_or_avail_units() {
-        let context = test_steady_context();
-        let rx = create_rx::<i32>(vec![1, 2, 3]);
-        let guard = rx.try_lock();
-        if let Some(mut rx) = guard {
-            let result = context.wait_avail(&mut rx, 2).await;
-            assert!(result); // Ensure it waits for availability or closure
-        }
-    }
-
-    // #[async_std::test]
-    // async fn test_wait_avail_units() {
-    //     let context = test_steady_context();
-    //     let rx = create_rx::<i32>(vec![]);
-    //     let guard = rx.try_lock();
-    //     if let Some(mut rx) = guard {
-    //         let result = context.wait_avail_units(&mut rx, 1).await;
-    //         assert!(!result); // Ensure availability waiting works
-    //     }
-    // }
-
-    #[async_std::test]
-    async fn test_wait_shutdown_or_vacant_units() {
-        let context = test_steady_context();
-        let tx = create_tx::<i32>(vec![]);
-        let guard = tx.try_lock();
-        if let Some(mut tx) = guard {
-            let result = context.wait_vacant(&mut tx, 2).await;
-            assert!(result); // Should succeed if vacant units or shutdown occur
-        }
-    }
-
-    #[async_std::test]
-    async fn test_wait_vacant_units() {
-        let context = test_steady_context();
-        let tx = create_tx::<i32>(vec![]);
-        let guard = tx.try_lock();
-        if let Some(mut tx) = guard {
-            let result = context.wait_vacant(&mut tx, 1).await;
-            assert!(result); // Ensure it waits for vacancy correctly
-        }
-    }
-
-    // #[async_std::test]
-    // async fn test_wait_future_void() {
-    //     let context = test_steady_context();
-    //     let fut = async { /* Simulate a task */ };
-    //     let result = context.wait_future_void(Box::pin(fut.fuse())).await;
-    //     assert!(result); // Ensure it handles shutdown while waiting for a future
-    // }
-
-
-    // Test is_empty method
-    #[test]
-    fn test_is_empty() {
-        let context = test_steady_context();
-        let rx = create_rx::<String>(vec![]); // Creating an empty Rx
-        if let Some(mut rx) = rx.try_lock() {
-            assert!(context.is_empty(&mut rx));
-        };
-    }
-
-    // Test avail_units method
-    #[test]
-    fn test_avail_units() {
-        let context = test_steady_context();
-        let rx = create_rx(vec![1, 2, 3]);
-        if let Some(mut rx) = rx.try_lock() {
-            assert_eq!(context.avail_units(&mut rx), 3);
-        };
-    }
-
-    // Test for try_peek_iter
-    #[test]
-    fn test_try_peek_iter() {
-        let rx = create_rx(vec![1, 2, 3, 4, 5]);
-        let context = test_steady_context();
-        if let Some(mut rx) = rx.try_lock() {
-            let mut iter = context.try_peek_iter(&mut rx);
-            assert_eq!(iter.next(), Some(&1));
-            assert_eq!(iter.next(), Some(&2));
-            assert_eq!(iter.next(), Some(&3));
-        };
-    }
-
-
-
-    // Test for peek_async
-    #[async_std::test]
-    async fn test_peek_async() {
-        let rx = create_rx(vec![1, 2, 3]);
-        let context = test_steady_context();
-        if let Some(mut rx) = rx.try_lock() {
-            let result = context.peek_async(&mut rx).await;
-            assert_eq!(result, Some(&1));
-        };
-    }
-
-    // Test for send_slice_until_full
-    #[test]
-    fn test_send_slice() {
-        let (tx, _rx) = create_test_channel();
-        let mut context = test_steady_context();
-        let slice = [1, 2, 3];
-        let tx = tx.clone();
-        if let Some(mut tx) = tx.try_lock() {
-            let done = context.send_slice(&mut tx, &slice);
-            assert_eq!(done.item_count(), slice.len());
-        };
-    }
-
-    // Test for send_iter_until_full
-    #[test]
-    fn test_send_iter_until_full() {
-        let (tx, _rx) = create_test_channel();
-        let mut context = test_steady_context();
-        let iter = vec![1, 2, 3].into_iter();
-        let tx = tx.clone();
-        if let Some(mut tx) = tx.try_lock() {
-            let sent_count = context.send_iter_until_full(&mut tx, iter);
-            assert_eq!(sent_count, 3);
-        };
-    }
-
-    // Test for try_send
-    #[test]
-    fn test_try_send() {
-        let (tx, _rx) = create_test_channel::<usize>();
-        let mut context = test_steady_context();
-        let tx = tx.clone();
-        if let Some(mut tx) = tx.try_lock() {
-            let result = context.try_send(&mut tx, 42).is_sent();
-            assert!(result);
-        };
-    }
-
-    // Test for is_full
-    #[test]
-    fn test_is_full() {
-        let (tx, _rx) = create_test_channel::<String>();
-        let context = test_steady_context();
-        let tx = tx.clone();
-        if let Some(mut tx) = tx.try_lock() {
-            assert!(!context.is_full(&mut tx));
-        };
-    }
-
-    // Test for vacant_units
-    #[test]
-    fn test_vacant_units() {
-        let (tx, _rx) = create_test_channel::<String>();
-        let context = test_steady_context();
-        let tx = tx.clone();
-        if let Some(mut tx) = tx.try_lock() {
-            let vacant_units = context.vacant_units(&mut tx);
-            assert_eq!(vacant_units, 64); // Assuming only one unit can be vacant
-        };
-    }
-
-    // Test for wait_empty
-    #[async_std::test]
-    async fn test_wait_empty() {
-        let (tx, _rx) = create_test_channel::<String>();
-        let context = test_steady_context();
-        let tx  = tx.clone();
-        if let Some(mut tx) = tx.try_lock() {
-            let empty = context.wait_empty(&mut tx).await;
-            assert!(empty);
-        };
-    }
-
-    // Test for take_into_iter
-    #[test]
-    fn test_take_into_iter() {
-        let rx = create_rx(vec![1, 2, 3]);
-        let mut context = test_steady_context();
-        if let Some(mut rx) = rx.try_lock() {
-            let mut iter = context.take_into_iter(&mut rx);
-            assert_eq!(iter.next(), Some(1));
-            assert_eq!(iter.next(), Some(2));
-            assert_eq!(iter.next(), Some(3));
-        };
-    }
-
-
-}
-
-#[cfg(test)]
-mod enum_tests {
-    use channel_builder_lazy::{LazySteadyRxBundleClone, LazySteadyTxBundleClone};
-    use crate::channel_builder::ChannelBuilder;
-    use crate::channel_builder_lazy::{LazyChannel, LazySteadyRxBundle, LazySteadyTxBundle};
-    use super::*;
-
-    #[test]
-    fn test_send_saturation_default() {
-        let saturation = SendSaturation::default();
-        assert_eq!(saturation, SendSaturation::WarnThenAwait);
-    }
-
-    #[test]
-    fn test_std_dev_creation() {
-        let valid_std_dev = StdDev::new(5.0);
-        assert_eq!(valid_std_dev, Some(StdDev(5.0)));
-
-        let invalid_std_dev = StdDev::new(10.5);
-        assert_eq!(invalid_std_dev, None);
-    }
-
-    #[test]
-    fn test_std_dev_predefined() {
-        assert_eq!(StdDev::one(), StdDev(1.0));
-        assert_eq!(StdDev::one_and_a_half(), StdDev(1.5));
-        assert_eq!(StdDev::two(), StdDev(2.0));
-        assert_eq!(StdDev::two_and_a_half(), StdDev(2.5));
-        assert_eq!(StdDev::three(), StdDev(3.0));
-        assert_eq!(StdDev::four(), StdDev(4.0));
-    }
-
-    #[test]
-    fn test_std_dev_custom() {
-        let std_dev = StdDev::custom(2.5);
-        assert_eq!(std_dev, Some(StdDev(2.5)));
-
-        let invalid_std_dev = StdDev::custom(10.1);
-        assert_eq!(None, invalid_std_dev);
-    }
-
-    #[test]
-    fn test_std_dev_value() {
-        let std_dev = StdDev(3.5);
-        assert_eq!(std_dev.value(), 3.5);
-    }
-
-    #[test]
-    fn test_alert_color_variants() {
-        let yellow = AlertColor::Yellow;
-        let orange = AlertColor::Orange;
-        let red = AlertColor::Red;
-
-        assert_eq!(yellow, AlertColor::Yellow);
-        assert_eq!(orange, AlertColor::Orange);
-        assert_eq!(red, AlertColor::Red);
-    }
-
-    #[test]
-    fn test_trigger_variants() {
-        use std::time::Duration;
-
-        let avg_above = Trigger::AvgAbove(Duration::from_secs(1));
-        let avg_below = Trigger::AvgBelow(Duration::from_secs(2));
-        let std_devs_above = Trigger::StdDevsAbove(StdDev::two(), Duration::from_secs(3));
-        let std_devs_below = Trigger::StdDevsBelow(StdDev::one(), Duration::from_secs(4));
-        let percentile_above = Trigger::PercentileAbove(Percentile(90.0), Duration::from_secs(5));
-        let percentile_below = Trigger::PercentileBelow(Percentile(10.0), Duration::from_secs(6));
-
-        match avg_above {
-            Trigger::AvgAbove(val) => assert_eq!(val, Duration::from_secs(1)),
-            _ => unreachable!("Expected AvgAbove"),
-        }
-
-        match avg_below {
-            Trigger::AvgBelow(val) => assert_eq!(val, Duration::from_secs(2)),
-            _ => unreachable!("Expected AvgBelow"),
-        }
-
-        match std_devs_above {
-            Trigger::StdDevsAbove(std_dev, val) => {
-                assert_eq!(std_dev, StdDev::two());
-                assert_eq!(val, Duration::from_secs(3));
-            },
-            _ => unreachable!("Expected StdDevsAbove"),
-        }
-
-        match std_devs_below {
-            Trigger::StdDevsBelow(std_dev, val) => {
-                assert_eq!(std_dev, StdDev::one());
-                assert_eq!(val, Duration::from_secs(4));
-            },
-            _ => unreachable!("Expected StdDevsBelow"),
-        }
-
-        match percentile_above {
-            Trigger::PercentileAbove(percentile, val) => {
-                assert_eq!(percentile, Percentile(90.0));
-                assert_eq!(val, Duration::from_secs(5));
-            },
-            _ => unreachable!("Expected PercentileAbove"),
-        }
-
-        match percentile_below {
-            Trigger::PercentileBelow(percentile, val) => {
-                assert_eq!(percentile, Percentile(10.0));
-                assert_eq!(val, Duration::from_secs(6));
-            },
-            _ => unreachable!("Expected PercentileBelow"),
-        }
-    }
-
-    #[test]
-    fn test_lazy_steady_tx_bundle_clone() {
-        // Define a simple data type for the test
-        type TestType = i32;
-
-        let cb = ChannelBuilder::new(
-                    Arc::new(Default::default()),
-                    Arc::new(Default::default()),
-                    40,
-        );
-
-        let lazy1 = Arc::new(LazyChannel::new(&cb));
-        let lazy2 = Arc::new(LazyChannel::new(&cb));
-        let lazy3 = Arc::new(LazyChannel::new(&cb));
-
-        // Create a LazySteadyTxBundle with a fixed size of 3
-        let tx1 = LazySteadyTx::<TestType>::new(lazy1.clone());
-        let tx2 = LazySteadyTx::<TestType>::new(lazy2.clone());
-        let tx3 = LazySteadyTx::<TestType>::new(lazy3.clone());
-        let lazy_bundle: LazySteadyTxBundle<TestType, 3> = [tx1, tx2, tx3];
-
-        // Clone the LazySteadyTxBundle
-        let cloned_bundle = lazy_bundle.clone();
-
-        assert_eq!(
-            Arc::as_ptr(&cloned_bundle[0]),
-            Arc::as_ptr(&lazy_bundle[0].clone())
-        );
-        assert_eq!(
-            Arc::as_ptr(&cloned_bundle[1]),
-            Arc::as_ptr(&lazy_bundle[1].clone())
-        );
-        assert_eq!(
-            Arc::as_ptr(&cloned_bundle[2]),
-            Arc::as_ptr(&lazy_bundle[2].clone())
-        );
-    }
-
-    #[test]
-    fn test_lazy_steady_rx_bundle_clone() {
-        // Define a simple data type for the test
-        type TestType = i32;
-
-        let cb = ChannelBuilder::new(
-            Arc::new(Default::default()),
-            Arc::new(Default::default()),
-            40,
-        );
-
-        let lazy1 = Arc::new(LazyChannel::new(&cb));
-        let lazy2 = Arc::new(LazyChannel::new(&cb));
-        let lazy3 = Arc::new(LazyChannel::new(&cb));
-
-        // Create a LazySteadyTxBundle with a fixed size of 3
-        let rx1 = LazySteadyRx::<TestType>::new(lazy1.clone());
-        let rx2 = LazySteadyRx::<TestType>::new(lazy2.clone());
-        let rx3 = LazySteadyRx::<TestType>::new(lazy3.clone());
-        let lazy_bundle: LazySteadyRxBundle<TestType, 3> = [rx1, rx2, rx3];
-
-        // Clone the LazySteadyTxBundle
-        let cloned_bundle = lazy_bundle.clone();
-
-        assert_eq!(
-            Arc::as_ptr(&cloned_bundle[0]),
-            Arc::as_ptr(&lazy_bundle[0].clone())
-        );
-        assert_eq!(
-            Arc::as_ptr(&cloned_bundle[1]),
-            Arc::as_ptr(&lazy_bundle[1].clone())
-        );
-        assert_eq!(
-            Arc::as_ptr(&cloned_bundle[2]),
-            Arc::as_ptr(&lazy_bundle[2].clone())
-        );
-    }
-
-
-    #[test]
-    fn test_alert_color_equality() {
-        assert_eq!(AlertColor::Yellow, AlertColor::Yellow);
-        assert_eq!(AlertColor::Orange, AlertColor::Orange);
-        assert_eq!(AlertColor::Red, AlertColor::Red);
-    }
-
-    #[test]
-    fn test_alert_color_inequality() {
-        assert_ne!(AlertColor::Yellow, AlertColor::Orange);
-        assert_ne!(AlertColor::Orange, AlertColor::Red);
-        assert_ne!(AlertColor::Red, AlertColor::Yellow);
-    }
-
-    #[test]
-    fn test_trigger_avg_above() {
-        let trigger = Trigger::AvgAbove(Duration::from_secs(1));
-        if let Trigger::AvgAbove(val) = trigger {
-            assert_eq!(val, Duration::from_secs(1));
-        } else {
-            panic!("Expected Trigger::AvgAbove");
-        }
-    }
-
-    #[test]
-    fn test_trigger_avg_below() {
-        let trigger = Trigger::AvgBelow(Duration::from_secs(2));
-        if let Trigger::AvgBelow(val) = trigger {
-            assert_eq!(val, Duration::from_secs(2));
-        } else {
-            panic!("Expected Trigger::AvgBelow");
-        }
-    }
-
-    #[test]
-    fn test_trigger_std_devs_above() {
-        let trigger = Trigger::StdDevsAbove(StdDev::two(), Duration::from_secs(3));
-        if let Trigger::StdDevsAbove(std_dev, val) = trigger {
-            assert_eq!(std_dev, StdDev::two());
-            assert_eq!(val, Duration::from_secs(3));
-        } else {
-            panic!("Expected Trigger::StdDevsAbove");
-        }
-    }
-
-    #[test]
-    fn test_trigger_std_devs_below() {
-        let trigger = Trigger::StdDevsBelow(StdDev::one(), Duration::from_secs(4));
-        if let Trigger::StdDevsBelow(std_dev, val) = trigger {
-            assert_eq!(std_dev, StdDev::one());
-            assert_eq!(val, Duration::from_secs(4));
-        } else {
-            panic!("Expected Trigger::StdDevsBelow");
-        }
-    }
-
-    #[test]
-    fn test_trigger_percentile_above() {
-        let trigger = Trigger::PercentileAbove(Percentile(90.0), Duration::from_secs(5));
-        if let Trigger::PercentileAbove(percentile, val) = trigger {
-            assert_eq!(percentile, Percentile(90.0));
-            assert_eq!(val, Duration::from_secs(5));
-        } else {
-            panic!("Expected Trigger::PercentileAbove");
-        }
-    }
-
-    #[test]
-    fn test_trigger_percentile_below() {
-        let trigger = Trigger::PercentileBelow(Percentile(10.0), Duration::from_secs(6));
-        if let Trigger::PercentileBelow(percentile, val) = trigger {
-            assert_eq!(percentile, Percentile(10.0));
-            assert_eq!(val, Duration::from_secs(6));
-        } else {
-            panic!("Expected Trigger::PercentileBelow");
-        }
-    }
-
-
 }

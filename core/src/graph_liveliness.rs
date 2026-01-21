@@ -588,7 +588,7 @@ impl GraphBuilder {
             telemetry_colors: None,
             shutdown_barrier: None,
             default_stack_size: None,
-            block_fail_fast: false,
+            block_fail_fast: true,
             bundle_floor_size: 4,
         }
     }

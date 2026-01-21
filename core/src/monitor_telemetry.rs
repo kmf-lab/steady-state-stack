@@ -6,7 +6,7 @@ use log::error;
 use std::ops::DerefMut;
 use std::thread;
 use num_traits::Zero;
-use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
+use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
 use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
 use crate::steady_rx::{Rx};
 use crate::steady_tx::{Tx};
@@ -28,12 +28,14 @@ pub struct SteadyTelemetryTake<const LENGTH: usize> {
 /// Structure representing the actor send side of steady telemetry.
 pub struct SteadyTelemetryActorSend {
     pub(crate) tx: SteadyTx<ActorStatus>,
+    pub(crate) ident: ActorIdentity,
     pub(crate) last_telemetry_error: Instant,
     pub(crate) instant_start: Instant,
     pub(crate) iteration_index_start: u64,
     pub(crate) regeneration: u32,
     pub(crate) bool_stop: bool,
     pub(crate) bool_blocking: bool,
+    pub(crate) show_thread_info: bool,
     pub(crate) hot_profile_await_ns_unit: AtomicU64,
     pub(crate) hot_profile: AtomicU64,
     pub(crate) hot_profile_concurrent: AtomicU16,
@@ -56,11 +58,15 @@ impl SteadyTelemetryActorSend {
 
         //this is a little expensive, and we should consider doing this every N calls
         //the consumer node already holds the previous and uses it until we see a change.
-        let thread_info = Some(ThreadInfo{
-                            thread_id: thread::current().id(),
-                            #[cfg(feature = "core_display")]
-                            core: crate::telemetry::setup::get_current_cpu(),
-                        });
+        let thread_info = if self.show_thread_info {
+            Some(ThreadInfo {
+                thread_id: thread::current().id(),
+                #[cfg(feature = "core_display")]
+                core: crate::telemetry::setup::get_current_cpu(),
+            })
+        } else {
+            None
+        };
 
         let total_ns = self.instant_start.elapsed().as_nanos() as u64;
 
@@ -75,10 +81,12 @@ impl SteadyTelemetryActorSend {
         assert!(total_ns>0);
 
         ActorStatus {
+            ident: self.ident,
             total_count_restarts: self.regeneration,
             iteration_start: iteration_index,
             iteration_sum: (iteration_index-self.iteration_index_start),
             bool_stop: self.bool_stop,
+            bool_stalled: false,
             bool_blocking: self.bool_blocking,
             await_total_ns: hot,
             unit_total_ns: total_ns,
@@ -264,11 +272,13 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 assert!(unit_total_ns > 0);
                 if count_of_actor_status_events > 0 {
                     Some(ActorStatus {
+                        ident: buffer[0].ident,
                         iteration_start: buffer[0].iteration_start, //always the starting iterator count
                         iteration_sum,
                         //we just use the last event for these two, no need to check the others.
                         total_count_restarts: buffer[count_of_actor_status_events - 1].total_count_restarts,
                         bool_stop: buffer[count_of_actor_status_events - 1].bool_stop,
+                        bool_stalled: buffer[count_of_actor_status_events - 1].bool_stalled,
                         bool_blocking: buffer[count_of_actor_status_events - 1].bool_blocking,
                         await_total_ns,
                         unit_total_ns,
@@ -277,10 +287,12 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                     })
                 } else {
                     Some(ActorStatus {
+                        ident: buffer[0].ident,
                         iteration_start: buffer[0].iteration_start, //always the starting iterator count
                         iteration_sum,
                         total_count_restarts: 0,
                         bool_stop: false,
+                        bool_stalled: false,
                         bool_blocking: false,
                         await_total_ns,
                         unit_total_ns,

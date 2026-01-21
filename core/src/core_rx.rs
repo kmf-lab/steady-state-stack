@@ -400,6 +400,9 @@ impl<T> RxCore for Rx<T> {
         let avail = self.rx.occupied_len();
         let idx = if request > avail { avail } else { request };
         unsafe { self.rx.advance_read_index(idx); }
+        if idx > 0 {
+            self.take_count.fetch_add(idx as u32, Ordering::Relaxed);
+        }
         RxDone::Normal(idx)
     }
 

@@ -165,7 +165,13 @@ impl<T> Rx<T> {
         assert_ne!(threshold, 1, "Threshold of one is not meaningful for detection.");
 
         if self.rx.try_peek().is_some() {
-            self.peek_repeats.load(Ordering::Relaxed) >= threshold
+            let take_count = self.take_count.load(Ordering::Relaxed);
+            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
+            if cached_take_count == take_count {
+                self.peek_repeats.load(Ordering::Relaxed) >= threshold
+            } else {
+                false
+            }
         } else {
             false
         }

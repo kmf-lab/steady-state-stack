@@ -16,6 +16,7 @@ pub(crate) struct Node {
     pub(crate) metric_text: String,
     pub(crate) thread_info_cache: Option<ThreadInfo>,
     pub(crate) total_count_restarts: u32,
+    pub(crate) bool_stalled: bool,
     pub(crate) work_info: Option<(u16, u16)>
 }
 
@@ -58,6 +59,7 @@ impl Node {
             None
         };
         self.total_count_restarts = self.total_count_restarts.max(actor_status.total_count_restarts);
+        self.bool_stalled = actor_status.bool_stalled;
 
         // Old strings for this actor are passed back in so they get cleared and re-used rather than reallocate
         let (color, pen_width) = self.stats_computer.compute(
@@ -67,6 +69,7 @@ impl Node {
             mcpu_load,
             self.total_count_restarts,
             actor_status.bool_stop,
+            actor_status.bool_stalled,
             thread_id
         );
 

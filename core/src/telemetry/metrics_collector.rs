@@ -2,9 +2,9 @@
 //! gathering telemetry data from all actors and channels in the graph. It aggregates this data
 //! into a `DotState` for visualization and Prometheus metrics.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{VecDeque};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use parking_lot::RwLock;
 use crate::*;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
@@ -52,8 +52,12 @@ pub struct MetricsCollector {
     frame_rate_ms: u64,
     /// Sequence number for data packets.
     seq: u64,
-    /// Cache of known actor IDs to avoid redundant NodeDef sends.
-    known_actors: HashMap<usize, u32>,
+    /// Tracks which actors have already had their NodeDef sent.
+    sent_node_def: Vec<bool>,
+    /// Tracks the last time a status update was received for each actor ID.
+    last_seen: Vec<Instant>,
+    /// Tracks which actors we have already warned about stalling.
+    warned_stalled: Vec<bool>,
 
     /// # CRITICAL DESIGN REQUIREMENT: Persistent Accumulation Buffers
     /// These vectors MUST persist for the entire life of the MetricsCollector actor.
@@ -74,14 +78,16 @@ impl MetricsCollector {
             targets,
             frame_rate_ms,
             seq: 0,
-            known_actors: HashMap::new(),
+            sent_node_def: Vec::new(),
+            last_seen: Vec::new(),
+            warned_stalled: Vec::new(),
             take_send_source: Vec::new(),
             future_take: Vec::new(),
             future_send: Vec::new(),
         }
     }
 
-    pub async fn run(mut self, mut context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(self, context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
         // CRITICAL: MetricsCollector must use the raw SteadyActorShadow (context) to avoid telemetry
         // feedback loops and prevent this internal actor from appearing in user-facing charts.
         // Also we move this to heap in case we have a giant graph
@@ -89,20 +95,32 @@ impl MetricsCollector {
     }
     /// The main loop for the `MetricsCollector` actor.
     pub async fn internal_behavior(mut self, mut context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
+        let start_time = Instant::now();
 
         while context.is_running(|| true) {
             self.seq += 1;
+            let now_loop = Instant::now();
             
             let mut actor_statuses = Vec::new();
 
             let receivers = self.all_telemetry_rx.read();
             for detail in receivers.iter() {
+                let actor_id = detail.ident.id;
+
+                // Ensure tracking vectors are large enough for this actor_id
+                if actor_id >= self.sent_node_def.len() {
+                    self.sent_node_def.resize(actor_id + 1, false);
+                    self.last_seen.resize(actor_id + 1, start_time);
+                    self.warned_stalled.resize(actor_id + 1, false);
+                }
+
+                let mut collected_this_time = false;
                 for rx in detail.telemetry_take.iter() {
                     let meta = rx.actor_metadata();
-                    let actor_id = meta.ident.id;
 
                     // 1. Send NodeDef if this is a new actor
-                    if !self.known_actors.contains_key(&actor_id) {
+                    if !self.sent_node_def[actor_id] {
+                        self.sent_node_def[actor_id] = true;
                         let def = DiagramData::NodeDef(
                             self.seq, 
                             Box::new((
@@ -114,7 +132,6 @@ impl MetricsCollector {
                         // SCOPE LOCK: Acquire, send, and drop immediately to avoid deadlocking other actors
                         let mut tx_guard = self.targets[0].lock().await;
                         let _ = context.send_async(&mut *tx_guard, def, SendSaturation::AwaitForRoom).await;
-                        self.known_actors.insert(actor_id, 0);
                     }
 
                     // 2. Collect Actor Status
@@ -122,7 +139,9 @@ impl MetricsCollector {
                         if actor_id >= actor_statuses.len() {
                             actor_statuses.resize(actor_id + 1, ActorStatus::default());
                         }
+                        self.last_seen[actor_id] = now_loop;
                         actor_statuses[actor_id] = status;
+                        collected_this_time = true;
                     }
 
                     // 3. Collect Channel Volume into persistent buffers
@@ -140,10 +159,29 @@ impl MetricsCollector {
                     rx.consume_take_into(&mut self.take_send_source, &mut self.future_take, &mut self.future_send);
                     rx.consume_send_into(&mut self.take_send_source, &mut self.future_send);
                 }
+
+                // 4. Detect Stalls (Default 20s timeout)
+                if !collected_this_time {
+                    let last_time = self.last_seen[actor_id];
+                    if now_loop.duration_since(last_time) > Duration::from_secs(20) {
+                        if actor_id >= actor_statuses.len() {
+                            actor_statuses.resize(actor_id + 1, ActorStatus::default());
+                        }
+                        actor_statuses[actor_id].ident = detail.ident;
+                        actor_statuses[actor_id].bool_stalled = true;
+                        
+                        if !self.warned_stalled[actor_id] {
+                            warn!("Actor {:?} (ID {}) appears to be stalled (no update for {:?})", detail.ident.label, actor_id, now_loop.duration_since(last_time));
+                            self.warned_stalled[actor_id] = true;
+                        }
+                    }
+                } else {
+                    self.warned_stalled[actor_id] = false;
+                }
             }
             drop(receivers);
 
-            // 4. Relay batches to server
+            // 5. Relay batches to server
             if !actor_statuses.is_empty() {
                 let mut tx_guard = self.targets[0].lock().await;
                 let _ = context.send_async(&mut *tx_guard, DiagramData::NodeProcessData(self.seq, actor_statuses.into_boxed_slice()), SendSaturation::AwaitForRoom).await;
@@ -187,6 +225,6 @@ pub(crate) mod metric_collector_tests {
         let targets = Arc::new([tx.clone()]);
         let collector = MetricsCollector::new(all_telemetry_rx, targets, 40);
         assert_eq!(collector.seq, 0);
-        assert!(collector.known_actors.is_empty());
+        assert!(collector.sent_node_def.is_empty());
     }
 }

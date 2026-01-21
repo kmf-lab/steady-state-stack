@@ -75,6 +75,10 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
                 self.payload_channel.rx.advance_read_index(count.1);
                 self.control_channel.rx.advance_read_index(count.0);
             }
+
+            self.payload_channel.take_count.fetch_add(count.1 as u32, Ordering::Relaxed);
+            self.control_channel.take_count.fetch_add(count.0 as u32, Ordering::Relaxed);
+
             RxDone::Stream(count.0, count.1)
         } else {
             RxDone::Stream(0, 0)

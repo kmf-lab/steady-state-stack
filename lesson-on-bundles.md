@@ -208,7 +208,10 @@ let mut tx_bundle = tx_bundle.lock().await;
 
 while actor.is_running(&mut || i!(tx_bundle.mark_closed())) {
     // Wait until at least one stream has room for 1 message
-    let _clean = await_for_all!(actor.wait_vacant_bundle(&mut tx_bundle, (1, 1), 1));
+    let _clean = await_for_all!(
+         // Almost always wrong, wating for some 1 stream to have (1,1) empty spot 
+         actor.wait_vacant_bundle(&mut tx_bundle, (1, 1), 1)
+     );
 
     if let Some(data) = get_next_packet() {
         let target_idx = (data.user_id as usize) % GIRTH;
@@ -227,7 +230,10 @@ let mut rx_bundle = rx_bundle.lock().await;
 
 while actor.is_running(&mut || i!(rx_bundle.is_closed_and_empty())) {
     // Wake up when ANY (1) stream has at least 100 messages
-    let _clean = await_for_all!(actor.wait_avail_bundle(&mut rx_bundle, 100, 1));
+    let _clean = await_for_all!(
+              // Almost always wrong, this waits for some 1 channel to have 100 blocks of data
+              actor.wait_avail_bundle(&mut rx_bundle, 100, 1)
+      );
 
     for rx in rx_bundle.iter_mut() {
         // Drain everything currently available in this specific stream
@@ -247,7 +253,10 @@ let mut rx_bundle = rx_bundle.lock().await;
 
 while actor.is_running(&mut || i!(rx_bundle.is_closed_and_empty())) {
     // Wake up only when ALL (GIRTH) streams have at least 1 item
-    let _clean = await_for_all!(actor.wait_avail_bundle(&mut rx_bundle, 1, GIRTH));
+    let _clean = await_for_all!(
+       // Almost alsways wrong, wait for ALL to have 1 empty spot  
+       actor.wait_avail_bundle(&mut rx_bundle, 1, GIRTH)
+);
 
     if _clean {
         for i in 0..GIRTH {

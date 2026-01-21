@@ -109,6 +109,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
     let calls: [AtomicU16; 6] = Default::default();
     let telemetry_actor = Some(SteadyTelemetryActorSend {
         tx: act_tuple.0.clone(), //TODO: may need LazySend...
+        ident: that.ident,
         last_telemetry_error: start_now,
         instant_start: Instant::now(),
         iteration_index_start: 0,
@@ -119,6 +120,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         regeneration: that.regeneration,
         bool_stop: false,
         bool_blocking: false, //TODO: thread this in from with_blocking?
+        show_thread_info: that.show_thread_info,
     });
 
     (rx_tuple.0, tx_tuple.0, telemetry_actor)
@@ -409,7 +411,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                         //happy path
                                         send_rx.count[rx.local_monitor_index] = 1;
                                     } else {
-                                        //we did not find our index, should not happen unless we have a code error.
+                                        //we did find our index, should not happen unless we have a code error.
                                         if rx.local_monitor_index.eq(&MONITOR_UNKNOWN) {
                                             trace!("MONITOR_UNKNOWN try send telemetry rx for  {:?} this {:?} with local index {}",this.ident,send_rx.count, rx.local_monitor_index);
                                         } else {

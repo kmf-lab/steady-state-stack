@@ -92,7 +92,9 @@ pub struct ActorStatsComputer {
     pub(crate) prometheus_labels: String,
 
     /// Flag to indicate whether to display thread information in telemetry.
-    pub(crate) show_thread_id: bool
+    pub(crate) show_thread_id: bool,
+    /// Flag to indicate whether the actor is stalled.
+    pub(crate) bool_stalled: bool,
 }
 
 impl ActorStatsComputer {
@@ -110,6 +112,7 @@ impl ActorStatsComputer {
     /// * `mcpu_load` - The current CPU utilization and workload values.
     /// * `total_count_restarts` - The total number of times the actor has been restarted.
     /// * `bool_stop` - A boolean indicating whether the actor has stopped.
+    /// * `bool_stalled` - A boolean indicating whether the actor is stalled.
     /// * `thread_info` - Optional thread information to include in the DOT label.
     ///
     /// # Returns
@@ -124,8 +127,10 @@ impl ActorStatsComputer {
         mcpu_load: Option<(u16,u16)>,
         total_count_restarts: u32,
         bool_stop: bool,
+        bool_stalled: bool,
         thread_info: Option<ThreadInfo>
     ) -> (&'static str, &'static str) {
+        self.bool_stalled = bool_stalled;
         if let Some((mcpu,load)) = mcpu_load {
             self.accumulate_data_frame(mcpu, load);
         }
@@ -139,6 +144,8 @@ impl ActorStatsComputer {
         // --- TITLE (Dynamic & Static) ---
         // The title is displayed both in the visible node label and the hover tooltip.
         dot_label.push_str(self.ident.label.name);
+        dot_label.push('\n');
+
         if let Some(suffix) =  self.ident.label.suffix {
             dot_label.push_str(itoa::Buffer::new().format(suffix));
         }
@@ -147,9 +154,11 @@ impl ActorStatsComputer {
             dot_label.push_str(itoa::Buffer::new().format(self.ident.id));
             dot_label.push(']');
         }
-        
+
         tooltip.push_str(dot_label);
         tooltip.push('\n');
+
+
 
         // --- STATIC METADATA (Tooltip only) ---
         // These values are relatively static or metadata-heavy and are moved to the tooltip 
@@ -174,19 +183,13 @@ impl ActorStatsComputer {
             tooltip.push('\n');
         }
 
-        if total_count_restarts > 0 {
-            tooltip.push_str("restarts: ");
-            tooltip.push_str(itoa::Buffer::new().format(total_count_restarts));
-            tooltip.push('\n');
-
-            #[cfg(feature = "prometheus_metrics")]
-            {
-                metric_text.push_str("graph_node_restarts{");
-                metric_text.push_str(&self.prometheus_labels);
-                metric_text.push_str("} ");
-                metric_text.push_str(itoa::Buffer::new().format(total_count_restarts));
-                metric_text.push('\n');
-            }
+        #[cfg(feature = "prometheus_metrics")]
+        {
+            metric_text.push_str("graph_node_restarts{");
+            metric_text.push_str(&self.prometheus_labels);
+            metric_text.push_str("} ");
+            metric_text.push_str(itoa::Buffer::new().format(total_count_restarts));
+            metric_text.push('\n');
         }
 
         if bool_stop {
@@ -198,7 +201,8 @@ impl ActorStatsComputer {
         // in both the visible label and the tooltip.
         let mut rolling_stats = String::new();
 
-        if let Some(current_work) = &self.current_work {
+        let work_block = self.current_work.as_ref().or_else(|| self.history_work.front());
+        if let Some(current_work) = work_block {
             let config = ComputeLabelsConfig::actor_config(self, (1, 1), (1, 1), 100
                                                            , self.show_avg_work, self.show_min_work, self.show_max_work);
             let labels = ComputeLabelsLabels {
@@ -211,7 +215,8 @@ impl ActorStatsComputer {
             compute_labels(config, current_work, labels, &self.std_dev_work, &self.percentiles_work, metric_text, &mut rolling_stats);
         }
 
-        if let Some(current_mcpu) = &self.current_mcpu { 
+        let mcpu_block = self.current_mcpu.as_ref().or_else(|| self.history_mcpu.front());
+        if let Some(current_mcpu) = mcpu_block { 
             let config = ComputeLabelsConfig::actor_config(self, (1, 1), (1, 1), 1024
                                                            , self.show_avg_mcpu, self.show_min_mcpu, self.show_max_mcpu);
             let labels = ComputeLabelsLabels {
@@ -225,15 +230,24 @@ impl ActorStatsComputer {
         }
 
         if !rolling_stats.is_empty() {
-            dot_label.push('\n');
             dot_label.push_str(&rolling_stats);
             
             tooltip.push_str("--- Stats ---\n");
             tooltip.push_str(&rolling_stats);
         }
+        if self.bool_stalled {
+            dot_label.push_str(" [STALLED]");
+        }
+        //only when we have a value and put it last
+        if total_count_restarts>0 {
+            dot_label.push_str("Restarts: ");
+            dot_label.push_str(itoa::Buffer::new().format(total_count_restarts));
+        }
 
         let mut line_color = DOT_GREY;
-        if !self.mcpu_trigger.is_empty() || !self.work_trigger.is_empty() {
+        if self.bool_stalled {
+            line_color = DOT_RED;
+        } else if !self.mcpu_trigger.is_empty() || !self.work_trigger.is_empty() {
             line_color = DOT_GREEN;
             if self.trigger_alert_level(&AlertColor::Yellow) {
                 line_color = DOT_YELLOW;
@@ -838,6 +852,7 @@ mod test_actor_stats {
             Some((512, 50)),
             1,
             false,
+            false,
             None
         );
 
@@ -1086,10 +1101,11 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None);
 
         // Should contain actor name with suffix
-        assert!(dot_label.contains("test42"));
+        assert!(dot_label.contains("test"));
+        assert!(dot_label.contains("42"));
     }
 
     /// Test compute method with SHOW_ACTORS feature enabled
@@ -1106,7 +1122,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None);
 
         // Should contain actor ID in brackets when SHOW_ACTORS is true
         // Note: This test might need adjustment based on how SHOW_ACTORS is implemented
@@ -1129,7 +1145,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None);
 
         // Should contain window information in tooltip
         assert!(tooltip.contains("Window 5.0 mins"));
@@ -1149,11 +1165,10 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 5, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 5, false, false, None);
 
-        // Should contain restart count in tooltip
-        assert!(tooltip.contains("restarts: 5"));
-        assert!(!dot_label.contains("restarts"));
+        // Should contain restart count in dot_label
+        assert!(dot_label.contains("Restarts: 5"));
 
         #[cfg(feature = "prometheus_metrics")]
         {
@@ -1175,7 +1190,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, true, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, true, false, None);
 
         // Should contain stopped indicator in tooltip
         assert!(tooltip.contains("stopped"));
@@ -1200,7 +1215,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 60)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 60)), 0, false, false, None);
 
         // Should contain work load information in both
         assert!(dot_label.contains("load"));
@@ -1225,7 +1240,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((700, 50)), 0, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((700, 50)), 0, false, false, None);
 
         // Should contain mcpu information in both
         assert!(dot_label.contains("mCPU"));
@@ -1252,7 +1267,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 50)), 0, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 50)), 0, false, false, None);
 
         assert_eq!(color, DOT_YELLOW);
     }
@@ -1277,7 +1292,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((300, 70)), 0, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((300, 70)), 0, false, false, None);
 
         assert_eq!(color, DOT_ORANGE);
     }
@@ -1464,7 +1479,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 80)), 0, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 80)), 0, false, false, None);
 
         // Should be Red (highest priority) even though other triggers also fire
         assert_eq!(color, DOT_RED);

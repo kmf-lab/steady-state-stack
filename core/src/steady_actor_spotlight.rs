@@ -16,7 +16,6 @@ use futures_util::future::{FusedFuture};
 use futures_timer::Delay;
 use futures_util::{select, FutureExt, StreamExt};
 use std::future::Future;
-use futures::executor;
 use num_traits::Zero;
 use std::ops::DerefMut;
 use std::task::Poll;
@@ -86,7 +85,7 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     pub(crate) is_running_iteration_count: u64,
     pub(crate) _team_id: usize,
-    pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    pub(crate) aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// If true, the monitor uses its internal simulation behavior for events.
     pub use_internal_behavior: bool,
     pub(crate) regeneration: u32,
@@ -115,10 +114,10 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
     #[allow(async_fn_in_trait)]
     /// Runs simulation runners within the context of this local monitor.
     pub async fn simulated_behavior(
-        mut self,
+        &mut self,
         sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>> {
-        simulate_edge::simulated_behavior::<Self>(&mut self, sims).await
+        simulate_edge::simulated_behavior::<Self>(self, sims).await
     }
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
@@ -152,7 +151,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotlight<RX_LEN, TX_LEN> {
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
-        Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
+        Graph::aeron_media_driver_internal(&self.aeron_media_driver)
     }
 
     fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool {
@@ -170,23 +169,20 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     fn relay_stats_smartly(&mut self) -> bool {
-
         let last_elapsed = self.last_telemetry_send.elapsed();
-        // if it is time to send do so now OR if this is the first run to signal ive start
-        if (last_elapsed.as_micros() as u64 * (REAL_CHANNEL_LENGTH_TO_COLLECTOR as u64) >= (1000u64 * self.frame_rate_ms))
-          || (self.is_running_iteration_count == 0)
-           {
+        let should_send = last_elapsed.as_micros() as u64 * (REAL_CHANNEL_LENGTH_TO_COLLECTOR as u64) >= (1000u64 * self.frame_rate_ms);
+        
+        if should_send {
             setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
             self.last_telemetry_send = Instant::now();
             if ENABLE_TELEMETRY_DEBUG {
-                info!("Telemetry data sent for actor {:?} after {}ms  iteration {} ", self.ident, last_elapsed.as_micros(), self.is_running_iteration_count);
+                info!("Telemetry data sent for actor {:?} after {}µs  iteration {} ", self.ident, last_elapsed.as_micros(), self.is_running_iteration_count);
             }
             true
-        }
-        else {
+        } else {
             if ENABLE_TELEMETRY_DEBUG {
-                error!("Telemetry data not sent for actor {:?} (elapsed: {} ms < threshold)",
-                      self.ident, last_elapsed.as_millis());
+                error!("Telemetry data not sent for actor {:?} (elapsed: {} µs < threshold)",
+                      self.ident, last_elapsed.as_micros());
             }
             self.check_telemetry_delay();
             false
@@ -778,22 +774,17 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     #[inline]
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
-
-        loop {//TODO: hold read for a few pases???
-            let runnning = self.runtime_state.read().is_running(self.ident, &mut accept_fn);
-            if let Some(result) = runnning {
-                if result && !self.is_running_iteration_count.is_zero() {
-                    if self.relay_stats_smartly() {
-                        self.check_telemetry_delay();
-                    }
-                } else {
-                    self.relay_stats();
-                }
-                self.is_running_iteration_count += 1;
-                return result;
+        let result = self.runtime_state.read().is_running(self.ident, &mut accept_fn);
+        if let Some(running) = result {
+            if running && !self.is_running_iteration_count.is_zero() {
+                self.relay_stats_smartly();
             } else {
-                executor::block_on(Delay::new(Duration::from_millis(20)));
+                self.relay_stats();
             }
+            self.is_running_iteration_count += 1;
+            running
+        } else {
+            true
         }
     }
 
