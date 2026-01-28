@@ -33,6 +33,8 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
              match actor.try_send(&mut print_signal_tx, PrintSignal { tick }) {
                  SendOutcome::Success => {}
                  SendOutcome::Blocked(signal) => {error!("channel backed up, failed to send tick: {:?}",signal.tick);}
+                 SendOutcome::Timeout(signal) => {error!("timeout sending tick: {:?}",signal.tick);}
+                 SendOutcome::Closed(_) => break,
              }
              actor.relay_stats();
          }

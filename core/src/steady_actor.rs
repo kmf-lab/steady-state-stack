@@ -25,6 +25,7 @@ use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::loop_driver::pin_mut;
 use crate::simulate_edge::IntoSimRunner;
 use futures_util::lock::Mutex;
+use std::sync::atomic::AtomicBool;
 
 impl SteadyActorShadow {
     /// Converts this actor shadow into a local monitor (spotlight) instance.
@@ -107,6 +108,7 @@ impl SteadyActorShadow {
                 send_rx,
                 send_tx,
                 state,
+                dirty: AtomicBool::new(false),
             },
             last_telemetry_send: Instant::now(),
             ident: self.ident,
@@ -121,7 +123,7 @@ impl SteadyActorShadow {
             _team_id: self.team_id,
             is_running_iteration_count: 0,
             regeneration: self.regeneration,
-            aeron_media_driver: self.aeron_meda_driver.clone(),
+            aeron_meda_driver: self.aeron_meda_driver.clone(),
             use_internal_behavior: self.use_internal_behavior,
             shutdown_barrier: self.shutdown_barrier.clone(),
 
@@ -135,8 +137,12 @@ pub enum SendOutcome<X> {
     /// The send operation was successful.
     #[default]
     Success,
-    /// The send operation was blocked, returning the blocked value.
+    /// The channel is full (returned by non-blocking try_send).
     Blocked(X),
+    /// The operation timed out (likely due to telemetry deadlines).
+    Timeout(X),
+    /// The channel is closed or a shutdown was signaled.
+    Closed(X),
 }
 
 impl<X> SendOutcome<X> {
@@ -144,16 +150,16 @@ impl<X> SendOutcome<X> {
     pub fn is_sent(&self) -> bool {
         match self {
             SendOutcome::Success => true,
-            SendOutcome::Blocked(_) => false,
+            _ => false,
         }
     }
 
-    /// Panics with the provided message if the outcome is `Blocked`.
+    /// Panics with the provided message if the outcome is not `Success`.
     /// Returns `true` if the outcome is `Success`.
     pub fn expect(self, msg: &'static str) -> bool {
         match self {
             SendOutcome::Success => true,
-            SendOutcome::Blocked(_) => panic!("{}", msg),
+            _ => panic!("{}", msg),
         }
     }
 }
@@ -522,6 +528,12 @@ mod steady_actor_tests {
 
         let blocked = SendOutcome::Blocked(42);
         assert!(!blocked.is_sent());
+
+        let timeout = SendOutcome::Timeout(42);
+        assert!(!timeout.is_sent());
+
+        let closed = SendOutcome::Closed(42);
+        assert!(!closed.is_sent());
     }
 
     #[test]

@@ -123,12 +123,20 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         active_graph: BytesMut::new(),
     };
 
-    //might block here as we are still building the graph
-    let mut rxg = rx.lock().await;
+    // CRITICAL: We must call is_running BEFORE we block on any resource (like the channel lock).
+    // This ensures the actor always identifies itself and registers its shutdown vote, 
+    // even if the channel is contested or the system is deadlocked.
+    while ctrl.is_running(&mut || {
+        // Use try_lock to avoid blocking the shutdown vote if the channel is contested.
+        if let Some(mut rxg) = rx.try_lock() {
+            i!(rxg.is_closed_and_empty())
+        } else {
+            false // Veto if we can't check, but we've identified ourselves
+        }
+    }) {
+        // Now that we've voted to keep running, we can safely block on the lock.
+        let mut rxg = rx.lock().await;
 
-
-
-    while ctrl.is_running(&mut || i!(rxg.is_empty()) && i!(rxg.is_closed())) {
         // 1. Wait for at least one message to arrive in the telemetry channel.
         let _clean = await_for_all!( ctrl.wait_avail(&mut rxg, 1) );
 

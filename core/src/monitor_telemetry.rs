@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::time::Instant;
 use std::sync::Arc;
 use futures_util::lock::Mutex;
@@ -447,21 +447,15 @@ pub(crate) struct SteadyTelemetry<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
     pub(crate) send_rx: Option<SteadyTelemetrySend<RX_LEN>>,
     pub(crate) state: Option<SteadyTelemetryActorSend>,
+    pub(crate) dirty: AtomicBool,
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
     
     /// Returns true if non zero channel data is waiting to be sent
+    #[inline]
     pub(crate) fn is_dirty(&self) -> bool {        
-        if let Some(send_tx) = &self.send_tx {
-            send_tx.count.iter().any(|&x| x > 0)
-        } else if let Some(send_rx) = &self.send_rx {
-                send_rx.count.iter().any(|&x| x > 0)
-            } else if let Some(state) = &self.state {
-                    state.calls.iter().any(|x| x.load(Ordering::Relaxed) > 0)
-                } else {
-                    false
-                } 
+        self.dirty.load(Ordering::Relaxed)
     }
 }
 
@@ -603,6 +597,7 @@ mod monitor_telemetry_tests {
             send_tx: None,
             send_rx: None,
             state: None,
+            dirty: std::sync::atomic::AtomicBool::new(false),
         };
 
         assert!(!telemetry.is_dirty());

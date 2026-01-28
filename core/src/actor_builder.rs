@@ -1,4 +1,4 @@
-//! The `actor_builder` module provides structures and functions to create, configure, and manage actors within a system.
+//! THE `actor_builder` module provides structures and functions to create, configure, and manage actors within a system.
 //! This module includes the `ActorBuilder` for building actors, `Troupe` for managing groups of actors, and various utility
 //! functions and types to support actor creation and telemetry monitoring.
 
@@ -18,8 +18,8 @@ use futures_util::lock::{Mutex, MutexGuard};
 use log::*;
 use crate::*;
 use crate::{steady_config, ActorName, AlertColor, Graph, StdDev, Trigger};
-use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, StageManager};
+use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -30,14 +30,15 @@ use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::dot::RemoteDetails;
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::FutureExt;
+use futures_util::future::Shared;
 
-/// The `ActorBuilder` struct is responsible for constructing and configuring actors within the system.
+/// THE `ActorBuilder` struct is responsible for constructing and configuring actors within the system.
 /// It provides a fluent interface to set various properties and behaviors of the actor, such as telemetry settings,
 /// trigger conditions, and execution parameters. Once configured, the builder can spawn the actor either standalone
 /// or as part of a `Troupe`.
 #[derive(Clone)]
 pub struct ActorBuilder {
-    /// The name of the actor, used for identification in telemetry and logging.
+    /// THE name of the actor, used for identification in telemetry and logging.
     actor_name: ActorName,
     /// Shared arguments passed to the actor, accessible via the `args` method in `SteadyContext`.
     args: Arc<Box<dyn Any + Send + Sync>>,
@@ -94,7 +95,7 @@ pub struct ActorBuilder {
     /// Flag indicating whether to prevent simulation, ensuring real execution.
     pub(crate) never_simulate: bool,
     /// Lazily initialized Aeron media driver for communication.
-    aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// Optional barrier for synchronizing actor shutdown.
     pub shutdown_barrier: Option<Arc<Barrier>>,
     /// Flag indicating whether the actor is for testing purposes.
@@ -122,7 +123,7 @@ impl CoreBalancer {
     ///
     /// # Returns
     ///
-    /// The index of the allocated core.
+    /// THE index of the allocated core.
     fn allocate_core(&mut self, excluded_cores: &[usize]) -> usize {
         let core = self
             .core_usage
@@ -141,7 +142,7 @@ impl CoreBalancer {
 ///
 /// # Returns
 ///
-/// The number of CPU cores available.
+/// THE number of CPU cores available.
 #[cfg(feature = "core_affinity")]
 #[cfg(unix)]
 fn get_num_cores() -> usize {
@@ -152,17 +153,17 @@ fn get_num_cores() -> usize {
 ///
 /// # Arguments
 ///
-/// * `core_id` - The index of the core to pin the thread to.
+/// * `_core_id` - THE index of the core to pin the thread to.
 ///
 /// # Returns
 ///
 /// A `Result` indicating success or an error message if pinning fails.
 #[cfg(feature = "core_affinity")]
-fn pin_thread_to_core(core_id: usize) -> Result<(), String> {
+fn pin_thread_to_core(_core_id: usize) -> Result<(), String> {
     #[cfg(unix)]
     {
         let num_cores = get_num_cores();
-        let core_id = core_id % num_cores;
+        let core_id = _core_id % num_cores;
         let mut cpu_set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
         unsafe {
             libc::CPU_ZERO(&mut cpu_set);
@@ -178,14 +179,14 @@ fn pin_thread_to_core(core_id: usize) -> Result<(), String> {
             }
         }
     }
-    #[cfg(windows)]
-    {
-        unsafe {
-            let thread = winapi::um::processthreadsapi::GetCurrentThread();
-            let mask = 1usize << core_id;
-            winapi::um::winbase::SetThreadAffinityMask(thread, mask);
-        }
-    }
+    // #[cfg(windows)]
+    // {
+    //     unsafe {
+    //         let thread = winapi::um::processthreadsapi::GetCurrentThread();
+    //         let mask = 1usize << core_id; //TODO: this logic is wrong we need to think
+    //         winapi::um::winbase::SetThreadAffinityMask(thread, mask);
+    //     }
+    // }
     Ok(())
 }
 
@@ -213,9 +214,9 @@ type ActorRuntime = NonSendWrapper<DynCall>;
 
 /// Represents a builder for a future, encapsulating the actor's execution logic and execution parameters.
 struct FutureBuilderType {
-    /// The archetype containing the actor's execution logic and context.
+    /// THE archetype containing the actor's execution logic and context.
     fun: SteadyContextArchetype<DynCall>,
-    /// The frame rate in milliseconds for telemetry data collection.
+    /// THE frame rate in milliseconds for telemetry data collection.
     frame_rate_ms: u64,
     /// Flag indicating whether the actor is for testing purposes.
     is_for_test: bool,
@@ -241,8 +242,8 @@ impl FutureBuilderType {
     ///
     /// # Arguments
     ///
-    /// * `fun` - The archetype containing the actor's execution logic and context.
-    /// * `frame_rate_ms` - The frame rate in milliseconds for telemetry data collection.
+    /// * `fun` - THE archetype containing the actor's execution logic and context.
+    /// * `frame_rate_ms` - THE frame rate in milliseconds for telemetry data collection.
     /// * `is_for_test` - Flag indicating whether the actor is for testing purposes.
     /// * `stack_size` - Optional stack size for the actor.
     ///
@@ -262,7 +263,7 @@ impl FutureBuilderType {
     ///
     /// # Returns
     ///
-    /// The `ActorRuntime` containing the registered execution logic.
+    /// THE `ActorRuntime` containing the registered execution logic.
     fn register(&self) -> ActorRuntime {
         build_actor_registration(&self.fun)
     }
@@ -271,7 +272,7 @@ impl FutureBuilderType {
     ///
     /// # Arguments
     ///
-    /// * `team_display_id` - The identifier of the team for display purposes.
+    /// * `team_display_id` - THE identifier of the team for display purposes.
     ///
     /// # Returns
     ///
@@ -285,7 +286,7 @@ impl FutureBuilderType {
 ///
 /// This guard ensures that the troupe is spawned only when the guard is dropped, allowing for deferred execution.
 pub struct TroupeGuard {
-    /// The optional troupe to be spawned when the guard is dropped.
+    /// THE optional troupe to be spawned when the guard is dropped.
     pub(crate) troupe: Option<Troupe>,
 }
 
@@ -323,7 +324,7 @@ impl TroupeGuard {
     ///
     /// # Arguments
     ///
-    /// * `name` - The custom name for the troupe.
+    /// * `name` - THE custom name for the troupe.
     ///
     /// # Returns
     ///
@@ -358,7 +359,7 @@ impl Troupe {
     ///
     /// # Arguments
     ///
-    /// * `name` - The custom name for the troupe.
+    /// * `name` - THE custom name for the troupe.
     ///
     /// # Returns
     ///
@@ -372,8 +373,8 @@ impl Troupe {
     ///
     /// # Arguments
     ///
-    /// * `context_archetype` - The archetype containing the actor's execution logic and context.
-    /// * `frame_rate_ms` - The frame rate in milliseconds for telemetry data collection.
+    /// * `context_archetype` - THE archetype containing the actor's execution logic and context.
+    /// * `frame_rate_ms` - THE frame rate in milliseconds for telemetry data collection.
     /// * `is_for_test` - Flag indicating whether the actor is for testing purposes.
     /// * `stack_size` - Optional stack size for the actor.
     fn add_actor(
@@ -395,7 +396,7 @@ impl Troupe {
     ///
     /// # Arguments
     ///
-    /// * `other` - The target `Troupe` to receive the actor.
+    /// * `other` - THE target `Troupe` to receive the actor.
     ///
     /// # Returns
     ///
@@ -413,7 +414,7 @@ impl Troupe {
     ///
     /// # Arguments
     ///
-    /// * `other` - The target `Troupe` to receive the actor.
+    /// * `other` - THE target `Troupe` to receive the actor.
     ///
     /// # Returns
     ///
@@ -431,7 +432,7 @@ impl Troupe {
     ///
     /// # Returns
     ///
-    /// The number of actors spawned.
+    /// THE number of actors spawned.
     fn spawn(self) -> usize {
         let count = Arc::new(AtomicUsize::new(0));
         if self.future_builder.is_empty() {
@@ -539,12 +540,12 @@ impl Troupe {
 ///
 /// # Type Parameters
 ///
-/// * `F` - The type of the future to execute.
-/// * `T` - The output type of the future.
+/// * `F` - THE type of the future to execute.
+/// * `T` - THE output type of the future.
 ///
 /// # Arguments
 ///
-/// * `future` - The future to execute.
+/// * `future` - THE future to execute.
 ///
 /// # Returns
 ///
@@ -561,7 +562,7 @@ pub(crate) type NodeTxRx = Mutex<(SideChannel, Receiver<()>)>;
 /// This struct serves as a blueprint for creating `SteadyActorShadow` instances, which provide the runtime environment
 /// for actors.
 struct SteadyContextArchetype<DynCall: ?Sized> {
-    /// The execution logic for the actor, wrapped to avoid `Send` requirements.
+    /// THE execution logic for the actor, wrapped to avoid `Send` requirements.
     build_actor_exec: NonSendWrapper<DynCall>,
     /// Shared liveliness state of the graph.
     runtime_state: Arc<RwLock<GraphLiveliness>>,
@@ -577,14 +578,14 @@ struct SteadyContextArchetype<DynCall: ?Sized> {
     actor_metadata: Arc<ActorMetaData>,
     /// Vector of oneshot senders for shutdown notifications.
     oneshot_shutdown_vec: Arc<Mutex<Vec<Sender<()>>>>,
-    /// Oneshot receiver for shutdown signals.
-    oneshot_shutdown: Arc<Mutex<Receiver<()>>>,
+    /// A shared future that resolves when a shutdown is requested.
+    oneshot_shutdown: Shared<Receiver<()>>,
     /// Optional node transmitter and receiver for side-channel communications.
     node_tx_rx: Option<Arc<NodeTxRx>>,
     /// Flag indicating whether to show thread information in telemetry.
     show_thread_info: bool,
     /// Lazily initialized Aeron media driver.
-    aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// Flag indicating whether to prevent simulation.
     never_simulate: bool,
     /// Optional barrier for synchronizing shutdown.
@@ -605,7 +606,7 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
             oneshot_shutdown: self.oneshot_shutdown.clone(),
             node_tx_rx: self.node_tx_rx.clone(),
             show_thread_info: self.show_thread_info,
-            aeron_media_driver: self.aeron_media_driver.clone(),
+            aeron_meda_driver: self.aeron_meda_driver.clone(),
             never_simulate: self.never_simulate,
             shutdown_barrier: self.shutdown_barrier.clone(),
         }
@@ -614,9 +615,9 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
 
 /// Represents the scheduling options for an actor, either as a solo act or a member of a troupe.
 pub enum ScheduleAs<'a> {
-    /// The actor runs independently on its own thread.
+    /// THE actor runs independently on its own thread.
     SoloAct,
-    /// The actor is part of a troupe, sharing a thread with other actors.
+    /// THE actor is part of a troupe, sharing a thread with other actors.
     MemberOf(&'a mut Troupe),
 }
 
@@ -629,7 +630,7 @@ impl ScheduleAs<'_> {
     ///
     /// # Returns
     ///
-    /// The appropriate `ScheduleAs` variant.
+    /// THE appropriate `ScheduleAs` variant.
     pub fn dynamic_schedule(some_troupe: &mut Option<TroupeGuard>) -> ScheduleAs<'_> {
         if let Some(t) = some_troupe {
             ScheduleAs::MemberOf(t)
@@ -688,7 +689,7 @@ impl ActorBuilder {
             core_balancer: None,
             remote_details: None,
             never_simulate: false,
-            aeron_media_driver: graph.aeron.clone(),
+            aeron_meda_driver: graph.aeron.clone(),
             shutdown_barrier: graph.shutdown_barrier.clone(),
             is_for_test: graph.is_for_testing,
             stack_size: graph.default_stack_size,
@@ -702,8 +703,8 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `refresh` - The minimum refresh rate as a `Duration`.
-    /// * `window` - The size of the window as a `Duration`.
+    /// * `refresh` - THE minimum refresh rate as a `Duration`.
+    /// * `window` - THE size of the window as a `Duration`.
     ///
     /// # Returns
     ///
@@ -736,7 +737,7 @@ impl ActorBuilder {
 
     /// Configures the actor to use a core balancer for dynamic core allocation.
     ///
-    /// The core balancer distributes actors across available cores to optimize resource usage.
+    /// THE core balancer distributes actors across available cores to optimize resource usage.
     ///
     /// # Arguments
     ///
@@ -755,7 +756,7 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `one_offset_core` - The one-based index of the core to assign the actor to.
+    /// * `one_offset_core` - THE one-based index of the core to assign the actor to.
     ///
     /// # Returns
     ///
@@ -784,9 +785,9 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `frame_rate_ms` - The frame rate in milliseconds.
-    /// * `refresh` - The desired refresh duration.
-    /// * `window` - The desired window duration.
+    /// * `frame_rate_ms` - THE frame rate in milliseconds.
+    /// * `refresh` - THE desired refresh duration.
+    /// * `window` - THE desired window duration.
     ///
     /// # Returns
     ///
@@ -812,7 +813,7 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `config` - The `Percentile` to monitor for CPU usage.
+    /// * `config` - THE `Percentile` to monitor for CPU usage.
     ///
     /// # Returns
     ///
@@ -827,7 +828,7 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `name` - The base name of the actor.
+    /// * `name` - THE base name of the actor.
     /// * `suffix` - A numeric suffix for uniqueness.
     ///
     /// # Returns
@@ -843,7 +844,7 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `name` - The name of the actor.
+    /// * `name` - THE name of the actor.
     ///
     /// # Returns
     ///
@@ -873,7 +874,7 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `config` - The `Percentile` to monitor for workload.
+    /// * `config` - THE `Percentile` to monitor for workload.
     ///
     /// # Returns
     ///
@@ -910,8 +911,8 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `bound` - The trigger condition based on CPU usage.
-    /// * `color` - The `AlertColor` for the alert.
+    /// * `bound` - THE trigger condition based on CPU usage.
+    /// * `color` - THE `AlertColor` for the alert.
     ///
     /// # Returns
     ///
@@ -926,8 +927,8 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `bound` - The trigger condition based on workload.
-    /// * `color` - The `AlertColor` for the alert.
+    /// * `bound` - THE trigger condition based on workload.
+    /// * `color` - THE `AlertColor` for the alert.
     ///
     /// # Returns
     ///
@@ -982,7 +983,7 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `bytes_count` - The desired stack size in bytes.
+    /// * `bytes_count` - THE desired stack size in bytes.
     ///
     /// # Returns
     ///
@@ -997,12 +998,12 @@ impl ActorBuilder {
     ///
     /// # Type Parameters
     ///
-    /// * `F` - The future returned by the execution logic.
-    /// * `I` - The execution logic function.
+    /// * `F` - THE future returned by the execution logic.
+    /// * `I` - THE execution logic function.
     ///
     /// # Arguments
     ///
-    /// * `build_actor_exec` - The execution logic for the actor.
+    /// * `build_actor_exec` - THE execution logic for the actor.
     fn build_spawn<F, I>(self, build_actor_exec: I)
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
@@ -1101,13 +1102,13 @@ impl ActorBuilder {
     ///
     /// # Type Parameters
     ///
-    /// * `F` - The future returned by the execution logic.
-    /// * `I` - The execution logic function.
+    /// * `F` - THE future returned by the execution logic.
+    /// * `I` - THE execution logic function.
     ///
     /// # Arguments
     ///
-    /// * `build_actor_exec` - The execution logic for the actor.
-    /// * `target` - The `Troupe` to add the actor to.
+    /// * `build_actor_exec` - THE execution logic for the actor.
+    /// * `target` - THE `Troupe` to add the actor to.
     fn build_join<F, I>(self, build_actor_exec: I, target: &mut Troupe)
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
@@ -1124,13 +1125,13 @@ impl ActorBuilder {
     ///
     /// # Type Parameters
     ///
-    /// * `F` - The future returned by the execution logic.
-    /// * `I` - The execution logic function.
+    /// * `F` - THE future returned by the execution logic.
+    /// * `I` - THE execution logic function.
     ///
     /// # Arguments
     ///
-    /// * `build_actor_exec` - The execution logic for the actor.
-    /// * `desired_scheduling` - The scheduling type (`SoloAct` or `MemberOf`).
+    /// * `build_actor_exec` - THE execution logic for the actor.
+    /// * `desired_scheduling` - THE scheduling type (`SoloAct` or `MemberOf`).
     pub fn build<F, I>(self, build_actor_exec: I, desired_scheduling: ScheduleAs)
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
@@ -1150,12 +1151,12 @@ impl ActorBuilder {
     ///
     /// # Type Parameters
     ///
-    /// * `I` - The input function type.
-    /// * `F` - The future type returned by the function.
+    /// * `I` - THE input function type.
+    /// * `F` - THE future type returned by the function.
     ///
     /// # Arguments
     ///
-    /// * `f` - The function to convert.
+    /// * `f` - THE function to convert.
     ///
     /// # Returns
     ///
@@ -1172,12 +1173,12 @@ impl ActorBuilder {
     ///
     /// # Type Parameters
     ///
-    /// * `F` - The future returned by the execution logic.
-    /// * `I` - The execution logic function.
+    /// * `F` - THE future returned by the execution logic.
+    /// * `I` - THE execution logic function.
     ///
     /// # Arguments
     ///
-    /// * `build_actor_exec` - The execution logic for the actor.
+    /// * `build_actor_exec` - THE execution logic for the actor.
     ///
     /// # Returns
     ///
@@ -1226,13 +1227,21 @@ impl ActorBuilder {
             }
         });
         let immutable_oneshot_shutdown = {
-            let (send_shutdown_notice_to_periodic_wait, oneshot_shutdown) = oneshot::channel();
+            let (send_shutdown_notice, oneshot_shutdown) = oneshot::channel();
             let oneshot_shutdown_vec = oneshot_shutdown_vec.clone();
+            let runtime_state = runtime_state.clone();
             core_exec::block_on(async move {
                 let mut v: MutexGuard<'_, Vec<Sender<()>>> = oneshot_shutdown_vec.lock().await;
-                v.push(send_shutdown_notice_to_periodic_wait);
+                // If the graph is already in StopRequested state, fire the signal immediately
+                // for this new actor instance. This ensures that actors born during the 
+                // shutdown window (e.g. after a panic) don't miss the global signal.
+                if runtime_state.read().is_in_state(&[GraphLivelinessState::StopRequested]) {
+                    let _ = send_shutdown_notice.send(());
+                } else {
+                    v.push(send_shutdown_notice);
+                }
             });
-            Arc::new(Mutex::new(oneshot_shutdown))
+            oneshot_shutdown.shared()
         };
         SteadyContextArchetype {
             runtime_state: runtime_state.clone(),
@@ -1246,7 +1255,7 @@ impl ActorBuilder {
             node_tx_rx: immutable_node_tx_rx.clone(),
             build_actor_exec: NonSendWrapper::new(dyn_call),
             show_thread_info: self.show_thread_info,
-            aeron_media_driver: self.aeron_media_driver,
+            aeron_meda_driver: self.aeron_meda_driver,
             never_simulate: self.never_simulate,
             shutdown_barrier: self.shutdown_barrier,
         }
@@ -1256,7 +1265,7 @@ impl ActorBuilder {
     ///
     /// # Arguments
     ///
-    /// * `ident` - The unique identifier for the actor.
+    /// * `ident` - THE unique identifier for the actor.
     ///
     /// # Returns
     ///
@@ -1285,11 +1294,11 @@ impl ActorBuilder {
 ///
 /// This allows non-`Send` types to be used safely in multi-threaded contexts by synchronizing access.
 pub struct NonSendWrapper<T: ?Sized> {
-    /// The inner value wrapped in an `Arc<Mutex<T>>`.
+    /// THE inner value wrapped in an `Arc<Mutex<T>>`.
     inner: Arc<Mutex<T>>,
 }
 
-// SAFETY: The wrapper is `Send` because access to `T` is synchronized via `Mutex`.
+// SAFETY: THE wrapper is `Send` because access to `T` is synchronized via `Mutex`.
 unsafe impl<T> Send for NonSendWrapper<T> {}
 
 impl<T: ?Sized> NonSendWrapper<T> {
@@ -1297,7 +1306,7 @@ impl<T: ?Sized> NonSendWrapper<T> {
     ///
     /// # Arguments
     ///
-    /// * `inner` - The value to wrap.
+    /// * `inner` - THE value to wrap.
     ///
     /// # Returns
     ///
@@ -1345,7 +1354,7 @@ impl<T: ?Sized> NonSendWrapper<T> {
 ///
 /// # Arguments
 ///
-/// * `builder_source` - The archetype containing the actor's context and logic.
+/// * `builder_source` - THE archetype containing the actor's context and logic.
 ///
 /// # Returns
 ///
@@ -1362,7 +1371,7 @@ fn build_actor_registration(builder_source: &SteadyContextArchetype<DynCall>) ->
 ///
 /// # Arguments
 ///
-/// * `builder_source` - The archetype containing the actor's context and logic.
+/// * `builder_source` - THE archetype containing the actor's context and logic.
 fn exit_actor_registration(builder_source: &SteadyContextArchetype<DynCall>) {
     builder_source
         .runtime_state
@@ -1374,9 +1383,9 @@ fn exit_actor_registration(builder_source: &SteadyContextArchetype<DynCall>) {
 ///
 /// # Arguments
 ///
-/// * `builder_source` - The archetype containing the actor's context and logic.
-/// * `frame_rate_ms` - The frame rate in milliseconds for telemetry.
-/// * `team_id` - The identifier of the team the actor belongs to.
+/// * `builder_source` - THE archetype containing the actor's context and logic.
+/// * `frame_rate_ms` - THE frame rate in milliseconds for telemetry.
+/// * `team_id` - THE identifier of the team the actor belongs to.
 /// * `is_test` - Flag indicating if the actor is for testing.
 ///
 /// # Returns
@@ -1408,7 +1417,7 @@ fn build_actor_context<I: ?Sized>(
         team_id,
         frame_rate_ms,
         show_thread_info: builder_source.show_thread_info,
-        aeron_meda_driver: builder_source.aeron_media_driver.clone(),
+        aeron_meda_driver: builder_source.aeron_meda_driver.clone(),
         use_internal_behavior,
         shutdown_barrier: builder_source.shutdown_barrier.clone(),
 
@@ -1474,10 +1483,10 @@ mod test_actor_builder {
             all_telemetry_rx: graph.all_telemetry_rx.clone(),
             actor_metadata: Arc::new(ActorMetaData::default()),
             oneshot_shutdown_vec: graph.oneshot_shutdown_vec.clone(),
-            oneshot_shutdown: Arc::new(Mutex::new(rx)),
+            oneshot_shutdown: rx.shared(),
             node_tx_rx: None,
             show_thread_info: false,
-            aeron_media_driver: OnceLock::new(),
+            aeron_meda_driver: OnceLock::new(),
             never_simulate: false,
             shutdown_barrier: None,
         };

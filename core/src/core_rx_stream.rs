@@ -1,7 +1,6 @@
 use std::time::Duration;
 use futures_timer::Delay;
 use futures_util::{select, FutureExt};
-use std::sync::atomic::Ordering;
 use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use futures_util::future::FusedFuture;
@@ -76,8 +75,8 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
                 self.control_channel.rx.advance_read_index(count.0);
             }
 
-            self.payload_channel.take_count.fetch_add(count.1 as u32, Ordering::Relaxed);
-            self.control_channel.take_count.fetch_add(count.0 as u32, Ordering::Relaxed);
+            self.payload_channel.take_count.fetch_add(count.1 as u32, std::sync::atomic::Ordering::Relaxed);
+            self.control_channel.take_count.fetch_add(count.0 as u32, std::sync::atomic::Ordering::Relaxed);
 
             RxDone::Stream(count.0, count.1)
         } else {
@@ -98,20 +97,20 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         }
         let result = self.control_channel.rx.first();
         if let Some(item) = result {
-            let take_count = self.control_channel.take_count.load(Ordering::Relaxed);
-            let cached_take_count = self.control_channel.cached_take_count.load(Ordering::Relaxed);
+            let take_count = self.control_channel.take_count.load(std::sync::atomic::Ordering::Relaxed);
+            let cached_take_count = self.control_channel.cached_take_count.load(std::sync::atomic::Ordering::Relaxed);
             if cached_take_count != take_count {
-                self.control_channel.peek_repeats.store(0, Ordering::Relaxed);
-                self.control_channel.cached_take_count.store(take_count, Ordering::Relaxed);
+                self.control_channel.peek_repeats.store(0, std::sync::atomic::Ordering::Relaxed);
+                self.control_channel.cached_take_count.store(take_count, std::sync::atomic::Ordering::Relaxed);
             } else {
-                self.control_channel.peek_repeats.fetch_add(1, Ordering::Relaxed);
+                self.control_channel.peek_repeats.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             let (a, b) = self.payload_channel.rx.as_slices();
             let count_a = a.len().min(item.length() as usize);
             let count_b = item.length() as usize - count_a;
             Some((item, &a[0..count_a], &b[0..count_b]))
         } else {
-            self.control_channel.peek_repeats.store(0, Ordering::Relaxed);
+            self.control_channel.peek_repeats.store(0, std::sync::atomic::Ordering::Relaxed);
             None
         }
     }
@@ -181,7 +180,7 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
                 let payload = payload.into_boxed_slice();
                 if let Some(item) = self.control_channel.rx.try_pop() {
                     unsafe { self.payload_channel.rx.advance_read_index(payload.len()); }
-                    self.control_channel.take_count.fetch_add(1, Ordering::Relaxed);
+                    self.control_channel.take_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     Some((RxDone::Stream(1, payload.len()), (item, payload)))
                 } else {
                     None
@@ -243,8 +242,8 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
             self.control_channel.rx.advance_read_index(items_copied);
         }
 
-        self.control_channel.take_count.fetch_add(payload_copied as u32, Ordering::Relaxed);
-        self.payload_channel.take_count.fetch_add(items_copied as u32, Ordering::Relaxed);
+        self.control_channel.take_count.fetch_add(payload_copied as u32, std::sync::atomic::Ordering::Relaxed);
+        self.payload_channel.take_count.fetch_add(items_copied as u32, std::sync::atomic::Ordering::Relaxed);
 
         RxDone::Stream(items_copied, payload_copied)
     }
@@ -263,7 +262,6 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
 #[cfg(test)]
 mod core_rx_stream_tests {
     use std::time::Duration;
-    use std::sync::atomic::Ordering;
     use async_ringbuf::traits::Producer;
     use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, RxCore, core_exec, RxDone, steady_rx::RxMetaDataProvider};
     use crate::core_tx::TxCore;
@@ -420,18 +418,18 @@ mod core_rx_stream_tests {
     //         
     //         // First peek
     //         rx_guard.shared_peek_async_timeout(None).await;
-    //         assert_eq!(rx_guard.control_channel.peek_repeats.load(Ordering::Relaxed), 0);
+    //         assert_eq!(rx_guard.control_channel.peek_repeats.load(std::sync::atomic::Ordering::Relaxed), 0);
     //         
     //         // Second peek (same take_count)
     //         rx_guard.shared_peek_async_timeout(None).await;
-    //         assert_eq!(rx_guard.control_channel.peek_repeats.load(Ordering::Relaxed), 1);
+    //         assert_eq!(rx_guard.control_channel.peek_repeats.load(std::sync::atomic::Ordering::Relaxed), 1);
     //         
     //         // Take it
     //         rx_guard.shared_try_take().unwrap();
     //         
     //         // Peek again (empty)
     //         rx_guard.shared_peek_async_timeout(None).await;
-    //         assert_eq!(rx_guard.control_channel.peek_repeats.load(Ordering::Relaxed), 0);
+    //         assert_eq!(rx_guard.control_channel.peek_repeats.load(std::sync::atomic::Ordering::Relaxed), 0);
     //         
     //         Ok::<(), Box<dyn std::error::Error>>(())
     //     })

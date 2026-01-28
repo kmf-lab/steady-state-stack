@@ -58,8 +58,8 @@ pub(crate) const PARTNER_BUNDLE_PEN_WIDTH: &str = "2";
 ///
 /// # Arguments
 ///
-/// * `state` - The current metric state.
-/// * `txt_metric` - The buffer to store the metrics text.
+/// * `state` - THE current metric state.
+/// * `txt_metric` - THE buffer to store the metrics text.
 pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
     txt_metric.clear(); // Clear the buffer for reuse
 
@@ -93,8 +93,8 @@ struct PrimaryGroupKey {
 ///
 /// # Arguments
 ///
-/// * `state` - The current metric state.
-/// * `dot_graph` - The buffer to store the DOT graph.
+/// * `state` - THE current metric state.
+/// * `dot_graph` - THE buffer to store the DOT graph.
 pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
     dot_graph.clear(); // Clear the buffer for reuse
 
@@ -516,11 +516,11 @@ pub struct DotGraphFrames {
 ///
 /// # Arguments
 ///
-/// * `local_state` - The local metric state.
-/// * `actor` - The metadata of the actor.
-/// * `channels_in` - The input channels.
-/// * `channels_out` - The output channels.
-/// * `frame_rate_ms` - The frame rate in milliseconds.
+/// * `local_state` - THE local metric state.
+/// * `actor` - THE metadata of the actor.
+/// * `channels_in` - THE input channels.
+/// * `channels_out` - THE output channels.
+/// * `frame_rate_ms` - THE frame rate in milliseconds.
 pub fn apply_node_def(
     local_state: &mut DotState,
     actor: Arc<ActorMetaData>,
@@ -570,11 +570,11 @@ pub fn apply_node_def(
 ///
 /// # Arguments
 ///
-/// * `local_state` - The local metric state.
-/// * `node_name` - The name of the node.
-/// * `mdvec` - The metadata of the channels.
+/// * `local_state` - THE local metric state.
+/// * `node_name` - THE name of the node.
+/// * `mdvec` - THE metadata of the channels.
 /// * `set_to` - A boolean indicating if the edges are set to the node.
-/// * `frame_rate_ms` - The frame rate in milliseconds.
+/// * `frame_rate_ms` - THE frame rate in milliseconds.
 fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec: &[Arc<ChannelMetaData>], set_to: bool, frame_rate_ms: u64) {
     mdvec.iter().for_each(|meta| {
         let idx = meta.id;
@@ -727,10 +727,10 @@ impl FrameHistory {
     ///
     /// # Arguments
     ///
-    /// * `name` - The name of the node.
-    /// * `id` - The ID of the node.
-    /// * `chin` - The input channels.
-    /// * `chout` - The output channels.
+    /// * `name` - THE name of the node.
+    /// * `id` - THE ID of the node.
+    /// * `chin` - THE input channels.
+    /// * `chout` - THE output channels.
     pub fn apply_node(&mut self, name: &'static str, id: usize, chin: &[Arc<ChannelMetaData>], chout: &[Arc<ChannelMetaData>]) {
         write_long_unsigned(REC_NODE, &mut self.history_buffer); // Message type
         write_long_unsigned(id as u64, &mut self.history_buffer); // Message type
@@ -763,8 +763,8 @@ impl FrameHistory {
     ///
     /// # Arguments
     ///
-    /// * `total_take_send` - The total take and send values.
-    /// * `frame_rate_ms` - The frame rate in milliseconds.
+    /// * `total_take_send` - THE total take and send values.
+    /// * `frame_rate_ms` - THE frame rate in milliseconds.
     pub fn apply_edge(&mut self, total_take_send: &[(i64, i64)], frame_rate_ms: u64) {
         write_long_unsigned(REC_EDGE, &mut self.history_buffer); // Message type
 
@@ -863,8 +863,8 @@ impl FrameHistory {
     ///
     /// # Arguments
     ///
-    /// * `path` - The file path.
-    /// * `data` - The data to write.
+    /// * `path` - THE file path.
+    /// * `data` - THE data to write.
     ///
     /// # Returns
     ///
@@ -1151,7 +1151,7 @@ mod dot_tests {
 
     #[test]
     fn test_node_compute_refresh_with_load_calculation() {
-        // Test the load calculation branch (lines 66-69)
+        // Test THE load calculation branch (lines 66-69)
         let actor_status = ActorStatus {
             ident: Default::default(),
             await_total_ns: 100,
@@ -1182,7 +1182,7 @@ mod dot_tests {
 
         };
         node.compute_and_refresh(actor_status, total_work_ns);
-        // This should trigger the load calculation branch
+        // This should trigger THE load calculation branch
     }
 
     #[test]
@@ -1501,7 +1501,7 @@ mod dot_tests {
 
     #[test]
     fn test_define_unified_edges_from_side() {
-        // Test the "from" side of edge definition (lines 382-386)
+        // Test THE "from" side of edge definition (lines 382-386)
         let mut metric_state = DotState::default();
         let node_name = ActorName::new("from_node", None);
 
@@ -1542,7 +1542,7 @@ mod dot_tests {
         });
         let channels = vec![channel];
 
-        // Test setting the "from" side (set_to = false)
+        // Test setting THE "from" side (set_to = false)
         define_unified_edges(&mut metric_state, node_name, &channels, false, 1000);
         assert_eq!(metric_state.edges.len(), 1);
         assert!(metric_state.edges[0].from.is_some());
@@ -1556,11 +1556,11 @@ mod dot_tests {
         // Test lines 540-552 - packed writer sync logic
         let mut frame_history = FrameHistory::new(1000);
 
-        // Force a sync condition by manipulating the delta_write_count
+        // Force a sync condition by manipulating THE delta_write_count
         // We'll simulate having written for more than 10 minutes worth of data
         let total_take_send = vec![(100, 50); 700]; // Large number to trigger sync
 
-        // This should trigger the sync branches
+        // This should trigger THE sync branches
         frame_history.apply_edge(&total_take_send, 1000);
         assert!(!frame_history.history_buffer.is_empty());
     }
@@ -1570,7 +1570,7 @@ mod dot_tests {
         // Test lines 623-627 - will_span_into_next_block function
         let frame_history = FrameHistory::new(1000);
 
-        // Test the function directly - this requires manipulating internal state
+        // Test THE function directly - this requires manipulating internal state
         let result = frame_history.will_span_into_next_block();
         assert!(!result); // Should be false for a new instance
     }
@@ -1584,7 +1584,7 @@ mod dot_tests {
         let result = core_exec::block_on(FrameHistory::truncate_file(test_path.clone(), test_data));
         assert!(result.is_ok());
 
-        // Verify the file was created and contains the data
+        // Verify THE file was created and contains THE data
         let file_content = std::fs::read_to_string(&test_path).expect("Failed to read test file");
         assert_eq!(file_content, "test truncate data");
 
@@ -1598,7 +1598,7 @@ mod dot_tests {
         let state = DotState {
             nodes: vec![
                 Node {
-                    id: None, // This will trigger the "unknown" branch
+                    id: None, // This will trigger THE "unknown" branch
                     color: "red",
                     pen_width: NODE_PEN_WIDTH,
                     stats_computer: ActorStatsComputer::default(),
@@ -1621,7 +1621,7 @@ mod dot_tests {
         };
         let mut dot_graph = BytesMut::new();
 
-        // This should not include the node since id is None (filtered out)
+        // This should not include THE node since id is None (filtered out)
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(!result.contains("unknown_node"));
@@ -1657,7 +1657,7 @@ mod dot_tests {
         let mut dot_graph = BytesMut::new();
 
 
-        // This should process the edge as "unknown" -> "unknown"
+        // This should process THE edge as "unknown" -> "unknown"
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         assert!(result.contains("test_edge"));
@@ -1822,7 +1822,6 @@ mod dot_tests {
             });
         }
 
-        let state = Duration::from_secs(0); // Dummy for state
         let state = DotState {
             nodes: vec![
                 Node {
@@ -1865,7 +1864,7 @@ mod dot_tests {
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
-        // Neither group reaches the threshold of 4
+        // Neither group reaches THE threshold of 4
         assert!(!result.contains("BUNDLE"));
     }
 

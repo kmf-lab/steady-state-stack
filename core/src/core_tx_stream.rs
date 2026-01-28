@@ -2,7 +2,6 @@ use log::{error, trace, warn};
 use std::time::{Duration, Instant};
 use futures_util::{select, FutureExt};
 use futures_util::future::{Either, FusedFuture};
-use futures_timer::Delay;
 use std::future::pending;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
@@ -66,7 +65,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// Sends closure signals through the oneshot channels for both control and payload, logging
     /// trace messages if the receivers are already dropped. Always returns `true`.
-    fn shared_mark_closed(&mut self) -> bool {
+    fn shared_mark_closed(&mut self) {
         if let Some(c) = self.control_channel.make_closed.take() {
             let result = c.send(());
             if result.is_err() {
@@ -79,7 +78,6 @@ impl TxCore for StreamTx<StreamIngress> {
                 trace!("close called but the receiver already dropped");
             }
         }
-        true
     }
 
     /// Returns a tuple representing one control item and an estimated payload size.
@@ -356,31 +354,31 @@ impl TxCore for StreamTx<StreamIngress> {
                 pin_mut!(has_room);
                 let mut one_down = &mut self.control_channel.oneshot_shutdown;
                 let timeout_future = match timeout {
-                    Some(duration) => Either::Left(Delay::new(duration).fuse()),
+                    Some(duration) => Either::Left(futures_timer::Delay::new(duration).fuse()),
                     None => Either::Right(pending::<()>().fuse()),
                 };
                 pin_mut!(timeout_future);
                 if !one_down.is_terminated() {
                     select! {
-                        _ = one_down => SendOutcome::Blocked(item),
+                        _ = one_down => SendOutcome::Closed(item),
                         _ = has_room => {
                             let pushed = self.payload_channel.tx.push_slice(payload) == payload.len();
                             if !pushed {
                                 error!("channel is closed");
-                                return SendOutcome::Blocked(item);
+                                return SendOutcome::Closed(item);
                             }
                             match self.control_channel.tx.push(item).await {
                                 Ok(_) => SendOutcome::Success,
                                 Err(t) => {
                                     error!("channel is closed");
-                                    SendOutcome::Blocked(t)
+                                    SendOutcome::Closed(t)
                                 }
                             }
                         }
-                        _ = timeout_future => SendOutcome::Blocked(item),
+                        _ = timeout_future => SendOutcome::Timeout(item),
                     }
                 } else {
-                    SendOutcome::Blocked(item)
+                    SendOutcome::Closed(item)
                 }
             }
         }
@@ -469,7 +467,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Sends closure signals through the oneshot channels for both, logging trace messages if
     /// receivers are dropped. Always returns `true`.
-    fn shared_mark_closed(&mut self) -> bool {
+    fn shared_mark_closed(&mut self) {
         if let Some(c) = self.control_channel.make_closed.take() {
             let result = c.send(());
             if result.is_err() {
@@ -482,7 +480,6 @@ impl TxCore for StreamTx<StreamEgress> {
                 trace!("close called but the receiver already dropped");
             }
         }
-        true
     }
 
     /// Returns a tuple representing one control item and an estimated payload size.
@@ -752,31 +749,31 @@ impl TxCore for StreamTx<StreamEgress> {
                 pin_mut!(has_room);
                 let mut one_down = &mut self.control_channel.oneshot_shutdown;
                 let timeout_future = match timeout {
-                    Some(duration) => Either::Left(Delay::new(duration).fuse()),
+                    Some(duration) => Either::Left(futures_timer::Delay::new(duration).fuse()),
                     None => Either::Right(pending::<()>().fuse()),
                 };
                 pin_mut!(timeout_future);
                 if !one_down.is_terminated() {
                     select! {
-                        _ = one_down => SendOutcome::Blocked(item),
+                        _ = one_down => SendOutcome::Closed(item),
                         _ = has_room => {
                             let pushed = self.payload_channel.tx.push_slice(payload) == payload.len();
                             if !pushed {
                                 error!("channel is closed");
-                                return SendOutcome::Blocked(item);
+                                return SendOutcome::Closed(item);
                             }
                             match self.control_channel.tx.push(item).await {
                                 Ok(_) => SendOutcome::Success,
                                 Err(t) => {
                                     error!("channel is closed");
-                                    SendOutcome::Blocked(t)
+                                    SendOutcome::Closed(t)
                                 }
                             }
                         }
-                        _ = timeout_future => SendOutcome::Blocked(item),
+                        _ = timeout_future => SendOutcome::Timeout(item),
                     }
                 } else {
-                    SendOutcome::Blocked(item)
+                    SendOutcome::Closed(item)
                 }
             }
         }
@@ -813,8 +810,7 @@ impl TxCore for StreamTx<StreamEgress> {
 #[cfg(test)]
 mod core_tx_stream_tests {
     use std::time::{Duration, Instant};
-    use futures_timer::Delay;
-    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, SendSaturation, TxCore, RxCore, TxDone, ActorIdentity, core_exec, SendOutcome, StreamTx, steady_tx::TxMetaDataProvider};
+    use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, SendSaturation, TxCore, TxDone, ActorIdentity, core_exec, SendOutcome, StreamTx, steady_tx::TxMetaDataProvider};
     use crate::distributed::aqueduct_stream::Defrag;
     use async_ringbuf::traits::Producer;
 
@@ -891,7 +887,7 @@ mod core_tx_stream_tests {
             assert!(matches!(outcome, crate::SendOutcome::Success));
 
             // Test shared_mark_closed
-            assert!(tx_guard.shared_mark_closed());
+            tx_guard.shared_mark_closed();
             
             Ok::<(), Box<dyn std::error::Error>>(())
         })
@@ -1058,7 +1054,7 @@ mod core_tx_stream_tests {
             SendSaturation::AwaitForRoom,
             Some(Duration::from_millis(10))
         ));
-        assert!(matches!(outcome_timeout, SendOutcome::Blocked(_)));
+        assert!(matches!(outcome_timeout, SendOutcome::Timeout(_)));
         assert!(start.elapsed() >= Duration::from_millis(10));
     }
 
@@ -1081,11 +1077,11 @@ mod core_tx_stream_tests {
 
             // Test WarnThenAwait
             let fut = tx_guard.shared_send_async_timeout(msg, ident, SendSaturation::WarnThenAwait, Some(Duration::from_millis(10)));
-            assert!(matches!(fut.await, SendOutcome::Blocked(_)));
+            assert!(matches!(fut.await, SendOutcome::Timeout(_)));
 
             // Test DebugWarnThenAwait
             let fut = tx_guard.shared_send_async_timeout(msg, ident, SendSaturation::DebugWarnThenAwait, Some(Duration::from_millis(10)));
-            assert!(matches!(fut.await, SendOutcome::Blocked(_)));
+            assert!(matches!(fut.await, SendOutcome::Timeout(_)));
         });
     }
 
@@ -1228,7 +1224,7 @@ mod core_tx_stream_tests {
             // Drop the receivers to trigger the trace branches
             drop(rx);
             
-            assert!(tx_guard.shared_mark_closed());
+            tx_guard.shared_mark_closed();
         });
     }
 

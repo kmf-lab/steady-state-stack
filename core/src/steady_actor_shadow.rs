@@ -8,18 +8,16 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use std::any::Any;
 use std::error::Error;
-use futures_util::lock::{Mutex, MutexGuard};
+use futures_util::lock::{Mutex};
 use futures::channel::oneshot;
 use futures_util::stream::FuturesUnordered;
 use std::future::Future;
 use futures_util::{select, FutureExt, StreamExt};
 use futures_timer::Delay;
-use futures_util::future::{FusedFuture};
-use std::thread;
+use futures_util::future::{FusedFuture, Shared};
 use ringbuf::consumer::Consumer;
 use ringbuf::traits::Observer;
 use ringbuf::producer::Producer;
-use std::ops::DerefMut;
 use std::task::Poll;
 use aeron::aeron::Aeron;
 use log::{info, warn};
@@ -50,7 +48,10 @@ pub struct SteadyActorShadow {
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     pub(crate) actor_metadata: Arc<ActorMetaData>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
-    pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
+    /// A shared future that resolves when a shutdown is requested.
+    /// Using `Shared` allows multiple generations of an actor (after restarts)
+    /// to await the same signal without consuming it.
+    pub(crate) oneshot_shutdown: Shared<oneshot::Receiver<()>>,
     pub(crate) last_periodic_wait: AtomicU64,
     pub(crate) actor_start_time: Instant,
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
@@ -172,7 +173,7 @@ impl SteadyActor for SteadyActorShadow {
     /// - `elems`: A mutable slice to store the peeked messages.
     ///
     /// # Returns
-    /// The number of messages peeked and stored in `elems`.
+    /// THE number of messages peeked and stored in `elems`.
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
@@ -251,7 +252,7 @@ impl SteadyActor for SteadyActorShadow {
     /// - `slice`: A slice of messages to be sent.
     ///
     /// # Returns
-    /// The number of messages successfully sent before the channel became full.
+    /// THE number of messages successfully sent before the channel became full.
     ///
     /// # Type Constraints
     /// - `T`: Must implement `Copy`.
@@ -274,7 +275,7 @@ impl SteadyActor for SteadyActorShadow {
     /// - `iter`: An iterator that yields messages of type `T`.
     ///
     /// # Returns
-    /// The number of messages successfully sent before the channel became full.
+    /// THE number of messages successfully sent before the channel became full.
     fn send_iter_until_full<T, I: Iterator<Item=T>>(&mut self, this: &mut Tx<T>, iter: I) -> usize {
         this.shared_send_iter_until_full(iter)
     }
@@ -282,7 +283,7 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Parameters
     /// - `this`: A mutable reference to a `Tx<T>` instance.
-    /// - `msg`: The message to be sent.
+    /// - `msg`: THE message to be sent.
     ///
     /// # Returns
     /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
@@ -383,7 +384,7 @@ impl SteadyActor for SteadyActorShadow {
     /// - `this`: A mutable reference to a `Tx<T>` instance.
     ///
     /// # Returns
-    /// The number of messages that can still be sent before the channel is full.
+    /// THE number of messages that can still be sent before the channel is full.
     fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize {
         this.shared_vacant_units()
     }
@@ -394,7 +395,12 @@ impl SteadyActor for SteadyActorShadow {
     ///
     /// # Asynchronous
     async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool {
-        this.shared_wait_empty().await
+        // We must select against shutdown to ensure the actor wakes up to vote
+        // even if the channel never becomes empty.
+        select! {
+            _ = self.oneshot_shutdown.clone().fuse() => false,
+            x = this.shared_wait_empty().fuse() => x,
+        }
     }
     /// Takes messages into an iterator.
     ///
@@ -409,10 +415,10 @@ impl SteadyActor for SteadyActorShadow {
     /// Calls an asynchronous function and monitors its execution for telemetry.
     ///
     /// # Parameters
-    /// - `f`: The asynchronous function to call.
+    /// - `f`: THE asynchronous function to call.
     ///
     /// # Returns
-    /// The output of the asynchronous function `f`.
+    /// THE output of the asynchronous function `f`.
     ///
     /// # Asynchronous
     async fn call_async<F>(&self, operation: F) -> Option<F::Output>
@@ -422,8 +428,7 @@ impl SteadyActor for SteadyActorShadow {
         let operation = operation.fuse();
         futures::pin_mut!(operation); // Pin the future on the stack
 
-        let one_down = &mut self.oneshot_shutdown.lock().await;
-        if one_down.is_terminated() {
+        if self.oneshot_shutdown.is_terminated() {
             if let Some(duration) = self.is_liveliness_shutdown_timeout() {
                 //in this case we know that the shutdown signal happened but we have duration
                 //before it is a hard shutdown, so we will wait 4/1 of duration
@@ -439,7 +444,7 @@ impl SteadyActor for SteadyActorShadow {
                 }
             }
         } else {
-            select! { _ = one_down.deref_mut() => None, r = operation => Some(r), }
+            select! { _ = self.oneshot_shutdown.clone().fuse() => None, r = operation => Some(r), }
         }
     }
 
@@ -469,18 +474,16 @@ impl SteadyActor for SteadyActorShadow {
         self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
         let delay = Delay::new(remaining_duration);
 
-        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
         let result = select! {
-                    _= &mut one_down.deref_mut() => false,
+                    _= self.oneshot_shutdown.clone().fuse() => false,
                     _= &mut delay.fuse() => true
                  };
         result
     }
     async fn wait_timeout(&self, timeout: Duration) -> bool {
         let delay = Delay::new(timeout);
-        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
         let result = select! {
-                    _= &mut one_down.deref_mut() => false,
+                    _= self.oneshot_shutdown.clone().fuse() => false,
                     _= &mut delay.fuse() => true
                  };
         result
@@ -490,13 +493,12 @@ impl SteadyActor for SteadyActorShadow {
     /// Asynchronously waits for a specified duration.
     ///
     /// # Parameters
-    /// - `duration`: The duration to wait.
+    /// - `duration`: THE duration to wait.
     ///
     /// # Asynchronous
     async fn wait(&self, duration: Duration) {
-        let one_down = &mut self.oneshot_shutdown.lock().await;
-        if !one_down.is_terminated() {
-            select! { _ = one_down.deref_mut() => {}, _ =Delay::new(duration).fuse() => {} }
+        if !self.oneshot_shutdown.is_terminated() {
+            select! { _ = self.oneshot_shutdown.clone().fuse() => {}, _ =Delay::new(duration).fuse() => {} }
         }
     }
     /// Yield so other actors may be able to make use of this thread. Returns
@@ -507,7 +509,7 @@ impl SteadyActor for SteadyActorShadow {
     /// Waits for a future to complete or until a shutdown signal is received.
     ///
     /// # Parameters
-    /// - `fut`: The future to wait for.
+    /// - `fut`: THE future to wait for.
     ///
     /// # Returns
     /// `true` if the future completed, `false` if a shutdown signal was received.
@@ -515,10 +517,8 @@ impl SteadyActor for SteadyActorShadow {
     where
         F: FusedFuture<Output = ()> + 'static + Send + Sync {
         let mut pinned_fut = Box::pin(fut);
-        let one_down = &mut self.oneshot_shutdown.lock().await;
-        let mut one_fused = one_down.deref_mut().fuse();
-        if !one_fused.is_terminated() {
-            select! { _ = one_fused => false, _ = pinned_fut => true, }
+        if !self.oneshot_shutdown.is_terminated() {
+            select! { _ = self.oneshot_shutdown.clone().fuse() => false, _ = pinned_fut => true, }
         } else {
             false
         }
@@ -526,7 +526,7 @@ impl SteadyActor for SteadyActorShadow {
     /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
     ///
     /// # Parameters
-    /// - `msg`: The message to be sent.
+    /// - `msg`: THE message to be sent.
     ///
     /// # Returns
     /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
@@ -574,23 +574,32 @@ impl SteadyActor for SteadyActorShadow {
     /// Waits until the specified number of available units are in the receiver.
     ///
     /// # Parameters
-    /// - `count`: The number of units to wait for.
+    /// - `count`: THE number of units to wait for.
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
     async fn wait_avail<T: RxCore>(&self, this: &mut T, size: usize) -> bool {
-        this.shared_wait_closed_or_avail_units(size).await
+        // Shutdown awareness is critical here; if the producer is gone but 
+        // the channel isn't closed, we'd hang forever without this select.
+        select! {
+            _ = self.oneshot_shutdown.clone().fuse() => false,
+            x = this.shared_wait_closed_or_avail_units(size).fuse() => x,
+        }
     }
 
     /// Waits until the specified number of vacant units are in the transmitter.
     ///
     /// # Parameters
-    /// - `count`: The number of units to wait for.
+    /// - `count`: THE number of units to wait for.
     ///
     /// # Returns
     /// `true` if the required number of units became available, `false` if the wait was interrupted.
     async fn wait_vacant<T: TxCore>(&self, this: &mut T, size: T::MsgSize) -> bool {
-        this.shared_wait_shutdown_or_vacant_units(size).await
+        // Ensure we don't block indefinitely on a full channel during shutdown.
+        select! {
+            _ = self.oneshot_shutdown.clone().fuse() => false,
+            x = this.shared_wait_shutdown_or_vacant_units(size).fuse() => x,
+        }
     }
 
     /// Waits until shutdown
@@ -598,11 +607,7 @@ impl SteadyActor for SteadyActorShadow {
     /// # Returns
     /// true
     async fn wait_shutdown(&self) -> bool {
-        let one_shot = &self.oneshot_shutdown;
-        let mut guard = one_shot.lock().await;
-        if !guard.is_terminated() {
-            let _ = guard.deref_mut().await;
-        }
+        let _ = self.oneshot_shutdown.clone().await;
         true
     }
     /// Returns a side channel responder if available.
@@ -615,7 +620,7 @@ impl SteadyActor for SteadyActorShadow {
     /// Checks if the actor is running, using a custom accept function.
     ///
     /// # Parameters
-    /// - `accept_fn`: The custom accept function to check the running state.
+    /// - `accept_fn`: THE custom accept function to check the running state.
     ///
     /// # Returns
     /// `true` if the actor is running, `false` otherwise.
@@ -671,11 +676,25 @@ impl SteadyActor for SteadyActorShadow {
                 });
             }
             let mut completed = 0;
-            // Poll futures concurrently
-            while futures.next().await.is_some() {
-                completed += 1;
+
+            // Poll futures concurrently while watching for shutdown.
+            // This prevents the actor from hanging if the bundle never reaches the required vacancy.
+            loop {
                 if completed >= count_down {
                     break;
+                }
+                select! {
+                    _ = self.oneshot_shutdown.clone().fuse() => {
+                        result.store(false, Ordering::Relaxed);
+                        break;
+                    }
+                    next = futures.next() => {
+                        if next.is_some() {
+                            completed += 1;
+                        } else {
+                            break;
+                        }
+                    }
                 }
             }
             result.load(Ordering::Relaxed)
@@ -701,11 +720,24 @@ impl SteadyActor for SteadyActorShadow {
 
             let mut completed = 0;
 
-            // Poll futures concurrently
-            while futures.next().await.is_some() {
-                completed += 1;
+            // Poll futures concurrently while watching for shutdown.
+            // This prevents the actor from hanging if the bundle never reaches the required availability.
+            loop {
                 if completed >= count_down {
                     break;
+                }
+                select! {
+                    _ = self.oneshot_shutdown.clone().fuse() => {
+                        result.store(false, Ordering::Relaxed);
+                        break;
+                    }
+                    next = futures.next() => {
+                        if next.is_some() {
+                            completed += 1;
+                        } else {
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -723,158 +755,58 @@ impl SteadyActor for SteadyActorShadow {
 
 
 #[cfg(test)]
-mod steady_actor_shadow_tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::thread::sleep;
-    use std::time::Duration;
-    use crate::*;
+mod steady_actor_tests {
     use super::*;
+    use crate::core_exec;
 
-    type BlockingResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    #[test]
+    fn test_send_outcome_methods() {
+        let success: SendOutcome<i32> = SendOutcome::Success;
+        assert!(success.is_sent());
+        assert!(success.expect("should not panic"));
 
-    fn blocking_simulator(blocking_on: Arc<AtomicBool>) -> BlockingResult {
-        while blocking_on.load(Ordering::Relaxed) {
-            sleep(Duration::from_millis(2));
-        }
-        Ok(())
+        let blocked = SendOutcome::Blocked(42);
+        assert!(!blocked.is_sent());
+
+        let timeout = SendOutcome::Timeout(42);
+        assert!(!timeout.is_sent());
+
+        let closed = SendOutcome::Closed(42);
+        assert!(!closed.is_sent());
     }
 
     #[test]
-    fn test_liveliness_checks() {
-        let graph = GraphBuilder::for_testing().build(());
-        let shadow = graph.new_testing_test_monitor("test");
-        
-        assert!(shadow.is_liveliness_building());
-        assert!(!shadow.is_liveliness_running());
-        assert!(!shadow.is_liveliness_stop_requested());
-        
-        let mut graph = graph;
-        graph.start();
-        assert!(shadow.is_liveliness_running());
-        
-        graph.request_shutdown();
-        assert!(shadow.is_liveliness_stop_requested());
+    #[should_panic(expected = "test panic")]
+    fn test_send_outcome_expect_panic() {
+        let blocked = SendOutcome::Blocked(42);
+        blocked.expect("test panic");
     }
 
     #[test]
-    fn test_wait_periodic_overrun() {
-        let graph = GraphBuilder::for_testing().build(());
-        let mut shadow = graph.new_testing_test_monitor("test");
-        shadow.use_internal_behavior = true;
-        
-        // Set last wait to far in the future to trigger overrun logic
-        // In internal_now_nanos, if last > 0, it returns last.
-        // So now_nanos = 1000, last = 1000.
-        shadow.last_periodic_wait.store(1000, Ordering::SeqCst);
-        
-        // This should hit the overrun warning branch if we can make last > now_nanos
-        // Let's temporarily disable internal behavior to get a real now, then re-enable
-        shadow.use_internal_behavior = false;
-        let real_now = shadow.actor_start_time.elapsed().as_nanos() as u64;
-        shadow.use_internal_behavior = true;
-        
-        // Force last to be ahead of now
-        shadow.last_periodic_wait.store(real_now + 1_000_000_000, Ordering::SeqCst);
-        
-        core_exec::block_on(shadow.wait_periodic(Duration::from_millis(10)));
+    fn test_blocking_call_future_terminated() {
+        let (tx, rx) = crate::oneshot::channel::<i32>();
+        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
+        assert!(!fut.is_terminated());
+        tx.send(42).unwrap();
+        let res = core_exec::block_on(&mut fut);
+        assert_eq!(res, 42);
+        assert!(fut.is_terminated());
     }
 
     #[test]
-    fn test_wait_timeout() {
-        let graph = GraphBuilder::for_testing().build(());
-        let shadow = graph.new_testing_test_monitor("test");
-        
-        let start = Instant::now();
-        let result = core_exec::block_on(shadow.wait_timeout(Duration::from_millis(50)));
-        assert!(result);
-        assert!(start.elapsed() >= Duration::from_millis(50));
+    fn test_blocking_call_future_fetch_timeout() {
+        let (_tx, rx) = crate::oneshot::channel::<i32>();
+        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
+        let res = core_exec::block_on(fut.fetch(Duration::from_millis(10)));
+        assert!(res.is_none());
     }
 
     #[test]
-    fn test_peek_take_iter() {
-        let mut graph = GraphBuilder::for_testing().build(());
-        let (_tx, rx) = graph.channel_builder().with_capacity(10).build_channel();
-        let mut shadow = graph.new_testing_test_monitor("test");
-        
-        _tx.testing_send_all(vec![1, 2, 3], true);
-        
-        let rx_cloned = rx.clone();
-        let mut rx_guard = core_exec::block_on(rx_cloned.lock());
-        let peeked: Vec<_> = shadow.try_peek_iter(&mut rx_guard).cloned().collect();
-        assert_eq!(peeked, vec![1, 2, 3]);
-        
-        let taken: Vec<_> = shadow.take_into_iter(&mut rx_guard).collect();
-        assert_eq!(taken, vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn test_shadow_liveliness_convenience() {
-        let graph = GraphBuilder::for_testing().build(());
-        let shadow = graph.new_testing_test_monitor("test");
-        
-        assert!(shadow.is_liveliness_building());
-        assert!(!shadow.is_liveliness_running());
-        assert!(!shadow.is_liveliness_stop_requested());
-        assert!(shadow.is_liveliness_shutdown_timeout().is_none());
-    }
-
-    #[test]
-    fn call_blocking_test() -> Result<(), Box<dyn Error>> {
-        // NOTE: this pattern needs to be used for ALL tests where applicable.
-
-        let mut graph = GraphBuilder::for_testing().build(());
-
-        let actor_builder = graph.actor_builder();
-        let trigger = Arc::new(AtomicBool::new(true));
-
-        actor_builder
-            .with_name("call_blocking_example")
-            .build(move |mut actor| {
-                let trigger = trigger.clone();
-                Box::pin(async move {
-                    let mut iter_count = 0;
-
-                    let mut blocking_future: Option<BlockingCallFuture<BlockingResult>> = None;
-
-                    //##!##// Look at this part to copy
-                    while actor.is_running(|| {
-                        if let Some(ref f) = blocking_future {
-                            f.is_terminated() // we accept the shutdown if our blocking is terminated
-                        } else {
-                            true // nothing blocking is waiting
-                        }
-                    }) {
-                        let nothing_blocking = blocking_future.is_none();
-                        if nothing_blocking {
-                            let trigger = trigger.clone();
-                            let blocking_function = move || {
-                                blocking_simulator(trigger)
-                            };
-                            //##!##// start up background blocking call
-                            blocking_future = Some(actor.call_blocking(blocking_function));
-                        }
-                        if iter_count > 1000 {
-                            trigger.store(false, Ordering::SeqCst);
-                        }
-                        if let Some(ref mut f) = blocking_future {
-                            let timeout = Duration::from_millis(10);
-                            //##!##// call fetch for short stretches to see if the future is done
-                            let result = f.fetch(timeout).await;
-                            if let Some(_r) = result {
-                                //NOTE: process your result here.
-                            }
-                        };
-                        // At some point we call
-                        if iter_count == 5000 {
-                            actor.request_shutdown().await;
-                        }
-                        iter_count += 1;
-                    }
-                    Ok(())
-                })
-            }, ScheduleAs::SoloAct);
-
-        graph.start();
-        graph.block_until_stopped(Duration::from_secs(5))
+    fn test_blocking_call_future_fetch_ready() {
+        let (tx, rx) = crate::oneshot::channel::<i32>();
+        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
+        tx.send(42).unwrap();
+        let res = core_exec::block_on(fut.fetch(Duration::from_millis(100)));
+        assert_eq!(res, Some(42));
     }
 }

@@ -3,7 +3,7 @@ use log::{error, warn};
 use futures_util::{FutureExt};
 use std::any::type_name;
 use std::backtrace::Backtrace;
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 use futures::channel::oneshot;
 use futures_util::lock::{Mutex, MutexLockFuture};
 use ringbuf::traits::Observer;
@@ -12,7 +12,6 @@ use futures_util::future::{select_all};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::thread;
-use std::thread::sleep;
 use crate::{steady_config, ActorIdentity, SteadyTxBundle, TxBundle};
 use crate::channel_builder::InternalSender;
 use crate::core_tx::TxCore;
@@ -90,7 +89,8 @@ impl<T> Tx<T> {
     /// # Returns
     /// A `bool` indicating `true` if the channel was successfully marked as closed, `false` otherwise.
     pub fn mark_closed(&mut self) -> bool {
-        self.shared_mark_closed()
+        self.shared_mark_closed();
+        true
     }
 
     /// Retrieves the total capacity of the channel’s message buffer.
@@ -130,7 +130,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `bool` returning `true` if the channel is full, `false` otherwise.
-    pub fn is_full(&self) -> bool {
+    pub fn find_is_full(&self) -> bool {
         self.shared_is_full()
     }
 
@@ -140,7 +140,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `bool` returning `true` if the channel is empty, `false` otherwise.
-    pub fn is_empty(&self) -> bool {
+    pub fn find_is_empty(&self) -> bool {
         self.shared_is_empty()
     }
 
@@ -357,7 +357,7 @@ impl<T> TxBundleTrait for TxBundle<'_, T> {
 
     fn is_all_empty(&mut self) -> bool {
         // Ensures all channels are empty and fully consumed
-        self.iter().all(|f| f.is_empty())
+        self.iter().all(|f| f.find_is_empty())
     }
 }
 

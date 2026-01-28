@@ -1,5 +1,5 @@
 //! This module provides core functionalities for the SteadyState project, including the
-//! graph and graph liveliness components. The graph manages the execution of actors,
+//! graph and graph liveliness components. THE graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
 use crate::{logging_util, Troupe};
@@ -36,6 +36,7 @@ use crate::monitor::ActorMetaData;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::logging_util::steady_logger;
+use futures_util::FutureExt;
 
 /// Represents the possible states of the graph's liveliness within the SteadyState framework.
 ///
@@ -55,7 +56,7 @@ pub enum GraphLivelinessState {
 
     /// Indicates that a shutdown has been requested and actors are voting on it.
     ///
-    /// The graph is transitioning to a stopped state, awaiting consensus from all actors.
+    /// THE graph is transitioning to a stopped state, awaiting consensus from all actors.
     StopRequested,
 
     /// Indicates that the graph has completely stopped cleanly.
@@ -75,13 +76,13 @@ pub enum GraphLivelinessState {
 /// including their identity and reasoning if they oppose the shutdown.
 #[derive(Default)]
 pub struct ShutdownVote {
-    /// The unique identifier of the actor casting the vote.
+    /// THE unique identifier of the actor casting the vote.
     pub(crate) id: usize,
-    /// The optional identity of the actor, providing additional context.
+    /// THE optional identity of the actor, providing additional context.
     pub(crate) signature: Option<ActorIdentity>,
     /// Indicates whether the actor supports the shutdown.
     pub(crate) in_favor: bool,
-    /// The current status of the voter, such as registered or dead.
+    /// THE current status of the voter, such as registered or dead.
     pub(crate) voter_status: VoterStatus,
     /// An optional backtrace captured if the actor vetoes the shutdown, useful for debugging.
     pub(crate) veto_backtrace: Option<Backtrace>,
@@ -95,12 +96,12 @@ pub struct ShutdownVote {
 /// affecting its participation in shutdown votes.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub(crate) enum VoterStatus {
-    /// The actor has not yet registered as a voter.
+    /// THE actor has not yet registered as a voter.
     #[default]
     None,
-    /// The actor is registered and eligible to vote.
+    /// THE actor is registered and eligible to vote.
     Registered(ActorIdentity),
-    /// The actor is marked as dead and cannot participate in voting.
+    /// THE actor is marked as dead and cannot participate in voting.
     Dead(ActorIdentity),
 }
 
@@ -111,15 +112,15 @@ pub(crate) enum VoterStatus {
 pub struct GraphLiveliness {
     /// A list of statuses for all registered voters.
     pub(crate) registered_voters: Vec<VoterStatus>,
-    /// The current state of the graph's liveliness.
+    /// THE current state of the graph's liveliness.
     pub(crate) state: GraphLivelinessState,
     /// A thread-safe collection of shutdown votes from actors.
     pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>,
-    /// The total number of votes in favor of shutdown.
+    /// THE total number of votes in favor of shutdown.
     pub(crate) vote_in_favor_total: AtomicUsize,
     /// A shared vector of oneshot channels for sending shutdown notifications.
     pub(crate) shutdown_one_shot_vec: Arc<Mutex<Vec<Sender<()>>>>,
-    /// The count of actors currently registered as voters.
+    /// THE count of actors currently registered as voters.
     pub(crate) registered_voter_count: AtomicUsize,
     /// A shared count of the total number of actors in the graph.
     pub(crate) actors_count: Arc<AtomicUsize>,
@@ -174,7 +175,7 @@ impl GraphLiveliness {
     ///
     /// # Arguments
     ///
-    /// * `ident` - The identity of the actor to be removed from voting.
+    /// * `ident` - THE identity of the actor to be removed from voting.
     pub(crate) fn remove_voter(&mut self, ident: ActorIdentity) {
         if self.registered_voters[ident.id].eq(&VoterStatus::Registered(ident)) {
             self.registered_voters[ident.id] = VoterStatus::Dead(ident);
@@ -187,7 +188,7 @@ impl GraphLiveliness {
     ///
     /// # Arguments
     ///
-    /// * `ident` - The identity of the actor to register.
+    /// * `ident` - THE identity of the actor to register.
     pub(crate) fn register_voter(&mut self, ident: ActorIdentity) {
         if ident.id >= self.registered_voters.len() {
             self.registered_voters.resize(ident.id + 1, VoterStatus::None);
@@ -204,7 +205,7 @@ impl GraphLiveliness {
     ///
     /// # Arguments
     ///
-    /// * `timeout` - The maximum duration to wait for actor registration.
+    /// * `timeout` - THE maximum duration to wait for actor registration.
     pub(crate) fn wait_for_registrations(&mut self, timeout: Duration) {
         if self.actors_count.load(Ordering::SeqCst) > 0 {
             trace!("waiting for actors to register: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
@@ -234,6 +235,7 @@ impl GraphLiveliness {
     ///
     /// * `runtime_state` - A shared reference to the graph's liveliness state.
     pub(crate) async fn internal_request_shutdown(runtime_state: Arc<RwLock<GraphLiveliness>>) {
+        error!("starting shutdown reqeuests");
         if runtime_state.read().state.eq(&GraphLivelinessState::Running) {
             let read = runtime_state.read();
             let votes: Vec<Mutex<ShutdownVote>> = read.registered_voters.iter().enumerate().map(|(i, v)| {
@@ -257,7 +259,9 @@ impl GraphLiveliness {
             let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
             while let Some(f) = one_shots.pop() {
                 let _ignore = f.send(());
+                error!("send one shot {:?}",_ignore);
             }
+            error!("finished all shutdown reqeuests");
             trace!("every actor has had one shot shutdown fired now");
         } else if runtime_state.read().is_in_state(&[GraphLivelinessState::Building]) {
             warn!("request_shutdown should only be called after start");
@@ -313,7 +317,7 @@ impl GraphLiveliness {
     /// # Arguments
     ///
     /// * `now` - THE instant when the shutdown was initiated.
-    /// * `timeout` - The maximum duration allowed for a clean shutdown.
+    /// * `timeout` - THE maximum duration allowed for a clean shutdown.
     ///
     /// # Returns
     ///
@@ -324,12 +328,18 @@ impl GraphLiveliness {
             GraphLivelinessState::Stopped,
             GraphLivelinessState::StoppedUncleanly,
         ]) {
-            if self.vote_in_favor_total.load(Ordering::SeqCst) == self.votes.len() {
+            let voters_count = self.votes.len();
+            if self.vote_in_favor_total.load(Ordering::SeqCst) == voters_count {
                 Some(GraphLivelinessState::Stopped)
-            } else if now.elapsed() > timeout {
+            } else if (voters_count>0) && (now.elapsed()>timeout) {
                 Some(GraphLivelinessState::StoppedUncleanly)
             } else {
-                None
+                if voters_count>0 {
+                    None
+                } else {
+                    assert_eq!(0,voters_count);
+                    Some(GraphLivelinessState::Stopped)
+                }
             }
         } else {
             None
@@ -351,13 +361,27 @@ impl GraphLiveliness {
         matches.iter().any(|f| f.eq(&self.state))
     }
 
+    /// Checks if all actors except the telemetry system (Collector and Server) have voted 'yes'.
+    /// This is used by telemetry actors to ensure they are the last to shut down,
+    /// allowing them to capture the final state of all other actors.
+    ///
+    /// # Panics
+    /// Panics if there are fewer than 2 actors, as the telemetry system itself requires
+    /// both a Collector and a Server.
+    pub fn is_shutdown_telemetry_complete(&self, count: usize) -> bool {
+        let total = self.votes.len();
+        assert!(total >= count, "Invariant failure: Telemetry system requires at least {:?} actors (ie, Collector and Server)", count);
+        let yes_votes = self.vote_in_favor_total.load(Ordering::Relaxed);
+        yes_votes >= total - count
+    }
+
     /// Assesses whether an actor should continue running based on the graph's state and its vote.
     ///
     /// This method helps actors determine their operational status during state transitions.
     ///
     /// # Arguments
     ///
-    /// * `ident` - The identity of the actor querying its status.
+    /// * `ident` - THE identity of the actor querying its status.
     /// * `accept_fn` - A closure that determines if the actor accepts the shutdown request.
     ///
     /// # Returns
@@ -371,27 +395,34 @@ impl GraphLiveliness {
             }
             GraphLivelinessState::Running => Some(true),
             GraphLivelinessState::StopRequested => {
-                let in_favor = accept_fn();
                 let my_ballot = &self.votes[ident.id];
                 if let Some(mut vote) = my_ballot.try_lock() {
+
+
                     debug_assert_eq!(vote.id, ident.id);
+                    let in_favor = accept_fn(); //has side effect, must act on results!
+                    if in_favor {
+                            error!("now agreed to shutdown: {:?}",&ident);
+                    }
                     vote.signature = Some(ident);
                     if in_favor && !vote.in_favor {
                         self.vote_in_favor_total.fetch_add(1, Ordering::SeqCst);
                         vote.veto_backtrace = None;
                         vote.in_favor = in_favor;
                     } else {
-                        if cfg!(debug_assertions) {
-                            vote.veto_backtrace = Some(Backtrace::capture());
-                        }
+                        //if cfg!(debug_assertions) { //TODO: noise!, not the best feature
+                        //    vote.veto_backtrace = Some(Backtrace::capture());
+                        //}
                         vote.veto_reason = i_take_expression();
                         if vote.in_favor {
-                            trace!("already voted in favor! : {:?} {:?} vs {:?}", ident, in_favor, vote.in_favor);
+                            warn!("already voted in favor! : {:?} {:?} vs {:?}", ident, in_favor, vote.in_favor);
                         }
                     }
                     drop(vote);
                     Some(!in_favor)
                 } else {
+                 //   error!("2 hello {:?}",&ident);
+
                     trace!("just try again later, unable to get the lock");
                     Some(true)
                 }
@@ -408,7 +439,7 @@ impl GraphLiveliness {
 pub struct ActorIdentity {
     /// A unique numeric identifier for the actor within the graph.
     pub id: usize,
-    /// The human-readable name of the actor, potentially with a suffix for uniqueness.
+    /// THE human-readable name of the actor, potentially with a suffix for uniqueness.
     pub label: ActorName,
 }
 
@@ -417,7 +448,7 @@ pub struct ActorIdentity {
 /// This struct provides a static base name and an optional numeric suffix to differentiate actors.
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ActorName {
-    /// The static, immutable base name of the actor.
+    /// THE static, immutable base name of the actor.
     pub name: &'static str,
     /// An optional numeric suffix to ensure uniqueness among actors with the same base name.
     pub suffix: Option<usize>,
@@ -430,8 +461,8 @@ impl ActorIdentity {
     ///
     /// # Arguments
     ///
-    /// * `id` - The unique numeric identifier for the actor.
-    /// * `name` - The static base name of the actor.
+    /// * `id` - THE unique numeric identifier for the actor.
+    /// * `name` - THE static base name of the actor.
     /// * `suffix` - An optional numeric suffix for uniqueness.
     ///
     /// # Returns
@@ -452,7 +483,7 @@ impl ActorName {
     ///
     /// # Arguments
     ///
-    /// * `name` - The static base name of the actor.
+    /// * `name` - THE static base name of the actor.
     /// * `suffix` - An optional numeric suffix for uniqueness.
     ///
     /// # Returns
@@ -513,11 +544,11 @@ pub struct GraphBuilder {
     enable_io_driver: bool,
     /// An optional backplane for testing side-channel communications.
     backplane: Option<StageManager>,
-    /// The configuration for the proactor, if specified.
+    /// THE configuration for the proactor, if specified.
     proactor_config: Option<ProactorConfig>,
-    /// The queue length for I/O uring operations.
+    /// THE queue length for I/O uring operations.
     iouring_queue_length: u32,
-    /// The rate at which telemetry data is produced, in milliseconds.
+    /// THE rate at which telemetry data is produced, in milliseconds.
     telemtry_production_rate_ms: u64,
     /// An optional hex color for the telemetry top bar.
     telemetry_colors: Option<(String, String)>,
@@ -599,7 +630,7 @@ impl GraphBuilder {
     ///
     /// # Arguments
     ///
-    /// * `len` - The desired queue length.
+    /// * `len` - THE desired queue length.
     ///
     /// # Returns
     ///
@@ -616,7 +647,7 @@ impl GraphBuilder {
     ///
     /// # Arguments
     ///
-    /// * `ms` - The desired production rate in milliseconds.
+    /// * `ms` - THE desired production rate in milliseconds.
     ///
     /// # Returns
     ///
@@ -644,7 +675,7 @@ impl GraphBuilder {
     ///
     /// # Arguments
     ///
-    /// * `latched_actor_count` - The number of actors to synchronize.
+    /// * `latched_actor_count` - THE number of actors to synchronize.
     ///
     /// # Returns
     ///
@@ -659,7 +690,7 @@ impl GraphBuilder {
     ///
     /// # Arguments
     ///
-    /// * `mb` - The desired stack size in megabytes.
+    /// * `mb` - THE desired stack size in megabytes.
     ///
     /// # Returns
     ///
@@ -721,11 +752,11 @@ impl GraphBuilder {
     ///
     /// # Type Parameters
     ///
-    /// * `A` - The type of arguments, which must implement `Any`, `Send`, and `Sync`.
+    /// * `A` - THE type of arguments, which must implement `Any`, `Send`, and `Sync`.
     ///
     /// # Arguments
     ///
-    /// * `args` - The arguments to pass to the graph during construction.
+    /// * `args` - THE arguments to pass to the graph during construction.
     ///
     /// # Returns
     ///
@@ -769,7 +800,7 @@ impl GraphBuilder {
 /// This struct orchestrates the actors within the SteadyState framework, handling their startup,
 /// execution, telemetry, and shutdown processes.
 pub struct Graph {
-    /// The arguments passed to the graph, stored in a thread-safe manner.
+    /// THE arguments passed to the graph, stored in a thread-safe manner.
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     /// A shared counter for the number of channels in the graph.
     pub(crate) channel_count: Arc<AtomicUsize>,
@@ -783,13 +814,13 @@ pub struct Graph {
     pub(crate) is_for_testing: bool,
     /// A collection of telemetry receivers for monitoring the graph.
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
-    /// The shared liveliness state of the graph.
+    /// THE shared liveliness state of the graph.
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     /// A shared vector of oneshot senders for shutdown notifications.
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     /// An optional backplane for testing side-channel communications.
     pub(crate) backplane: Arc<Mutex<Option<StageManager>>>,
-    /// The rate at which telemetry data is produced, in milliseconds.
+    /// THE rate at which telemetry data is produced, in milliseconds.
     pub(crate) telemetry_production_rate_ms: u64,
     /// An optional hex color for the telemetry top bar.
     pub(crate) telemetry_colors: Option<(String, String)>,
@@ -807,7 +838,7 @@ pub struct Graph {
 ///
 /// This struct holds a lock on the backplane, allowing test code to interact with it safely.
 pub struct StageManagerGuard<'a> {
-    /// The mutex guard holding the lock on the backplane.
+    /// THE mutex guard holding the lock on the backplane.
     guard: MutexGuard<'a, Option<StageManager>>,
 }
 
@@ -860,7 +891,7 @@ impl Graph {
     ///
     /// # Arguments
     ///
-    /// * `holder` - The `OnceLock` containing the media driver instance.
+    /// * `holder` - THE `OnceLock` containing the media driver instance.
     ///
     /// # Returns
     ///
@@ -875,7 +906,7 @@ impl Graph {
     ///
     /// # Arguments
     ///
-    /// * `loglevel` - The desired logging level to apply.
+    /// * `loglevel` - THE desired logging level to apply.
     pub fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = steady_logger::initialize_with_level(loglevel);
     }
@@ -886,7 +917,7 @@ impl Graph {
     ///
     /// # Type Parameters
     ///
-    /// * `A` - The type to which the arguments should be cast.
+    /// * `A` - THE type to which the arguments should be cast.
     ///
     /// # Returns
     ///
@@ -901,7 +932,7 @@ impl Graph {
     ///
     /// # Arguments
     ///
-    /// * `name` - The name to assign to the test monitor.
+    /// * `name` - THE name to assign to the test monitor.
     ///
     /// # Returns
     ///
@@ -910,15 +941,23 @@ impl Graph {
         info!("this is for testing only, never run as part of your release");
         let channel_count = self.channel_count.clone();
         let all_telemetry_rx = self.all_telemetry_rx.clone();
-        let oneshot_shutdown_rx = {
-            let (send_shutdown_notice_to_periodic_wait, rx) = oneshot::channel();
+        let oneshot_shutdown = {
+            let (send_shutdown_notice, rx) = oneshot::channel();
             let local_vec = self.oneshot_shutdown_vec.clone();
+            let runtime_state = self.runtime_state.clone();
             core_exec::block_on(async move {
-                local_vec.lock().await.push(send_shutdown_notice_to_periodic_wait);
+                let mut v = local_vec.lock().await;
+                // If the graph is already in StopRequested state, fire the signal immediately
+                // for this new actor instance. This ensures that actors born during the 
+                // shutdown window (e.g. after a panic) don't miss the global signal.
+                if runtime_state.read().is_in_state(&[GraphLivelinessState::StopRequested]) {
+                    let _ = send_shutdown_notice.send(());
+                } else {
+                    v.push(send_shutdown_notice);
+                }
             });
-            rx
+            rx.shared()
         };
-        let oneshot_shutdown = Arc::new(Mutex::new(oneshot_shutdown_rx));
         let now = Instant::now();
         SteadyActorShadow {
             channel_count,
@@ -992,7 +1031,7 @@ impl Graph {
     ///
     /// # Arguments
     ///
-    /// * `duration` - The maximum time to wait for actor registration.
+    /// * `duration` - THE maximum time to wait for actor registration.
     ///
     /// # Returns
     ///
@@ -1023,7 +1062,7 @@ impl Graph {
     ///
     /// # Arguments
     ///
-    /// * `clean_shutdown_timeout` - The maximum duration to wait for a clean shutdown.
+    /// * `clean_shutdown_timeout` - THE maximum duration to wait for a clean shutdown.
     ///
     /// # Returns
     ///
@@ -1057,10 +1096,10 @@ impl Graph {
     ///
     /// # Arguments
     ///
-    /// * `timeout` - The maximum duration for a clean shutdown.
-    /// * `now` - The time at which shutdown was initiated.
+    /// * `timeout` - THE maximum duration for a clean shutdown.
+    /// * `now` - THE time at which shutdown was initiated.
     /// * `rs` - A shared reference to the graph's liveliness state.
-    /// * `tel_prod_rate` - The interval at which to check the shutdown status.
+    /// * `tel_prod_rate` - THE interval at which to check the shutdown status.
     ///
     /// # Returns
     ///
@@ -1072,9 +1111,9 @@ impl Graph {
                 let is_unclean = shutdown.eq(&GraphLivelinessState::StoppedUncleanly);
                 rs.write().state = shutdown;
                 if is_unclean {
-                    warn!("graph stopped uncleanly");
+                    warn!("graph stopped uncleanly: votes report");
                     Self::report_votes(&mut rs.write());
-                    return Err("graph stopped uncleanly".into());
+                    return Err("graph stopped uncleanly error from watch_shutdown".into());
                 }
                 return Ok(());
             } else {
@@ -1105,7 +1144,7 @@ impl Graph {
                                 {voter.as_ref().map_or(None, |f| f.veto_reason.clone()).map_or("".to_string(), |f| f.veto_reason())}
                    , voter.as_ref().map_or(Default::default(), |f| f.signature));
         });
-        warn!("graph stopped uncleanly");
+        warn!("graph stopped uncleanly, with voters {}",voters.len());
         voters.iter().for_each(|voter| {
             let signature = voter.as_ref().map_or(&None, |f| &f.signature);
             let skip_internal = if let Some(signature) = signature {
@@ -1168,12 +1207,12 @@ impl Graph {
     ///
     /// # Type Parameters
     ///
-    /// * `A` - The type of arguments, which must implement `Any`, `Send`, and `Sync`.
+    /// * `A` - THE type of arguments, which must implement `Any`, `Send`, and `Sync`.
     ///
     /// # Arguments
     ///
-    /// * `args` - The arguments to initialize the graph with.
-    /// * `builder` - The `GraphBuilder` providing configuration options.
+    /// * `args` - THE arguments to initialize the graph with.
+    /// * `builder` - THE `GraphBuilder` providing configuration options.
     ///
     /// # Returns
     ///

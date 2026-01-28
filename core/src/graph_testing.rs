@@ -280,13 +280,13 @@ impl SideChannelResponder {
                 Some(msg) => match msg {
                     StageDirection::Echo(m) => match actor.try_send(tx_core, m.clone()) {
                         SendOutcome::Success => Some(Box::new(OK_MESSAGE)),
-                        SendOutcome::Blocked(msg) => Some(Box::new(msg)),
+                        SendOutcome::Blocked(msg) | SendOutcome::Timeout(msg) | SendOutcome::Closed(msg) => Some(Box::new(msg)),
                     },
                     StageDirection::EchoAt(i, m) => {
                         if *i == index {
                             match actor.try_send(tx_core, m.clone()) {
                                 SendOutcome::Success => Some(Box::new(OK_MESSAGE)),
-                                SendOutcome::Blocked(msg) => Some(Box::new(msg)),
+                                SendOutcome::Blocked(msg) | SendOutcome::Timeout(msg) | SendOutcome::Closed(msg) => Some(Box::new(msg)),
                             }
                         } else {
                             None
@@ -624,7 +624,6 @@ mod graph_testing_tests {
     use crate::RxCoreBundle;
     use crate::steady_actor::BlockingCallFuture;
     use crate::TxCoreBundle;
-    use futures_timer::Delay;
 
     struct DummyActor {
         has_data: bool,

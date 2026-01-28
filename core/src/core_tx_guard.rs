@@ -29,7 +29,7 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     }
 
     /// Forwards the mark closed operation to the underlying `T`.
-    fn shared_mark_closed(&mut self) -> bool {
+    fn shared_mark_closed(&mut self) {
         <T as TxCore>::shared_mark_closed(&mut **self)
     }
 

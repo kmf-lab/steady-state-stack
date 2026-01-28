@@ -1,4 +1,4 @@
-//! The `commander_monitor` module provides the `LocalMonitor` type and its implementation
+//! THE `commander_monitor` module provides the `LocalMonitor` type and its implementation
 //! of the `SteadyCommander` trait, enabling telemetry collection, profiling, and controlled
 //! execution monitoring for actors and channels within the Steady framework.
 
@@ -8,16 +8,15 @@ use std::time::{Duration, Instant};
 use std::sync::{Arc, OnceLock};
 use async_lock::Barrier;
 use parking_lot::RwLock;
-use futures_util::lock::{Mutex, MutexGuard};
+use futures_util::lock::{Mutex};
 use futures::channel::oneshot;
 use std::any::Any;
 use std::error::Error;
-use futures_util::future::{FusedFuture};
+use futures_util::future::{FusedFuture, Shared};
 use futures_timer::Delay;
 use futures_util::{select, FutureExt, StreamExt};
 use std::future::Future;
 use num_traits::Zero;
-use std::ops::DerefMut;
 use std::task::Poll;
 use aeron::aeron::Aeron;
 use futures_util::stream::FuturesUnordered;
@@ -69,8 +68,8 @@ impl<const RXL: usize, const TXL: usize> Drop for SteadyActorSpotlight<RXL, TXL>
 /// Represents a local monitor that handles telemetry for an actor or channel.
 ///
 /// # Type Parameters
-/// - `RX_LEN`: The length of the receiver array.
-/// - `TX_LEN`: The length of the transmitter array.
+/// - `RX_LEN`: THE length of the receiver array.
+/// - `TX_LEN`: THE length of the transmitter array.
 pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) ident: ActorIdentity,
     pub(crate) is_in_graph: bool,
@@ -78,14 +77,17 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) last_telemetry_send: Instant,
     pub(crate) last_periodic_wait: AtomicU64,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
-    pub(crate) oneshot_shutdown: Arc<Mutex<oneshot::Receiver<()>>>,
+    /// A shared future that resolves when a shutdown is requested.
+    /// Using `Shared` allows multiple generations of an actor (after restarts)
+    /// to await the same signal without consuming it.
+    pub(crate) oneshot_shutdown: Shared<oneshot::Receiver<()>>,
     pub(crate) actor_start_time: Instant,
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
     pub(crate) frame_rate_ms: u64,
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     pub(crate) is_running_iteration_count: u64,
     pub(crate) _team_id: usize,
-    pub(crate) aeron_media_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// If true, the monitor uses its internal simulation behavior for events.
     pub use_internal_behavior: bool,
     pub(crate) regeneration: u32,
@@ -124,6 +126,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
     pub(crate) fn start_profile(&self, x: usize) -> Option<FinallyRollupProfileGuard<'_>> {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[x].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
+            self.telemetry.dirty.store(true, Ordering::Relaxed);
             if st.hot_profile_concurrent.fetch_add(1, Ordering::SeqCst).is_zero() {
                 st.hot_profile.store(self.actor_start_time.elapsed().as_nanos() as u64, Ordering::Relaxed);
             }
@@ -134,11 +137,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
     }
 
     pub(crate) async fn internal_wait_shutdown(&self) -> bool {
-        let one_shot = &self.oneshot_shutdown;
-        let mut guard = one_shot.lock().await;
-        if !guard.is_terminated() {
-            let _ = guard.deref_mut().await;
-        }
+        let _ = self.oneshot_shutdown.clone().await;
         true
     }
 
@@ -151,7 +150,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotlight<RX_LEN, TX_LEN> {
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
-        Graph::aeron_media_driver_internal(&self.aeron_media_driver)
+        Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
     }
 
     fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool {
@@ -174,6 +173,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         
         if should_send {
             setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
+            self.telemetry.dirty.store(false, Ordering::Relaxed);
             self.last_telemetry_send = Instant::now();
             if ENABLE_TELEMETRY_DEBUG {
                 info!("Telemetry data sent for actor {:?} after {}µs  iteration {} ", self.ident, last_elapsed.as_micros(), self.is_running_iteration_count);
@@ -193,6 +193,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     fn relay_stats(&mut self) {
         let last_elapsed = self.last_telemetry_send.elapsed();
         setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
+        self.telemetry.dirty.store(false, Ordering::Relaxed);
         self.last_telemetry_send = Instant::now();
         if ENABLE_TELEMETRY_DEBUG {
             info!("Telemetry data sent for actor {:?} via relay_stats after {} ms",
@@ -245,6 +246,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         let done = this.shared_take_slice(slice);
         if let Some(ref mut tel) = self.telemetry.send_rx {
             this.telemetry_inc(done, tel);
+            self.telemetry.dirty.store(true, Ordering::Relaxed);
         } else {
             this.monitor_not();
         }
@@ -258,6 +260,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         let done = this.shared_advance_index(count);
         if let Some(ref mut tel) = self.telemetry.send_rx {
             this.telemetry_inc(done, tel);
+            self.telemetry.dirty.store(true, Ordering::Relaxed);
         } else {
             this.monitor_not();
         }
@@ -271,6 +274,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         let done = this.shared_advance_index(count);
         if let Some(ref mut tel) = self.telemetry.send_tx {
             this.telemetry_inc(done, tel);
+            self.telemetry.dirty.store(true, Ordering::Relaxed);
         } else {
             this.monitor_not();
         }
@@ -318,6 +322,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
         if let Some(ref mut tel) = self.telemetry.send_tx {
             this.telemetry_inc(done, tel);
+            self.telemetry.dirty.store(true, Ordering::Relaxed);
         } else {
             this.monitor_not();
         }
@@ -337,6 +342,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
         let done = this.shared_send_iter_until_full(iter);
         this.local_monitor_index = if let Some(ref mut tel) = self.telemetry.send_tx {
+            self.telemetry.dirty.store(true, Ordering::Relaxed);
             tel.process_event(this.local_monitor_index, this.channel_meta_data.meta_data.id, done as isize)
         } else {
             MONITOR_NOT
@@ -352,6 +358,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             Ok(done_count) => {
                 if let Some(ref mut tel) = self.telemetry.send_tx {
                     this.telemetry_inc(done_count, tel);
+                    self.telemetry.dirty.store(true, Ordering::Relaxed);
                 } else {
                     this.monitor_not();
                 }
@@ -427,6 +434,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
         if msg_count > 0 {
             if let Some(ref mut tel) = self.telemetry.send_tx {
+                self.telemetry.dirty.store(true, Ordering::Relaxed);
                 out_item.local_monitor_index = tel.process_event(
                     out_item.local_monitor_index,
                     out_item.channel_meta_data.meta_data.id,
@@ -468,12 +476,16 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
                 let wat = this.shared_wait_empty();
                 select! {
+                    _ = self.oneshot_shutdown.clone().fuse() => false,
                     _ = dur.fuse() => false,
                     x = wat.fuse() => x
                 }
             }
         } else {
-            this.shared_wait_empty().await
+            select! {
+                _ = self.oneshot_shutdown.clone().fuse() => false,
+                x = this.shared_wait_empty().fuse() => x,
+            }
         }
     }
 
@@ -483,6 +495,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
         let units = this.shared_avail_units();
         if let Some(ref mut tel) = self.telemetry.send_rx {
+            self.telemetry.dirty.store(true, Ordering::Relaxed);
             let drift = this.iterator_count_drift.load(Ordering::Relaxed);
             this.iterator_count_drift.store(0, Ordering::Relaxed);
             let done_count = RxDone::Normal((units as isize + drift) as usize);
@@ -501,8 +514,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         futures::pin_mut!(operation); // Pin the future on the stack
 
         let _guard = self.start_profile(CALL_OTHER);
-        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
-        if one_down.is_terminated() {
+        if self.oneshot_shutdown.is_terminated() {
             if let Some(duration) = self.is_liveliness_shutdown_timeout() {
                 //in this case we know that the shutdown signal happened but we have duration
                 //before it is a hard shutdown, so we will wait 4/1 of duration
@@ -518,7 +530,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                 }
             }
         } else {
-            select! { _ = one_down.deref_mut() => None, r = operation.fuse() => Some(r), }
+            select! { _ = self.oneshot_shutdown.clone().fuse() => None, r = operation.fuse() => Some(r), }
         }
     }
 
@@ -552,9 +564,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         let delay = Delay::new(remaining_duration);
 
         let _guard = self.start_profile(CALL_WAIT);
-        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
         let result = select! {
-                    _= &mut one_down.deref_mut() => false,
+                    _= self.oneshot_shutdown.clone().fuse() => false,
                     _= &mut delay.fuse() => true
                  };
         result
@@ -562,9 +573,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     async fn wait_timeout(&self, timeout: Duration) -> bool {
         let delay = Delay::new(timeout);
         let _guard = self.start_profile(CALL_WAIT);
-        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
         let result = select! {
-                    _= &mut one_down.deref_mut() => false,
+                    _= self.oneshot_shutdown.clone().fuse() => false,
                     _= &mut delay.fuse() => true
                  };
         result
@@ -572,8 +582,9 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     async fn wait(&self, duration: Duration) {
         let _guard = self.start_profile(CALL_WAIT);
-        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
-        select! { _ = one_down.deref_mut() => {}, _ = Delay::new(duration).fuse() => {} }
+        if !self.oneshot_shutdown.is_terminated() {
+            select! { _ = self.oneshot_shutdown.clone().fuse() => {}, _ = Delay::new(duration).fuse() => {} }
+        }
     }
 
     async fn yield_now(&self) {
@@ -585,10 +596,8 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     where F: FusedFuture<Output = ()> + 'static + Send + Sync {
         let mut pinned_fut = Box::pin(fut);
         let _guard = self.start_profile(CALL_OTHER);
-        let one_down: &mut MutexGuard<oneshot::Receiver<()>> = &mut self.oneshot_shutdown.lock().await;
-        let mut one_fused = one_down.deref_mut().fuse();
-        if !one_fused.is_terminated() {
-            select! { _ = one_fused => false, _ = pinned_fut => true, }
+        if !self.oneshot_shutdown.is_terminated() {
+            select! { _ = self.oneshot_shutdown.clone().fuse() => false, _ = pinned_fut => true, }
         } else {
             false
         }
@@ -597,11 +606,12 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut> {
         let guard = self.start_profile(CALL_SINGLE_WRITE);
         let timeout = if self.telemetry.is_dirty() {
+            //we add one more frame just to let the natural processing take care of this in more cases
             let remaining_micros = self.telemetry_remaining_micros();
             if remaining_micros <= 0 {
-                Some(Duration::from_micros(0))
+                Some(Duration::from_millis(self.frame_rate_ms))
             } else {
-                Some(Duration::from_micros(remaining_micros as u64))
+                Some(Duration::from_micros(remaining_micros as u64)+Duration::from_millis(self.frame_rate_ms))
             }
         } else {
             None
@@ -613,12 +623,15 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             SendOutcome::Success => {
                 if let Some(ref mut tel) = self.telemetry.send_tx {
                     this.telemetry_inc(done_one, tel);
+                    self.telemetry.dirty.store(true, Ordering::Relaxed);
                 } else {
                     this.monitor_not();
                 }
                 SendOutcome::Success
             }
             SendOutcome::Blocked(sensitive) => SendOutcome::Blocked(sensitive),
+            SendOutcome::Timeout(sensitive) => SendOutcome::Timeout(sensitive),
+            SendOutcome::Closed(sensitive) => SendOutcome::Closed(sensitive),
         }
     }
 
@@ -630,6 +643,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             Some((done_count, msg)) => {
                 if let Some(ref mut tel) = self.telemetry.send_rx {
                     this.telemetry_inc(done_count, tel);
+                    self.telemetry.dirty.store(true, Ordering::Relaxed);
                 } else {
                     this.monitor_not();
                 }
@@ -657,6 +671,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             Some(result) => {
                 if let Some(ref mut tel) = self.telemetry.send_rx {
                     this.telemetry_inc(RxDone::Normal(1), tel);
+                    self.telemetry.dirty.store(true, Ordering::Relaxed);
                 } else {
                     this.monitor_not();
                 }
@@ -689,6 +704,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             Some(result) => {
                 if let Some(ref mut tel) = self.telemetry.send_rx {
                     this.telemetry_inc(RxDone::Normal(1), tel);
+                    self.telemetry.dirty.store(true, Ordering::Relaxed);
                 } else {
                     this.monitor_not();
                 }
@@ -709,17 +725,22 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             if self.telemetry.is_dirty() {
                 let remaining_micros = self.telemetry_remaining_micros();
                 if remaining_micros <= 0 {
+                    yield_now().await; //Important to avoid tight loops
                     false
                 } else {
                     let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
                     let wat = this.shared_wait_closed_or_avail_units(count);
                     select! {
+                        _ = self.oneshot_shutdown.clone().fuse() => false,
                         _ = dur.fuse() => false,
                         x = wat.fuse() => x
                     }
                 }
             } else {
-                this.shared_wait_closed_or_avail_units(count).await
+                select! {
+                    _ = self.oneshot_shutdown.clone().fuse() => false,
+                    x = this.shared_wait_closed_or_avail_units(count).fuse() => x,
+                }
             }
         }
 
@@ -734,17 +755,22 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             if self.telemetry.is_dirty() {
                 let remaining_micros = self.telemetry_remaining_micros();
                 if remaining_micros <= 0 {
+                    yield_now().await; //Important to avoid tight loops
                     false //immediate return to do telemetry will be back later
                 } else {
                         let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
                         let wat = this.shared_wait_shutdown_or_vacant_units(size);
                         select! {
+                            _ = self.oneshot_shutdown.clone().fuse() => false,
                             _ = dur.fuse() => false,
                             x = wat.fuse() => x
                         }
                 }
             } else {
-                this.shared_wait_shutdown_or_vacant_units(size).await
+                select! {
+                    _ = self.oneshot_shutdown.clone().fuse() => false,
+                    x = this.shared_wait_shutdown_or_vacant_units(size).fuse() => x,
+                }
             }
         }
     }
@@ -759,6 +785,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
                 let wat = self.internal_wait_shutdown();
                 select! {
+                    _ = self.oneshot_shutdown.clone().fuse() => false,
                     _ = dur.fuse() => false,
                     x = wat.fuse() => x
                 }
@@ -774,6 +801,14 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     #[inline]
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
+
+        let current_state = self.runtime_state.read().state.clone();
+        if self.oneshot_shutdown.is_terminated() && current_state == GraphLivelinessState::Running {
+            // This is the smoking gun of a mismatched Arc instance
+            error!("ARCHITECTURE ERROR: Shutdown oneshot fired but Arc state is still Running for {:?}", self.ident);
+            error!("State pointer: {:p}", Arc::as_ptr(&self.runtime_state));
+        }
+
         let result = self.runtime_state.read().is_running(self.ident, &mut accept_fn);
         if let Some(running) = result {
             if running && !self.is_running_iteration_count.is_zero() {
@@ -791,6 +826,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     #[inline]
     async fn request_shutdown(&mut self) {
         self.relay_stats();
+        //if we have a shutdown barrier count we will await here until all are ready
         if let Some(barrier) = &self.shutdown_barrier {
             barrier.clone().wait().await;
         }
@@ -820,10 +856,22 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             });
         }
         let mut completed = 0;
-        while futures.next().await.is_some() {
-            completed += 1;
+        loop {
             if completed >= count_down {
                 break;
+            }
+            select! {
+                _ = self.oneshot_shutdown.clone().fuse() => {
+                    result.store(false, Ordering::Relaxed);
+                    break;
+                }
+                next = futures.next() => {
+                    if next.is_some() {
+                        completed += 1;
+                    } else {
+                        break;
+                    }
+                }
             }
         }
         result.load(Ordering::Relaxed)
@@ -844,10 +892,22 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             });
         }
         let mut completed = 0;
-        while futures.next().await.is_some() {
-            completed += 1;
+        loop {
             if completed >= count_down {
                 break;
+            }
+            select! {
+                _ = self.oneshot_shutdown.clone().fuse() => {
+                    result.store(false, Ordering::Relaxed);
+                    break;
+                }
+                next = futures.next() => {
+                    if next.is_some() {
+                        completed += 1;
+                    } else {
+                        break;
+                    }
+                }
             }
         }
         result.load(Ordering::Relaxed)

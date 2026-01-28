@@ -51,7 +51,15 @@ async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_
 
             match actor.try_send(&mut tx[index], t) {
                 SendOutcome::Success => {}
-                SendOutcome::Blocked(t) => {actor.send_async(&mut tx[index], t, SendSaturation::AwaitForRoom).await;}
+                SendOutcome::Blocked(t) => {
+                    match actor.send_async(&mut tx[index], t, SendSaturation::AwaitForRoom).await {
+                        SendOutcome::Success => {}
+                        SendOutcome::Closed(_) => break,
+                        _ => break,
+                    }
+                }
+                SendOutcome::Closed(_) => break,
+                _ => break,
             }
         }
     }

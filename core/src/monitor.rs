@@ -294,7 +294,7 @@ pub trait RxTel: Send + Sync {
 /// - `goal`: The global index to locate.
 ///
 /// # Returns
-/// The local index if found, otherwise `MONITOR_NOT`.
+/// THE local index if found, otherwise `MONITOR_NOT`.
 pub(crate) fn find_my_index<const LEN: usize>(telemetry: &SteadyTelemetrySend<LEN>, goal: usize) -> usize {
     let (idx, _) = telemetry.inverse_local_index
         .iter()
@@ -332,7 +332,7 @@ impl Drop for FinallyRollupProfileGuard<'_> {
 ///
 /// This struct monitors the difference between expected and actual yields, updating a shared drift counter.
 pub(crate) struct DriftCountIterator<I> {
-    /// The underlying iterator being wrapped.
+    /// THE underlying iterator being wrapped.
     iter: I,
     /// Number of items expected to be yielded.
     expected_count: usize,
@@ -350,7 +350,7 @@ where
     ///
     /// # Parameters
     /// - `expected_count`: Expected number of items to be yielded.
-    /// - `iter`: The iterator to wrap.
+    /// - `iter`: THE iterator to wrap.
     /// - `iterator_count_drift`: Shared counter for tracking drift.
     pub fn new(
         expected_count: usize,
@@ -611,8 +611,8 @@ pub(crate) mod monitor_tests {
 
         if let Some(mut tx) = tx.try_lock() {
             let result = match monitor.try_send(&mut tx, 42) {
-                SendOutcome::Success => {true}
-                SendOutcome::Blocked(_) => {false}
+                SendOutcome::Success => true,
+                _ => false,
             };
             assert!(result);
         };
@@ -620,10 +620,11 @@ pub(crate) mod monitor_tests {
 
     // Common function to create a test SteadyContext
     fn test_steady_context() -> SteadyActorShadow {
-        let (_tx, rx) = build_tx_rx();
+        let (tx, rx) = build_tx_rx();
+        let oneshot_shutdown_vec = Arc::new(Mutex::new(vec![tx]));
         SteadyActorShadow {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
-                Default::default(),
+                oneshot_shutdown_vec.clone(),
                 Default::default()
             ))),
             channel_count: Arc::new(AtomicUsize::new(0)),
@@ -631,8 +632,8 @@ pub(crate) mod monitor_tests {
             args: Arc::new(Box::new(())),
             all_telemetry_rx: Arc::new(RwLock::new(Vec::new())),
             actor_metadata: Arc::new(ActorMetaData::default()),
-            oneshot_shutdown_vec: Arc::new(Mutex::new(Vec::new())),
-            oneshot_shutdown: Arc::new(Mutex::new(rx)),
+            oneshot_shutdown_vec,
+            oneshot_shutdown: rx.shared(),
             node_tx_rx: None,
             regeneration: 0,
             last_periodic_wait: Default::default(),
@@ -662,12 +663,15 @@ pub(crate) mod monitor_tests {
     }
 
     fn create_test_channel<T: Debug>(capacity: usize) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
+        let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
         let builder = ChannelBuilder::new(
             Arc::new(Default::default()),
-            Arc::new(Default::default()),
+            oneshot_shutdown_vec.clone(),
             40).with_capacity(capacity);
 
-        builder.build_channel::<T>()
+        let result = builder.build_channel::<T>();
+        Box::leak(Box::new(oneshot_shutdown_vec));
+        result
     }
 
     #[test]
@@ -1130,10 +1134,11 @@ pub(crate) mod monitor_tests {
 
     // Helper function to create a test context with arguments
     fn test_steady_context_with_args<A: Any + Send + Sync>(args: A) -> SteadyActorShadow {
-        let (_tx, rx) = build_tx_rx();
+        let (tx, rx) = build_tx_rx();
+        let oneshot_shutdown_vec = Arc::new(Mutex::new(vec![tx]));
         SteadyActorShadow {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
-                Default::default(),
+                oneshot_shutdown_vec.clone(),
                 Default::default(),
             ))),
             channel_count: Arc::new(AtomicUsize::new(0)),
@@ -1141,8 +1146,8 @@ pub(crate) mod monitor_tests {
             args: Arc::new(Box::new(args)),
             all_telemetry_rx: Arc::new(RwLock::new(Vec::new())),
             actor_metadata: Arc::new(ActorMetaData::default()),
-            oneshot_shutdown_vec: Arc::new(Mutex::new(Vec::new())),
-            oneshot_shutdown: Arc::new(Mutex::new(rx)),
+            oneshot_shutdown_vec,
+            oneshot_shutdown: rx.shared(),
             node_tx_rx: None,
             regeneration: 0,
             last_periodic_wait: Default::default(),

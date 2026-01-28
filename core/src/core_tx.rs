@@ -41,7 +41,7 @@ pub trait TxCore {
     ///
     /// This method signals that no more messages will be transmitted, often by notifying receivers
     /// through an oneshot channel. It always returns `true` to indicate the request was processed.
-    fn shared_mark_closed(&mut self) -> bool;
+    fn shared_mark_closed(&mut self);
 
     /// Sends messages from an iterator until the channel is full.
     ///
@@ -236,7 +236,7 @@ impl<T> TxCore for Tx<T> {
     ///
     /// If the oneshot sender is already taken, it logs a trace message indicating a redundant call.
     /// This method is idempotent and always returns `true`.
-    fn shared_mark_closed(&mut self) -> bool {
+    fn shared_mark_closed(&mut self) {
         if let Some(c) = self.make_closed.take() {
             let result = c.send(());
             if result.is_err() {
@@ -245,7 +245,6 @@ impl<T> TxCore for Tx<T> {
         } else {
             trace!("{:?}\n already marked closed, check for redundant calls, ensure mark_closed is called last after all other conditions!", self.channel_meta_data.meta_data);
         }
-        true
     }
 
     /// Returns `1` as the unit value for counting messages.
@@ -453,37 +452,42 @@ impl<T> TxCore for Tx<T> {
                 match saturation {
                     SendSaturation::AwaitForRoom => {}
                     #[allow(deprecated)]
-                    SendSaturation::ReturnBlockedMsg => return SendOutcome::Blocked(msg),
+                    SendSaturation::ReturnBlockedMsg => {error!("due to enum"); return SendOutcome::Blocked(msg)},
                     SendSaturation::WarnThenAwait => self.report_tx_full_warning(ident),
                     SendSaturation::DebugWarnThenAwait => {
                         #[cfg(debug_assertions)]
                         self.report_tx_full_warning(ident);
                     }
                 }
-                let has_room = self.tx.wait_vacant(1).fuse();
-                pin_mut!(has_room);
-                let mut one_down = &mut self.oneshot_shutdown;
-                let timeout_future = match timeout {
-                    Some(duration) => Delay::new(duration).fuse(),
-                    None => Delay::new(Duration::from_secs(i32::MAX as u64)).fuse(),
+
+
+                let timeout_duration = match timeout {
+                    Some(duration) => duration,
+                    None => Duration::from_secs(60 * 60 * 24 * 7)
                 };
-                pin_mut!(timeout_future);
-                if !one_down.is_terminated() {
-                    select! {
-                        _ = one_down => SendOutcome::Blocked(msg),
-                        _ = has_room => {
-                            match self.tx.push(msg).await {
-                                Ok(_) => SendOutcome::Success,
-                                Err(t) => {
-                                    error!("channel is closed");
-                                    SendOutcome::Blocked(t)
-                                }
-                            }
+
+                let shutdown_fut = &mut self.oneshot_shutdown;//.fuse();
+                let wait_fut     = self.tx.wait_vacant(1).fuse();
+                let timeout_fut  = Delay::new(timeout_duration).fuse();
+
+                pin_mut!(shutdown_fut);
+                pin_mut!(wait_fut);
+                pin_mut!(timeout_fut);
+
+                select! {
+                    // shutdown always wins
+                    _ = shutdown_fut => SendOutcome::Closed(msg),
+
+                    // room became available
+                    _ = wait_fut => {
+                        match self.tx.try_push(msg) {
+                            Ok(_) => SendOutcome::Success,
+                            Err(t) => SendOutcome::Closed(t), // channel closed or lane reset
                         }
-                        _ = timeout_future => SendOutcome::Blocked(msg),
                     }
-                } else {
-                    SendOutcome::Blocked(msg)
+
+                    // timeout fallback
+                    _ = timeout_fut => SendOutcome::Timeout(msg),
                 }
             }
         }
@@ -613,9 +617,8 @@ mod core_tx_rx_tests {
         type SliceTarget<'a> = (&'a [usize], &'a [usize]);
 
         /// Marks the channel as closed and returns `true`.
-        fn shared_mark_closed(&mut self) -> bool {
+        fn shared_mark_closed(&mut self) {
             self.closed = true;
-            true
         }
 
         /// Counts and accumulates the number of items sent from an iterator.
@@ -759,7 +762,7 @@ mod core_tx_rx_tests {
         let mtx = Mutex::new(FakeTx::new());
         let mut guard = block_on(mtx.lock());
         assert!(!guard.closed);
-        assert!(guard.shared_mark_closed());
+        guard.shared_mark_closed();
         assert!(guard.closed);
         let sent = guard.shared_send_iter_until_full([10, 20, 30].into_iter());
         assert_eq!(sent, 3);
@@ -802,8 +805,8 @@ mod core_tx_rx_tests {
     fn done_one_and_shared_mark_closed() {
         let mut tx = new_tx();
         assert_eq!(tx.done_one(&42u8), TxDone::Normal(1));
-        assert!(tx.shared_mark_closed());
-        assert!(tx.shared_mark_closed());
+        tx.shared_mark_closed();
+        tx.shared_mark_closed();
     }
 
     /// Tests sending after closure and the associated warning behavior.
@@ -815,7 +818,7 @@ mod core_tx_rx_tests {
         let mut tx = new_tx();
         let pushed = tx.shared_send_iter_until_full([7u8, 8u8].into_iter());
         assert_eq!(pushed, 2);
-        let _ = tx.shared_mark_closed();
+        tx.shared_mark_closed();
         let pushed2 = tx.shared_send_iter_until_full(std::iter::empty());
         assert_eq!(pushed2, 0);
     }
@@ -855,8 +858,8 @@ mod core_tx_rx_tests {
         assert_eq!(tx.shared_vacant_units(), 0);
         
         // Test redundant mark_closed
-        assert!(tx.shared_mark_closed());
-        assert!(tx.shared_mark_closed());
+        tx.shared_mark_closed();
+        tx.shared_mark_closed();
 
         // Test shared_send_slice empty
         let done_slice = tx.shared_send_slice(&[]);

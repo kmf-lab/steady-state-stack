@@ -178,8 +178,17 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
             .with_load_avg();
         let tel_colors = graph.telemetry_colors.clone();
         let threshold = graph.bundle_floor_size;
+
+        // CRITICAL: We must initialize the SteadyRx eagerly on the main thread.
+        // LazySteadyRx::clone() calls block_on internally. If we call it inside 
+        // the actor's spawn closure, it results in a nested block_on deadlock 
+        // during actor restarts (common in the Robust example).
+        let rx_initialized = rx.clone(); 
+
         bldr.with_name(metrics_server::NAME).build(move |context| {
-            metrics_server::run(context, rx.clone(), tel_colors.clone(), threshold)
+            // Pass the already-initialized SteadyRx to the restart closure.
+            // Cloning a SteadyRx is a simple Arc clone and does not block.
+            metrics_server::run(context, rx_initialized.clone(), tel_colors.clone(), threshold)
         }, ScheduleAs::SoloAct);
 
         
@@ -324,7 +333,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                             GraphLivelinessState::StoppedUncleanly,
                                         ]) {
                                             // trace!("full telemetry state channel detected from {:?} value:{:?} full:{:?} capacity: {:?}",
-                                            //             this.ident, a, tx.is_full(), tx.tx.capacity());
+                                            //             this.ident, a, tx.find_is_full(), tx.tx.capacity());
                                             actor_status.last_telemetry_error = now;
                                         }
                                    
@@ -378,7 +387,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                 let dif = now.duration_since(send_tx.last_telemetry_error);
                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                     warn!("full telemetry tx channel detected from {:?} value:{:?} full:{:?} capacity: {:?}",
-                                        this.ident, a, tx.is_full(), tx.tx.capacity());
+                                        this.ident, a, tx.find_is_full(), tx.tx.capacity());
                                     send_tx.last_telemetry_error = now;
                                 }
                             }
@@ -425,7 +434,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                 let dif = now.duration_since(send_rx.last_telemetry_error);
                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                     warn!("full telemetry rx channel detected from {:?} value:{:?} full:{:?} capacity: {:?}",
-                                        this.ident, a, rx.is_full(), rx.tx.capacity());
+                                        this.ident, a, rx.find_is_full(), rx.tx.capacity());
                                     send_rx.last_telemetry_error = now;
                                 }
                             }

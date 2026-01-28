@@ -41,6 +41,8 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Packet>, t
                     match actor.try_send(&mut tx, packet) {
                         SendOutcome::Success => {}
                         SendOutcome::Blocked(packet) => {error!("Error sending packet: {:?}",packet); break;}
+                        SendOutcome::Timeout(packet) => {error!("Timeout sending packet: {:?}",packet); break;}
+                        SendOutcome::Closed(_) => break,
                     }
                 } else {
                     error!("Error reading packet");

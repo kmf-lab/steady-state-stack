@@ -19,8 +19,9 @@ use futures_util::future::FusedFuture;
 /// The result is a boolean indicating whether all futures returned `true`.
 #[macro_export]
 macro_rules! await_for_all {
-    ($($t:expr),*) => {
+($($t:expr),*) => {
         async {
+            $crate::yield_now().await; //ensure we play nice in troupes
             $(
                 if !$t.await {
                     return false;
@@ -191,17 +192,20 @@ where
 #[macro_export]
 macro_rules! await_for_all_or_proceed_upon {
     ($first:expr, $second:expr $(,)?) => {{
+        $crate::yield_now().await; //ensure we play nice in troupes
         let fut1 = $crate::steady_fuse_future($first);
         let fut2 = $crate::steady_fuse_future($second);
         $crate::steady_await_for_all_or_proceed_upon_two(fut1,fut2).await
     }};
     ($first:expr, $second:expr, $third:expr $(,)?) => {{
+        $crate::yield_now().await; //ensure we play nice in troupes
         let fut1 = $crate::steady_fuse_future($first);
         let fut2 = $crate::steady_fuse_future($second);
         let fut3 = $crate::steady_fuse_future($third);
         $crate::steady_await_for_all_or_proceed_upon_three(fut1,fut2,fut3).await
     }};
     ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
+        $crate::yield_now().await; //ensure we play nice in troupes
         let fut1 = $crate::steady_fuse_future($first);
         let fut2 = $crate::steady_fuse_future($second);
         let fut3 = $crate::steady_fuse_future($third);
@@ -209,6 +213,7 @@ macro_rules! await_for_all_or_proceed_upon {
         $crate::steady_await_for_all_or_proceed_upon_four(fut1,fut2,fut3,fut4).await
     }};
     ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
+        $crate::yield_now().await; //ensure we play nice in troupes
         let fut1 = $crate::steady_fuse_future($first);
         let fut2 = $crate::steady_fuse_future($second);
         let fut3 = $crate::steady_fuse_future($third);
@@ -226,11 +231,13 @@ macro_rules! await_for_all_or_proceed_upon {
 macro_rules! await_for_any {
     ($first:expr $(,)?) => {{
         async {
+            $crate::yield_now().await; //ensure we play nice in troupes
             $first.await
         }.await
     }};
     ($first:expr, $second:expr $(,)?) => {{
         async {
+            $crate::yield_now().await; //ensure we play nice in troupes
             let fut1 = $crate::steady_fuse_future($first);
             let fut2 = $crate::steady_fuse_future($second);
             $crate::steady_select_two(fut1, fut2).await
@@ -238,6 +245,7 @@ macro_rules! await_for_any {
     }};
     ($first:expr, $second:expr, $third:expr $(,)?) => {{
         async {
+            $crate::yield_now().await; //ensure we play nice in troupes
             let fut1 = $crate::steady_fuse_future($first);
             let fut2 = $crate::steady_fuse_future($second);
             let fut3 = $crate::steady_fuse_future($third);
@@ -246,6 +254,7 @@ macro_rules! await_for_any {
     }};
     ($first:expr, $second:expr, $third:expr, $fourth:expr $(,)?) => {{
         async {
+            $crate::yield_now().await; //ensure we play nice in troupes
             let fut1 = $crate::steady_fuse_future($first);
             let fut2 = $crate::steady_fuse_future($second);
             let fut3 = $crate::steady_fuse_future($third);
@@ -253,8 +262,9 @@ macro_rules! await_for_any {
             $crate::steady_select_four(fut1, fut2, fut3, fut4).await
         }.await
     }};
-    ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
+   ($first:expr, $second:expr, $third:expr, $fourth:expr, $fifth:expr $(,)?) => {{
         async {
+            $crate::yield_now().await; //ensure we play nice in troupes
             let fut1 = $crate::steady_fuse_future($first);
             let fut2 = $crate::steady_fuse_future($second);
             let fut3 = $crate::steady_fuse_future($third);
