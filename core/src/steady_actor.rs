@@ -546,9 +546,9 @@ mod steady_actor_tests {
     #[test]
     fn test_blocking_call_future_terminated() {
         let (tx, rx) = crate::oneshot::channel::<i32>();
-        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
+        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.expect("") }.fuse()));
         assert!(!fut.is_terminated());
-        tx.send(42).unwrap();
+        tx.send(42).expect("send");
         let res = core_exec::block_on(&mut fut);
         assert_eq!(res, 42);
         assert!(fut.is_terminated());
@@ -557,7 +557,7 @@ mod steady_actor_tests {
     #[test]
     fn test_blocking_call_future_fetch_timeout() {
         let (_tx, rx) = crate::oneshot::channel::<i32>();
-        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
+        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.expect("") }.fuse()));
         let res = core_exec::block_on(fut.fetch(Duration::from_millis(10)));
         assert!(res.is_none());
     }
@@ -565,8 +565,8 @@ mod steady_actor_tests {
     #[test]
     fn test_blocking_call_future_fetch_ready() {
         let (tx, rx) = crate::oneshot::channel::<i32>();
-        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
-        tx.send(42).unwrap();
+        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.expect("") }.fuse()));
+        tx.send(42).expect("send");
         let res = core_exec::block_on(fut.fetch(Duration::from_millis(100)));
         assert_eq!(res, Some(42));
     }

@@ -1560,8 +1560,8 @@ mod test_actor_builder {
             .with_load_percentile(Percentile::p50())
             .with_mcpu_avg()
             .with_load_avg()
-            .with_mcpu_trigger(Trigger::AvgAbove(MCPU::new(500).unwrap()), AlertColor::Red)
-            .with_load_trigger(Trigger::AvgBelow(Work::new(10.0).unwrap()), AlertColor::Yellow)
+            .with_mcpu_trigger(Trigger::AvgAbove(MCPU::new(500).expect("")), AlertColor::Red)
+            .with_load_trigger(Trigger::AvgBelow(Work::new(10.0).expect("")), AlertColor::Yellow)
             .with_thread_info()
             .with_stack_size(4 * 1024 * 1024)
             .never_simulate(true);
