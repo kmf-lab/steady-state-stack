@@ -494,9 +494,13 @@ impl Troupe {
                             slot.ctx.regeneration += 1;
                             futures.push(Self::build_async_fun(slot));
                         }
-                        Err(_) => {
+                        Err(e) => {
                             // Actor panicked, restart it
-                            error!("Actor {:?} panicked", slot.ctx.ident);
+                            let msg = if let Some(s) = e.downcast_ref::<&str>() { *s }
+                                      else if let Some(s) = e.downcast_ref::<String>() { s.as_str() }
+                                      else { "Unknown panic payload" };
+
+                            error!("PANIC in troupe actor {:?}: {}", slot.ctx.ident, msg);
                             slot.ctx.regeneration += 1;
                             futures.push(Self::build_async_fun(slot));
                         }
@@ -1009,6 +1013,9 @@ impl ActorBuilder {
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
+        if self.actor_name.name.is_empty() {
+            panic!("Actor name must be set before calling build(). Use .with_name() or .with_name_and_suffix().");
+        }
         let excluded_cores = self.excluded_cores.clone();
         let core_balancer = self.core_balancer.clone();
         let explicit_core = self.explicit_core;
@@ -1074,19 +1081,13 @@ impl ActorBuilder {
                                 break;
                             }
                             Err(e) => {
-                                if let Some(specific_error) = e.downcast_ref::<std::io::Error>() {
-                                    warn!(
-                                        "IO Error encountered: {} in actor: {:?}",
-                                        specific_error, context_archetype.ident
-                                    );
-                                } else if let Some(specific_error) = e.downcast_ref::<String>() {
-                                    warn!(
-                                        "String Error encountered: {} in actor: {:?}",
-                                        specific_error, context_archetype.ident
-                                    );
-                                }
+                                let msg = if let Some(s) = e.downcast_ref::<&str>() { *s }
+                                          else if let Some(s) = e.downcast_ref::<String>() { s.as_str() }
+                                          else { "Unknown panic payload" };
+
+                                error!("PANIC in actor {:?}: {}", context_archetype.ident, msg);
                                 master_ctx.regeneration += 1;
-                                warn!("Restarting: {:?}", context_archetype.ident);
+                                info!("Restarting actor: {:?}", context_archetype.ident);
                             }
                         }
                     }
@@ -1114,6 +1115,9 @@ impl ActorBuilder {
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
+        if self.actor_name.name.is_empty() {
+            panic!("Actor name must be set before calling build(). Use .with_name() or .with_name_and_suffix().");
+        }
         let rate = self.frame_rate_ms;
         let is_for_test = self.is_for_test;
         let stack_size = self.stack_size;

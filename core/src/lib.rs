@@ -366,7 +366,7 @@ pub use crate::macros::steady_tx_bundle;
 pub use crate::macros::steady_rx_bundle_active;
 pub use crate::macros::steady_tx_bundle_active;
 
-use crate::yield_now::yield_now;
+pub use crate::yield_now::yield_now;
 
 
 

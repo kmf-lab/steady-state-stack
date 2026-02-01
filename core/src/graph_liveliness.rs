@@ -235,7 +235,7 @@ impl GraphLiveliness {
     ///
     /// * `runtime_state` - A shared reference to the graph's liveliness state.
     pub(crate) async fn internal_request_shutdown(runtime_state: Arc<RwLock<GraphLiveliness>>) {
-        error!("starting shutdown reqeuests");
+        trace!("starting shutdown one shots");
         if runtime_state.read().state.eq(&GraphLivelinessState::Running) {
             let read = runtime_state.read();
             let votes: Vec<Mutex<ShutdownVote>> = read.registered_voters.iter().enumerate().map(|(i, v)| {
@@ -259,9 +259,8 @@ impl GraphLiveliness {
             let mut one_shots: MutexGuard<Vec<Sender<_>>> = local_oss.lock().await;
             while let Some(f) = one_shots.pop() {
                 let _ignore = f.send(());
-                error!("send one shot {:?}",_ignore);
+                //trace!("send one shot {:?}",_ignore);
             }
-            error!("finished all shutdown reqeuests");
             trace!("every actor has had one shot shutdown fired now");
         } else if runtime_state.read().is_in_state(&[GraphLivelinessState::Building]) {
             warn!("request_shutdown should only be called after start");
@@ -402,7 +401,7 @@ impl GraphLiveliness {
                     debug_assert_eq!(vote.id, ident.id);
                     let in_favor = accept_fn(); //has side effect, must act on results!
                     if in_favor {
-                            error!("now agreed to shutdown: {:?}",&ident);
+                            trace!("now agreed to shutdown: {:?}",&ident);
                     }
                     vote.signature = Some(ident);
                     if in_favor && !vote.in_favor {

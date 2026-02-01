@@ -783,11 +783,10 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                 false
             } else {
                 let dur = Delay::new(Duration::from_micros(remaining_micros as u64));
-                let wat = self.internal_wait_shutdown();
+                let mut shut = self.oneshot_shutdown.clone().fuse();
                 select! {
-                    _ = self.oneshot_shutdown.clone().fuse() => false,
+                    _ = shut => true,
                     _ = dur.fuse() => false,
-                    x = wat.fuse() => x
                 }
             }
         } else {
