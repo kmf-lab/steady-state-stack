@@ -2,8 +2,9 @@ use std::sync::Arc;
 use futures_util::lock::{Mutex, MutexGuard, MappedMutexGuard};
 use std::ops::{Deref, DerefMut};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Error};
 use std::path::{Path, PathBuf};
+use futures_util::TryFutureExt;
 use log::error;
 use serde::{Serialize};
 use serde::de::DeserializeOwned;
@@ -21,6 +22,7 @@ use serde_json;
 pub struct SteadyState<S> {
     inner: Arc<Mutex<Option<S>>>,
     on_drop: Option<Arc<dyn Fn(&S) + Send + Sync>>,
+    on_persist: Option<Arc<dyn Fn(&S) -> Result<(), std::io::Error> + Send + Sync>>,
 }
 
 impl<S> Clone for SteadyState<S> {
@@ -31,6 +33,7 @@ impl<S> Clone for SteadyState<S> {
         SteadyState {
             inner: self.inner.clone(),
             on_drop: self.on_drop.clone(),
+            on_persist: self.on_persist.clone(),
         }
     }
 }
@@ -60,6 +63,7 @@ impl<S> SteadyState<S> {
         StateGuard {
             guard: mapped,
             on_drop: self.on_drop.clone(),
+            on_persist: self.on_persist.clone(),
         }
     }
 
@@ -76,6 +80,7 @@ impl<S> SteadyState<S> {
                 Some(StateGuard {
                     guard: mapped,
                     on_drop: self.on_drop.clone(),
+                    on_persist: self.on_persist.clone(),
                 })
             } else {
                 None
@@ -102,6 +107,8 @@ pub fn new_state<S>() -> SteadyState<S> {
     SteadyState {
         inner: Arc::new(Mutex::new(None)),
         on_drop: None,
+        on_persist: None,
+
     }
 }
 
@@ -133,28 +140,40 @@ where
             serde_json::from_reader(reader).ok()
         });
 
+    let drop_file = file_path.clone();
     let on_drop = move |s: &S| {
-        if let Ok(file) = File::create(&file_path) {
-            let result = serde_json::to_writer(file, s);
-            match result {
-                Ok(_) => (),
-                Err(e) => error!("Error writing state to file: {}", e),
-            }
-        };
+        write_file(&drop_file, s);
+    };
+    let persist_file = file_path.clone();
+    let on_persist = move |s: &S| {
+        write_file(&persist_file, s)
     };
 
     SteadyState {
         inner: Arc::new(Mutex::new(state)),
         on_drop: Some(Arc::new(on_drop)),
+        on_persist: Some(Arc::new(on_persist)),
     }
 }
 
+fn write_file<S: serde::Serialize>(file_path: &PathBuf, s: &S) -> Result<(), std::io::Error> {
+    if let Ok(file) = File::create(&file_path) {
+        let result = serde_json::to_writer_pretty(file, s);
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(Error::from(e)),
+        }
+    } else {
+        Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to create file"))
+    }
+}
 
 ///
 /// Protect state access while the actor needs to use it. State reverts to lock when dropped.
 pub struct StateGuard<'a, S> {
     guard: MappedMutexGuard<'a, Option<S>, S>,
     on_drop: Option<Arc<dyn Fn(&S) + Send + Sync>>,
+    on_persist: Option<Arc<dyn Fn(&S) -> Result<(), std::io::Error> + Send + Sync>>,
 }
 
 impl<'a, S> Deref for StateGuard<'a, S> {
@@ -175,6 +194,20 @@ impl<'a, S> Drop for StateGuard<'a, S> {
     fn drop(&mut self) {
         if let Some(on_drop) = &self.on_drop {
             on_drop(&*self.guard);
+        }
+    }
+}
+
+impl<'a, S> StateGuard<'a, S> {
+
+    pub async fn persist(&self) -> Result<(), std::io::Error>
+    where
+        S: Serialize,
+    {
+        if let Some(on_persist) = &self.on_persist {
+            on_persist(&*self.guard)
+        } else {
+            Ok(())
         }
     }
 }
