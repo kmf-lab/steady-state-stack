@@ -87,8 +87,6 @@ struct PrimaryGroupKey {
     color: String,
     sidecar: bool,
     partner: Option<&'static str>,
-    // Add a unique identifier to distinguish between actors with same name but different suffixes
-    unique_id: u64,
 }
 
 /// Builds the DOT graph from the current state.
@@ -319,7 +317,6 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             color: pe.combined_color.clone(),
             sidecar: pe.sidecar,
             partner: pe.partner_name,
-            unique_id: pe.ids.iter().sum::<usize>() as u64, // Use sum of edge IDs as unique identifier
         };
         primary_groups.entry(key).or_default().push(pe);
     }
