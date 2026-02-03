@@ -122,6 +122,9 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         last_generated_graph: Instant::now(),
         active_graph: BytesMut::new(),
     };
+    //generate the first empty chart
+    generate_reports(&mut metrics_state, &mut history, &mut frames, false, state.clone(), true).await;
+
 
     // CRITICAL: We must call is_running BEFORE we block on any resource (like the channel lock).
     // This ensures the actor always identifies itself and registers its shutdown vote, 
@@ -138,7 +141,11 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         let mut rxg = rx.lock().await;
 
         // 1. Wait for at least one message to arrive in the telemetry channel.
-        let _clean = await_for_all!( ctrl.wait_avail(&mut rxg, 1) );
+        let _clean = await_for_any!(
+            ctrl.wait_avail(&mut rxg, 1),
+            ctrl.wait_periodic(Duration::from_millis(frame_rate_ms/2)) //required for smooth paint
+
+        );
 
         let flush_all = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped]);
         let mut burst_processed = false;
@@ -150,23 +157,31 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         while let Some(msg) = ctrl.try_take(&mut rxg) {
             burst_processed = true;
             process_msg(msg, &mut metrics_state, &mut history, frame_rate_ms).await;
+
+            if frames.last_generated_graph.elapsed().as_millis() >= (frame_rate_ms/2) as u128 {
+                break;// stop early if we have half a frame break
+            }
+
         }
 
-        // 3. After the burst is processed, generate reports exactly once.
-        if burst_processed {
-            // We only rebuild the DOT graph and Prometheus text if we are shutting down 
-            // OR if enough time has passed to satisfy our target frame rate.
-            let flush_frame = flush_all || frames.last_generated_graph.elapsed().as_millis() >= frame_rate_ms as u128;
-            
+        // We only rebuild the DOT graph and Prometheus text if we are shutting down
+        // OR if enough time has passed to satisfy our target frame rate.
+        let flush_frame = flush_all
+            || burst_processed
+            || frames.last_generated_graph.elapsed().as_millis()
+                  >= frame_rate_ms as u128;
+
+        if flush_frame {
             generate_reports(
-                &mut metrics_state, 
-                &mut history, 
-                &mut frames, 
-                flush_all, 
-                state.clone(), 
-                flush_frame
+                &mut metrics_state,
+                &mut history,
+                &mut frames,
+                flush_all,
+                state.clone(),
+                true
             ).await;
         }
+
     }
     //force all the data we may be holding to be written to history and telemetry before we exit
     generate_reports(&mut metrics_state, &mut history, &mut frames, true, state, true).await;
@@ -314,15 +329,23 @@ async fn process_msg(
         },
         DiagramData::NodeProcessData(_seq, actor_status) => {
             let total_work_ns: u128 = actor_status.iter().map(|status| {
-                assert!(status.unit_total_ns >= status.await_total_ns, "unit_total_ns:{:?} await_total_ns:{:?}", status.unit_total_ns, status.await_total_ns);
+                assert!(status.unit_total_ns >= status.await_total_ns,
+                "unit_total_ns:{:?} await_total_ns:{:?}",
+                status.unit_total_ns,
+                status.await_total_ns);
                 (status.unit_total_ns - status.await_total_ns) as u128
             }).sum();
 
-            actor_status.iter().enumerate().for_each(|(i, status)| {
-                if metrics_state.nodes.len() > i && metrics_state.nodes[i].id.is_some() {
-                    metrics_state.nodes[i].compute_and_refresh(*status, total_work_ns);
+
+            for status in  actor_status.iter() {
+                let ident = status.ident;
+
+                if let Some(node) = metrics_state.nodes.get_mut(ident.id) {
+                    node.compute_and_refresh(*status, total_work_ns);
                 }
-            });
+            }
+
+
         },
         DiagramData::ChannelVolumeData(seq, total_take_send) => {
             total_take_send.iter().enumerate().for_each(|(i, (t, s))| {

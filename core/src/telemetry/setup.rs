@@ -7,7 +7,7 @@ use async_ringbuf::traits::Observer;
 #[allow(unused_imports)]
 use log::*;
 use num_traits::Zero;
-use crate::{ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
+use crate::{yield_now, ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{find_my_index, ChannelMetaData, RxTel};
@@ -245,7 +245,8 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         let tx = lock_guard.deref_mut();                       
                         let capacity = tx.capacity();
                         let vacant_units = tx.vacant_units();
-                        //trace!("lock send {:?} !!!!CRITIAL ACTOR SEND!!!!!!!!!!!!!!!!!!!!!!!!!!!{:?} vacant: {:?}", this.ident,tx,vacant_units);
+
+                        //info!("lock send {:?} !!!!CRITIAL ACTOR SEND!!!!!!!!!!!!!!!!!!!!!!!!!!!{:?} vacant: {:?} last_send:{:?}", this.ident, tx, vacant_units, tx.last_error_send);
 
                         if vacant_units >= (capacity >> 1) {
                         } else {
@@ -286,7 +287,10 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         let msg = actor_status.status_message(this.is_running_iteration_count);
                         // trace!("message to send {:?} for {:?}",msg, this.ident);
                         match tx.shared_try_send(msg) {
+
                             Ok(_) => {
+                                //info!("message to send {:?} for {:?}",msg, this.ident);
+
                                 if let Some(ref mut send_tx) = this.telemetry.send_tx {
                                     if tx.local_monitor_index.lt(&MONITOR_NOT) {
                                         //happy path
@@ -321,6 +325,8 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                 true
                             }
                             Err(_a) => {
+                                info!("message unable to send {:?} for {:?}",msg, this.ident);
+
                                 let now = Instant::now();
                                 let dif = now.duration_since(actor_status.last_telemetry_error);
                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {

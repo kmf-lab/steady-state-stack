@@ -552,9 +552,9 @@ pub fn apply_node_def(
     local_state.nodes[id].id = Some(actor.ident.label);
     local_state.nodes[id].remote_details = actor.remote_details.clone();
     local_state.nodes[id].display_label = if let Some(suf) = actor.ident.label.suffix {
-        format!("{}{}",actor.ident.label.name,suf)
+        format!("{}{}\n",actor.ident.label.name,suf)
     } else {
-        actor.ident.label.name.to_string()
+        format!("{}\n",actor.ident.label.name)
     };
     local_state.nodes[id].tooltip = String::new();
     local_state.nodes[id].stats_computer.init(actor.clone(), frame_rate_ms);

@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use parking_lot::RwLock;
 use crate::*;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
+use crate::telemetry::{metrics_collector, metrics_server};
 
 /// The name of the metrics collector actor.
 pub const NAME: &str = "metrics_collector";
@@ -118,6 +119,12 @@ impl MetricsCollector {
             {
                 let receivers = self.all_telemetry_rx.read();
                 for detail in receivers.iter() {
+
+                    if detail.ident.label.name == metrics_collector::NAME ||
+                        detail.ident.label.name == metrics_server::NAME {
+                        continue; //skip internal system actors
+                    }
+
                     let actor_id = detail.ident.id;
 
                     // Ensure tracking vectors are large enough for this actor_id

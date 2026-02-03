@@ -16,9 +16,6 @@ pub const TELEMETRY_SERVER: bool = true;
 #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin", feature = "prometheus_metrics")))]
 pub const TELEMETRY_SERVER: bool = false;
 
-/// Whether actor IDs are logged on creation (for debugging).
-pub const SHOW_ACTORS: bool = false;
-
 /// Capacity of the backplane channel for test messages.
 pub const BACKPLANE_CAPACITY: usize = 16;
 
@@ -83,7 +80,6 @@ mod tests {
     fn test_default_constants() {
         // Under default compilation (no special features)
         assert!(TELEMETRY_SERVER);
-        assert!(!SHOW_ACTORS);
         assert_eq!(BACKPLANE_CAPACITY, 16);
         assert!(!TELEMETRY_HISTORY);
         assert_eq!(MAX_TELEMETRY_ERROR_RATE_SECONDS, 20);

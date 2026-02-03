@@ -354,11 +354,6 @@ mod extra_tests {
 
         actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None);
 
-        // Should contain actor ID in brackets when SHOW_ACTORS is true
-        // Note: This test might need adjustment based on how SHOW_ACTORS is implemented
-        if steady_config::SHOW_ACTORS {
-            assert!(dot_label.contains("[123]"));
-        }
     }
 
     /// Test compute method with window display

@@ -137,6 +137,12 @@ async fn internal_behavior<A: SteadyActor{%- if has_bundles -%},{% endif -%}
             SendOutcome::Blocked(msg) => { //in the above await we should have confirmed space is available
                 trace!("error sending: {:?}", msg)
             },
+            SendOutcome::Timeout(msg) => {
+                trace!("error sending: {:?}", msg)
+            },
+            SendOutcome::Closed(msg) => {
+                trace!("error sending: {:?}", msg)
+            },
         }
   {% else %}
         {{note_for_the_user}} here is an example writing to one of the {{channel[0].name}}_tx bundle of {{channel.len()}}
@@ -144,6 +150,12 @@ async fn internal_behavior<A: SteadyActor{%- if has_bundles -%},{% endif -%}
             SendOutcome::Success => {
             },
             SendOutcome::Blocked(msg) => { //in the above await we should have confirmed space is available
+                trace!("error sending: {:?}", msg)
+            },
+            SendOutcome::Timeout(msg) => {
+                trace!("error sending: {:?}", msg)
+            },
+            SendOutcome::Closed(msg) => {
                 trace!("error sending: {:?}", msg)
             },
         }
