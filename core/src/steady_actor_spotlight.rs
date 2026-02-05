@@ -74,6 +74,7 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) ident: ActorIdentity,
     pub(crate) is_in_graph: bool,
     pub(crate) telemetry: SteadyTelemetry<RX_LEN, TX_LEN>,
+
     pub(crate) last_telemetry_send: Instant,
     pub(crate) last_periodic_wait: AtomicU64,
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
@@ -168,12 +169,23 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
     fn relay_stats_smartly(&mut self) -> bool {
+
+
+
         let last_elapsed = self.last_telemetry_send.elapsed();
-        let should_send = last_elapsed.as_micros() as u64 * (REAL_CHANNEL_LENGTH_TO_COLLECTOR as u64) >= (1000u64 * self.frame_rate_ms);
-        
+        let should_send = last_elapsed.as_micros() as u64
+                          * (REAL_CHANNEL_LENGTH_TO_COLLECTOR as u64)
+                       >= (1000u64 * self.frame_rate_ms);
+
+
+        // if self.is_running_iteration_count%10000 == 0 {
+        //     trace!("is running {:?} {:?} send? {:?} elapsed:{:?} last send:{:?}",self.is_running_iteration_count
+        //         , self.ident, should_send, last_elapsed, self.last_telemetry_send);
+        // }
+
         if should_send {
             setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
-            self.telemetry.dirty.store(false, Ordering::Relaxed);
+            self.telemetry.dirty.store(false, Ordering::SeqCst);
             self.last_telemetry_send = Instant::now();
             if ENABLE_TELEMETRY_DEBUG {
                 info!("Telemetry data sent for actor {:?} after {}µs  iteration {} ", self.ident, last_elapsed.as_micros(), self.is_running_iteration_count);

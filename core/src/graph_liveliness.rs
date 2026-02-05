@@ -126,6 +126,8 @@ pub struct GraphLiveliness {
     pub(crate) actors_count: Arc<AtomicUsize>,
     /// An optional timeout duration for the shutdown process.
     pub(crate) shutdown_timeout: Option<Duration>,
+    /// Full catalog of all actors
+    pub(crate) actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>
 }
 
 impl GraphLiveliness {
@@ -141,7 +143,11 @@ impl GraphLiveliness {
     /// # Returns
     ///
     /// A newly initialized `GraphLiveliness` instance.
-    pub(crate) fn new(one_shot_shutdown: Arc<Mutex<Vec<Sender<()>>>>, actors_count: Arc<AtomicUsize>) -> Self {
+    pub(crate) fn new(
+        one_shot_shutdown: Arc<Mutex<Vec<Sender<()>>>>,
+        actors_count: Arc<AtomicUsize>,
+        actors_catalog: Arc<RwLock<Vec<ActorIdentity>>>
+    ) -> Self {
         GraphLiveliness {
             actors_count,
             registered_voter_count: AtomicUsize::new(0),
@@ -151,7 +157,14 @@ impl GraphLiveliness {
             vote_in_favor_total: AtomicUsize::new(0),
             shutdown_one_shot_vec: one_shot_shutdown,
             shutdown_timeout: None,
+            actor_catalog: actors_catalog
         }
+    }
+
+    pub(crate) fn actor_by_id(&self, id: usize) -> Option<ActorIdentity> {
+
+       let vec = self.actor_catalog.read();
+       vec.iter().find(|x| x.id==id).map(|x|x.clone())
     }
 
     /// Transitions the graph from the building state to the running state.
@@ -207,15 +220,30 @@ impl GraphLiveliness {
     ///
     /// * `timeout` - THE maximum duration to wait for actor registration.
     pub(crate) fn wait_for_registrations(&mut self, timeout: Duration) {
-        if self.actors_count.load(Ordering::SeqCst) > 0 {
+        let expected_count = self.actors_count.load(Ordering::SeqCst);
+        if expected_count > 0 {
             trace!("waiting for actors to register: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
             let start = Instant::now();
             while self.registered_voter_count.load(Ordering::SeqCst) < self.actors_count.load(Ordering::SeqCst) {
                 trace!(" waiting for actors to register: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
                 let elapsed = start.elapsed();
                 if elapsed > timeout {
+
                     error!("timeout on startup, not all actors registered: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
-                    break;
+                    error!("if you need more startup time than {:?} use start_with_timeout",timeout);
+                    error!("if any of these actors are in a troupe, ensure the troupe is dropped BEFORE calling graph.start()");
+                    
+                    //find all actors in the None status
+                    let missing: Vec<_> = self.registered_voters.iter()
+                        .enumerate()
+                        .filter(|(_, status)| matches!(status, VoterStatus::None))
+                        .map(|(id,_)| self.actor_by_id(id))
+                        .collect();
+
+
+                    error!("missing actors: {:?}",missing);
+
+                    std::process::exit(1); //exit, we did not start up in a reasonable way
                 }
                 thread::sleep(Duration::from_millis(40));
             }
@@ -414,7 +442,7 @@ impl GraphLiveliness {
                         //}
                         vote.veto_reason = i_take_expression();
                         if vote.in_favor {
-                            warn!("already voted in favor! : {:?} {:?} vs {:?}", ident, in_favor, vote.in_favor);
+                            trace!("already voted in favor! : {:?} {:?} vs {:?}", ident, in_favor, vote.in_favor);
                         }
                     }
                     drop(vote);
@@ -831,6 +859,8 @@ pub struct Graph {
     pub(crate) default_stack_size: Option<usize>,
     /// Minimum size for bundles.
     pub(crate) bundle_floor_size: usize,
+    /// Univeral list of all actor identifiers
+    pub(crate) actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>,
 }
 
 /// A guard that provides access to the stage manager for testing purposes.
@@ -1021,7 +1051,7 @@ impl Graph {
     ///
     /// This method initiates the graph's operation, waiting for actors to register before proceeding.
     pub fn start(&mut self) {
-        self.start_with_timeout(Duration::from_secs(40));
+        self.start_with_timeout(Duration::from_secs(20));
     }
 
     /// Starts the graph with a specified timeout for actor registration.
@@ -1225,6 +1255,7 @@ impl Graph {
         core_exec::init(builder.enable_io_driver, proactor_config, builder.iouring_queue_length);
         let channel_count = Arc::new(AtomicUsize::new(0));
         let actor_count = Arc::new(AtomicUsize::new(0));
+        let actor_catalog = Arc::new(RwLock::new(Vec::new()));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
         let mut result = Graph {
             args: Arc::new(Box::new(args)),
@@ -1234,6 +1265,7 @@ impl Graph {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
                 oneshot_shutdown_vec.clone(),
                 actor_count.clone(),
+                actor_catalog.clone(),
             ))),
             thread_lock: Arc::new(Mutex::new(())),
             oneshot_shutdown_vec,
@@ -1250,6 +1282,7 @@ impl Graph {
             shutdown_barrier: builder.shutdown_barrier,
             default_stack_size: builder.default_stack_size,
             bundle_floor_size: builder.bundle_floor_size,
+            actor_catalog: actor_catalog.clone(),
         };
         if builder.telemetry_metric_features {
             telemetry::setup::build_telemetry_metric_features(&mut result);

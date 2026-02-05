@@ -625,6 +625,7 @@ pub(crate) mod monitor_tests {
         SteadyActorShadow {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
                 oneshot_shutdown_vec.clone(),
+                Default::default(),
                 Default::default()
             ))),
             channel_count: Arc::new(AtomicUsize::new(0)),
@@ -1140,6 +1141,7 @@ pub(crate) mod monitor_tests {
             runtime_state: Arc::new(RwLock::new(GraphLiveliness::new(
                 oneshot_shutdown_vec.clone(),
                 Default::default(),
+                Default::default()
             ))),
             channel_count: Arc::new(AtomicUsize::new(0)),
             ident: ActorIdentity::new(0, "test_actor", None),

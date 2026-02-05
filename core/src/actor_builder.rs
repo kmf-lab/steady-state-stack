@@ -26,6 +26,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
 use aeron::aeron::Aeron;
 use async_lock::Barrier;
+use async_std::task::block_on;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::dot::RemoteDetails;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -102,6 +103,8 @@ pub struct ActorBuilder {
     is_for_test: bool,
     /// Optional stack size for the actor.
     stack_size: Option<usize>,
+    /// Universal list of all actors in the graph.
+    actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>
 }
 
 /// A helper struct for managing CPU core allocation to balance actor distribution across available cores.
@@ -697,6 +700,7 @@ impl ActorBuilder {
             shutdown_barrier: graph.shutdown_barrier.clone(),
             is_for_test: graph.is_for_testing,
             stack_size: graph.default_stack_size,
+            actor_catalog: graph.actor_catalog.clone()
         }
     }
 
@@ -1198,12 +1202,12 @@ impl ActorBuilder {
         let args = self.args.clone();
         let oneshot_shutdown_vec = self.oneshot_shutdown_vec.clone();
         let backplane = self.backplane.clone();
-        let id = self.actor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let dyn_call = Self::to_dyn_call(build_actor_exec);
+
+        let id = self.actor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let immutable_identity = ActorIdentity::new(id, self.actor_name.name, self.actor_name.suffix);
-        if steady_config::SHOW_ACTORS {
-            info!(" Actor {:?} defined ", immutable_identity);
-        }
+        self.actor_catalog.write().push(immutable_identity.clone());
+
         let immutable_actor_metadata = self.build_actor_metadata(immutable_identity).clone();
 
         // Pre-register with telemetry to avoid "unknown" labels if the actor hangs at startup
