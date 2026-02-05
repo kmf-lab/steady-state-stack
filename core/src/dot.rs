@@ -630,7 +630,9 @@ fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec:
 
         if let Some(node_from) = edge.from {
             if let Some(node_to) = edge.to {
-                    edge.stats_computer.init(meta, node_from, node_to, frame_rate_ms);
+                    if edge.stats_computer.capacity == 0 {
+                        edge.stats_computer.init(meta, node_from, node_to, frame_rate_ms);
+                    }
                     edge.sidecar = meta.connects_sidecar;
                     edge.partner = meta.partner;
                     edge.bundle_index = meta.bundle_index;

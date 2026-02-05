@@ -535,13 +535,16 @@ impl ChannelStatsComputer {
         // Set the default color in case we have no alerts.
         let mut line_color = DOT_GREY;
 
-        if self.trigger_alert_level(&AlertColor::Yellow) {
+        // Fallback: If windows aren't full, use instant saturation for color
+        let is_hot = self.current_rate.is_none() && self.saturation_score > 0.1;
+
+        if is_hot || self.trigger_alert_level(&AlertColor::Yellow) {
             line_color = DOT_YELLOW;
         };
-        if self.trigger_alert_level(&AlertColor::Orange) {
+        if (is_hot && self.saturation_score > 0.4) || self.trigger_alert_level(&AlertColor::Orange) {
             line_color = DOT_ORANGE;
         };
-        if self.trigger_alert_level(&AlertColor::Red) {
+        if (is_hot && self.saturation_score > 0.8) || self.trigger_alert_level(&AlertColor::Red) {
             line_color = DOT_RED;
         };
 
