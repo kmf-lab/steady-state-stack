@@ -122,7 +122,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
             }
         } else {
-            dot_graph.put_slice(b"unknown");
+            dot_graph.put_slice(b"No Name");
         }
 
         dot_graph.put_slice(b"\" [label=\"");
