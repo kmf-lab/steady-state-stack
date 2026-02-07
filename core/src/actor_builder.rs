@@ -26,7 +26,6 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
 use aeron::aeron::Aeron;
 use async_lock::Barrier;
-use async_std::task::block_on;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::dot::RemoteDetails;
 use futures::stream::{FuturesUnordered, StreamExt};

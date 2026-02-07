@@ -15,16 +15,20 @@ use std::io::Write;
 use std::fmt::Write as FmtWrite;
 use futures_util::{AsyncReadExt, AsyncWriteExt};
 use crate::steady_actor_shadow::SteadyActorShadow;
+use parking_lot::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // The name of the metrics server actor
 pub const NAME: &str = "metrics_server";
 
 #[derive(Clone)]
 struct MetricState {
-    doc: Vec<u8>,
-    metric: Vec<u8>,
-    config: Vec<u8>,
-    last_disk_write: Instant,
+    doc: Arc<[u8]>,
+    metric: Arc<[u8]>,
+    config: Arc<[u8]>,
+    // Seconds since the server started, used for throttling disk writes
+    last_disk_write: Arc<AtomicU64>,
+    start_time: Instant,
 }
 
 
@@ -67,13 +71,13 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
     let _ = write!(initial_config, "\"refresh_rate_ms\": {}", frame_rate_ms);
     initial_config.push('}');
 
-    // Define a new instance of the state.
-    let state = Arc::new(Mutex::new(MetricState {
-        doc: Vec::new(),
-        metric: Vec::new(),
-        config: initial_config.into_bytes(),
-        // Initialize to the past so the first request triggers a write
-        last_disk_write: Instant::now().checked_sub(Duration::from_secs(6)).unwrap_or_else(Instant::now),
+    // Define a new instance of the state using Arc for zero-copy handoff to readers
+    let state = Arc::new(RwLock::new(MetricState {
+        doc: Arc::from(Vec::new()),
+        metric: Arc::from(Vec::new()),
+        config: Arc::from(initial_config.into_bytes()),
+        last_disk_write: Arc::new(AtomicU64::new(0)),
+        start_time: Instant::now(),
     }));
 
 
@@ -150,7 +154,7 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         let flush_all = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped]);
         let mut burst_processed = false;
 
-        // 2. Consume the entire burst of messages. 
+        // 2. Consume the entire burst of messages but stop early if we have too much
         // We process all pending updates (NodeDef, ProcessData, VolumeData) to ensure 
         // our internal `metrics_state` is fully up-to-date before we attempt to 
         // generate any expensive string-based reports.
@@ -158,7 +162,8 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
             burst_processed = true;
             process_msg(msg, &mut metrics_state, &mut history, frame_rate_ms).await;
 
-            if frames.last_generated_graph.elapsed().as_millis() >= (frame_rate_ms/2) as u128 {
+            //stop early at this point if we are here too long
+            if frames.last_generated_graph.elapsed().as_millis() >= (frame_rate_ms/8) as u128 {
                 break;// stop early if we have half a frame break
             }
 
@@ -249,7 +254,7 @@ pub fn bind_to_port(addr: &str) -> Arc<Option<Box<dyn AsyncListener + Send + Syn
 
 async fn handle_new_requests (
     tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<Option<Duration>>>>,
-    state: Arc<Mutex<MetricState>>,
+    state: Arc<RwLock<MetricState>>,
     listener: &Box<dyn AsyncListener + Send + Sync>,
 ) {
     //NOTE: this server is fast but only does 1 request/response at a time. This is good enough
@@ -276,7 +281,11 @@ async fn handle_new_requests (
                 result = listener.accept().fuse() => {
                     match result {
                        Ok((stream, _peer_addr)) => {
-                           let _ = handle_request(stream,state.clone()).await;
+                           let state_clone = state.clone();
+                           // SPAWN detached to prevent slow clients from blocking telemetry updates
+                           core_exec::spawn_detached(async move {
+                               let _ = handle_request(stream, state_clone).await;
+                           });
                        }
                        Err(e) => {
                            //this may happen on shutdown. TODO: should not report during shutdown.
@@ -296,7 +305,10 @@ async fn handle_new_requests (
                 result = listener.accept().fuse() => {
                     match result {
                         Ok((stream, _peer_addr)) => {
-                            let _ = handle_request(stream, state.clone()).await;
+                            let state_clone = state.clone();
+                            core_exec::spawn_detached(async move {
+                                let _ = handle_request(stream, state_clone).await;
+                            });
                         }
                         Err(e) => {
                             error!("Error accepting connection: {}", e);
@@ -362,7 +374,7 @@ async fn process_msg(
     }
 }
 
-async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<Mutex<MetricState>>, flush_frame: bool) {
+async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<RwLock<MetricState>>, flush_frame: bool) {
     if steady_config::TELEMETRY_HISTORY {
         history.update(flush_all).await;
         history.mark_position();
@@ -370,10 +382,10 @@ async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHisto
 
     if flush_frame {
         build_dot(metrics_state, &mut frames.active_graph);
-
-        let graph_bytes = frames.active_graph.to_vec();
+        let graph_bytes: Arc<[u8]> = Arc::from(&frames.active_graph[..]);
+        
         build_metric(metrics_state, &mut frames.active_metric);
-        let metric_bytes = frames.active_metric.to_vec();
+        let metric_bytes: Arc<[u8]> = Arc::from(&frames.active_metric[..]);
 
         let mut config_json = String::from("{");
         if let Some((ref c1, ref c2)) = metrics_state.telemetry_colors {
@@ -384,15 +396,15 @@ async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHisto
         }
         let _ = write!(config_json, "\"refresh_rate_ms\": {}", metrics_state.refresh_rate_ms);
         config_json.push('}');
-        let config_bytes = config_json.into_bytes();
+        let config_bytes: Arc<[u8]> = Arc::from(config_json.into_bytes());
 
-        //only if we can get this update so if we have too many users they will get fewer updates
-        // but our channel will not fall behind or be blocked by slow clients
+        // SWAP: Hold the write lock only for the duration of pointer updates
+        // This ensures that readers (HTTP handlers) are never blocked by the heavy DOT generation.
         {
-            let mut state = state.lock().await;
-            state.doc = graph_bytes;
-            state.metric = metric_bytes;
-            state.config = config_bytes;
+            let mut state_guard = state.write();
+            state_guard.doc = graph_bytes;
+            state_guard.metric = metric_bytes;
+            state_guard.config = config_bytes;
         }
         frames.last_generated_graph = Instant::now();
     }
@@ -493,7 +505,7 @@ const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SER
 //   pub trait AsyncReadExt: AsyncRead     for the .write_all
 
 async fn handle_request<T>(mut stream: T,
-                           state: Arc<Mutex<MetricState>>) -> io::Result<()>
+                           state: Arc<RwLock<MetricState>>) -> io::Result<()>
 where
     T: AsyncRead + AsyncWrite + Unpin
 {
@@ -518,10 +530,7 @@ where
 
     #[cfg(feature = "prometheus_metrics")]
     if path.starts_with("/me") { // for prometheus /metrics
-        let metric = {
-            let locked_state = state.lock().await;
-            locked_state.metric.clone()
-        };
+        let metric = state.read().metric.clone(); // Arc clone is instant
         stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: text/plain\r\nContent-Length: ", cors_header).as_bytes()).await?;
         stream.write_all(itoa::Buffer::new().format(metric.len()).as_bytes()).await?;
         stream.write_all(b"\r\n\r\n").await?;
@@ -533,23 +542,25 @@ where
     {
         if path.starts_with("/gr") { // for local telemetry /graph.dot
 
-            let mut locked_state = state.lock().await;
-            let now = Instant::now();
-            let can_write = locked_state.last_disk_write.elapsed() >= Duration::from_secs(20); //write file every 20 sec
-            if can_write {
-                locked_state.last_disk_write = now;
-            }
+            let (data, can_write) = {
+                let locked_state = state.read(); // Use READ lock
+                let now_secs = locked_state.start_time.elapsed().as_secs();
+                let last_secs = locked_state.last_disk_write.load(Ordering::Relaxed);
+                
+                let can_write = now_secs >= last_secs + 20; //write file every 20 sec
+                if can_write {
+                    locked_state.last_disk_write.store(now_secs, Ordering::Relaxed);
+                }
+                (locked_state.doc.clone(), can_write)
+            };
 
             stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: text/vnd.graphviz\r\nContent-Length: ", cors_header).as_bytes()).await?;
-            stream.write_all(itoa::Buffer::new().format(locked_state.doc.len()).as_bytes()).await?;
+            stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
-            stream.write_all(&locked_state.doc).await?;
+            stream.write_all(&data).await?;
             stream.flush().await?;
 
             if can_write {
-                let data = locked_state.doc.clone();
-                drop(locked_state);
-
                 let _ = std::fs::create_dir_all("logs");
                 if let Ok(file) = std::fs::OpenOptions::new()
                     .create(true)
@@ -557,17 +568,14 @@ where
                     .truncate(true)
                     .open("logs/graph.dot")
                 {
-                    let data = BytesMut::from(&data[..]);
-                    let _ = async_write_all(data, true, file).await;
+                    let data_buf = BytesMut::from(&data[..]);
+                    let _ = async_write_all(data_buf, true, file).await;
                 }
             }
 
             return Ok(());
         } else if path.starts_with("/co") { // for /config
-            let config = {
-                let locked_state = state.lock().await;
-                locked_state.config.clone()
-            };
+            let config = state.read().config.clone(); // Arc clone is instant
             stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: application/json\r\nContent-Length: ", cors_header).as_bytes()).await?;
             stream.write_all(itoa::Buffer::new().format(config.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
@@ -1001,28 +1009,28 @@ mod handle_request_logic_tests {
 
     #[test]
     fn test_handle_request_index() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![], last_disk_write: Instant::now() }));
+        let state = Arc::new(RwLock::new(MetricState { doc: Arc::from(vec![]), metric: Arc::from(vec![]), config: Arc::from(vec![]), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let stream = MockStream::new("GET / HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_options() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![], last_disk_write: Instant::now() }));
+        let state = Arc::new(RwLock::new(MetricState { doc: Arc::from(vec![]), metric: Arc::from(vec![]), config: Arc::from(vec![]), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let stream = MockStream::new("OPTIONS / HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_404() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![], last_disk_write: Instant::now() }));
+        let state = Arc::new(RwLock::new(MetricState { doc: Arc::from(vec![]), metric: Arc::from(vec![]), config: Arc::from(vec![]), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let stream = MockStream::new("GET /unknown HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_assets() {
-        let state = Arc::new(Mutex::new(MetricState { doc: vec![], metric: vec![], config: vec![], last_disk_write: Instant::now() }));
+        let state = Arc::new(RwLock::new(MetricState { doc: Arc::from(vec![]), metric: Arc::from(vec![]), config: Arc::from(vec![]), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let paths = [
             "/",
             "/index.html",

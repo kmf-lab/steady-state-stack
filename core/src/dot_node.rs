@@ -1,4 +1,3 @@
-use num_traits::Zero;
 use crate::actor_stats::ActorStatsComputer;
 use crate::ActorName;
 use crate::dot::RemoteDetails;
@@ -31,11 +30,11 @@ impl Node {
         let num = actor_status.await_total_ns; //TODO: should not be zero..
         let den = actor_status.unit_total_ns;
 
-        let mcpu_load = if den.is_zero() {
+        let mcpu_load = if den == 0 {
             None
         } else {
             assert!(den.ge(&num), "num: {} den: {}", num, den);
-            let mcpu:u16 = if den.is_zero() || num.is_zero() || 0==actor_status.iteration_start { 0u16 } else { (1024 - ((num * 1024) / den)) as u16 };
+            let mcpu:u16 = if den == 0 || num == 0 || 0==actor_status.iteration_start { 0u16 } else { (1024 - ((num * 1024) / den)) as u16 };
             let load:u16 = if 0==total_work_ns || 0==actor_status.iteration_start {0} else {
                 ((100u64 * (actor_status.unit_total_ns - actor_status.await_total_ns))
                                                                    / total_work_ns as u64) as u16

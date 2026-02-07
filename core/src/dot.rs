@@ -54,6 +54,25 @@ pub(crate) const BUNDLE_PEN_WIDTH: &str = "4";
 /// The pen width for bundles of partnered channels.
 pub(crate) const PARTNER_BUNDLE_PEN_WIDTH: &str = "2";
 
+/// Maps a color name to its RGB components.
+fn color_to_rgb(color: &str) -> (u32, u32, u32) {
+    match color {
+        "red" => (255, 0, 0),
+        "green" => (0, 169, 0),
+        "blue" => (0, 0, 255),
+        "grey" | "gray" => (128, 128, 128),
+        "yellow" => (255, 255, 0),
+        "purple" => (128, 0, 128),
+        "white" => (255, 255, 255),
+        _ => (0, 0, 0), // black/default
+    }
+}
+
+/// Converts RGB components to a hex color string.
+fn rgb_to_hex(r: u32, g: u32, b: u32) -> String {
+    format!("#{:02X}{:02X}{:02X}", r.min(255), g.min(255), b.min(255))
+}
+
 /// Builds the Prometheus metrics from the current state.
 ///
 /// # Arguments
@@ -84,7 +103,6 @@ struct PrimaryGroupKey {
     to_suffix: Option<usize>,
     sub_capacities: Vec<usize>,
     type_name: String,
-    color: String,
     sidecar: bool,
     partner: Option<&'static str>,
 }
@@ -180,7 +198,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
     struct PartneredEdge {
         from: Option<ActorName>,
         to: Option<ActorName>,
-        combined_color: String,
+        lane_rgbs: Vec<(u32, u32, u32)>,
         summary_label: String,
         combined_type: String,
         partner_name: Option<&'static str>,
@@ -189,12 +207,14 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         saturation_score: f64,
         tooltip: String,
         sub_totals: Vec<u128>,
+        sum_total_consumed: u128,
         last_total: i64,
         ids: Vec<usize>,
         ctl_labels: Vec<&'static str>,
         pen_width: String,
         memory_footprint: usize,
         show_memory: bool,
+        show_total: bool,
     }
 
     let mut partnered_edges = Vec::new();
@@ -204,27 +224,29 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         
         let first = edges[0];
         let is_partnered = first.partner.is_some();
-        let mut combined_color = String::new();
+        let mut lane_rgbs = Vec::new();
         let mut type_list = Vec::new();
         let mut ctl_labels = Vec::new();
         let mut ids = Vec::new();
         let mut tooltip = String::new();
+        
+        // Add Window info to the top of the tooltip if active
+        if !first.stats_computer.time_label.is_empty() {
+            let _ = write!(tooltip, "Window: {}\\n", first.stats_computer.time_label);
+        }
+
         let mut sum_saturation = 0.0;
         let mut sub_capacities = Vec::with_capacity(edges.len());
         let mut sub_totals = Vec::with_capacity(edges.len());
         let mut sum_total = 0;
+        let mut sum_total_consumed = 0u128;
         let mut memory_footprint = 0;
         let mut show_memory = false;
 
-        for (i, e) in edges.iter().enumerate() {
-            if i > 0 {
-                if is_partnered {
-                    combined_color.push_str(":black:");
-                } else {
-                    combined_color.push(':');
-                }
-            }
-            combined_color.push_str(e.color);
+        let is_large_bundle = edges.len() > 20;
+
+        for e in edges.iter() {
+            lane_rgbs.push(color_to_rgb(e.color));
             
             let short_type = e.stats_computer.show_type.unwrap_or("");
             if !short_type.is_empty() {
@@ -235,18 +257,24 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             memory_footprint += e.stats_computer.memory_footprint;
             show_memory |= e.stats_computer.show_memory;
             
-            let _ = write!(tooltip, "CH#{}: {} | Cap: ", 
-                e.id, 
-                if short_type.is_empty() { "Data" } else { short_type }
-            );
-            crate::channel_stats_labels::format_compressed_u128(e.stats_computer.capacity as u128, &mut tooltip);
-            let _ = write!(tooltip, " | Vol: {} (Total: ", e.stats_computer.last_total);
-            crate::channel_stats_labels::format_compressed_u128(e.stats_computer.total_consumed, &mut tooltip);
-            let _ = write!(tooltip, ") | Sat: {}% | Color: {}\\n", (e.saturation_score * 100.0) as usize, e.color);
+            if !is_large_bundle {
+                let _ = write!(tooltip, "CH#{}: {}\\n", 
+                    e.id, 
+                    if short_type.is_empty() { "Data" } else { short_type }
+                );
+                tooltip.push_str(" Capacity: ");
+                crate::channel_stats_labels::format_compressed_u128(e.stats_computer.capacity as u128, &mut tooltip);
+                tooltip.push_str("\\n Volume: ");
+                crate::channel_stats_labels::format_compressed_u128(e.stats_computer.last_total as u128, &mut tooltip);
+                tooltip.push_str(" (Total: ");
+                crate::channel_stats_labels::format_compressed_u128(e.stats_computer.total_consumed, &mut tooltip);
+                let _ = write!(tooltip, ")\\n Saturation: {}%\\n", (e.saturation_score * 100.0) as usize);
+            }
 
             ids.push(e.id);
             sum_saturation += e.saturation_score;
             sum_total += e.stats_computer.last_total;
+            sum_total_consumed += e.stats_computer.total_consumed;
             
             for &l in &e.ctl_labels {
                 if !ctl_labels.contains(&l) {
@@ -254,28 +282,30 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 }
             }
         }
+
+        if is_large_bundle {
+            let _ = write!(tooltip, "Summary: {} channels\\n", edges.len());
+            tooltip.push_str(" Total Volume: ");
+            crate::channel_stats_labels::format_compressed_u128(sum_total as u128, &mut tooltip);
+            tooltip.push_str("\\n Avg Saturation: ");
+            let _ = write!(tooltip, "{}%\\n", (sum_saturation / edges.len() as f64 * 100.0) as usize);
+        }
         
         let combined_type = type_list.join("/");
 
         let mut summary_label = first.display_label.clone();
         if is_partnered {
-            summary_label = format!("{} [{}] (", first.partner.unwrap(), first.bundle_index.unwrap_or(0));
-            for (i, cap) in sub_capacities.iter().enumerate() {
-                if i > 0 { summary_label.push_str(", "); }
-                crate::channel_stats_labels::format_compressed_u128(*cap as u128, &mut summary_label);
-            }
-            summary_label.push(')');
+            summary_label = format!("{} [{}]", first.partner.unwrap(), first.bundle_index.unwrap_or(0));
 
             if show_memory {
                 summary_label.push_str(" (");
                 crate::channel_stats_labels::format_compressed_u128(memory_footprint as u128, &mut summary_label);
                 summary_label.push_str("B)");
             }
-            summary_label.push_str("\\nTotal: ");
-
-            for (i, total) in sub_totals.iter().enumerate() {
-                if i > 0 { summary_label.push_str(", "); }
-                crate::channel_stats_labels::format_compressed_u128(*total, &mut summary_label);
+            // RESTORED: Show aggregated volume and total for partnered edges
+            if first.stats_computer.show_total {
+                summary_label.push_str("\\n Total: ");
+                crate::channel_stats_labels::format_compressed_u128(sum_total_consumed, &mut summary_label);
             }
             if !combined_type.is_empty() {
                 summary_label.push_str("\\n");
@@ -286,7 +316,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         partnered_edges.push(PartneredEdge {
             from: first.from,
             to: first.to,
-            combined_color,
+            lane_rgbs,
             summary_label,
             combined_type,
             partner_name: first.partner,
@@ -295,12 +325,14 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             saturation_score: sum_saturation / edges.len() as f64,
             tooltip,
             sub_totals,
+            sum_total_consumed,
             last_total: sum_total,
             ids,
             ctl_labels,
             pen_width: if is_partnered { PARTNER_BUNDLE_PEN_WIDTH.to_string() } else { first.pen_width.clone() },
             memory_footprint,
             show_memory,
+            show_total: first.stats_computer.show_total,
         });
     }
 
@@ -314,7 +346,6 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             to_suffix: pe.to.and_then(|f| f.suffix),
             sub_capacities: pe.sub_capacities.clone(),
             type_name: pe.combined_type.clone(),
-            color: pe.combined_color.clone(),
             sidecar: pe.sidecar,
             partner: pe.partner_name,
         };
@@ -330,6 +361,11 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         
         if edges.len() < state.bundle_floor_size {
             for pe in edges {
+                let color_str = pe.lane_rgbs.iter()
+                    .map(|(r, g, b)| rgb_to_hex(*r, *g, *b))
+                    .collect::<Vec<_>>()
+                    .join(if p_key.partner.is_some() { ":black:" } else { ":" });
+
                 render_edge_internal(
                     dot_graph,
                     p_key.from_name.unwrap_or("unknown"),
@@ -337,7 +373,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                     p_key.to_name.unwrap_or("unknown"),
                     p_key.to_suffix,
                     &pe.summary_label,
-                    &p_key.color,
+                    &color_str,
                     &pe.pen_width,
                     "",
                     p_key.sidecar,
@@ -347,20 +383,30 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         } else {
             // Render as Bundle
             let n = edges.len();
+            let total_channels: usize = edges.iter().map(|e| e.ids.len()).sum();
             let sum_traffic: f64 = edges.iter().map(|e| e.saturation_score * e.sub_capacities.iter().sum::<usize>() as f64).sum();
             let bundle_capacity = (n as f64) * p_key.sub_capacities.iter().sum::<usize>() as f64;
-            let bundle_util = if bundle_capacity > 0.0 { (sum_traffic / bundle_capacity).clamp(0.0, 1.0) } else { 0.0 };
+            let _bundle_util = if bundle_capacity > 0.0 { (sum_traffic / bundle_capacity).clamp(0.0, 1.0) } else { 0.0 };
             
-            // S-Tier: Element-wise summation of index-aligned totals
+            // S-Tier: Element-wise summation of index-aligned totals and RGBs
             let mut bundle_totals = vec![0u128; edges[0].sub_totals.len()];
+            let lane_count = edges[0].lane_rgbs.len();
+            let mut sum_rgbs = vec![(0u32, 0u32, 0u32); lane_count];
             let mut bundle_volume = 0i64;
+            let mut bundle_total_consumed = 0u128;
             let mut total_memory = 0usize;
             let mut show_mem = false;
             for pe in edges {
                 for (i, val) in pe.sub_totals.iter().enumerate() {
                     bundle_totals[i] += val;
                 }
+                for (i, (r, g, b)) in pe.lane_rgbs.iter().enumerate() {
+                    sum_rgbs[i].0 += r;
+                    sum_rgbs[i].1 += g;
+                    sum_rgbs[i].2 += b;
+                }
                 bundle_volume += pe.last_total;
+                bundle_total_consumed += pe.sum_total_consumed;
                 total_memory += pe.memory_footprint;
                 show_mem |= pe.show_memory;
             }
@@ -370,29 +416,17 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             all_labels.dedup();
 
             let label_prefix = p_key.partner.unwrap_or("Bundle");
-            let mut header = format!("{}: {}x ({}%)", label_prefix, n, (bundle_util * 100.0) as usize);
-            if p_key.sub_capacities.len() > 1 {
-                header.push('(');
-                for (i, cap) in p_key.sub_capacities.iter().enumerate() {
-                    if i > 0 { header.push_str(", "); }
-                    crate::channel_stats_labels::format_compressed_u128(*cap as u128, &mut header);
-                }
-                header.push(')');
-            } else {
-                crate::channel_stats_labels::format_compressed_u128(p_key.sub_capacities[0] as u128, &mut header);
-            }
+            let mut header = format!("{}: {}x", label_prefix, n);
 
             if show_mem {
                 header.push_str(" (");
                 crate::channel_stats_labels::format_compressed_u128(total_memory as u128, &mut header);
                 header.push_str("B)");
             }
-            header.push_str("\\nVol: ");
-            crate::channel_stats_labels::format_compressed_u128(bundle_volume as u128, &mut header);
-            header.push_str(" Total: ");
-            for (i, total) in bundle_totals.iter().enumerate() {
-                if i > 0 { header.push_str(", "); }
-                crate::channel_stats_labels::format_compressed_u128(*total, &mut header);
+            // RESTORED: Show aggregated volume and total for the entire bundle
+            if edges[0].show_total {
+                header.push_str("\\nTotal: ");
+                crate::channel_stats_labels::format_compressed_u128(bundle_total_consumed, &mut header);
             }
             if !p_key.type_name.is_empty() {
                 header.push_str("\\n");
@@ -403,25 +437,49 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 header.push_str(l);
             });
 
-            let mut bundle_tooltip = format!("Bundle Details ({} partnered edges):\\n", n);
-            if p_key.sub_capacities.len() > 1 {
-                bundle_tooltip.push_str("Capacities: (");
-                for (i, cap) in p_key.sub_capacities.iter().enumerate() {
-                    if i > 0 { bundle_tooltip.push_str(", "); }
-                    crate::channel_stats_labels::format_compressed_u128(*cap as u128, &mut bundle_tooltip);
+            let mut bundle_tooltip = format!("Bundle Details ({} channels in {} groups):\\n", total_channels, n);
+            // Add Window info to the top of the bundle tooltip
+            if !edges[0].tooltip.is_empty() && edges[0].tooltip.starts_with("Window:") {
+                if let Some(first_line) = edges[0].tooltip.split("\\n").next() {
+                    bundle_tooltip.push_str(first_line);
+                    bundle_tooltip.push_str("\\n");
                 }
-                bundle_tooltip.push_str(")\\n");
             }
-            for (i, e) in edges.iter().enumerate() {
-                if i >= 10 {
-                    let _ = write!(bundle_tooltip, "... and {} more", n - 10);
-                    break;
+
+            if total_channels > 20 {
+                bundle_tooltip.push_str(" Total Volume: ");
+                crate::channel_stats_labels::format_compressed_u128(bundle_volume as u128, &mut bundle_tooltip);
+                bundle_tooltip.push_str("\\n Avg Saturation: ");
+                let avg_saturation = edges.iter().map(|e| e.saturation_score).sum::<f64>() / n as f64;
+                let _ = write!(bundle_tooltip, "{}%\\n", (avg_saturation * 100.0) as usize);
+            } else {
+                if p_key.sub_capacities.len() > 1 {
+                    bundle_tooltip.push_str("Capacities: (");
+                    for (i, cap) in p_key.sub_capacities.iter().enumerate() {
+                        if i > 0 { bundle_tooltip.push_str(", "); }
+                        crate::channel_stats_labels::format_compressed_u128(*cap as u128, &mut bundle_tooltip);
+                    }
+                    bundle_tooltip.push_str(")\\n");
                 }
-                bundle_tooltip.push_str(&e.tooltip);
+                for e in edges.iter() {
+                    // Skip the Window line if it was already added to the bundle header
+                    let entry_tooltip = if e.tooltip.starts_with("Window:") {
+                        e.tooltip.splitn(2, "\\n").nth(1).unwrap_or(&e.tooltip)
+                    } else {
+                        &e.tooltip
+                    };
+                    bundle_tooltip.push_str(entry_tooltip);
+                }
             }
 
             let is_partnered = p_key.partner.is_some();
             let pen_width = if is_partnered { PARTNER_BUNDLE_PEN_WIDTH } else { BUNDLE_PEN_WIDTH };
+
+            // Calculate average colors per lane and build the final striped string
+            let bundle_color_str = sum_rgbs.iter()
+                .map(|(r, g, b)| rgb_to_hex(r / n as u32, g / n as u32, b / n as u32))
+                .collect::<Vec<_>>()
+                .join(if p_key.partner.is_some() { ":black:" } else { ":" });
 
             render_edge_internal(
                 dot_graph,
@@ -430,7 +488,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 p_key.to_name.unwrap_or("unknown"),
                 p_key.to_suffix,
                 &header,
-                &p_key.color,
+                &bundle_color_str,
                 pen_width,
                 ", style=\"bold,dashed\"",
                 p_key.sidecar,
@@ -480,7 +538,12 @@ fn render_edge_internal(
     }
     if !tooltip.is_empty() {
         dot_graph.put_slice(b"\", tooltip=\"");
-        dot_graph.put_slice(tooltip.replace('"', "'").as_bytes());
+        let escaped_tooltip = tooltip.replace('"', "'");
+        dot_graph.put_slice(escaped_tooltip.as_bytes());
+        
+        // Apply the same tooltip to the label text
+        dot_graph.put_slice(b"\", labeltooltip=\"");
+        dot_graph.put_slice(escaped_tooltip.as_bytes());
     }
 
     dot_graph.put_slice(b"\", color=\"");
@@ -488,7 +551,7 @@ fn render_edge_internal(
     dot_graph.put_slice(b"\", penwidth=");
     dot_graph.put_slice(pen_width.as_bytes());
     dot_graph.put_slice(style.as_bytes());
-    dot_graph.put_slice(b"];\n");
+    dot_graph.put_slice(b];\n");
 
     if sidecar {
         dot_graph.put_slice(b"{rank=same; \"");
@@ -807,7 +870,7 @@ impl FrameHistory {
             let continued_buffer: BytesMut = self.history_buffer.split_off(buf_bytes_count);
             // trace!("attempt to write history");
             let to_be_written = std::mem::replace(&mut self.history_buffer, continued_buffer).to_owned();
-            if !to_be_written.len().is_zero() {
+            if !to_be_written.is_empty() {
                 let path = self.build_history_path().to_owned();
 
                 let ptw = self.packed_take_writer.sync_required.clone();
@@ -910,7 +973,7 @@ mod dot_tests {
             iteration_start: 0,
             iteration_sum: 0,
             bool_stop: false,
-            bool_stalled: false,
+            is_quiet: false,
             calls: [0;6],
             thread_info: None,
             bool_blocking: false,
@@ -921,7 +984,7 @@ mod dot_tests {
             color: "grey",
             pen_width: NODE_PEN_WIDTH,
             stats_computer: ActorStatsComputer::default(),
-            display_label: String::new(),
+            display_label: String::new(), // Defined when the content arrives
             tooltip: String::new(),
             metric_text: String::new(),
             remote_details: None,
@@ -947,7 +1010,7 @@ mod dot_tests {
             saturation_score: 0.0,
             ctl_labels: Vec::new(),
             stats_computer: ChannelStatsComputer::default(),
-            display_label: String::new(),
+            display_label: String::new(), // Defined when the content arrives
             metric_text: String::new(),
             partner: None,
             bundle_index: None,
@@ -1061,8 +1124,8 @@ mod dot_tests {
         let result = String::from_utf8(vec).expect("Invalid UTF-8");
         
         assert!(result.contains("label=\"edge1\""), "found: {}", result);
-        assert!(result.contains("tooltip=\"CH#1: Data | Cap: 0 | Vol: 0 (Total: 0) | Sat: 0% | Color: grey\\n\""), "found: {}", result);
-        assert!(result.contains("color=\"grey\""), "found: {}", result);
+        assert!(result.contains("tooltip=\"CH#1: Data\\n Capacity: 0\\n Volume: 0 (Total: 0)\\n Saturation: 0%\\n\""), "found: {}", result);
+        assert!(result.contains("color=\"#808080\""), "found: {}", result);
     }
 
     #[test]
@@ -1162,7 +1225,7 @@ mod dot_tests {
             iteration_start: 10, // Non-zero to trigger load calculation
             iteration_sum: 0,
             bool_stop: false,
-            bool_stalled: false,
+            is_quiet: false,
             calls: [0;6],
             thread_info: None,
             bool_blocking: false,
@@ -1739,10 +1802,10 @@ mod dot_tests {
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
-        assert!(result.contains("Bundle: 5x (10%)10\\nVol: 50 Total: 0\\nTestType test_label"));
+        assert!(result.contains("Bundle: 5x"));
         assert!(result.contains("penwidth=4"));
         assert!(result.contains("style=\"bold,dashed\""));
-        assert!(result.contains("tooltip=\"Bundle Details (5 partnered edges):\\nCH#0: TestType | Cap: 10 | Vol: 10 (Total: 0) | Sat: 10% | Color: green\\n"));
+        assert!(result.contains("tooltip=\"Bundle Details (5 partnered edges):\\nCH#0: TestType\\n Capacity: 10\\n Volume: 10 (Total: 0)\\n Saturation: 10%\\n"));
     }
 
     #[test]
@@ -1788,12 +1851,10 @@ mod dot_tests {
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
-        // Should have two bundles
-        // Red group (2) is below threshold (4), so it stays discrete
-        assert!(result.contains("color=\"red\"")); 
-        // Grey group (6) is above threshold, so it bundles
-        assert!(result.contains("Bundle: 6x (0%)64\\nVol: 150 Total: 0\\nAttestationEvent shared"));
-        assert!(result.contains("color=\"grey\""));
+        // Should have one bundle with averaged color
+        assert!(result.contains("Bundle: 8x"));
+        // (2*255 + 6*128)/8 = 159, (2*0 + 6*128)/8 = 96, (2*0 + 6*128)/8 = 96 -> #9F6060
+        assert!(result.contains("color=\"#9F6060\""));
     }
 
     #[test]
@@ -1989,7 +2050,7 @@ mod dot_tests {
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
-        assert!(result.contains("color=\"red:black:blue\""));
+        assert!(result.contains("color=\"#FF0000:black:#0000FF\""));
         assert!(result.contains("penwidth=2"));
     }
 
@@ -2056,7 +2117,7 @@ mod dot_tests {
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
-        assert!(result.contains("MyStream: 5x (0%)(10, 100)\\nVol: 0 Total: 0, 0"), "{}", result);
+        assert!(result.contains("MyStream: 5x"), "{}", result);
         assert!(result.contains("Capacities: (10, 100)"), "{}", result);
     }
 }

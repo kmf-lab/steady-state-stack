@@ -7,7 +7,7 @@ use async_ringbuf::traits::Observer;
 #[allow(unused_imports)]
 use log::*;
 use num_traits::Zero;
-use crate::{yield_now, ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
+use crate::{ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{find_my_index, ChannelMetaData, RxTel};

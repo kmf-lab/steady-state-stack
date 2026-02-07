@@ -65,56 +65,54 @@ function onDrag(event) {
 }
 
 function onMessage(message) {
-  let svgText;
-  if (typeof message.data === 'string') {
-    svgText = message.data;
-  } else {
-    ({ svg: svgText } = message.data);
-  }
+  const svgText = typeof message.data === 'string' ? message.data : message.data.svg;
 
-  diagram.innerHTML = svgText;
-  removeSvgSize(diagram);
+  // Use requestAnimationFrame to avoid blocking the UI thread
+  window.requestAnimationFrame(() => {
+      diagram.innerHTML = svgText;
+      removeSvgSize(diagram);
 
-  // Display a scaled copy of the svg in the preview.
-  preview.innerHTML = diagram.innerHTML;
-  removeSvgSize(preview);
+      // Display a scaled copy of the svg in the preview.
+      preview.innerHTML = diagram.innerHTML;
+      removeSvgSize(preview);
 
-  // Make the preview have the same aspect ratio
-  // as the svg that was loaded.
-  svg = diagram.querySelector('svg');
-  
-  // Apply current rendering mode to prevent flicker on refresh
-  if (zoomCurrent < 40) {
-    if (svg) svg.style.shapeRendering = 'crispEdges';
-  } else {
-    if (svg) svg.style.shapeRendering = 'geometricPrecision';
-  }
+      // Make the preview have the same aspect ratio
+      // as the svg that was loaded.
+      svg = diagram.querySelector('svg');
+      
+      // Apply current rendering mode to prevent flicker on refresh
+      if (zoomCurrent < 40) {
+        if (svg) svg.style.shapeRendering = 'crispEdges';
+      } else {
+        if (svg) svg.style.shapeRendering = 'geometricPrecision';
+      }
 
-  if (svg) {
-    svgRect = svg.getBoundingClientRect();
-    aspectRatio = svgRect.width / svgRect.height;
-    const previewRect = preview.getBoundingClientRect();
-    const newHeight = Math.ceil(previewRect.width / aspectRatio);
-    setStyle(preview, 'height', px(newHeight));
-  }
+      if (svg) {
+        svgRect = svg.getBoundingClientRect();
+        aspectRatio = svgRect.width / svgRect.height;
+        const previewRect = preview.getBoundingClientRect();
+        const newHeight = Math.ceil(previewRect.width / aspectRatio);
+        setStyle(preview, 'height', px(newHeight));
+      }
 
-  if (firstTime) {
-    firstTime = false;
+      if (firstTime) {
+        firstTime = false;
 
-    const diagramRect = diagram.getBoundingClientRect();
+        const diagramRect = diagram.getBoundingClientRect();
 
-    // if diagram is taller than the window, then we zoom out
-    // if it is wider, ignore and just set it to original width
-    if(diagramRect.height > window.innerHeight) {
-       zoomInitialScale = MAX_SCALE;
-       originalWindowWidth *= zoomInitialScale;
-    }
+        // if diagram is taller than the window, then we zoom out
+        // if it is wider, ignore and just set it to original width
+        if(diagramRect.height > window.innerHeight) {
+           zoomInitialScale = MAX_SCALE;
+           originalWindowWidth *= zoomInitialScale;
+        }
 
-    setStyle(diagram, 'width', px(originalWindowWidth));
+        setStyle(diagram, 'width', px(originalWindowWidth));
 
-    // Make the viewport start at the same size as the preview.
-    onResize();
-  }
+        // Make the viewport start at the same size as the preview.
+        onResize();
+      }
+  });
 }
 
 function onMouseDown(event) {
@@ -315,7 +313,10 @@ const toggleVisibility = element =>
 
 function fetchConfig() {
   return fetch('/config')
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) throw new Error('Config not found');
+        return response.json();
+    })
     .then(config => {
       console.log('Config received:', config);
       if (config.telemetry_colors && config.telemetry_colors.length === 2) {
@@ -349,7 +350,10 @@ function fetchConfig() {
       }
       return config;
     })
-    .catch(err => console.error('Config fetch failed:', err));
+    .catch(err => {
+        console.error('Config fetch failed, retrying in 5s:', err);
+        setTimeout(fetchConfig, 5000);
+    });
 }
 
 window.onload = () => {
@@ -365,6 +369,7 @@ window.onload = () => {
   speedArea = getById('speedArea');
   speedDropdown = getById('speedDropdown');
   speedSpan = getById('speedSpan');
+  speedSpan.textContent = 'Initializing...';
   viewport = getById('viewport');
   zoomInBtn = getById('zoomInBtn');
   zoomInBtnDisabled = getById('zoomInBtnDisabled');

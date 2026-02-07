@@ -93,8 +93,9 @@ pub struct ActorStatsComputer {
 
     /// Flag to indicate whether to display thread information in telemetry.
     pub(crate) show_thread_id: bool,
-    /// Flag to indicate whether the actor is stalled.
-    pub(crate) bool_stalled: bool,
+    /// Flag to indicate whether the actor has not sent updates in a while
+    /// If an node has no work and is not using any CPU then it will not send deltas, that is ok.
+    pub(crate) is_quiet: bool, //this is NOT a problem, it might just have nothing worth reporting
 }
 
 impl ActorStatsComputer {
@@ -127,10 +128,10 @@ impl ActorStatsComputer {
         mcpu_load: Option<(u16,u16)>,
         total_count_restarts: u32,
         bool_stop: bool,
-        bool_stalled: bool,
+        is_quiet: bool,
         thread_info: Option<ThreadInfo>
     ) -> (&'static str, &'static str) {
-        self.bool_stalled = bool_stalled;
+        self.is_quiet = is_quiet;
         if let Some((mcpu,load)) = mcpu_load {
             self.accumulate_data_frame(mcpu, load);
         }
@@ -189,6 +190,7 @@ impl ActorStatsComputer {
             metric_text.push_str(itoa::Buffer::new().format(total_count_restarts));
             metric_text.push('\n');
         }
+        //note: in the future we could "cache" the display for self.is_quiet nodes since we know they have not changed
 
         if bool_stop {
             tooltip.push_str("stopped\n");
@@ -233,9 +235,7 @@ impl ActorStatsComputer {
             tooltip.push_str("--- Stats ---\n");
             tooltip.push_str(&rolling_stats);
         }
-        if self.bool_stalled {
-            dot_label.push_str(" [STALLED]");
-        }
+
         //only when we have a value and put it last
         if total_count_restarts>0 {
             dot_label.push_str("Restarts: ");
@@ -243,9 +243,7 @@ impl ActorStatsComputer {
         }
 
         let mut line_color = DOT_GREY;
-        if self.bool_stalled {
-            line_color = DOT_RED;
-        } else if !self.mcpu_trigger.is_empty() || !self.work_trigger.is_empty() {
+        if !self.mcpu_trigger.is_empty() || !self.work_trigger.is_empty() {
             line_color = DOT_GREEN;
             if self.trigger_alert_level(&AlertColor::Yellow) {
                 line_color = DOT_YELLOW;

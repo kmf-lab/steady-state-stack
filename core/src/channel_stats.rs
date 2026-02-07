@@ -3,7 +3,6 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 #[allow(unused_imports)]
 use log::*;
-use num_traits::Zero;
 use crate::*;
 use hdrhistogram::{Histogram};
 
@@ -477,11 +476,7 @@ impl ChannelStatsComputer {
             display_label.push('\n');
         });
 
-        if !self.window_bucket_in_bits.is_zero() {
-            display_label.push_str("Window ");
-            display_label.push_str(&self.time_label);
-            display_label.push('\n');
-        }
+        // NOTE: Window info is now moved to the tooltip in dot.rs to keep the graph clean.
 
         self.display_labels.as_ref().iter().for_each(|labels| {
             labels.iter().for_each(|f| {
@@ -491,60 +486,50 @@ impl ChannelStatsComputer {
             display_label.push('\n');
         });
 
-        let line_thick = "1".to_string();
-
-        // Does nothing if the value is None
-        if let Some(ref current_rate) = self.current_rate {
-            self.compute_rate_labels(display_label, metric_text, &current_rate);
-        }
-
-        if let Some(ref current_filled) = self.current_filled {
-            self.compute_filled_labels(display_label, metric_text, &current_filled);
-        }
-
-        if let Some(ref current_latency) = self.current_latency {
-            self.compute_latency_labels(display_label, metric_text, &current_latency);
-        }
-
+        // RESTORED: Show Volume and Total on the label if enabled
         if self.show_total {
-            if self.girth > 1 {
-                display_label.push_str(itoa::Buffer::new().format(self.girth));
-                display_label.push('x');
-                channel_stats_labels::format_compressed_u128((self.capacity / self.girth) as u128, display_label);
-            } else {
-                display_label.push_str("Cap: ");
-                channel_stats_labels::format_compressed_u128(self.capacity as u128, display_label);
-            }
-            
-            if self.show_memory {
-                display_label.push_str(" (");
-                channel_stats_labels::format_compressed_u128(self.memory_footprint as u128, display_label);
-                display_label.push_str("B)");
-            }
-
-            display_label.push_str(" ");
-            if let Some(p) = self.partner {
-                display_label.push_str(p);
-                display_label.push(' ');
-            }
             display_label.push_str("Total: ");
-            channel_stats_labels::format_compressed_u128(self.total_consumed, display_label);
+            crate::channel_stats_labels::format_compressed_u128(self.total_consumed, display_label);
+            // display_label.push_str(" Vol: ");
+            // crate::channel_stats_labels::format_compressed_u128(self.last_total as u128, display_label);
             display_label.push('\n');
         }
 
-        // Set the default color in case we have no alerts.
-        let mut line_color = DOT_GREY;
+        let line_thick = "1".to_string();
 
-        // Fallback: If windows aren't full, use instant saturation for color
-        let is_hot = self.current_rate.is_none() && self.saturation_score > 0.1;
+        // Update metrics but keep display_label clean of configuration details.
+        let mut dummy_label = String::new();
+        if let Some(ref current_rate) = self.current_rate {
+            self.compute_rate_labels(&mut dummy_label, metric_text, &current_rate);
+        }
+        if let Some(ref current_filled) = self.current_filled {
+            self.compute_filled_labels(&mut dummy_label, metric_text, &current_filled);
+        }
+        if let Some(ref current_latency) = self.current_latency {
+            self.compute_latency_labels(&mut dummy_label, metric_text, &current_latency);
+        }
 
-        if is_hot || self.trigger_alert_level(&AlertColor::Yellow) {
+        // NOTE: Capacity is now moved to the tooltip in dot.rs.
+
+        // Set the default color based on activity (saturation)
+        let mut line_color = if self.saturation_score > 0.8 {
+            DOT_RED
+        } else if self.saturation_score > 0.4 {
+            DOT_ORANGE
+        } else if self.saturation_score > 0.1 {
+            DOT_YELLOW
+        } else {
+            DOT_GREY
+        };
+
+        // Triggers can override the base activity color
+        if self.trigger_alert_level(&AlertColor::Yellow) {
             line_color = DOT_YELLOW;
         };
-        if (is_hot && self.saturation_score > 0.4) || self.trigger_alert_level(&AlertColor::Orange) {
+        if self.trigger_alert_level(&AlertColor::Orange) {
             line_color = DOT_ORANGE;
         };
-        if (is_hot && self.saturation_score > 0.8) || self.trigger_alert_level(&AlertColor::Red) {
+        if self.trigger_alert_level(&AlertColor::Red) {
             line_color = DOT_RED;
         };
 
