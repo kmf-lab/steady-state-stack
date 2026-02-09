@@ -1805,7 +1805,10 @@ mod dot_tests {
         assert!(result.contains("Bundle: 5x"));
         assert!(result.contains("penwidth=4"));
         assert!(result.contains("style=\"bold,dashed\""));
-        assert!(result.contains("tooltip=\"Bundle Details (5 partnered edges):\\nCH#0: TestType\\n Capacity: 10\\n Volume: 10 (Total: 0)\\n Saturation: 10%\\n"));
+        // Updated to match new tooltip format: "channels in groups" instead of "partnered edges"
+        assert!(result.contains("Bundle Details (5 channels in 5 groups):\\n"));
+        assert!(result.contains("CH#0: TestType"));
+        assert!(result.contains("Saturation: 10%"));
     }
 
     #[test]

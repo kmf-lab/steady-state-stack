@@ -961,11 +961,10 @@ mod channel_stats_tests {
         
         computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
         
-        let mut label = String::new();
-        computer.compute(&mut label, &mut String::new(), None, 0, 0);
-        
-        assert!(label.contains("4x25")); // Girth x (Cap/Girth)
-        assert!(label.contains("(800B)")); // 100 * 8 bytes
+        // Verify internal state is set correctly (display label no longer contains these values)
+        assert_eq!(computer.girth, 4);
+        assert_eq!(computer.memory_footprint, 800); // 100 * 8 bytes
+        assert!(computer.show_memory);
     }
 
     #[test]
