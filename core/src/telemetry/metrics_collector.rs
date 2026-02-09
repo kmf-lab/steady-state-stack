@@ -58,7 +58,7 @@ pub struct MetricsCollector {
     /// Tracks the last time a status update was received for each actor ID.
     last_seen: Vec<Instant>,
     /// Tracks which actors we have already warned about stalling.
-    warned_stalled: Vec<bool>,
+    logged_is_quiet: Vec<bool>,
 
     /// # CRITICAL DESIGN REQUIREMENT: Persistent Accumulation Buffers
     /// These vectors MUST persist for the entire life of the MetricsCollector actor.
@@ -81,7 +81,7 @@ impl MetricsCollector {
             seq: 0,
             sent_node_def: Vec::new(),
             last_seen: Vec::new(),
-            warned_stalled: Vec::new(),
+            logged_is_quiet: Vec::new(),
             take_send_source: Vec::new(),
             future_take: Vec::new(),
             future_send: Vec::new(),
@@ -131,7 +131,7 @@ impl MetricsCollector {
                     if actor_id >= self.sent_node_def.len() {
                         self.sent_node_def.resize(actor_id + 1, false);
                         self.last_seen.resize(actor_id + 1, start_time);
-                        self.warned_stalled.resize(actor_id + 1, false);
+                        self.logged_is_quiet.resize(actor_id + 1, false);
                     }
 
                     let mut collected_this_time = false;
@@ -185,15 +185,16 @@ impl MetricsCollector {
                                 actor_statuses.resize(actor_id + 1, ActorStatus::default());
                             }
                             actor_statuses[actor_id].ident = detail.ident;
-                            actor_statuses[actor_id].bool_stalled = true;
+                            actor_statuses[actor_id].is_quiet = true;
                             
-                            if !self.warned_stalled[actor_id] {
-                                warn!("Actor {:?} (ID {}) appears to be stalled (no update for {:?})", detail.ident.label, actor_id, now_loop.duration_since(last_time));
-                                self.warned_stalled[actor_id] = true;
+                            if !self.logged_is_quiet[actor_id] {
+                                //NOT a bug, just something to watch
+                                trace!("Actor {:?} (ID {}) appears to be quiet (no update for {:?})", detail.ident.label, actor_id, now_loop.duration_since(last_time));
+                                self.logged_is_quiet[actor_id] = true;
                             }
                         }
                     } else {
-                        self.warned_stalled[actor_id] = false;
+                        self.logged_is_quiet[actor_id] = false;
                     }
                 }
             } // READ LOCK DROPPED HERE

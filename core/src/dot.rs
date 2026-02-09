@@ -551,7 +551,7 @@ fn render_edge_internal(
     dot_graph.put_slice(b"\", penwidth=");
     dot_graph.put_slice(pen_width.as_bytes());
     dot_graph.put_slice(style.as_bytes());
-    dot_graph.put_slice(b];\n");
+    dot_graph.put_slice(b"];\n");
 
     if sidecar {
         dot_graph.put_slice(b"{rank=same; \"");

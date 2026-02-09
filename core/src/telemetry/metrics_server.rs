@@ -905,7 +905,7 @@ mod http_telemetry_tests {
                 iteration_start: 0,
                 iteration_sum: 0,
                 bool_stop: false,
-                bool_stalled: false,
+                is_quiet: false,
                 calls: [0; 6],
                 thread_info: None,
                 bool_blocking: false,

@@ -37,7 +37,7 @@ pub struct ActorStatus {
     /// Indicates whether the actor has stopped.
     pub(crate) bool_stop: bool,
     /// Indicates whether the actor is stalled (not yielding).
-    pub(crate) bool_stalled: bool,
+    pub(crate) is_quiet: bool,
     /// Indicates whether the actor is currently blocking.
     pub(crate) bool_blocking: bool,
     /// Total time spent awaiting, measured in nanoseconds.
