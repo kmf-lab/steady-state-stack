@@ -132,7 +132,7 @@ impl SteadyActorShadow {
 }
 
 /// Represents the outcome of a send operation on a channel.
-#[derive(Default)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SendOutcome<X> {
     /// The send operation was successful.
     #[default]
