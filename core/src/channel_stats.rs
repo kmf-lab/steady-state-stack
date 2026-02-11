@@ -9,6 +9,7 @@ use hdrhistogram::{Histogram};
 use crate::actor_stats::{ChannelBlock};
 use crate::channel_stats_labels;
 use crate::channel_stats_labels::{ComputeLabelsConfig, ComputeLabelsLabels};
+use crate::steady_config::TELEMETRY_SAMPLES_PER_FRAME;
 
 /// Constants representing the colors used in the dot graph.
 pub(crate) const DOT_GREEN: &str = "green";
@@ -129,7 +130,10 @@ impl ChannelStatsComputer {
         self.frame_rate_ms = frame_rate_ms;
         self.refresh_rate_in_bits = meta.refresh_rate_in_bits;
         self.window_bucket_in_bits = meta.window_bucket_in_bits;
-        self.time_label = actor_stats::time_label((self.frame_rate_ms as u128) << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits));
+        
+        let total_ms = (self.frame_rate_ms as u128 * (1u128 << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits))) 
+                       / (TELEMETRY_SAMPLES_PER_FRAME as u128);
+        self.time_label = actor_stats::time_label(total_ms);
 
         self.display_labels = if meta.display_labels {
             Some(meta.labels.clone())
@@ -583,11 +587,13 @@ impl ChannelStatsComputer {
     pub(crate) fn triggered_rate(&self, rule: &Trigger<Rate>) -> bool {
         match rule {
             Trigger::AvgBelow(rate) => {
-                let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let window_in_ms = (self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits))
+                                   / (TELEMETRY_SAMPLES_PER_FRAME as u64);
                 actor_stats::avg_rational(window_in_ms as u128, PLACES_TENS as u128, &self.current_rate, rate.rational_ms()).is_lt()
             },
             Trigger::AvgAbove(rate) => {
-                let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
+                let window_in_ms = (self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits))
+                                   / (TELEMETRY_SAMPLES_PER_FRAME as u64);
                 actor_stats::avg_rational(window_in_ms as u128, PLACES_TENS as u128,  &self.current_rate, rate.rational_ms()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, expected_rate) => {
@@ -678,8 +684,8 @@ impl ChannelStatsComputer {
 
     pub(crate) fn compute_rate_labels(&self, target_telemetry_label: &mut String, target_metric: &mut String, current_block: &&ChannelBlock<u64>) {
         let config = ComputeLabelsConfig::channel_config(self
-                                                         , (1, self.frame_rate_ms)
-                                                         , (1000, self.frame_rate_ms), u64::MAX
+                                                         , (TELEMETRY_SAMPLES_PER_FRAME as u64, self.frame_rate_ms)
+                                                         , (PLACES_TENS * TELEMETRY_SAMPLES_PER_FRAME as u64, self.frame_rate_ms), u64::MAX
                                                          , self.show_avg_rate, self.show_min_rate, self.show_max_rate);
         let labels = ComputeLabelsLabels {
             label: "rate",
@@ -739,8 +745,7 @@ impl ChannelStatsComputer {
         if let Some(current_latency) = &self.current_latency {
             assert_eq!(Self::MS_PER_SEC, PLACES_TENS); // We assume this with as_micros below
             current_latency.runner
-                .cmp(&((duration.as_micros())
-                    << (self.window_bucket_in_bits + self.refresh_rate_in_bits)))
+                .cmp(&((duration.as_micros() * (1u128 << (self.window_bucket_in_bits + self.refresh_rate_in_bits)))))
         } else {
             Ordering::Equal // Unknown
         }
@@ -977,8 +982,9 @@ mod channel_stats_tests {
         
         computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
         
-        // Fill window to trigger both
-        for _ in 0..10 { computer.accumulate_data_frame(50, 100); }
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
+        for _ in 0..c { computer.accumulate_data_frame(50, 100); }
         
         let mut label = String::new();
         let (color, _) = computer.compute(&mut label, &mut String::new(), None, 100, 50);
@@ -1001,8 +1007,9 @@ mod channel_stats_tests {
         
         computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
         
-        // Fill window with data: 50 filled, 100 rate -> 50 * 1000 / 100 = 500 micros latency
-        for _ in 0..10 { computer.accumulate_data_frame(50, 100); }
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
+        for _ in 0..c { computer.accumulate_data_frame(50, 100); }
         
         assert!(computer.triggered_latency(&Trigger::AvgAbove(Duration::from_micros(100))));
         assert!(!computer.triggered_latency(&Trigger::AvgBelow(Duration::from_micros(10))));
@@ -1015,15 +1022,16 @@ mod channel_stats_tests {
         let mut meta = (*mock_meta()).clone();
         
         meta.trigger_rate.push((Trigger::AvgAbove(Rate::per_seconds(50)), AlertColor::Red));
-        meta.trigger_rate.push((Trigger::AvgBelow(Rate::per_seconds(200)), AlertColor::Red));
+        meta.trigger_rate.push((Trigger::AvgBelow(Rate::per_seconds(10000)), AlertColor::Red));
         
         computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
         
-        // Rate is 100 per frame (1000ms) -> 100 per sec
-        for _ in 0..10 { computer.accumulate_data_frame(10, 100); }
+        // Rate is 100 per message. With 32 samples/frame, that's 3200 per sec.
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
+        for _ in 0..c { computer.accumulate_data_frame(10, 100); }
         
         assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_seconds(50))));
-        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_seconds(200))));
+        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_seconds(10000))));
     }
 
     #[test]
@@ -1037,7 +1045,8 @@ mod channel_stats_tests {
         computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
         
         // 60 items in 100 capacity -> 60% full
-        for _ in 0..10 { computer.accumulate_data_frame(60, 10); }
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
+        for _ in 0..c { computer.accumulate_data_frame(60, 10); }
         
         assert!(computer.triggered_filled(&Trigger::AvgAbove(Filled::Percentage(50, 100))));
         assert!(computer.triggered_filled(&Trigger::AvgBelow(Filled::Exact(80))));

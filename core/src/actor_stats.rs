@@ -294,7 +294,10 @@ impl ActorStatsComputer {
         self.frame_rate_ms = frame_rate_ms;
         self.refresh_rate_in_bits = meta.refresh_rate_in_bits;
         self.window_bucket_in_bits = meta.window_bucket_in_bits;
-        self.time_label = time_label((self.frame_rate_ms as u128)<< (meta.refresh_rate_in_bits + meta.window_bucket_in_bits));
+        
+        let total_ms = (self.frame_rate_ms as u128 * (1u128 << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits))) 
+                       / (steady_config::TELEMETRY_SAMPLES_PER_FRAME as u128);
+        self.time_label = time_label(total_ms);
 
         self.show_avg_mcpu = meta.avg_mcpu;
         self.show_avg_work = meta.avg_work;
@@ -642,14 +645,14 @@ pub(crate) fn avg_rational<T: Counter>(run_divisor: u128, units: u128, current: 
 ///
 /// A `cmp::Ordering` indicating whether the computed value is less than, equal to, or greater than the threshold.
 pub(crate) fn stddev_rational<T: Counter>(
-    std_dev: f32,
+    _std_dev: f32,
     window_bits: u8,
     std_devs: &StdDev,
     current: &Option<ChannelBlock<T>>,
     expected: (u64, u64)
 ) -> cmp::Ordering {
     if let Some(current) = current {
-        let std_deviation = (std_dev * std_devs.value()) as u128;
+        let std_deviation = (_std_dev * std_devs.value()) as u128;
         (expected.1 as u128 * ((current.runner >> window_bits) + std_deviation)).cmp(&(PLACES_TENS as u128 * expected.0 as u128))
     } else {
         cmp::Ordering::Equal // Unknown
@@ -1052,7 +1055,7 @@ mod extra_tests {
 
     use std::sync::Arc;
     use crate::monitor::ActorMetaData;
-    use crate::{steady_config, logging_util, ActorIdentity, AlertColor, StdDev, Trigger};
+    use crate::{logging_util, ActorIdentity, AlertColor, StdDev, Trigger};
     use crate::actor_builder_units::{Percentile, Work, MCPU};
     use crate::channel_stats::{DOT_ORANGE, DOT_RED, DOT_YELLOW};
 

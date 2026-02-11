@@ -33,7 +33,7 @@ use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::simulate_edge::IntoSimRunner;
-use crate::steady_config::{CONSUMED_MESSAGES_BY_COLLECTOR, REAL_CHANNEL_LENGTH_TO_COLLECTOR};
+use crate::steady_config::{TELEMETRY_SAMPLES_PER_FRAME};
 use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
 use crate::telemetry::setup;
@@ -143,8 +143,8 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
     }
 
     fn telemetry_remaining_micros(&self) -> i64 {
-        (1000i64 * self.frame_rate_ms as i64) - (self.last_telemetry_send.elapsed().as_micros() as i64
-            * CONSUMED_MESSAGES_BY_COLLECTOR as i64)
+        ((1000i64 * self.frame_rate_ms as i64) / (TELEMETRY_SAMPLES_PER_FRAME as i64))
+            - (self.last_telemetry_send.elapsed().as_micros() as i64)
     }
 
 }
@@ -174,7 +174,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
         let last_elapsed = self.last_telemetry_send.elapsed();
         let should_send = last_elapsed.as_micros() as u64
-                          * (REAL_CHANNEL_LENGTH_TO_COLLECTOR as u64)
+                          * (TELEMETRY_SAMPLES_PER_FRAME as u64)
                        >= (1000u64 * self.frame_rate_ms);
 
 

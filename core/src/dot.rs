@@ -3,7 +3,6 @@
 //! computing and refreshing metrics, building DOT and Prometheus outputs, and managing historical data.
 
 use log::*;
-use num_traits::Zero;
 use std::fmt::Write;
 use std::fs::{create_dir_all, OpenOptions};
 use std::path::PathBuf;
@@ -1683,8 +1682,7 @@ mod dot_tests {
             telemetry_colors: None,
             refresh_rate_ms: 0,
             bundle_floor_size: 4,
-        };
-        let mut dot_graph = BytesMut::new();
+        }; let mut dot_graph = BytesMut::new();
 
         // This should not include THE node since id is None (filtered out)
         build_dot(&state, &mut dot_graph);

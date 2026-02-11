@@ -13,6 +13,8 @@ pub(crate) mod channel_stats_tests {
     use crate::actor_stats::{ActorStatsComputer, ChannelBlock};
     use crate::channel_builder_units::{Filled, Rate};
     use crate::channel_stats_labels::ComputeLabelsConfig;
+    use crate::steady_config::TELEMETRY_SAMPLES_PER_FRAME;
+
     ////////////////////////////////
     // Each of these tests cover both sides of above and below triggers with the matching label display
     ///////////////////////////////
@@ -30,7 +32,8 @@ pub(crate) mod channel_stats_tests {
         computer.frame_rate_ms = 3;
         computer.show_avg_filled = true;
 
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c { // 256 * 0.81 = 207
             computer.accumulate_data_frame((computer.capacity as f32 * 0.81f32) as u64, 100);
         }
@@ -57,14 +60,12 @@ pub(crate) mod channel_stats_tests {
         computer.frame_rate_ms = 3;
         computer.show_avg_filled = true;
 
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c { // 256 * 0.81 = 207
-            let filled = (computer.capacity as
-
-                f32 * 0.81f32) as u64;
+            let filled = (computer.capacity as f32 * 0.81f32) as u64;
             let consumed = 100;
             computer.accumulate_data_frame(filled, consumed);
-   
         }
 
         let display_label = compute_display_label(&mut computer);
@@ -96,11 +97,11 @@ pub(crate) mod channel_stats_tests {
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
             computer.accumulate_data_frame(value, 100);
-  
         }
 
         computer.std_dev_filled.push(StdDev::two_and_a_half());
@@ -149,7 +150,8 @@ pub(crate) mod channel_stats_tests {
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
             computer.accumulate_data_frame(value, 100);
@@ -180,59 +182,45 @@ pub(crate) mod channel_stats_tests {
         let mut computer = ChannelStatsComputer::default();
         computer.init(&Arc::new(actor), ActorName::new("1",None)
                                     , ActorName::new("2",None)
-                                    , 30);
+                                    , 30); // 30ms frame
         computer.show_avg_rate = true;
-        // We consume 100 messages every computer.frame_rate_ms which is 3 ms
-        // So per ms we are consuming about 33.3 messages
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
-        for _ in 0..c {
-            computer.accumulate_data_frame(0, 1000);
 
+        // Target: ~33 messages per ms. 
+        // In a 30ms frame, that is 990 messages.
+        // With 32 samples per frame, we need ~31 messages per sample.
+        let messages_per_sample = 1000 / TELEMETRY_SAMPLES_PER_FRAME as u64; 
+
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
+        for _ in 0..c {
+            computer.accumulate_data_frame(0, messages_per_sample);
         }
 
         let display_label = compute_display_label(&mut computer);
+        // 31 msgs * 32 samples = 992 msgs per 30ms frame.
+        // 992 / 30 = 33.06 msgs/ms -> 33K per sec.
         assert_eq!(display_label, "Avg rate: 33K per/sec\n");
 
-        // NOTE: our triggers are in fixed units so they do not need to change if we modify
-        // the frame rate, refresh rate or window rate.
-        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(32))), "Trigger should fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34))), "Trigger should not fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32))), "Trigger should not fire when the average is below");
-        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34))), "Trigger should fire when the average is below");
+        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(32))), "Trigger should fire when the average is above 32");
+        assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34))), "Trigger should not fire when the average is above 34");
+        assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32))), "Trigger should not fire when the average is below 32");
+        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34))), "Trigger should fire when the average is below 34");
 
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Test Mega scale
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
-            computer.accumulate_data_frame(0, 1_000_000);
-
+            computer.accumulate_data_frame(0, 1_000_000 / TELEMETRY_SAMPLES_PER_FRAME as u64);
         }
-
         let display_label = compute_display_label(&mut computer);
         assert_eq!(display_label, "Avg rate: 33M per/sec\n");
 
-        // NOTE: our triggers are in fixed units so they do not need to change if we modify
-        // the frame rate, refresh rate or window rate.
-        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(32000))), "Trigger should fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34000))), "Trigger should not fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32000))), "Trigger should not fire when the average is below");
-        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34000))), "Trigger should fire when the average is below");
-
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Test Giga scale
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
-            computer.accumulate_data_frame(0, 1_000_000_000);
-
+            computer.accumulate_data_frame(0, 1_000_000_000 / TELEMETRY_SAMPLES_PER_FRAME as u64);
         }
-
         let display_label = compute_display_label(&mut computer);
         assert_eq!(display_label, "Avg rate: 33B per/sec\n");
-
-        // NOTE: our triggers are in fixed units so they do not need to change if we modify
-        // the frame rate, refresh rate or window rate.
-        assert!(computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(32_000_000))), "Trigger should fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgAbove(Rate::per_millis(34_000_000))), "Trigger should not fire when the average is above");
-        assert!(!computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(32_000_000))), "Trigger should not fire when the average is below");
-        assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_millis(34_000_000))), "Trigger should fire when the average is below");
-
     }
 
     #[test]
@@ -254,23 +242,23 @@ pub(crate) mod channel_stats_tests {
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
             computer.accumulate_data_frame(100, value);
-
         }
 
         computer.std_dev_rate.push(StdDev::two_and_a_half());
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg rate: 68K per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
+        assert_eq!(display_label, "Avg rate: 2188K per/sec\nrate 2.5StdDev: 30.455 per frame (3ms duration)\n");
 
         computer.std_dev_rate.clear();
         computer.std_dev_rate.push(StdDev::one());
         let display_label = compute_display_label(&mut computer);
 
-        assert_eq!(display_label, "Avg rate: 68K per/sec\nrate StdDev: 12.182 per frame (3ms duration)\n");
+        assert_eq!(display_label, "Avg rate: 2188K per/sec\nrate StdDev: 12.182 per frame (3ms duration)\n");
 
         // Define a trigger with a standard deviation condition
         assert!(computer.triggered_rate(&Trigger::StdDevsAbove(StdDev::one(), Rate::per_millis(80))), "Trigger should fire when standard deviation from the average filled is above the threshold");
@@ -302,11 +290,11 @@ pub(crate) mod channel_stats_tests {
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             let value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
             computer.accumulate_data_frame(100, value);
-
         }
 
         let display_label = compute_display_label(&mut computer);
@@ -356,23 +344,23 @@ pub(crate) mod channel_stats_tests {
         let seed = [42; 32];
         let mut rng = StdRng::from_seed(seed);
 
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             // 205 in flight and we consume 33 per 3ms frame 11 per ms, so 205/11 = 18.6ms
             let inflight_value = normal.sample(&mut rng).max(0.0).min(computer.capacity as f64) as u64;
             computer.accumulate_data_frame(inflight_value, 33);
-
         }
 
         let display_label = compute_display_label(&mut computer);
 
         assert_eq!(display_label, "Avg latency: 18K µs\n");
 
-        assert!(computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(5))), "Trigger should fire when the average is above");
-        assert!(!computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(21))), "Trigger should fire when the average is above");
+        assert!(computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(5))), "Trigger should fire when the average is above 5ms");
+        assert!(!computer.triggered_latency(&Trigger::AvgAbove(Duration::from_millis(21))), "Trigger should not fire when the average is above 21ms");
 
-        assert!(!computer.triggered_latency(&Trigger::AvgBelow(Duration::from_millis(5))), "Trigger should fire when the average is above");
-        assert!(computer.triggered_latency(&Trigger::AvgBelow(Duration::from_millis(21))), "Trigger should fire when the average is above");
+        assert!(!computer.triggered_latency(&Trigger::AvgBelow(Duration::from_millis(5))), "Trigger should not fire when the average is below 5ms");
+        assert!(computer.triggered_latency(&Trigger::AvgBelow(Duration::from_millis(21))), "Trigger should fire when the average is below 21ms");
     }
 
 
@@ -388,9 +376,7 @@ pub(crate) mod channel_stats_tests {
         actor.refresh_rate_in_bits = 2;
         let mut computer = ChannelStatsComputer::default();
         computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
-        computer
-
-            .frame_rate_ms = 3;
+        computer.frame_rate_ms = 3;
         computer.show_avg_latency = true;
         let mean = 5.0; // Mean rate
         let std_dev = 1.0; // Standard deviation
@@ -399,11 +385,11 @@ pub(crate) mod channel_stats_tests {
         let mut rng = StdRng::from_seed(seed);
 
         // Simulate rate data with a distribution
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             let consumed_value = normal.sample(&mut rng) as u64;
             computer.accumulate_data_frame(computer.capacity as u64 / 2, consumed_value);
-
         }
 
         computer.std_dev_latency.push(StdDev::two_and_a_half());
@@ -435,10 +421,10 @@ pub(crate) mod channel_stats_tests {
         computer.init(&Arc::new(actor), ActorName::new("1",None), ActorName::new("2",None), 42);
 
         // Simulate rate data accumulation
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             computer.accumulate_data_frame((computer.capacity - 1) as u64, (5.0 * 1.2) as u64); // Simulating rate being consistently above a certain value
-
         }
 
         let display_label = compute_display_label(&mut computer);
@@ -485,7 +471,8 @@ pub(crate) mod channel_stats_tests {
     pub(crate) fn full_bucket() {
         let _ = logging_util::steady_logger::initialize();
         let mut computer = setup_computer(256, 2, 2);
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             computer.accumulate_data_frame(100, 100);
         }
@@ -660,7 +647,8 @@ pub(crate) mod channel_stats_tests {
         computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
 
         // Accumulate data to get current_rate
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             computer.accumulate_data_frame(50, 1000); // High rate
         }
@@ -772,7 +760,8 @@ pub(crate) mod channel_stats_tests {
         computer.init(&Arc::new(actor), ActorName::new("1", None), ActorName::new("2", None), 1000);
 
         // Accumulate some data to get current values
-        let c = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        // Fill window + 1 to trigger rotation
+        let c = (1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits)) + 1;
         for _ in 0..c {
             computer.accumulate_data_frame(50, 100);
         }

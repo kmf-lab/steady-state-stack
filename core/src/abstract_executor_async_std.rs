@@ -71,7 +71,7 @@ use std::error::Error;
         let mut cpu_set: cpu_set_t = unsafe { std::mem::zeroed() };
         unsafe {
             libc::CPU_SET(core, &mut cpu_set);
-            let res = pthread_setaffinity_np(pthread_self(), std::mem::size_of::<cpu_set_t>(), &cpu_set);
+            let res = pthread_setaffinity_np(pthread_self(), std::mem::size_of::<libc::cpu_set_t>(), &cpu_set);
             if res == 0 {
                 Ok(())
             } else {
@@ -154,8 +154,9 @@ use std::error::Error;
     ///
     /// Since `async-std` does not support dynamically adding threads to its executor, this function
     /// returns `Ok(0)` as a no-op, maintaining interface compatibility with the `nuclei` version.
+    #[allow(dead_code)]
     pub async fn spawn_more_threads(_count: usize) -> Result<usize> {
-        Ok(0) // async-std doesn’t allow dynamic thread addition
+        Ok(0) // async-std does not allow dynamic thread addition
     }
 
     lazy_static! {

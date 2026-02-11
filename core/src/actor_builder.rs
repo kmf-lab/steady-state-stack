@@ -806,8 +806,12 @@ impl ActorBuilder {
     ) -> (u8, u8) {
         if frame_rate_ms > 0 {
             let frames_per_refresh = refresh.as_micros() / (1000u128 * frame_rate_ms);
-            let refresh_in_bits = (frames_per_refresh as f32).log2().ceil() as u8;
-            let refresh_in_micros = (1000u128 << refresh_in_bits) * frame_rate_ms;
+            let samples_per_refresh = frames_per_refresh * (steady_config::TELEMETRY_SAMPLES_PER_FRAME as u128);
+            let refresh_in_bits = (samples_per_refresh as f32).log2().ceil() as u8;
+            
+            let refresh_in_micros = (1000u128 << refresh_in_bits) * frame_rate_ms 
+                                    / (steady_config::TELEMETRY_SAMPLES_PER_FRAME as u128);
+            
             let buckets_per_window: f32 = window.as_micros() as f32 / refresh_in_micros as f32;
             let window_in_bits = buckets_per_window.log2().ceil() as u8;
             (refresh_in_bits, window_in_bits)

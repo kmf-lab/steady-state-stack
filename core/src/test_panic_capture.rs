@@ -22,6 +22,7 @@ mod simple_graph_test {
     ///
     /// The generator actor is designed to panic when it generates the 5th message.
     #[test]
+    #[ignore] //ONLY for advanced testing, NOT normal code coverage testing !! do not enable
     fn test_panic_graph() {
         // Smallest possible graph just to test the capture of panic.
         // It is not recommended to inline actors this way, but it is possible.

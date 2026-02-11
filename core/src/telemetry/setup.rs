@@ -252,7 +252,8 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                         } else {
                             let scale = calculate_exponential_channel_backoff(capacity, vacant_units);
                             if let Some(last_elapsed) = elapsed_micros {
-                                if last_elapsed < scale as u64 * this.frame_rate_ms {
+                                let sample_interval_micros = (1000u64 * this.frame_rate_ms) / (TELEMETRY_SAMPLES_PER_FRAME as u64);
+                                if last_elapsed < scale as u64 * sample_interval_micros {
                                     if scale >= 128 {
                                         let guard = this.runtime_state.read();
                                         let state = guard.deref();
@@ -296,12 +297,12 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
                                         //happy path
                                         send_tx.count[tx.local_monitor_index] += 1;
                                         if let Some(last_elapsed) = elapsed_micros {
-                                            if last_elapsed >= this.frame_rate_ms {
+                                            if last_elapsed >= 1000 * this.frame_rate_ms {
                                                 let now = Instant::now();
                                                 let dif = now.duration_since(actor_status.last_telemetry_error);
                                                 if dif.as_secs() > MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
                                                     warn!("{:?} consider shortening period of relay_stats_periodic or adding relay_stats_all() in your work loop,\n it is called too infrequently at {}ms which is larger than your frame rate of {}ms",
-                                                        this.ident, last_elapsed, this.frame_rate_ms);
+                                                        this.ident, last_elapsed / 1000, this.frame_rate_ms);
                                                     actor_status.last_telemetry_error = now;
                                                 }
                                             }

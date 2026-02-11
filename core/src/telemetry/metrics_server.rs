@@ -359,16 +359,19 @@ async fn process_msg(
 
 
         },
-        DiagramData::ChannelVolumeData(seq, total_take_send) => {
-            total_take_send.iter().enumerate().for_each(|(i, (t, s))| {
-                if !metrics_state.edges.is_empty() {
-                   metrics_state.edges[i].compute_and_refresh(*s, *t);
+        DiagramData::ChannelVolumeData(seq, sparse_data) => {
+            sparse_data.iter().for_each(|(id, t, s)| {
+                if let Some(edge) = metrics_state.edges.get_mut(*id) {
+                   edge.compute_and_refresh(*s, *t);
                 }
             });
             metrics_state.seq = seq;
 
             if steady_config::TELEMETRY_HISTORY {
-                history.apply_edge(&total_take_send, frame_rate_ms);
+                let dense_data: Vec<(i64, i64)> = metrics_state.edges.iter()
+                    .map(|e| (e.stats_computer.last_take, e.stats_computer.last_send))
+                    .collect();
+                history.apply_edge(&dense_data, frame_rate_ms);
             }
         },
     }
@@ -914,9 +917,9 @@ mod http_telemetry_tests {
         ).collect();
 
         data.push(DiagramData::NodeProcessData(0, node_status.clone().into()));
-        data.push(DiagramData::ChannelVolumeData(0, vec![(5, 10), (15, 20)].into()));
+        data.push(DiagramData::ChannelVolumeData(0, vec![(0, 5, 10), (1, 15, 20)].into()));
         data.push(DiagramData::NodeProcessData(1, node_status.into()));
-        data.push(DiagramData::ChannelVolumeData(1, vec![(15, 20), (30, 30)].into()));
+        data.push(DiagramData::ChannelVolumeData(1, vec![(0, 15, 20), (1, 30, 30)].into()));
 
         tx_in.testing_send_all(data, false);
         (graph, server_ip_out, tx_in)

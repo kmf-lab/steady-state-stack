@@ -4,8 +4,6 @@ use std::ops::{Deref, DerefMut};
 use std::fs::File;
 use std::io::{BufReader, Error};
 use std::path::{Path, PathBuf};
-use futures_util::TryFutureExt;
-use log::error;
 use serde::{Serialize};
 use serde::de::DeserializeOwned;
 use serde_json;
@@ -142,7 +140,7 @@ where
 
     let drop_file = file_path.clone();
     let on_drop = move |s: &S| {
-        write_file(&drop_file, s);
+        let _ = write_file(&drop_file, s);
     };
     let persist_file = file_path.clone();
     let on_persist = move |s: &S| {
@@ -200,6 +198,10 @@ impl<'a, S> Drop for StateGuard<'a, S> {
 
 impl<'a, S> StateGuard<'a, S> {
 
+    /// Persists the current state to disk if a persistence function was provided.
+    ///
+    /// # Returns
+    /// - `Result<(), std::io::Error>`: The result of the persistence operation.
     pub async fn persist(&self) -> Result<(), std::io::Error>
     where
         S: Serialize,
