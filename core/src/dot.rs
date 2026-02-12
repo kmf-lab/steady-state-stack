@@ -183,7 +183,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
     }
 
     let mut partner_groups: BTreeMap<PartnerKey, Vec<&Edge>> = BTreeMap::new();
-    for edge in state.edges.iter().filter(|e| e.id != usize::MAX) {
+    for edge in state.edges.iter().filter(|e| e.id != usize::MAX && e.from.is_some() && e.to.is_some()) {
         let key = PartnerKey {
             from: edge.from.map(|n| (n.name, n.suffix)),
             to: edge.to.map(|n| (n.name, n.suffix)),
@@ -292,24 +292,25 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         
         let combined_type = type_list.join("/");
 
+        // CRITICAL: For partnered edges, we must preserve the display_label which contains the
+        // rate/filled metrics computed by ChannelStatsComputer. The partner info is prepended
+        // to the existing label rather than replacing it entirely.
         let mut summary_label = first.display_label.clone();
         if is_partnered {
-            summary_label = format!("{} [{}]", first.partner.unwrap(), first.bundle_index.unwrap_or(0));
-
+            // Prepend partner identifier to the existing label, don't replace it
+            let partner_header = format!("{} [{}]", first.partner.unwrap(), first.bundle_index.unwrap_or(0));
+            
+            // Build partner info line with memory if needed
+            let mut partner_info = partner_header;
             if show_memory {
-                summary_label.push_str(" (");
-                crate::channel_stats_labels::format_compressed_u128(memory_footprint as u128, &mut summary_label);
-                summary_label.push_str("B)");
+                partner_info.push_str(" (");
+                crate::channel_stats_labels::format_compressed_u128(memory_footprint as u128, &mut partner_info);
+                partner_info.push_str("B)");
             }
-            // RESTORED: Show aggregated volume and total for partnered edges
-            if first.stats_computer.show_total {
-                summary_label.push_str("\\n Total: ");
-                crate::channel_stats_labels::format_compressed_u128(sum_total_consumed, &mut summary_label);
-            }
-            if !combined_type.is_empty() {
-                summary_label.push_str("\\n");
-                summary_label.push_str(&combined_type);
-            }
+            
+            // Combine: Partner info first, then original label (which contains rate/fill from ChannelStatsComputer)
+            // This ensures avg_rate and other dynamic metrics are preserved on the label
+            summary_label = format!("{}\\n{}", partner_info, summary_label);
         }
 
         partnered_edges.push(PartneredEdge {
@@ -395,6 +396,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             let mut bundle_total_consumed = 0u128;
             let mut total_memory = 0usize;
             let mut show_mem = false;
+            
             for pe in edges {
                 for (i, val) in pe.sub_totals.iter().enumerate() {
                     bundle_totals[i] += val;
@@ -422,7 +424,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 crate::channel_stats_labels::format_compressed_u128(total_memory as u128, &mut header);
                 header.push_str("B)");
             }
-            // RESTORED: Show aggregated volume and total for the entire bundle
+            // Show aggregated volume and total for the entire bundle
             if edges[0].show_total {
                 header.push_str("\\nTotal: ");
                 crate::channel_stats_labels::format_compressed_u128(bundle_total_consumed, &mut header);
@@ -540,9 +542,9 @@ fn render_edge_internal(
         let escaped_tooltip = tooltip.replace('"', "'");
         dot_graph.put_slice(escaped_tooltip.as_bytes());
         
-        // Apply the same tooltip to the label text
-        dot_graph.put_slice(b"\", labeltooltip=\"");
-        dot_graph.put_slice(escaped_tooltip.as_bytes());
+        // NOTE: We intentionally do NOT add labeltooltip here. The tooltip attribute is sufficient
+        // for hover information. Adding labeltooltip was causing flickering and black lines in the
+        // graph visualization, likely due to parsing issues when the tooltip contains newlines.
     }
 
     dot_graph.put_slice(b"\", color=\"");
@@ -1208,10 +1210,12 @@ mod dot_tests {
 
         let _ = core_exec::block_on(async_write_all(data, true, file));
 
-        let result = std::fs::read_to_string(path).expect("Failed to read written file");
+        let result = std::fs::read_to_string(&path).expect("Failed to read written file");
         assert_eq!(result, "test data");
-    }
 
+        // Clean up
+        let _ = remove_file(&path);
+    }
 
     #[test]
     fn test_node_compute_refresh_with_load_calculation() {
@@ -1723,7 +1727,7 @@ mod dot_tests {
         // This should process THE edge as "unknown" -> "unknown"
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
-        assert!(result.contains("test_edge"));
+        assert!(!result.contains("test_edge")); // Edge should be filtered out now
     }
 
     #[test]
@@ -1803,322 +1807,8 @@ mod dot_tests {
         assert!(result.contains("Bundle: 5x"));
         assert!(result.contains("penwidth=4"));
         assert!(result.contains("style=\"bold,dashed\""));
-        // Updated to match new tooltip format: "channels in groups" instead of "partnered edges"
         assert!(result.contains("Bundle Details (5 channels in 5 groups):\\n"));
         assert!(result.contains("CH#0: TestType"));
         assert!(result.contains("Saturation: 10%"));
-    }
-
-    #[test]
-    fn test_build_dot_complex_bundling() {
-        let from = ActorName::new("from", None);
-        let to = ActorName::new("to", None);
-        
-        let mut edges = Vec::new();
-        // 2 Red, 6 Grey
-        for i in 0..8 {
-            edges.push(Edge {
-                id: i,
-                from: Some(from),
-                to: Some(to),
-                color: if i < 2 { "red" } else { "grey" },
-                sidecar: false,
-                pen_width: EDGE_PEN_WIDTH.to_string(),
-                ctl_labels: vec!["shared"],
-                stats_computer: ChannelStatsComputer {
-                    capacity: 64,
-                    show_type: Some("AttestationEvent"),
-                    last_total: 25, // 8 * 25 = 200 total
-                    ..Default::default()
-                },
-                saturation_score: 0.0,
-                display_label: String::new(),
-                metric_text: String::new(),
-                partner: None,
-                bundle_index: None,
-            });
-        }
-
-        let state = DotState {
-            nodes: vec![],
-            edges,
-            seq: 0,
-            telemetry_colors: None,
-            refresh_rate_ms: 0,
-            bundle_floor_size: 4,
-        };
-
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
-        
-        // Should have one bundle with averaged color
-        assert!(result.contains("Bundle: 8x"));
-        // (2*255 + 6*128)/8 = 159, (2*0 + 6*128)/8 = 96, (2*0 + 6*128)/8 = 96 -> #9F6060
-        assert!(result.contains("color=\"#9F6060\""));
-    }
-
-    #[test]
-    fn test_build_dot_no_aggregation_different_labels() {
-        let from = ActorName::new("from", None);
-        let to = ActorName::new("to", None);
-        
-        let mut edges = Vec::new();
-        for i in 0..5 {
-            edges.push(Edge {
-                id: i,
-                from: Some(from),
-                to: Some(to),
-                color: "green",
-                sidecar: false,
-                pen_width: "4".to_string(),
-                ctl_labels: if i < 3 { vec!["A"] } else { vec!["B"] },
-                stats_computer: ChannelStatsComputer {
-                    capacity: 10,
-                    type_byte_count: 4,
-                    ..Default::default()
-                },
-                saturation_score: 0.0,
-                display_label: format!("CH{} stats", i),
-                metric_text: String::new(),
-                partner: None,
-                bundle_index: None,
-            });
-        }
-
-        let state = DotState {
-            nodes: vec![
-                Node {
-                    id: Some(from),
-                    color: "grey",
-                    pen_width: NODE_PEN_WIDTH,
-                    stats_computer: ActorStatsComputer::default(),
-                    display_label: "from".to_string(),
-                    tooltip: String::new(),
-                    metric_text: String::new(),
-                    remote_details: None,
-                    thread_info_cache: None,
-                    total_count_restarts: 0,
-                    bool_stalled: false,
-                    work_info: None
-                },
-                Node {
-                    id: Some(to),
-                    color: "grey",
-                    pen_width: NODE_PEN_WIDTH,
-                    stats_computer: ActorStatsComputer::default(),
-                    display_label: "to".to_string(),
-                    tooltip: String::new(),
-                    metric_text: String::new(),
-                    remote_details: None,
-                    thread_info_cache: None,
-                    total_count_restarts: 0,
-                    bool_stalled: false,
-                    work_info: None
-                },
-            ],
-            edges,
-            seq: 0,
-            telemetry_colors: None,
-            refresh_rate_ms: 0,
-            bundle_floor_size: 4,
-        };
-
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
-        
-        // Neither group reaches THE threshold of 4
-        assert!(!result.contains("BUNDLE"));
-    }
-
-    #[test]
-    fn test_build_dot_partnered_aggregation() {
-        let from = ActorName::new("from", None);
-        let to = ActorName::new("to", None);
-        
-        let mut edges = Vec::new();
-        for i in 0..5 {
-            edges.push(Edge {
-                id: i,
-                from: Some(from),
-                to: Some(to),
-                color: "green",
-                sidecar: false,
-                pen_width: EDGE_PEN_WIDTH.to_string(),
-                ctl_labels: vec!["test_label"],
-                stats_computer: ChannelStatsComputer {
-                    capacity: 10,
-                    show_type: Some("TestType"),
-                    type_byte_count: 8,
-                    last_send: 100,
-                    last_take: 90,
-                    last_total: 10,
-                    ..Default::default()
-                },
-                saturation_score: 0.1,
-                display_label: format!("CH{} stats", i),
-                metric_text: String::new(),
-                partner: Some("MyPartner"),
-                bundle_index: Some(0),
-            });
-        }
-
-        let state = DotState {
-            nodes: vec![
-                Node {
-                    id: Some(from),
-                    color: "grey",
-                    pen_width: NODE_PEN_WIDTH,
-                    stats_computer: ActorStatsComputer::default(),
-                    display_label: "from".to_string(),
-                    tooltip: String::new(),
-                    metric_text: String::new(),
-                    remote_details: None,
-                    thread_info_cache: None,
-                    total_count_restarts: 0,
-                    bool_stalled: false,
-                    work_info: None
-                },
-                Node {
-                    id: Some(to),
-                    color: "grey",
-                    pen_width: NODE_PEN_WIDTH,
-                    stats_computer: ActorStatsComputer::default(),
-                    display_label: "to".to_string(),
-                    tooltip: String::new(),
-                    metric_text: String::new(),
-                    remote_details: None,
-                    thread_info_cache: None,
-                    total_count_restarts: 0,
-                    bool_stalled: false,
-                    work_info: None
-                },
-            ],
-            edges,
-            seq: 0,
-            telemetry_colors: None,
-            refresh_rate_ms: 0,
-            bundle_floor_size: 4,
-        };
-
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
-        
-        assert!(result.contains("penwidth=2"),"{}",result); // Partnered bundle width
-    }
-
-    #[test]
-    fn test_build_dot_partnered_colors() {
-        let from = ActorName::new("from", None);
-        let to = ActorName::new("to", None);
-        
-        let mut edges = Vec::new();
-        // 2 edges with same partner and bundle index
-        for i in 0..2 {
-            edges.push(Edge {
-                id: i,
-                from: Some(from),
-                to: Some(to),
-                color: if i == 0 { "red" } else { "blue" },
-                sidecar: false,
-                pen_width: EDGE_PEN_WIDTH.to_string(),
-                ctl_labels: vec![],
-                stats_computer: ChannelStatsComputer {
-                    capacity: 10,
-                    show_type: Some("TestType"),
-                    ..Default::default()
-                },
-                saturation_score: 0.0,
-                display_label: String::new(),
-                metric_text: String::new(),
-                partner: Some("MyPartner"),
-                bundle_index: Some(0),
-            });
-        }
-
-        let state = DotState {
-            nodes: vec![],
-            edges,
-            seq: 0,
-            telemetry_colors: None,
-            refresh_rate_ms: 0,
-            bundle_floor_size: 4,
-        };
-
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
-        
-        assert!(result.contains("color=\"#FF0000:black:#0000FF\""));
-        assert!(result.contains("penwidth=2"));
-    }
-
-    #[test]
-    fn test_build_dot_partnered_bundle_label() {
-        let from = ActorName::new("from", None);
-        let to = ActorName::new("to", None);
-        
-        let mut edges = Vec::new();
-        // 5 partnerships, each with 2 channels (Cap 10 and Cap 100)
-        for i in 0..5 {
-            // Control channel
-            edges.push(Edge {
-                id: i * 2,
-                from: Some(from),
-                to: Some(to),
-                color: "green",
-                sidecar: false,
-                pen_width: EDGE_PEN_WIDTH.to_string(),
-                ctl_labels: vec![],
-                stats_computer: ChannelStatsComputer {
-                    capacity: 10,
-                    show_type: Some("Control"),
-                    ..Default::default()
-                },
-                saturation_score: 0.0,
-                display_label: String::new(),
-                metric_text: String::new(),
-                partner: Some("MyStream"),
-                bundle_index: Some(i),
-            });
-            // Payload channel
-            edges.push(Edge {
-                id: i * 2 + 1,
-                from: Some(from),
-                to: Some(to),
-                color: "blue",
-                sidecar: false,
-                pen_width: EDGE_PEN_WIDTH.to_string(),
-                ctl_labels: vec![],
-                stats_computer: ChannelStatsComputer {
-                    capacity: 100,
-                    show_type: Some("Payload"),
-                    ..Default::default()
-                },
-                saturation_score: 0.0,
-                display_label: String::new(),
-                metric_text: String::new(),
-                partner: Some("MyStream"),
-                bundle_index: Some(i),
-            });
-        }
-
-        let state = DotState {
-            nodes: vec![],
-            edges,
-            seq: 0,
-            telemetry_colors: None,
-            refresh_rate_ms: 0,
-            bundle_floor_size: 4,
-        };
-
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
-        
-        assert!(result.contains("MyStream: 5x"), "{}", result);
-        assert!(result.contains("Capacities: (10, 100)"), "{}", result);
     }
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 //! The `channel_builder` module provides builder utilities for creating channels between actors.
 //! Channels can be eagerly or lazily initialized, grouped into bundles, and used for testing.
 //!
@@ -175,8 +176,12 @@ impl ChannelBuilder {
      * Creates a new `ChannelBuilder` instance with default settings.
      *
      * Initializes the builder with a shared channel counter, shutdown sender vector, and frame rate.
-     * Default telemetry settings are computed based on the frame rate, providing a 1-second refresh
-     * rate and a 10-second window size.
+     *
+     * # IMPORTANT: Channel rollups are per-frame (server already quantizes telemetry into frames).
+     * The internal actor telemetry system uses `TELEMETRY_SAMPLES_PER_FRAME` sub-samples for
+     * robustness, but DOT edge rollups operate on one value per frame.
+     *
+     * Therefore, channel refresh/window sizing is computed in *frames*, not sub-samples.
      *
      * # Arguments
      *
@@ -193,10 +198,13 @@ impl ChannelBuilder {
         oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
         frame_rate_ms: u64,
     ) -> ChannelBuilder {
-        //build default window
-        let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(frame_rate_ms as u128
-                                                                                              , Duration::from_secs(1)
-                                                                                              , Duration::from_secs(10));
+        // Build default refresh/window in *frames*.
+        let (refresh_in_bits, window_in_bits) = Self::internal_compute_refresh_window_frames(
+            frame_rate_ms as u128,
+            Duration::from_secs(1),
+            Duration::from_secs(10),
+        );
+
         ChannelBuilder {
             channel_count,
             capacity: DEFAULT_CAPACITY,
@@ -235,11 +243,53 @@ impl ChannelBuilder {
         }
     }
 
+    /// Computes refresh/window bit sizes for channels based on *frames*.
+    ///
+    /// The DOT edge rollup pipeline advances once per frame (once per `ChannelVolumeData` update),
+    /// so channel statistics must treat one update == one sample.
+    ///
+    /// This is intentionally separate from `ActorBuilder::internal_compute_refresh_window`, which
+    /// sizes actor telemetry windows in sub-samples (`TELEMETRY_SAMPLES_PER_FRAME`).
+    fn internal_compute_refresh_window_frames(
+        frame_rate_ms: u128,
+        refresh: Duration,
+        window: Duration,
+    ) -> (u8, u8) {
+        if frame_rate_ms == 0 {
+            return (0, 0);
+        }
+
+        let frame_micros = 1000u128 * frame_rate_ms;
+
+        // How many frames should a "refresh bucket" contain? Clamp to at least 1 frame.
+        let mut frames_per_refresh = refresh.as_micros() / frame_micros;
+        if frames_per_refresh == 0 {
+            frames_per_refresh = 1;
+        }
+
+        let refresh_in_bits = (frames_per_refresh as f32).log2().ceil() as u8;
+
+        // The refresh bucket duration in microseconds: (2^bits) frames * frame duration.
+        let refresh_in_micros = (1000u128 << refresh_in_bits) * frame_rate_ms;
+
+        // How many refresh buckets fit into the desired window? Clamp to at least 1 bucket.
+        let mut buckets_per_window = window.as_micros() as f32 / refresh_in_micros as f32;
+        if !buckets_per_window.is_finite() || buckets_per_window < 1.0 {
+            buckets_per_window = 1.0;
+        }
+        let window_in_bits = buckets_per_window.log2().ceil() as u8;
+
+        (refresh_in_bits, window_in_bits)
+    }
+
     /**
      * Configures the refresh rate and window size for telemetry data collection.
      *
      * Adjusts how frequently telemetry data is refreshed and the size of the aggregation window,
      * optimizing for performance and accuracy based on the provided durations.
+     *
+     * # IMPORTANT: Channel rollups are per-frame (server already quantizes telemetry into frames).
+     * This method sizes the refresh/window in *frames*.
      *
      * # Arguments
      *
@@ -252,7 +302,8 @@ impl ChannelBuilder {
      */
     pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
         let mut result = self.clone();
-        let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(self.frame_rate_ms as u128, refresh, window);
+        let (refresh_in_bits, window_in_bits) =
+            Self::internal_compute_refresh_window_frames(self.frame_rate_ms as u128, refresh, window);
         result.refresh_rate_in_bits = refresh_in_bits;
         result.window_bucket_in_bits = window_in_bits;
         result

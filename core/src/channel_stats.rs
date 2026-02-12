@@ -9,7 +9,6 @@ use hdrhistogram::{Histogram};
 use crate::actor_stats::{ChannelBlock};
 use crate::channel_stats_labels;
 use crate::channel_stats_labels::{ComputeLabelsConfig, ComputeLabelsLabels};
-use crate::steady_config::TELEMETRY_SAMPLES_PER_FRAME;
 
 /// Constants representing the colors used in the dot graph.
 pub(crate) const DOT_GREEN: &str = "green";
@@ -130,9 +129,11 @@ impl ChannelStatsComputer {
         self.frame_rate_ms = frame_rate_ms;
         self.refresh_rate_in_bits = meta.refresh_rate_in_bits;
         self.window_bucket_in_bits = meta.window_bucket_in_bits;
-        
-        let total_ms = (self.frame_rate_ms as u128 * (1u128 << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits))) 
-                       / (TELEMETRY_SAMPLES_PER_FRAME as u128);
+
+        // Channel rollups are per-frame (server already quantizes to frames).
+        // Total window duration = frame_rate_ms * 2^(refresh_bits + window_bits).
+        let total_ms = (self.frame_rate_ms as u128
+            * (1u128 << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits)));
         self.time_label = actor_stats::time_label(total_ms);
 
         self.display_labels = if meta.display_labels {
@@ -407,8 +408,8 @@ impl ChannelStatsComputer {
     ///
     /// # Arguments
     ///
-    /// * `display_label` - Mutable reference to a string for storing the display label.
-    /// * `metric_text` - Mutable reference to a string for storing the metric text.
+    /// * `display_label` - Mutable reference to a string for storing the display label (visual graph).
+    /// * `metric_text` - Mutable reference to a string for storing the metric text (Prometheus).
     /// * `from_id` - The ID of the actor sending data.
     /// * `send` - The send value.
     /// * `take` - The take value.
@@ -494,23 +495,22 @@ impl ChannelStatsComputer {
         if self.show_total {
             display_label.push_str("Total: ");
             crate::channel_stats_labels::format_compressed_u128(self.total_consumed, display_label);
-            // display_label.push_str(" Vol: ");
-            // crate::channel_stats_labels::format_compressed_u128(self.last_total as u128, display_label);
             display_label.push('\n');
         }
 
         let line_thick = "1".to_string();
 
-        // Update metrics but keep display_label clean of configuration details.
-        let mut dummy_label = String::new();
+        // CRITICAL FIX: Previous code used 'dummy_label' here which discarded the visual metrics.
+        // The display_label must receive the rate/filled/latency text so it appears on the DOT graph edge.
+        // Prometheus metrics are written to metric_text separately within these functions.
         if let Some(ref current_rate) = self.current_rate {
-            self.compute_rate_labels(&mut dummy_label, metric_text, &current_rate);
+            self.compute_rate_labels(display_label, metric_text, &current_rate);
         }
         if let Some(ref current_filled) = self.current_filled {
-            self.compute_filled_labels(&mut dummy_label, metric_text, &current_filled);
+            self.compute_filled_labels(display_label, metric_text, &current_filled);
         }
         if let Some(ref current_latency) = self.current_latency {
-            self.compute_latency_labels(&mut dummy_label, metric_text, &current_latency);
+            self.compute_latency_labels(display_label, metric_text, &current_latency);
         }
 
         // NOTE: Capacity is now moved to the tooltip in dot.rs.
@@ -587,13 +587,11 @@ impl ChannelStatsComputer {
     pub(crate) fn triggered_rate(&self, rule: &Trigger<Rate>) -> bool {
         match rule {
             Trigger::AvgBelow(rate) => {
-                let window_in_ms = (self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits))
-                                   / (TELEMETRY_SAMPLES_PER_FRAME as u64);
+                let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
                 actor_stats::avg_rational(window_in_ms as u128, PLACES_TENS as u128, &self.current_rate, rate.rational_ms()).is_lt()
             },
             Trigger::AvgAbove(rate) => {
-                let window_in_ms = (self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits))
-                                   / (TELEMETRY_SAMPLES_PER_FRAME as u64);
+                let window_in_ms = self.frame_rate_ms << (self.window_bucket_in_bits + self.refresh_rate_in_bits);
                 actor_stats::avg_rational(window_in_ms as u128, PLACES_TENS as u128,  &self.current_rate, rate.rational_ms()).is_gt()
             },
             Trigger::StdDevsBelow(std_devs, expected_rate) => {
@@ -683,10 +681,18 @@ impl ChannelStatsComputer {
     }
 
     pub(crate) fn compute_rate_labels(&self, target_telemetry_label: &mut String, target_metric: &mut String, current_block: &&ChannelBlock<u64>) {
-        let config = ComputeLabelsConfig::channel_config(self
-                                                         , (TELEMETRY_SAMPLES_PER_FRAME as u64, self.frame_rate_ms)
-                                                         , (PLACES_TENS * TELEMETRY_SAMPLES_PER_FRAME as u64, self.frame_rate_ms), u64::MAX
-                                                         , self.show_avg_rate, self.show_min_rate, self.show_max_rate);
+        // Per-frame rollup: each sample represents one collector/server frame tick.
+        // Because PLACES_TENS == 1000, the conversion to per/sec is:
+        //   avg_per_sec = (avg_scaled_per_frame) / frame_rate_ms.
+        let config = ComputeLabelsConfig::channel_config(
+            self,
+            (1u64, self.frame_rate_ms),
+            (PLACES_TENS, self.frame_rate_ms),
+            u64::MAX,
+            self.show_avg_rate,
+            self.show_min_rate,
+            self.show_max_rate,
+        );
         let labels = ComputeLabelsLabels {
             label: "rate",
             unit: "per/sec",
