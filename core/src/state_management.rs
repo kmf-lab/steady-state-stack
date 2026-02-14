@@ -24,6 +24,7 @@ pub struct SteadyState<S> {
 }
 
 impl<S> Clone for SteadyState<S> {
+
     /// Creates a new reference to the same underlying state.
     ///
     /// This method clones the `Arc`, allowing multiple references to the same state.
@@ -36,7 +37,21 @@ impl<S> Clone for SteadyState<S> {
     }
 }
 
+impl<S> Default for SteadyState<S> {
+    /// new simple state creation
+    fn default() -> Self {
+        new_state()
+    }
+}
+
 impl<S> SteadyState<S> {
+
+    /// new simple state creation
+    fn new() -> Self {
+        new_state()
+    }
+
+
     /// Asynchronously locks the state, initializing it if absent.
     ///
     /// If the state is `None`, the provided `init` closure is called to create the initial state.
