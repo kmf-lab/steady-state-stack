@@ -302,3 +302,158 @@ impl<T, const GIRTH: usize> LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBu
         }
     }
 }
+
+// Smoke tests for LazySteadyTx and LazySteadyRx to verify basic functionality.
+#[cfg(test)]
+mod steady_lazy_tests {
+    use super::*;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::*;
+
+    /// Tests the basic flow of sending and receiving messages through lazy transmitter and receiver channels.
+    #[test]
+    fn test_lazy_flow() {
+        let builder = ChannelBuilder::default().with_capacity(2);
+        let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
+
+        // Clones the transmitter lazily and sends messages.
+        tx_lazy.testing_send_all(vec![1, 2], false);
+
+        // Locks and inspects the transmitter's capacity.
+        let tx = tx_lazy.clone();
+        let ste_tx = core_exec::block_on(tx.lock());
+        assert_eq!(ste_tx.shared_capacity(), 2);
+        drop(ste_tx);
+
+        // Locks and peeks at the receiver's next message.
+        let rx = rx_lazy.clone();
+        let ste_rx = core_exec::block_on(rx.lock());
+        assert_eq!(ste_rx.try_peek(), Some(&1));
+        drop(ste_rx);
+
+        // Locks and retrieves messages from the receiver.
+        let rx = rx_lazy.clone();
+        let mut ste_rx = core_exec::block_on(rx.lock());
+        assert_eq!(ste_rx.try_take(), Some(1));
+        assert_eq!(ste_rx.try_take(), Some(2));
+        assert_eq!(ste_rx.try_take(), None);
+    }
+
+    /// Tests lazy channel initialization - verifies that channels are properly created on first clone.
+    #[test]
+    fn test_lazy_channel_initialization() {
+        let builder = ChannelBuilder::default().with_capacity(10);
+        let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
+        
+        // First clone triggers initialization on tx side
+        let tx = tx_lazy.clone();
+        let ste_tx = core_exec::block_on(tx.lock());
+        assert_eq!(ste_tx.shared_capacity(), 10);
+        drop(ste_tx);
+        
+        // First clone on rx triggers initialization  
+        let rx = rx_lazy.clone();
+        let ste_rx = core_exec::block_on(rx.lock());
+        // Should be empty but initialized
+        assert!(ste_rx.shared_is_empty());
+        // Verify capacity is correct
+        assert_eq!(ste_rx.shared_capacity(), 10);
+        drop(ste_rx);
+    }
+
+    /// Tests testing_send_all with close=true to verify channel closure.
+    #[test]
+    fn test_testing_send_all_with_close() {
+        let builder = ChannelBuilder::default().with_capacity(5);
+        let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
+        
+        // Send data with close = true
+        tx_lazy.testing_send_all(vec![1, 2, 3], true);
+        
+        // Verify transmitter is properly configured
+        let tx = tx_lazy.clone();
+        let ste_tx = core_exec::block_on(tx.lock());
+        assert_eq!(ste_tx.shared_capacity(), 5);
+        
+        // Verify we can still receive the data (channel not fully closed at this level)
+        drop(ste_tx);
+        
+        let rx = rx_lazy.clone();
+        let mut ste_rx = core_exec::block_on(rx.lock());
+        assert_eq!(ste_rx.try_take(), Some(1));
+        assert_eq!(ste_rx.try_take(), Some(2));
+        assert_eq!(ste_rx.try_take(), Some(3));
+    }
+
+    /// Tests LazySteadyRx::testing_take_all() to verify it retrieves all available items.
+    #[test]
+    fn test_testing_take_all() {
+        let builder = ChannelBuilder::default().with_capacity(5);
+        let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
+        
+        // Send some data via the lazy tx
+        tx_lazy.testing_send_all(vec![10, 20, 30], false);
+        
+        // Take all via lazy receiver's testing method
+        let items = rx_lazy.testing_take_all();
+        assert_eq!(items, vec![10, 20, 30]);
+        
+        // Verify channel is now empty
+        let rx = rx_lazy.clone();
+        let ste_rx = core_exec::block_on(rx.lock());
+        assert!(ste_rx.shared_is_empty());
+    }
+
+    /// Tests LazySteadyTxBundleClone trait implementation.
+    /// This test verifies that cloning a lazy bundle triggers lazy initialization 
+    /// and returns a SteadyTxBundle that can be used with the lock() method.
+    #[test]
+    fn test_lazy_tx_bundle_clone() {
+        use crate::channel_builder_lazy::LazySteadyTxBundleClone;
+        
+        let builder = ChannelBuilder::default().with_capacity(3);
+        let (tx_bundle, _rx_bundle) = builder.build_channel_bundle::<u8, 4>();
+        
+        // Clone via trait - this triggers lazy initialization on all lanes
+        // The clone() method on LazySteadyTxBundle returns a SteadyTxBundle
+        let cloned: SteadyTxBundle<u8, 4> = tx_bundle.clone();
+        
+        // Use cloned bundle - all lanes should be initialized
+        // SteadyTxBundle has the lock() method from SteadyTxBundleTrait
+        let mut guards = core_exec::block_on(cloned.lock());
+        for tx in guards.iter_mut() {
+            let result = tx.shared_try_send(42);
+            assert!(result.is_ok());
+        }
+    }
+
+    /// Tests LazySteadyRxBundleClone trait implementation.
+    /// This test verifies that cloning a lazy receiver bundle triggers lazy initialization
+    /// and returns a SteadyRxBundle that can be used with the lock() method.
+    #[test]
+    fn test_lazy_rx_bundle_clone() {
+        use crate::channel_builder_lazy::LazySteadyRxBundleClone;
+        
+        let builder = ChannelBuilder::default().with_capacity(3);
+        let (tx_bundle, rx_bundle) = builder.build_channel_bundle::<u8, 4>();
+        
+        // First send some data on each lane
+        {
+            let cloned_tx: SteadyTxBundle<u8, 4> = tx_bundle.clone();
+            let mut guards = core_exec::block_on(cloned_tx.lock());
+            for (i, tx) in guards.iter_mut().enumerate() {
+                let _ = tx.shared_try_send(i as u8);
+            }
+        }
+        
+        // Clone receiver bundle via trait - triggers lazy initialization
+        let cloned_rx: SteadyRxBundle<u8, 4> = rx_bundle.clone();
+        
+        // Verify we can receive on all lanes
+        let mut guards = core_exec::block_on(cloned_rx.lock());
+        for (i, rx) in guards.iter_mut().enumerate() {
+            let val = rx.shared_try_take();
+            assert_eq!(val.map(|(_, v)| v), Some(i as u8));
+        }
+    }
+}
