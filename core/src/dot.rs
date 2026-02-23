@@ -265,7 +265,8 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 crate::channel_stats_labels::format_compressed_u128(e.stats_computer.capacity as u128, &mut tooltip);
                 // FIX: Only show Total (cumulative), not Volume. Volume was redundant.
                 tooltip.push_str("\n Total: ");
-                crate::channel_stats_labels::format_compressed_u128(e.stats_computer.total_consumed, &mut tooltip);
+                // Use last_total - total_consumed may not be updated if compute_and_refresh wasn't called
+                crate::channel_stats_labels::format_compressed_u128(e.stats_computer.last_total as u128, &mut tooltip);
                 let _ = write!(tooltip, "\n Saturation: {}%\n", (e.saturation_score * 100.0) as usize);
             }
 
