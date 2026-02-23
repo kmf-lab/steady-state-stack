@@ -451,9 +451,15 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 crate::channel_stats_labels::format_compressed_u128(total_memory as u128, &mut header);
                 header.push_str("B)");
             }
+            // FIX: Show comma-separated totals for each partner type in the bundle, not a single aggregated total
             if edges[0].show_total {
-                header.push_str("\nTotal: ");
-                crate::channel_stats_labels::format_compressed_u128(bundle_total_consumed, &mut header);
+                header.push_str("\nTotals: ");
+                for (i, total) in bundle_totals.iter().enumerate() {
+                    if i > 0 {
+                        header.push_str(", ");
+                    }
+                    crate::channel_stats_labels::format_compressed_u128(*total, &mut header);
+                }
             }
             if !p_key.type_name.is_empty() {
                 header.push_str("\n");
