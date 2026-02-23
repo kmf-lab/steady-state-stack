@@ -1,4 +1,4 @@
-//! This module provides the metrics for both local Graphviz DOT telemetry and Prometheus telemetry
+// This module provides the metrics for both local Graphviz DOT telemetry and Prometheus telemetry
 //! based on the settings for the actor builder in the SteadyState project. It includes functions for
 //! computing and refreshing metrics, building DOT and Prometheus outputs, and managing historical data.
 
@@ -231,7 +231,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         
         // Add Window info to the top of the tooltip if active
         if !first.stats_computer.time_label.is_empty() {
-            let _ = write!(tooltip, "Window: {}\\n", first.stats_computer.time_label);
+            let _ = write!(tooltip, "Window: {}\n", first.stats_computer.time_label);
         }
 
         let mut sum_saturation = 0.0;
@@ -257,17 +257,17 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             show_memory |= e.stats_computer.show_memory;
             
             if !is_large_bundle {
-                let _ = write!(tooltip, "CH#{}: {}\\n", 
+                let _ = write!(tooltip, "CH#{}: {}\n", 
                     e.id, 
                     if short_type.is_empty() { "Data" } else { short_type }
                 );
                 tooltip.push_str(" Capacity: ");
                 crate::channel_stats_labels::format_compressed_u128(e.stats_computer.capacity as u128, &mut tooltip);
-                tooltip.push_str("\\n Volume: ");
+                tooltip.push_str("\n Volume: ");
                 crate::channel_stats_labels::format_compressed_u128(e.stats_computer.last_total as u128, &mut tooltip);
                 tooltip.push_str(" (Total: ");
                 crate::channel_stats_labels::format_compressed_u128(e.stats_computer.total_consumed, &mut tooltip);
-                let _ = write!(tooltip, ")\\n Saturation: {}%\\n", (e.saturation_score * 100.0) as usize);
+                let _ = write!(tooltip, ")\n Saturation: {}%\n", (e.saturation_score * 100.0) as usize);
             }
 
             ids.push(e.id);
@@ -283,11 +283,11 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         }
 
         if is_large_bundle {
-            let _ = write!(tooltip, "Summary: {} channels\\n", edges.len());
+            let _ = write!(tooltip, "Summary: {} channels\n", edges.len());
             tooltip.push_str(" Total Volume: ");
             crate::channel_stats_labels::format_compressed_u128(sum_total as u128, &mut tooltip);
-            tooltip.push_str("\\n Avg Saturation: ");
-            let _ = write!(tooltip, "{}%\\n", (sum_saturation / edges.len() as f64 * 100.0) as usize);
+            tooltip.push_str("\n Avg Saturation: ");
+            let _ = write!(tooltip, "{}%\n", (sum_saturation / edges.len() as f64 * 100.0) as usize);
         }
         
         let combined_type = type_list.join("/");
@@ -310,8 +310,35 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             
             // Combine: Partner info first, then original label (which contains rate/fill from ChannelStatsComputer)
             // This ensures avg_rate and other dynamic metrics are preserved on the label
-            summary_label = format!("{}\\n{}", partner_info, summary_label);
+            summary_label = format!("{}\n{}", partner_info, summary_label);
         }
+
+        // FIX: Always show the total(s) on the edge label itself, not just in the tooltip.
+        // For bundled edges that will be rendered individually (len < bundle_floor_size), 
+        // show all totals separated by commas. For single edges, show the total directly.
+        // For large bundles (len >= bundle_floor_size), totals are handled in the bundle rendering section below.
+        if first.stats_computer.show_total {
+            let mut total_label = String::new();
+            if edges.len() == 1 {
+                // Single edge: show total directly
+                total_label.push_str("Total: ");
+                crate::channel_stats_labels::format_compressed_u128(first.stats_computer.total_consumed, &mut total_label);
+            } else if edges.len() < state.bundle_floor_size {
+                // Bundled edges (but not large enough to be rendered as bundle): show all totals separated by commas
+                total_label.push_str("Totals: ");
+                for (i, total) in sub_totals.iter().enumerate() {
+                    if i > 0 {
+                        total_label.push_str(", ");
+                    }
+                    crate::channel_stats_labels::format_compressed_u128(*total, &mut total_label);
+                }
+            }
+            // For large bundles (len >= bundle_floor_size), the totals are handled in the bundle rendering section below
+            if !total_label.is_empty() {
+                summary_label = format!("{}{}\n", summary_label, total_label);
+            }
+        }
+
 
         partnered_edges.push(PartneredEdge {
             from: first.from,
@@ -424,13 +451,12 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 crate::channel_stats_labels::format_compressed_u128(total_memory as u128, &mut header);
                 header.push_str("B)");
             }
-            // Show aggregated volume and total for the entire bundle
             if edges[0].show_total {
-                header.push_str("\\nTotal: ");
+                header.push_str("\nTotal: ");
                 crate::channel_stats_labels::format_compressed_u128(bundle_total_consumed, &mut header);
             }
             if !p_key.type_name.is_empty() {
-                header.push_str("\\n");
+                header.push_str("\n");
                 header.push_str(&p_key.type_name);
             }
             all_labels.iter().for_each(|l| {
@@ -438,29 +464,29 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 header.push_str(l);
             });
 
-            let mut bundle_tooltip = format!("Bundle Details ({} channels in {} groups):\\n", total_channels, n);
+            let mut bundle_tooltip = format!("Bundle ({} chans in {} groups):", total_channels, n);
             // Add Window info to the top of the bundle tooltip
             if !edges[0].tooltip.is_empty() && edges[0].tooltip.starts_with("Window:") {
                 if let Some(first_line) = edges[0].tooltip.split("\\n").next() {
-                    bundle_tooltip.push_str(first_line);
                     bundle_tooltip.push_str("\\n");
+                    bundle_tooltip.push_str(first_line);
                 }
             }
 
             if total_channels > 20 {
-                bundle_tooltip.push_str(" Total Volume: ");
+                bundle_tooltip.push_str("\\n Total Volume: ");
                 crate::channel_stats_labels::format_compressed_u128(bundle_volume as u128, &mut bundle_tooltip);
                 bundle_tooltip.push_str("\\n Avg Saturation: ");
                 let avg_saturation = edges.iter().map(|e| e.saturation_score).sum::<f64>() / n as f64;
-                let _ = write!(bundle_tooltip, "{}%\\n", (avg_saturation * 100.0) as usize);
+                let _ = write!(bundle_tooltip, "{}%", (avg_saturation * 100.0) as usize);
             } else {
                 if p_key.sub_capacities.len() > 1 {
-                    bundle_tooltip.push_str("Capacities: (");
+                    bundle_tooltip.push_str("\\n Capacities: (");
                     for (i, cap) in p_key.sub_capacities.iter().enumerate() {
                         if i > 0 { bundle_tooltip.push_str(", "); }
                         crate::channel_stats_labels::format_compressed_u128(*cap as u128, &mut bundle_tooltip);
                     }
-                    bundle_tooltip.push_str(")\\n");
+                    bundle_tooltip.push_str(")");
                 }
                 for e in edges.iter() {
                     // Skip the Window line if it was already added to the bundle header
@@ -469,6 +495,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                     } else {
                         &e.tooltip
                     };
+                    bundle_tooltip.push_str("\\n");
                     bundle_tooltip.push_str(entry_tooltip);
                 }
             }
@@ -1807,7 +1834,8 @@ mod dot_tests {
         assert!(result.contains("Bundle: 5x"));
         assert!(result.contains("penwidth=4"));
         assert!(result.contains("style=\"bold,dashed\""));
-        assert!(result.contains("Bundle Details (5 channels in 5 groups):\\n"));
+        // Check for bundle tooltip - look for the header (without trailing newline)
+        assert!(result.contains("Bundle (5 chans in 5 groups):"));
         assert!(result.contains("CH#0: TestType"));
         assert!(result.contains("Saturation: 10%"));
     }

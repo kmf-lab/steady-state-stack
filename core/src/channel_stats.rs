@@ -491,12 +491,12 @@ impl ChannelStatsComputer {
             display_label.push('\n');
         });
 
-        // RESTORED: Show Volume and Total on the label if enabled
-        if self.show_total {
-            display_label.push_str("Total: ");
-            crate::channel_stats_labels::format_compressed_u128(self.total_consumed, display_label);
-            display_label.push('\n');
-        }
+        // // RESTORED: Show Volume and Total on the label if enabled
+        // if self.show_total {
+        //     display_label.push_str("Total: ");
+        //     crate::channel_stats_labels::format_compressed_u128(self.total_consumed, display_label);
+        //     display_label.push('\n');
+        // }
 
         let line_thick = "1".to_string();
 

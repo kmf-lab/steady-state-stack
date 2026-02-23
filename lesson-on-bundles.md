@@ -319,11 +319,10 @@ let mut tx_bundle = tx_bundle.lock().await;
 
 while actor.is_running(&mut || {
     // Veto shutdown if ANY stream is not empty
-    let rx_ready = rx_bundle.is_closed_and_empty();
     // Signal downstream that we are closing
-    let tx_ready = tx_bundle.mark_closed();
-
-    i!(rx_ready) && i!(tx_ready)
+    // Always use the short-circuiting and here, like this, with mark closed at the end. 
+    // Never, ever, under any circumstances, put these values in temporary variables.
+    i!(rx_bundle.is_closed_and_empty()) && i!(tx_bundle.mark_closed())
 }) {
     // Loop continues until all streams are empty and closed
 }
