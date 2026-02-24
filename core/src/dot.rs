@@ -280,11 +280,6 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
 
         if is_large_bundle {
             let _ = write!(tooltip, "Summary: {} channels\n", edges.len());
-            // FIX: Use total_consumed for "Total Volume" to match edge label
-            tooltip.push_str(" Total Volume: ");
-            crate::channel_stats_labels::format_compressed_u128(sum_total_consumed as u128, &mut tooltip);
-            tooltip.push_str("\n Avg Saturation: ");
-            let _ = write!(tooltip, "{}%\n", (sum_saturation / edges.len() as f64 * 100.0) as usize);
         }
         
         let combined_type = type_list.join("/");
@@ -415,7 +410,6 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             let mut bundle_totals = vec![0u128; edges[0].sub_totals.len()];
             let lane_count = edges[0].lane_rgbs.len();
             let mut sum_rgbs = vec![(0u32, 0u32, 0u32); lane_count];
-            let mut bundle_total_consumed = 0u128;
             let mut total_memory = 0usize;
             let mut show_mem = false;
             
@@ -428,7 +422,6 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                     sum_rgbs[i].1 += g;
                     sum_rgbs[i].2 += b;
                 }
-                bundle_total_consumed += pe.sum_total_consumed;
                 total_memory += pe.memory_footprint;
                 show_mem |= pe.show_memory;
             }
@@ -474,12 +467,8 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             }
 
             if total_channels > 20 {
-                // FIX: Use total_consumed for "Total Volume" to match edge label
-                bundle_tooltip.push_str("\\n Total Volume: ");
-                crate::channel_stats_labels::format_compressed_u128(bundle_total_consumed as u128, &mut bundle_tooltip);
-                bundle_tooltip.push_str("\\n Avg Saturation: ");
-                let avg_saturation = edges.iter().map(|e| e.saturation_score).sum::<f64>() / n as f64;
-                let _ = write!(bundle_tooltip, "{}%", (avg_saturation * 100.0) as usize);
+                // Large bundle tooltip - show summary, but no total volume or avg saturation
+                let _ = write!(bundle_tooltip, "\\nSummary: {} channels", total_channels);
             } else {
                 if p_key.sub_capacities.len() > 1 {
                     bundle_tooltip.push_str("\\n Capacities: (");
@@ -1324,24 +1313,21 @@ mod dot_tests {
         println!("✓ Bundle tooltip correctly uses total_consumed (cumulative)");
     }
 
-    /// Test: Large bundle (>20 channels) shows sum of total_consumed in tooltip
+    /// Test: Large bundle (>20 channels) shows summary without total volume or avg saturation
     #[test]
-    fn test_large_bundle_tooltip_uses_total_consumed() {
+    fn test_large_bundle_tooltip_no_total_volume() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
         
         // Create 25 edges (large bundle)
         let mut edges = Vec::new();
-        let mut expected_total = 0u128;
         for i in 0..25 {
             let mut stats = ChannelStatsComputer::default();
             stats.capacity = 100;
             stats.show_total = true;
-            let tc = (i as u128 + 1) * 100;
-            stats.total_consumed = tc;
+            stats.total_consumed = (i as u128 + 1) * 100;
             stats.last_total = (i as i64 + 1) * 10;
             stats.saturation_score = 0.3;
-            expected_total += tc;
 
             edges.push(Edge {
                 id: i,
@@ -1402,13 +1388,12 @@ mod dot_tests {
         build_dot(&state, &mut dot_graph);
         let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
         
-        // Large bundle should show "Total Volume:" in tooltip with sum of total_consumed
-        assert!(result.contains("Total Volume:"), "Large bundle should show Total Volume: {}", result);
+        // Large bundle should show summary
+        assert!(result.contains("Summary: 25 channels"), "Large bundle should show Summary: {}", result);
         
-        // The sum should be formatted as "32K" (32500 compressed)
-        assert!(result.contains("32K"), "Total Volume should be 32K: {}", result);
-        
-        println!("✓ Large bundle tooltip correctly uses total_consumed: expected = {}", expected_total);
+        // Should NOT contain Total Volume or Avg Saturation
+        assert!(!result.contains("Total Volume:"), "Large bundle should NOT show Total Volume: {}", result);
+        assert!(!result.contains("Avg Saturation:"), "Large bundle should NOT show Avg Saturation: {}", result);
     }
 
     /// Test: Partner channels show correct rollup
