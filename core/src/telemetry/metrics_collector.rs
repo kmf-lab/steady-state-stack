@@ -1,4 +1,4 @@
-//! The `metrics_collector` module provides the `MetricsCollector` actor, which is responsible for
+ //! The `metrics_collector` module provides the `MetricsCollector` actor, which is responsible for
 //! gathering telemetry data from all actors and channels in the graph. It aggregates this data
 //! into a `DotState` for visualization and Prometheus metrics.
 
@@ -112,7 +112,9 @@ impl MetricsCollector {
             self.seq += 1;
             let now_loop = Instant::now();
             
-            let mut actor_statuses = Vec::new();
+            // Sparse actor status accumulation keyed by actor_id.
+            // We compact before sending so downstream only processes real updates.
+            let mut actor_statuses: Vec<Option<ActorStatus>> = Vec::new();
             let mut node_defs_to_send = Vec::new();
             let mut channel_volumes_to_send = Vec::new();
 
@@ -162,10 +164,10 @@ impl MetricsCollector {
                             // Collect Actor Status
                             if let Some(status) = rx.consume_actor() {
                                 if actor_id >= actor_statuses.len() {
-                                    actor_statuses.resize(actor_id + 1, ActorStatus::default());
+                                    actor_statuses.resize_with(actor_id + 1, || None);
                                 }
                                 self.last_seen[actor_id] = now_loop;
-                                actor_statuses[actor_id] = status;
+                                actor_statuses[actor_id] = Some(status);
                                 collected_this_time = true;
                             }
 
@@ -196,10 +198,13 @@ impl MetricsCollector {
                             let last_time = self.last_seen[actor_id];
                             if now_loop.duration_since(last_time) > Duration::from_secs(20) {
                                 if actor_id >= actor_statuses.len() {
-                                    actor_statuses.resize(actor_id + 1, ActorStatus::default());
+                                    actor_statuses.resize_with(actor_id + 1, || None);
                                 }
-                                actor_statuses[actor_id].ident = detail.ident;
-                                actor_statuses[actor_id].is_quiet = true;
+                                actor_statuses[actor_id] = Some(ActorStatus {
+                                    ident: detail.ident,
+                                    is_quiet: true,
+                                    ..ActorStatus::default()
+                                });
                                 
                                 if !self.logged_is_quiet[actor_id] {
                                     //NOT a bug, just something to watch
@@ -222,6 +227,10 @@ impl MetricsCollector {
                 let mut tx_guard = self.targets[0].lock().await;
                 let _ = context.send_async(&mut *tx_guard, def, SendSaturation::AwaitForRoom).await;
             }
+
+            // Compact sparse actor updates before transmit.
+            // Downstream identifies nodes by status.ident.id (not positional index).
+            let actor_statuses: Vec<ActorStatus> = actor_statuses.into_iter().flatten().collect();
 
             // Relay batches to server
             if !actor_statuses.is_empty() {
