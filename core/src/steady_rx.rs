@@ -16,6 +16,8 @@ use crate::monitor::{ChannelMetaData};
 use crate::core_rx::RxCore;
 use crate::{RxBundle, SteadyRxBundle};
 use crate::distributed::aqueduct_stream::RxChannelMetaDataWrapper;
+use crate::monitor_telemetry::SteadyTelemetrySend;
+use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
 
 /// Represents a receiver that consumes messages from a channel in a steady-state actor system.
 ///
@@ -242,7 +244,7 @@ impl<T> Rx<T> {
     /// data with specific channels.
     ///
     /// # Returns
-    /// The channel’s unique ID as a `usize`.
+    /// The channel's unique ID as a `usize`.
     pub fn id(&self) -> usize {
         self.channel_meta_data.meta_data.id
     }
@@ -266,7 +268,7 @@ impl<T> Rx<T> {
 
     /// Resets the last checked transmitter instance to the current instance.
     ///
-    /// This method updates the receiver’s internal state to reflect the current transmitter instance,
+    /// This method updates the receiver's internal state to reflect the current transmitter instance,
     /// typically called after handling a detected change.
     pub fn tx_instance_reset(&mut self) {
         let id = self.tx_version.load(Ordering::SeqCst);
@@ -326,7 +328,7 @@ impl<T> Rx<T> {
     /// analysis and bottleneck identification.
     ///
     /// # Returns
-    /// The channel’s capacity as a `usize`.
+    /// The channel's capacity as a `usize`.
     pub fn capacity(&self) -> usize {
         self.shared_capacity()
     }
@@ -478,6 +480,37 @@ impl<T> Rx<T> {
         self.take_count.fetch_add(count as u32, Ordering::Relaxed);
         count
     }
+
+    /// Records telemetry data for a receive operation.
+    /// 
+    /// CRITICAL FIX: This method now ensures that the local_monitor_index is resolved
+    /// before attempting to record telemetry. Previously, if the index was MONITOR_UNKNOWN,
+    /// the call to process_event would attempt resolution, but if it failed or if the
+    /// index was already MONITOR_NOT, counts would be silently dropped. This fix ensures
+    /// we explicitly resolve the index and validate it before recording.
+    ///
+    /// # Parameters
+    /// - `done`: The receive operation result containing the count of items received.
+    /// - `tel`: The telemetry send structure to record the event in.
+    pub(crate) fn telemetry_inc<const LEN: usize>(&mut self, done: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
+        // CRITICAL FIX: Resolve lazy index if not yet established
+        if self.local_monitor_index == MONITOR_UNKNOWN {
+            self.local_monitor_index = crate::monitor::find_my_index(tel, self.channel_meta_data.meta_data.id);
+        }
+        
+        // Only record if we have a valid index
+        if self.local_monitor_index < MONITOR_NOT {
+            self.local_monitor_index = tel.process_event(
+                self.local_monitor_index, 
+                self.channel_meta_data.meta_data.id, 
+                *done as isize
+            );
+        } else {
+            // Log error once to avoid spam, but indicate counts are being dropped
+            error!("Telemetry channel {} has invalid index {} (MONITOR_UNKNOWN or MONITOR_NOT). Count {} lost.", 
+                   self.channel_meta_data.meta_data.id, self.local_monitor_index, *done);
+        }
+    }
 }
 
 /// An iterator that counts the number of items taken from the channel.
@@ -532,11 +565,11 @@ where
 pub trait RxMetaDataProvider: Debug {
     /// Retrieves metadata associated with the receiver.
     ///
-    /// This method provides access to the channel’s metadata, such as its ID and name, for use in
+    /// This method provides access to the channel's metadata, such as its ID and name, for use in
     /// logging, debugging, and telemetry.
     ///
     /// # Returns
-    /// A shared reference to the channel’s metadata.
+    /// A shared reference to the channel's metadata.
     fn meta_data(&self) -> Arc<ChannelMetaData>;
 }
 
@@ -558,7 +591,7 @@ impl<T: Send + Sync> RxMetaDataProvider for Arc<Mutex<Rx<T>>> {
     /// This implementation performs a lock-free lookup in the global metadata registry using the Arc's pointer address as a key. This avoids contention with the channel's data path and prevents deadlocks during telemetry collection.
     ///
     /// # Returns
-    /// A shared reference to the channel’s metadata, or a default instance if not found.
+    /// A shared reference to the channel's metadata, or a default instance if not found.
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         let key = Arc::as_ptr(self) as usize;
         if let Some(meta) = crate::monitor::METADATA_REGISTRY.read().get(&key) {

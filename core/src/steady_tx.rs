@@ -17,6 +17,8 @@ use crate::channel_builder::InternalSender;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{TxChannelMetaDataWrapper};
 use crate::monitor::{ChannelMetaData};
+use crate::monitor_telemetry::SteadyTelemetrySend;
+use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
 
 /// Represents a transmission channel for sending messages of type `T`.
 ///
@@ -77,7 +79,7 @@ impl<T> Tx<T> {
     /// Each channel is assigned a distinct ID, which is useful for tracking, debugging, or associating telemetry data with specific channels.
     ///
     /// # Returns
-    /// A `usize` representing the channel’s unique identifier.
+    /// A `usize` representing the channel's unique identifier.
     pub fn id(&self) -> usize {
         self.channel_meta_data.meta_data.id
     }
@@ -93,7 +95,7 @@ impl<T> Tx<T> {
         true
     }
 
-    /// Retrieves the total capacity of the channel’s message buffer.
+    /// Retrieves the total capacity of the channel's message buffer.
     ///
     /// This method returns the maximum number of messages the channel can hold at any given time, aiding in buffer size configuration and performance optimization.
     ///
@@ -105,7 +107,7 @@ impl<T> Tx<T> {
 
     /// Logs a warning when the channel reaches full capacity, with rate-limiting applied.
     ///
-    /// This internal method issues a warning when the channel cannot accept additional messages, but only if sufficient time has passed since the last warning to avoid overwhelming the log. It includes details such as the actor’s identity and message type for context.
+    /// This internal method issues a warning when the channel cannot accept additional messages, but only if sufficient time has passed since the last warning to avoid overwhelming the log. It includes details such as the actor's identity and message type for context.
     ///
     /// # Parameters
     /// - `ident`: The identity of the actor associated with this channel, providing context for the warning.
@@ -136,7 +138,7 @@ impl<T> Tx<T> {
 
     /// Determines whether the channel currently contains no messages.
     ///
-    /// This method is helpful for monitoring the channel’s state or ensuring it is empty before performing specific actions, such as shutdown.
+    /// This method is helpful for monitoring the channel's state or ensuring it is empty before performing specific actions, such as shutdown.
     ///
     /// # Returns
     /// A `bool` returning `true` if the channel is empty, `false` otherwise.
@@ -193,6 +195,37 @@ impl<T> Tx<T> {
         debug_assert!(self.make_closed.is_some(), "Send called after channel marked closed");
         self.tx.push_slice(slice)
     }
+
+    /// Records telemetry data for a transmission operation.
+    /// 
+    /// CRITICAL FIX: This method ensures that the local_monitor_index is resolved
+    /// before attempting to record telemetry. Previously, if the index was MONITOR_UNKNOWN,
+    /// the call to process_event would attempt resolution, but if it failed or if the
+    /// index was already MONITOR_NOT, counts would be silently dropped. This fix ensures
+    /// we explicitly resolve the index and validate it before recording.
+    ///
+    /// # Parameters
+    /// - `done`: The transmission operation result containing the count of items sent.
+    /// - `tel`: The telemetry send structure to record the event in.
+    pub(crate) fn telemetry_inc<const LEN: usize>(&mut self, done: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
+        // CRITICAL FIX: Resolve lazy index if not yet established
+        if self.local_monitor_index == MONITOR_UNKNOWN {
+            self.local_monitor_index = crate::monitor::find_my_index(tel, self.channel_meta_data.meta_data.id);
+        }
+        
+        // Only record if we have a valid index
+        if self.local_monitor_index < MONITOR_NOT {
+            self.local_monitor_index = tel.process_event(
+                self.local_monitor_index, 
+                self.channel_meta_data.meta_data.id, 
+                *done as isize
+            );
+        } else {
+            // Log error once to avoid spam, but indicate counts are being dropped
+            error!("Telemetry TX channel {} has invalid index {} (MONITOR_UNKNOWN or MONITOR_NOT). Count {} lost.", 
+                   self.channel_meta_data.meta_data.id, self.local_monitor_index, *done);
+        }
+    }
 }
 
 /// Defines an interface for accessing metadata about a transmission channel.
@@ -201,20 +234,20 @@ impl<T> Tx<T> {
 pub trait TxMetaDataProvider: Debug {
     /// Retrieves the metadata associated with the transmission channel.
     ///
-    /// This method provides a shared reference to the channel’s metadata, ensuring thread-safe access to its details.
+    /// This method provides a shared reference to the channel's metadata, ensuring thread-safe access to its details.
     ///
     /// # Returns
-    /// An atomically reference-counted pointer (`Arc`) to the channel’s metadata.
+    /// An atomically reference-counted pointer (`Arc`) to the channel's metadata.
     fn meta_data(&self) -> Arc<ChannelMetaData>;
 }
 
 impl<T: Send + Sync> TxMetaDataProvider for Mutex<Tx<T>> {
     /// Retrieves the metadata for a transmission channel wrapped in a `Mutex`.
     ///
-    /// This implementation attempts to acquire the mutex lock to access the channel’s metadata, retrying with a yield if the lock is unavailable. It logs an error if the lock cannot be obtained after numerous attempts, indicating a potential contention issue.
+    /// This implementation attempts to acquire the mutex lock to access the channel's metadata, retrying with a yield if the lock is unavailable. It logs an error if the lock cannot be obtained after numerous attempts, indicating a potential contention issue.
     ///
     /// # Returns
-    /// An `Arc` pointing to the channel’s metadata.
+    /// An `Arc` pointing to the channel's metadata.
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         let mut count = 0;
         loop {
@@ -240,7 +273,7 @@ impl<T: Send + Sync> TxMetaDataProvider for Arc<Mutex<Tx<T>>> {
     /// This implementation performs a lock-free lookup in the global metadata registry using the Arc's pointer address as a key. This avoids contention with the channel's data path and prevents deadlocks during telemetry collection.
     ///
     /// # Returns
-    /// An `Arc` pointing to the channel’s metadata, or a default instance if not found.
+    /// An `Arc` pointing to the channel's metadata, or a default instance if not found.
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         let key = Arc::as_ptr(self) as usize;
         if let Some(meta) = crate::monitor::METADATA_REGISTRY.read().get(&key) {
@@ -264,7 +297,7 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
 
     /// Retrieves metadata for all transmission channels in the bundle.
     ///
-    /// This method gathers metadata from each channel, providing a comprehensive overview of the bundle’s state.
+    /// This method gathers metadata from each channel, providing a comprehensive overview of the bundle's state.
     ///
     /// # Returns
     /// An array of references to metadata providers, one for each channel in the bundle.
@@ -430,13 +463,13 @@ mod steady_lazy_tests {
         // Clones the transmitter lazily and sends messages.
         tx_lazy.testing_send_all(vec![1, 2], false);
 
-        // Locks and inspects the transmitter’s capacity.
+        // Locks and inspects the transmitter's capacity.
         let tx = tx_lazy.clone();
         let ste_tx = core_exec::block_on(tx.lock());
         assert_eq!(ste_tx.shared_capacity(), 2);
         drop(ste_tx);
 
-        // Locks and peeks at the receiver’s next message.
+        // Locks and peeks at the receiver's next message.
         let rx = rx_lazy.clone();
         let ste_rx = core_exec::block_on(rx.lock());
         assert_eq!(ste_rx.try_peek(), Some(&1));

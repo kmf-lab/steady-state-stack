@@ -10,7 +10,7 @@ use async_ringbuf::producer::AsyncProducer;
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
-use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, Tx, MONITOR_NOT};
+use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, Tx, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::yield_now;
 
 /// Trait defining the core functionality for transmitting data in a steady-state system.
@@ -63,8 +63,8 @@ pub trait TxCore {
 
     /// Increments telemetry data based on the number of messages sent.
     ///
-    /// This method updates the telemetry system with the count of messages or bytes transmitted,
-    /// depending on the channel type and the provided `TxDone` value.
+    /// This method updates the telemetry based on the `TxDone` value, expecting `Normal` for
+    /// standard channels and logging a warning if `Stream` is received unexpectedly.
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>);
 
     /// Notifies or resets the monitor, typically by setting a monitor index to a predefined value.
@@ -126,7 +126,7 @@ pub trait TxCore {
     /// Advances the write index by a specified number of units.
     ///
     /// This method is used in zero-copy operations to manually update the write position after
-    /// directly writing to the channel’s buffer. It returns a `TxDone` value indicating the
+    /// directly writing to the channel's buffer. It returns a `TxDone` value indicating the
     /// number of units advanced.
     fn shared_advance_index(&mut self, request: Self::MsgSize) -> TxDone;
 
@@ -138,7 +138,7 @@ pub trait TxCore {
 
     /// Provides direct access to the vacant slices of the channel for zero-copy writing.
     ///
-    /// This method returns the writable portions of the channel’s buffer, allowing direct
+    /// This method returns the writable portions of the channel's buffer, allowing direct
     /// manipulation of the underlying memory.
     fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_>;
 
@@ -199,7 +199,7 @@ pub trait TxCore {
 /// This implementation provides the transmission functionality for a standard channel, supporting
 /// synchronous and asynchronous message sending, zero-copy operations, and telemetry integration.
 impl<T> TxCore for Tx<T> {
-    /// The type of message that can be sent into the channel, matching the channel’s generic type.
+    /// The type of message that can be sent into the channel, matching the channel's generic type.
     type MsgIn<'a> = T;
 
     /// The type of message that comes out of the channel, identical to `MsgIn` for standard channels.
@@ -216,7 +216,7 @@ impl<T> TxCore for Tx<T> {
 
     /// Advances the write index by the requested number of units, limited by available space.
     ///
-    /// This method adjusts the write position in the channel’s buffer, ensuring it does not exceed
+    /// This method adjusts the write position in the channel's buffer, ensuring it does not exceed
     /// the vacant space, and returns the number of units advanced.
     fn shared_advance_index(&mut self, request: Self::MsgSize) -> TxDone {
         let avail = self.tx.vacant_len();
@@ -284,14 +284,33 @@ impl<T> TxCore for Tx<T> {
     /// This method updates the telemetry based on the `TxDone` value, expecting `Normal` for
     /// standard channels and logging a warning if `Stream` is received unexpectedly.
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
-        match done_count {
-            TxDone::Normal(d) => {
-                self.local_monitor_index = tel.process_event(self.local_monitor_index, self.channel_meta_data.meta_data.id, d as isize)
+        // CRITICAL FIX: Resolve lazy index if not yet established
+        if self.local_monitor_index == MONITOR_UNKNOWN {
+            self.local_monitor_index = crate::monitor::find_my_index(tel, self.channel_meta_data.meta_data.id);
+        }
+        
+        // Only record if we have a valid index
+        if self.local_monitor_index < MONITOR_NOT {
+            match done_count {
+                TxDone::Normal(d) => {
+                    self.local_monitor_index = tel.process_event(
+                        self.local_monitor_index, 
+                        self.channel_meta_data.meta_data.id, 
+                        d as isize
+                    )
+                }
+                TxDone::Stream(i, _p) => {
+                    warn!("internal error should have gotten Normal");
+                    self.local_monitor_index = tel.process_event(
+                        self.local_monitor_index, 
+                        self.channel_meta_data.meta_data.id, 
+                        i as isize
+                    )
+                }
             }
-            TxDone::Stream(i, _p) => {
-                warn!("internal error should have gotten Normal");
-                self.local_monitor_index = tel.process_event(self.local_monitor_index, self.channel_meta_data.meta_data.id, i as isize)
-            }
+        } else {
+            error!("Telemetry TX channel {} has invalid index {} (MONITOR_UNKNOWN or MONITOR_NOT). Count {:?} lost.", 
+                   self.channel_meta_data.meta_data.id, self.local_monitor_index, done_count);
         }
     }
 
