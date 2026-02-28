@@ -126,8 +126,13 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         last_generated_graph: Instant::now(),
         active_graph: BytesMut::new(),
     };
-    //generate the first empty chart
-    generate_reports(&mut metrics_state, &mut history, &mut frames, false, state.clone(), true).await;
+    
+    // CRITICAL: Track whether we've completed the initial full drain of the channel
+    // This ensures we don't generate partial graphs during startup
+    let mut initial_drain_complete = false;
+    
+    //generate the first empty chart (but don't flush yet)
+    generate_reports(&mut metrics_state, &mut history, &mut frames, false, state.clone(), false).await;
 
 
     // CRITICAL: We must call is_running BEFORE we block on any resource (like the channel lock).
@@ -162,11 +167,22 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
             burst_processed = true;
             process_msg(msg, &mut metrics_state, &mut history, frame_rate_ms).await;
 
-            //stop early at this point if we are here too long
-            if frames.last_generated_graph.elapsed().as_millis() >= (frame_rate_ms/8) as u128 {
-                break;// stop early if we have half a frame break
+            // CRITICAL: Only enforce time limits after initial drain is complete.
+            // On startup, we want to process ALL pending NodeDef messages to ensure
+            // the first graph we generate is complete, not partial.
+            if initial_drain_complete {
+                //stop early at this point if we are here too long
+                if frames.last_generated_graph.elapsed().as_millis() >= (frame_rate_ms/8) as u128 {
+                    break;// stop early if we have half a frame break
+                }
             }
 
+        }
+        
+        // Mark initial drain as complete after first full consumption of the channel.
+        // After this point, we switch to normal frame-limited processing.
+        if !initial_drain_complete {
+            initial_drain_complete = true;
         }
 
         // We only rebuild the DOT graph and Prometheus text if we are shutting down
