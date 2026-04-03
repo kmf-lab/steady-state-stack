@@ -54,9 +54,7 @@ let state = new_state::<ProcessingStats>();
 let state = new_persistent_state::<ProcessingStats, _>("./data/stats.json");
 
 
-Step 3: Consumption (The Actor)
-
-Inside the actor, you lock the state. The first time this is called, the provided closure initializes the data. On every subsequent restart (regeneration),
+/// Inside the actor, you lock the state. The first time this is called, the provided closure initializes the data. On every subsequent restart (regeneration),
 the closure is skipped, and the existing data is returned.
 
 
@@ -91,8 +89,8 @@ behavior (e.g., "If I've restarted 5 times, log a critical alert").
 
 II. The is_running Loop & i! Macro
 
-The is_running loop ensures that an actor only processes data when the graph is healthy. By wrapping your state checks in the i! macro, you provide the
-telemetry system with "Veto Reasons." If an actor refuses to shut down, the telemetry will show: "Vetoed: state.has_pending_writes() is true."
+The is_running loop ensures that an actor only processes data when the graph is healthy. By wrapping your logic checks in the i! macro, you provide the
+telemetry system with "Veto Reasons." If an actor refuses to shut down, the telemetry will show exactly which condition failed: "Vetoed: i!(guard.is_idle) is false."
 
 III. Clean vs. Dirty Shutdowns
 
@@ -165,7 +163,7 @@ struct StreamState {
     last_processed_offset: u64,
 }
 
-async fn internal_behavior(
+async fn internal_behavior<C: SteadyContext>(
     mut actor: C,
     rx: SteadyRx<Message>,
     state: SteadyState<StreamState>
@@ -177,7 +175,7 @@ async fn internal_behavior(
     let start_offset = guard.last_processed_offset;
     info!("Restarting from offset: {}", start_offset);
 
-    while actor.is_running(&mut || rx.is_closed_and_empty()) {
+    while actor.is_running(&mut || i!(rx.is_closed_and_empty())) {
         if let Some(msg) = actor.take_async(&mut rx).await {
             process_message(&msg);
             // Update the durable offset
@@ -196,7 +194,7 @@ Scenario: An actor keeps panicking because of a specific data-driven bug. You wa
 log spam or resource exhaustion.
 
 
-async fn internal_behavior(mut actor: C, state: SteadyState<MyState>) -> Result<(), Box<dyn Error>> {
+async fn internal_behavior<C: SteadyContext>(mut actor: C, state: SteadyState<MyState>) -> Result<(), Box<dyn Error>> {
     // Check the framework-provided regeneration count
     if actor.regeneration() > 5 {
         error!("Critical failure: Actor regenerated too many times. Halting.");
@@ -275,7 +273,7 @@ while actor.is_running(&mut || {
     i!(guard.is_idle) && i!(rx.is_closed_and_empty())
 }) {
     guard.is_idle = false;
-    perform_sensitive_work().await;
+    perform_sensitive_work(&mut actor).await;
     guard.is_idle = true;
 }
 

@@ -164,8 +164,41 @@ Summary Best Practices
 This appendix provides advanced patterns for mapping actors to hardware. In Steady State, a Core refers to a logical processor (thread) as seen by the OS,
 and a Troupe is the mechanism used to multiplex actors onto those cores.
 
+### Spotlight: Terminology Check
+
+In earlier versions of some documentation, the spotlight was referred to as a "monitor." In the modern API, we use **Spotlight** to emphasize that you are 
+choosing which channels to illuminate for the telemetry system. 
+
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-1. Estimating Core Usage
+1. Elastic Sharding with Bundles
+
+The most powerful way to use Troupes is in combination with **Bundles**. 
+
+Scenario: You have a high-volume data source and need to distribute the work across 8 CPU cores.
+
+```rust
+// 1. Create a bundle with a Girth of 8
+let (tx_bundle, rx_bundle) = graph.channel_builder()
+    .with_capacity(1000)
+    .build_channel_bundle::<MyData, 8>();
+
+// 2. Create a Troupe to manage the workers
+let mut worker_troupe = graph.actor_troupe();
+
+// 3. Shard the bundle into the troupe
+// This pattern gives each worker its own dedicated channel from the bundle.
+for i in 0..8 {
+    let rx = rx_bundle[i].clone(); 
+    builder.with_name_and_suffix("Worker", i)
+           .build(move |c| worker::run(c, rx), ScheduleAs::MemberOf(&mut worker_troupe));
+}
+```
+
+By using `ScheduleAs::MemberOf`, all 8 workers are multiplexed onto a single OS thread. If you later find this is a bottleneck, simply change 
+`MemberOf` to `SoloAct`, and the framework will automatically spread those same 8 workers across 8 separate CPU cores.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+2. Estimating Core Usage
 
 Before deploying, use this formula to estimate your hardware requirements:
 

@@ -17,7 +17,7 @@ Its only job is to decide which "mode" the actor should operate in based on the 
 
 ```rust
 pub async fn run(context: SteadyActorShadow, rx: SteadyRx<Msg>, tx: SteadyTx<Msg>) -> Result<(), Box<dyn Error>> {
-    // Convert the shadow context into a spotlight (monitor) context
+    // Convert the shadow context into a spotlight instance
     let mut actor = context.into_spotlight([&rx], [&tx]);
 
     // THE SWITCH

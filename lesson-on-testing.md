@@ -36,7 +36,12 @@ The simulated_behavior method takes a list of "Sim Runners" (usually your Rx/Tx 
 side-channel.
 
 
-pub async fn run(context: SteadyActorShadow, rx: SteadyRx<Msg>, tx: SteadyTx<Msg>) -> Result<(), Box<dyn Error>> {
+async fn run<C: SteadyContext>(
+    context: SteadyActorShadow, 
+    rx: SteadyRx<Msg>, 
+    tx: SteadyTx<Msg>
+) -> Result<(), Box<dyn Error>> {
+    // Convert the shadow context into a spotlight instance (for telemetry)
     let mut actor = context.into_spotlight([&rx], [&tx]);
 
     if actor.use_internal_behavior {
@@ -77,7 +82,7 @@ fn test_full_system_flow() -> Result<(), Box<dyn Error>> {
         graph.start();
 
         // 3. Use StageManager to interact with the "Worker" actor
-        let stage = graph.stage_manager();
+        let mut stage = graph.stage_manager();
 
         // Command: Tell the "Worker" to expect a specific message
         stage.actor_perform("Worker", StageWaitFor::Message(MyMsg::default(), Duration::from_secs(1)))?;
@@ -123,7 +128,8 @@ out, and the test will fail.
  2 Name your actors: Use .with_name("Processor") in your builder. The StageManager relies on these names to find the side-channels.
  3 Drop the StageManager Guard: The StageManager holds a lock on the graph's backplane. You must drop it (or let it go out of scope) before calling
    graph.block_until_stopped().
- 4 Use i! in tests: Simulation relies on the is_running loop. If you don't use i!, you lose the ability to see why a test hung in the telemetry.
+ 6 Use i! in tests: Simulation relies on the is_running loop. If you don't use i!, you lose the ability to see why a test hung in the telemetry.
+   The i! macro provides "Veto Reasons" that are recorded when a condition prevents progress or shutdown.
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
