@@ -33,6 +33,28 @@ mod channel_stats_tests {
     }
 
     #[test]
+    fn test_avg_filled_whole_percent_formula() {
+        use crate::actor_stats::ChannelBlock;
+        let mut c = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        // window_bits = 0 => numer = runner; denominator = 10 * capacity = 1000
+        c.current_filled = Some(ChannelBlock {
+            histogram: None,
+            runner: 50_000,
+            sum_of_squares: 0,
+        });
+        assert_eq!(c.avg_filled_whole_percent(), Some(50));
+
+        c.show_avg_filled = false;
+        assert_eq!(c.avg_filled_whole_percent(), None);
+    }
+
+    #[test]
     fn test_avg_latency_none() {
         let computer = ChannelStatsComputer::default();
         assert_eq!(computer.avg_latency(&Duration::from_millis(100)), Ordering::Equal);

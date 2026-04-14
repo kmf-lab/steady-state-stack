@@ -18,7 +18,7 @@ use time::OffsetDateTime;
 use crate::actor_stats::ActorStatsComputer;
 use crate::ActorName;
 use crate::*;
-use crate::channel_stats::ChannelStatsComputer;
+use crate::channel_stats::{ChannelStatsComputer, FilledVisualMode};
 use crate::dot_edge::Edge;
 use crate::dot_node::Node;
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
@@ -70,6 +70,46 @@ fn color_to_rgb(color: &str) -> (u32, u32, u32) {
 /// Converts RGB components to a hex color string.
 fn rgb_to_hex(r: u32, g: u32, b: u32) -> String {
     format!("#{:02X}{:02X}{:02X}", r.min(255), g.min(255), b.min(255))
+}
+
+/// Single hex color: arithmetic mean of lane RGBs (DOT multi-lane / bundle rollup).
+fn hex_color_average(lane_rgbs: &[(u32, u32, u32)]) -> String {
+    if lane_rgbs.is_empty() {
+        return rgb_to_hex(128, 128, 128);
+    }
+    let n = lane_rgbs.len() as u32;
+    let r = lane_rgbs.iter().map(|(r, _, _)| *r).sum::<u32>() / n;
+    let g = lane_rgbs.iter().map(|(_, g, _)| *g).sum::<u32>() / n;
+    let b = lane_rgbs.iter().map(|(_, _, b)| *b).sum::<u32>() / n;
+    rgb_to_hex(r, g, b)
+}
+
+/// Per-resolved-edge color name counts for tooltips (e.g. `Lane colors: 3 red, 120 grey`).
+fn format_lane_color_histogram(lane_colors: &[&'static str]) -> String {
+    use std::collections::BTreeMap;
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for c in lane_colors {
+        *counts.entry(*c).or_insert(0) += 1;
+    }
+    let parts: Vec<String> = counts
+        .iter()
+        .map(|(name, n)| format!("{} {}", n, name))
+        .collect();
+    format!("Lane colors: {}", parts.join(", "))
+}
+
+/// Comma-separated whole-percent avg fill for multi-lane DOT labels (lanes without data show em dash).
+fn format_avg_fill_rollup_line(edges: &[&Edge]) -> String {
+    let parts: Vec<String> = edges
+        .iter()
+        .map(|e| {
+            e.stats_computer
+                .avg_filled_whole_percent()
+                .map(|n| format!("{}%", n))
+                .unwrap_or_else(|| "—".to_string())
+        })
+        .collect();
+    format!("Avg fill: {}\n", parts.join(", "))
 }
 
 /// Builds the Prometheus metrics from the current state.
@@ -198,6 +238,11 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         from: Option<ActorName>,
         to: Option<ActorName>,
         lane_rgbs: Vec<(u32, u32, u32)>,
+        /// Resolved edge colors (after triggers), one per lane — for tooltip histograms.
+        lane_colors: Vec<&'static str>,
+        /// Whole-percent avg fill per lane (`None` if disabled or no window sample).
+        avg_fill_per_lane: Vec<Option<u8>>,
+        show_avg_filled_any: bool,
         summary_label: String,
         combined_type: String,
         partner_name: Option<&'static str>,
@@ -239,11 +284,16 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         let mut sum_total_consumed = 0u128;
         let mut memory_footprint = 0;
         let mut show_memory = false;
+        let mut lane_colors = Vec::with_capacity(edges.len());
+        let mut avg_fill_per_lane = Vec::with_capacity(edges.len());
 
         let is_large_bundle = edges.len() > 20;
+        let show_avg_filled_any = edges.iter().any(|e| e.stats_computer.show_avg_filled);
 
         for e in edges.iter() {
             lane_rgbs.push(color_to_rgb(e.color));
+            lane_colors.push(e.color);
+            avg_fill_per_lane.push(e.stats_computer.avg_filled_whole_percent());
             
             let short_type = e.stats_computer.show_type.unwrap_or("");
             if !short_type.is_empty() {
@@ -264,7 +314,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 // FIX: Show Total (cumulative) on tooltip to match edge label
                 tooltip.push_str("\n Total: ");
                 crate::channel_stats_labels::format_compressed_u128(e.stats_computer.total_consumed, &mut tooltip);
-                let _ = write!(tooltip, "\n Saturation: {}%\n", (e.saturation_score * 100.0) as usize);
+                let _ = write!(tooltip, "\n Instant fill: {}%\n", (e.saturation_score * 100.0) as usize);
             }
 
             ids.push(e.id);
@@ -278,16 +328,37 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             }
         }
 
+        if !is_large_bundle && !lane_colors.is_empty() {
+            let _ = write!(tooltip, "{}\n", format_lane_color_histogram(&lane_colors));
+        }
+
         if is_large_bundle {
             let _ = write!(tooltip, "Summary: {} channels\n", edges.len());
+            if !lane_colors.is_empty() {
+                let _ = write!(tooltip, "{}\n", format_lane_color_histogram(&lane_colors));
+            }
         }
         
         let combined_type = type_list.join("/");
 
+        // Multi-lane avg fill: rebuild first lane's label without "Avg filled" line, then append comma rollup.
+        let mut summary_label = if edges.len() > 1 && show_avg_filled_any {
+            let mut body = String::new();
+            let mut dummy_metric = String::new();
+            first.stats_computer.append_visual_metric_lines(
+                &mut body,
+                &mut dummy_metric,
+                FilledVisualMode::SuppressAvgOnly,
+            );
+            body.push_str(&format_avg_fill_rollup_line(&edges));
+            body
+        } else {
+            first.display_label.clone()
+        };
+
         // CRITICAL: For partnered edges, we must preserve the display_label which contains the
         // rate/filled metrics computed by ChannelStatsComputer. The partner info is prepended
         // to the existing label rather than replacing it entirely.
-        let mut summary_label = first.display_label.clone();
         if is_partnered {
             // Prepend partner identifier to the existing label, don't replace it
             let partner_header = format!("{} [{}]", first.partner.unwrap(), first.bundle_index.unwrap_or(0));
@@ -336,6 +407,9 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             from: first.from,
             to: first.to,
             lane_rgbs,
+            lane_colors,
+            avg_fill_per_lane,
+            show_avg_filled_any,
             summary_label,
             combined_type,
             partner_name: first.partner,
@@ -379,10 +453,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         
         if edges.len() < state.bundle_floor_size {
             for pe in edges {
-                let color_str = pe.lane_rgbs.iter()
-                    .map(|(r, g, b)| rgb_to_hex(*r, *g, *b))
-                    .collect::<Vec<_>>()
-                    .join(if p_key.partner.is_some() { ":black:" } else { ":" });
+                let color_str = hex_color_average(&pe.lane_rgbs);
 
                 render_edge_internal(
                     dot_graph,
@@ -406,21 +477,14 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
             let bundle_capacity = (n as f64) * p_key.sub_capacities.iter().sum::<usize>() as f64;
             let _bundle_util = if bundle_capacity > 0.0 { (sum_traffic / bundle_capacity).clamp(0.0, 1.0) } else { 0.0 };
             
-            // S-Tier: Element-wise summation of index-aligned totals and RGBs
+            // S-Tier: Element-wise summation of index-aligned totals
             let mut bundle_totals = vec![0u128; edges[0].sub_totals.len()];
-            let lane_count = edges[0].lane_rgbs.len();
-            let mut sum_rgbs = vec![(0u32, 0u32, 0u32); lane_count];
             let mut total_memory = 0usize;
             let mut show_mem = false;
             
             for pe in edges {
                 for (i, val) in pe.sub_totals.iter().enumerate() {
                     bundle_totals[i] += val;
-                }
-                for (i, (r, g, b)) in pe.lane_rgbs.iter().enumerate() {
-                    sum_rgbs[i].0 += r;
-                    sum_rgbs[i].1 += g;
-                    sum_rgbs[i].2 += b;
                 }
                 total_memory += pe.memory_footprint;
                 show_mem |= pe.show_memory;
@@ -447,6 +511,15 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                     }
                     crate::channel_stats_labels::format_compressed_u128(*total, &mut header);
                 }
+            }
+            if edges.iter().any(|pe| pe.show_avg_filled_any) {
+                let parts: Vec<String> = edges
+                    .iter()
+                    .flat_map(|pe| pe.avg_fill_per_lane.iter())
+                    .map(|o| o.map(|n| format!("{}%", n)).unwrap_or_else(|| "—".to_string()))
+                    .collect();
+                header.push_str("\nAvg fill: ");
+                header.push_str(&parts.join(", "));
             }
             if !p_key.type_name.is_empty() {
                 header.push_str("\n");
@@ -490,14 +563,22 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 }
             }
 
+            let flat_lane_colors: Vec<&'static str> = edges
+                .iter()
+                .flat_map(|pe| pe.lane_colors.iter().copied())
+                .collect();
+            if !flat_lane_colors.is_empty() {
+                let _ = write!(bundle_tooltip, "\\n{}", format_lane_color_histogram(&flat_lane_colors));
+            }
+
             let is_partnered = p_key.partner.is_some();
             let pen_width = if is_partnered { PARTNER_BUNDLE_PEN_WIDTH } else { BUNDLE_PEN_WIDTH };
 
-            // Calculate average colors per lane and build the final striped string
-            let bundle_color_str = sum_rgbs.iter()
-                .map(|(r, g, b)| rgb_to_hex(r / n as u32, g / n as u32, b / n as u32))
-                .collect::<Vec<_>>()
-                .join(if p_key.partner.is_some() { ":black:" } else { ":" });
+            let all_rgbs: Vec<(u32, u32, u32)> = edges
+                .iter()
+                .flat_map(|pe| pe.lane_rgbs.iter().cloned())
+                .collect();
+            let bundle_color_str = hex_color_average(&all_rgbs);
 
             render_edge_internal(
                 dot_graph,
@@ -1142,6 +1223,129 @@ mod dot_tests {
     // ROLLUP VERIFICATION TESTS - These tests verify that the total_consumed
     // is correctly displayed on both edge labels AND tooltips.
     // ============================================================================
+
+    /// Multi-lane partner group: comma-separated whole-percent avg fill and lane color histogram.
+    #[test]
+    fn test_multi_lane_avg_fill_rollup_and_lane_color_histogram() {
+        use crate::actor_stats::ChannelBlock;
+
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+
+        let mut lane0 = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            show_type: Some("T"),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        lane0.current_filled = Some(ChannelBlock {
+            histogram: None,
+            runner: 10_000,
+            sum_of_squares: 0,
+        });
+
+        let mut lane1 = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            show_type: Some("T"),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        lane1.current_filled = Some(ChannelBlock {
+            histogram: None,
+            runner: 40_000,
+            sum_of_squares: 0,
+        });
+
+        let edges = vec![
+            Edge {
+                id: 0,
+                from: Some(from),
+                to: Some(to),
+                color: "green",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.1,
+                ctl_labels: vec![],
+                stats_computer: lane0,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: Some("L"),
+                bundle_index: Some(0),
+            },
+            Edge {
+                id: 1,
+                from: Some(from),
+                to: Some(to),
+                color: "red",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.4,
+                ctl_labels: vec![],
+                stats_computer: lane1,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: Some("L"),
+                bundle_index: Some(0),
+            },
+        ];
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+            ],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 4,
+        };
+
+        let mut dot_graph = BytesMut::new();
+        build_dot(&state, &mut dot_graph);
+        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+
+        assert!(
+            result.contains("Avg fill: 10%, 40%"),
+            "expected rollup line: {}",
+            result
+        );
+        assert!(
+            result.contains("Lane colors: 1 green, 1 red"),
+            "expected histogram: {}",
+            result
+        );
+    }
 
     /// Test: Edge tooltip uses total_consumed (cumulative), not last_total (inflight)
     /// This verifies the fix - tooltip should match edge label
@@ -1797,6 +2001,6 @@ mod dot_tests {
         // Check for bundle tooltip - look for the header (without trailing newline)
         assert!(result.contains("Bundle (5 chans in 5 groups):"));
         assert!(result.contains("CH#0: TestType"));
-        assert!(result.contains("Saturation: 10%"));
+        assert!(result.contains("Instant fill: 10%"));
     }
 }

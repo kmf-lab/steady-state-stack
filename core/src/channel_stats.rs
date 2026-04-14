@@ -81,6 +81,15 @@ pub struct ChannelStatsComputer {
     pub(crate) show_memory: bool,
 }
 
+/// How DOT multi-lane rollup treats the filled block when rebuilding an edge label from [`ChannelStatsComputer`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FilledVisualMode {
+    /// Full filled block (avg/min/max/percentiles/stddev) — normal `compute` path.
+    Full,
+    /// Omit only the avg filled line so DOT can append a per-lane comma rollup.
+    SuppressAvgOnly,
+}
+
 impl ChannelStatsComputer {
 
     /// Initializes the `ChannelStatsComputer` with metadata and settings.
@@ -404,6 +413,55 @@ impl ChannelStatsComputer {
         }
     }
 
+    /// Rolling-window average fill as a whole percent (0–100), matching [`Self::compute_filled_labels`] / [`channel_stats_labels::compute_labels`] integer path.
+    /// Returns `None` if avg filled is disabled or the window has no `current_filled` sample yet.
+    pub(crate) fn avg_filled_whole_percent(&self) -> Option<u8> {
+        if !self.show_avg_filled {
+            return None;
+        }
+        let current = self.current_filled.as_ref()?;
+        let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
+        let denominator = 10u128.saturating_mul(self.capacity as u128);
+        if denominator == 0 {
+            return None;
+        }
+        let avg_numer = (1u128 * current.runner) >> window_bits;
+        let pct = (avg_numer / denominator).min(100) as u8;
+        Some(pct)
+    }
+
+    /// DOT label body: type lines, optional display labels, rate / filled / latency blocks.
+    pub(crate) fn append_visual_metric_lines(
+        &self,
+        display_label: &mut String,
+        metric_text: &mut String,
+        filled_mode: FilledVisualMode,
+    ) {
+        self.show_type.iter().for_each(|f| {
+            display_label.push_str(f);
+            display_label.push('\n');
+        });
+
+        self.display_labels.as_ref().iter().for_each(|labels| {
+            labels.iter().for_each(|f| {
+                display_label.push_str(f);
+                display_label.push(' ');
+            });
+            display_label.push('\n');
+        });
+
+        if let Some(ref current_rate) = self.current_rate {
+            self.compute_rate_labels(display_label, metric_text, &current_rate);
+        }
+        if let Some(ref current_filled) = self.current_filled {
+            let suppress_avg = matches!(filled_mode, FilledVisualMode::SuppressAvgOnly);
+            self.compute_filled_labels_inner(display_label, metric_text, &current_filled, suppress_avg);
+        }
+        if let Some(ref current_latency) = self.current_latency {
+            self.compute_latency_labels(display_label, metric_text, &current_latency);
+        }
+    }
+
     /// Computes and updates the labels and metrics for the channel.
     ///
     /// # Arguments
@@ -476,42 +534,12 @@ impl ChannelStatsComputer {
             metric_text.push('\n');
         }
 
-        self.show_type.iter().for_each(|f| {
-            display_label.push_str(f);
-            display_label.push('\n');
-        });
-
-        // NOTE: Window info is now moved to the tooltip in dot.rs to keep the graph clean.
-
-        self.display_labels.as_ref().iter().for_each(|labels| {
-            labels.iter().for_each(|f| {
-                display_label.push_str(f);
-                display_label.push(' ');
-            });
-            display_label.push('\n');
-        });
-
-        // // RESTORED: Show Volume and Total on the label if enabled
-        // if self.show_total {
-        //     display_label.push_str("Total: ");
-        //     crate::channel_stats_labels::format_compressed_u128(self.total_consumed, display_label);
-        //     display_label.push('\n');
-        // }
-
         let line_thick = "1".to_string();
 
         // CRITICAL FIX: Previous code used 'dummy_label' here which discarded the visual metrics.
         // The display_label must receive the rate/filled/latency text so it appears on the DOT graph edge.
         // Prometheus metrics are written to metric_text separately within these functions.
-        if let Some(ref current_rate) = self.current_rate {
-            self.compute_rate_labels(display_label, metric_text, &current_rate);
-        }
-        if let Some(ref current_filled) = self.current_filled {
-            self.compute_filled_labels(display_label, metric_text, &current_filled);
-        }
-        if let Some(ref current_latency) = self.current_latency {
-            self.compute_latency_labels(display_label, metric_text, &current_latency);
-        }
+        self.append_visual_metric_lines(display_label, metric_text, FilledVisualMode::Full);
 
         // NOTE: Capacity is now moved to the tooltip in dot.rs.
 
@@ -708,10 +736,17 @@ impl ChannelStatsComputer {
 
     }
 
-    pub(crate) fn compute_filled_labels(&self, display_label: &mut String, metric_target: &mut String, current_block: &&ChannelBlock<u64>) {
+    fn compute_filled_labels_inner(
+        &self,
+        display_label: &mut String,
+        metric_target: &mut String,
+        current_block: &&ChannelBlock<u64>,
+        suppress_avg_filled: bool,
+    ) {
         //NOTE: the runner stores 1000*fill value so we need 100/1000*capacity to get a normal percentage
+        let show_avg = self.show_avg_filled && !suppress_avg_filled;
         let config = ComputeLabelsConfig::channel_config(self, (1u64, 10u64 * self.capacity as u64), (1u64, 1u64), 100
-                                                         , self.show_avg_filled, self.show_min_filled, self.show_max_filled);
+                                                         , show_avg, self.show_min_filled, self.show_max_filled);
         let labels = ComputeLabelsLabels {
             label: "filled",
             unit: "%",
