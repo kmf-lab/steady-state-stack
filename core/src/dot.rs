@@ -67,49 +67,95 @@ fn color_to_rgb(color: &str) -> (u32, u32, u32) {
     }
 }
 
-/// Converts RGB components to a hex color string.
-fn rgb_to_hex(r: u32, g: u32, b: u32) -> String {
-    format!("#{:02X}{:02X}{:02X}", r.min(255), g.min(255), b.min(255))
+/// Writes `#RRGGBB` into `out` (reused across DOT builds to avoid per-edge `String` churn).
+fn rgb_to_hex_into(out: &mut String, r: u32, g: u32, b: u32) {
+    out.clear();
+    let _ = write!(out, "#{:02X}{:02X}{:02X}", r.min(255), g.min(255), b.min(255));
 }
 
 /// Single hex color: arithmetic mean of lane RGBs (DOT multi-lane / bundle rollup).
-fn hex_color_average(lane_rgbs: &[(u32, u32, u32)]) -> String {
+fn hex_color_average_into(out: &mut String, lane_rgbs: &[(u32, u32, u32)]) {
     if lane_rgbs.is_empty() {
-        return rgb_to_hex(128, 128, 128);
+        rgb_to_hex_into(out, 128, 128, 128);
+        return;
     }
     let n = lane_rgbs.len() as u32;
     let r = lane_rgbs.iter().map(|(r, _, _)| *r).sum::<u32>() / n;
     let g = lane_rgbs.iter().map(|(_, g, _)| *g).sum::<u32>() / n;
     let b = lane_rgbs.iter().map(|(_, _, b)| *b).sum::<u32>() / n;
-    rgb_to_hex(r, g, b)
+    rgb_to_hex_into(out, r, g, b);
 }
 
 /// Per-resolved-edge color name counts for tooltips (e.g. `Lane colors: 3 red, 120 grey`).
-fn format_lane_color_histogram(lane_colors: &[&'static str]) -> String {
-    use std::collections::BTreeMap;
-    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+/// Reuses `counts` across calls to avoid allocating a new `BTreeMap` per line.
+fn format_lane_color_histogram_into(
+    counts: &mut BTreeMap<&'static str, usize>,
+    out: &mut String,
+    lane_colors: &[&'static str],
+) {
+    counts.clear();
     for c in lane_colors {
         *counts.entry(*c).or_insert(0) += 1;
     }
-    let parts: Vec<String> = counts
-        .iter()
-        .map(|(name, n)| format!("{} {}", n, name))
-        .collect();
-    format!("Lane colors: {}", parts.join(", "))
+    out.clear();
+    out.push_str("Lane colors: ");
+    let mut first = true;
+    for (name, n) in counts.iter() {
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        let _ = write!(out, "{} {}", n, name);
+    }
 }
 
 /// Comma-separated whole-percent avg fill for multi-lane DOT labels (lanes without data show em dash).
-fn format_avg_fill_rollup_line(edges: &[&Edge]) -> String {
-    let parts: Vec<String> = edges
-        .iter()
-        .map(|e| {
-            e.stats_computer
-                .avg_filled_whole_percent()
-                .map(|n| format!("{}%", n))
-                .unwrap_or_else(|| "—".to_string())
-        })
-        .collect();
-    format!("Avg fill: {}\n", parts.join(", "))
+fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
+    out.clear();
+    out.push_str("Avg fill: ");
+    let mut first = true;
+    for e in edges {
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        match e.stats_computer.avg_filled_whole_percent() {
+            Some(n) => {
+                let _ = write!(out, "{}%", n);
+            }
+            None => out.push('—'),
+        }
+    }
+    out.push('\n');
+}
+
+#[inline]
+fn escape_dot_quotes(out: &mut String, src: &str) {
+    out.clear();
+    out.reserve(src.len());
+    for ch in src.chars() {
+        if ch == '"' {
+            out.push('\'');
+        } else {
+            out.push(ch);
+        }
+    }
+}
+
+#[inline]
+fn escape_node_tooltip_text(out: &mut String, src: &str) {
+    out.clear();
+    out.reserve(src.len().saturating_mul(2));
+    for ch in src.chars() {
+        match ch {
+            '"' => out.push('\''),
+            '\n' => {
+                out.push('\\');
+                out.push('n');
+            }
+            _ => out.push(ch),
+        }
+    }
 }
 
 /// Builds the Prometheus metrics from the current state.
@@ -146,14 +192,39 @@ struct PrimaryGroupKey {
     partner: Option<&'static str>,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct PartnerKey {
+    from: Option<(&'static str, Option<usize>)>,
+    to: Option<(&'static str, Option<usize>)>,
+    partner: Option<&'static str>,
+    bundle_index: Option<usize>,
+    /// Only used if partner is None to keep edges separate.
+    edge_id: Option<usize>,
+}
+
+/// Working buffers for DOT + Prometheus + config JSON (reused each telemetry frame).
+pub struct DotGraphFrames {
+    pub(crate) active_metric: BytesMut,
+    pub(crate) active_graph: BytesMut,
+    /// Small JSON payload built without per-frame `String` allocation on the hot path.
+    pub(crate) config_line: String,
+    /// DOT escapes, rollups, histogram text (used sequentially; not nested).
+    pub(crate) dot_scratch: String,
+    /// `#RRGGBB` for the current edge render (separate from [`DotGraphFrames::dot_scratch`]).
+    pub(crate) hex_line: String,
+    pub(crate) lane_color_counts: BTreeMap<&'static str, usize>,
+    pub(crate) last_generated_graph: Instant,
+}
+
 /// Builds the DOT graph from the current state.
 ///
 /// # Arguments
 ///
 /// * `state` - THE current metric state.
-/// * `dot_graph` - THE buffer to store the DOT graph.
-pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
-    dot_graph.clear(); // Clear the buffer for reuse
+/// * `frames` - Working buffers including the DOT output (`active_graph`).
+pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
+    frames.active_graph.clear(); // Clear the buffer for reuse
+    let dot_graph = &mut frames.active_graph;
 
     dot_graph.put_slice(b"digraph G {\nrankdir=");
     dot_graph.put_slice("LR".as_bytes());
@@ -186,8 +257,8 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         dot_graph.put_slice(node.display_label.as_bytes());
         if !node.tooltip.is_empty() {
             dot_graph.put_slice(b"\", tooltip=\"");
-            let escaped = node.tooltip.replace('"', "'").replace('\n', "\\n");
-            dot_graph.put_slice(escaped.as_bytes());
+            escape_node_tooltip_text(&mut frames.dot_scratch, &node.tooltip);
+            dot_graph.put_slice(frames.dot_scratch.as_bytes());
         }
         if !node.color.is_empty() {
             dot_graph.put_slice(b"\", color=\"");
@@ -213,15 +284,6 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
     });
 
     // Stage 1: Partnering
-    #[derive(PartialEq, Eq, PartialOrd, Ord)]
-    struct PartnerKey {
-        from: Option<(&'static str, Option<usize>)>,
-        to: Option<(&'static str, Option<usize>)>,
-        partner: Option<&'static str>,
-        bundle_index: Option<usize>,
-        edge_id: Option<usize>, // Only used if partner is None to keep them separate
-    }
-
     let mut partner_groups: BTreeMap<PartnerKey, Vec<&Edge>> = BTreeMap::new();
     for edge in state.edges.iter().filter(|e| e.id != usize::MAX && e.from.is_some() && e.to.is_some()) {
         let key = PartnerKey {
@@ -329,13 +391,15 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         }
 
         if !is_large_bundle && !lane_colors.is_empty() {
-            let _ = write!(tooltip, "{}\n", format_lane_color_histogram(&lane_colors));
+            format_lane_color_histogram_into(&mut frames.lane_color_counts, &mut frames.dot_scratch, &lane_colors);
+            let _ = write!(tooltip, "{}\n", frames.dot_scratch);
         }
 
         if is_large_bundle {
             let _ = write!(tooltip, "Summary: {} channels\n", edges.len());
             if !lane_colors.is_empty() {
-                let _ = write!(tooltip, "{}\n", format_lane_color_histogram(&lane_colors));
+                format_lane_color_histogram_into(&mut frames.lane_color_counts, &mut frames.dot_scratch, &lane_colors);
+                let _ = write!(tooltip, "{}\n", frames.dot_scratch);
             }
         }
         
@@ -350,7 +414,8 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 &mut dummy_metric,
                 FilledVisualMode::SuppressAvgOnly,
             );
-            body.push_str(&format_avg_fill_rollup_line(&edges));
+            format_avg_fill_rollup_line_into(&mut frames.dot_scratch, &edges);
+            body.push_str(&frames.dot_scratch);
             body
         } else {
             first.display_label.clone()
@@ -453,7 +518,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
         
         if edges.len() < state.bundle_floor_size {
             for pe in edges {
-                let color_str = hex_color_average(&pe.lane_rgbs);
+                hex_color_average_into(&mut frames.hex_line, &pe.lane_rgbs);
 
                 render_edge_internal(
                     dot_graph,
@@ -462,11 +527,13 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                     p_key.to_name.unwrap_or("unknown"),
                     p_key.to_suffix,
                     &pe.summary_label,
-                    &color_str,
+                    &frames.hex_line,
                     &pe.pen_width,
                     "",
                     p_key.sidecar,
-                    "", "", &pe.tooltip
+                    "", "",
+                    &pe.tooltip,
+                    &mut frames.dot_scratch,
                 );
             }
         } else {
@@ -513,13 +580,20 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 }
             }
             if edges.iter().any(|pe| pe.show_avg_filled_any) {
-                let parts: Vec<String> = edges
-                    .iter()
-                    .flat_map(|pe| pe.avg_fill_per_lane.iter())
-                    .map(|o| o.map(|n| format!("{}%", n)).unwrap_or_else(|| "—".to_string()))
-                    .collect();
                 header.push_str("\nAvg fill: ");
-                header.push_str(&parts.join(", "));
+                let mut first_avg = true;
+                for o in edges.iter().flat_map(|pe| pe.avg_fill_per_lane.iter()) {
+                    if !first_avg {
+                        header.push_str(", ");
+                    }
+                    first_avg = false;
+                    match o {
+                        Some(n) => {
+                            let _ = write!(header, "{}%", n);
+                        }
+                        None => header.push('—'),
+                    }
+                }
             }
             if !p_key.type_name.is_empty() {
                 header.push_str("\n");
@@ -568,7 +642,12 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 .flat_map(|pe| pe.lane_colors.iter().copied())
                 .collect();
             if !flat_lane_colors.is_empty() {
-                let _ = write!(bundle_tooltip, "\\n{}", format_lane_color_histogram(&flat_lane_colors));
+                format_lane_color_histogram_into(
+                    &mut frames.lane_color_counts,
+                    &mut frames.dot_scratch,
+                    &flat_lane_colors,
+                );
+                let _ = write!(bundle_tooltip, "\\n{}", frames.dot_scratch);
             }
 
             let is_partnered = p_key.partner.is_some();
@@ -578,7 +657,7 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 .iter()
                 .flat_map(|pe| pe.lane_rgbs.iter().cloned())
                 .collect();
-            let bundle_color_str = hex_color_average(&all_rgbs);
+            hex_color_average_into(&mut frames.hex_line, &all_rgbs);
 
             render_edge_internal(
                 dot_graph,
@@ -587,11 +666,13 @@ pub(crate) fn build_dot(state: &DotState, dot_graph: &mut BytesMut) {
                 p_key.to_name.unwrap_or("unknown"),
                 p_key.to_suffix,
                 &header,
-                &bundle_color_str,
+                &frames.hex_line,
                 pen_width,
                 ", style=\"bold,dashed\"",
                 p_key.sidecar,
-                "", "", &bundle_tooltip
+                "", "",
+                &bundle_tooltip,
+                &mut frames.dot_scratch,
             );
         }
     }
@@ -612,6 +693,7 @@ fn render_edge_internal(
     headlabel: &str,
     taillabel: &str,
     tooltip: &str,
+    escape_buf: &mut String,
 ) {
     dot_graph.put_slice(b"\"");
     dot_graph.put_slice(from_name.as_bytes());
@@ -624,21 +706,23 @@ fn render_edge_internal(
         dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
     }
     dot_graph.put_slice(b"\" [label=\"");
-    let escaped_label = label.replace('"', "'");
-    dot_graph.put_slice(escaped_label.as_bytes());
+    escape_dot_quotes(escape_buf, label);
+    dot_graph.put_slice(escape_buf.as_bytes());
     
     if !headlabel.is_empty() {
         dot_graph.put_slice(b"\", headlabel=\"");
-        dot_graph.put_slice(headlabel.replace('"', "'").as_bytes());
+        escape_dot_quotes(escape_buf, headlabel);
+        dot_graph.put_slice(escape_buf.as_bytes());
     }
     if !taillabel.is_empty() {
         dot_graph.put_slice(b"\", taillabel=\"");
-        dot_graph.put_slice(taillabel.replace('"', "'").as_bytes());
+        escape_dot_quotes(escape_buf, taillabel);
+        dot_graph.put_slice(escape_buf.as_bytes());
     }
     if !tooltip.is_empty() {
         dot_graph.put_slice(b"\", tooltip=\"");
-        let escaped_tooltip = tooltip.replace('"', "'");
-        dot_graph.put_slice(escaped_tooltip.as_bytes());
+        escape_dot_quotes(escape_buf, tooltip);
+        dot_graph.put_slice(escape_buf.as_bytes());
         
         // NOTE: We intentionally do NOT add labeltooltip here. The tooltip attribute is sufficient
         // for hover information. Adding labeltooltip was causing flickering and black lines in the
@@ -665,13 +749,6 @@ fn render_edge_internal(
         }
         dot_graph.put_slice(b"\"}\n");
     }
-}
-
-/// Represents the frames of a DOT graph, including active metrics and the last graph update.
-pub struct DotGraphFrames {
-    pub(crate) active_metric: BytesMut,
-    pub(crate) active_graph: BytesMut,
-    pub(crate) last_generated_graph: Instant,
 }
 
 /// Applies the node definition to the local state.
@@ -1060,7 +1137,19 @@ mod dot_tests {
     use bytes::BytesMut;
     use std::path::PathBuf;
     use std::fs::remove_file;
+    use std::time::Instant;
 
+    fn test_dot_frames() -> DotGraphFrames {
+        DotGraphFrames {
+            active_metric: BytesMut::new(),
+            active_graph: BytesMut::new(),
+            config_line: String::new(),
+            dot_scratch: String::new(),
+            hex_line: String::new(),
+            lane_color_counts: std::collections::BTreeMap::new(),
+            last_generated_graph: Instant::now(),
+        }
+    }
 
     #[test]
     fn test_node_compute_and_refresh() {
@@ -1207,11 +1296,10 @@ mod dot_tests {
             refresh_rate_ms: 40,
             bundle_floor_size: 4,
         };
-        let mut dot_graph = BytesMut::new();
+        let mut frames = test_dot_frames();
 
-
-        build_dot(&state, &mut dot_graph);
-        let vec = dot_graph.to_vec();
+        build_dot(&state, &mut frames);
+        let vec = frames.active_graph.to_vec();
         let result = String::from_utf8(vec).expect("Invalid UTF-8");
         
         // Updated: Check for the actual output format - node ID is "1" not "1 "
@@ -1331,9 +1419,9 @@ mod dot_tests {
             bundle_floor_size: 4,
         };
 
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
 
         assert!(
             result.contains("Avg fill: 10%, 40%"),
@@ -1416,9 +1504,9 @@ mod dot_tests {
             bundle_floor_size: 4,
         };
 
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
         
         // Edge label should show total_consumed (1000)
         assert!(result.contains("Total: 1000"), "Edge label should show total_consumed: {}", result);
@@ -1500,9 +1588,9 @@ mod dot_tests {
             bundle_floor_size: 4,
         };
 
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
         
         // Each edge shows its own Total in the label (format: "CH0Total: 100")
         assert!(result.contains("Total: 100"), "Edge 0 should show Total: 100: {}", result);
@@ -1588,9 +1676,9 @@ mod dot_tests {
             bundle_floor_size: 4,
         };
 
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
         
         // Large bundle should show summary
         assert!(result.contains("Summary: 25 channels"), "Large bundle should show Summary: {}", result);
@@ -1674,9 +1762,9 @@ mod dot_tests {
             bundle_floor_size: 4,
         };
 
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
         
         // Each partner lane shows its Total in the label
         assert!(result.contains("Total: 1000"), "Partner lane 0 should show Total: 1000: {}", result);
@@ -1991,9 +2079,9 @@ mod dot_tests {
             bundle_floor_size: 4,
         };
 
-        let mut dot_graph = BytesMut::new();
-        build_dot(&state, &mut dot_graph);
-        let result = String::from_utf8(dot_graph.to_vec()).expect("internal error");
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
         
         assert!(result.contains("Bundle: 5x"));
         assert!(result.contains("penwidth=4"));

@@ -3,7 +3,7 @@ use std::error::Error;
 use std::net::{SocketAddr, TcpListener};
 use std::pin::Pin;
 use std::time::{Duration, Instant};
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 #[allow(unused_imports)]
 use log::*;
 use crate::*;
@@ -27,9 +27,9 @@ const GRAPH_DOT_DISK_WRITE_INTERVAL_SECS: u64 = 10;
 
 #[derive(Clone)]
 struct MetricState {
-    doc: Arc<[u8]>,
-    metric: Arc<[u8]>,
-    config: Arc<[u8]>,
+    doc: Bytes,
+    metric: Bytes,
+    config: Bytes,
     /// Elapsed whole seconds at last `logs/graph.dot` disk write (throttle HTTP path).
     last_disk_write: Arc<AtomicU64>,
     start_time: Instant,
@@ -91,9 +91,9 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
 
     // Define a new instance of the state using Arc for zero-copy handoff to readers
     let state = Arc::new(RwLock::new(MetricState {
-        doc: Arc::from(Vec::new()),
-        metric: Arc::from(Vec::new()),
-        config: Arc::from(initial_config.into_bytes()),
+        doc: Bytes::new(),
+        metric: Bytes::new(),
+        config: Bytes::from(initial_config.into_bytes()),
         last_disk_write: Arc::new(AtomicU64::new(0)),
         start_time: Instant::now(),
     }));
@@ -141,8 +141,12 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
 
     let mut frames = DotGraphFrames {
         active_metric: BytesMut::new(),
-        last_generated_graph: Instant::now(),
         active_graph: BytesMut::new(),
+        config_line: String::with_capacity(160),
+        dot_scratch: String::with_capacity(512),
+        hex_line: String::with_capacity(16),
+        lane_color_counts: std::collections::BTreeMap::new(),
+        last_generated_graph: Instant::now(),
     };
     
     // CRITICAL: Track whether we've completed the initial full drain of the channel
@@ -408,22 +412,29 @@ async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHisto
     }
 
     if flush_frame {
-        build_dot(metrics_state, &mut frames.active_graph);
-        let graph_bytes: Arc<[u8]> = Arc::from(&frames.active_graph[..]);
-        
-        build_metric(metrics_state, &mut frames.active_metric);
-        let metric_bytes: Arc<[u8]> = Arc::from(&frames.active_metric[..]);
+        build_dot(metrics_state, frames);
+        let cap_g = frames.active_graph.capacity();
+        let built_graph = std::mem::replace(&mut frames.active_graph, BytesMut::with_capacity(cap_g));
+        let graph_bytes = built_graph.freeze();
 
-        let mut config_json = String::from("{");
+        build_metric(metrics_state, &mut frames.active_metric);
+        let cap_m = frames.active_metric.capacity();
+        let built_metric = std::mem::replace(&mut frames.active_metric, BytesMut::with_capacity(cap_m));
+        let metric_bytes = built_metric.freeze();
+
+        let cap_cfg = frames.config_line.capacity();
+        frames.config_line.clear();
+        let _ = write!(frames.config_line, "{{");
         if let Some((ref c1, ref c2)) = metrics_state.telemetry_colors {
-            let _ = write!(config_json, "\"telemetry_colors\": [\"{}\", \"{}\"],", c1, c2);
+            let _ = write!(frames.config_line, "\"telemetry_colors\": [\"{}\", \"{}\"],", c1, c2);
         } else {
-            //default green
-            let _ = write!(config_json, "\"telemetry_colors\": [\"#00a900\", \"#008000\"],");
+            let _ = write!(frames.config_line, "\"telemetry_colors\": [\"#00a900\", \"#008000\"],");
         }
-        let _ = write!(config_json, "\"refresh_rate_ms\": {}", metrics_state.refresh_rate_ms);
-        config_json.push('}');
-        let config_bytes: Arc<[u8]> = Arc::from(config_json.into_bytes());
+        let _ = write!(frames.config_line, "\"refresh_rate_ms\": {}", metrics_state.refresh_rate_ms);
+        frames.config_line.push('}');
+        let config_bytes = Bytes::from(
+            std::mem::replace(&mut frames.config_line, String::with_capacity(cap_cfg)).into_bytes(),
+        );
 
         // SWAP: Hold the write lock only for the duration of pointer updates
         // This ensures that readers (HTTP handlers) are never blocked by the heavy DOT generation.
@@ -1043,28 +1054,28 @@ mod handle_request_logic_tests {
 
     #[test]
     fn test_handle_request_index() {
-        let state = Arc::new(RwLock::new(MetricState { doc: Arc::from(vec![]), metric: Arc::from(vec![]), config: Arc::from(vec![]), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
+        let state = Arc::new(RwLock::new(MetricState { doc: Bytes::new(), metric: Bytes::new(), config: Bytes::new(), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let stream = MockStream::new("GET / HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_options() {
-        let state = Arc::new(RwLock::new(MetricState { doc: Arc::from(vec![]), metric: Arc::from(vec![]), config: Arc::from(vec![]), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
+        let state = Arc::new(RwLock::new(MetricState { doc: Bytes::new(), metric: Bytes::new(), config: Bytes::new(), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let stream = MockStream::new("OPTIONS / HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_404() {
-        let state = Arc::new(RwLock::new(MetricState { doc: Arc::from(vec![]), metric: Arc::from(vec![]), config: Arc::from(vec![]), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
+        let state = Arc::new(RwLock::new(MetricState { doc: Bytes::new(), metric: Bytes::new(), config: Bytes::new(), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let stream = MockStream::new("GET /unknown HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).unwrap();
     }
 
     #[test]
     fn test_handle_request_assets() {
-        let state = Arc::new(RwLock::new(MetricState { doc: Arc::from(vec![]), metric: Arc::from(vec![]), config: Arc::from(vec![]), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
+        let state = Arc::new(RwLock::new(MetricState { doc: Bytes::new(), metric: Bytes::new(), config: Bytes::new(), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let paths = [
             "/",
             "/index.html",

@@ -84,12 +84,12 @@ mod tests {
     fn test_default_constants() {
         // Under default compilation (no special features)
         assert!(TELEMETRY_SERVER);
-        assert_eq!(BACKPLANE_CAPACITY, 16);
+        assert_eq!(BACKPLANE_CAPACITY, 32);
         assert!(!TELEMETRY_HISTORY);
         assert_eq!(MAX_TELEMETRY_ERROR_RATE_SECONDS, 20);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 256);
         assert_eq!(CONSUMED_MESSAGES_BY_COLLECTOR, 256);
-        assert_eq!(TELEMETRY_SAMPLES_PER_FRAME, 8);
+        assert_eq!(TELEMETRY_SAMPLES_PER_FRAME, 4);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_FEATURE, 256);
         assert_eq!(AGGREGATION_THRESHOLD, 4);
     }
