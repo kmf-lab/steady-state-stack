@@ -46,12 +46,6 @@ impl<S> Default for SteadyState<S> {
 
 impl<S> SteadyState<S> {
 
-    /// new simple state creation
-    fn new() -> Self {
-        new_state()
-    }
-
-
     /// Asynchronously locks the state, initializing it if absent.
     ///
     /// If the state is `None`, the provided `init` closure is called to create the initial state.
