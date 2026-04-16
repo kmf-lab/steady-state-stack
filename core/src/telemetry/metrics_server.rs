@@ -13,7 +13,8 @@ use futures::io;
 use futures::channel::oneshot::Receiver;
 use std::io::Write;
 use std::fmt::Write as FmtWrite;
-use futures_util::{AsyncReadExt, AsyncWriteExt};
+use futures_util::{AsyncReadExt, AsyncWriteExt, FutureExt};
+use futures::select_biased;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -62,13 +63,27 @@ pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>, t
     internal_behavior(ctrl, frame_rate_ms, rx, addr, telemetry_colors, bundle_floor_size).await
 }
 
+/// Wakeup source for [`internal_behavior`]. Timer is listed first in [`select_biased!`] so frame
+/// boundaries are not starved when the telemetry RX stays non-empty.
+#[derive(Clone, Copy, Debug)]
+enum MetricsWake {
+    /// Timelord tick completed (`wait_periodic` returned `true`).
+    TimelordTick,
+    /// At least one `DiagramData` is available; apply only unless shutdown forces publish.
+    Data,
+    /// `wait_periodic` returned `false` (shutdown interrupted the wait).
+    PeriodicInterrupted,
+}
+
 async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx: SteadyRx<DiagramData>, addr: Option<String>, telemetry_colors: Option<(String, String)>, bundle_floor_size: usize) -> Result<(), Box<dyn Error>> {
+    let effective_frame_rate_ms = frame_rate_ms.max(1);
+    let frame_duration = Duration::from_millis(effective_frame_rate_ms);
 
     let mut initial_config = String::from("{");
     if let Some((ref c1, ref c2)) = telemetry_colors {
         let _ = write!(initial_config, "\"telemetry_colors\": [\"{}\", \"{}\"],", c1, c2);
     }
-    let _ = write!(initial_config, "\"refresh_rate_ms\": {}", frame_rate_ms);
+    let _ = write!(initial_config, "\"refresh_rate_ms\": {}", effective_frame_rate_ms);
     initial_config.push('}');
 
     // Define a new instance of the state using Arc for zero-copy handoff to readers
@@ -118,8 +133,8 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
     let mut metrics_state = DotState::default();
     metrics_state.bundle_floor_size = bundle_floor_size;
     metrics_state.telemetry_colors = telemetry_colors;
-    metrics_state.refresh_rate_ms = frame_rate_ms;
-    let mut history = FrameHistory::new(frame_rate_ms);
+    metrics_state.refresh_rate_ms = effective_frame_rate_ms;
+    let mut history = FrameHistory::new(effective_frame_rate_ms);
 
     let mut frames = DotGraphFrames {
         active_metric: BytesMut::new(),
@@ -149,50 +164,36 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
         // Now that we've voted to keep running, we can safely block on the lock.
         let mut rxg = rx.lock().await;
 
-        // 1. Wait for at least one message to arrive in the telemetry channel.
-        let _clean = await_for_any!(
-            ctrl.wait_avail(&mut rxg, 1),
-            ctrl.wait_periodic(Duration::from_millis(frame_rate_ms/2)) //required for smooth paint
-
-        );
-
-        let flush_all = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped]);
-        let mut burst_processed = false;
-
-        // 2. Consume the entire burst of messages but stop early if we have too much
-        // We process all pending updates (NodeDef, ProcessData, VolumeData) to ensure 
-        // our internal `metrics_state` is fully up-to-date before we attempt to 
-        // generate any expensive string-based reports.
-        while let Some(msg) = ctrl.try_take(&mut rxg) {
-            burst_processed = true;
-            process_msg(msg, &mut metrics_state, &mut history, frame_rate_ms).await;
-
-            // CRITICAL: Only enforce time limits after initial drain is complete.
-            // On startup, we want to process ALL pending NodeDef messages to ensure
-            // the first graph we generate is complete, not partial.
-            if initial_drain_complete {
-                //stop early at this point if we are here too long
-                if frames.last_generated_graph.elapsed().as_millis() >= (frame_rate_ms/8) as u128 {
-                    break;// stop early if we have half a frame break
+        // 1) Race timelord frame tick (publish cadence) vs data arrival (apply cadence).
+        //    Timer branch is first so a due tick is not starved when the RX stays ready.
+        let wake = select_biased! {
+            tick_done = ctrl.wait_periodic(frame_duration).fuse() => {
+                if tick_done {
+                    MetricsWake::TimelordTick
+                } else {
+                    MetricsWake::PeriodicInterrupted
                 }
-            }
+            },
+            _data_ready = ctrl.wait_avail(&mut rxg, 1).fuse() => MetricsWake::Data,
+        };
 
+        // 2) Apply: drain all pending telemetry (catch up; may use significant CPU if backlogged).
+        while let Some(msg) = ctrl.try_take(&mut rxg) {
+            process_msg(msg, &mut metrics_state, &mut history, effective_frame_rate_ms).await;
         }
-        
-        // Mark initial drain as complete after first full consumption of the channel.
-        // After this point, we switch to normal frame-limited processing.
+
+        // Mark initial drain complete after the first full pass (startup had no early break).
         if !initial_drain_complete {
             initial_drain_complete = true;
         }
 
-        // We only rebuild the DOT graph and Prometheus text if we are shutting down
-        // OR if enough time has passed to satisfy our target frame rate.
-        let flush_frame = flush_all
-            || burst_processed
-            || frames.last_generated_graph.elapsed().as_millis()
-                  >= frame_rate_ms as u128;
+        let flush_all = ctrl.is_liveliness_in(&[GraphLivelinessState::StopRequested, GraphLivelinessState::Stopped]);
 
-        if flush_frame {
+        // 3) Publish: DOT + Prometheus only on timelord ticks or shutdown—never solely because we applied messages.
+        let should_publish =
+            flush_all || matches!(wake, MetricsWake::TimelordTick);
+
+        if should_publish {
             generate_reports(
                 &mut metrics_state,
                 &mut history,
