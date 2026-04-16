@@ -598,6 +598,8 @@ impl Default for GraphBuilder {
     }
 }
 
+const MIN_MS_RATE: u64 = 100;
+
 impl GraphBuilder {
     /// Creates a `GraphBuilder` configured for production environments.
     ///
@@ -617,7 +619,7 @@ impl GraphBuilder {
             backplane: None,
             proactor_config: Some(ProactorConfig::InterruptDriven),
             iouring_queue_length: 1 << 5,
-            telemtry_production_rate_ms: 40,
+            telemtry_production_rate_ms: MIN_MS_RATE,
             telemetry_colors: None,
             shutdown_barrier: None,
             default_stack_size: None,
@@ -642,7 +644,7 @@ impl GraphBuilder {
             backplane: Some(StageManager::default()),
             proactor_config: Some(ProactorConfig::InterruptDriven),
             iouring_queue_length: 1 << 5,
-            telemtry_production_rate_ms: 40,
+            telemtry_production_rate_ms: MIN_MS_RATE,
             telemetry_colors: None,
             shutdown_barrier: None,
             default_stack_size: None,
@@ -681,7 +683,7 @@ impl GraphBuilder {
     /// A new `GraphBuilder` instance with the updated telemetry rate.
     pub fn with_telemtry_production_rate_ms(&self, ms: u64) -> Self {
         let mut result = self.clone();
-        if ms >= 40 {
+        if ms >= MIN_MS_RATE {
             result.telemtry_production_rate_ms = ms;
         } else {
             warn!("telemetry production rate must be at least 40ms, setting to 40ms");

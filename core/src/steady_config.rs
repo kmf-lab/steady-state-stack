@@ -17,7 +17,7 @@ pub const TELEMETRY_SERVER: bool = true;
 pub const TELEMETRY_SERVER: bool = false;
 
 /// Capacity of the backplane channel for test messages.
-pub const BACKPLANE_CAPACITY: usize = 16;
+pub const BACKPLANE_CAPACITY: usize = 32;
 
 /// Whether telemetry history is enabled (controlled by `telemetry_history` feature).
 #[cfg(feature = "telemetry_history")]
@@ -37,8 +37,7 @@ pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECT
 
 /// Number of telemetry samples to send per frame.
 /// This defines the Nyquist resolution for motion capture.
-/// 32 samples per frame provides 2x the minimum requirement of 16.
-pub const TELEMETRY_SAMPLES_PER_FRAME: usize = 8;
+pub const TELEMETRY_SAMPLES_PER_FRAME: usize = 4;
 
 
 //should be big enought to hold one message for every actor, on graph def we need this much space
