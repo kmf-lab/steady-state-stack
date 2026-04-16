@@ -129,6 +129,23 @@ fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
     out.push('\n');
 }
 
+/// Per-channel hover line: rolling-window avg fill when enabled, else snapshot inflight/capacity.
+fn append_channel_fill_tooltip(tooltip: &mut String, stats: &crate::channel_stats::ChannelStatsComputer, saturation_score: f64) {
+    if stats.show_avg_filled {
+        tooltip.push_str("\n ");
+        match stats.avg_filled_whole_percent() {
+            Some(n) => {
+                let _ = write!(tooltip, "Avg fill: {}%\n", n);
+            }
+            None => {
+                tooltip.push_str("Avg fill: —\n");
+            }
+        }
+    } else {
+        let _ = write!(tooltip, "\n Instant fill: {}%\n", (saturation_score * 100.0) as usize);
+    }
+}
+
 #[inline]
 fn escape_dot_quotes(out: &mut String, src: &str) {
     out.clear();
@@ -376,7 +393,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 // FIX: Show Total (cumulative) on tooltip to match edge label
                 tooltip.push_str("\n Total: ");
                 crate::channel_stats_labels::format_compressed_u128(e.stats_computer.total_consumed, &mut tooltip);
-                let _ = write!(tooltip, "\n Instant fill: {}%\n", (e.saturation_score * 100.0) as usize);
+                append_channel_fill_tooltip(&mut tooltip, &e.stats_computer, e.saturation_score);
             }
 
             ids.push(e.id);
@@ -1515,6 +1532,99 @@ mod dot_tests {
         assert!(result.contains("Total: 1000"), "Tooltip should show total_consumed, not last_total: {}", result);
         
         println!("✓ Edge tooltip correctly uses total_consumed (cumulative): 1000");
+    }
+
+    /// When `avg_filled` is enabled, tooltip shows rolling-window **Avg fill**, not snapshot Instant fill
+    /// (which is often 0% when inflight is drained between samples).
+    #[test]
+    fn test_edge_tooltip_prefers_avg_fill_when_enabled() {
+        use crate::actor_stats::ChannelBlock;
+
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+
+        let mut stats = ChannelStatsComputer::default();
+        stats.capacity = 100;
+        stats.show_total = true;
+        stats.show_avg_filled = true;
+        stats.refresh_rate_in_bits = 0;
+        stats.window_bucket_in_bits = 0;
+        stats.total_consumed = 0;
+        stats.saturation_score = 0.0;
+        stats.current_filled = Some(ChannelBlock {
+            histogram: None,
+            runner: 50_000,
+            sum_of_squares: 0,
+        });
+
+        let edge = Edge {
+            id: 0,
+            from: Some(from),
+            to: Some(to),
+            color: "green",
+            sidecar: false,
+            pen_width: "1".to_string(),
+            saturation_score: 0.0,
+            ctl_labels: vec![],
+            stats_computer: stats,
+            display_label: "edge".to_string(),
+            metric_text: String::new(),
+            partner: None,
+            bundle_index: None,
+        };
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+            ],
+            edges: vec![edge],
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 4,
+        };
+
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
+
+        assert!(
+            result.contains("Avg fill: 50%"),
+            "expected rolling avg fill in tooltip: {}",
+            result
+        );
+        assert!(
+            !result.contains("Instant fill:"),
+            "should not show Instant fill when avg fill is enabled: {}",
+            result
+        );
     }
 
     /// Test: Bundle tooltip uses sum of total_consumed, not sum of last_total

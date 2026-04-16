@@ -227,7 +227,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
 
     fn consume_actor(&self) -> Option<ActorStatus> {
         if let Some(act) = &self.actor {
-            let mut buffer = vec![ActorStatus::default(); steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
+            let mut buffer = vec![ActorStatus::default(); steady_config::TELEMETRY_COLLECTOR_SLICE_MAX + 1];
             let count_of_actor_status_events = {
                 if let Some(mut actor_status_rx) = act.try_lock() {
                     //TODO: if we have no messages then we also do not get any status on graph.dot.
@@ -322,7 +322,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         future_send: &mut Vec<i64>,
     ) -> bool {
         if let Some(take) = &self.take {
-            let mut buffer = vec![[0usize; RXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
+            let mut buffer = vec![[0usize; RXL]; steady_config::TELEMETRY_COLLECTOR_SLICE_MAX + 1];
 
             let count = {
                 if let Some(mut rx_guard) = take.rx.try_lock() {
@@ -376,7 +376,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         future_send: &mut Vec<i64>,
     ) -> bool {
         if let Some(send) = &self.send {
-            let mut buffer = vec![[0usize; TXL]; steady_config::CONSUMED_MESSAGES_BY_COLLECTOR + 1];
+            let mut buffer = vec![[0usize; TXL]; steady_config::TELEMETRY_COLLECTOR_SLICE_MAX + 1];
 
             let count = {
                 if let Some(mut tx_guard) = send.rx.try_lock() {
