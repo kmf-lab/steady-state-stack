@@ -22,12 +22,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 // The name of the metrics server actor
 pub const NAME: &str = "metrics_server";
 
+/// Minimum seconds between writing `logs/graph.dot` when serving `/graph.dot` (logging); shutdown always writes once.
+const GRAPH_DOT_DISK_WRITE_INTERVAL_SECS: u64 = 10;
+
 #[derive(Clone)]
 struct MetricState {
     doc: Arc<[u8]>,
     metric: Arc<[u8]>,
     config: Arc<[u8]>,
-    // Seconds since the server started, used for throttling disk writes
+    /// Elapsed whole seconds at last `logs/graph.dot` disk write (throttle HTTP path).
     last_disk_write: Arc<AtomicU64>,
     start_time: Instant,
 }
@@ -206,7 +209,11 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
 
     }
     //force all the data we may be holding to be written to history and telemetry before we exit
-    generate_reports(&mut metrics_state, &mut history, &mut frames, true, state, true).await;
+    generate_reports(&mut metrics_state, &mut history, &mut frames, true, state.clone(), true).await;
+    {
+        let doc = state.read().doc.clone();
+        let _ = write_graph_dot_to_logs(&doc).await;
+    }
     let timeout = ctrl.is_liveliness_shutdown_timeout();
     let _ = tcp_sender_tx.send(timeout);
     Ok(())
@@ -524,6 +531,21 @@ const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SER
 //   pub trait AsyncWriteExt: AsyncWrite   for the .read
 //   pub trait AsyncReadExt: AsyncRead     for the .write_all
 
+/// Writes the current graph DOT bytes to `logs/graph.dot` (blocking I/O on the pool).
+async fn write_graph_dot_to_logs(data: &[u8]) -> std::io::Result<()> {
+    let _ = std::fs::create_dir_all("logs");
+    if let Ok(file) = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open("logs/graph.dot")
+    {
+        let data_buf = BytesMut::from(data);
+        async_write_all(data_buf, true, file).await?;
+    }
+    Ok(())
+}
+
 async fn handle_request<T>(mut stream: T,
                            state: Arc<RwLock<MetricState>>) -> io::Result<()>
 where
@@ -567,7 +589,8 @@ where
                 let now_secs = locked_state.start_time.elapsed().as_secs();
                 let last_secs = locked_state.last_disk_write.load(Ordering::Relaxed);
                 
-                let can_write = now_secs >= last_secs + 20; //write file every 20 sec
+                let can_write =
+                    now_secs >= last_secs.saturating_add(GRAPH_DOT_DISK_WRITE_INTERVAL_SECS);
                 if can_write {
                     locked_state.last_disk_write.store(now_secs, Ordering::Relaxed);
                 }
@@ -581,16 +604,7 @@ where
             stream.flush().await?;
 
             if can_write {
-                let _ = std::fs::create_dir_all("logs");
-                if let Ok(file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open("logs/graph.dot")
-                {
-                    let data_buf = BytesMut::from(&data[..]);
-                    let _ = async_write_all(data_buf, true, file).await;
-                }
+                let _ = write_graph_dot_to_logs(&data).await;
             }
 
             return Ok(());
