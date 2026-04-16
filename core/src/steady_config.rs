@@ -38,7 +38,7 @@ pub const CONSUMED_MESSAGES_BY_COLLECTOR: usize = REAL_CHANNEL_LENGTH_TO_COLLECT
 /// Number of telemetry samples to send per frame.
 /// This defines the Nyquist resolution for motion capture.
 /// 32 samples per frame provides 2x the minimum requirement of 16.
-pub const TELEMETRY_SAMPLES_PER_FRAME: usize = 32;
+pub const TELEMETRY_SAMPLES_PER_FRAME: usize = 8;
 
 
 //should be big enought to hold one message for every actor, on graph def we need this much space
@@ -90,7 +90,7 @@ mod tests {
         assert_eq!(MAX_TELEMETRY_ERROR_RATE_SECONDS, 20);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 256);
         assert_eq!(CONSUMED_MESSAGES_BY_COLLECTOR, 256);
-        assert_eq!(TELEMETRY_SAMPLES_PER_FRAME, 32);
+        assert_eq!(TELEMETRY_SAMPLES_PER_FRAME, 8);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_FEATURE, 256);
         assert_eq!(AGGREGATION_THRESHOLD, 4);
     }
