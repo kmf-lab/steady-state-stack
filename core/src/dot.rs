@@ -1183,7 +1183,6 @@ mod dot_tests {
             thread_info: None,
             bool_blocking: false,
         };
-        let total_work_ns = 1000u128;
         let mut node = Node {
             id: Some(ActorName::new("1",None)),
             color: "grey",
@@ -1198,7 +1197,7 @@ mod dot_tests {
             bool_stalled: false,
             work_info: None
         };
-        node.compute_and_refresh(actor_status, total_work_ns);
+        node.compute_and_refresh(actor_status);
         assert_eq!(node.color, "grey");
         assert_eq!(node.pen_width, NODE_PEN_WIDTH);
     }
@@ -1984,7 +1983,6 @@ mod dot_tests {
             thread_info: None,
             bool_blocking: false,
         };
-        let total_work_ns = 1000u128;
         let mut node = Node {
             id: Some(ActorName::new("test_node", None)),
             color: "grey",
@@ -2000,8 +1998,9 @@ mod dot_tests {
             work_info: None
 
         };
-        node.compute_and_refresh(actor_status, total_work_ns);
-        // This should trigger THE load calculation branch
+        node.compute_and_refresh(actor_status);
+        // Local load: 100 * (500-100)/500 = 80; mCPU: 1024 - (100*1024/500) = 820.
+        assert_eq!(node.work_info, Some((820, 80)));
     }
 
     #[test]

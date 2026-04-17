@@ -368,24 +368,19 @@ async fn process_msg(
             metrics_state.seq = seq;
         },
         DiagramData::NodeProcessData(_seq, actor_status) => {
-            let total_work_ns: u128 = actor_status.iter().map(|status| {
-                assert!(status.unit_total_ns >= status.await_total_ns,
-                "unit_total_ns:{:?} await_total_ns:{:?}",
-                status.unit_total_ns,
-                status.await_total_ns);
-                (status.unit_total_ns - status.await_total_ns) as u128
-            }).sum();
-
-
-            for status in  actor_status.iter() {
+            for status in actor_status.iter() {
+                assert!(
+                    status.unit_total_ns >= status.await_total_ns,
+                    "unit_total_ns:{:?} await_total_ns:{:?}",
+                    status.unit_total_ns,
+                    status.await_total_ns
+                );
                 let ident = status.ident;
 
                 if let Some(node) = metrics_state.nodes.get_mut(ident.id) {
-                    node.compute_and_refresh(*status, total_work_ns);
+                    node.compute_and_refresh(*status);
                 }
             }
-
-
         },
         DiagramData::ChannelVolumeData(seq, sparse_data) => {
             sparse_data.iter().for_each(|(id, t, s)| {
