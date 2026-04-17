@@ -3,27 +3,27 @@
 //! computing and refreshing metrics, building DOT and Prometheus outputs, and managing historical data.
 
 use log::*;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
-use std::fs::{create_dir_all, OpenOptions};
+use std::fs::{OpenOptions, create_dir_all};
 use std::path::PathBuf;
-use std::collections::{HashMap, BTreeMap};
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::time::Instant;
 use bytes::{BufMut, BytesMut};
-use time::macros::format_description;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 use time::OffsetDateTime;
+use time::macros::format_description;
 
-use crate::actor_stats::ActorStatsComputer;
 use crate::ActorName;
-use crate::*;
+use crate::actor_stats::ActorStatsComputer;
 use crate::channel_stats::{ChannelStatsComputer, FilledVisualMode};
 use crate::dot_edge::Edge;
 use crate::dot_node::Node;
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::telemetry::metrics_server;
+use crate::*;
 
 /// Represents the state of metrics for the graph, including nodes and edges.
 #[derive(Default)]
@@ -36,18 +36,18 @@ pub struct DotState {
     pub(crate) bundle_floor_size: usize,
 }
 
-#[derive(Default,Clone,Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct RemoteDetails {
-   pub(crate) ips: String,
-   pub(crate) match_on: String,
-   pub(crate) tech:  &'static str,
-   pub(crate) direction: &'static str, //  in OR out
+    pub(crate) ips: String,
+    pub(crate) match_on: String,
+    pub(crate) tech: &'static str,
+    pub(crate) direction: &'static str, //  in OR out
 }
 
 /// The default pen width for nodes in the DOT graph.
-pub(crate) const NODE_PEN_WIDTH: &str = "3"; 
+pub(crate) const NODE_PEN_WIDTH: &str = "3";
 /// The default pen width for edges in the DOT graph.
-pub(crate) const EDGE_PEN_WIDTH: &str = "1"; 
+pub(crate) const EDGE_PEN_WIDTH: &str = "1";
 /// The pen width for bundles of single kind of channels.
 pub(crate) const BUNDLE_PEN_WIDTH: &str = "4";
 /// The pen width for bundles of partnered channels.
@@ -70,7 +70,13 @@ fn color_to_rgb(color: &str) -> (u32, u32, u32) {
 /// Writes `#RRGGBB` into `out` (reused across DOT builds to avoid per-edge `String` churn).
 fn rgb_to_hex_into(out: &mut String, r: u32, g: u32, b: u32) {
     out.clear();
-    let _ = write!(out, "#{:02X}{:02X}{:02X}", r.min(255), g.min(255), b.min(255));
+    let _ = write!(
+        out,
+        "#{:02X}{:02X}{:02X}",
+        r.min(255),
+        g.min(255),
+        b.min(255)
+    );
 }
 
 /// Single hex color: arithmetic mean of lane RGBs (DOT multi-lane / bundle rollup).
@@ -130,7 +136,11 @@ fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
 }
 
 /// Per-channel hover line: rolling-window avg fill when enabled, else snapshot inflight/capacity.
-fn append_channel_fill_tooltip(tooltip: &mut String, stats: &crate::channel_stats::ChannelStatsComputer, saturation_score: f64) {
+fn append_channel_fill_tooltip(
+    tooltip: &mut String,
+    stats: &crate::channel_stats::ChannelStatsComputer,
+    saturation_score: f64,
+) {
     if stats.show_avg_filled {
         tooltip.push_str("\n ");
         match stats.avg_filled_whole_percent() {
@@ -142,7 +152,11 @@ fn append_channel_fill_tooltip(tooltip: &mut String, stats: &crate::channel_stat
             }
         }
     } else {
-        let _ = write!(tooltip, "\n Instant fill: {}%\n", (saturation_score * 100.0) as usize);
+        let _ = write!(
+            tooltip,
+            "\n Instant fill: {}%\n",
+            (saturation_score * 100.0) as usize
+        );
     }
 }
 
@@ -184,13 +198,17 @@ fn escape_node_tooltip_text(out: &mut String, src: &str) {
 pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
     txt_metric.clear(); // Clear the buffer for reuse
 
-    state.nodes.iter().filter(|n| {
-        n.id.is_some()
-    }).for_each(|node| {
-        txt_metric.put_slice(node.metric_text.as_bytes());
-    });
+    state
+        .nodes
+        .iter()
+        .filter(|n| n.id.is_some())
+        .for_each(|node| {
+            txt_metric.put_slice(node.metric_text.as_bytes());
+        });
 
-    state.edges.iter()
+    state
+        .edges
+        .iter()
         .filter(|e| e.id != usize::MAX)
         .for_each(|edge| {
             txt_metric.put_slice(edge.metric_text.as_bytes());
@@ -255,60 +273,71 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
     dot_graph.put_slice(b"edge [color=white, fontcolor=white];\n");
     dot_graph.put_slice(b"graph [bgcolor=black];\n");
 
-    state.nodes.iter().filter(|n| {
-        // Only fully defined nodes, some may be in the process of being defined
-        n.id.is_some()
-    }).for_each(|node| {
-        dot_graph.put_slice(b"\"");
+    state
+        .nodes
+        .iter()
+        .filter(|n| {
+            // Only fully defined nodes, some may be in the process of being defined
+            n.id.is_some()
+        })
+        .for_each(|node| {
+            dot_graph.put_slice(b"\"");
 
-        if let Some(f) = node.id {
-            dot_graph.put_slice(f.name.as_bytes());
-            if let Some(s) = f.suffix {
-                dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+            if let Some(f) = node.id {
+                dot_graph.put_slice(f.name.as_bytes());
+                if let Some(s) = f.suffix {
+                    dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+                }
+            } else {
+                dot_graph.put_slice(b"No Name");
             }
-        } else {
-            dot_graph.put_slice(b"No Name");
-        }
 
-        dot_graph.put_slice(b"\" [label=\"");
-        dot_graph.put_slice(node.display_label.as_bytes());
-        if !node.tooltip.is_empty() {
-            dot_graph.put_slice(b"\", tooltip=\"");
-            escape_node_tooltip_text(&mut frames.dot_scratch, &node.tooltip);
-            dot_graph.put_slice(frames.dot_scratch.as_bytes());
-        }
-        if !node.color.is_empty() {
-            dot_graph.put_slice(b"\", color=\"");
-            dot_graph.put_slice(node.color.as_bytes());
-        }
-        dot_graph.put_slice(b"\", penwidth=");
-        dot_graph.put_slice(node.pen_width.as_bytes());
-        dot_graph.put_slice(b" ");
+            dot_graph.put_slice(b"\" [label=\"");
+            dot_graph.put_slice(node.display_label.as_bytes());
+            if !node.tooltip.is_empty() {
+                dot_graph.put_slice(b"\", tooltip=\"");
+                escape_node_tooltip_text(&mut frames.dot_scratch, &node.tooltip);
+                dot_graph.put_slice(frames.dot_scratch.as_bytes());
+            }
+            if !node.color.is_empty() {
+                dot_graph.put_slice(b"\", color=\"");
+                dot_graph.put_slice(node.color.as_bytes());
+            }
+            dot_graph.put_slice(b"\", penwidth=");
+            dot_graph.put_slice(node.pen_width.as_bytes());
+            dot_graph.put_slice(b" ");
 
-        if let Some(remote) = &node.remote_details {
-            dot_graph.put_slice(b"/* remote_ips='");
-            dot_graph.put_slice(remote.ips.as_bytes());
-            dot_graph.put_slice(b"', match_on='");
-            dot_graph.put_slice(remote.match_on.as_bytes());
-            dot_graph.put_slice(b"', direction='");
-            dot_graph.put_slice(remote.direction.as_bytes());
-            dot_graph.put_slice(b"', tech='");
-            dot_graph.put_slice(remote.tech.as_bytes());
-            dot_graph.put_slice(b"' */");
-        };
-        dot_graph.put_slice(b"];\n");
-
-    });
+            if let Some(remote) = &node.remote_details {
+                dot_graph.put_slice(b"/* remote_ips='");
+                dot_graph.put_slice(remote.ips.as_bytes());
+                dot_graph.put_slice(b"', match_on='");
+                dot_graph.put_slice(remote.match_on.as_bytes());
+                dot_graph.put_slice(b"', direction='");
+                dot_graph.put_slice(remote.direction.as_bytes());
+                dot_graph.put_slice(b"', tech='");
+                dot_graph.put_slice(remote.tech.as_bytes());
+                dot_graph.put_slice(b"' */");
+            };
+            dot_graph.put_slice(b"];\n");
+        });
 
     // Stage 1: Partnering
     let mut partner_groups: BTreeMap<PartnerKey, Vec<&Edge>> = BTreeMap::new();
-    for edge in state.edges.iter().filter(|e| e.id != usize::MAX && e.from.is_some() && e.to.is_some()) {
+    for edge in state
+        .edges
+        .iter()
+        .filter(|e| e.id != usize::MAX && e.from.is_some() && e.to.is_some())
+    {
         let key = PartnerKey {
             from: edge.from.map(|n| (n.name, n.suffix)),
             to: edge.to.map(|n| (n.name, n.suffix)),
             partner: edge.partner,
             bundle_index: edge.bundle_index,
-            edge_id: if edge.partner.is_none() { Some(edge.id) } else { None },
+            edge_id: if edge.partner.is_none() {
+                Some(edge.id)
+            } else {
+                None
+            },
         };
         partner_groups.entry(key).or_default().push(edge);
     }
@@ -343,7 +372,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
     for (_, mut edges) in partner_groups {
         // S-Tier: Sort edges by type name to ensure index-aligned vectors are stable across the bundle
         edges.sort_by_key(|e| e.stats_computer.show_type.unwrap_or(""));
-        
+
         let first = edges[0];
         let is_partnered = first.partner.is_some();
         let mut lane_rgbs = Vec::new();
@@ -351,7 +380,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
         let mut ctl_labels = Vec::new();
         let mut ids = Vec::new();
         let mut tooltip = String::new();
-        
+
         // Add Window info to the top of the tooltip if active
         if !first.stats_computer.time_label.is_empty() {
             let _ = write!(tooltip, "Window: {}\n", first.stats_computer.time_label);
@@ -373,7 +402,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             lane_rgbs.push(color_to_rgb(e.color));
             lane_colors.push(e.color);
             avg_fill_per_lane.push(e.stats_computer.avg_filled_whole_percent());
-            
+
             let short_type = e.stats_computer.show_type.unwrap_or("");
             if !short_type.is_empty() {
                 type_list.push(short_type);
@@ -382,24 +411,36 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             sub_totals.push(e.stats_computer.total_consumed);
             memory_footprint += e.stats_computer.memory_footprint;
             show_memory |= e.stats_computer.show_memory;
-            
+
             if !is_large_bundle {
-                let _ = write!(tooltip, "CH#{}: {}\n", 
-                    e.id, 
-                    if short_type.is_empty() { "Data" } else { short_type }
+                let _ = write!(
+                    tooltip,
+                    "CH#{}: {}\n",
+                    e.id,
+                    if short_type.is_empty() {
+                        "Data"
+                    } else {
+                        short_type
+                    }
                 );
                 tooltip.push_str(" Capacity: ");
-                crate::channel_stats_labels::format_compressed_u128(e.stats_computer.capacity as u128, &mut tooltip);
+                crate::channel_stats_labels::format_compressed_u128(
+                    e.stats_computer.capacity as u128,
+                    &mut tooltip,
+                );
                 // FIX: Show Total (cumulative) on tooltip to match edge label
                 tooltip.push_str("\n Total: ");
-                crate::channel_stats_labels::format_compressed_u128(e.stats_computer.total_consumed, &mut tooltip);
+                crate::channel_stats_labels::format_compressed_u128(
+                    e.stats_computer.total_consumed,
+                    &mut tooltip,
+                );
                 append_channel_fill_tooltip(&mut tooltip, &e.stats_computer, e.saturation_score);
             }
 
             ids.push(e.id);
             sum_saturation += e.saturation_score;
             sum_total_consumed += e.stats_computer.total_consumed;
-            
+
             for &l in &e.ctl_labels {
                 if !ctl_labels.contains(&l) {
                     ctl_labels.push(l);
@@ -408,18 +449,26 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
         }
 
         if !is_large_bundle && !lane_colors.is_empty() {
-            format_lane_color_histogram_into(&mut frames.lane_color_counts, &mut frames.dot_scratch, &lane_colors);
+            format_lane_color_histogram_into(
+                &mut frames.lane_color_counts,
+                &mut frames.dot_scratch,
+                &lane_colors,
+            );
             let _ = write!(tooltip, "{}\n", frames.dot_scratch);
         }
 
         if is_large_bundle {
             let _ = write!(tooltip, "Summary: {} channels\n", edges.len());
             if !lane_colors.is_empty() {
-                format_lane_color_histogram_into(&mut frames.lane_color_counts, &mut frames.dot_scratch, &lane_colors);
+                format_lane_color_histogram_into(
+                    &mut frames.lane_color_counts,
+                    &mut frames.dot_scratch,
+                    &lane_colors,
+                );
                 let _ = write!(tooltip, "{}\n", frames.dot_scratch);
             }
         }
-        
+
         let combined_type = type_list.join("/");
 
         // Multi-lane avg fill: rebuild first lane's label without "Avg filled" line, then append comma rollup.
@@ -443,23 +492,30 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
         // to the existing label rather than replacing it entirely.
         if is_partnered {
             // Prepend partner identifier to the existing label, don't replace it
-            let partner_header = format!("{} [{}]", first.partner.unwrap(), first.bundle_index.unwrap_or(0));
-            
+            let partner_header = format!(
+                "{} [{}]",
+                first.partner.unwrap(),
+                first.bundle_index.unwrap_or(0)
+            );
+
             // Build partner info line with memory if needed
             let mut partner_info = partner_header;
             if show_memory {
                 partner_info.push_str(" (");
-                crate::channel_stats_labels::format_compressed_u128(memory_footprint as u128, &mut partner_info);
+                crate::channel_stats_labels::format_compressed_u128(
+                    memory_footprint as u128,
+                    &mut partner_info,
+                );
                 partner_info.push_str("B)");
             }
-            
+
             // Combine: Partner info first, then original label (which contains rate/fill from ChannelStatsComputer)
             // This ensures avg_rate and other dynamic metrics are preserved on the label
             summary_label = format!("{}\n{}", partner_info, summary_label);
         }
 
         // FIX: Always show the total(s) on the edge label itself, not just in the tooltip.
-        // For bundled edges that will be rendered individually (len < bundle_floor_size), 
+        // For bundled edges that will be rendered individually (len < bundle_floor_size),
         // show all totals separated by commas. For single edges, show the total directly.
         // For large bundles (len >= bundle_floor_size), totals are handled in the bundle rendering section below.
         if first.stats_computer.show_total {
@@ -467,7 +523,10 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             if edges.len() == 1 {
                 // Single edge: show total directly
                 total_label.push_str("Total: ");
-                crate::channel_stats_labels::format_compressed_u128(first.stats_computer.total_consumed, &mut total_label);
+                crate::channel_stats_labels::format_compressed_u128(
+                    first.stats_computer.total_consumed,
+                    &mut total_label,
+                );
             } else if edges.len() < state.bundle_floor_size {
                 // Bundled edges (but not large enough to be rendered as bundle): show all totals separated by commas
                 total_label.push_str("Totals: ");
@@ -483,7 +542,6 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 summary_label = format!("{}{}\n", summary_label, total_label);
             }
         }
-
 
         partnered_edges.push(PartneredEdge {
             from: first.from,
@@ -503,7 +561,11 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             sum_total_consumed,
             ids,
             ctl_labels,
-            pen_width: if is_partnered { PARTNER_BUNDLE_PEN_WIDTH.to_string() } else { first.pen_width.clone() },
+            pen_width: if is_partnered {
+                PARTNER_BUNDLE_PEN_WIDTH.to_string()
+            } else {
+                first.pen_width.clone()
+            },
             memory_footprint,
             show_memory,
             show_total: first.stats_computer.show_total,
@@ -532,7 +594,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
 
     for p_key in sorted_primary {
         let edges = &primary_groups[p_key];
-        
+
         if edges.len() < state.bundle_floor_size {
             for pe in edges {
                 hex_color_average_into(&mut frames.hex_line, &pe.lane_rgbs);
@@ -548,7 +610,8 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                     &pe.pen_width,
                     "",
                     p_key.sidecar,
-                    "", "",
+                    "",
+                    "",
                     &pe.tooltip,
                     &mut frames.dot_scratch,
                 );
@@ -557,15 +620,22 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             // Render as Bundle
             let n = edges.len();
             let total_channels: usize = edges.iter().map(|e| e.ids.len()).sum();
-            let sum_traffic: f64 = edges.iter().map(|e| e.saturation_score * e.sub_capacities.iter().sum::<usize>() as f64).sum();
+            let sum_traffic: f64 = edges
+                .iter()
+                .map(|e| e.saturation_score * e.sub_capacities.iter().sum::<usize>() as f64)
+                .sum();
             let bundle_capacity = (n as f64) * p_key.sub_capacities.iter().sum::<usize>() as f64;
-            let _bundle_util = if bundle_capacity > 0.0 { (sum_traffic / bundle_capacity).clamp(0.0, 1.0) } else { 0.0 };
-            
+            let _bundle_util = if bundle_capacity > 0.0 {
+                (sum_traffic / bundle_capacity).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
             // S-Tier: Element-wise summation of index-aligned totals
             let mut bundle_totals = vec![0u128; edges[0].sub_totals.len()];
             let mut total_memory = 0usize;
             let mut show_mem = false;
-            
+
             for pe in edges {
                 for (i, val) in pe.sub_totals.iter().enumerate() {
                     bundle_totals[i] += val;
@@ -574,7 +644,10 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 show_mem |= pe.show_memory;
             }
 
-            let mut all_labels: Vec<&'static str> = edges.iter().flat_map(|e| e.ctl_labels.iter().cloned()).collect();
+            let mut all_labels: Vec<&'static str> = edges
+                .iter()
+                .flat_map(|e| e.ctl_labels.iter().cloned())
+                .collect();
             all_labels.sort();
             all_labels.dedup();
 
@@ -583,7 +656,10 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
 
             if show_mem {
                 header.push_str(" (");
-                crate::channel_stats_labels::format_compressed_u128(total_memory as u128, &mut header);
+                crate::channel_stats_labels::format_compressed_u128(
+                    total_memory as u128,
+                    &mut header,
+                );
                 header.push_str("B)");
             }
             // FIX: Show comma-separated totals for each partner type in the bundle, not a single aggregated total
@@ -637,8 +713,13 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 if p_key.sub_capacities.len() > 1 {
                     bundle_tooltip.push_str("\\n Capacities: (");
                     for (i, cap) in p_key.sub_capacities.iter().enumerate() {
-                        if i > 0 { bundle_tooltip.push_str(", "); }
-                        crate::channel_stats_labels::format_compressed_u128(*cap as u128, &mut bundle_tooltip);
+                        if i > 0 {
+                            bundle_tooltip.push_str(", ");
+                        }
+                        crate::channel_stats_labels::format_compressed_u128(
+                            *cap as u128,
+                            &mut bundle_tooltip,
+                        );
                     }
                     bundle_tooltip.push_str(")");
                 }
@@ -668,7 +749,11 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             }
 
             let is_partnered = p_key.partner.is_some();
-            let pen_width = if is_partnered { PARTNER_BUNDLE_PEN_WIDTH } else { BUNDLE_PEN_WIDTH };
+            let pen_width = if is_partnered {
+                PARTNER_BUNDLE_PEN_WIDTH
+            } else {
+                BUNDLE_PEN_WIDTH
+            };
 
             let all_rgbs: Vec<(u32, u32, u32)> = edges
                 .iter()
@@ -687,7 +772,8 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 pen_width,
                 ", style=\"bold,dashed\"",
                 p_key.sidecar,
-                "", "",
+                "",
+                "",
                 &bundle_tooltip,
                 &mut frames.dot_scratch,
             );
@@ -725,7 +811,7 @@ fn render_edge_internal(
     dot_graph.put_slice(b"\" [label=\"");
     escape_dot_quotes(escape_buf, label);
     dot_graph.put_slice(escape_buf.as_bytes());
-    
+
     if !headlabel.is_empty() {
         dot_graph.put_slice(b"\", headlabel=\"");
         escape_dot_quotes(escape_buf, headlabel);
@@ -740,7 +826,7 @@ fn render_edge_internal(
         dot_graph.put_slice(b"\", tooltip=\"");
         escape_dot_quotes(escape_buf, tooltip);
         dot_graph.put_slice(escape_buf.as_bytes());
-        
+
         // NOTE: We intentionally do NOT add labeltooltip here. The tooltip attribute is sufficient
         // for hover information. Adding labeltooltip was causing flickering and black lines in the
         // graph visualization, likely due to parsing issues when the tooltip contains newlines.
@@ -801,25 +887,39 @@ pub fn apply_node_def(
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
-                work_info: None
+                work_info: None,
             }
         });
     }
     local_state.nodes[id].id = Some(actor.ident.label);
     local_state.nodes[id].remote_details = actor.remote_details.clone();
     local_state.nodes[id].display_label = if let Some(suf) = actor.ident.label.suffix {
-        format!("{}{}\n",actor.ident.label.name,suf)
+        format!("{}{}\n", actor.ident.label.name, suf)
     } else {
-        format!("{}\n",actor.ident.label.name)
+        format!("{}\n", actor.ident.label.name)
     };
     local_state.nodes[id].tooltip = String::new();
-    local_state.nodes[id].stats_computer.init(actor.clone(), frame_rate_ms);
+    local_state.nodes[id]
+        .stats_computer
+        .init(actor.clone(), frame_rate_ms);
 
     // Edges are defined by both the sender and the receiver
     // We need to record both monitors in this edge as to and from
     // actor.ident.id.label
-    define_unified_edges(local_state, actor.ident.label, channels_in, true, frame_rate_ms);
-    define_unified_edges(local_state, actor.ident.label, channels_out, false, frame_rate_ms);
+    define_unified_edges(
+        local_state,
+        actor.ident.label,
+        channels_in,
+        true,
+        frame_rate_ms,
+    );
+    define_unified_edges(
+        local_state,
+        actor.ident.label,
+        channels_out,
+        false,
+        frame_rate_ms,
+    );
 }
 
 /// Defines unified edges in the local state.
@@ -831,7 +931,13 @@ pub fn apply_node_def(
 /// * `mdvec` - THE metadata of the channels.
 /// * `set_to` - A boolean indicating if the edges are set to the node.
 /// * `frame_rate_ms` - THE frame rate in milliseconds.
-fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec: &[Arc<ChannelMetaData>], set_to: bool, frame_rate_ms: u64) {
+fn define_unified_edges(
+    local_state: &mut DotState,
+    node_name: ActorName,
+    mdvec: &[Arc<ChannelMetaData>],
+    set_to: bool,
+    frame_rate_ms: u64,
+) {
     mdvec.iter().for_each(|meta| {
         let idx = meta.id;
         // info!("define_unified_edges: {} {} {}", idx, node_id, set_to);
@@ -862,20 +968,30 @@ fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec:
                 edge.to = Some(node_name);
             } else {
                 if !Some(node_name).eq(&edge.to) {
-                    warn!("internal error: edge.to was {:?} but now {:?}",edge.to.expect("to"), node_name);
+                    warn!(
+                        "internal error: edge.to was {:?} but now {:?}",
+                        edge.to.expect("to"),
+                        node_name
+                    );
                 }
             }
         } else if edge.from.is_none() {
             edge.from = Some(node_name);
         } else {
             if !Some(node_name).eq(&edge.from) {
-                warn!("internal error: edge.from was {:?} but now {:?}",edge.from.expect("from"), node_name);
+                warn!(
+                    "internal error: edge.from was {:?} but now {:?}",
+                    edge.from.expect("from"),
+                    node_name
+                );
             }
         }
 
         // Collect the labels that need to be added
         // This is redundant but provides safety if two different label lists are in play
-        let labels_to_add: Vec<_> = meta.labels.iter()
+        let labels_to_add: Vec<_> = meta
+            .labels
+            .iter()
             .filter(|f| !edge.ctl_labels.contains(f))
             .cloned() // Clone the items to be added
             .collect();
@@ -886,16 +1002,15 @@ fn define_unified_edges(local_state: &mut DotState, node_name: ActorName, mdvec:
 
         if let Some(node_from) = edge.from {
             if let Some(node_to) = edge.to {
-                    if edge.stats_computer.capacity == 0 {
-                        edge.stats_computer.init(meta, node_from, node_to, frame_rate_ms);
-                    }
-                    edge.sidecar = meta.connects_sidecar;
-                    edge.partner = meta.partner;
-                    edge.bundle_index = meta.bundle_index;
+                if edge.stats_computer.capacity == 0 {
+                    edge.stats_computer
+                        .init(meta, node_from, node_to, frame_rate_ms);
+                }
+                edge.sidecar = meta.connects_sidecar;
+                edge.partner = meta.partner;
+                edge.bundle_index = meta.bundle_index;
             }
         }
-
-
     });
 }
 
@@ -923,12 +1038,12 @@ impl FrameHistory {
     ///
     /// A new `FrameHistory` instance.
     pub fn new(ms_rate: u64) -> FrameHistory {
-        let mut buf = BytesMut::with_capacity(HISTORY_WRITE_BLOCK_SIZE*2);
+        let mut buf = BytesMut::with_capacity(HISTORY_WRITE_BLOCK_SIZE * 2);
 
         //set history file header with key information about our run
         //
         //what time did we start
-        let now:u64 = OffsetDateTime::now_utc().unix_timestamp() as u64;
+        let now: u64 = OffsetDateTime::now_utc().unix_timestamp() as u64;
         write_long_unsigned(now, &mut buf);
         //
         //set history file header with key information about our frame rate
@@ -937,19 +1052,29 @@ impl FrameHistory {
         let mut runtime_config = 0;
 
         #[cfg(test)]
-        {runtime_config |= 1;} // ones bit is ether test(1) or release(0)
+        {
+            runtime_config |= 1;
+        } // ones bit is ether test(1) or release(0)
 
         #[cfg(feature = "prometheus_metrics")]
-        {runtime_config |= 2;} // twos bit is ether prometheus(1) or none(0)
+        {
+            runtime_config |= 2;
+        } // twos bit is ether prometheus(1) or none(0)
 
         #[cfg(feature = "proactor_tokio")]
-        {runtime_config |= 4;} // fours bit is ether tokio(1) or nuclei(0)
+        {
+            runtime_config |= 4;
+        } // fours bit is ether tokio(1) or nuclei(0)
 
-        #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin" ))]
-        {runtime_config |= 8;} // eights bit is ether telemetry(1) or none(0)
+        #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
+        {
+            runtime_config |= 8;
+        } // eights bit is ether telemetry(1) or none(0)
 
         #[cfg(feature = "telemetry_server_cdn")]
-        {runtime_config |= 16;} // sixteenth bit is ether cdn(1) or builtin(0)
+        {
+            runtime_config |= 16;
+        } // sixteenth bit is ether cdn(1) or builtin(0)
 
         //write bits which captured the runtime conditions
         write_long_unsigned(runtime_config, &mut buf);
@@ -971,7 +1096,6 @@ impl FrameHistory {
             local_thread_bytes_cache: 0usize,
         };
 
-
         let _ = create_dir_all(&result.output_log_path);
         result
     }
@@ -989,12 +1113,20 @@ impl FrameHistory {
     /// * `id` - THE ID of the node.
     /// * `chin` - THE input channels.
     /// * `chout` - THE output channels.
-    pub fn apply_node(&mut self, name: &'static str, id: usize, chin: &[Arc<ChannelMetaData>], chout: &[Arc<ChannelMetaData>]) {
+    pub fn apply_node(
+        &mut self,
+        name: &'static str,
+        id: usize,
+        chin: &[Arc<ChannelMetaData>],
+        chout: &[Arc<ChannelMetaData>],
+    ) {
         write_long_unsigned(REC_NODE, &mut self.history_buffer); // Message type
         write_long_unsigned(id as u64, &mut self.history_buffer); // Message type
 
         write_long_unsigned(name.len() as u64, &mut self.history_buffer);
-        self.history_buffer.write_str(name).expect("internal error writing to ByteMut");
+        self.history_buffer
+            .write_str(name)
+            .expect("internal error writing to ByteMut");
 
         write_long_unsigned(chin.len() as u64, &mut self.history_buffer);
         chin.iter().for_each(|meta| {
@@ -1002,7 +1134,9 @@ impl FrameHistory {
             write_long_unsigned(meta.labels.len() as u64, &mut self.history_buffer);
             meta.labels.iter().for_each(|s| {
                 write_long_unsigned(s.len() as u64, &mut self.history_buffer);
-                self.history_buffer.write_str(s).expect("internal error writing to ByteMut");
+                self.history_buffer
+                    .write_str(s)
+                    .expect("internal error writing to ByteMut");
             });
         });
 
@@ -1012,7 +1146,9 @@ impl FrameHistory {
             write_long_unsigned(meta.labels.len() as u64, &mut self.history_buffer);
             meta.labels.iter().for_each(|s| {
                 write_long_unsigned(s.len() as u64, &mut self.history_buffer);
-                self.history_buffer.write_str(s).expect("internal error writing to ByteMut");
+                self.history_buffer
+                    .write_str(s)
+                    .expect("internal error writing to ByteMut");
             });
         });
     }
@@ -1029,18 +1165,24 @@ impl FrameHistory {
         let total_take: Vec<i64> = total_take_send.iter().map(|(t, _)| *t).collect();
         let total_send: Vec<i64> = total_take_send.iter().map(|(_, s)| *s).collect();
 
-        if (self.packed_sent_writer.delta_write_count() * frame_rate_ms as usize) < (10 * 60 * 1000) {
-            self.packed_sent_writer.add_vec(&mut self.history_buffer, &total_send);
+        if (self.packed_sent_writer.delta_write_count() * frame_rate_ms as usize) < (10 * 60 * 1000)
+        {
+            self.packed_sent_writer
+                .add_vec(&mut self.history_buffer, &total_send);
         } else {
             self.packed_sent_writer.sync_data();
-            self.packed_sent_writer.add_vec(&mut self.history_buffer, &total_send);
+            self.packed_sent_writer
+                .add_vec(&mut self.history_buffer, &total_send);
         };
 
-        if (self.packed_take_writer.delta_write_count() * frame_rate_ms as usize) < (10 * 60 * 1000) {
-            self.packed_take_writer.add_vec(&mut self.history_buffer, &total_take);
+        if (self.packed_take_writer.delta_write_count() * frame_rate_ms as usize) < (10 * 60 * 1000)
+        {
+            self.packed_take_writer
+                .add_vec(&mut self.history_buffer, &total_take);
         } else {
             self.packed_take_writer.sync_data();
-            self.packed_take_writer.add_vec(&mut self.history_buffer, &total_take);
+            self.packed_take_writer
+                .add_vec(&mut self.history_buffer, &total_take);
         };
     }
 
@@ -1055,14 +1197,17 @@ impl FrameHistory {
         // NOTE: We block and do not write if the previous write was not completed.
         let cur_bytes_written = self.file_bytes_written.load(Ordering::SeqCst);
 
-        if (flush_all || self.will_span_into_next_block()) && (cur_bytes_written != self.local_thread_bytes_cache || 0 == cur_bytes_written) {
+        if (flush_all || self.will_span_into_next_block())
+            && (cur_bytes_written != self.local_thread_bytes_cache || 0 == cur_bytes_written)
+        {
             // Store this and do not run again until this has changed
             self.local_thread_bytes_cache = cur_bytes_written;
 
             let buf_bytes_count = self.buffer_bytes_count;
             let continued_buffer: BytesMut = self.history_buffer.split_off(buf_bytes_count);
             // trace!("attempt to write history");
-            let to_be_written = std::mem::replace(&mut self.history_buffer, continued_buffer).to_owned();
+            let to_be_written =
+                std::mem::replace(&mut self.history_buffer, continued_buffer).to_owned();
             if !to_be_written.is_empty() {
                 let path = self.build_history_path().to_owned();
 
@@ -1096,12 +1241,19 @@ impl FrameHistory {
     fn build_history_path(&mut self) -> PathBuf {
         let format = format_description!("[year]_[month]_[day]");
         let log_time = OffsetDateTime::now_utc();
-        let file_to_append_onto = format!("{}_{}_log.dat", log_time.format(&format).unwrap_or_else(|_| "0000_00_00".to_string()), self.guid);
+        let file_to_append_onto = format!(
+            "{}_{}_log.dat",
+            log_time
+                .format(&format)
+                .unwrap_or_else(|_| "0000_00_00".to_string()),
+            self.guid
+        );
 
         // If we are starting a new file reset our counter to zero
         if !self.last_file_to_append_onto.eq(&file_to_append_onto) {
             self.file_bytes_written.store(0, Ordering::SeqCst);
-            self.last_file_to_append_onto.clone_from(&file_to_append_onto);
+            self.last_file_to_append_onto
+                .clone_from(&file_to_append_onto);
         }
         self.output_log_path.join(&file_to_append_onto)
     }
@@ -1112,8 +1264,11 @@ impl FrameHistory {
     ///
     /// `true` if the next block will span into the next file write block, `false` otherwise.
     fn will_span_into_next_block(&self) -> bool {
-        let old_blocks = (self.file_bytes_written.load(Ordering::SeqCst) + self.buffer_bytes_count) / HISTORY_WRITE_BLOCK_SIZE;
-        let new_blocks = (self.file_bytes_written.load(Ordering::SeqCst) + self.history_buffer.len()) / HISTORY_WRITE_BLOCK_SIZE;
+        let old_blocks = (self.file_bytes_written.load(Ordering::SeqCst) + self.buffer_bytes_count)
+            / HISTORY_WRITE_BLOCK_SIZE;
+        let new_blocks = (self.file_bytes_written.load(Ordering::SeqCst)
+            + self.history_buffer.len())
+            / HISTORY_WRITE_BLOCK_SIZE;
         new_blocks > old_blocks
     }
 
@@ -1135,25 +1290,25 @@ impl FrameHistory {
             .open(&path)?;
         metrics_server::async_write_all(data, false, file).await
     }
-    async fn append_to_file(path: PathBuf, data: BytesMut, flush: bool) -> Result<(), std::io::Error> {
-        let file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&path)?;
+    async fn append_to_file(
+        path: PathBuf,
+        data: BytesMut,
+        flush: bool,
+    ) -> Result<(), std::io::Error> {
+        let file = OpenOptions::new().append(true).create(true).open(&path)?;
         metrics_server::async_write_all(data, flush, file).await
     }
-
 }
 
 #[cfg(test)]
 mod dot_tests {
     use super::*;
-    use crate::telemetry::metrics_server::async_write_all;
     use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData};
-    use std::sync::Arc;
+    use crate::telemetry::metrics_server::async_write_all;
     use bytes::BytesMut;
-    use std::path::PathBuf;
     use std::fs::remove_file;
+    use std::path::PathBuf;
+    use std::sync::Arc;
     use std::time::Instant;
 
     fn test_dot_frames() -> DotGraphFrames {
@@ -1179,12 +1334,12 @@ mod dot_tests {
             iteration_sum: 0,
             bool_stop: false,
             is_quiet: false,
-            calls: [0;6],
+            calls: [0; 6],
             thread_info: None,
             bool_blocking: false,
         };
         let mut node = Node {
-            id: Some(ActorName::new("1",None)),
+            id: Some(ActorName::new("1", None)),
             color: "grey",
             pen_width: NODE_PEN_WIDTH,
             stats_computer: ActorStatsComputer::default(),
@@ -1195,7 +1350,7 @@ mod dot_tests {
             thread_info_cache: None,
             total_count_restarts: 0,
             bool_stalled: false,
-            work_info: None
+            work_info: None,
         };
         node.compute_and_refresh(actor_status);
         assert_eq!(node.color, "grey");
@@ -1227,40 +1382,35 @@ mod dot_tests {
     #[test]
     fn test_build_metric() {
         let state = DotState {
-            nodes: vec![
-                Node {
-                    id: Some(ActorName::new("1",None)),
-                    color: "grey",
-                    pen_width: NODE_PEN_WIDTH,
-                    stats_computer: ActorStatsComputer::default(),
-                    display_label: String::new(),
-                    tooltip: String::new(),
-                    metric_text: "node_metric".to_string(),
-                    remote_details: None,
-                    thread_info_cache: None,
-                    total_count_restarts: 0,
-                    bool_stalled: false,
-                    work_info: None
-
-                }
-            ],
-            edges: vec![
-                Edge {
-                    id: 1,
-                    from: None,
-                    to: None,
-                    color: "grey",
-                    sidecar: false,
-                    pen_width: EDGE_PEN_WIDTH.to_string(),
-                    saturation_score: 0.0,
-                    ctl_labels: Vec::new(),
-                    stats_computer: ChannelStatsComputer::default(),
-                    display_label: "edge_metric".to_string(),
-                    metric_text: "edge_metric".to_string(),
-                    partner: None,
-                    bundle_index: None,
-                }
-            ],
+            nodes: vec![Node {
+                id: Some(ActorName::new("1", None)),
+                color: "grey",
+                pen_width: NODE_PEN_WIDTH,
+                stats_computer: ActorStatsComputer::default(),
+                display_label: String::new(),
+                tooltip: String::new(),
+                metric_text: "node_metric".to_string(),
+                remote_details: None,
+                thread_info_cache: None,
+                total_count_restarts: 0,
+                bool_stalled: false,
+                work_info: None,
+            }],
+            edges: vec![Edge {
+                id: 1,
+                from: None,
+                to: None,
+                color: "grey",
+                sidecar: false,
+                pen_width: EDGE_PEN_WIDTH.to_string(),
+                saturation_score: 0.0,
+                ctl_labels: Vec::new(),
+                stats_computer: ChannelStatsComputer::default(),
+                display_label: "edge_metric".to_string(),
+                metric_text: "edge_metric".to_string(),
+                partner: None,
+                bundle_index: None,
+            }],
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 0,
@@ -1273,40 +1423,35 @@ mod dot_tests {
     #[test]
     fn test_build_dot() {
         let state = DotState {
-            nodes: vec![
-                Node {
-                    id: Some(ActorName::new("1",None)),
-                    color: "grey",
-                    pen_width: NODE_PEN_WIDTH,
-                    stats_computer: ActorStatsComputer::default(),
-                    display_label: "node1".to_string(),
-                    tooltip: String::new(),
-                    metric_text: String::new(),
-                    remote_details: None,
-                    thread_info_cache: None,
-                    total_count_restarts: 0,
-                    bool_stalled: false,
-                    work_info: None
-
-                }
-            ],
-            edges: vec![
-                Edge {
-                    id: 1,
-                    from: None,
-                    to: None,
-                    color: "grey",
-                    sidecar: false,
-                    pen_width: EDGE_PEN_WIDTH.to_string(),
-                    saturation_score: 0.0,
-                    ctl_labels: Vec::new(),
-                    stats_computer: ChannelStatsComputer::default(),
-                    display_label: "edge1".to_string(),
-                    metric_text: String::new(),
-                    partner: None,
-                    bundle_index: None,
-                }
-            ],
+            nodes: vec![Node {
+                id: Some(ActorName::new("1", None)),
+                color: "grey",
+                pen_width: NODE_PEN_WIDTH,
+                stats_computer: ActorStatsComputer::default(),
+                display_label: "node1".to_string(),
+                tooltip: String::new(),
+                metric_text: String::new(),
+                remote_details: None,
+                thread_info_cache: None,
+                total_count_restarts: 0,
+                bool_stalled: false,
+                work_info: None,
+            }],
+            edges: vec![Edge {
+                id: 1,
+                from: None,
+                to: None,
+                color: "grey",
+                sidecar: false,
+                pen_width: EDGE_PEN_WIDTH.to_string(),
+                saturation_score: 0.0,
+                ctl_labels: Vec::new(),
+                stats_computer: ChannelStatsComputer::default(),
+                display_label: "edge1".to_string(),
+                metric_text: String::new(),
+                partner: None,
+                bundle_index: None,
+            }],
             seq: 0,
             telemetry_colors: None,
             refresh_rate_ms: 40,
@@ -1317,9 +1462,13 @@ mod dot_tests {
         build_dot(&state, &mut frames);
         let vec = frames.active_graph.to_vec();
         let result = String::from_utf8(vec).expect("Invalid UTF-8");
-        
+
         // Updated: Check for the actual output format - node ID is "1" not "1 "
-        assert!(result.contains("\"1\" [label=\"node1\""), "found: {}", result);
+        assert!(
+            result.contains("\"1\" [label=\"node1\""),
+            "found: {}",
+            result
+        );
         assert!(result.contains("color=\"grey\""), "found: {}", result);
     }
 
@@ -1457,13 +1606,13 @@ mod dot_tests {
     fn test_edge_tooltip_uses_total_consumed() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
-        
+
         // Create edge with known total_consumed and last_total
         let mut stats = ChannelStatsComputer::default();
         stats.capacity = 100;
         stats.show_total = true;
         stats.total_consumed = 1000; // Cumulative total - what user wants to see
-        stats.last_total = 50;       // Current inflight - NOT what user wants to see
+        stats.last_total = 50; // Current inflight - NOT what user wants to see
         stats.saturation_score = 0.5;
 
         let edge = Edge {
@@ -1496,7 +1645,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
                 Node {
                     id: Some(to),
@@ -1510,7 +1659,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
             ],
             edges: vec![edge],
@@ -1523,13 +1672,21 @@ mod dot_tests {
         let mut frames = test_dot_frames();
         build_dot(&state, &mut frames);
         let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
-        
+
         // Edge label should show total_consumed (1000)
-        assert!(result.contains("Total: 1000"), "Edge label should show total_consumed: {}", result);
-        
+        assert!(
+            result.contains("Total: 1000"),
+            "Edge label should show total_consumed: {}",
+            result
+        );
+
         // Tooltip should also show total_consumed (1000), NOT last_total (50)
-        assert!(result.contains("Total: 1000"), "Tooltip should show total_consumed, not last_total: {}", result);
-        
+        assert!(
+            result.contains("Total: 1000"),
+            "Tooltip should show total_consumed, not last_total: {}",
+            result
+        );
+
         println!("✓ Edge tooltip correctly uses total_consumed (cumulative): 1000");
     }
 
@@ -1631,7 +1788,7 @@ mod dot_tests {
     fn test_bundle_tooltip_uses_total_consumed() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
-        
+
         // Create 3 edges with different total_consumed and last_total
         let mut edges = Vec::new();
         for i in 0..3 {
@@ -1639,7 +1796,7 @@ mod dot_tests {
             stats.capacity = 100;
             stats.show_total = true;
             stats.total_consumed = (i as u128 + 1) * 100; // 100, 200, 300 = 600 total
-            stats.last_total = (i as i64 + 1) * 10;       // 10, 20, 30 = 60 total (inflight)
+            stats.last_total = (i as i64 + 1) * 10; // 10, 20, 30 = 60 total (inflight)
             stats.saturation_score = 0.3;
 
             edges.push(Edge {
@@ -1673,7 +1830,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
                 Node {
                     id: Some(to),
@@ -1687,7 +1844,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
             ],
             edges,
@@ -1700,17 +1857,41 @@ mod dot_tests {
         let mut frames = test_dot_frames();
         build_dot(&state, &mut frames);
         let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
-        
+
         // Each edge shows its own Total in the label (format: "CH0Total: 100")
-        assert!(result.contains("Total: 100"), "Edge 0 should show Total: 100: {}", result);
-        assert!(result.contains("Total: 200"), "Edge 1 should show Total: 200: {}", result);
-        assert!(result.contains("Total: 300"), "Edge 2 should show Total: 300: {}", result);
-        
+        assert!(
+            result.contains("Total: 100"),
+            "Edge 0 should show Total: 100: {}",
+            result
+        );
+        assert!(
+            result.contains("Total: 200"),
+            "Edge 1 should show Total: 200: {}",
+            result
+        );
+        assert!(
+            result.contains("Total: 300"),
+            "Edge 2 should show Total: 300: {}",
+            result
+        );
+
         // Tooltip should also show these totals
-        assert!(result.contains("Total: 100"), "Tooltip channel 0 should show 100: {}", result);
-        assert!(result.contains("Total: 200"), "Tooltip channel 1 should show 200: {}", result);
-        assert!(result.contains("Total: 300"), "Tooltip channel 2 should show 300: {}", result);
-        
+        assert!(
+            result.contains("Total: 100"),
+            "Tooltip channel 0 should show 100: {}",
+            result
+        );
+        assert!(
+            result.contains("Total: 200"),
+            "Tooltip channel 1 should show 200: {}",
+            result
+        );
+        assert!(
+            result.contains("Total: 300"),
+            "Tooltip channel 2 should show 300: {}",
+            result
+        );
+
         println!("✓ Bundle tooltip correctly uses total_consumed (cumulative)");
     }
 
@@ -1719,7 +1900,7 @@ mod dot_tests {
     fn test_large_bundle_tooltip_no_total_volume() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
-        
+
         // Create 25 edges (large bundle)
         let mut edges = Vec::new();
         for i in 0..25 {
@@ -1761,7 +1942,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
                 Node {
                     id: Some(to),
@@ -1775,7 +1956,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
             ],
             edges,
@@ -1788,13 +1969,25 @@ mod dot_tests {
         let mut frames = test_dot_frames();
         build_dot(&state, &mut frames);
         let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
-        
+
         // Large bundle should show summary
-        assert!(result.contains("Summary: 25 channels"), "Large bundle should show Summary: {}", result);
-        
+        assert!(
+            result.contains("Summary: 25 channels"),
+            "Large bundle should show Summary: {}",
+            result
+        );
+
         // Should NOT contain Total Volume or Avg Saturation
-        assert!(!result.contains("Total Volume:"), "Large bundle should NOT show Total Volume: {}", result);
-        assert!(!result.contains("Avg Saturation:"), "Large bundle should NOT show Avg Saturation: {}", result);
+        assert!(
+            !result.contains("Total Volume:"),
+            "Large bundle should NOT show Total Volume: {}",
+            result
+        );
+        assert!(
+            !result.contains("Avg Saturation:"),
+            "Large bundle should NOT show Avg Saturation: {}",
+            result
+        );
     }
 
     /// Test: Partner channels show correct rollup
@@ -1802,7 +1995,7 @@ mod dot_tests {
     fn test_partner_tooltip_uses_total_consumed() {
         let from = ActorName::new("partner", None);
         let to = ActorName::new("to", None);
-        
+
         // Create 3 partner lanes
         let mut edges = Vec::new();
         let mut expected_total = 0u128;
@@ -1847,7 +2040,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
                 Node {
                     id: Some(to),
@@ -1861,7 +2054,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
             ],
             edges,
@@ -1874,16 +2067,35 @@ mod dot_tests {
         let mut frames = test_dot_frames();
         build_dot(&state, &mut frames);
         let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
-        
+
         // Each partner lane shows its Total in the label
-        assert!(result.contains("Total: 1000"), "Partner lane 0 should show Total: 1000: {}", result);
-        assert!(result.contains("Total: 2000"), "Partner lane 1 should show Total: 2000: {}", result);
-        assert!(result.contains("Total: 3000"), "Partner lane 2 should show Total: 3000: {}", result);
-        
+        assert!(
+            result.contains("Total: 1000"),
+            "Partner lane 0 should show Total: 1000: {}",
+            result
+        );
+        assert!(
+            result.contains("Total: 2000"),
+            "Partner lane 1 should show Total: 2000: {}",
+            result
+        );
+        assert!(
+            result.contains("Total: 3000"),
+            "Partner lane 2 should show Total: 3000: {}",
+            result
+        );
+
         // Tooltip should also show these totals
-        assert!(result.contains("Total: 1000"), "Tooltip should show 1000: {}", result);
-        
-        println!("✓ Partner tooltip correctly uses total_consumed: expected = {}", expected_total);
+        assert!(
+            result.contains("Total: 1000"),
+            "Tooltip should show 1000: {}",
+            result
+        );
+
+        println!(
+            "✓ Partner tooltip correctly uses total_consumed: expected = {}",
+            expected_total
+        );
     }
 
     #[test]
@@ -1915,16 +2127,22 @@ mod dot_tests {
     fn test_frame_history_build_history_path() {
         let mut frame_history = FrameHistory::new(1000);
         let path = frame_history.build_history_path();
-        assert!(path.to_str().expect("iternal error").contains(&frame_history.guid));
+        assert!(
+            path.to_str()
+                .expect("iternal error")
+                .contains(&frame_history.guid)
+        );
     }
 
     #[test]
     fn test_frame_history_mark_position() {
         let mut frame_history = FrameHistory::new(1000);
         frame_history.mark_position();
-        assert_eq!(frame_history.buffer_bytes_count, frame_history.history_buffer.len());
+        assert_eq!(
+            frame_history.buffer_bytes_count,
+            frame_history.history_buffer.len()
+        );
     }
-
 
     #[test]
     fn test_define_unified_edges() {
@@ -1949,7 +2167,6 @@ mod dot_tests {
 
     #[test]
     fn test_frame_history_all_to_file_async() {
-
         let data = BytesMut::from("test data");
         let path = PathBuf::from("test_all_to_file.dat");
         let file = OpenOptions::new()
@@ -1979,7 +2196,7 @@ mod dot_tests {
             iteration_sum: 0,
             bool_stop: false,
             is_quiet: false,
-            calls: [0;6],
+            calls: [0; 6],
             thread_info: None,
             bool_blocking: false,
         };
@@ -1995,12 +2212,45 @@ mod dot_tests {
             thread_info_cache: None,
             total_count_restarts: 0,
             bool_stalled: false,
-            work_info: None
-
+            work_info: None,
         };
         node.compute_and_refresh(actor_status);
-        // Local load: 100 * (500-100)/500 = 80; mCPU: 1024 - (100*1024/500) = 820.
-        assert_eq!(node.work_info, Some((820, 80)));
+        // Local load: 100 * (500-100)/500 = 80; mCPU: (400*1024)/500 = 819 (integer busy fraction).
+        assert_eq!(node.work_info, Some((819, 80)));
+    }
+
+    #[test]
+    fn test_node_compute_refresh_full_busy_when_await_zero() {
+        // No instrumented/profile time in window → treat as fully busy (not 0 mCPU).
+        let actor_status = ActorStatus {
+            ident: Default::default(),
+            await_total_ns: 0,
+            unit_total_ns: 500,
+            total_count_restarts: 0,
+            iteration_start: 1,
+            iteration_sum: 1,
+            bool_stop: false,
+            is_quiet: false,
+            calls: [0; 6],
+            thread_info: None,
+            bool_blocking: false,
+        };
+        let mut node = Node {
+            id: Some(ActorName::new("full_busy", None)),
+            color: "grey",
+            pen_width: NODE_PEN_WIDTH,
+            stats_computer: ActorStatsComputer::default(),
+            display_label: String::new(),
+            tooltip: String::new(),
+            metric_text: String::new(),
+            remote_details: None,
+            thread_info_cache: None,
+            total_count_restarts: 0,
+            bool_stalled: false,
+            work_info: None,
+        };
+        node.compute_and_refresh(actor_status);
+        assert_eq!(node.work_info, Some((1024, 100)));
     }
 
     #[test]
@@ -2112,7 +2362,10 @@ mod dot_tests {
 
         assert_eq!(local_state.nodes.len(), 1);
         assert!(local_state.nodes[0].id.is_some());
-        assert_eq!(local_state.nodes[0].id.expect("internal error").name, "test_actor");
+        assert_eq!(
+            local_state.nodes[0].id.expect("internal error").name,
+            "test_actor"
+        );
         assert!(local_state.nodes[0].remote_details.is_some());
         assert_eq!(local_state.edges.len(), 2); // One for input, one for output
     }
@@ -2121,7 +2374,7 @@ mod dot_tests {
     fn test_build_dot_aggregation() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
-        
+
         let mut edges = Vec::new();
         for i in 0..5 {
             edges.push(Edge {
@@ -2164,7 +2417,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
                 Node {
                     id: Some(to),
@@ -2178,7 +2431,7 @@ mod dot_tests {
                     thread_info_cache: None,
                     total_count_restarts: 0,
                     bool_stalled: false,
-                    work_info: None
+                    work_info: None,
                 },
             ],
             edges,
@@ -2191,7 +2444,7 @@ mod dot_tests {
         let mut frames = test_dot_frames();
         build_dot(&state, &mut frames);
         let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
-        
+
         assert!(result.contains("Bundle: 5x"));
         assert!(result.contains("penwidth=4"));
         assert!(result.contains("style=\"bold,dashed\""));

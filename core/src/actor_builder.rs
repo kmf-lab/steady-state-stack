@@ -2,36 +2,36 @@
 //! This module includes the `ActorBuilder` for building actors, `Troupe` for managing groups of actors, and various utility
 //! functions and types to support actor creation and telemetry monitoring.
 
-use std::any::Any;
-use std::error::Error;
-use std::future::Future;
-use std::sync::{Arc, OnceLock};
-use parking_lot::RwLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use crate::dot::RemoteDetails;
+use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
+use crate::graph_testing::{SideChannel, StageManager};
+use crate::monitor::ActorMetaData;
+use crate::steady_actor_shadow::SteadyActorShadow;
+use crate::telemetry::metrics_collector::CollectorDetail;
+use crate::telemetry_window::compute_refresh_window_frames;
+use crate::*;
+use crate::{ActorName, AlertColor, Graph, StdDev, Trigger, steady_config};
+use aeron::aeron::Aeron;
+use async_lock::Barrier;
 use core::default::Default;
-use std::collections::VecDeque;
+use futures::FutureExt;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
+use futures::stream::{FuturesUnordered, StreamExt};
+use futures_util::future::Shared;
 use futures_util::lock::{Mutex, MutexGuard};
 #[allow(unused_imports)]
 use log::*;
-use crate::*;
-use crate::{steady_config, ActorName, AlertColor, Graph, StdDev, Trigger};
-use crate::graph_testing::{SideChannel, StageManager};
-use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
-use crate::monitor::ActorMetaData;
-use crate::telemetry::metrics_collector::CollectorDetail;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use parking_lot::RwLock;
+use std::any::Any;
+use std::collections::VecDeque;
+use std::error::Error;
+use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
-use aeron::aeron::Aeron;
-use async_lock::Barrier;
-use crate::steady_actor_shadow::SteadyActorShadow;
-use crate::telemetry_window::compute_refresh_window_frames;
-use crate::dot::RemoteDetails;
-use futures::stream::{FuturesUnordered, StreamExt};
-use futures::FutureExt;
-use futures_util::future::Shared;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 /// THE `ActorBuilder` struct is responsible for constructing and configuring actors within the system.
 /// It provides a fluent interface to set various properties and behaviors of the actor, such as telemetry settings,
@@ -104,7 +104,7 @@ pub struct ActorBuilder {
     /// Optional stack size for the actor.
     stack_size: Option<usize>,
     /// Universal list of all actors in the graph.
-    actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>
+    actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>,
 }
 
 /// A helper struct for managing CPU core allocation to balance actor distribution across available cores.
@@ -253,7 +253,12 @@ impl FutureBuilderType {
     /// # Returns
     ///
     /// A new `FutureBuilderType` instance.
-    fn new(fun: SteadyContextArchetype<DynCall>, frame_rate_ms: u64, is_for_test: bool, stack_size: Option<usize>) -> Self {
+    fn new(
+        fun: SteadyContextArchetype<DynCall>,
+        frame_rate_ms: u64,
+        is_for_test: bool,
+        stack_size: Option<usize>,
+    ) -> Self {
         FutureBuilderType {
             fun,
             frame_rate_ms,
@@ -281,7 +286,12 @@ impl FutureBuilderType {
     ///
     /// A `SteadyActorShadow` instance representing the actor's runtime context.
     fn context(&self, team_display_id: usize) -> SteadyActorShadow {
-        build_actor_context(&self.fun, self.frame_rate_ms, team_display_id, self.is_for_test)
+        build_actor_context(
+            &self.fun,
+            self.frame_rate_ms,
+            team_display_id,
+            self.is_for_test,
+        )
     }
 }
 
@@ -445,7 +455,11 @@ impl Troupe {
         let (local_send, local_take) = oneshot::channel();
         let count_task = count.clone();
         let team_id = self.team_id;
-        let max_stack_size = self.future_builder.iter().filter_map(|f| f.stack_size).max();
+        let max_stack_size = self
+            .future_builder
+            .iter()
+            .filter_map(|f| f.stack_size)
+            .max();
 
         // 1. ATOMIC REGISTRATION: Register all actors on the main thread.
         // This ensures the Graph is fully aware of all "voters" before any thread starts polling.
@@ -461,7 +475,9 @@ impl Troupe {
 
         count_task.store(slots.len(), Ordering::SeqCst);
 
-        let thread_name = self.name.clone()
+        let thread_name = self
+            .name
+            .clone()
             .unwrap_or_else(|| format!("Troupe-{}", team_id));
 
         let mut thread_builder = std::thread::Builder::new().name(thread_name);
@@ -499,9 +515,13 @@ impl Troupe {
                         }
                         Err(e) => {
                             // Actor panicked, restart it
-                            let msg = if let Some(s) = e.downcast_ref::<&str>() { *s }
-                                      else if let Some(s) = e.downcast_ref::<String>() { s.as_str() }
-                                      else { "Unknown panic payload" };
+                            let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                                *s
+                            } else if let Some(s) = e.downcast_ref::<String>() {
+                                s.as_str()
+                            } else {
+                                "Unknown panic payload"
+                            };
 
                             error!("PANIC in troupe actor {:?}: {}", slot.ctx.ident, msg);
                             slot.ctx.regeneration += 1;
@@ -514,7 +534,10 @@ impl Troupe {
         });
 
         if let Err(e) = handle {
-            error!("Failed to spawn OS thread for troupe: {}, error: {:?}", team_id, e);
+            error!(
+                "Failed to spawn OS thread for troupe: {}, error: {:?}",
+                team_id, e
+            );
         } else {
             // Wait for the troupe thread to signal it has started before returning.
             let _ = core_exec::block_on(local_take);
@@ -522,9 +545,7 @@ impl Troupe {
         count.load(Ordering::SeqCst)
     }
 
-    fn build_async_fun(
-        slot: ActorSlot,
-    ) -> Pin<Box<dyn Future<Output = ActorSlotOutcome>>> {
+    fn build_async_fun(slot: ActorSlot) -> Pin<Box<dyn Future<Output = ActorSlotOutcome>>> {
         let fun = slot.fun.clone();
         Box::pin(async move {
             let result = AssertUnwindSafe(async {
@@ -700,7 +721,7 @@ impl ActorBuilder {
             shutdown_barrier: graph.shutdown_barrier.clone(),
             is_for_test: graph.is_for_testing,
             stack_size: graph.default_stack_size,
-            actor_catalog: graph.actor_catalog.clone()
+            actor_catalog: graph.actor_catalog.clone(),
         }
     }
 
@@ -708,6 +729,12 @@ impl ActorBuilder {
     ///
     /// This method fine-tunes telemetry data collection by specifying the minimum refresh rate and window size for
     /// metrics aggregation.
+    ///
+    /// **Effective window vs. wall clock:** [`crate::telemetry_window::compute_refresh_window_frames`] rounds bucket
+    /// counts up to powers of two. The displayed “Window” span is approximately
+    /// `telemetry_frame_ms × 2^(refresh_bits + window_bits)`, so a `(1s, 10s)` floor with a ~100ms collector frame
+    /// often yields **~12.8s** of samples, not exactly 10s. Use a shorter `window` argument if you need **Avg mCPU**
+    /// to converge faster; defaults come from [`ActorBuilder::new`] (`1s` / `10s`).
     ///
     /// # Arguments
     ///
@@ -719,8 +746,11 @@ impl ActorBuilder {
     /// A new `ActorBuilder` instance with the updated compute refresh window configuration.
     pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
         let mut result = self.clone();
-        let (refresh_in_bits, window_in_bits) =
-            ActorBuilder::internal_compute_refresh_window(self.frame_rate_ms as u128, refresh, window);
+        let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(
+            self.frame_rate_ms as u128,
+            refresh,
+            window,
+        );
         result.refresh_rate_in_bits = refresh_in_bits;
         result.window_bucket_in_bits = window_in_bits;
         result
@@ -771,7 +801,10 @@ impl ActorBuilder {
     /// A new `ActorBuilder` instance with the explicit core assignment.
     pub fn with_explicit_core(&self, one_offset_core: u16) -> Self {
         let mut result = self.clone();
-        assert!(one_offset_core > 0, "Core index must be greater than zero and match your OS task manager.");
+        assert!(
+            one_offset_core > 0,
+            "Core index must be greater than zero and match your OS task manager."
+        );
         let zero_offset_core = one_offset_core - 1;
         result.explicit_core = Some(zero_offset_core.into());
         result
@@ -1012,7 +1045,9 @@ impl ActorBuilder {
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         if self.actor_name.name.is_empty() {
-            panic!("Actor name must be set before calling build(). Use .with_name() or .with_name_and_suffix().");
+            panic!(
+                "Actor name must be set before calling build(). Use .with_name() or .with_name_and_suffix()."
+            );
         }
         let excluded_cores = self.excluded_cores.clone();
         let core_balancer = self.core_balancer.clone();
@@ -1034,65 +1069,72 @@ impl ActorBuilder {
                 build_actor_context(&context_archetype, rate_ms, default_core, is_for_test);
 
             let actor_name_clone = actor_name.name;
-            
+
             let mut thread_builder = std::thread::Builder::new().name(actor_name_clone.to_string());
             if let Some(size) = stack_size {
                 thread_builder = thread_builder.stack_size(size);
             }
-            
+
             let handle = thread_builder.spawn(move || {
-                    let default = if let Some(exp) = explicit_core {
-                        exp
-                    } else {
-                        default_core
-                    };
-                    let _core = if let Some(mut balancer) = core_balancer {
-                        balancer.allocate_core(excluded_cores.as_slice())
-                    } else if !excluded_cores.is_empty() {
-                        if !excluded_cores.contains(&default) {
-                            default
-                        } else {
-                            (0..excluded_cores.len())
-                                .find(|&core| !excluded_cores.contains(&core))
-                                .unwrap_or(default)
-                        }
-                    } else {
+                let default = if let Some(exp) = explicit_core {
+                    exp
+                } else {
+                    default_core
+                };
+                let _core = if let Some(mut balancer) = core_balancer {
+                    balancer.allocate_core(excluded_cores.as_slice())
+                } else if !excluded_cores.is_empty() {
+                    if !excluded_cores.contains(&default) {
                         default
-                    };
+                    } else {
+                        (0..excluded_cores.len())
+                            .find(|&core| !excluded_cores.contains(&core))
+                            .unwrap_or(default)
+                    }
+                } else {
+                    default
+                };
 
-                    #[cfg(feature = "core_affinity")]
-                    {
-                        if let Err(e) = pin_thread_to_core(_core) {
-                            eprintln!("Failed to pin thread to core {}: {:?}", _core, e);
+                #[cfg(feature = "core_affinity")]
+                {
+                    if let Err(e) = pin_thread_to_core(_core) {
+                        eprintln!("Failed to pin thread to core {}: {:?}", _core, e);
+                    }
+                }
+
+                trace!("Spawning SoloAct {:?} on new OS thread", &actor_name_clone);
+
+                loop {
+                    match catch_unwind(AssertUnwindSafe(|| match fun.clone().try_lock() {
+                        Some(actor_run) => launch_actor(actor_run(master_ctx.clone())),
+                        None => panic!("internal error, future (actor) already locked"),
+                    })) {
+                        Ok(_) => {
+                            exit_actor_registration(&context_archetype);
+                            break;
+                        }
+                        Err(e) => {
+                            let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                                *s
+                            } else if let Some(s) = e.downcast_ref::<String>() {
+                                s.as_str()
+                            } else {
+                                "Unknown panic payload"
+                            };
+
+                            error!("PANIC in actor {:?}: {}", context_archetype.ident, msg);
+                            master_ctx.regeneration += 1;
+                            info!("Restarting actor: {:?}", context_archetype.ident);
                         }
                     }
-                    
-                    trace!("Spawning SoloAct {:?} on new OS thread", &actor_name_clone);
-
-                    loop {
-                        match catch_unwind(AssertUnwindSafe(|| match fun.clone().try_lock() {
-                            Some(actor_run) => launch_actor(actor_run(master_ctx.clone())),
-                            None => panic!("internal error, future (actor) already locked"),
-                        })) {
-                            Ok(_) => {
-                                exit_actor_registration(&context_archetype);
-                                break;
-                            }
-                            Err(e) => {
-                                let msg = if let Some(s) = e.downcast_ref::<&str>() { *s }
-                                          else if let Some(s) = e.downcast_ref::<String>() { s.as_str() }
-                                          else { "Unknown panic payload" };
-
-                                error!("PANIC in actor {:?}: {}", context_archetype.ident, msg);
-                                master_ctx.regeneration += 1;
-                                info!("Restarting actor: {:?}", context_archetype.ident);
-                            }
-                        }
-                    }
-                });
+                }
+            });
 
             if let Err(e) = handle {
-                error!("Failed to spawn OS thread for actor: {:?}, error: {:?}", &self.actor_name.name, e);
+                error!(
+                    "Failed to spawn OS thread for actor: {:?}, error: {:?}",
+                    &self.actor_name.name, e
+                );
             }
         });
     }
@@ -1114,12 +1156,15 @@ impl ActorBuilder {
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
     {
         if self.actor_name.name.is_empty() {
-            panic!("Actor name must be set before calling build(). Use .with_name() or .with_name_and_suffix().");
+            panic!(
+                "Actor name must be set before calling build(). Use .with_name() or .with_name_and_suffix()."
+            );
         }
         let rate = self.frame_rate_ms;
         let is_for_test = self.is_for_test;
         let stack_size = self.stack_size;
-        let temp: SteadyContextArchetype<DynCall> = self.single_actor_exec_archetype(build_actor_exec);
+        let temp: SteadyContextArchetype<DynCall> =
+            self.single_actor_exec_archetype(build_actor_exec);
         target.add_actor(temp, rate, is_for_test, stack_size);
     }
 
@@ -1185,7 +1230,10 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A `SteadyContextArchetype` configured with the actor's execution logic.
-    fn single_actor_exec_archetype<F, I>(self, build_actor_exec: I) -> SteadyContextArchetype<DynCall>
+    fn single_actor_exec_archetype<F, I>(
+        self,
+        build_actor_exec: I,
+    ) -> SteadyContextArchetype<DynCall>
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
@@ -1198,8 +1246,11 @@ impl ActorBuilder {
         let backplane = self.backplane.clone();
         let dyn_call = Self::to_dyn_call(build_actor_exec);
 
-        let id = self.actor_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let immutable_identity = ActorIdentity::new(id, self.actor_name.name, self.actor_name.suffix);
+        let id = self
+            .actor_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let immutable_identity =
+            ActorIdentity::new(id, self.actor_name.name, self.actor_name.suffix);
         self.actor_catalog.write().push(immutable_identity.clone());
 
         let immutable_actor_metadata = self.build_actor_metadata(immutable_identity).clone();
@@ -1219,10 +1270,15 @@ impl ActorBuilder {
             if let Some(pb) = &mut *backplane {
                 let (shutdown_tx, shutdown_rx) = oneshot::channel();
                 core_exec::block_on(async move {
-                    let mut v: MutexGuard<'_, Vec<Sender<()>>> = oneshot_shutdown_vec_for_node.lock().await;
+                    let mut v: MutexGuard<'_, Vec<Sender<()>>> =
+                        oneshot_shutdown_vec_for_node.lock().await;
                     v.push(shutdown_tx);
                 });
-                pb.register_node(immutable_identity.label, steady_config::BACKPLANE_CAPACITY, shutdown_rx);
+                pb.register_node(
+                    immutable_identity.label,
+                    steady_config::BACKPLANE_CAPACITY,
+                    shutdown_rx,
+                );
                 pb.node_tx_rx(immutable_identity.label)
             } else {
                 None
@@ -1235,9 +1291,12 @@ impl ActorBuilder {
             core_exec::block_on(async move {
                 let mut v: MutexGuard<'_, Vec<Sender<()>>> = oneshot_shutdown_vec.lock().await;
                 // If the graph is already in StopRequested state, fire the signal immediately
-                // for this new actor instance. This ensures that actors born during the 
+                // for this new actor instance. This ensures that actors born during the
                 // shutdown window (e.g. after a panic) don't miss the global signal.
-                if runtime_state.read().is_in_state(&[GraphLivelinessState::StopRequested]) {
+                if runtime_state
+                    .read()
+                    .is_in_state(&[GraphLivelinessState::StopRequested])
+                {
                     let _ = send_shutdown_notice.send(());
                 } else {
                     v.push(send_shutdown_notice);
@@ -1361,7 +1420,9 @@ impl<T: ?Sized> NonSendWrapper<T> {
 /// # Returns
 ///
 /// THE `NonSendWrapper` containing the actor's execution logic.
-fn build_actor_registration(builder_source: &SteadyContextArchetype<DynCall>) -> NonSendWrapper<DynCall> {
+fn build_actor_registration(
+    builder_source: &SteadyContextArchetype<DynCall>,
+) -> NonSendWrapper<DynCall> {
     builder_source
         .runtime_state
         .write()
@@ -1422,18 +1483,19 @@ fn build_actor_context<I: ?Sized>(
         aeron_meda_driver: builder_source.aeron_meda_driver.clone(),
         use_internal_behavior,
         shutdown_barrier: builder_source.shutdown_barrier.clone(),
-
     }
 }
 
 #[cfg(test)]
 mod test_actor_builder {
-    use crate::{GraphBuilder};
     use super::*;
+    use crate::GraphBuilder;
 
     #[test]
     fn test_core_balancer() {
-        let mut cb = CoreBalancer { core_usage: vec![0, 0, 0] };
+        let mut cb = CoreBalancer {
+            core_usage: vec![0, 0, 0],
+        };
         assert_eq!(cb.allocate_core(&[]), 0);
         assert_eq!(cb.allocate_core(&[]), 1);
         assert_eq!(cb.allocate_core(&[0]), 2);
@@ -1445,14 +1507,16 @@ mod test_actor_builder {
     fn test_actor_builder_core_configs() {
         let mut graph = GraphBuilder::for_testing().build(());
         let builder = ActorBuilder::new(&mut graph);
-        
+
         let b2 = builder.with_explicit_core(5);
         assert_eq!(b2.explicit_core, Some(4));
 
         let b3 = builder.with_core_exclusion(vec![0, 1]);
         assert_eq!(b3.excluded_cores, vec![0, 1]);
 
-        let cb = CoreBalancer { core_usage: vec![0] };
+        let cb = CoreBalancer {
+            core_usage: vec![0],
+        };
         let b4 = builder.with_core_balancing(cb);
         assert!(b4.core_balancer.is_some());
     }
@@ -1473,11 +1537,13 @@ mod test_actor_builder {
         assert_eq!(troupe.name, Some("TestTroupe".to_string()));
 
         let mut other = Troupe::new(&graph);
-        
+
         // Mock an archetype
         let (_tx, rx) = oneshot::channel();
         let arch = SteadyContextArchetype {
-            build_actor_exec: NonSendWrapper::new(ActorBuilder::to_dyn_call(|_| Box::pin(async { Ok::<(), Box<dyn Error>>(()) }))),
+            build_actor_exec: NonSendWrapper::new(ActorBuilder::to_dyn_call(|_| {
+                Box::pin(async { Ok::<(), Box<dyn Error>>(()) })
+            })),
             runtime_state: graph.runtime_state.clone(),
             channel_count: graph.channel_count.clone(),
             ident: ActorIdentity::default(),
@@ -1495,7 +1561,7 @@ mod test_actor_builder {
 
         troupe.add_actor(arch.clone(), 40, true, None);
         assert_eq!(troupe.future_builder.len(), 1);
-        
+
         assert!(troupe.transfer_front_to(&mut other));
         assert_eq!(troupe.future_builder.len(), 0);
         assert_eq!(other.future_builder.len(), 1);
@@ -1507,11 +1573,17 @@ mod test_actor_builder {
     #[test]
     fn test_schedule_as() {
         let mut troupe_guard = None;
-        assert!(matches!(ScheduleAs::dynamic_schedule(&mut troupe_guard), ScheduleAs::SoloAct));
-        
+        assert!(matches!(
+            ScheduleAs::dynamic_schedule(&mut troupe_guard),
+            ScheduleAs::SoloAct
+        ));
+
         let graph = GraphBuilder::for_testing().build(());
         let mut troupe_guard = Some(graph.actor_troupe());
-        assert!(matches!(ScheduleAs::dynamic_schedule(&mut troupe_guard), ScheduleAs::MemberOf(_)));
+        assert!(matches!(
+            ScheduleAs::dynamic_schedule(&mut troupe_guard),
+            ScheduleAs::MemberOf(_)
+        ));
     }
 
     // #[test]   //restarts forever, need a deeper review first
@@ -1562,14 +1634,20 @@ mod test_actor_builder {
             .with_load_percentile(Percentile::p50())
             .with_mcpu_avg()
             .with_load_avg()
-            .with_mcpu_trigger(Trigger::AvgAbove(MCPU::new(500).expect("")), AlertColor::Red)
-            .with_load_trigger(Trigger::AvgBelow(Work::new(10.0).expect("")), AlertColor::Yellow)
+            .with_mcpu_trigger(
+                Trigger::AvgAbove(MCPU::new(500).expect("")),
+                AlertColor::Red,
+            )
+            .with_load_trigger(
+                Trigger::AvgBelow(Work::new(10.0).expect("")),
+                AlertColor::Yellow,
+            )
             .with_thread_info()
             .with_stack_size(4 * 1024 * 1024)
             .never_simulate(true);
 
         let meta = builder.build_actor_metadata(ActorIdentity::new(1, "test", None));
-        
+
         assert_eq!(meta.ident.id, 1);
         assert_eq!(meta.refresh_rate_in_bits, builder.refresh_rate_in_bits);
         assert!(meta.avg_mcpu);
@@ -1612,11 +1690,19 @@ mod test_actor_builder {
     #[test]
     fn test_internal_compute_refresh_window_edge_cases() {
         // Test zero frame rate (should return 0,0)
-        let (r, w) = ActorBuilder::internal_compute_refresh_window(0, Duration::from_secs(1), Duration::from_secs(10));
+        let (r, w) = ActorBuilder::internal_compute_refresh_window(
+            0,
+            Duration::from_secs(1),
+            Duration::from_secs(10),
+        );
         assert_eq!((r, w), (0, 0));
 
         // Test very small durations
-        let (_r, _w) = ActorBuilder::internal_compute_refresh_window(100, Duration::from_millis(1), Duration::from_millis(1));
+        let (_r, _w) = ActorBuilder::internal_compute_refresh_window(
+            100,
+            Duration::from_millis(1),
+            Duration::from_millis(1),
+        );
         // Logic ensures it doesn't crash on small inputs.
     }
 

@@ -1,15 +1,17 @@
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
-use std::time::Instant;
-use std::sync::Arc;
+use crate::monitor::{
+    ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo,
+};
+use crate::steady_rx::Rx;
+use crate::steady_tx::Tx;
+use crate::{MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx, monitor, steady_config};
 use futures_util::lock::Mutex;
 use log::error;
-use std::ops::DerefMut;
-use std::thread;
 use num_traits::Zero;
-use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo};
-use crate::{steady_config, monitor, MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx};
-use crate::steady_rx::{Rx};
-use crate::steady_tx::{Tx};
+use std::ops::DerefMut;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
+use std::thread;
+use std::time::Instant;
 
 /// Structure representing the receiver side of steady telemetry.
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
@@ -47,15 +49,16 @@ impl SteadyTelemetryActorSend {
     pub(crate) fn status_reset(&mut self, iteration_index: u64) {
         self.hot_profile_await_ns_unit = AtomicU64::new(0);
         self.instant_start = Instant::now();
-        self.calls.iter().for_each(|f| f.store(0, Ordering::Relaxed));
+        self.calls
+            .iter()
+            .for_each(|f| f.store(0, Ordering::Relaxed));
         self.iteration_index_start = iteration_index;
     }
 
     //TODO: check the  calls for all zero?
-    
+
     /// Generates a status message for the actor.
     pub(crate) fn status_message(&self, iteration_index: u64) -> ActorStatus {
-
         //this is a little expensive, and we should consider doing this every N calls
         //the consumer node already holds the previous and uses it until we see a change.
         let thread_info = if self.show_thread_info {
@@ -71,20 +74,17 @@ impl SteadyTelemetryActorSend {
         let total_ns = self.instant_start.elapsed().as_nanos() as u64;
 
         let hot = self.hot_profile_await_ns_unit.load(Ordering::Relaxed);
-        debug_assert!(
-            total_ns >= hot, "should be: {} >= {}", total_ns, hot
-        );
+        debug_assert!(total_ns >= hot, "should be: {} >= {}", total_ns, hot);
         // trace!("status ratio {} over {} mCPU {}", hot, total_ns, (1024*hot)/total_ns );
 
-
         let calls: [u16; 6] = std::array::from_fn(|i| self.calls[i].load(Ordering::Relaxed));
-        assert!(total_ns>0);
+        assert!(total_ns > 0);
 
         ActorStatus {
             ident: self.ident,
             total_count_restarts: self.regeneration,
             iteration_start: iteration_index,
-            iteration_sum: (iteration_index-self.iteration_index_start),
+            iteration_sum: (iteration_index - self.iteration_index_start),
             bool_stop: self.bool_stop,
             is_quiet: false,
             bool_blocking: self.bool_blocking,
@@ -132,7 +132,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         } else {
             true
         };
-    
+
         let a = if let Some(actor) = &self.actor {
             if let Some(mut rx) = actor.try_lock() {
                 rx.is_empty() && rx.is_closed()
@@ -142,7 +142,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         } else {
             true
         };
-    
+
         let t = if let Some(take) = &self.take {
             if let Some(mut rx) = take.rx.try_lock() {
                 rx.is_empty() && rx.is_closed()
@@ -152,7 +152,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         } else {
             true
         };
-    
+
         s & a & t
     }
 
@@ -227,17 +227,25 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
 
     fn consume_actor(&self) -> Option<ActorStatus> {
         if let Some(act) = &self.actor {
-            let mut buffer = vec![ActorStatus::default(); steady_config::TELEMETRY_COLLECTOR_SLICE_MAX + 1];
+            let mut buffer =
+                vec![ActorStatus::default(); steady_config::TELEMETRY_COLLECTOR_SLICE_MAX + 1];
             let count_of_actor_status_events = {
                 if let Some(mut actor_status_rx) = act.try_lock() {
                     //TODO: if we have no messages then we also do not get any status on graph.dot.
-                    actor_status_rx.deref_mut().deprecated_shared_take_slice(&mut buffer)
+                    actor_status_rx
+                        .deref_mut()
+                        .deprecated_shared_take_slice(&mut buffer)
                 } else {
-                    error!("Internal error, unable to lock the actor!!!! {:?} ",&self.actor);
+                    error!(
+                        "Internal error, unable to lock the actor!!!! {:?} ",
+                        &self.actor
+                    );
                     0
                 }
             };
 
+            // Each `ActorStatus` is a disjoint slice since the last `status_reset` after a successful send.
+            // Summing `await_total_ns` / `unit_total_ns` yields the combined busy ratio across backlog drained this wake.
             let mut await_total_ns: u64 = 0;
             let mut unit_total_ns: u64 = 0;
 
@@ -254,7 +262,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
 
                 iteration_sum += status.iteration_sum;
                 await_total_ns += status.await_total_ns;
-                assert!( status.unit_total_ns > 0);
+                assert!(status.unit_total_ns > 0);
 
                 unit_total_ns += status.unit_total_ns;
                 if status.thread_info.is_some() {
@@ -266,7 +274,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 }
             }
 
-            if unit_total_ns==0 {
+            if unit_total_ns == 0 {
                 None
             } else {
                 assert!(unit_total_ns > 0);
@@ -276,7 +284,8 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                         iteration_start: buffer[0].iteration_start, //always the starting iterator count
                         iteration_sum,
                         //we just use the last event for these two, no need to check the others.
-                        total_count_restarts: buffer[count_of_actor_status_events - 1].total_count_restarts,
+                        total_count_restarts: buffer[count_of_actor_status_events - 1]
+                            .total_count_restarts,
                         bool_stop: buffer[count_of_actor_status_events - 1].bool_stop,
                         is_quiet: buffer[count_of_actor_status_events - 1].is_quiet,
                         bool_blocking: buffer[count_of_actor_status_events - 1].bool_blocking,
@@ -346,7 +355,9 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
                 take.details.iter().zip(msg.iter()).for_each(|(meta, val)| {
                     let limit = take_send_source[meta.id].1;
                     let val = *val as i64;
-                    if i64::is_zero(&future_take[meta.id]) && val + take_send_source[meta.id].0 <= limit {
+                    if i64::is_zero(&future_take[meta.id])
+                        && val + take_send_source[meta.id].0 <= limit
+                    {
                         take_send_source[meta.id].0 += val;
                     } else {
                         future_take[meta.id] += val;
@@ -410,13 +421,13 @@ impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
         tx: Arc<Mutex<Tx<[usize; LENGTH]>>>,
         count: [usize; LENGTH],
         inverse_local_index: [usize; LENGTH],
-        last_telemetry_error: Instant
+        last_telemetry_error: Instant,
     ) -> SteadyTelemetrySend<LENGTH> {
         SteadyTelemetrySend {
             tx,
             count,
             last_telemetry_error,
-            inverse_local_index
+            inverse_local_index,
         }
     }
 
@@ -425,14 +436,20 @@ impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
         let telemetry = self;
         if index < MONITOR_NOT {
             let result: isize = done.saturating_add(telemetry.count[index] as isize);
-            assert!(result >= 0, "internal error, already added then subtracted so negative is not possible");
+            assert!(
+                result >= 0,
+                "internal error, already added then subtracted so negative is not possible"
+            );
             telemetry.count[index] = result as usize;
             index
         } else if index == MONITOR_UNKNOWN {
             let local_index = monitor::find_my_index(telemetry, id);
             if local_index < MONITOR_NOT {
                 let result: isize = done.saturating_add(telemetry.count[local_index] as isize);
-                assert!(result >= 0, "internal error, already added then subtracted so negative is not possible");
+                assert!(
+                    result >= 0,
+                    "internal error, already added then subtracted so negative is not possible"
+                );
                 telemetry.count[local_index] = result as usize;
             }
             local_index
@@ -451,10 +468,9 @@ pub(crate) struct SteadyTelemetry<const RX_LEN: usize, const TX_LEN: usize> {
 }
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
-    
     /// Returns true if non zero channel data is waiting to be sent
     #[inline]
-    pub(crate) fn is_dirty(&self) -> bool {        
+    pub(crate) fn is_dirty(&self) -> bool {
         self.dirty.load(Ordering::Relaxed)
     }
 }
@@ -462,10 +478,9 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
 //tests
 #[cfg(test)]
 mod monitor_telemetry_old_tests {
-use std::sync::{Arc};
     use crate::monitor::{ActorMetaData, RxTel};
-    use crate::monitor_telemetry::{SteadyTelemetryRx};
-
+    use crate::monitor_telemetry::SteadyTelemetryRx;
+    use std::sync::Arc;
 
     #[test]
     fn test_steady_telemetry_rx_actor_metadata() {
@@ -481,21 +496,14 @@ use std::sync::{Arc};
         assert_eq!(Arc::strong_count(&actor_metadata), 3);
         assert_eq!(Arc::strong_count(&metadata), 3);
     }
-
- 
-
 }
 
 // tests for the monitor telemetry module
 #[cfg(test)]
 mod monitor_telemetry_tests {
-    use std::sync::{Arc};
-    use crate::monitor::{
-        ActorMetaData, RxTel, 
-    };
-    use crate::monitor_telemetry::{
-        SteadyTelemetry, SteadyTelemetryRx,
-    };
+    use crate::monitor::{ActorMetaData, RxTel};
+    use crate::monitor_telemetry::{SteadyTelemetry, SteadyTelemetryRx};
+    use std::sync::Arc;
 
     // // Helper function to create default ChannelMetaData
     // fn create_channel_meta(id: usize, capacity: usize) -> Arc<ChannelMetaData> {
@@ -541,7 +549,6 @@ mod monitor_telemetry_tests {
         assert!(telemetry_rx.is_empty_and_closed());
     }
 
-
     #[test]
     fn test_steady_telemetry_rx_actor_metadata_clone() {
         let actor_metadata = Arc::new(ActorMetaData::default());
@@ -557,8 +564,6 @@ mod monitor_telemetry_tests {
         assert_eq!(Arc::strong_count(&metadata), 3);
     }
 
-  
-
     #[test]
     fn test_steady_telemetry_rx_tx_channel_id_vec_empty() {
         let actor_metadata = Arc::new(ActorMetaData::default());
@@ -572,8 +577,6 @@ mod monitor_telemetry_tests {
         let tx_channels = telemetry_rx.tx_channel_id_vec();
         assert!(tx_channels.is_empty());
     }
-
-
 
     #[test]
     fn test_steady_telemetry_rx_rx_channel_id_vec_empty() {
@@ -589,8 +592,6 @@ mod monitor_telemetry_tests {
         assert!(rx_channels.is_empty());
     }
 
-    
-
     #[test]
     fn test_steady_telemetry_is_dirty_all_none() {
         let telemetry = SteadyTelemetry::<4, 4> {
@@ -602,7 +603,6 @@ mod monitor_telemetry_tests {
 
         assert!(!telemetry.is_dirty());
     }
-
 
     #[test]
     fn test_steady_telemetry_consume_actor_without_actor() {
@@ -618,8 +618,6 @@ mod monitor_telemetry_tests {
         assert!(status.is_none());
     }
 
- 
-
     #[test]
     fn test_steady_telemetry_consume_take_into_without_take() {
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
@@ -633,10 +631,13 @@ mod monitor_telemetry_tests {
         let mut future_take = vec![50];
         let mut future_send = vec![0];
 
-        let result = telemetry_rx.consume_take_into(&mut take_send_source, &mut future_take, &mut future_send);
+        let result = telemetry_rx.consume_take_into(
+            &mut take_send_source,
+            &mut future_take,
+            &mut future_send,
+        );
         assert!(!result);
     }
-
 
     #[test]
     fn test_steady_telemetry_consume_send_into_without_send() {
@@ -653,6 +654,4 @@ mod monitor_telemetry_tests {
         let result = telemetry_rx.consume_send_into(&mut take_send_target, &mut future_send);
         assert!(!result);
     }
-
-
 }
