@@ -29,7 +29,7 @@ A Troupe groups multiple actors onto a single OS thread. They execute cooperativ
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-2. Advanced Troupe Maneuvers: The "Linedance" Pattern
+1. Advanced Troupe Maneuvers: The "Linedance" Pattern
 
 The Large Scale example demonstrates a sophisticated pattern where actors are moved between troupes during the graph-building phase. This allows you to
 organize actors logically before committing them to hardware threads.
@@ -38,7 +38,6 @@ Dynamic Scheduling
 
 You can decide at runtime whether an actor should be Solo or part of a Troupe using ScheduleAs::dynamic_schedule.
 
-
 let mut my_troupe = Some(graph.actor_troupe());
 
 // If the troupe exists, the actor joins it. If None, it becomes a SoloAct.
@@ -46,12 +45,10 @@ let schedule = ScheduleAs::dynamic_schedule(&mut my_troupe);
 
 builder.build(move |c| my_actor::run(c), schedule);
 
-
 The Transfer Trick
 
 You can create multiple troupes and move actors between them using transfer_front_to or transfer_back_to. This is useful for "lining up" actors in a
 specific execution order.
-
 
 let mut troupe_a = graph.actor_troupe();
 let mut troupe_b = graph.actor_troupe();
@@ -61,13 +58,12 @@ let mut troupe_b = graph.actor_troupe();
 // Move the last actor added to troupe_a over to troupe_b
 troupe_a.transfer_back_to(&mut troupe_b);
 
-
 Why do this? In complex graphs (like the Large Scale example), you might build a pipeline of actors (Generator -> Router -> User). By transferring them into
 specific troupes, you ensure that the "User" actors share threads efficiently while the "Generators" stay isolated.
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-3. CPU Affinity: Pinning Logic to Hardware
+1. CPU Affinity: Pinning Logic to Hardware
 
 Steady State allows you to control exactly which CPU cores your actors and troupes inhabit. This is vital for reducing cache misses and avoiding "thread
 migration" by the OS.
@@ -76,17 +72,14 @@ Explicit Core Assignment
 
 Force an actor or troupe to a specific core.
 
-
 base_actor_builder
     .with_explicit_core(3) // Pin to the 3rd CPU core (1-indexed for OS parity)
     .build(..., SoloAct);
-
 
 Core Balancing and Exclusion
 
 If you don't want to manage every core manually, use the CoreBalancer. You can also exclude specific cores (e.g., Core 1 and 2) to keep them clear for the
 OS or high-priority drivers.
-
 
 let balancer = graph.actor_builder().get_core_balancer();
 
@@ -95,10 +88,9 @@ base_actor_builder
     .with_core_exclusion(vec![0, 1]) // Never use Core 0 or 1
     .build(..., SoloAct);
 
-
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-4. Managing the Stack
+1. Managing the Stack
 
 In high-scale systems, the default OS thread stack size (often 2MB or 8MB) can quickly exhaust your RAM. If you have 1,000 Solo Actors, 8MB each = 8GB of
 RAM just for stacks!
@@ -106,7 +98,6 @@ RAM just for stacks!
 Setting Stack Size
 
 You can configure the stack size at the runner level or the individual actor level.
-
 
 // Global default for all actors in the graph
 SteadyRunner::release_build()
@@ -118,28 +109,28 @@ graph.actor_builder()
     .with_stack_size(16 * 1024 * 1024) // 16 MB for this specific actor
     .build(..., SoloAct);
 
-
 Lesson: Use small stacks (64KB - 256KB) for simple Troupes and large stacks only for actors performing deep recursion or large stack-allocated array
 operations.
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-5. The TroupeGuard Lifecycle
+1. The TroupeGuard Lifecycle
 
 A TroupeGuard is a RAII (Resource Acquisition Is Initialization) object. The OS thread for the troupe is not spawned until the TroupeGuard is dropped.
-
 
 {
     let mut troupe = graph.actor_troupe(); // Returns a TroupeGuard
 
-    // Add 50 actors to the troupe
-    for i in 0..50 {
-        builder.build(..., ScheduleAs::MemberOf(&mut troupe));
-    }
+```
+// Add 50 actors to the troupe
+for i in 0..50 {
+    builder.build(..., ScheduleAs::MemberOf(&mut troupe));
+}
 
-    info!("Actors added, but thread not yet started.");
+info!("Actors added, but thread not yet started.");
+```
+
 } // <--- TroupeGuard is dropped here. The OS thread spawns NOW.
-
 
 Lesson: This allows you to batch-initialize actors. If an actor in the troupe needs to reference another actor's channel, you can ensure all 50 are fully
 configured before the first one starts executing.
@@ -156,7 +147,7 @@ Summary Best Practices
  4 Monitor MCPU: Use the graph.dot telemetry. If a Troupe's MCPU is consistently near 1024, it means the OS thread is saturated. Split that troupe into two.
 
  ###################################
- 
+
  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Appendix: Creative Troupe Strategies and Core Management                                                                                                 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
@@ -170,6 +161,7 @@ In earlier versions of some documentation, the spotlight was referred to as a "m
 choosing which channels to illuminate for the telemetry system. 
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 1. Elastic Sharding with Bundles
 
 The most powerful way to use Troupes is in combination with **Bundles**. 
@@ -214,7 +206,6 @@ Formula: Total Cores = (Count of SoloActs) + (Count of Troupes) + 2
 Objective: Ensure a group of non-critical actors (e.g., logging, cleanup, or background sync) never consumes more than 100% of a single CPU core, preventing
 them from interfering with high-priority logic.
 
-
 // All 100 background actors share exactly one OS thread.
 let mut sandbox = graph.actor_troupe();
 for i in 0..100 {
@@ -223,11 +214,9 @@ for i in 0..100 {
 }
 // Dropping the guard here pins all 100 to one core.
 
-
-3. Creative Usage: The "Linedance" Pipeline
+1. Creative Usage: The "Linedance" Pipeline
 
 Objective: Use transfer_front_to to ensure that actors are processed in a specific order within the troupe's internal round-robin cycle.
-
 
 let mut pipeline = graph.actor_troupe();
 
@@ -238,26 +227,22 @@ builder.build(move |c| decryptor::run(c), ScheduleAs::MemberOf(&mut pipeline));
 // If we accidentally added a Logger in between, we can move it to the back
 pipeline.transfer_front_to(&mut pipeline);
 
-
-4. Creative Usage: NUMA-Aware Socket Pinning
+1. Creative Usage: NUMA-Aware Socket Pinning
 
 Objective: On multi-socket servers, you want to keep a bundle and its actors on the same physical CPU to avoid the "NUMA penalty" (slow cross-socket memory
 access).
 
-
 // Assuming Cores 0-15 are on Socket A, and 16-31 are on Socket B
-let socket_b_cores: Vec<usize> = (16..32).collect();
+let socket_b_cores: Vec = (16..32).collect();
 
 let mut socket_a_troupe = graph.actor_troupe();
 
 builder.with_core_exclusion(socket_b_cores) // Force allocation to Socket A
        .build(move |c| high_speed_logic::run(c), ScheduleAs::MemberOf(&mut socket_a_troupe));
 
-
-5. Creative Usage: The "I/O Shield"
+1. Creative Usage: The "I/O Shield"
 
 Objective: Isolate actors that perform heavy call_blocking operations into their own troupe so they don't stall the main execution flow.
-
 
 let mut io_troupe = graph.actor_troupe();
 
@@ -269,11 +254,9 @@ builder.with_name("DatabaseWriter")
            db_actor::run(c)
        }, ScheduleAs::MemberOf(&mut io_troupe));
 
-
-6. Creative Usage: The "Priority Lane"
+1. Creative Usage: The "Priority Lane"
 
 Objective: Give a specific actor more "CPU time" by making it a SoloAct while keeping its peers in a Troupe.
-
 
 // 10 normal workers share one core
 let mut normal_lane = graph.actor_troupe();
@@ -286,7 +269,6 @@ builder.with_name("VIP_Worker")
        .with_explicit_core(1) // Pin to the first core for lowest latency
        .build(..., ScheduleAs::SoloAct);
 
-
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 7. Troubleshooting Core Contention
 
@@ -298,6 +280,3 @@ If your graph.dot telemetry shows an actor is "Stalled" or has high latency, che
 
 Pro Tip: Use i! in every is_running condition. In a Troupe, if one actor fails to check its shutdown signal, the entire OS thread stays alive, wasting a
 core. The i! macro will tell you exactly which actor is the "anchor" preventing shutdown.
-
- 
- 
