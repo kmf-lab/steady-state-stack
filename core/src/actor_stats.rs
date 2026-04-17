@@ -295,8 +295,9 @@ impl ActorStatsComputer {
         self.refresh_rate_in_bits = meta.refresh_rate_in_bits;
         self.window_bucket_in_bits = meta.window_bucket_in_bits;
         
-        let total_ms = (self.frame_rate_ms as u128 * (1u128 << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits))) 
-                       / (steady_config::TELEMETRY_SAMPLES_PER_FRAME as u128);
+        // Match channel_stats: wall-clock window ≈ frame_ms * 2^(refresh+window) bits of samples.
+        let total_ms = self.frame_rate_ms as u128
+            * (1u128 << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits));
         self.time_label = time_label(total_ms);
 
         self.show_avg_mcpu = meta.avg_mcpu;

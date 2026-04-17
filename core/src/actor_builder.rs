@@ -27,6 +27,7 @@ use std::pin::Pin;
 use aeron::aeron::Aeron;
 use async_lock::Barrier;
 use crate::steady_actor_shadow::SteadyActorShadow;
+use crate::telemetry_window::compute_refresh_window_frames;
 use crate::dot::RemoteDetails;
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::FutureExt;
@@ -790,6 +791,9 @@ impl ActorBuilder {
 
     /// Computes the refresh rate and window bucket size in bits based on frame rate and durations.
     ///
+    /// Delegates to [`crate::telemetry_window::compute_refresh_window_frames`]: one sample per
+    /// telemetry frame (same cadence as channel edge rollups).
+    ///
     /// # Arguments
     ///
     /// * `frame_rate_ms` - THE frame rate in milliseconds.
@@ -804,20 +808,7 @@ impl ActorBuilder {
         refresh: Duration,
         window: Duration,
     ) -> (u8, u8) {
-        if frame_rate_ms > 0 {
-            let frames_per_refresh = refresh.as_micros() / (1000u128 * frame_rate_ms);
-            let samples_per_refresh = frames_per_refresh * (steady_config::TELEMETRY_SAMPLES_PER_FRAME as u128);
-            let refresh_in_bits = (samples_per_refresh as f32).log2().ceil() as u8;
-            
-            let refresh_in_micros = (1000u128 << refresh_in_bits) * frame_rate_ms 
-                                    / (steady_config::TELEMETRY_SAMPLES_PER_FRAME as u128);
-            
-            let buckets_per_window: f32 = window.as_micros() as f32 / refresh_in_micros as f32;
-            let window_in_bits = buckets_per_window.log2().ceil() as u8;
-            (refresh_in_bits, window_in_bits)
-        } else {
-            (0, 0)
-        }
+        compute_refresh_window_frames(frame_rate_ms, refresh, window)
     }
 
     /// Configures the actor to monitor a specific CPU usage percentile for performance analysis.
@@ -1627,5 +1618,15 @@ mod test_actor_builder {
         // Test very small durations
         let (_r, _w) = ActorBuilder::internal_compute_refresh_window(100, Duration::from_millis(1), Duration::from_millis(1));
         // Logic ensures it doesn't crash on small inputs.
+    }
+
+    #[test]
+    fn test_actor_refresh_window_matches_shared_frame_math() {
+        let refresh = Duration::from_secs(1);
+        let window = Duration::from_secs(10);
+        let actor_bits = ActorBuilder::internal_compute_refresh_window(100, refresh, window);
+        let shared = compute_refresh_window_frames(100, refresh, window);
+        assert_eq!(actor_bits, shared);
+        assert_eq!(actor_bits, (4, 3));
     }
 }

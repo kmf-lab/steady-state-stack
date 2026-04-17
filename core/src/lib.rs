@@ -69,6 +69,9 @@ pub(crate) mod actor_stats;
 /// Internal module for framework configuration settings.
 pub(crate) mod steady_config;
 
+/// Shared frame-based refresh/window bit sizing for actor and channel telemetry.
+pub(crate) mod telemetry_window;
+
 /// Internal module for graph visualization and DOT language integration.
 pub(crate) mod dot;
 
