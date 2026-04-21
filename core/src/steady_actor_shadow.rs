@@ -639,9 +639,19 @@ impl SteadyActor for SteadyActorShadow {
         }
         GraphLiveliness::internal_request_shutdown(self.runtime_state.clone()).await;
     }
-   
-    
-    
+
+    /// Sets or clears an optional single-line subtitle in the **Graphviz DOT** node label only,
+    /// rendered directly under the actor name (before rolling stats). Pass `None` to remove the
+    /// line. Text is copied for cross-thread telemetry; newlines are collapsed to spaces and the
+    /// stored length is capped (see `DOT_SUBTITLE_MAX_CHARS` in the crate sources).
+    ///
+    /// No-op if telemetry was not initialized (for example when the graph has no telemetry server
+    /// features or `frame_rate_ms` is zero).
+    fn set_dot_display_text(&mut self, text: Option<&str>) {
+        //NO OP no tlemetry
+    }
+
+
     /// Retrieves the actor's arguments, cast to the specified type.
     ///
     /// # Returns

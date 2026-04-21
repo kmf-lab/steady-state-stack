@@ -517,6 +517,10 @@ mod simulate_edge_tests {
         fn args<A: Any>(&self) -> Option<&A> { None }
         fn identity(&self) -> ActorIdentity { ActorIdentity::default() }
         fn is_showstopper<T>(&self, _rx: &mut Rx<T>, _threshold: usize) -> bool { false }
+
+        fn set_dot_display_text(&mut self, text: Option<&str>) {
+            todo!()
+        }
     }
 
     struct FaultyRunner {

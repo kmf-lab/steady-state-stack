@@ -123,18 +123,6 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
         simulate_edge::simulated_behavior::<Self>(self, sims).await
     }
 
-    /// Sets or clears an optional single-line subtitle in the **Graphviz DOT** node label only,
-    /// rendered directly under the actor name (before rolling stats). Pass `None` to remove the
-    /// line. Text is copied for cross-thread telemetry; newlines are collapsed to spaces and the
-    /// stored length is capped (see `DOT_SUBTITLE_MAX_CHARS` in the crate sources).
-    ///
-    /// No-op if telemetry was not initialized (for example when the graph has no telemetry server
-    /// features or `frame_rate_ms` is zero).
-    pub fn set_dot_display_text(&mut self, text: Option<&str>) {
-        if let Some(ref st) = self.telemetry.state {
-            st.set_dot_display_text(text);
-        }
-    }
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
     pub(crate) fn start_profile(&self, x: usize) -> Option<FinallyRollupProfileGuard<'_>> {
@@ -860,6 +848,20 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     fn args<A: Any>(&self) -> Option<&A> {
         self.args.downcast_ref::<A>()
     }
+
+    /// Sets or clears an optional single-line subtitle in the **Graphviz DOT** node label only,
+    /// rendered directly under the actor name (before rolling stats). Pass `None` to remove the
+    /// line. Text is copied for cross-thread telemetry; newlines are collapsed to spaces and the
+    /// stored length is capped (see `DOT_SUBTITLE_MAX_CHARS` in the crate sources).
+    ///
+    /// No-op if telemetry was not initialized (for example when the graph has no telemetry server
+    /// features or `frame_rate_ms` is zero).
+    fn set_dot_display_text(&mut self, text: Option<&str>) {
+        if let Some(ref st) = self.telemetry.state {
+            st.set_dot_display_text(text);
+        }
+    }
+
 
     fn identity(&self) -> ActorIdentity {
         self.ident
