@@ -259,6 +259,14 @@ pub trait RxTel: Send + Sync {
     /// Consumes and returns the current actor status, if available.
     fn consume_actor(&self) -> Option<ActorStatus>;
 
+    /// Consumes a pending DOT graph subtitle update for this telemetry receiver, if any.
+    ///
+    /// Return value: `None` = no pending change; `Some(None)` = clear subtitle; `Some(Some(s))` =
+    /// set subtitle to `s`. Default: no subtitle channel (always `None`).
+    fn consume_dot_subtitle(&self) -> Option<Option<String>> {
+        None
+    }
+
     /// Returns the metadata associated with the actor.
     fn actor_metadata(&self) -> Arc<ActorMetaData>;
 

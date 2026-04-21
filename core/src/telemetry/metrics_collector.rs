@@ -28,6 +28,8 @@ pub enum DiagramData {
     NodeDef(u64, Box<(Arc<ActorMetaData>, Box<[Arc<ChannelMetaData>]>, Box<[Arc<ChannelMetaData>]>)>),
     /// Performance status updates for a set of nodes.
     NodeProcessData(u64, Box<[ActorStatus]>),
+    /// Optional DOT subtitle line per actor id (`None` value clears the subtitle).
+    NodeDotSubtitle(u64, Box<[(usize, Option<String>)]>),
     /// Throughput and volume data for a subset of channels.
     ChannelVolumeData(u64, Box<[(usize, i64, i64)]>),
 }
@@ -117,6 +119,7 @@ impl MetricsCollector {
             let mut actor_statuses: Vec<Option<ActorStatus>> = Vec::new();
             let mut node_defs_to_send = Vec::new();
             let mut channel_volumes_to_send = Vec::new();
+            let mut dot_subtitle_updates: Vec<(usize, Option<String>)> = Vec::new();
 
             // 1. GATHER PHASE: Acquire the read lock, collect data into local buffers, and release.
             // CRITICAL: We must NOT perform any .await operations (like send_async) while holding 
@@ -169,6 +172,10 @@ impl MetricsCollector {
                                 self.last_seen[actor_id] = now_loop;
                                 actor_statuses[actor_id] = Some(status);
                                 collected_this_time = true;
+                            }
+
+                            if let Some(upd) = rx.consume_dot_subtitle() {
+                                dot_subtitle_updates.push((meta.ident.id, upd));
                             }
 
                             // Collect Channel Volume into persistent buffers
@@ -236,6 +243,15 @@ impl MetricsCollector {
             if !actor_statuses.is_empty() {
                 let mut tx_guard = self.targets[0].lock().await;
                 let _ = context.send_async(&mut *tx_guard, DiagramData::NodeProcessData(self.seq, actor_statuses.into_boxed_slice()), SendSaturation::AwaitForRoom).await;
+            }
+            if !dot_subtitle_updates.is_empty() {
+                let mut tx_guard = self.targets[0].lock().await;
+                let _ = context.send_async(
+                    &mut *tx_guard,
+                    DiagramData::NodeDotSubtitle(self.seq, dot_subtitle_updates.into_boxed_slice()),
+                    SendSaturation::AwaitForRoom,
+                )
+                .await;
             }
             if !channel_volumes_to_send.is_empty() {
                 let mut tx_guard = self.targets[0].lock().await;

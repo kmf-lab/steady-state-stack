@@ -11,6 +11,8 @@ pub(crate) struct Node {
     pub(crate) pen_width: &'static str,
     pub(crate) stats_computer: ActorStatsComputer,
     pub(crate) display_label: String,
+    /// Raw (unescaped) optional subtitle line under the actor name in DOT labels only.
+    pub(crate) dot_subtitle: Option<String>,
     pub(crate) tooltip: String,
     pub(crate) metric_text: String,
     pub(crate) thread_info_cache: Option<ThreadInfo>,
@@ -77,6 +79,7 @@ impl Node {
             actor_status.bool_stop,
             actor_status.is_quiet,
             thread_id,
+            self.dot_subtitle.as_deref(),
         );
 
         self.color = color;

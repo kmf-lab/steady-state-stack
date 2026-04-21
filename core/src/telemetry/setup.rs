@@ -11,7 +11,10 @@ use crate::{ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturati
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{find_my_index, ChannelMetaData, RxTel};
-use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend, SteadyTelemetryTake};
+use crate::monitor_telemetry::{
+    DotSubtitleMailbox, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend,
+    SteadyTelemetryTake,
+};
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::core_exec;
@@ -77,11 +80,13 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         };
 
     let act_tuple = channel_builder.build_channel();
+    let dot_subtitle_mailbox = Arc::new(DotSubtitleMailbox::new());
     let det = SteadyTelemetryRx {
         send: tx_tuple.1,
         take: rx_tuple.1,
         actor: Some(act_tuple.1.clone()), //TODO: may need LazySend...
         actor_metadata: that.actor_metadata.clone(),
+        dot_subtitle_mailbox: Some(dot_subtitle_mailbox.clone()),
     };
 
     let idx: Option<usize> = {
@@ -121,6 +126,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         bool_stop: false,
         bool_blocking: false, //TODO: thread this in from with_blocking?
         show_thread_info: that.show_thread_info,
+        dot_subtitle_mailbox: Some(dot_subtitle_mailbox),
     });
 
     (rx_tuple.0, tx_tuple.0, telemetry_actor)

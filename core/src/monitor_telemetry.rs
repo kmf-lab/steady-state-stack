@@ -13,12 +13,59 @@ use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::thread;
 use std::time::Instant;
 
+/// Maximum characters stored for a DOT node subtitle (after newline collapse).
+pub(crate) const DOT_SUBTITLE_MAX_CHARS: usize = 256;
+
+/// Pending subtitle for Graphviz DOT labels; shared between [`SteadyTelemetryActorSend`] and
+/// [`SteadyTelemetryRx`] for the same actor registration.
+pub(crate) struct DotSubtitleMailbox {
+    pending: parking_lot::Mutex<Option<DotSubtitlePending>>,
+}
+
+#[derive(Debug)]
+enum DotSubtitlePending {
+    Clear,
+    Set(String),
+}
+
+impl DotSubtitleMailbox {
+    pub(crate) fn new() -> Self {
+        Self {
+            pending: parking_lot::Mutex::new(None),
+        }
+    }
+
+    /// Queue a clear (`None`) or set (`Some`); coalesces to the latest value under one lock.
+    pub(crate) fn record(&self, text: Option<&str>) {
+        let mut lock = self.pending.lock();
+        *lock = Some(match text {
+            None => DotSubtitlePending::Clear,
+            Some(s) => {
+                let collapsed = s.replace(['\n', '\r'], " ");
+                let truncated: String = collapsed.chars().take(DOT_SUBTITLE_MAX_CHARS).collect();
+                DotSubtitlePending::Set(truncated)
+            }
+        });
+    }
+
+    /// `None` = nothing to relay. `Some(None)` = clear subtitle. `Some(Some(s))` = set text.
+    pub(crate) fn take_pending(&self) -> Option<Option<String>> {
+        let mut lock = self.pending.lock();
+        let pending = lock.take()?;
+        Some(match pending {
+            DotSubtitlePending::Clear => None,
+            DotSubtitlePending::Set(s) => Some(s),
+        })
+    }
+}
+
 /// Structure representing the receiver side of steady telemetry.
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
     pub(crate) send: Option<SteadyTelemetryTake<TXL>>,
     pub(crate) take: Option<SteadyTelemetryTake<RXL>>,
     pub(crate) actor: Option<SteadyRx<ActorStatus>>,
     pub(crate) actor_metadata: Arc<ActorMetaData>,
+    pub(crate) dot_subtitle_mailbox: Option<Arc<DotSubtitleMailbox>>,
 }
 
 /// Structure representing the telemetry take side with a fixed length.
@@ -42,6 +89,7 @@ pub struct SteadyTelemetryActorSend {
     pub(crate) hot_profile: AtomicU64,
     pub(crate) hot_profile_concurrent: AtomicU16,
     pub(crate) calls: [AtomicU16; 6],
+    pub(crate) dot_subtitle_mailbox: Option<Arc<DotSubtitleMailbox>>,
 }
 
 impl SteadyTelemetryActorSend {
@@ -92,6 +140,12 @@ impl SteadyTelemetryActorSend {
             unit_total_ns: total_ns,
             thread_info,
             calls,
+        }
+    }
+
+    pub(crate) fn set_dot_display_text(&self, text: Option<&str>) {
+        if let Some(m) = &self.dot_subtitle_mailbox {
+            m.record(text);
         }
     }
 }
@@ -316,6 +370,12 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         }
     }
 
+    fn consume_dot_subtitle(&self) -> Option<Option<String>> {
+        self.dot_subtitle_mailbox
+            .as_ref()
+            .and_then(|m| m.take_pending())
+    }
+
     #[inline]
     /// Consumes messages from a channel and updates telemetry state, ensuring a "sane" state by
     /// postponing takes when necessary. Returns true if messages were consumed, false otherwise.
@@ -490,6 +550,7 @@ mod monitor_telemetry_old_tests {
             take: None,
             actor: None,
             actor_metadata: actor_metadata.clone(),
+            dot_subtitle_mailbox: None,
         };
 
         let metadata = telemetry_rx.actor_metadata();
@@ -502,7 +563,7 @@ mod monitor_telemetry_old_tests {
 #[cfg(test)]
 mod monitor_telemetry_tests {
     use crate::monitor::{ActorMetaData, RxTel};
-    use crate::monitor_telemetry::{SteadyTelemetry, SteadyTelemetryRx};
+    use crate::monitor_telemetry::{DotSubtitleMailbox, SteadyTelemetry, SteadyTelemetryRx};
     use std::sync::Arc;
 
     // // Helper function to create default ChannelMetaData
@@ -537,6 +598,17 @@ mod monitor_telemetry_tests {
     // }
 
     #[test]
+    fn test_dot_subtitle_mailbox_take_and_clear() {
+        let m = Arc::new(DotSubtitleMailbox::new());
+        m.record(Some("x"));
+        assert_eq!(m.take_pending(), Some(Some("x".into())));
+        assert_eq!(m.take_pending(), None);
+        m.record(None);
+        assert_eq!(m.take_pending(), Some(None));
+        assert_eq!(m.take_pending(), None);
+    }
+
+    #[test]
     fn test_steady_telemetry_rx_is_empty_and_closed_all_none() {
         let actor_metadata = Arc::new(ActorMetaData::default());
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
@@ -544,6 +616,7 @@ mod monitor_telemetry_tests {
             take: None,
             actor: None,
             actor_metadata: actor_metadata.clone(),
+            dot_subtitle_mailbox: None,
         };
 
         assert!(telemetry_rx.is_empty_and_closed());
@@ -557,6 +630,7 @@ mod monitor_telemetry_tests {
             take: None,
             actor: None,
             actor_metadata: actor_metadata.clone(),
+            dot_subtitle_mailbox: None,
         };
 
         let metadata = telemetry_rx.actor_metadata();
@@ -572,6 +646,7 @@ mod monitor_telemetry_tests {
             take: None,
             actor: None,
             actor_metadata,
+            dot_subtitle_mailbox: None,
         };
 
         let tx_channels = telemetry_rx.tx_channel_id_vec();
@@ -586,6 +661,7 @@ mod monitor_telemetry_tests {
             take: None,
             actor: None,
             actor_metadata,
+            dot_subtitle_mailbox: None,
         };
 
         let rx_channels = telemetry_rx.rx_channel_id_vec();
@@ -612,6 +688,7 @@ mod monitor_telemetry_tests {
             take: None,
             actor: None,
             actor_metadata,
+            dot_subtitle_mailbox: None,
         };
 
         let status = telemetry_rx.consume_actor();
@@ -625,6 +702,7 @@ mod monitor_telemetry_tests {
             take: None,
             actor: None,
             actor_metadata: Arc::new(ActorMetaData::default()),
+            dot_subtitle_mailbox: None,
         };
 
         let mut take_send_source = vec![(0, 100)];
@@ -646,6 +724,7 @@ mod monitor_telemetry_tests {
             take: None,
             actor: None,
             actor_metadata: Arc::new(ActorMetaData::default()),
+            dot_subtitle_mailbox: None,
         };
 
         let mut take_send_target = vec![(0, 100)];

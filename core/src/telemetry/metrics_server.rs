@@ -382,6 +382,13 @@ async fn process_msg(
                 }
             }
         },
+        DiagramData::NodeDotSubtitle(_seq, pairs) => {
+            for (id, opt) in pairs.iter() {
+                if let Some(node) = metrics_state.nodes.get_mut(*id) {
+                    node.dot_subtitle = opt.clone();
+                }
+            }
+        },
         DiagramData::ChannelVolumeData(seq, sparse_data) => {
             sparse_data.iter().for_each(|(id, t, s)| {
                 if let Some(edge) = metrics_state.edges.get_mut(*id) {

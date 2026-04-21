@@ -98,6 +98,19 @@ pub struct ActorStatsComputer {
     pub(crate) is_quiet: bool, //this is NOT a problem, it might just have nothing worth reporting
 }
 
+/// Escapes text embedded in a Graphviz double-quoted `label` attribute fragment.
+fn append_escaped_dot_label_line(out: &mut String, src: &str) {
+    for ch in src.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => {}
+            _ => out.push(ch),
+        }
+    }
+}
+
 impl ActorStatsComputer {
     /// Computes the actor's statistics and updates the provided labels for visualization and metrics.
     ///
@@ -115,6 +128,7 @@ impl ActorStatsComputer {
     /// * `bool_stop` - A boolean indicating whether the actor has stopped.
     /// * `bool_stalled` - A boolean indicating whether the actor is stalled.
     /// * `thread_info` - Optional thread information to include in the DOT label.
+    /// * `dot_subtitle` - Optional extra line under the actor name in the DOT label only (not tooltip).
     ///
     /// # Returns
     ///
@@ -129,7 +143,8 @@ impl ActorStatsComputer {
         total_count_restarts: u32,
         bool_stop: bool,
         is_quiet: bool,
-        thread_info: Option<ThreadInfo>
+        thread_info: Option<ThreadInfo>,
+        dot_subtitle: Option<&str>,
     ) -> (&'static str, &'static str) {
         self.is_quiet = is_quiet;
         if let Some((mcpu,load)) = mcpu_load {
@@ -157,7 +172,12 @@ impl ActorStatsComputer {
         tooltip.push_str(dot_label);
         tooltip.push('\n');
 
-
+        if let Some(st) = dot_subtitle {
+            if !st.is_empty() {
+                append_escaped_dot_label_line(dot_label, st);
+                dot_label.push('\n');
+            }
+        }
 
         // --- STATIC METADATA (Tooltip only) ---
         // These values are relatively static or metadata-heavy and are moved to the tooltip 
@@ -853,13 +873,47 @@ mod test_actor_stats {
             1,
             false,
             false,
-            None
+            None,
+            None,
         );
 
         assert_eq!(line_color, DOT_GREEN);
         assert_eq!(line_width, crate::dot::NODE_PEN_WIDTH);
         assert!(dot_label.contains("test_actor"));
 
+    }
+
+    #[test]
+    fn test_dot_subtitle_escaped_in_label_only() {
+        let metadata = create_mock_metadata();
+        let mut actor_stats = ActorStatsComputer::default();
+        actor_stats.init(metadata.clone(), 1000);
+        actor_stats.accumulate_data_frame(512, 50);
+        let mut dot_label = String::new();
+        let mut tooltip = String::new();
+        let mut metric_text = String::new();
+        let _ = actor_stats.compute(
+            &mut dot_label,
+            &mut tooltip,
+            &mut metric_text,
+            Some((512, 50)),
+            0,
+            false,
+            false,
+            None,
+            Some(r#"say "hi""#),
+        );
+        assert!(dot_label.contains("test_actor"));
+        assert!(
+            dot_label.contains("\\\""),
+            "expected escaped double-quote in DOT label fragment: {}",
+            dot_label
+        );
+        assert!(
+            !tooltip.contains("say"),
+            "subtitle must not appear in tooltip: {}",
+            tooltip
+        );
     }
 
     #[test]
@@ -1101,7 +1155,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None, None);
 
         // Should contain actor name with suffix
         assert!(dot_label.contains("test"));
@@ -1122,7 +1176,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None, None);
 
 
     }
@@ -1141,7 +1195,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None, None);
 
         // Should contain window information in tooltip
         assert!(tooltip.contains("Window 5.0 mins"));
@@ -1161,7 +1215,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 5, false, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 5, false, false, None, None);
 
         // Should contain restart count in dot_label
         assert!(dot_label.contains("Restarts: 5"));
@@ -1186,7 +1240,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, true, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, true, false, None, None);
 
         // Should contain stopped indicator in tooltip
         assert!(tooltip.contains("stopped"));
@@ -1211,7 +1265,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 60)), 0, false, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 60)), 0, false, false, None, None);
 
         // Should contain work load information in both
         assert!(dot_label.contains("load"));
@@ -1236,7 +1290,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((700, 50)), 0, false, false, None);
+        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((700, 50)), 0, false, false, None, None);
 
         // Should contain mcpu information in both
         assert!(dot_label.contains("mCPU"));
@@ -1263,7 +1317,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 50)), 0, false, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 50)), 0, false, false, None, None);
 
         assert_eq!(color, DOT_YELLOW);
     }
@@ -1288,7 +1342,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((300, 70)), 0, false, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((300, 70)), 0, false, false, None, None);
 
         assert_eq!(color, DOT_ORANGE);
     }
@@ -1475,7 +1529,7 @@ mod extra_tests {
         let mut tooltip = String::new();
         let mut metric_text = String::new();
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 80)), 0, false, false, None);
+        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 80)), 0, false, false, None, None);
 
         // Should be Red (highest priority) even though other triggers also fire
         assert_eq!(color, DOT_RED);
