@@ -129,7 +129,7 @@ fn mean_avg_fill_from_edge_slice(edges: &[&Edge]) -> Option<u8> {
             count += 1;
         }
     }
-    (count > 0).then_some((sum / count) as u8)
+    (count > 0).then(|| (sum / count) as u8)
 }
 
 /// Multi-lane `Avg fill` for DOT: comma list when `edges.len() <=` [`MAX_INLINE_AVG_FILL_LANES`], else
@@ -173,7 +173,7 @@ fn mean_avg_fill_percent<'a, I: Iterator<Item = &'a Option<u8>>>(iter: I) -> Opt
             count += 1;
         }
     }
-    (count > 0).then_some((sum / count) as u8)
+    (count > 0).then(|| (sum / count) as u8)
 }
 
 /// Per-channel hover line: rolling-window avg fill when enabled, else snapshot inflight/capacity.
@@ -1374,6 +1374,15 @@ mod dot_tests {
             lane_color_counts: std::collections::BTreeMap::new(),
             last_generated_graph: Instant::now(),
         }
+    }
+
+    /// `bool::then_some(x)` evaluates `x` eagerly; mean must use `then` so empty iterators never divide.
+    #[test]
+    fn test_mean_avg_fill_percent_all_none_returns_none_without_panic() {
+        let all_none = [None::<u8>, None];
+        assert_eq!(mean_avg_fill_percent(all_none.iter()), None);
+        let empty: [Option<u8>; 0] = [];
+        assert_eq!(mean_avg_fill_percent(empty.iter()), None);
     }
 
     #[test]
