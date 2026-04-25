@@ -135,6 +135,19 @@ fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
     out.push('\n');
 }
 
+/// Integer mean of `Some` percent values; `None` if there are no samples.
+fn mean_avg_fill_percent<'a, I: Iterator<Item = &'a Option<u8>>>(iter: I) -> Option<u8> {
+    let mut sum = 0u32;
+    let mut count = 0u32;
+    for o in iter {
+        if let Some(n) = o {
+            sum += u32::from(*n);
+            count += 1;
+        }
+    }
+    (count > 0).then_some((sum / count) as u8)
+}
+
 /// Per-channel hover line: rolling-window avg fill when enabled, else snapshot inflight/capacity.
 fn append_channel_fill_tooltip(
     tooltip: &mut String,
@@ -674,17 +687,33 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             }
             if edges.iter().any(|pe| pe.show_avg_filled_any) {
                 header.push_str("\nAvg fill: ");
-                let mut first_avg = true;
-                for o in edges.iter().flat_map(|pe| pe.avg_fill_per_lane.iter()) {
-                    if !first_avg {
-                        header.push_str(", ");
-                    }
-                    first_avg = false;
-                    match o {
+                if total_channels > 20 {
+                    let mean = mean_avg_fill_percent(
+                        edges
+                            .iter()
+                            .flat_map(|pe| pe.avg_fill_per_lane.iter()),
+                    );
+                    match mean {
                         Some(n) => {
-                            let _ = write!(header, "{}%", n);
+                            let _ = write!(header, "{}% (mean, {} ch)", n, total_channels);
                         }
-                        None => header.push('—'),
+                        None => {
+                            let _ = write!(header, "— ({} ch)", total_channels);
+                        }
+                    }
+                } else {
+                    let mut first_avg = true;
+                    for o in edges.iter().flat_map(|pe| pe.avg_fill_per_lane.iter()) {
+                        if !first_avg {
+                            header.push_str(", ");
+                        }
+                        first_avg = false;
+                        match o {
+                            Some(n) => {
+                                let _ = write!(header, "{}%", n);
+                            }
+                            None => header.push('—'),
+                        }
                     }
                 }
             }
@@ -1603,6 +1632,107 @@ mod dot_tests {
             result.contains("Lane colors: 1 green, 1 red"),
             "expected histogram: {}",
             result
+        );
+    }
+
+    /// Merged bundle edge (`n` groups ≥ `bundle_floor_size`, `total_channels` > 20) must not list
+    /// one percent per channel on the label; use a single mean line instead.
+    #[test]
+    fn test_large_bundle_avg_fill_uses_mean_summary() {
+        use crate::actor_stats::ChannelBlock;
+
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+
+        let mut edges: Vec<Edge> = Vec::new();
+        let mut id: usize = 0;
+        for bi in 0..8 {
+            for type_s in ["A", "B", "C"] {
+                let mut stats = ChannelStatsComputer {
+                    capacity: 100,
+                    show_avg_filled: true,
+                    show_type: Some(type_s),
+                    refresh_rate_in_bits: 0,
+                    window_bucket_in_bits: 0,
+                    ..Default::default()
+                };
+                stats.current_filled = Some(ChannelBlock {
+                    histogram: None,
+                    runner: 5_000,
+                    sum_of_squares: 0,
+                });
+
+                edges.push(Edge {
+                    id,
+                    from: Some(from),
+                    to: Some(to),
+                    color: "green",
+                    sidecar: false,
+                    pen_width: "1".to_string(),
+                    saturation_score: 0.0,
+                    ctl_labels: vec![],
+                    stats_computer: stats,
+                    display_label: String::new(),
+                    metric_text: String::new(),
+                    partner: Some("P"),
+                    bundle_index: Some(bi),
+                });
+                id += 1;
+            }
+        }
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+            ],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 2,
+        };
+
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
+
+        assert!(
+            result.contains("Avg fill: 5% (mean, 24 ch)"),
+            "expected mean summary on bundle label, got output starting: {}",
+            &result[..result.len().min(500)]
+        );
+        assert!(
+            !result.contains("0%, 0%, 0%, 0%, 0%, 0%"),
+            "label should not contain a long comma-separated fill list"
         );
     }
 
